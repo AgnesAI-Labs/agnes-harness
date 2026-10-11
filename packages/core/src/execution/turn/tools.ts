@@ -481,6 +481,7 @@ export async function approveAndExecute(
       s,
       structuredClone({
         sessionKey: s.key,
+        workspaceRoot: s.workspaceRoot,
         cwd: s.d.cwd,
         actor: s.d.actor,
         call: {
@@ -1147,6 +1148,7 @@ export async function approveAndExecute(
           generationDepth: s.generationDepth,
           actor: s.d.actor,
           cwd: s.d.cwd,
+          workspaceRoot: s.workspaceRoot,
           fullAccess: s.yolo,
           runtime: s.d.runtime,
           preset: s.preset,

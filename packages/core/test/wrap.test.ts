@@ -810,6 +810,7 @@ describe('buildToolContext hands every path to the file system, and decides none
         generationDepth: 0,
         actor,
         cwd: '/w/project',
+        workspaceRoot: '/w/project',
         runtime,
         preset: presetDefaults(),
         children: { create: async () => ({}) as never },

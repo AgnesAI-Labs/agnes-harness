@@ -59,6 +59,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     return input
   }
   const ctx: LoopContext = options.context ?? {
+    session: { key: 'author-loop-test', lane: 'main', workspaceRoot: '/fixture' },
     sessionKey: 'author-loop-test',
     lane: 'main',
     async prepareRequest(input = {}) {

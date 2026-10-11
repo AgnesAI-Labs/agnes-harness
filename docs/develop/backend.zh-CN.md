@@ -8,6 +8,17 @@
 
 复用可安装的 [hot-tool-plugin](../../examples/packages/hot-tool-plugin/package.json)。它不访问网络、文件或付费模型；工具 `demo_text_stats` 接受 text，返回字符数与空白分隔词数。字符计数采用 JavaScript `text.length`，不是 Unicode 字素数。
 
+## 工作区身份与执行目录
+
+`cwd` 是本次调用开始时的执行目录快照，未来版本中可能与 `workspaceRoot` 不同。
+当前会话默认满足 `cwd === workspaceRoot`；显式进程目录仅影响该次操作。
+定位工作区所属状态、策略和配置（例如 `.agh/plan-mode.json`）时，必须使用可信身份：
+`ToolContext.session.workspaceRoot`、`ToolPolicyInput.workspaceRoot` 或
+`LoopContext.session.workspaceRoot`。绑定会话的 `ServiceContext` 通过
+`session.workspaceRoot` 提供身份；没有 `session` 时，必须拒绝需要工作区身份的操作。
+Host/Core 从权威工作区绑定注入身份，不采用工具参数或服务输入。根路径字符串不授予
+文件系统权限，访问仍须使用获授权端口。本次契约调整不提供会话目录切换功能。
+
 ## 入口与工具
 
 包通过 `agnes.plugins` 指向 `textStatsTool`，manifest 和对象都声明 `inject: ['extension']`。核心实现：

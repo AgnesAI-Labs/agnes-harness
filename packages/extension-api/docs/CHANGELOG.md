@@ -4,6 +4,17 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolPolicyInput.workspaceRoot` is now required and Host-injected. `LoopContext.session`
+adds the existing `SessionRef` identity. Tools and session-bound services reuse
+`session.workspaceRoot`; non-session services must refuse operations that need an absent
+workspace identity. The surface snapshot records these identity access paths separately
+from runtime exports. `cwd` is an execution directory snapshot at call start, and may differ
+from `workspaceRoot` in a future version. Use `workspaceRoot` to locate workspace-owned
+state, policy and config. Session defaults remain equal today; explicit process overrides
+never change identity or authority. Policy-input and Loop test fixtures must supply the new
+required identity fields. No directory-change port or protocol event is added. These are
+unpublished pre-freeze contract changes; `API_VERSION` stays `1.4.0` pending release versioning.
+
 Git worktree types moved to `@agnes/git-worktree-contract`. The dedicated init field is removed.
 Host registers `gitWorktreeKind`. The bundled subagent binds it. `API_VERSION` stays `1.4.0`.
 

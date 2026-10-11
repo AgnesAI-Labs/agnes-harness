@@ -51,6 +51,10 @@ export type ChildTaskRecord = {
   boundarySeq: Seq
   inputHash: string
   inputText: string
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   cwd: string
   actorId: string
   budgetScopeId: string
@@ -119,6 +123,10 @@ export type CreateDelegatedChildInput = {
   maxFanOut: number
   inputHash: string
   inputText: string
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   cwd: string
   actorId: string
   isolation: 'worktree' | 'shared'

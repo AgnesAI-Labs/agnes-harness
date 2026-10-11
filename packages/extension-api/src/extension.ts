@@ -24,6 +24,10 @@ export interface ExtensionContext {
     // Optional: three ExtensionAPI construction sites under host/test still build this object
     // literal with only the original three fields, and this task doesn't touch host.
     readonly preset?: string
+    /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+     * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+     * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+     */
     readonly cwd?: string
   }
   readonly platform: PlatformFacts // assembly-time snapshot; terminal.width is not live (spec §5.2)

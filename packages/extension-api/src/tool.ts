@@ -160,7 +160,11 @@ export type ChildStatus = {
   waitTimedOut?: boolean
   /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
   receipt?: {
-    workspace: { cwd: string; isolation: 'shared' | 'worktree' }
+    workspace: {
+      /** Child execution directory snapshot at call start. May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config. */
+      cwd: string
+      isolation: 'shared' | 'worktree'
+    }
     tools: Array<{ seq: number; name: string; isError: boolean }>
     truncated: boolean
   }
@@ -175,6 +179,10 @@ export interface CodeRuntime {
   readonly isolation: 'process' | 'worker-thread' | 'container'
   probe(): Promise<{ ok: true; version: string } | { ok: false; reason: string; installHint?: string }>
   start(opts: {
+    /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+     * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+     * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+     */
     cwd: string
     env: Record<string, string>
     /** Managed provider-bound executor; required by process PTC backends. */
@@ -244,10 +252,18 @@ export interface ToolContext {
     >
   }
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   readonly cwd: string
   exec(
     cmd: string[],
     opts?: {
+      /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+       * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+       * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+       */
       cwd?: string
       env?: Record<string, string>
       stdin?: string
@@ -283,6 +299,10 @@ export interface ToolContext {
         argv: readonly string[]
         /** Cancellation while opening; returning a handle detaches its lifetime from this call. */
         signal?: AbortSignal
+        /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+         * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+         * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+         */
         cwd?: string
         env?: Readonly<Record<string, string>>
         pty?: Readonly<{ columns: number; rows: number }>
@@ -325,6 +345,10 @@ export interface ToolContext {
         model?: string
         isolation?: 'worktree' | 'shared'
         budget?: number
+        /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+         * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+         * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+         */
         cwd?: string
         start?: boolean
         /** Background child inherits parent context when true. */

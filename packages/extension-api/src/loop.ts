@@ -12,6 +12,7 @@ import type {
   ChildAgentSessionService,
   ChildAgentSessionStartOptions,
 } from './child-agent.js'
+import type { SessionRef } from './common.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
 import type { ToolResult } from './tool.js'
@@ -183,6 +184,8 @@ export interface LoopServiceReader {
 }
 
 export interface LoopContext {
+  /** Host/Core-bound session identity. Use session.workspaceRoot for workspace-owned state, policy and config. */
+  readonly session: SessionRef
   /** Host-bound services for this session. Absent means the caller has no service reader. */
   readonly services?: LoopServiceReader
   readonly sessionKey: string

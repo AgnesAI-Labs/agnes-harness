@@ -25,6 +25,10 @@ export type RemoteTransport = Readonly<{
   exec(
     cmd: string[],
     opts: {
+      /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+       * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+       * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+       */
       cwd: string
       env?: Record<string, string>
       stdin?: string

@@ -3,6 +3,12 @@ import type { ResolvedToolCallPolicy } from './tool.js'
 
 export interface ToolPolicyInput {
   sessionKey: string
+  /** Host-injected canonical workspace identity. Use for workspace-owned state, policy and config; grants no authority. */
+  readonly workspaceRoot: string
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   cwd: string
   actor: Actor
   call: {

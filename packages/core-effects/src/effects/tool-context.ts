@@ -97,6 +97,7 @@ export type ToolContextDeps = {
   generationDepth: number
   actor: Actor
   cwd: string
+  workspaceRoot: string
   fullAccess?: boolean
   runtime: SeamRuntime
   preset: PresetView
@@ -187,7 +188,7 @@ export function buildToolContext(
     session: {
       key: d.sessionKey,
       lane: d.lane,
-      workspaceRoot: d.cwd,
+      workspaceRoot: d.workspaceRoot,
       fullAccess: d.fullAccess === true,
       turn: d.turn,
       step: d.step,

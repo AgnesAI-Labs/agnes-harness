@@ -374,6 +374,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   }
   const children = s.loopChildrenPort()
   const ctx: LoopContext = {
+    session: Object.freeze({ key: s.key, lane: s.lane, workspaceRoot: s.workspaceRoot }),
     sessionKey: s.key,
     lane: s.lane,
     services: {

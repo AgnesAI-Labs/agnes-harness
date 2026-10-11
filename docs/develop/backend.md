@@ -12,6 +12,19 @@ Reuse the installable [hot-tool-plugin](../../examples/packages/hot-tool-plugin/
 
 <a id="入口与工具"></a>
 
+## Workspace identity and execution directory
+
+`cwd` is the execution directory snapshot at the start of a call. It may differ from
+`workspaceRoot` in a future version. Session defaults currently satisfy `cwd === workspaceRoot`;
+an explicit process directory only affects that operation. Locate workspace-owned state,
+policy and config (for example `.agh/plan-mode.json`) using the trusted identity:
+`ToolContext.session.workspaceRoot`, `ToolPolicyInput.workspaceRoot`, or
+`LoopContext.session.workspaceRoot`. A session-bound `ServiceContext` exposes
+`session.workspaceRoot`; when `session` is absent, refuse operations that require workspace
+identity. Host/Core derive identity from the authoritative workspace binding, never tool
+arguments or service input. A root string grants no filesystem authority; use the granted ports.
+There is no session directory-change feature in this contract change.
+
 ## Entry point and tool
 
 The package points `agnes.plugins` at `textStatsTool`. Both manifest and exported object declare `inject: ['extension']`. The core registration is:

@@ -556,6 +556,11 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
 }
 
 export class SessionImpl {
+  /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
+  get workspaceRoot(): string {
+    return this.d.workspaceIdentity?.canonicalRoot ?? this.d.cwd
+  }
+
   readonly d: SessionDeps
   readonly loop: LoopSelection
   loopEdge = 0

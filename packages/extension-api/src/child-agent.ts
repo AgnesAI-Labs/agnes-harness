@@ -41,6 +41,10 @@ export type ChildAgentStartOptions = Readonly<{
   sessionKey: string
   /** Stable parent-scoped creation identity supplied by Core. */
   invocationId?: string
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   cwd?: string
   model?: string
   isolation?: 'worktree' | 'shared'
@@ -64,6 +68,10 @@ export type ChildAgentModel = Readonly<{ id: string; route: string; selector: st
 export type ChildAgentParentScope = Readonly<{
   sessionKey: string
   signal: AbortSignal
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   cwd: string
   generation?: string
   /** Remaining parent credit ceiling; a requested child ceiling may only narrow it. */

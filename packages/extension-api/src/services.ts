@@ -11,13 +11,17 @@ export interface SessionChildJobs {
 }
 export interface ServiceContext {
   readonly childJobs?: SessionChildJobs
-  /** Host-bound identity, never caller input. Older Hosts may omit it. */
+  /** Host-bound identity, never caller input. Use session.workspaceRoot for workspace-owned state, policy and config. Non-session services may omit it; refuse identity-dependent operations when absent. */
   readonly session?: import('./common.js').SessionRef
   /** Present only on authorized, journaled effect services. Queries cannot start processes. */
   readonly sandbox?: Pick<ToolContext['sandbox'], 'openProcess'>
   readonly actor: Actor
   readonly source: string
   readonly requestId: string
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   readonly cwd: string
   readonly exec: ToolContext['exec']
   readonly fs: ToolContext['fs']

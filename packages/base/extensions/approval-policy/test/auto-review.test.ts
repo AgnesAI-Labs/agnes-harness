@@ -5,6 +5,7 @@ import { createAutoReviewPolicy } from '../src/auto-review.js'
 const input: ToolPolicyInput = {
   sessionKey: 'test',
   cwd: '/workspace',
+  workspaceRoot: '/workspace',
   actor: { id: 'human', org: 'test', role: 'user', deptPath: [], attrs: {} },
   call: { id: 't1', name: 'shell', args: { command: 'pnpm lint' } },
   policy: {

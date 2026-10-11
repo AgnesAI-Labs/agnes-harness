@@ -12,7 +12,7 @@ export type TelemetryConsent = 'DISABLED' | 'LOCAL' | 'ANON' | 'FULL'
 export interface SessionRef {
   readonly key: SessionKey
   readonly lane: string
-  /** Canonical workspace identity selected by the Host for this session. Data only, never authority. */
+  /** Canonical workspace identity selected by the Host for this session. Use for workspace-owned state, policy and config, even when execution cwd differs. Data only, never authority. */
   readonly workspaceRoot: string
   /** Session access-mode hint for tool prechecks; filesystem ports independently enforce authority. */
   readonly fullAccess?: boolean

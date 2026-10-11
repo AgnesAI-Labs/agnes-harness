@@ -1133,6 +1133,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       defaultToolPolicy.decide(
         {
           sessionKey: 'k',
+          workspaceRoot: '/w',
           cwd: '/w',
           actor,
           call: { id: 'c', name, args: {} },

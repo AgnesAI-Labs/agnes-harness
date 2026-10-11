@@ -22,6 +22,7 @@ export async function authorizeServiceProcess(
   const permission = await session.toolPolicy().decide(
     {
       sessionKey: session.key,
+      workspaceRoot: session.workspaceRoot,
       cwd,
       actor: identity.actor,
       call: { id: identity.requestId, name: 'pty_open', args },

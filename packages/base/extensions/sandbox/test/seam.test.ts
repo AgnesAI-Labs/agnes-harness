@@ -108,6 +108,7 @@ describe('Host-bound sandbox seam', () => {
     const input: import('@agnes/extension-api').ToolPolicyInput = {
       sessionKey: 's',
       cwd: '/work',
+      workspaceRoot: '/work',
       actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       call: { id: 'c', name: 'shell', args: {} },
       policy: {

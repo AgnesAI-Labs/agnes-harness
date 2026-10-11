@@ -73,5 +73,11 @@
     "systemPromptKind",
     "unavailableProjections",
     "webhookTriggerKind"
-  ]
+  ],
+  "workspaceIdentity": {
+    "ToolPolicyInput": "workspaceRoot",
+    "ToolContext": "session.workspaceRoot",
+    "ServiceContext": "session?.workspaceRoot",
+    "LoopContext": "session.workspaceRoot"
+  }
 }
