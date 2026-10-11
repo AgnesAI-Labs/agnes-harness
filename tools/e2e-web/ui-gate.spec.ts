@@ -206,6 +206,9 @@ for (const locale of ['en', 'zh-CN'])
             Math.max(...excess),
             'Provider rows have no gap beyond their shared padding',
           ).toBeLessThanOrEqual(1)
+          await page.getByTestId('settings-subsection-provider-types').evaluate((section) => {
+            section.scrollIntoView({ block: 'start', behavior: 'instant' })
+          })
           await screen(page, info, `plugin-kinds-${locale}-${theme}`)
         }
         if (id === 'discover') {
@@ -215,6 +218,8 @@ for (const locale of ['en', 'zh-CN'])
           await expect(packageRow.getByRole('heading')).toHaveCount(1)
           const versions = packageRow.getByTestId('plugin-other-versions')
           await expect(versions).not.toHaveAttribute('open', '')
+          await packageRow.scrollIntoViewIfNeeded()
+          await expect(packageRow).toBeVisible()
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
           await versions.getByTestId('plugin-other-versions-toggle').click()
           await expect(packageRow.locator('.plugin-source')).toHaveCount(0)
