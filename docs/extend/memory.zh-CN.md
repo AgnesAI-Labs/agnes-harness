@@ -22,6 +22,8 @@ declare const enterpriseMemory: MemoryProvider
 
 包 `config.memory: { provider: "enterprise", version: "1.0.0" }` 替换默认实现。多个包同时选择记忆会拒绝；明确选择不存在或无效实现时 fail closed，不回退文件 provider。安装多个实现不代表同时使用多个 store。知识库仍是多个独立 MCP、工具、Skill、FDE 能力，可与所选记忆共存。
 
+`approve` 回调返回 `MemoryApprovalResult`：`{ status: 'approved' }`、真人拒绝的 `{ status: 'rejected' }`，或使用已有审批原因的 `{ status: 'unanswered', reason }`。询问模式要求已验证真人的一次性回答；缺少身份、agent 回答或未提供的 session/permanent 选项均无效。文件 provider 用 `MEMORY_APPROVAL_UNANSWERED` 保留原原因，不把断线变成拒绝或授权。
+
 ## 必须保持的行为
 
 - Agent 默认关闭。询问模式在写入前审批精确文件候选，绑定 `baseHash`、`newHash`、完整 diff、会话/轮次；full-access 或宽泛授权不能代替审批。拒绝、取消、冲突的候选不能注入。

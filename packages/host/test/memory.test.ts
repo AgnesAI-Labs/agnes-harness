@@ -39,7 +39,14 @@ const plugins = [
   entry: normalizePluginExport(entry),
 }))
 
-it.each(['rejected', 'allowed-session'] as const)(
+it.each([
+  'rejected',
+  'allowed-session',
+  'allowed-permanent',
+  'missing-human',
+  'agent',
+  'no-handler',
+] as const)(
   'uses normal read/write/edit and refuses an initial %s answer, injects the next revision, and closes access when off',
   async (initialAnswer) => {
     const home = await mkdtemp(join(tmpdir(), 'agh-host-memory-'))
@@ -85,9 +92,28 @@ it.each(['rejected', 'allowed-session'] as const)(
       approval: async (request) => {
         if (request.scope.startsWith('memory:')) {
           asked.push(request)
-          return allowed ? 'allowed-once' : initialAnswer
+          if (allowed)
+            return {
+              verdict: 'allowed-once',
+              answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+            }
+          if (initialAnswer === 'missing-human') return 'allowed-once'
+          if (initialAnswer === 'no-handler') return { verdict: 'unavailable', reason: 'no-handler' }
+          return {
+            verdict: initialAnswer === 'agent' ? 'allowed-once' : initialAnswer,
+            answeredBy: {
+              id: 'reviewer',
+              org: 'local',
+              role: initialAnswer === 'agent' ? 'agent' : 'user',
+              deptPath: [],
+              attrs: {},
+            },
+          }
         }
-        return 'allowed-once'
+        return {
+          verdict: 'allowed-once',
+          answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        }
       },
       provider: (profile) => {
         const memory = hostMemoryRoot(home)
@@ -137,7 +163,10 @@ it.each(['rejected', 'allowed-session'] as const)(
       ).toMatchObject(
         initialAnswer === 'rejected'
           ? { verdict: 'rejected' }
-          : { verdict: 'unavailable', reason: 'invalid-answer' },
+          : {
+              verdict: 'unavailable',
+              reason: initialAnswer === 'no-handler' ? 'no-handler' : 'invalid-answer',
+            },
       )
       expect((await memory.readFile('MEMORY.md')).content).toBe('')
       allowed = true

@@ -22,6 +22,8 @@ Implement `open({ home, workspaceRoot, sessionKey })`, returning a `MemorySessio
 
 Use package `config.memory: { provider: "enterprise", version: "1.0.0" }` to replace the default. More than one package selecting memory is refused. A missing or invalid explicit selection fails closed; it must not fall back to the file provider. Installing multiple provider implementations differs from selecting multiple stores. Knowledge bases remain multiple independent MCP/tool/Skill/FDE capabilities and can coexist with the selected memory implementation.
 
+The `approve` callback returns `MemoryApprovalResult`: `{ status: 'approved' }`, `{ status: 'rejected' }` for a real human refusal, or `{ status: 'unanswered', reason }` using the existing approval reasons. Ask mode requires a verified human, once-only answer. Missing identity, agent answers and unoffered session/permanent choices are invalid. The file provider reports `MEMORY_APPROVAL_UNANSWERED` with the original reason; it never converts delivery loss into a rejection or a grant.
+
 ## Required behavior
 
 - Default agent permission off; ask reviews an exact file-level proposal before any mutation. Bind approval to `baseHash`, `newHash`, full diff and session/turn. Full-access or broad grants cannot approve it. Reject/cancel/conflict never inject a candidate.

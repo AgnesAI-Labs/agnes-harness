@@ -155,7 +155,15 @@ export function openMemory(input: {
             diff: diff(before.content, candidate.content),
             source,
           })
-          if (config.mode === 'ask' && !(await approve(proposal))) throw fault('MEMORY_APPROVAL_REJECTED')
+          if (config.mode === 'ask') {
+            const result = await approve(proposal)
+            if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
+            if (result.status !== 'approved')
+              throw Object.assign(fault('MEMORY_APPROVAL_UNANSWERED'), {
+                reason: result.reason,
+                message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
+              })
+          }
           signal.throwIfAborted()
           // A policy change during approval cannot silently convert it into an auto write.
           if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
