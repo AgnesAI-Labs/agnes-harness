@@ -1,5 +1,5 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { rpcError, type UiActionParams } from '@agnes/protocol'
+import { rpcError, type UiActionParams, type UiSurfaceRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { CommandQueue } from '../src/local/command-queue.js'
 import type { AgnesContext } from '../src/local/methods/agnes.js'
@@ -25,6 +25,23 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     seq: 4,
     duplicate: false,
   }
+  const refreshed: UiSurfaceRecord = {
+    owner: 'fixture/intelligent-ui',
+    lane: 'main',
+    taskId: 'review',
+    createdSeq: 1,
+    updatedSeq: 5,
+    status: 'open',
+    surface: {
+      id: 'review',
+      revision: 2,
+      title: 'Review',
+      placement: { inline: true, workbench: true },
+      components: [{ id: 'note', kind: 'text', dataKey: 'note' }],
+      data: { note: 'Refreshed' },
+      actions: [],
+    },
+  }
   const result = { sessionId: 'owned', lastSeq: 4, surfaces: [], actions: [receipt] }
   const entry = {
     session: {
@@ -39,7 +56,7 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
                 return result
               },
               async refresh() {
-                return { sessionId: 'owned', surfaceId: 'review' }
+                return refreshed
               },
             }
           : undefined
@@ -88,10 +105,9 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     expect((await call('_agnes/v1/ui.action', request)).result).toEqual(receipt)
     expect(seen).toContainEqual({ input: request, actor })
     expect((await call('_agnes/v1/ui.read', { sessionId: 'owned' })).result).toEqual(result)
-    expect((await call('_agnes/v1/ui.refresh', { sessionId: 'owned', surfaceId: 'review' })).result).toEqual({
-      sessionId: 'owned',
-      surfaceId: 'review',
-    })
+    expect((await call('_agnes/v1/ui.refresh', { sessionId: 'owned', surfaceId: 'review' })).result).toEqual(
+      refreshed,
+    )
     expect(
       (await call('_agnes/v1/ui.refresh', { sessionId: 'foreign', surfaceId: 'review' })).error?.data?.code,
     ).toBe('CAPABILITY_DENIED')
