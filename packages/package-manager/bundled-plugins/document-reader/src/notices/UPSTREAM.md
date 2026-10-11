@@ -1,7 +1,7 @@
 # Supplemental binary and omitted-package notices
 
 These notices supplement the licenses collected from the JavaScript bundle graph.
-They are copied into the ordinary plugin's generated `runtime/THIRD-PARTY-NOTICES`;
+They are copied into the ordinary plugin's generated `dist/runtime/THIRD-PARTY-NOTICES`;
 building and reading documents do not download notices or document data.
 
 - `saxes.txt`: unmodified [ISC license from saxes v5.0.1](https://github.com/lddubeau/saxes/blob/v5.0.1/LICENSE).

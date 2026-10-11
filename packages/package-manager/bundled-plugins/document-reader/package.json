@@ -8,6 +8,7 @@
   "files": [
     "index.mjs",
     "src",
+    "dist",
     "README.md",
     "LICENSE"
   ],

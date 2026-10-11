@@ -5,11 +5,11 @@ globalThis.fetch = async () => {
   throw new Error('Document parsing is offline.')
 }
 try {
-  const { parseDocument } = await import('./runtime/engine.mjs')
+  const { parseDocument } = await import('../dist/runtime/engine.mjs')
   const result = await parseDocument(
     new Uint8Array(workerData.bytes),
     workerData.args,
-    new URL('./runtime/assets/', import.meta.url),
+    new URL('../dist/runtime/assets/', import.meta.url),
   )
   parentPort.postMessage({ ok: true, result }, result.image ? [result.image.buffer] : [])
 } catch (error) {
