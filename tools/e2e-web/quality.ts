@@ -73,6 +73,13 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
   await settled(page)
+  if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
+    info.annotations.push({
+      type: 'pixel-snapshot-deferred',
+      description: `${name}: deferred to consolidated visual acceptance`,
+    })
+    return
+  }
   // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
   if (name.startsWith('tool-row-')) {
     await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
