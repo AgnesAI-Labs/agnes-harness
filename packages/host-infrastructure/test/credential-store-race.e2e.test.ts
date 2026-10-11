@@ -26,6 +26,50 @@ describe.runIf(process.getuid !== undefined)('credential store atomic writers', 
 
   afterEach(() => rmSync(parent, { recursive: true, force: true }))
 
+  it('persists generic credentials across writer process restart without returning the value', async () => {
+    const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+    const canary = 'synthetic-process-persistence-canary'
+    const storeUrl = new URL('../src/adapters/credential-store.ts', import.meta.url).href
+    const resolverUrl = new URL('../src/adapters/secrets.ts', import.meta.url).href
+    const env = { ...process.env, AGH_TEST_STORE_ROOT: root, AGH_TEST_STORE_VALUE: canary }
+    const writer = await run(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '--eval',
+        `
+      const { createCredentialStore } = await import(${JSON.stringify(storeUrl)});
+      await createCredentialStore({ root: process.env.AGH_TEST_STORE_ROOT }).putGeneric(${JSON.stringify(ref)}, process.env.AGH_TEST_STORE_VALUE, { label: 'Persisted', createdAt: '2026-10-11T00:00:00.000Z' });
+    `,
+      ],
+      { env, timeout: 30_000 },
+    )
+    expect(writer.stdout).toBe('')
+    const reader = await run(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '--eval',
+        `
+      const { createCredentialStore } = await import(${JSON.stringify(storeUrl)});
+      const { createSecretsFile } = await import(${JSON.stringify(resolverUrl)});
+      const root = process.env.AGH_TEST_STORE_ROOT;
+      if (createSecretsFile({ dir: root + '/secrets' }).resolve(${JSON.stringify(ref)}) !== process.env.AGH_TEST_STORE_VALUE) throw new Error('persistence mismatch');
+      process.stdout.write(JSON.stringify(await createCredentialStore({ root }).listGeneric()));
+    `,
+      ],
+      { env, timeout: 30_000 },
+    )
+    expect(JSON.parse(reader.stdout)).toEqual([
+      { id: ref, label: 'Persisted', createdAt: '2026-10-11T00:00:00.000Z', kind: 'api-key' },
+    ])
+    expect(JSON.stringify([writer, reader])).not.toContain(canary)
+  }, 45_000)
+
   it('leaves one complete closed envelope after twenty processes write the same ref', async () => {
     const values = Array.from({ length: 20 }, (_, index) => `writer-marker-${index}`)
     const writes = await Promise.allSettled(

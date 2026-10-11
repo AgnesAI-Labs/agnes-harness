@@ -6,6 +6,13 @@ it('rejects raw admin and Extension Service calls from the browser client before
   await expect(client.call('_agnes/v1/packages.list', { profile: 'local-dev' })).rejects.toMatchObject({
     kind: 'unsupported',
   })
+  await expect(client.credentials.list()).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(
+    client.credentials.create({ label: 'Work', value: 'synthetic-browser-canary' }),
+  ).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(
+    client.notify('_agnes/v1/admin.credentials.set', { id: 'unused', value: 'synthetic-browser-canary' }),
+  ).rejects.toMatchObject({ kind: 'unsupported' })
   await expect(client.config.modelSlots.get()).rejects.toMatchObject({ kind: 'unsupported' })
   await expect(client.config.modelSlots.save({ revision: 0, slots: { fast: null } })).rejects.toMatchObject({
     kind: 'unsupported',

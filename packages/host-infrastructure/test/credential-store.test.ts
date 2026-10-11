@@ -100,6 +100,36 @@ describe.runIf(process.getuid !== undefined)('credential store', () => {
     }
   })
 
+  it('persists generic metadata with private files and atomic last-writer-wins values', async () => {
+    const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+    const metadata = { label: 'Work', createdAt: '2026-10-11T00:00:00.000Z' }
+    const store = createCredentialStore({ root })
+    await store.putGeneric(ref, 'generic-canary-one', metadata)
+    await Promise.all(
+      ['generic-canary-two', 'generic-canary-three'].map((value) => store.putGeneric(ref, value, metadata)),
+    )
+    const reopened = createCredentialStore({ root })
+    expect(await reopened.listGeneric()).toEqual([{ id: ref, kind: 'api-key', ...metadata }])
+    const persisted = await reopened.read(ref)
+    expect(persisted?.kind).toBe('api-key')
+    expect(['generic-canary-two', 'generic-canary-three']).toContain(
+      persisted?.kind === 'api-key' ? persisted.value : undefined,
+    )
+    expect(JSON.stringify(await reopened.listGeneric())).not.toContain('generic-canary')
+    expect(lstatSync(resolveCredentialFile(root, ref, 'api-key')).mode & 0o7777).toBe(0o600)
+    await store.putGeneric(ref, 'final-canary', metadata)
+    const { createSecretsFile } = await import('../src/adapters/secrets.js')
+    expect(createSecretsFile({ dir: join(root, 'secrets') }).resolve(ref)).toBe('final-canary')
+    await expect(store.putGeneric(ref, 'invalid\nsecret', metadata)).rejects.toBeInstanceOf(
+      CredentialStoreError,
+    )
+    symlinkSync(
+      resolveCredentialFile(root, ref, 'api-key'),
+      join(root, 'secrets/generic/22222222-2222-4222-8222-222222222222'),
+    )
+    await expect(store.listGeneric()).rejects.toMatchObject({ reason: 'symlink' })
+  })
+
   it.each([
     'literal-key',
     'secret:///name',

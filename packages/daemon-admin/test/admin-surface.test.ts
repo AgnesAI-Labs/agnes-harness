@@ -21,6 +21,7 @@ async function server(
     async () => [],
   ),
   selectionOptions: {
+    credentials?: NonNullable<AdminSurfaceOptions['credentials']>
     sessionSelection?: AdminSessionSelection
     permissions?: readonly PackageAdminPermission[]
     composition?: NonNullable<AdminSurfaceOptions['composition']>
@@ -316,7 +317,7 @@ describe('local package admin surface trust boundary', () => {
     s.invoke.mockRejectedValueOnce(new Error('bad lock'))
     expect(await (await s.request('context')).json()).toMatchObject({
       readOnly: true,
-      permissions: ['packages.read'],
+      permissions: ['packages.read', 'credentials.read'],
     })
     s.invoke.mockClear()
     const response = await s.request('inspect', {
@@ -664,4 +665,86 @@ it('restricts fact-chain reads to the fixed same-origin read bridge with strict 
     factChain: async () => ({ ...result, password: 'secret' }),
   })
   expect((await invalid.selectionRequest('fact-chain', 'POST', input)).status).toBe(502)
+})
+
+it('gates generic credential routes with permissions, live read-only state and metadata-only schemas', async () => {
+  const metadata = {
+    id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+    label: 'Work',
+    kind: 'api-key',
+    createdAt: '2026-10-11T00:00:00.000Z',
+    references: [],
+  }
+  let leak = false
+  let errorLeak = false
+  const credentials = {
+    call: vi.fn(async (action: string) => {
+      if (errorLeak)
+        throw {
+          rpc: {
+            code: -32011,
+            message: 'canary',
+            data: { code: 'canary', value: 'canary', reason: 'CONFIG_CREDENTIAL_STORE' },
+          },
+        }
+      return action === 'list' ? { items: [metadata] } : leak ? { ...metadata, value: 'canary' } : metadata
+    }),
+  }
+  const owner = await server(undefined, undefined, { credentials })
+  expect((await owner.selectionRequest('credentials')).status).toBe(200)
+  expect(
+    await (
+      await owner.selectionRequest('credentials/create', 'POST', { label: 'Work', value: 'canary' })
+    ).json(),
+  ).toEqual(metadata)
+  expect(
+    (
+      await owner.selectionRequest('credentials/create', 'POST', {
+        label: 'Work',
+        value: 'canary',
+        actor: 'forged',
+      })
+    ).status,
+  ).toBe(400)
+  leak = true
+  const refused = await owner.selectionRequest('credentials/create', 'POST', {
+    label: 'Work',
+    value: 'canary',
+  })
+  expect(refused.status).toBe(502)
+  expect(await refused.text()).not.toContain('canary')
+  errorLeak = true
+  const refusedError = await owner.selectionRequest('credentials/set', 'POST', {
+    id: metadata.id,
+    value: 'canary',
+  })
+  expect(refusedError.status).toBe(409)
+  const safeError = await refusedError.text()
+  expect(safeError).not.toContain('canary')
+  expect(safeError).toContain('CONFIG_CREDENTIAL_STORE')
+  errorLeak = false
+  const reader = await server(undefined, undefined, {
+    credentials,
+    permissions: ['packages.read', 'credentials.read'],
+  })
+  expect((await reader.selectionRequest('credentials')).status).toBe(200)
+  expect((await reader.selectionRequest('credentials/delete', 'POST', { id: metadata.id })).status).toBe(403)
+  const recovery = await server(
+    vi.fn(async () => ({ broken: true })),
+    undefined,
+    { credentials },
+  )
+  expect(
+    (await recovery.selectionRequest('credentials/set', 'POST', { id: metadata.id, value: 'canary' })).status,
+  ).toBe(409)
+  expect(
+    (
+      await owner.selectionRequest(
+        'credentials/create',
+        'POST',
+        { label: 'Work', value: 'canary' },
+        { Origin: 'http://foreign.example' },
+      )
+    ).status,
+  ).toBe(403)
 })

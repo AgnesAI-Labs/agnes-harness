@@ -1,9 +1,14 @@
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { localPackageAdminAuthority, localWebSkinReadAuthority } from '@agnes/daemon-admin/packages/index'
+import { McpResourceStore, RESOURCE_ALL_PERMISSIONS } from '@agnes/daemon-admin/resources/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { createCredentialStore, createPlatform, resolveProfile } from '@agnes/host'
+import { compilePluginConfig } from '@agnes/extension-api'
+import { createCredentialStore, createPlatform, createSecretsFile, resolveProfile } from '@agnes/host'
+import { jcs } from '@agnes/protocol'
+import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
 import { expect, it } from 'vitest'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
 
@@ -150,4 +155,249 @@ it('keeps doctor local-only and refuses caller-supplied homes and implicit model
       checks: expect.arrayContaining([expect.objectContaining({ id: 'credentials', status: 'ok' })]),
     },
   })
+})
+
+it('manages write-only generic credentials with MCP references, restart persistence and local permissions', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-generic-admin-'))
+  const dataDir = join(home, 'data')
+  const canary = 'synthetic-generic-canary-never-log'
+  const logs: unknown[] = []
+  const profile = await resolveProfile(
+    { builtin: 'local-dev' },
+    { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
+  )
+  let unavailable = false
+  let envAdapter = false
+  const pluginConfigurations: { kind: 'plugin'; profile: string; configId: string; value: unknown }[] = []
+  const factory = () =>
+    createAppServerAdmin({
+      home,
+      dataDir,
+      profileDir: join(home, 'profiles/local-dev'),
+      resolveProfile: async () =>
+        envAdapter ? { ...profile, adapters: { ...profile.adapters, secrets: { kind: 'env' } } } : profile,
+      workspaces: async () => ({ items: [{ path: home, available: true }] }),
+      credentialConfigurations: async () => {
+        if (unavailable) throw new Error(canary)
+        return pluginConfigurations
+      },
+    })
+  let endpoint = new LocalEndpoint({
+    clock: Date.now,
+    principalId: 'credential-owner',
+    profile: 'local-dev',
+    audit: (row) => logs.push(row),
+  })
+  endpoint.conn.initialized = true
+  let authority = localPackageAdminAuthority()
+  let recovery = false
+  const administration = {
+    call: async () => (recovery ? { unavailable: true } : { packages: [] }),
+    recover: async () => {},
+    rebuildClientModules: async () => {},
+    subscribe: () => () => {},
+    subscribeClientModules: () => () => {},
+    closeClientModules: () => {},
+  }
+  let service = factory()
+  registerAppServerAdmin(endpoint, service, (context) => authority(context), administration)
+  let command = 0
+  const responses: unknown[] = []
+  const call = async (action: string, params: unknown) => {
+    const response = (await endpoint.handle({
+      jsonrpc: '2.0',
+      id: ++command,
+      method: `_agnes/v1/admin.credentials.${action}`,
+      params,
+    })) as {
+      result?: AdminCredentialMetadata & { items?: AdminCredentialMetadata[] }
+      error?: { data?: { code?: string; cause?: { code?: string } } }
+    }
+    responses.push(response)
+    return response
+  }
+  try {
+    expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
+    endpoint.conn.authKind = 'local'
+    endpoint.conn.credentialKind = 'local'
+    for (const permissions of [[], ['packages.read', 'credentials.read'], ['packages.activate']] as const) {
+      authority = localPackageAdminAuthority(permissions)
+      expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(
+        'error.data.code',
+        'CAPABILITY_DENIED',
+      )
+    }
+    authority = localPackageAdminAuthority()
+    expect(await call('create', { label: 'MCP', value: canary, actor: 'forged' })).toHaveProperty('error')
+    envAdapter = true
+    expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty('error')
+    envAdapter = false
+    recovery = true
+    expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty('error')
+    recovery = false
+    const created = await call('create', { label: 'MCP', value: canary })
+    expect(created.error).toBeUndefined()
+    const metadata = created.result
+    if (!metadata) throw new Error('credential metadata missing')
+    const id = metadata.id
+    expect(id).toMatch(/^secret:\/\/generic\//)
+    const resolver = createSecretsFile({ dir: join(home, 'secrets') })
+    const definition = {
+      serverId: 'canary-mcp',
+      displayName: 'Canary MCP',
+      transport: { kind: 'http' as const, url: 'https://example.test/mcp' },
+      secretBinding: { kind: 'http-bearer' as const, credentialRef: id },
+    }
+    let used = false
+    const status = {
+      serverId: 'canary-mcp',
+      connectionState: 'disabled' as const,
+      observedRevision: 'a'.repeat(64),
+      catalogRevision: 'a'.repeat(64),
+      toolCount: 0,
+      observedAt: new Date().toISOString(),
+    }
+    const mcp = new McpResourceStore(
+      join(dataDir, 'resource-control/mcp'),
+      { allowedProfiles: ['local-dev'] },
+      {
+        reconcile: async () => ({ status }),
+        reconnect: async () => ({ status }),
+        tools: async () => ({ serverId: 'canary-mcp', catalogRevision: 'a'.repeat(64), items: [] }),
+        test: async ({ definition: configured }) => {
+          if (configured.secretBinding.kind !== 'http-bearer') throw new Error('missing reference')
+          expect(resolver.resolve(configured.secretBinding.credentialRef)).toBe(canary)
+          used = true
+          return { toolCount: 0, catalogRevision: 'a'.repeat(64) }
+        },
+      },
+    )
+    mcp.setDeferredDrive(true)
+    const grant = {
+      audience: 'admin' as const,
+      principalId: 'credential-owner',
+      clientId: 'fixture-client',
+      permissions: RESOURCE_ALL_PERMISSIONS,
+    }
+    const effect = async (
+      method: import('@agnes/protocol').ResourceControlMethodName,
+      params: Record<string, unknown>,
+    ) => {
+      const result = (await mcp.call(
+        method,
+        { profile: 'local-dev', clientId: 'fixture-client', commandId: `mcp-${++command}`, ...params },
+        grant,
+      )) as { operationId: string }
+      await mcp.driveOperation('local-dev', result.operationId)
+    }
+    await effect('_agnes/v1/mcp.servers.create', { definition })
+    await effect('_agnes/v1/mcp.servers.test', {
+      serverId: definition.serverId,
+      expectedRevision: createHash('sha256').update(jcs(definition)).digest('hex'),
+    })
+    expect(used).toBe(true)
+    const listed = await call('list', {})
+    expect(listed.result?.items).toEqual([
+      { ...metadata, references: [{ kind: 'mcp', profile: 'local-dev', configId: 'canary-mcp' }] },
+    ])
+    expect(
+      compilePluginConfig({
+        type: 'object',
+        properties: { apiKey: { type: 'string', 'x-secret': true } },
+        additionalProperties: false,
+      })({ apiKey: id }),
+    ).toEqual([])
+    pluginConfigurations.push({
+      kind: 'plugin',
+      profile: 'local-dev',
+      configId: 'ext:business',
+      value: { apiKey: id },
+    })
+    const triggers = await service.triggers({
+      action: 'upsert',
+      rule: {
+        id: 'credential-trigger',
+        enabled: false,
+        provider: 'generic',
+        auth: 'bearer',
+        secretRef: id,
+        event: 'created',
+        filters: {},
+        workspace: home,
+        agent: 'default',
+        bundles: [],
+        template: '{{$.title}}',
+        timestampPath: '$.time',
+        windowSeconds: 300,
+        ratePerMinute: 10,
+      },
+    })
+    expect(triggers.snapshot?.secretRefs).toContain(id)
+    const allRefs = (await call('list', {})).result?.items?.[0]?.references
+    expect(allRefs).toEqual(
+      expect.arrayContaining([
+        { kind: 'plugin', profile: 'local-dev', configId: 'ext:business' },
+        { kind: 'trigger', profile: 'local-dev', configId: 'credential-trigger' },
+      ]),
+    )
+    expect(await call('delete', { id })).toHaveProperty(
+      'error.data.cause.code',
+      'CONFIG_CREDENTIAL_REFERENCED',
+    )
+    expect(resolver.resolve(id)).toBe(canary)
+    expect(await call('delete', { id, force: true })).toHaveProperty(
+      'error.data.cause.code',
+      'CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED',
+    )
+    const updates = await Promise.all(
+      ['first-write', 'last-write'].map((value) => call('set', { id, value })),
+    )
+    expect(updates.every((response) => !response.error)).toBe(true)
+    expect(resolver.resolve(id)).toBe('last-write')
+    expect(await call('rename', { id, label: 'Renamed' })).toHaveProperty('result.label', 'Renamed')
+    await endpoint.close()
+    endpoint = new LocalEndpoint({
+      clock: Date.now,
+      principalId: 'credential-owner',
+      profile: 'local-dev',
+      audit: (row) => logs.push(row),
+    })
+    endpoint.conn.initialized = true
+    endpoint.conn.authKind = 'local'
+    endpoint.conn.credentialKind = 'local'
+    service = factory()
+    registerAppServerAdmin(endpoint, service, (context) => authority(context), administration)
+    expect((await call('list', {})).result?.items?.[0]).toMatchObject({
+      id,
+      label: 'Renamed',
+      createdAt: metadata.createdAt,
+    })
+    expect(resolver.resolve(id)).toBe('last-write')
+    unavailable = true
+    expect(await call('delete', { id, force: true, confirm: true })).toHaveProperty(
+      'error.data.cause.code',
+      'CONFIG_CREDENTIAL_STORE',
+    )
+    unavailable = false
+    authority = localWebSkinReadAuthority
+    expect(await call('list', {})).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    authority = localPackageAdminAuthority()
+    endpoint.conn.authKind = 'jwt'
+    expect(await call('set', { id, value: canary })).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    endpoint.conn.authKind = 'local'
+    expect(await call('delete', { id, force: true, confirm: true })).toHaveProperty('result')
+    expect((await call('list', {})).result?.items).toEqual([])
+    const audit = await readFile(join(dataDir, 'audit/credentials.jsonl'), 'utf8')
+    expect(audit).not.toContain(canary)
+    for (const line of audit.trim().split('\n'))
+      expect(JSON.parse(line).detail).toMatchObject({ actor: 'credential-owner', id })
+    expect(audit).not.toContain('Renamed')
+    expect(JSON.stringify([responses, logs])).not.toContain(canary)
+  } finally {
+    await endpoint.close()
+    await rm(home, { recursive: true, force: true })
+  }
 })

@@ -167,3 +167,7 @@ MCP 集合成功应用后，即使独立的 Skills 刷新失败，也保留新�
 连接管理复用已有 command sandbox 的探测和编译入口（macOS Seatbelt 或实际可用的 Linux bubblewrap）。Host 提供实际安装 home 和配置的文件凭据目录。所有受限配置都排除工作区的 `.agh/secrets`、旧数据凭据目录，以及安装 home 的凭据、认证和 profile 配置目录，覆盖 canonical 路径和绑定别名。工作区可写授权不能覆盖这些排除。若只读挂载需要已有挂载点，Host 会在隔离前以 `0700` 模式预留空的受保护目录；准备失败就拒绝连接。更改受保护目录的祖先名称不能使内容暴露。
 
 缺少实际 home 信息或隔离不可用时，以 `E_MCP_SANDBOX_UNAVAILABLE` 拒绝连接，并在 MCP 诊断中显示；不会静默裸启动。Windows 当前需要显式批准 `off-with-warning`。该配置允许子进程访问完整主机，请先审阅可执行程序再确认。HTTP/SSE 是远程服务器，继续使用已有 URL、凭据及工具策略。
+
+## 管理通用凭据
+
+通过[凭据管理合同](credentials.zh-CN.md)创建只写密钥，再把返回的 `secret://generic/<UUID>` id 放入现有 MCP secret 绑定。

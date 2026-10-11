@@ -33,6 +33,7 @@ const CURRENT_KINDS = [
   'extension.isolation-fallback',
   'extensions.loaded',
   'secret.resolved',
+  'credential.changed',
   'startup.failed',
   'daemon.request_failed',
   'plugin.tree.reverted',

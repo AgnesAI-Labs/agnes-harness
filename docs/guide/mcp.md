@@ -177,3 +177,7 @@ Sandboxed children read the workspace, their own data directory and necessary re
 The connection owner uses the existing command sandbox probe and compiler (macOS Seatbelt or Linux bubblewrap when it actually runs). Host supplies the actual installation home and any configured file-secret directory. All confined profiles exclude workspace `.agh/secrets`, legacy data secrets, and the installation's secrets, authentication and profile configuration directories, including canonical and bind aliases. A writable workspace grant never overrides these exclusions. Before confinement, Host may reserve empty protected directories with mode `0700` where read-only mounts need existing mountpoints; if preparation fails, the connection is refused. Renaming a protected ancestor must not expose its contents.
 
 Missing actual home information or unusable enforcement refuses the connection with `E_MCP_SANDBOX_UNAVAILABLE`, shown in MCP diagnostics; it never silently starts unconfined. Windows currently requires explicitly approving `off-with-warning`. That profile grants the child full host access; review the executable before confirming. HTTP/SSE servers are remote and retain their existing URL, credential and tool policies.
+
+## Manage generic credentials
+
+Use the [credential management contract](credentials.md) to create a write-only key, then use its returned `secret://generic/<UUID>` id in the existing MCP secret binding.

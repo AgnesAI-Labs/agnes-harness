@@ -7,6 +7,7 @@ import {
   localWebSkinReadAuthority,
 } from '@agnes/daemon-admin/packages/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { createCredentialStore } from '@agnes/host'
 import { installDiagnosticJournal } from '@agnes/observability'
 import {
   type ApisListResult,
@@ -169,6 +170,11 @@ describe('diagnostics.export', () => {
     const home = tempDataDir()
     const stop = installDiagnosticJournal(home)
     const secret = ['synthetic', 'private-body-and-path'].join('-')
+    await createCredentialStore({ root: home }).putGeneric(
+      'secret://generic/11111111-1111-4111-8111-111111111111',
+      secret,
+      { label: 'Diagnostic canary', createdAt: new Date().toISOString() },
+    )
     const old = normalizeRpcError(rpcError('INTERNAL_ERROR', { message: secret, password: secret }))
     stop()
     writeFileSync(

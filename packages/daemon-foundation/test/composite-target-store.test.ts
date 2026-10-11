@@ -10,12 +10,13 @@ import { sqliteTables } from './sqlite-tables.js'
 
 const revision = 'c'.repeat(64)
 
-function artifact(id: string) {
+function artifact(id: string, config?: Record<string, string>) {
   return encodeRuntimeTargetArtifact(
     buildRuntimeTarget({
       rows: [
         createPluginRow({
           id,
+          ...(config ? { config } : {}),
           plugin: `builtin:host/${id}`,
           snapshotDigest: 'builtin:host:v1',
           exportName: id,
@@ -65,6 +66,39 @@ describe('CompositeTargetStore', () => {
     expect(store.desired()?.digest).toBe(second.digest)
     expect(store.previous()?.digest).toBe(first.digest)
     expect(store.acknowledged()).toBeUndefined()
+  })
+
+  it('reports current, rollback and disabled saved configurations across profiles for credential integrity', async () => {
+    const tables = sqliteTables()
+    const first = new CompositeTargetStore(tables.table('composite'), 'first')
+    const second = new CompositeTargetStore(tables.table('composite'), 'second')
+    const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+    first.publishDesired(artifact('ext:rollback', { credential: ref }))
+    first.publishDesired(
+      artifact('ext:current', { credential: 'secret://generic/22222222-2222-4222-8222-222222222222' }),
+    )
+    second.publishDesired(artifact('ext:other', { credential: ref }))
+    second.overlay('session', { credential: ref }, 'overlay')
+    tables
+      .table('composite')
+      .exec(
+        'INSERT INTO plugin_config_values (profile, package_id, row_id, value_json) VALUES (?, ?, ?, ?)',
+        ['first', 'package', 'ext:disabled', JSON.stringify({ credential: ref })],
+      )
+    expect(first.credentialConfigurations()).toEqual(
+      expect.arrayContaining([
+        { kind: 'plugin', profile: 'first', configId: 'ext:rollback', value: { credential: ref } },
+        { kind: 'plugin', profile: 'second', configId: 'ext:other', value: { credential: ref } },
+        { kind: 'plugin', profile: 'first', configId: 'ext:disabled', value: { credential: ref } },
+        {
+          kind: 'plugin',
+          profile: 'second',
+          configId: 'session-overlay:session',
+          value: { credential: ref },
+        },
+      ]),
+    )
+    await tables.close()
   })
 
   it('qualifies converged lastGood/report/ack in one transaction and ignores stale failures', () => {
