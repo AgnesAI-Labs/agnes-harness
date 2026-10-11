@@ -1463,74 +1463,94 @@ describe('web session selection', () => {
     expect(location.hash).toBe('#settings-subsection-examples')
   })
 
-  it('opens directory confirmation before creation and explains an unavailable path', async () => {
-    installPublicFixture()
-    history.replaceState(null, '', '/#test-launcher-token')
-    const create = vi.fn<() => Promise<SessionDouble>>()
+  it.each([false, true])(
+    'validates directory confirmation and handles a terminal deep link without a session (%s)',
+    async (terminalLink) => {
+      installPublicFixture()
+      history.replaceState(
+        null,
+        '',
+        terminalLink ? '/?settings=terminal#test-launcher-token' : '/#test-launcher-token',
+      )
+      const create = vi.fn<() => Promise<SessionDouble>>()
 
-    const add = vi.fn(async () => {
-      throw Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
-        data: { code: 'WORKSPACE_INVALID', reason: 'not-found' },
+      const add = vi.fn(async () => {
+        throw Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+          data: { code: 'WORKSPACE_INVALID', reason: 'not-found' },
+        })
       })
-    })
-    sdk.createClient.mockReturnValue({
-      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
-      approval: { decide: vi.fn(async () => undefined) },
-      close: vi.fn(async () => undefined),
-      config: {
-        get: vi.fn(async () => ({ configured: true, accounts: [] })),
-        providers: vi.fn(async () => ({ providers: [] })),
-        save: vi.fn(async () => ({ configured: true })),
-        test: vi.fn(async () => ({ verified: true, models: [] })),
-      },
-      initialize: vi.fn(async () => undefined),
-      on: vi.fn(),
-      workspace: {
-        list: vi.fn(async () => ({ items: [] })),
-        add,
-      },
-      session: {
-        list: vi.fn(async () => ({ items: [] })),
-        load: vi.fn(),
-        new: create,
-      },
-    })
-    binding.loadWebSession.mockImplementation(async () => {
-      throw new Error('no session should load before creation')
-    })
-    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
-      session: selected,
-      offPermission: vi.fn(),
-    }))
+      sdk.createClient.mockReturnValue({
+        apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+        approval: { decide: vi.fn(async () => undefined) },
+        close: vi.fn(async () => undefined),
+        config: {
+          get: vi.fn(async () => ({ configured: true, accounts: [] })),
+          providers: vi.fn(async () => ({ providers: [] })),
+          save: vi.fn(async () => ({ configured: true })),
+          test: vi.fn(async () => ({ verified: true, models: [] })),
+        },
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn(),
+        workspace: {
+          list: vi.fn(async () => ({ items: [] })),
+          add,
+        },
+        session: {
+          list: vi.fn(async () => ({ items: [] })),
+          load: vi.fn(),
+          new: create,
+        },
+      })
+      binding.loadWebSession.mockImplementation(async () => {
+        throw new Error('no session should load before creation')
+      })
+      binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+        session: selected,
+        offPermission: vi.fn(),
+      }))
 
-    await import('../src/app.js')
-    const newSession = document.getElementById('new-session') as HTMLDialogElement
-    const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
-    const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
-    const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
-    const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
+      await import('../src/app.js')
+      if (terminalLink) {
+        await vi.waitFor(() =>
+          expect(document.querySelector('.agh-toast')?.textContent).toContain('打开会话后即可使用终端'),
+        )
+        expect((document.getElementById('config') as HTMLDialogElement).open).toBe(false)
+        expect(document.querySelector('[data-testid="workbench-tab-terminal"]')).toBeNull()
+        expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+      }
+      const newSession = document.getElementById('new-session') as HTMLDialogElement
+      const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
+      const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
+      const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
+      const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
 
-    await vi.waitFor(() => expect(document.querySelector('[data-testid="first-run-guide"]')).not.toBeNull())
-    expect(newSession.open).toBe(false)
-    expect(create).not.toHaveBeenCalled()
-    document.querySelector<HTMLButtonElement>('[data-testid="first-run-skip"]')?.click()
-    await vi.waitFor(() => expect(newSession.open).toBe(true))
-    expect(create).not.toHaveBeenCalled()
-    newSessionCwd.value = '/workspace/not-present'
-    newSessionCwd.dispatchEvent(new Event('input', { bubbles: true }))
-    await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
-    newSessionForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() =>
-      expect(document.getElementById('new-session-error')?.textContent).toContain(
-        '工作目录不存在，请检查路径后重试。',
-      ),
-    )
-    expect(newSession.open).toBe(true)
-    expect(add).toHaveBeenCalledWith('/workspace/not-present')
-    newSessionCancel.click()
-    expect(newSession.open).toBe(false)
-    expect(create).not.toHaveBeenCalled()
-  })
+      if (terminalLink) document.getElementById('new')?.click()
+      else {
+        await vi.waitFor(() =>
+          expect(document.querySelector('[data-testid="first-run-guide"]')).not.toBeNull(),
+        )
+        expect(newSession.open).toBe(false)
+        expect(create).not.toHaveBeenCalled()
+        document.querySelector<HTMLButtonElement>('[data-testid="first-run-skip"]')?.click()
+      }
+      await vi.waitFor(() => expect(newSession.open).toBe(true))
+      expect(create).not.toHaveBeenCalled()
+      newSessionCwd.value = '/workspace/not-present'
+      newSessionCwd.dispatchEvent(new Event('input', { bubbles: true }))
+      await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
+      newSessionForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await vi.waitFor(() =>
+        expect(document.getElementById('new-session-error')?.textContent).toContain(
+          '工作目录不存在，请检查路径后重试。',
+        ),
+      )
+      expect(newSession.open).toBe(true)
+      expect(add).toHaveBeenCalledWith('/workspace/not-present')
+      newSessionCancel.click()
+      expect(newSession.open).toBe(false)
+      expect(create).not.toHaveBeenCalled()
+    },
+  )
 
   it('uses the system picker, treats cancel as a no-op, then validates the selected path through workspace.add', async () => {
     installPublicFixture()

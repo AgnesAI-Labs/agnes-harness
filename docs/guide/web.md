@@ -113,6 +113,8 @@ Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application
 
 Open a session, then use the terminal tab in the workbench’s bottom panel to create a terminal. No session ID is required. Focus the output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Closing a tab detaches its UI; the explicit kill action ends the human-owned terminal and its process. Shell selection affects new terminals only. The text terminal supports cursor movement and line clearing, but does not emulate graphical terminal extensions.
 
+The legacy `/?settings=terminal` link opens the terminal in an available session workbench. If no session is open, it closes settings and asks you to open a session to use the terminal.
+
 The background jobs settings page selects sessions by title, workspace and relative date, defaults to the current session and updates automatically. It shows shell commands, persistent interpreters, PTYs and subagent status and output. A running human-owned job can be stopped from its row menu after confirmation. Agent-owned jobs are read only here; ask the agent to stop them in their session. Every operation remains constrained by that session’s sandbox preset.
 
 The `agnes/jobs-web` extension needs `services` in its capability ceiling. New templates include it; older configurations can add it explicitly. Without that grant, shell/job tools still work but Web control is unavailable. Jobs survive page refreshes and turns, but are not recovered after a Host restart. Local PTYs support macOS/Linux; missing shells or providers without interactive execution report an error.

@@ -364,7 +364,7 @@ function SettingsBuiltinImpl(
   const host = useRef<HTMLDivElement>(null)
   const activePane = useRef<SettingsPane>('model')
   const navigateRef = useRef<(id: string, notify?: boolean) => void>()
-  const [terminalNotice, setTerminalNotice] = useState(false)
+  const [terminalNotice, setTerminalNotice] = useState<'moved' | 'needs-session' | false>(false)
   const form = useCallback(() => host.current?.querySelector<HTMLFormElement>('#config-form') ?? null, [])
   const open = useCallback(
     (pane: SettingsPane): void => {
@@ -516,9 +516,12 @@ function SettingsBuiltinImpl(
         if (!selected) return
         id = selected.id
         if (route.terminal) {
-          setTerminalNotice(true)
           options.onClose?.()
-          root.dispatchEvent(new CustomEvent('agnes:settings-terminal', { bubbles: true }))
+          // Preventing the default acknowledges that the workbench opened the terminal.
+          const opened = !root.dispatchEvent(
+            new CustomEvent('agnes:settings-terminal', { bubbles: true, cancelable: true }),
+          )
+          setTerminalNotice(opened ? 'moved' : 'needs-session')
           const url = new URL(location.href)
           url.searchParams.delete('settings')
           history.replaceState(history.state, '', url)
@@ -867,9 +870,12 @@ function SettingsBuiltinImpl(
     createPortal(
       createElement(
         Toast,
-        { open: terminalNotice, onDismiss: () => setTerminalNotice(false) },
-        options.translate?.('settings-shell.terminalMoved') ??
-          'The terminal is now in the session workbench.',
+        { open: !!terminalNotice, onDismiss: () => setTerminalNotice(false) },
+        terminalNotice === 'needs-session'
+          ? (options.translate?.('settings-shell.terminalNeedsSession') ??
+              'Open a session to use the terminal.')
+          : (options.translate?.('settings-shell.terminalMoved') ??
+              'The terminal is now in the session workbench.'),
       ),
       document.body,
     ),

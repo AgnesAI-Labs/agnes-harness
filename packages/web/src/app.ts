@@ -980,9 +980,9 @@ const clientModules = await startClientModules({
 })
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
-document.addEventListener('agnes:settings-terminal', () => {
+document.addEventListener('agnes:settings-terminal', (event) => {
   settings.close()
-  workbenchNavigation.open('terminal')
+  if (workbenchNavigation.open('terminal')) event.preventDefault()
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')

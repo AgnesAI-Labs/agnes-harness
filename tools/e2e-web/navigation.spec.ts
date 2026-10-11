@@ -137,7 +137,17 @@ test('settings search, narrow master-detail and old links keep their destination
   }
   await page.goto('/?settings=terminal')
   await expect(page.locator('#config')).toBeHidden()
-  await expect(page.getByTestId('workbench-tab-terminal')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.locator('.agh-toast')).toContainText('terminal')
+  await expect(page).not.toHaveURL(/settings=terminal/)
+  if (new URL(page.url()).searchParams.has('session')) {
+    await expect(page.getByTestId('workbench-tab-terminal')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.agh-toast')).toContainText('The terminal has moved to the session workbench.')
+  } else {
+    await expect(page.locator('.agh-toast')).toContainText('Open a session to use the terminal.')
+  }
+  // An unavailable explicit session prevents selection of sessions from other specs.
+  await page.goto('/?session=missing-terminal-fixture&settings=terminal')
+  await expect(page.locator('#config')).toBeHidden()
+  await expect(page.getByTestId('workbench-tab-terminal')).toHaveCount(0)
+  await expect(page.locator('.agh-toast')).toContainText('Open a session to use the terminal.')
   await expect(page).not.toHaveURL(/settings=terminal/)
 })

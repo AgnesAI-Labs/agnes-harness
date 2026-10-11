@@ -80,6 +80,23 @@ it('operates the React settings pane and account dialog without losing native fo
       }),
     ),
   )
+  flushSync(() =>
+    dialog
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true })),
+  )
+  expect(document.querySelector('.agh-toast')?.textContent).toContain('Open a session to use the terminal.')
+  const openTerminal = (event: Event) => event.preventDefault()
+  dialog.addEventListener('agnes:settings-terminal', openTerminal)
+  flushSync(() =>
+    dialog
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true })),
+  )
+  expect(document.querySelector('.agh-toast')?.textContent).toContain(
+    'The terminal is now in the session workbench.',
+  )
+  dialog.removeEventListener('agnes:settings-terminal', openTerminal)
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
   expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
   expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
