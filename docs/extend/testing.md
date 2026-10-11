@@ -136,7 +136,7 @@ The server binds only `127.0.0.1` on an ephemeral port. `latencyMs` delays heade
 
 ## Provider conformance against Host
 
-`@agnes/extension-api/testkit` and `@agnes/plugin-runtime/testkit` export `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance` and `childAgentConformance`. `runProviderConformance(kind, options)` is their common runner.
+For specialist provider contracts, `@agnes/extension-api/testkit` exports `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance` and `childAgentConformance`. `runProviderConformance(kind, options)` is their common runner.
 
 Capture `ctx.providers` inside an isolated ordinary Host plugin. Pass that port, the owner package name, a fresh provider declaration and `open(provider)`. The probe uses the Host's public service/session path and returns `start(signal)`, `close()` and, for loop/persistence, `coldResume()`. Each started operation returns `{ ready, result }`: `ready` settles once the controlled operation reaches the provider, and `result` settles after it drains. If the native API returns a cancelled outcome instead of rejecting with AbortError, supply `isCancelledResult(result)` to validate that outcome. The suite refuses unload that returns before the admitted operation settles.
 

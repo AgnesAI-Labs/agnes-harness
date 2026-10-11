@@ -51,7 +51,7 @@ MCP 传输健康回调：[implementation](../../packages/base/src/mcp/transport-
 
 Host 组合合同测试：[owner suites](../../packages/host/test/owners)
 
-Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时的一行转发路径。插件作者显式从 `@agnes/host/testkit` 提供注册桥。
+Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时的一行转发路径。插件作者使用 `@agnes/host/author-testkit`，它自动提供生产注册桥；参阅[导入选择图](../extend/imports.zh-CN.md)。
 
 大型前端入口保留原有出口，具体职责分给领域模块：
 

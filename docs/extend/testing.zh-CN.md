@@ -130,7 +130,7 @@ try {
 
 ## 经 Host 验证提供器
 
-`@agnes/extension-api/testkit` 与 `@agnes/plugin-runtime/testkit` 导出 `loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance`，共用 `runProviderConformance(kind, options)`。
+专用 provider 合同测试使用 `@agnes/extension-api/testkit`，它导出 `loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance`，共用 `runProviderConformance(kind, options)`。
 
 在隔离的普通 Host 插件中捕获 `ctx.providers`，传入该端口、所有者包名、全新提供器与 `open(provider)`。Probe 走 Host 的公共服务/会话路径，返回 `start(signal)`、`close()`；loop/persistence 还需 `coldResume()`。每次操作返回 `{ ready, result }`：到达提供器时 ready 完成，排空后 result 完成。原生 API 返回取消结果而非抛出 AbortError 时，用 `isCancelledResult(result)` 校验；操作未结束就完成卸载会失败。
 

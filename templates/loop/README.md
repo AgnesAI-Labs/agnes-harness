@@ -4,6 +4,8 @@ AGH loop starter. Requires Node.js 24.10 or later and matching AGH package build
 
 __SETUP_GUIDE__
 
+Use `@agnes/host/author-testkit` for author tests. See the [SDK import map](https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md) for helpers, contracts and service kind tokens.
+
 This one-turn loop asks the session's effective model through `ctx.prepareRequest`, emits a reply, checkpoints completion and finishes. The local-dev profile supplies this keyless demo route. After this package activates through local discovery or plugin management, check `/admin/api/loops` for `__PACKAGE_NAME__@0.1.0` and run:
 
 ```sh

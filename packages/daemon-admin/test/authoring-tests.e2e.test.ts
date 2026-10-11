@@ -5,12 +5,32 @@ import { candidateTemplate } from '@agnes/base/plugin-creator'
 import { expect, it } from 'vitest'
 import { runAuthoringTests } from '../src/packages/authoring-tests.js'
 
-it.each(['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skill'])(
+it.each(['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skill', 'bounded-tool'])(
   'runs real Node contract tests against the %s candidate with the public author SDK',
   async (template) => {
     const directory = mkdtempSync(join(tmpdir(), 'agh-author-test-'))
     try {
-      const files = candidateTemplate(template, 'review-demo')
+      let files: { path: string; content: string }[]
+      if (template === 'bounded-tool') {
+        const { pluginHelper } = await import(
+          new URL('../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+        )
+        const tools: { name: string; execute(args: unknown): Promise<{ content: { text: string }[] }> }[] = []
+        pluginHelper.apply({
+          extension: () => ({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) }),
+        })
+        const guide = tools.find((tool) => tool.name === 'plugin_helper_guide')
+        if (!guide) throw new Error('guide missing')
+        const result = (await guide.execute({ kind: 'tool' })).content[0]
+        if (!result) throw new Error('guide content missing')
+        files = JSON.parse(result.text).files
+      } else files = candidateTemplate(template, 'review-demo')
+      const authorTests = files
+        .filter((file) => /\.test\.mjs$/.test(file.path))
+        .map((file) => file.content)
+        .join('\n')
+      if (template !== 'skill') expect(authorTests).toContain('@agnes/host/author-testkit')
+      expect(authorTests).not.toMatch(/@agnes\/(?:plugin-runtime|host)\/testkit/)
       writeFiles(directory, files)
       const result = await runAuthoringTests(directory, files, new AbortController().signal)
       expect(result, result.output).toMatchObject({ state: 'passed', runner: 'node-test' })

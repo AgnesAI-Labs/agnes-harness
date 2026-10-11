@@ -53,7 +53,7 @@ Dismissible dialog DOM bindings: [web-ui](../../packages/web-ui/src/dom/dialog-b
 
 Host assembly contract tests: [owner suites](../../packages/host/test/owners)
 
-Private paths under daemon, Host and Web use their owning packages directly; obsolete one-line forwarding paths have been removed. Plugin author registration is explicitly supplied from `@agnes/host/testkit`.
+Private paths under daemon, Host and Web use their owning packages directly; obsolete one-line forwarding paths have been removed. Plugin authors use `@agnes/host/author-testkit`, which supplies the production registration bridge automatically; see the [import map](../extend/imports.md).
 
 Large frontend entries retain their original exports while delegating to domain modules:
 

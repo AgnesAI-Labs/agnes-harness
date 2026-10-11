@@ -39,7 +39,7 @@ Persistence providers use `ChildControlStore` and its child identity, budget and
 workspace records from this package. Core re-exports the same types for existing
 consumers; the durable data format and store methods are unchanged.
 
-The general `@agnes/extension-api/testkit` and
-`@agnes/plugin-runtime/testkit` entries work with Node's test runner.
+Author tests use `@agnes/host/author-testkit`; see the [import map](../../docs/extend/imports.md).
+Specialist contract tests use `@agnes/extension-api/testkit` with Node's test runner.
 Vitest persistence suites are available separately from
 `@agnes/extension-api/testkit/persistence-contract`.
