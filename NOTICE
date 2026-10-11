@@ -47,6 +47,12 @@ following material retains its original notices and license terms:
   Their upstream LICENSE, NOTICE and third-party dependency notices are retained beside the
   codec in the distributed node_modules payload. See third-party/runtime-dependencies.json.
 
+- Lucide icon subset in packages/web-ui/src/ui/icons.ts:
+  Copyright (c) 2026 Lucide Icons and Contributors. ISC License.
+  Feather-derived geometries retain the MIT notice of Cole Bemis.
+  See packages/web-ui/THIRD_PARTY_NOTICES.md and LUCIDE-LICENSE.
+  Web builds retain the full license in THIRD-PARTY-NOTICES/lucide-icons.txt.
+
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.

@@ -129,3 +129,18 @@ it('announces success without stealing focus and cleans up the expiry on unmount
   await new Promise((resolve) => setTimeout(resolve, 60))
   expect(dismiss).toHaveBeenCalledTimes(1)
 })
+
+it('shares Lucide geometry between native and React icons and labels icon actions', async () => {
+  const { Icon, IconButton, createSettingsIcon, icons } = await import('../src/index.js')
+  for (const name of Object.keys(icons) as (keyof typeof icons)[]) {
+    const host = render(createElement(Icon, { name, size: 20 }))
+    const svg = host.querySelector('svg')!
+    const native = createSettingsIcon(document, name)
+    expect(svg.innerHTML).toBe(native.innerHTML)
+    expect(svg.getAttribute('data-agnes-region')).toBe('icon')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg.getAttribute('stroke-width')).toBe('1.75')
+  }
+  const host = render(createElement(IconButton, { name: 'refresh-cw', label: 'Refresh' }))
+  expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh')
+})

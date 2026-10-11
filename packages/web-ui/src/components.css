@@ -254,3 +254,24 @@
     inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
   }
 }
+.agh-icon[data-size="16"] {
+  width: var(--s16);
+  height: var(--s16);
+}
+.agh-icon[data-size="18"] {
+  width: 18px;
+  height: 18px;
+}
+.agh-icon[data-size="20"] {
+  width: 20px;
+  height: 20px;
+}
+.agh-icon[data-size="48"] {
+  width: var(--s48);
+  height: var(--s48);
+}
+.agh-btn--icon .ant-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

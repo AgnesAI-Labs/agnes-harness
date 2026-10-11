@@ -1,23 +1,39 @@
-const paths: Readonly<Record<string, string>> = {
-  accounts: 'M7 8h10M7 12h10M7 16h6M4 4h16v16H4Z',
-  agent: 'M8 4h8v4h4v12H4V8h4ZM9 12h.01M15 12h.01M9 16h6',
-  plugins: 'M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3',
-  tools: 'M4 6h10M4 12h16M4 18h10M17 3v6M7 9v6M17 15v6',
-  diagnostics: 'M2 12h4l3-8 6 16 3-8h4',
-  automation: 'M12 3a9 9 0 1 0 9 9M12 7v5l4 2M18 3v5h5',
-  security: 'M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6ZM8 12l3 3 5-6',
-  history: 'M4 10a8 8 0 1 1 1 8M4 4v6h6M12 7v5l4 2',
-  general: 'M5 8h14M5 16h14M9 5v6M15 13v6',
+import { icons, type IconName } from './ui/icons.js'
+
+const navigation: Readonly<Record<string, IconName>> = {
+  accounts: 'list',
+  agent: 'bot',
+  plugins: 'plug',
+  tools: 'sliders-horizontal',
+  diagnostics: 'activity',
+  automation: 'clock',
+  security: 'shield-check',
+  history: 'history',
+  general: 'settings',
 }
-/** Shared native settings navigation uses the same skin hook as the existing account rail. */
+/** Native controls read the exact geometry used by the React Icon. Existing skin hook is retained. */
 export function createSettingsIcon(document: Document, icon: string): SVGSVGElement {
+  const name = navigation[icon] ?? (Object.hasOwn(icons, icon) ? (icon as IconName) : 'plug')
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.classList.add('icon')
+  svg.classList.add('icon', 'agh-icon')
   svg.dataset.agnesRegion = 'icon'
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS(svg.namespaceURI, 'path')
-  path.setAttribute('d', paths[icon] ?? paths.plugins ?? '')
-  svg.appendChild(path)
+  svg.dataset.size = '20'
+  for (const [attribute, value] of Object.entries({
+    viewBox: '0 0 24 24',
+    width: '20',
+    height: '20',
+    'aria-hidden': 'true',
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': '1.75',
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round',
+  }))
+    svg.setAttribute(attribute, value)
+  for (const [tag, attributes] of icons[name]) {
+    const node = document.createElementNS(svg.namespaceURI, tag)
+    for (const [attribute, value] of Object.entries(attributes)) node.setAttribute(attribute, value)
+    svg.appendChild(node)
+  }
   return svg
 }

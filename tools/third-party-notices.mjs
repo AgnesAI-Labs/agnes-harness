@@ -79,5 +79,14 @@ export async function collectThirdPartyNotices(
     )
     inventory.push({ name, version: metadata.version, license: metadata.license, file: fileName })
   }
+  // Vendored geometries do not appear as an npm dependency in the bundle graph.
+  const lucideLicense = join(import.meta.dirname, '../packages/web-ui/LUCIDE-LICENSE')
+  await writeFile(join(destination, 'lucide-icons.txt'), await readFile(lucideLicense))
+  inventory.push({
+    name: 'lucide-icons (vendored subset)',
+    version: '70562c1ee1c4fdcf736fe97bc893fb8511927934',
+    license: 'ISC and MIT',
+    file: 'lucide-icons.txt',
+  })
   await writeFile(join(destination, 'index.json'), `${JSON.stringify(inventory, null, 2)}\n`)
 }
