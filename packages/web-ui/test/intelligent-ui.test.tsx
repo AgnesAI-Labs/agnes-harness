@@ -660,3 +660,55 @@ describe('UI data source states', () => {
     }
   })
 })
+
+describe('preset render isolation', () => {
+  it('keeps one failing component from unmounting the rest of the surface', async () => {
+    const { ComponentBoundary } = await import('../src/intelligent-ui/catalog.js')
+    const Throws = () => {
+      throw new Error('render failure')
+    }
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () =>
+      root.render(
+        createElement(
+          'div',
+          null,
+          createElement(ComponentBoundary, {
+            fallback: createElement('p', { id: 'fallback' }, 'fallback'),
+            children: createElement(Throws),
+          }),
+          createElement('p', { id: 'sibling' }, 'still here'),
+        ),
+      ),
+    )
+    expect(host.querySelector('#fallback')).not.toBeNull()
+    expect(host.querySelector('#sibling')?.textContent).toBe('still here')
+    quiet.mockRestore()
+    await act(async () => root.unmount())
+  })
+
+  it('computes chart extremes without spreading every value onto the stack', () => {
+    const rows = Array.from({ length: 300 }, (_, i) => ({ id: `t${i}`, amount: i - 150 }))
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() =>
+      root.render(
+        createElement(IntelligentCatalog, {
+          surface: { ...surface, data: { ...surface.data, rows } },
+          selection: {},
+          input: {},
+          disabled: false,
+          onAction: vi.fn(),
+          onSelection: vi.fn(),
+          onInput: vi.fn(),
+          onInvalid: vi.fn(),
+        } as never),
+      ),
+    )
+    expect(host.querySelector('[data-testid="ui-component-failed"]')).toBeNull()
+    expect(host.querySelector('svg')).not.toBeNull()
+    act(() => root.unmount())
+  })
+})

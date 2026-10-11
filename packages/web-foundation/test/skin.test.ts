@@ -350,3 +350,42 @@ describe('caching one selected skin', () => {
     expect(readSkinCache(storage)).toBeNull()
   })
 })
+
+describe('skin token names', () => {
+  it('never writes a non-custom property, even from a tampered cache', () => {
+    const written = new Map<string, string>()
+    const target = {
+      style: {
+        setProperty: (name: string, value: string) => void written.set(name, value),
+        removeProperty: (name: string) => void written.delete(name),
+      },
+    }
+    const tampered = {
+      version: SKIN_CACHE_VERSION,
+      id: 'midnight',
+      revision: 'r1',
+      css: '',
+      tokens: {
+        display: { light: 'none', dark: 'none' },
+        '--agnes-bg-page': { light: '#fff', dark: '#000' },
+      },
+    } as SkinCache
+    expect([...applySkinTokens(target, tampered, 'light', [])]).toEqual(['--agnes-bg-page'])
+    expect(written.has('display')).toBe(false)
+  })
+
+  it('rejects a cached skin whose token names are not custom properties', () => {
+    const storage = memory()
+    storage.setItem(
+      SKIN_STORAGE_KEY,
+      JSON.stringify({
+        version: SKIN_CACHE_VERSION,
+        id: 'midnight',
+        revision: 'r1',
+        css: '',
+        tokens: { display: { light: 'none', dark: 'none' } },
+      }),
+    )
+    expect(readSkinCache(storage)).toBeNull()
+  })
+})

@@ -42,12 +42,15 @@ export const SKIN_CACHE_VERSION = 1
 export const SKIN_NONE = 'none'
 /** 与协议层 `SkinId` 同一形态。 */
 const SKIN_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const CUSTOM_PROPERTY = /^--[a-zA-Z0-9_-]+$/
 
 /** 校验 token 表：每个键都必须同时给出非空的 light 与 dark。 */
 function readTokens(value: unknown): Record<string, SkinTokenModes> | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const tokens: Record<string, SkinTokenModes> = {}
   for (const [name, modes] of Object.entries(value as Record<string, unknown>)) {
+    // Only custom properties: a name like `display` would otherwise become an inline root style.
+    if (!CUSTOM_PROPERTY.test(name)) return null
     if (typeof modes !== 'object' || modes === null || Array.isArray(modes)) return null
     const { light, dark } = modes as Record<string, unknown>
     if (typeof light !== 'string' || light === '' || typeof dark !== 'string' || dark === '') return null
@@ -153,7 +156,7 @@ export function applySkinTokens(
   if (cache !== null)
     for (const [name, modes] of Object.entries(cache.tokens)) {
       const value = mode === 'dark' ? modes.dark : modes.light
-      if (value !== '') wanted.set(name, value)
+      if (value !== '' && CUSTOM_PROPERTY.test(name)) wanted.set(name, value)
     }
   for (const name of applied) if (!wanted.has(name)) root.style.removeProperty(name)
   for (const [name, value] of wanted) root.style.setProperty(name, value)

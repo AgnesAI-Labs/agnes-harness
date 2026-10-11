@@ -6,7 +6,7 @@ import type {
   UiSourceStatus,
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { type ReactNode, useCallback, useId } from 'react'
+import { Component, type ReactNode, useCallback, useId } from 'react'
 import { SettingsState } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
@@ -63,15 +63,35 @@ export function IntelligentCatalog(props: IntelligentCatalogProps) {
     <div className="agnes-intelligent-catalog" data-agnes-intelligent-ui="catalog">
       {props.surface.components.map((component) =>
         placed.has(component.id) ? null : (
-          <CatalogComponent
-            key={`${component.id}:${props.surface.revision}`}
-            {...props}
-            component={component}
-            degradedKeys={degradedKeys}
-          />
+          <ComponentBoundary key={`${component.id}:${props.surface.revision}`} fallback={<ComponentFailed />}>
+            <CatalogComponent {...props} component={component} degradedKeys={degradedKeys} />
+          </ComponentBoundary>
         ),
       )}
     </div>
+  )
+}
+
+/** One failing preset must not unmount the conversation or keep a persisted session from opening. */
+export class ComponentBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
+
+function ComponentFailed() {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  return (
+    <SettingsState tone="error" role="alert" data-testid="ui-component-failed">
+      {t('ui.componentFailed')}
+    </SettingsState>
   )
 }
 

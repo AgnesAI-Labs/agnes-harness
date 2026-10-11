@@ -19,8 +19,13 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
     typeof value === 'number' ? new Intl.NumberFormat(locale).format(value) : String(value)
   const rows = Array.isArray(data) ? data.filter(uiObject) : []
   const values = rows.flatMap((row) => component.series.map((series) => Number(row[series.key])))
-  const min = Math.min(0, ...values),
-    max = Math.max(0, ...values)
+  // A loop, not Math.min(...values): argument spreading has an engine-specific stack limit.
+  let min = 0,
+    max = 0
+  for (const value of values) {
+    if (value < min) min = value
+    if (value > max) max = value
+  }
   const scale = Math.max(Math.abs(min), Math.abs(max), 1)
   const y = (n: number) => 180 - ((n / scale - min / scale) / (max / scale - min / scale || 1)) * 160
   const x = (i: number) => 20 + ((i + 0.5) / Math.max(1, rows.length)) * 560
