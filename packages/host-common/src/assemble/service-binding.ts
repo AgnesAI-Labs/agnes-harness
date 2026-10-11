@@ -235,7 +235,20 @@ export class ServiceBindings {
     if (grants.has('input') && !call.actor?.id) throw closed(kind.kind, 'bind')
     const ports = buildPorts(kind, call, binding, descriptor, factories, grants, enter, lifetime)
     if (!open(readLive())) throw closed(kind.kind, 'bind')
-    const raw: unknown = await provider.open(ports as P)
+    // A service instance may own a `then` method. Awaiting the open result would adopt that method
+    // and never settle. Only a real Promise is waited on, and its fulfillment is kept inside a
+    // plain holder so the instance itself is never resolved as a thenable.
+    const opened = provider.open(ports as P)
+    const raw = (
+      await new Promise<{ value: unknown }>((resolve, reject) => {
+        try {
+          if (opened instanceof Promise) opened.then((value) => resolve({ value }), reject)
+          else resolve({ value: opened })
+        } catch (error) {
+          reject(error)
+        }
+      })
+    ).value
     if (!open(readLive()) || !raw || typeof raw !== 'object' || Array.isArray(raw)) {
       try {
         await disposeRaw(raw)
@@ -262,7 +275,14 @@ export class ServiceBindings {
   ): ServiceProvider<S, P> {
     if (kind.cardinality === 'single' && call.providerId !== undefined) throw closed(kind.kind, 'bind')
     const scope = serviceBindingScope(kind, call)
-    const providers = this.current()
+    let providers: ProvidersService
+    try {
+      providers = this.current()
+    } catch (cause) {
+      throw closed(kind.kind, 'bind', cause)
+    }
+    // Disposal drops the Cordis service. A missing registry is a closed binding, not a TypeError.
+    if (!providers?.catalog) throw closed(kind.kind, 'bind')
     const owned = providers
       .catalog()
       .filter((entry) => entry.kind === kind.kind && owns(entry, call, descriptor, this.claims))
