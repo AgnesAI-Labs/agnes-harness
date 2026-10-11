@@ -113,6 +113,7 @@ export function SearchPanel({
   const [confirmClear, setConfirmClear] = useState<SearchRow>()
   const [reload, setReload] = useState(0)
   const [elapsed, setElapsed] = useState<number>()
+  const [probeFailure, setProbeFailure] = useState<string>()
   const [status, setStatus] = useState<SearchStatus>()
   const [providerId, setProviderId] = useState<ProviderId>('brave')
   const [endpoint, setEndpoint] = useState('')
@@ -252,10 +253,13 @@ export function SearchPanel({
     if (!canSave || busy) return
     const probe = query.trim()
     if (!probe) {
-      setError('searchTestEmpty')
+      setProbeFailure(ux('testEmpty'))
+      setElapsed(undefined)
       return
     }
     setBusy(true)
+    setNotice('')
+    setProbeFailure(undefined)
     setError('')
     setErrorEnvelope(undefined)
     setHits([])
@@ -277,19 +281,22 @@ export function SearchPanel({
       }
       if (lifetime.current?.signal.aborted) return
       if (!response.ok || !value.ok) {
-        setErrorEnvelope(value.error)
-        setError('searchFailed')
+        setProbeFailure(appServerErrorMessage(value.error, document.documentElement.lang) ?? ux('testFailed'))
         return
       }
       setHits(Array.isArray(value.results) ? value.results : [])
-      setElapsed(Math.round(performance.now() - started))
       setNotice('tested')
     } catch (error) {
       if (lifetime.current?.signal.aborted) return
-      setErrorEnvelope((error as { envelope?: unknown })?.envelope)
-      setError('searchFailed')
+      setProbeFailure(
+        appServerErrorMessage((error as { envelope?: unknown })?.envelope, document.documentElement.lang) ??
+          ux('testFailed'),
+      )
     } finally {
-      if (!lifetime.current?.signal.aborted) setBusy(false)
+      if (!lifetime.current?.signal.aborted) {
+        setElapsed(Math.round(performance.now() - started))
+        setBusy(false)
+      }
     }
   }
 
@@ -468,7 +475,7 @@ export function SearchPanel({
       )}
       <SettingsToolbar
         search={
-          <Field label={t('searchTestQuery')} htmlFor="search-test-query">
+          <Field label={ux('trySearch')} htmlFor="search-test-query">
             <SettingsInput
               id="search-test-query"
               data-testid="search-test-query"
@@ -483,10 +490,18 @@ export function SearchPanel({
             disabled={!canSave || busy || !status?.configured}
             onClick={() => void testProvider()}
           >
-            {t('searchTest')}
+            {ux('test')}
           </Button>
         }
       />
+      {probeFailure && (
+        <SettingsState tone="error" data-testid="search-test-error">
+          {probeFailure}
+          {elapsed !== undefined
+            ? ` · ${new Intl.NumberFormat(document.documentElement.lang || 'en').format(elapsed)} ms`
+            : ''}
+        </SettingsState>
+      )}
       {notice && (
         <SettingsState tone="success" data-testid="search-notice">
           {notice === 'tested'
@@ -528,7 +543,7 @@ export function SearchPanel({
       >
         <form id="search-settings-editor" onSubmit={(event) => void save(event)}>
           <fieldset disabled={!canSave || busy || !status}>
-            <Field label={t('searchProvider')} htmlFor="search-edit-provider">
+            <Field label={ux('provider')} htmlFor="search-edit-provider">
               <SchemaControl
                 schema={searchConfigSchema.properties.id}
                 value={providerId}

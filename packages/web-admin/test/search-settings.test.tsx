@@ -45,7 +45,19 @@ const status = {
 it('shows the unconfigured state and saves a key without rendering it again', async () => {
   const key = 'ui-search-key-value'
   let saved = false
+  let refuseProbe = true
   const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'POST')
+      return Response.json(
+        refuseProbe
+          ? { ok: false }
+          : {
+              ok: true,
+              results: [
+                { title: 'Fixture result', url: 'https://example.test/result', snippet: 'Synthetic result' },
+              ],
+            },
+      )
     if (init?.method === 'PUT') {
       const body = JSON.parse(String(init.body)) as { apiKey?: string; provider?: { id?: string } }
       expect(body.apiKey).toBe(key)
@@ -123,4 +135,21 @@ it('shows the unconfigured state and saves a key without rendering it again', as
     key,
   )
   expect(settingsCatalog['zh-CN'].searchEmpty).toContain('尚未配置')
+  const query = panel.querySelector<HTMLInputElement>('[data-testid="search-test-query"]')
+  await act(async () => {
+    setter?.call(query, 'fixture')
+    query?.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.click())
+  expect(panel.querySelector('[data-testid="search-test-error"]')?.textContent).toMatch(
+    /Search failed.*\d+ ms/,
+  )
+  expect(panel.querySelector('[data-testid="search-test-error"]')?.textContent).not.toContain('saved')
+  refuseProbe = false
+  await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.click())
+  expect(panel.querySelector('[data-testid="search-test-error"]')).toBeNull()
+  expect(panel.querySelector('[data-testid="search-notice"]')?.textContent).toMatch(/Test passed.*\d+ ms/)
+  expect(panel.querySelector('[data-testid="search-test-result"] a')?.getAttribute('href')).toBe(
+    'https://example.test/result',
+  )
 })
