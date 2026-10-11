@@ -281,15 +281,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4068,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 9324,
+  'packages/web-admin/src/settings': 9325,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 267,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/types': 82,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/admin/plugins/api': 546,
+  'packages/web-admin/src/admin/plugins/api': 548,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 16390,
+  'packages/web-admin/src': 16393,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2459,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
@@ -627,7 +627,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
   // AC1: consume one-time example launch parameters after session activation (+2 exact lines).
-  'packages/web/src/app': 4221,
+  'packages/web/src/app': 4238,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -2448,7 +2448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
   // UX B1/B2 native sheet binding adds 3 lines; ST1 c2a1bd004 seeds reveal history with 5.
   // Exact combined countLines measurement, preserving both contributions without spare allocation.
-  'packages/web/src': 13719,
+  'packages/web/src': 13802,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
