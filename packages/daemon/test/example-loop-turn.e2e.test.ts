@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -115,6 +115,7 @@ async function runExample(kind: 'react' | 'dag') {
   let sdk: ReturnType<typeof createClient> | undefined
   let socketPath: string | undefined
   let stage = 'boot'
+  const failures: unknown[] = []
   try {
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
@@ -190,9 +191,10 @@ async function runExample(kind: 'react' | 'dag') {
       (await bounded(session.prompt('Summarize again after cancellation.'), `${kind} recovery`)).reason,
     ).toBe('completed')
   } catch (error) {
-    throw new Error(`${kind} ${stage}: ${String(error)}\nSource daemon stderr:\n${stderr}`, { cause: error })
+    failures.push(
+      new Error(`${kind} ${stage}: ${String(error)}\nSource daemon stderr:\n${stderr}`, { cause: error }),
+    )
   } finally {
-    const failures: unknown[] = []
     for (const close of [
       () => sdk?.close(),
       () => stop(daemon, exited),
@@ -208,8 +210,9 @@ async function runExample(kind: 'react' | 'dag') {
         failures.push(error)
       }
     }
-    if (failures.length) throw new AggregateError(failures, 'source loop fixture cleanup failed')
   }
+  if (failures.length === 1) throw failures[0]
+  if (failures.length > 1) throw new AggregateError(failures, 'source loop fixture and cleanup failed')
 }
 
 // POSIX signal shutdown and Unix transport; Windows stop-request coverage lives in daemon lifecycle tests.
