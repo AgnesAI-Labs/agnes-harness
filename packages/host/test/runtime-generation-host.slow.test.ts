@@ -155,6 +155,12 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
   const providers: ScriptedProvider[] = []
   const options = {
     dataDir: root,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    skillResources: {
+      list: () => [],
+      read: () => ({ ok: false as const, code: 'NOT_FOUND' as const }),
+      readFile: () => ({ ok: false as const, code: 'NOT_FOUND' as const }),
+    },
     provider: (profile: ResolvedProfile) => {
       const provider = new ScriptedProvider({
         models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
@@ -248,6 +254,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       }).target
     await host.applyRuntimeTarget(target(one))
     const a = await host.createSession({ key: 'session-a', cwd: root })
+    expect(a.currentTools().resolve('skill_read')).toBeDefined()
     const firstId = a.pluginGenerationId
     await a.enqueue('next-turn', { actor: a.d.actor, content: [{ type: 'text', text: 'run the old code' }] })
     const inFlight = a.run({ until: 'turn-end', signal: new AbortController().signal })
@@ -265,6 +272,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     await host.applyRuntimeTarget(target(one))
     await host.applyRuntimeTarget(target(two))
     const b = await host.createSession({ key: 'session-b', cwd: root })
+    expect(a.currentTools().resolve('skill_read')).toBeDefined()
+    expect(b.currentTools().resolve('skill_read')).toBeDefined()
     expect(a.pluginGenerationId).toBe(firstId)
     expect(await a.scan({ type: 'tool/result', limit: 10 })).toEqual([])
     resume()

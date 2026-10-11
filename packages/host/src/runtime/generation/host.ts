@@ -365,13 +365,15 @@ export async function createRuntimeGenerationHost(
         )
       }
       const rowIds = (snapshot.resources?.data as { extensionRowIds?: string[] } | undefined)?.extensionRowIds
+      // Daemon targets omit Host defaults. Keep pinned consumers even when that target names none;
+      // explicitly selected resource rows above have already replaced their claims with live inputs.
       if (rowIds)
         await host.extensionRows.apply([
-          ...rowIds
-            .filter((id) => !liveResource(id) && !claims.get(id)?.liveResources?.length)
-            .flatMap((id) => claims.get(id) ?? []),
+          ...rowIds.filter((id) => !liveResource(id)).flatMap((id) => claims.get(id) ?? []),
           ...targetRows(target)
-            .filter((row) => liveResource(row.id) || !!row.liveResources?.length)
+            .filter(
+              (row) => liveResource(row.id) || (!!row.liveResources?.length && !rowIds.includes(row.id)),
+            )
             .flatMap((row) => claims.get(row.id) ?? []),
         ])
       await host.applyRuntimeTarget(

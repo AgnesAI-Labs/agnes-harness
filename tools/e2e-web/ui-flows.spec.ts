@@ -608,6 +608,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     preset: 'full-access',
   })
   await old.attach()
+  expect((await old.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   await client.session.rename(old.id, 'Text statistics workshop')
   old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   const { prompt } = await import('./sdk.js')
@@ -817,6 +818,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     preset: 'full-access',
   })
   await freshSession.attach()
+  expect((await freshSession.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
   await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
   expect((await toolResult(freshSession, 'my_text_stats'))!.structured).toEqual({ characters: 11, words: 2 })
