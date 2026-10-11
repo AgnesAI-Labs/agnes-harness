@@ -264,7 +264,7 @@ export function CandidateInbox({
           {t('candidates.refresh')}
         </Button>
       </SettingsToolbar>
-      {error && (
+      {error && (!selected || !reviewSurface) && (
         <p role="alert" data-testid="candidate-error">
           {error}
         </p>
@@ -371,6 +371,11 @@ export function CandidateInbox({
             data-testid="candidate-review"
             aria-label={t('candidates.review')}
           >
+            {reviewSurface && error && (
+              <p role="alert" data-testid="candidate-error">
+                {error}
+              </p>
+            )}
             {reviewSurface && (
               <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
                 {t('candidates.back')}

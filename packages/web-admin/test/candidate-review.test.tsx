@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
@@ -132,89 +132,101 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
   }
 })
 
-it('hides empty inboxes, serializes review navigation and exposes list failures', async () => {
-  vi.useFakeTimers()
-  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
-  scope.IS_REACT_ACT_ENVIRONMENT = true
-  const list = vi.fn().mockResolvedValue({ candidates: [] })
-  const show = vi.fn().mockResolvedValue(candidate)
-  const api = { candidatesList: list, candidatesShow: show } as unknown as PluginAdminApi
-  const host = document.createElement('div')
-  document.body.append(host)
-  const root = createRoot(host)
-  try {
-    await act(async () =>
-      root.render(
-        <CandidateInbox
-          api={api}
-          canReview
-          canTest
-          t={t}
-          confirm={() => undefined}
-          onPublished={async () => undefined}
-        />,
-      ),
-    )
-    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
-    list.mockResolvedValue({ candidates: [candidate] })
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(host.querySelector('[data-testid="candidate-open"]')?.textContent).toContain(candidate.packageId)
-    const button = (id: string) => {
-      const element = host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
-      if (!element) throw new Error(`Missing ${id}`)
-      return element
+it.each([false, true])(
+  'hides empty inboxes, serializes review navigation and exposes list failures (review surface %s)',
+  async (surface) => {
+    vi.useFakeTimers()
+    const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+    scope.IS_REACT_ACT_ENVIRONMENT = true
+    const list = vi.fn().mockResolvedValue({ candidates: [] })
+    const show = vi.fn().mockResolvedValue(candidate)
+    const api = { candidatesList: list, candidatesShow: show } as unknown as PluginAdminApi
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          <CandidateInbox
+            api={api}
+            canReview
+            canTest
+            t={t}
+            confirm={() => undefined}
+            onPublished={async () => undefined}
+            {...(surface
+              ? { reviewSurface: (content: ReactNode) => <div data-testid="review-surface">{content}</div> }
+              : {})}
+          />,
+        ),
+      )
+      expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+      list.mockResolvedValue({ candidates: [candidate] })
+      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      expect(host.querySelector('[data-testid="candidate-open"]')?.textContent).toContain(candidate.packageId)
+      const button = (id: string) => {
+        const element = host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)
+        if (!element) throw new Error(`Missing ${id}`)
+        return element
+      }
+      let finishRefresh!: (value: { candidates: AuthoringCandidate[] }) => void
+      list.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRefresh = resolve
+          }),
+      )
+      await act(async () => button('candidate-refresh').click())
+      expect(button('candidate-refresh').disabled).toBe(true)
+      expect(button('candidate-open').disabled).toBe(true)
+      await act(async () => button('candidate-open').click())
+      expect(host.querySelector('[data-testid="candidate-review"]')).toBeNull()
+      await act(async () => finishRefresh({ candidates: [candidate] }))
+      expect(button('candidate-open').disabled).toBe(false)
+      let finishShow!: (value: AuthoringCandidate) => void
+      show.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishShow = resolve
+          }),
+      )
+      await act(async () => button('candidate-open').click())
+      expect(button('candidate-refresh').disabled).toBe(true)
+      await act(async () => button('candidate-refresh').click())
+      await act(async () => finishShow({ ...candidate, state: 'review' }))
+      expect(host.querySelector('[data-testid="candidate-summary"]')?.textContent).toContain(
+        candidate.packageId,
+      )
+      expect(button('candidate-approve').disabled).toBe(false)
+      list.mockRejectedValueOnce(new Error('offline'))
+      await act(async () => button('candidate-refresh').click())
+      expect(button('candidate-refresh').disabled).toBe(false)
+      expect(host.querySelector('[data-testid="candidate-review"]')).not.toBeNull()
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
+      if (surface) {
+        expect(host.querySelector('[data-testid="review-surface"] [role="alert"]')?.textContent).toBe(
+          t('candidates.unavailable'),
+        )
+        expect(button('candidate-back').closest('[data-testid="review-surface"]')).not.toBeNull()
+      }
+      await act(async () => button('candidate-back').click())
+      list.mockResolvedValue({ candidates: [] })
+      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+      list.mockRejectedValue(new Error('offline'))
+      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
+      list.mockResolvedValue({ candidates: [] })
+      await act(async () => vi.advanceTimersByTimeAsync(3000))
+      expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+      vi.useRealTimers()
+      scope.IS_REACT_ACT_ENVIRONMENT = false
     }
-    let finishRefresh!: (value: { candidates: AuthoringCandidate[] }) => void
-    list.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishRefresh = resolve
-        }),
-    )
-    await act(async () => button('candidate-refresh').click())
-    expect(button('candidate-refresh').disabled).toBe(true)
-    expect(button('candidate-open').disabled).toBe(true)
-    await act(async () => button('candidate-open').click())
-    expect(host.querySelector('[data-testid="candidate-review"]')).toBeNull()
-    await act(async () => finishRefresh({ candidates: [candidate] }))
-    expect(button('candidate-open').disabled).toBe(false)
-    let finishShow!: (value: AuthoringCandidate) => void
-    show.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishShow = resolve
-        }),
-    )
-    await act(async () => button('candidate-open').click())
-    expect(button('candidate-refresh').disabled).toBe(true)
-    await act(async () => button('candidate-refresh').click())
-    await act(async () => finishShow({ ...candidate, state: 'review' }))
-    expect(host.querySelector('[data-testid="candidate-summary"]')?.textContent).toContain(
-      candidate.packageId,
-    )
-    expect(button('candidate-approve').disabled).toBe(false)
-    list.mockRejectedValueOnce(new Error('offline'))
-    await act(async () => button('candidate-refresh').click())
-    expect(button('candidate-refresh').disabled).toBe(false)
-    expect(host.querySelector('[data-testid="candidate-review"]')).not.toBeNull()
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
-    await act(async () => button('candidate-back').click())
-    list.mockResolvedValue({ candidates: [] })
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
-    list.mockRejectedValue(new Error('offline'))
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
-    list.mockResolvedValue({ candidates: [] })
-    await act(async () => vi.advanceTimersByTimeAsync(3000))
-    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
-  } finally {
-    await act(async () => root.unmount())
-    host.remove()
-    vi.useRealTimers()
-    scope.IS_REACT_ACT_ENVIRONMENT = false
-  }
-})
+  },
+)
 
 it('shows only inspected skill candidates and counts reviews without enabling a forbidden decision', async () => {
   const skill = {
