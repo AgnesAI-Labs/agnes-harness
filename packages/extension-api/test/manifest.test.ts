@@ -116,7 +116,7 @@ describe('author manifest validation', () => {
     expect(checkManifest(input)).toEqual({ ok: false, problems: ['manifest: expected plain JSON data'] })
     expect(calls).toBe(0)
   })
-  it('namespaces bundled and partner events and rejects reserved shortcuts', () => {
+  it('namespaces bundled and partner events and rejects malformed names', () => {
     expect(extEventType('agnes/subagent', 'worktree-skipped')).toBe('x/agnes/subagent/worktree-skipped')
     expect(extEventType('vendor/tool', 'done')).toBe('x/vendor/tool/done')
     for (const name of [
@@ -134,10 +134,13 @@ describe('author manifest validation', () => {
     ])
       expect(extEventType('agnes/intelligent-ui', name)).toBe(`x/agnes/intelligent-ui/${name}`)
     for (const [id, name] of [
-      ['core', 'done'],
       ['vendor/tool', 'surface.opened'],
       ['agnes/intelligent-ui', 'surface.forged'],
       ['agnes/intelligent-ui', 'action.forged'],
+    ] as const)
+      expect(extEventType(id, name)).toBe(`x/${id}/${name}`)
+    for (const [id, name] of [
+      ['core', 'done'],
       ['agnes/intelligent-ui', 'surface.opened/forged'],
       ['vendor/tool', 'Bad Name'],
       ['vendor/tool', 'x/other'],
