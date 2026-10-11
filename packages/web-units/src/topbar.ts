@@ -76,6 +76,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
             ref: taskTitle,
             id: 'task-title',
             appearance: 'ghost',
+            size: 'small',
             title: t('topbar.rename'),
             onClick: (event) =>
               event.currentTarget.dispatchEvent(

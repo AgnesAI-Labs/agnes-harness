@@ -63,6 +63,8 @@ for (const locale of ['en', 'zh-CN'])
     ).toHaveCount(0)
     await card.getByTestId('ui-select-differences-txn-1').check()
     await card.getByTestId('ui-form-adjustment').getByRole('textbox').fill('Human reviewed mismatch')
+    await page.getByTestId('workbench-right-toggle').click()
+    await expect(card).toBeHidden()
     await inline.getByTestId('ui-expand').click()
     await expect(panel.getByTestId('ui-select-differences-txn-1')).toBeChecked()
     await expect(panel.getByTestId('ui-form-adjustment').getByRole('textbox')).toHaveValue(
@@ -89,7 +91,8 @@ for (const locale of ['en', 'zh-CN'])
     await expect(card.getByTestId('ui-surface-finance-review')).toHaveAttribute('data-revision', '2')
     await card.getByTestId('ui-review-current').click()
     await card.getByTestId('ui-action-confirm').first().click()
-    await page.getByTestId('fixture-change-data').click()
+    // This fixture control injects a concurrent backend change while the user's confirmation stays open.
+    await page.getByTestId('fixture-change-data').evaluate((button) => (button as HTMLButtonElement).click())
     await card.getByTestId('ui-confirm').click()
     await expect(card.getByTestId('ui-reconfirm-message')).toContainText(
       locale === 'en' ? 'Data changed' : '数据已变化，请重新确认',

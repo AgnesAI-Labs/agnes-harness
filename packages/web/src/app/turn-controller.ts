@@ -137,7 +137,7 @@ export function createTurnController(
         : context.liveApproval
           ? context.t('app.status.awaitingApproval')
           : view.status,
-      view.busy ? 'running' : (receipt?.reason ?? 'idle'),
+      context.liveApproval ? 'approval' : view.busy ? 'running' : (receipt?.reason ?? 'idle'),
     )
     const meta = transcriptMeta()
     context.renderer.render(view.nodes, context.projection.turns, meta)

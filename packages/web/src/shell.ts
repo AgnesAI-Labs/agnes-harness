@@ -1,5 +1,5 @@
-import { cycleTaskFocus } from './workbench/focus.js'
 import { tr } from '@agnes/web-foundation/locale-bridge'
+import { cycleTaskFocus } from './workbench/focus.js'
 
 const getButton = (id: string) => {
   const value = document.getElementById(id)

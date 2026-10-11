@@ -101,9 +101,8 @@ export async function fresh(page: Page, locale = 'en') {
 }
 
 export async function fullAccess(page: Page, locale = 'en') {
-  await expect(page.getByTestId('composer-agent')).toBeEnabled()
-  await page.getByTestId('composer-agent').click()
-  const permission = page.getByTestId('new-session-preset')
+  const permission = page.locator('#composer-permission')
+  await expect(permission).toBeEnabled()
   await permission.click()
   const option = page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全访问/ })
   await expect(option).toBeVisible()
@@ -119,16 +118,14 @@ export async function fullAccess(page: Page, locale = 'en') {
   })
   await option.click()
   await expect(permission).toContainText(locale === 'en' ? 'Full access' : '完全访问')
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('agent-options')).toBeHidden()
+  await expect(page.locator('#permission-picker-popover')).toBeHidden()
   await page
     .getByRole('textbox', { name: locale === 'en' ? 'Task content' : '任务内容', exact: true })
     .click()
   await expect(
     page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全访问/ }),
   ).toBeHidden()
-  await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.getByTestId('agent-options')).toBeHidden()
+  await expect(permission).toHaveAttribute('aria-expanded', 'false')
 }
 
 export async function send(page: Page, input: string) {

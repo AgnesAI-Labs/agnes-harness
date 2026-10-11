@@ -73,6 +73,10 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   })
   await expect(files.locator('[data-path="report.md"] .workbench-git-mark')).toHaveText('Added')
   await expect(page.getByTestId('workbench-bottom-toggle')).toHaveCount(0)
+  expect(await page.locator('.topbar').evaluate((node) => node.getBoundingClientRect().height)).toBe(48)
+  expect(await page.getByTestId('workbench-right-toggle').evaluate((node) => !!node.closest('.topbar'))).toBe(
+    true,
+  )
   await expect(page.locator('#composer-workspace')).toBeHidden()
   await page.getByTestId('workbench-tab-files').focus()
   await page.keyboard.press('F6')
@@ -358,13 +362,13 @@ test('goal panel follows durable progress and shares authorized human controls',
     timeout: 30_000,
   })
   await page.getByTestId('workbench-right-toggle').click()
-  await page.getByTestId('workbench-tab-goal').click()
-  const panel = page.getByTestId('goal-panel')
-  await expect(panel).toContainText('Create a goal')
+  await expect(page.getByTestId('workbench-tab-goal')).toHaveCount(0)
   await page.getByTestId('goal-toggle').click()
   await page.getByTestId('goal-objective').fill('Review the synthetic delivery')
   await page.getByTestId('goal-max-rounds').fill('1')
   await page.getByTestId('goal-save').click()
+  await page.getByTestId('workbench-tab-goal').click()
+  const panel = page.getByTestId('goal-panel')
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Blocked goal', { timeout: 30_000 })
   await expect(page.getByTestId('goal-toggle')).toHaveAttribute('aria-expanded', 'false')
   await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
@@ -432,7 +436,8 @@ test('goal panel follows durable progress and shares authorized human controls',
   expect(await snapshot()).toMatchObject({ phase: 'complete' })
   await page.getByTestId('workbench-right-toggle').click()
   await panel.getByTestId('goal-panel-clear').click()
-  await expect(panel).toContainText('Create a goal')
+  await expect(page.getByTestId('workbench-tab-goal')).toHaveCount(0)
+  await expect(panel).toHaveCount(0)
   expect(await snapshot()).toBeUndefined()
 })
 

@@ -383,7 +383,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ref: usage,
             id: 'session-usage',
             'aria-label': dependencies.translate('composer.usage.label'),
-            hidden: !view.usage || view.usage.context.tokens / view.usage.context.window < 0.6,
+            hidden:
+              !view.usage ||
+              !(
+                view.usage.context.window > 0 && view.usage.context.tokens / view.usage.context.window >= 0.6
+              ),
           },
           dependencies.UsagePanel
             ? createElement(dependencies.UsagePanel, {

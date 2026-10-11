@@ -1,9 +1,9 @@
 import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
+import { goalSlot } from '../goal-card.js'
 import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
+import { panelContext } from './context.js'
 import { FactChainPanel } from './fact-chain-panel.js'
 import { FilesPanel } from './files-panel.js'
-import { goalSlot } from '../goal-card.js'
-import { panelContext } from './context.js'
 import { GoalPanel } from './goal-panel.js'
 import { TerminalPanel } from './terminal-panel.js'
 

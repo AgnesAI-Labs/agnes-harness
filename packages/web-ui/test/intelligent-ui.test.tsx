@@ -5,8 +5,8 @@ import type { UiSourceStatus, UiSurface } from '@agnes/protocol/gen/intelligent-
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { SurfaceRenderBoundary } from '../src/intelligent-ui/render-boundary.js'
 import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
+import { SurfaceRenderBoundary } from '../src/intelligent-ui/render-boundary.js'
 import { type UiLocale, UiLocaleProvider, type UiLocaleSource } from '../src/ui-locale.js'
 
 const surface: UiSurface = {

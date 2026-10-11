@@ -76,7 +76,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
 }, info) => {
   test.setTimeout(120_000)
   await open(page, runtime)
-  await expect(page.getByTestId('composer-agent')).toContainText('More')
+  await expect(page.getByTestId('composer-agent')).toBeHidden()
   await turn(page, 'call read {"path":"report.md"}')
   const demo = await current(page, runtime)
   expect(JSON.stringify(await toolResult(demo, 'read'))).toContain('Synthetic delivery')

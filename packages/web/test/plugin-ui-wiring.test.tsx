@@ -44,6 +44,11 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
     })
     expect(host.textContent).toContain('workflow')
     expect(host.querySelector('[role="combobox"]')).toBeNull()
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.hidden).toBe(true)
+    await act(async () =>
+      updateLoopPicker({ ...view, bundles: [{ id: 'workflow#delivery', sourcePackage: 'workflow' }] }),
+    )
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.hidden).toBe(false)
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
     expect(document.querySelector('[data-testid="new-session-loop-readonly"]')?.textContent).toContain(
       'workflow',

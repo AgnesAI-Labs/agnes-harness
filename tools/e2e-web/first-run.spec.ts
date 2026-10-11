@@ -35,7 +35,7 @@ for (const locale of ['en', 'zh-CN']) {
         await snapshots.capture(page, name)
       }
       await expect(guide).toHaveAttribute('data-step', 'welcome')
-      await expect(page.getByTestId('composer-agent')).toBeEnabled()
+      await expect(page.getByTestId('composer-agent')).toBeHidden()
       await expect(page.locator('.workspace-heading .workspace-name').first()).not.toBeEmpty()
       const modal = page.getByRole('dialog', { name: en ? 'Welcome to AGH' : '欢迎使用 AGH', exact: true })
       await expect(modal).toHaveAttribute('aria-modal', 'true')
@@ -181,7 +181,7 @@ for (const locale of ['en', 'zh-CN']) {
           const guide = page.getByTestId('first-run-guide')
           await show('setup-welcome')
           await expect(guide).toHaveAttribute('data-step', 'welcome')
-          await expect(page.getByTestId('composer-agent')).toBeEnabled()
+          await expect(page.getByTestId('composer-agent')).toBeHidden()
           await expect(page.locator('.workspace-heading .workspace-name').first()).not.toBeEmpty()
           const modal = page.getByRole('dialog', {
             name: en ? 'Welcome to AGH' : '欢迎使用 AGH',

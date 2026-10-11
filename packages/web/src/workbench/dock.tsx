@@ -251,7 +251,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       setCopyMessage(t('workbench.copyFailed'))
     }
   }
-  return (
+  const controlsView = (
     <div ref={controls} className="workbench-controls">
       <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
         {copyMessage}
@@ -260,7 +260,12 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         workspaceHost &&
         createPortal(
           <Tooltip title={t('workbench.workspace')}>
-            <Button appearance="ghost" className="topbar-workspace" onClick={() => void copyWorkspace()}>
+            <Button
+              appearance="ghost"
+              size="small"
+              className="topbar-workspace"
+              onClick={() => void copyWorkspace()}
+            >
               <Icon name="folder" />
               {workspace.name}
             </Button>
@@ -468,6 +473,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       })}
     </div>
   )
+  return workspaceHost ? createPortal(controlsView, workspaceHost) : controlsView
 }
 export function renderWorkbench(host: HTMLElement, context: UiExtensionContext): void {
   renderRegion(host, <Dock context={context} />)

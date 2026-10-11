@@ -26,9 +26,11 @@ main {
   gap: 0.625rem;
 }
 .task-heading h1 {
-  max-width: 220px;
+  max-width: 36rem;
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
-  padding: 0.25rem 0.5rem;
+  padding: 0;
   color: var(--agnes-text-primary);
   font-size: 0.875rem;
   font-weight: 500;
@@ -174,7 +176,7 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
 .topbar .connection-group {
   display: none;
 }
-.topbar-workspace {
+.topbar .topbar-workspace {
   margin-left: auto;
   color: var(--agnes-text-secondary);
   max-width: 15rem;
@@ -199,10 +201,31 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
 }
 
 #task-title {
+  display: block;
+  text-align: left;
   font: inherit;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.topbar :where([data-slot], [data-slot-entry]) {
+  display: contents;
+}
+#status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s4);
+}
+#status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+#status[data-state="approval"] {
+  color: var(--agnes-status-warning-text);
 }
 #status:not([data-state="running"]):not([data-state="error"]):not([data-state="failed"]):not(
   [data-state="approval"]

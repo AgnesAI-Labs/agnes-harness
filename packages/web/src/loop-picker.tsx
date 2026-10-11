@@ -125,25 +125,35 @@ export function LoopPicker() {
     return value === key ? fallback(key) : value
   }
   const state = useSyncExternalStore(subscribe, () => view)
+  const selected = state.selected ? loopIdentity(state.selected) : ''
+  const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
+  const advancedAvailable =
+    state.loops.length >= 2 ||
+    stale ||
+    !!state.error ||
+    !!state.bundles?.length ||
+    !!state.presets?.some((entry) => !['read-only', 'workspace-write', 'full-access'].includes(entry.id))
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (!state.visible || state.disabled) setOpen(false)
-  }, [state.visible, state.disabled])
+    if (!state.visible || state.disabled || !advancedAvailable) setOpen(false)
+  }, [state.visible, state.disabled, advancedAvailable])
   useEffect(() => {
     if (!open) return
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Let an open Select consume its first Escape; a closed Select must not trap it.
+        if (document.querySelector('.agent-picker-panel [role="combobox"][aria-expanded="true"]')) return
+        event.preventDefault()
+        event.stopPropagation()
         setOpen(false)
         trigger.current?.focus()
       }
     }
-    document.addEventListener('keydown', onEscape)
-    return () => document.removeEventListener('keydown', onEscape)
+    document.addEventListener('keydown', onEscape, true)
+    return () => document.removeEventListener('keydown', onEscape, true)
   }, [open])
   if (!state.visible) return null
-  const selected = state.selected ? loopIdentity(state.selected) : ''
-  const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
   const resolved = state.resolvedLoop ?? state.loops[0]
   const inheritedLoop =
     state.loops.find((entry) => resolved && loopIdentity(entry) === loopIdentity(resolved)) ?? resolved
@@ -273,6 +283,7 @@ export function LoopPicker() {
         type="text"
         className="composer-agent"
         data-testid="composer-agent"
+        hidden={!advancedAvailable}
         disabled={state.disabled}
         aria-expanded={open}
         aria-label={tr('composer.agent.title')}

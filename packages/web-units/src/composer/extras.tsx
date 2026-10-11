@@ -24,7 +24,7 @@ export function ComposerExtras({ children, label }: { children?: ReactNode; labe
       attributeFilter: ['hidden'],
     })
     return () => observer.disconnect()
-  }, [children])
+  }, [])
   return (
     <div ref={host} className="composer-extras" data-overflow={overflow}>
       <SettingsDetails
