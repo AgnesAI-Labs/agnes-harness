@@ -287,7 +287,8 @@ export function createPermissionPicker(options: {
     render(next) {
       state = next
       setTrigger()
-      if (popover) renderOptions()
+      // The composer calls this during its layout effect; render the separate root after it commits.
+      if (popover) queueMicrotask(renderOptions)
     },
   }
 }

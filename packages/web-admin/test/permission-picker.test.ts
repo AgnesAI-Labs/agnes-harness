@@ -52,6 +52,13 @@ it('opens the list and reports the chosen mode', async () => {
     (row) => row.querySelector('.permission-picker-label')?.textContent === '可修改工作区',
   )
   expect(workspace?.textContent).toContain('越界需切换完全权限或选择目录')
+  picker.render({ disabled: false, pending: true, selected: 'workspace' })
+  await vi.waitFor(() => expect(listbox.getAttribute('aria-busy')).toBe('true'))
+  expect(full?.getAttribute('aria-disabled')).toBe('true')
+  full?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(onSelect).not.toHaveBeenCalled()
+  picker.render({ disabled: false, pending: false, selected: 'workspace' })
+  await vi.waitFor(() => expect(listbox.getAttribute('aria-busy')).toBe('false'))
   full?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith('full'))
   picker.destroy()
