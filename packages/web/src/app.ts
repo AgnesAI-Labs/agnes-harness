@@ -92,6 +92,7 @@ import {
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
+import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
@@ -1128,6 +1129,7 @@ const settingsText = (key: string): string =>
 let newSessionCatalog: NewSessionCatalog | undefined
 let loopCatalogError = false
 let loopCatalogPending = false
+let sessionCatalogGeneration = 0
 function selectedDraftPreset(): string | undefined {
   return effectiveSessionPreset(draftPreset, newSessionCatalog?.defaults, runtimeCatalog)
 }
@@ -1135,23 +1137,30 @@ function syncDraftPermission(): void {
   permissionMode = permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) ?? permissionMode
 }
 async function refreshSessionCatalog(): Promise<void> {
+  const generation = ++sessionCatalogGeneration
   loopCatalogPending = !newSessionCatalog
   renderControls()
   try {
-    newSessionCatalog = await loadNewSessionCatalog()
+    const catalog = await loadNewSessionCatalog()
+    let runtime: typeof runtimeCatalog
     try {
-      runtimeCatalog = await loadRuntimeCatalog()
+      runtime = await loadRuntimeCatalog()
     } catch {
-      runtimeCatalog = undefined
+      runtime = undefined
     }
+    if (generation !== sessionCatalogGeneration) return
+    newSessionCatalog = catalog
+    runtimeCatalog = runtime
     loopCatalogError = false
     if (draftingNew && !draftLoopEdited) draftLoop = newSessionCatalog.defaults.loop
     if (draftingNew) syncDraftPermission()
   } catch {
-    loopCatalogError = true
+    if (generation === sessionCatalogGeneration) loopCatalogError = true
   } finally {
-    loopCatalogPending = false
-    renderControls()
+    if (generation === sessionCatalogGeneration) {
+      loopCatalogPending = false
+      renderControls()
+    }
   }
 }
 function draftLoopAvailable(): boolean {
@@ -1958,7 +1967,8 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   accountLabels = new Map(
     (saved.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
   )
-  const savedModels = await refreshModels()
+  await modelRefresh.request()
+  const savedModels = runtimeModels
   const published = savedModels.some(
     (entry) =>
       entry.route === (saved.provider?.route ?? saved.provider?.id) && entry.id === saved.provider?.model,
@@ -2310,7 +2320,7 @@ client.on('reconnected', () => {
   setConnection('connected')
   run(async () => {
     // The live projection reopens the session on its own once the connection is back.
-    await refreshModelConfiguration()
+    await modelRefresh.request()
     await list()
     scheduleClientRosterRead()
   })
@@ -2355,7 +2365,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     reconnect.resume()
     void list().catch(showError)
-    void refreshModelConfiguration().catch(showError)
+    void modelRefresh.request().catch(showError)
     scheduleClientRosterRead()
   }
 })
@@ -2390,23 +2400,25 @@ async function refreshModelConfiguration(): Promise<void> {
   await refreshSessionCatalog()
   await refreshModels()
 }
-let modelRefreshPending = false
-const modelRefreshTimer = setInterval(() => {
-  if (!connected || document.visibilityState !== 'visible' || modelRefreshPending) return
-  modelRefreshPending = true
-  void refreshModelConfiguration()
-    .catch(() => undefined)
-    .finally(() => {
-      modelRefreshPending = false
-    })
-}, 2000)
+// Embedders may set data-model-refresh-interval-ms on <html>; invalid values use the default.
+const refreshInterval = Number(document.documentElement.dataset.modelRefreshIntervalMs)
+const modelRefresh = createRefreshCoordinator({
+  refresh: refreshModelConfiguration,
+  canPoll: () => connected && document.visibilityState === 'visible',
+  ...(Number.isSafeInteger(refreshInterval) && refreshInterval >= 1_000 && refreshInterval <= 2_147_483_647
+    ? { intervalMs: refreshInterval }
+    : {}),
+})
+const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
+window.addEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
 window.addEventListener('pagehide', () => {
   unbindDialogSheets()
   unmountIntelligentUi()
   firstRun.dispose()
   const dockHost = dockControlsHost
   if (dockHost) unmountWorkbench(dockHost)
-  clearInterval(modelRefreshTimer)
+  modelRefresh.stop()
+  window.removeEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
   intentionalClose = true
   reconnect.cancel()
   titleRefresh.close()

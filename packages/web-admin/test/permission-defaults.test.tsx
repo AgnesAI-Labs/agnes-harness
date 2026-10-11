@@ -19,6 +19,8 @@ it.each([false, true])(
       },
     }
     const writes: unknown[] = []
+    const notified = vi.fn()
+    window.addEventListener('agnes:session-configuration-changed', notified)
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       if (String(url).endsWith('/context'))
         return Response.json({
@@ -56,6 +58,7 @@ it.each([false, true])(
       await act(async () => pick('read-only').click())
       if (readOnly) {
         expect(writes).toEqual([])
+        expect(notified).not.toHaveBeenCalled()
         return
       }
       expect(writes).toEqual([{ revision: 4, defaults: { ...snapshot.defaults, preset: 'read-only' } }])
@@ -75,7 +78,9 @@ it.each([false, true])(
         },
       })
       expect(pick('full-access').checked).toBe(true)
+      expect(notified).toHaveBeenCalledTimes(2)
     } finally {
+      window.removeEventListener('agnes:session-configuration-changed', notified)
       await act(async () => root.unmount())
     }
   },

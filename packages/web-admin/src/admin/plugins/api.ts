@@ -256,6 +256,7 @@ export class PluginAdminApi {
     if (!isSessionDefaultsSnapshot(input)) throw invalidSelection()
     const body = await this.#selection('defaults', input)
     if (!isSessionDefaultsSnapshot(body)) throw invalidSelection()
+    globalThis.window?.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
     return body
   }
 
@@ -269,6 +270,7 @@ export class PluginAdminApi {
     const body = await this.#selection('bundles', input)
     if (!body || typeof body !== 'object' || !('effect' in body) || body.effect !== 'restart-required')
       throw invalidSelection()
+    globalThis.window?.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
   }
 
   async composition(preset?: string): Promise<import('@agnes/protocol').CompositionCapabilitySnapshot> {

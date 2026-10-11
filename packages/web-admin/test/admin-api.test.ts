@@ -462,3 +462,32 @@ it('reads publication reports and migrates a session through the scoped BFF cont
   })
   await expect(api.publicationStatus()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
 })
+
+it('notifies the workbench only after validated default and bundle saves', async () => {
+  const events = new EventTarget()
+  const notified = vi.fn()
+  events.addEventListener('agnes:session-configuration-changed', notified)
+  vi.stubGlobal('window', events)
+  const defaults = { revision: 1, defaults: {} }
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(defaults))
+    .mockResolvedValueOnce(Response.json({ effect: 'restart-required' }))
+    .mockResolvedValueOnce(Response.json({ invalid: true }))
+    .mockResolvedValueOnce(Response.json({ effect: 'invalid' }))
+  const api = new PluginAdminApi(context, fetcher)
+  try {
+    await api.saveDefaults(defaults)
+    await api.saveBundles({ revision: 1, bundles: ['synthetic#bundle'] })
+    expect(notified).toHaveBeenCalledTimes(2)
+    await expect(api.saveDefaults(defaults)).rejects.toMatchObject({
+      details: { code: 'ADMIN_RESPONSE_INVALID' },
+    })
+    await expect(api.saveBundles({ revision: 1, bundles: [] })).rejects.toMatchObject({
+      details: { code: 'ADMIN_RESPONSE_INVALID' },
+    })
+    expect(notified).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

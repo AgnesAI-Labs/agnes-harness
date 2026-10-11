@@ -75,6 +75,7 @@ export function PermissionDefaults({
       const value: unknown = await response.json()
       if (!response.ok || !isSessionDefaultsSnapshot(value)) throw new Error('save failed')
       if (lifetime.current?.signal.aborted) return
+      window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
       setSnapshot(value as Snapshot)
       setConfirm(false)
       setSaved(true)

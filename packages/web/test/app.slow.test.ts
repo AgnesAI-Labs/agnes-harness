@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
@@ -1102,8 +1102,65 @@ describe('web session selection', () => {
     control('model').click()
   }, 20_000)
 
-  it.each(['save-first', 'poll-first', 'poll-fails'])(
-    'keeps saved model status accurate when %s',
+  it('refreshes saved catalogs and rejects a late catalog after the user starts a draft', async () => {
+    installPublicFixture()
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const apis = vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis,
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })), load: vi.fn(async () => old) },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    await vi.waitFor(() =>
+      expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+    )
+    const stale = deferred<Response>()
+    let loopReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) => {
+        if (url === '/admin/api/loops') {
+          if (++loopReads === 1) return stale.promise
+          return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
+        }
+        if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+        if (url === '/admin/api/composition') return Response.json({})
+        if (url === '/admin/api/runtime')
+          return Response.json({
+            providers: [],
+            bundles: [],
+            presets: [
+              { id: 'full-access', isDefault: true },
+              { id: 'read-only', isDefault: false },
+            ],
+            localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+          })
+        if (url === '/admin/api/bundles') return Response.json({ catalog: [] })
+        return Response.json({ available: false })
+      }),
+    )
+    window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
+    await vi.waitFor(() => expect(loopReads).toBe(1))
+    document.getElementById('new')?.click()
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
+    )
+    stale.resolve(Response.json({ revision: 1, defaults: { preset: 'read-only' }, loops: [] }))
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+    expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
+  })
+
+  it.each(['idle-save', 'poll-save', 'failed-poll-save'])(
+    'keeps saved model status accurate after coordinated %s',
     async (order) => {
       installPublicFixture()
       const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
@@ -1127,9 +1184,13 @@ describe('web session selection', () => {
       await import('../src/app.js')
       const modelButton = document.getElementById('model') as HTMLButtonElement
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
-      const saveRead = deferred<Awaited<ReturnType<typeof apis>>>()
-      const pollRead = deferred<Awaited<ReturnType<typeof apis>>>()
-      apis.mockImplementationOnce(() => saveRead.promise).mockImplementationOnce(() => pollRead.promise)
+      const beforeSave = deferred<Awaited<ReturnType<typeof apis>>>()
+      const afterSave = deferred<Awaited<ReturnType<typeof apis>>>()
+      apis.mockImplementationOnce(() => beforeSave.promise).mockImplementationOnce(() => afterSave.promise)
+      if (order !== 'idle-save') {
+        document.dispatchEvent(new Event('visibilitychange'))
+        await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
+      }
       const save = configurationCallback.saved
       if (!save) throw new Error('settings callback not bound')
       const saved = save({
@@ -1137,24 +1198,20 @@ describe('web session selection', () => {
         effect: 'new-sessions',
         provider: { id: 'new', route: 'new', model: 'model-b' },
       } as ConfigSnapshot)
-      document.dispatchEvent(new Event('visibilitychange'))
-      await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
+      await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
       const result = { profile: { models: [{ route: 'new', id: 'model-b' }] } }
-      const newer = { profile: { models: [...result.profile.models, { route: 'newer', id: 'model-c' }] } }
-      if (order === 'poll-first') {
-        pollRead.resolve(newer)
-        await Promise.resolve()
+      if (order === 'failed-poll-save') beforeSave.reject(new Error('poll unavailable'))
+      else beforeSave.resolve(order === 'idle-save' ? result : { profile: { models: [] } })
+      if (order !== 'idle-save') {
+        await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
+        afterSave.resolve(result)
       }
-      saveRead.resolve(result)
       await saved
       expect(document.getElementById('notice')?.textContent).toContain('模型配置已更新')
-      if (order === 'poll-fails') pollRead.reject(new Error('poll unavailable'))
-      else pollRead.resolve(result)
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
       openModelList()
       expect(modelMenu().textContent).toContain('model-b')
-      if (order === 'poll-first') expect(modelMenu().textContent).toContain('model-c')
     },
   )
 
@@ -2924,3 +2981,122 @@ it('renders Computer Use in the application and retires its late operation reply
   expect(call.mock.calls).toHaveLength(requests)
   expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
 })
+
+// Opt-in synthetic sampling of the actual app entry; report files live outside the repository.
+it.skipIf(!process.env.AGH_WEB_PERFORMANCE_OUTPUT).each([1, 2, 3])(
+  'records visible idle requests and first-screen latency (sample %s)',
+  async (sample) => {
+    installPublicFixture()
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const times: Record<string, number> = {}
+    let requests = 0
+    const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms))
+    const counted = async <T>(value: T) => {
+      requests++
+      return value
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) => {
+        const path = String(url)
+        if (path === '/admin/api/loops')
+          return Response.json(
+            await counted({
+              revision: 1,
+              defaults: {},
+              loops: [],
+            }),
+          )
+        if (path === '/admin/api/model-adapters') return Response.json(await counted({ modelAdapters: [] }))
+        if (path === '/admin/api/composition') return Response.json(await counted({}))
+        if (path === '/admin/api/runtime')
+          return Response.json(
+            await counted({
+              providers: [],
+              presets: [{ id: 'workspace-write', isDefault: true }],
+              bundles: [],
+              localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+            }),
+          )
+        if (path === '/admin/api/bundles') return Response.json(await counted({ catalog: [] }))
+        return Response.json({ available: false })
+      }),
+    )
+    const client = {
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      config: {
+        get: vi.fn(async () => {
+          requests++
+          times.config ??= performance.now()
+          return { configured: true }
+        }),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      apis: vi.fn(async () => {
+        requests++
+        times.modelsStart ??= performance.now()
+        if (times.modelsEnd === undefined) await delay(250)
+        times.modelsEnd ??= performance.now()
+        return { profile: { models: [{ route: 'local', id: 'model-a' }] } }
+      }),
+      workspace: {
+        list: vi.fn(async () => {
+          times.workspacesStart ??= performance.now()
+          await delay(40)
+          times.workspacesEnd ??= performance.now()
+          return { items: [] }
+        }),
+      },
+      session: {
+        list: vi.fn(async () => {
+          times.sessionsStart ??= performance.now()
+          await delay(20)
+          times.sessionsEnd ??= performance.now()
+          return { items: [{ sessionId: 'old' }] }
+        }),
+        load: vi.fn(),
+      },
+    }
+    sdk.createClient.mockReturnValue(client)
+    const old = session('old', async () => idleTimeline('old'))
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    try {
+      await import('../src/app.js')
+      await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
+      const idleStart = requests
+      await vi.advanceTimersByTimeAsync(60_000)
+      // These synthetic reads have real bounded waits; finish the last tick before counting.
+      await delay(300)
+      const visibleRequests = requests - idleStart
+      const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      const hiddenStart = requests
+      await vi.advanceTimersByTimeAsync(60_000)
+      await delay(300)
+      const hiddenRequests = requests - hiddenStart
+      hidden.mockRestore()
+      expect(hiddenRequests).toBe(0)
+      const config = times.config ?? 0
+      await writeFile(
+        `${process.env.AGH_WEB_PERFORMANCE_OUTPUT}.${sample}.json`,
+        JSON.stringify(
+          {
+            sample,
+            modelDelayMs: 250,
+            workspaceDelayMs: 40,
+            sessionDelayMs: 20,
+            visibleRequestsPerMinute: visibleRequests,
+            hiddenRequestsPerMinute: hiddenRequests,
+            firstSessionListMs: (times.sessionsEnd ?? 0) - config,
+            requests: Object.fromEntries(Object.entries(times).map(([key, time]) => [key, time - config])),
+          },
+          null,
+          2,
+        ),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
