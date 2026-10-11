@@ -9,10 +9,6 @@
     "packages/web-admin/src/oauth-controls.ts": {
       "internal-button-class:secondary-button": 1
     },
-    "packages/web-units/src/composer.ts": {
-      "internal-button-class:secondary-button": 2,
-      "internal-button-class:primary-button": 1
-    },
     "packages/web-units/src/diagnostics-viewer.ts": {
       "hex-color:#fff": 2,
       "hex-color:#1a1a1a": 1,
@@ -29,9 +25,6 @@
       "internal-button-class:icon-button": 2,
       "internal-button-class:primary-button": 1,
       "internal-button-class:secondary-button": 1
-    },
-    "packages/web-units/src/topbar.ts": {
-      "internal-button-class:icon-button": 1
     },
     "packages/web/public/admin.html": {
       "internal-button-class:secondary-button": 5,
