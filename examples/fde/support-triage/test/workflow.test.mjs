@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { driveLoop } from '@agnes/host/author-testkit'
 import { test } from 'vitest'
 import { factory, main } from '../index.mjs'
@@ -20,6 +21,14 @@ test('support-triage completes through the public loop and tool ports', async ()
   assert.equal(data.classification.priority, 'urgent')
   assert.equal(data.receipt.status, 'simulated-sent')
   assert.equal(data.receipt.draft, data.draft)
+  const draft = run.requests.find((request) => request.system.includes('Draft a concise support reply.'))
+  assert.ok(draft, 'the draft stage reaches the scripted model')
+  assert.deepEqual(draft.tools, [])
+  assert.ok(draft.system.includes('Return only the reply.'))
+  const playbook = readFileSync(new URL('../skills/playbook/SKILL.md', import.meta.url), 'utf8')
+  assert.ok(!draft.system.includes(playbook), 'the draft must not inherit tool-workflow obligations')
+  assert.ok(!draft.system.includes('discover tools'))
+  assert.ok(!draft.system.includes('tool_describe'))
 })
 test('refusal and cancellation preserve workflow boundaries', async () => {
   const stop = new AbortController()

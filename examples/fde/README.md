@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md) · [Why AGH](../../docs/guide/why-agh.
 
 A forward-deployed engineer ships a workflow, connectors, a reviewed policy and a playbook together. Each directory below is an independent installable **bundle**, using only public contracts and the author kit. The examples use synthetic data and local simulators, so a team can explore the delivery workflow without credentials.
 
+Each `modelText` request is a tools-free prose stage with its own narrow instruction. The workflow playbook remains a registered Skill for the surrounding Loop; it is not injected into draft or commentary requests. Keep customer drafts focused on the supplied facts and customer-facing reply.
+
 | Bundle | Business result | Control point |
 | --- | --- | --- |
 | [Support triage](support-triage/README.md) | Ticket lookup → classification → draft → human approval → simulated send receipt. | Human approval before action |

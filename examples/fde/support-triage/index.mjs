@@ -56,7 +56,7 @@ const stages = [
     async run(ctx, state, signal) {
       const suggestion = await modelText(
         ctx,
-        'Draft a concise support reply. State the escalation, do not promise refunds or invent a fix. Return only the reply.',
+        'Draft a concise support reply. State the escalation, do not promise refunds or invent a fix. Return only the reply. Use only the provided ticket and classification facts.',
         state.data,
         signal,
       )

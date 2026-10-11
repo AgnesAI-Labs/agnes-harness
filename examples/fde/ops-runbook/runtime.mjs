@@ -106,7 +106,7 @@ export function tool(name, description, parameters, execute, meta = readMeta) {
 export async function modelText(ctx, system, data, signal) {
   const request = await ctx.prepareRequest({
     slot: 'primary',
-    system: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8') + '\n\n' + system,
+    system,
     tools: [],
     messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(data) }] }],
   })
