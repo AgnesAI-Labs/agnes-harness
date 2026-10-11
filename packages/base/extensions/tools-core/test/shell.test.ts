@@ -2,7 +2,7 @@ import { checkToolDef, type JobInfo, type JobOutput, type ToolContext } from '@a
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
-import { SHELL_SENTINEL, shellTool } from '../src/tools/shell.js'
+import { MAX_TIMED_OUT_ENTRIES, SHELL_SENTINEL, shellTool } from '../src/tools/shell.js'
 
 const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
@@ -241,8 +241,8 @@ describe('shell foreground time', () => {
 // exit line, because the exit code of a killed command says nothing and the UI reads `[exit N]` last.
 describe('shell timeout', () => {
   afterEach(() => vi.restoreAllMocks())
-  const marker = (ms: number): string =>
-    `[timed out after ${ms}ms: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`
+  const marker = (ms: number, printed = true): string =>
+    `[timed out after ${ms}ms: the command and the processes in its process group were killed; ${printed ? 'the output above is what was captured' : 'it printed nothing, so this result does not show where it was or why it was slow'}, and the command may have taken partial effect. Check the current state before retrying. Do not rerun it unchanged: make it print its progress, split it into shorter steps, or ask for a longer timeoutMs (capped by the deployment).]`
 
   it.each([
     ['the captured output, then the marker', { code: -1, stdout: 'part', stderr: '' }, 'part\n'],
@@ -258,11 +258,15 @@ describe('shell timeout', () => {
       { code: -1, stdout: 'x', stderr: '', truncated: true },
       'x\n[output truncated by sandbox]\n',
     ],
-  ])('reports %s', async (_name, result, before) => {
-    const ctx = fakeToolContext({ timeoutMs: 1000, exec: () => ({ ...result, timedOut: true }) })
+  ])('reports %s', async (name, result, before) => {
+    const ctx = fakeToolContext({
+      sessionKey: `timeout-${name}`,
+      timeoutMs: 1000,
+      exec: () => ({ ...result, timedOut: true }),
+    })
     const r = await shellTool.execute({ command: 'sleep 9' }, ctx)
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe(`${before}${marker(1000)}`)
+    expect(textOf(r)).toBe(`${before}${marker(1000, before !== '')}`)
     expect(textOf(r)).not.toMatch(/\[exit /)
     expect(textOf(r)).not.toContain('background=true')
   })
@@ -452,5 +456,133 @@ describe('shell says what was stopped when the command returned', () => {
       }),
     })
     expect(textOf(await shellTool.execute({ command: 'true' }, ctx))).toBe('ok\n[exit 0]')
+  })
+})
+
+// A timeout says what to do instead of running the same thing again, and a second timeout of the
+// same command in the same place says it is the second. A model re-ran a five-minute command that
+// had printed nothing, unchanged, twice, and between the runs named a cause it had no output for.
+describe('shell after a timeout', () => {
+  let sessions = 0
+  const timingOut = (opts: Parameters<typeof fakeToolContext>[0] = {}) =>
+    fakeToolContext({
+      sessionKey: `after-timeout-${sessions++}`,
+      timeoutMs: 1000,
+      exec: () => ({ code: -1, stdout: '', stderr: '', timedOut: true }),
+      ...opts,
+    })
+  const run = async (ctx: ReturnType<typeof fakeToolContext>, command: string, cwd?: string) =>
+    textOf(await shellTool.execute({ command, ...(cwd ? { cwd } : {}) }, ctx))
+  const AGAIN = /\[this exact command has now timed out \d+ times in this session\.\]/
+
+  it('offers a background job as a way out only where the session keeps jobs', async () => {
+    const without = await run(timingOut(), 'slow')
+    expect(without).toContain(
+      'Do not rerun it unchanged: make it print its progress, split it into shorter steps, or ask',
+    )
+    expect(without).not.toContain('background')
+    const { jobs } = scriptedJobs()
+    expect(await run(timingOut({ jobs }), 'slow')).toContain(
+      'split it into shorter steps, run it with background: true and read its output with the job tool, or ask for a longer timeoutMs',
+    )
+  })
+
+  it('counts the timeouts of the same command in the same directory, and says so from the second', async () => {
+    const ctx = timingOut()
+    expect(await run(ctx, 'python check.py')).not.toMatch(AGAIN)
+    expect(await run(ctx, 'python other.py')).not.toMatch(AGAIN)
+    expect(await run(ctx, 'python check.py', 'elsewhere')).not.toMatch(AGAIN)
+    const second = await run(ctx, 'python check.py')
+    expect(second).toMatch(
+      /^\[this exact command has now timed out 2 times in this session\.\]\n\[timed out after/,
+    )
+    expect(await run(ctx, 'python check.py')).toMatch(/timed out 3 times/)
+  })
+
+  it('keeps each session to its own count', async () => {
+    const first = timingOut()
+    await run(first, 'python check.py')
+    expect(await run(timingOut(), 'python check.py')).not.toMatch(AGAIN)
+    expect(await run(first, 'python check.py')).toMatch(AGAIN)
+  })
+
+  it('starts again after the same command finishes in time', async () => {
+    let timedOut = true
+    const ctx = timingOut({ exec: () => ({ code: timedOut ? -1 : 0, stdout: '', stderr: '', timedOut }) })
+    await run(ctx, 'make test')
+    timedOut = false
+    expect(await run(ctx, 'make test')).toBe('[exit 0]')
+    timedOut = true
+    expect(await run(ctx, 'make test')).not.toMatch(AGAIN)
+  })
+
+  it('forgets the oldest command first once the table is full', async () => {
+    const ctx = timingOut()
+    await run(ctx, 'first')
+    for (let i = 0; i < MAX_TIMED_OUT_ENTRIES; i++) await run(ctx, `other ${i}`)
+    expect(await run(ctx, 'first')).not.toMatch(AGAIN)
+    expect(await run(ctx, `other ${MAX_TIMED_OUT_ENTRIES - 1}`)).toMatch(AGAIN)
+  })
+})
+
+// Under PowerShell, a model wrapped a third of its commands in `powershell -Command "..."`; wherever
+// the string held a `$`, the outer shell expanded it first and the inner one failed to parse what
+// was left. The wrapper is recognised at the start of the line, and only under PowerShell.
+describe('shell under PowerShell', () => {
+  const NOTE =
+    '[this command already runs in PowerShell: a powershell or pwsh -Command wrapper makes the outer shell expand $ variables and quotes in its string before the inner one runs. Write the command directly.]'
+  const inShell = (shell: 'posix' | 'powershell', opts: Parameters<typeof fakeToolContext>[0] = {}) => {
+    const ctx = fakeToolContext(opts)
+    return Object.assign(ctx, { platform: { ...ctx.platform, shell } })
+  }
+
+  it.each([
+    'powershell -Command "try { $r = Invoke-WebRequest $u } catch { $_ }"',
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-Date"',
+    "pwsh -c 'Get-Date'",
+    '& "C:\\Program Files\\PowerShell\\7\\pwsh.exe" -command Get-Date',
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -Com Get-Date',
+    '  PowerShell -Command @"\nGet-Date\n"@',
+  ])('says the wrapper is not needed, before the exit line: %s', async (command) => {
+    const ctx = inShell('powershell', { exec: () => ({ code: 1, stdout: '', stderr: 'ParserError' }) })
+    expect(textOf(await shellTool.execute({ command }, ctx))).toBe(`[stderr]\nParserError\n${NOTE}\n[exit 1]`)
+  })
+
+  it.each([
+    'Get-Date',
+    'Write-Output "powershell -Command x"',
+    'powershell -File build.ps1 -c 1',
+    'pwsh script.ps1 -c',
+    'powershell -NoProfile "Get-Date"',
+    'powershell -EncodedCommand AAAA',
+    'powershellx -c x',
+    'python -c "print(1)"',
+    'cmd /c run.bat',
+  ])('says nothing about a command that does not wrap itself: %s', async (command) => {
+    const ctx = inShell('powershell')
+    expect(textOf(await shellTool.execute({ command }, ctx))).toBe('[exit 0]')
+  })
+
+  it('says nothing where the shell is not PowerShell, where calling pwsh is how to reach it', async () => {
+    expect(textOf(await shellTool.execute({ command: "pwsh -c 'Get-Date'" }, inShell('posix')))).toBe(
+      '[exit 0]',
+    )
+  })
+
+  it('says it before a timeout marker, which stays last', async () => {
+    const ctx = inShell('powershell', {
+      sessionKey: 'powershell-timeout',
+      timeoutMs: 1000,
+      exec: () => ({ code: -1, stdout: '', stderr: '', timedOut: true }),
+    })
+    const text = textOf(await shellTool.execute({ command: 'powershell -Command "Start-Sleep 9"' }, ctx))
+    expect(text.startsWith(`${NOTE}\n[timed out after 1000ms:`)).toBe(true)
+  })
+
+  it('says it when the wrapped command starts as a background job', async () => {
+    const { jobs } = scriptedJobs({ outputs: [{ text: 'ok\n', status: 'exited', code: 0 }] })
+    const ctx = inShell('powershell', { jobs })
+    const text = textOf(await shellTool.execute({ command: 'pwsh -c serve', background: true }, ctx))
+    expect(text).toContain(`ok\n${NOTE}\n[job-1 exited 0]`)
   })
 })

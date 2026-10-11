@@ -68,6 +68,7 @@ describe('prompt section order table', () => {
     'channel-style.md': 'channel-style',
     'code-doctrine.md': 'code-doctrine',
     'coding-doctrine.md': 'coding-doctrine',
+    'environment-powershell.md': 'environment',
     'environment.md': 'environment',
     'persona.md': 'persona',
   }
@@ -132,6 +133,8 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.',
     '- Build large generated files, including HTML and SVG, across multiple tool calls. Write a small valid scaffold with unique section markers first, then replace one marker per edit call with a complete section. Aim for at most 8 KiB of new content per call, and retain a unique marker for each remaining section. Never attempt the entire large file in one tool call.',
     "- Run the project's own test or build command to check your work. If none exists, say so instead of inventing one.",
+    '- Name a cause only when output in this session shows it. Without that output, say the cause is unconfirmed and run a step that would show it.',
+    "- Never print a secret's value (an API key, token or password); to check one, test only whether it is set.",
     '- Keep output short. Report what changed, what you verified, and what is still open.',
     '- Leave the workspace consistent: no half-applied edits, no stray files.',
   ].join('\n'),
@@ -143,6 +146,14 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Transcript: this session is an append-only event ledger the harness keeps under the session key stated in the most recent message beginning "[runtime context]". Your requests, your answers, every tool call and every tool result are rows in it. Nothing outside that ledger carries over between sessions.',
     '',
     'The UTC date, session key, answering model, preset, tool-disclosure mode, working directory, and operating-system sandbox level in force are stated in the most recent message beginning "[runtime context]", not here: those seven facts can change between requests or sessions, and restating them here would rewrite this section every time one does.',
+  ].join('\n'),
+  'environment-powershell': [
+    'Shell commands already run inside PowerShell, so for them:',
+    '',
+    '- Write commands and `$` variables directly. Never wrap a command in `powershell -Command` or `pwsh -Command`: the outer shell expands `$` and quotes in that string before the inner one runs.',
+    '- `curl` and `wget` may be aliases of Invoke-WebRequest. Call `curl.exe`, or Invoke-WebRequest with its own parameters.',
+    "- No bash syntax: no heredoc, `export`, or, in Windows PowerShell 5.1, `&&` and `||`. Pipe a here-string into the program instead (`@'` ends its line and `'@` starts one; for example into `python -`), set `$env:NAME = 'value'`, and separate commands with `;`.",
+    '- Pass `-Encoding utf8` every time you read or write a file with Get-Content, Set-Content, Add-Content or Out-File.',
   ].join('\n'),
   persona: [
     'You are Agnes, a general-purpose AI agent powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
@@ -165,7 +176,7 @@ const PROMPT_TEXT: Record<string, string> = {
 
 describe('prompt text', () => {
   it('ships exactly the bytes recorded for every prompt, and records every prompt it ships', () => {
-    expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')))
+    expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')).sort())
     for (const [id, text] of Object.entries(PROMPT_TEXT)) expect(loadPrompt(id), id).toBe(text)
   })
 
@@ -196,6 +207,9 @@ describe('prompt text', () => {
       'Read the file before editing it',
       'Change one thing at a time',
       "Run the project's own test or build command",
+      'Name a cause only when output in this session shows it',
+      "Never print a secret's value",
+      'test only whether it is set',
       'Keep output short',
     ])
       expect(t, needle).toContain(needle)
@@ -246,12 +260,29 @@ describe('prompt rendering', () => {
     agnesVersion: '0.1.0',
     platform: 'darwin-arm64',
     shell: 'posix',
-  }
+    dialect: 'posix',
+  } as const
 
   it('fills every environment placeholder, leaving none standing', () => {
     const text = renderEnvironment(facts)
     expect(text).not.toContain('{{')
     for (const v of Object.values(facts)) expect(text, v).toContain(v)
+  })
+
+  // Wrapping in `powershell -Command`, curl's flags on Invoke-WebRequest and heredocs all failed in
+  // real PowerShell sessions, so the rules against them follow the facts there and nowhere else.
+  it('appends the PowerShell rules where the shell speaks PowerShell, and only there', () => {
+    const rules = loadPrompt('environment-powershell')
+    const shell = 'PowerShell 5.1.26100.1 (Desktop); use PS5.1 syntax, without && or ||'
+    const powershell = renderEnvironment({ ...facts, shell, dialect: 'powershell' })
+    expect(powershell).toBe(`${renderEnvironment({ ...facts, shell })}\n\n${rules}`)
+    expect(powershell).toContain(shell)
+    for (const needle of ['`powershell -Command`', '`curl.exe`', 'here-string', '`-Encoding utf8`'])
+      expect(rules, needle).toContain(needle)
+    const posix = renderEnvironment(facts)
+    expect(posix).toBe(applyVars(loadPrompt('environment'), { ...facts }))
+    expect(posix).not.toContain(rules)
+    expect(posix).not.toMatch(/Invoke-WebRequest|here-string/)
   })
 
   it('states that the offered tools are complete, without enumerating them', () => {
