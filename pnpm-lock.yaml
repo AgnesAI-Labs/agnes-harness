@@ -80,6 +80,12 @@ importers:
         specifier: '*'
         version: link:../../../packages/extension-api
 
+  examples/loops/decision-loop:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: '*'
+        version: link:../../../packages/extension-api
+
   examples/loops/react-loop:
     dependencies:
       '@agnes/extension-api':

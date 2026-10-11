@@ -32,3 +32,5 @@ Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。�
 可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出。队列和回执类型位于 `@agnes/plugin-runtime/deferred-contract`。账本端口仍是 Host 适配器。Loop 插件从公开作者运行库命名空间导入 helper，并用 `deferredQueueKind` 读取队列。
 
 决策 key 由 session 与插件 owner 限定命名空间。只有同一 operation、同一 spec 重用 key，才返回原 handle 和期限；其他 operation 得到 `DECISION_KEY_CONFLICT`，应使用自己的 key。Loop 恢复保持 `loop:<id>` 的 operation 身份。重复 request 不表示允许重放原 operation。
+
+[Decision Loop 示例](../../examples/loops/decision-loop/README.md) 用 `ctx.decisions` 和已有 checkpoint 演示社区插件的纯阶段确认：请求前保存稳定 key，真人回答与下一 checkpoint 同批消费。普通工具的 session/permanent 宽授权绑定原决策、签发者、工具定义及策略；永久授权仍在派发前同步签发。改变的 grant 格式要求 reset，不做迁移。任意 `ToolDef.execute` JS 后缀仍需真实可恢复的 Loop/领域切点。

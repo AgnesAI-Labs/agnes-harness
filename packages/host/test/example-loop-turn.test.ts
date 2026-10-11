@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import * as decisionModule from '../../../examples/loops/decision-loop/index.mjs'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import * as reactModule from '../../../examples/loops/react-loop/index.mjs'
 import { createTestHost } from '../testkit/index.js'
@@ -26,6 +27,13 @@ const plan: InferenceEvent[] = [
 ]
 
 const cases = {
+  decision: {
+    selection: { id: 'example.decision', version: '1.0.0' },
+    packageId: '@agnes-example/decision-loop',
+    source: new URL('../../../examples/loops/decision-loop', import.meta.url),
+    module: decisionModule,
+    scripts: [],
+  },
   react: {
     selection: { id: 'example.react', version: '1.0.0' },
     packageId: '@agnes-example/react-loop',
@@ -206,7 +214,7 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
     generation: 1,
     trusted: true,
   }
-  const { host } = await createTestHost({
+  const options: Parameters<typeof createTestHost>[0] = {
     dataDir,
     packageDirs: { [spec.packageId]: directory },
     provider,
@@ -240,8 +248,9 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
         return spec.module
       },
     },
-  })
-  return { host, dataDir, spec }
+  }
+  const { host } = await createTestHost(options)
+  return { host, dataDir, spec, reopen: () => createTestHost(options) }
 }
 
 async function probeTurn(
@@ -333,3 +342,93 @@ it('cancels an example turn only when the session run signal aborts', async () =
     { kind: 'dag', disturb: 'run-abort', ...aborted },
   ])
 }, 120_000)
+
+it.each(['waiting', 'before-waiting-checkpoint'] as const)(
+  'reopens a community confirmation at %s and consumes it with a pure checkpoint',
+  async (cut) => {
+    const provider = new GatedProvider([])
+    const f = await openExample('decision', provider)
+    const first = await f.host.createSession({ key: 'decision-cold', cwd: f.dataDir })
+    await first.enqueue('next-turn', {
+      actor: first.d.actor,
+      content: [{ type: 'text', text: 'Review the synthetic phase.' }],
+    })
+    if (cut === 'before-waiting-checkpoint') {
+      const append = first.d.log.append.bind(first.d.log)
+      const injection = vi.spyOn(first.d.log, 'append').mockImplementation(async (events, options) => {
+        if (
+          events.some(
+            (event) =>
+              event.type === 'x/core/loop-checkpoint' &&
+              (event.data as { checkpoint?: { state?: { stage?: string } } }).checkpoint?.state?.stage ===
+                'waiting',
+          )
+        )
+          throw new Error('synthetic checkpoint cut')
+        return append(events, options)
+      })
+      try {
+        await expect(first.step()).rejects.toThrow('synthetic checkpoint cut')
+      } finally {
+        injection.mockRestore()
+      }
+    } else {
+      expect((await first.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'parked',
+      )
+    }
+    const [pending] = first.state.registers.decisionStates.values()
+    if (!pending) throw new Error('missing durable community decision')
+    const original = pending.value
+    expect(original.request).toMatchObject({
+      owner: 'example.decision',
+      sourcePackage: '@agnes-example/decision-loop',
+      operationId: 'loop:example.decision',
+    })
+    await f.host.close()
+    const second = await f.reopen()
+    try {
+      const reopened = await second.host.createSession({ key: first.key, cwd: f.dataDir })
+      const cold = await reopened.decisions.get(original.handle)
+      expect(cold.request).toEqual(original.request)
+      expect(cold.result).toBeNull()
+      const command = {
+        handle: cold.handle,
+        revision: cold.revision,
+        commandId: 'review-phase',
+        response: { option: 'continue', value: null },
+      }
+      const receipt = await reopened.decisions.answer(command, {
+        actor: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        category: 'human',
+        authorize() {},
+      })
+      expect(receipt).toMatchObject({ commandId: 'review-phase', revision: cold.revision + 1 })
+      if (cut === 'before-waiting-checkpoint')
+        expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'parked',
+        )
+      expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(
+        (await reopened.decisions.list()).filter((value) => value.request.owner === 'example.decision'),
+      ).toHaveLength(1)
+      const consumed = await reopened.decisions.get(original.handle)
+      expect(consumed.consumption).toMatchObject({
+        effectId: null,
+        operationId: original.request.operationId,
+      })
+      const rows = await reopened.scan({ limit: 100 })
+      const at = rows.findIndex(
+        (row) => row.type === 'decision/state' && (row.data as { consumption?: unknown }).consumption != null,
+      )
+      expect(rows[at + 1]?.type).toBe('x/core/loop-checkpoint')
+      expect(rows.some((row) => row.type === 'effect/intent')).toBe(false)
+      expect(provider.calls).toHaveLength(0)
+    } finally {
+      await second.host.close()
+    }
+  },
+  30_000,
+)
