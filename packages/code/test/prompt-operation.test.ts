@@ -1,6 +1,6 @@
 import type { OpContext } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import { createPromptOperation, operations, PROMPT_SECTIONS } from '../src/index.js'
+import { createPromptOperation, loadPrompt, operations, PROMPT_SECTIONS } from '../src/index.js'
 
 const platform = {
   shell: () => 'posix',
@@ -50,6 +50,16 @@ describe('the prompt operation', () => {
     const environment = op.contribute?.(ctxFor({}))?.promptSections?.find((s) => s.id === 'environment')
     expect(environment?.text).toContain(description)
     expect(contribute(ctxFor({})).find((s) => s.id === 'environment')?.text).toContain('posix')
+  })
+  it('states the PowerShell rules in the environment section where the platform shell is PowerShell, and only there', () => {
+    const rules = loadPrompt('environment-powershell')
+    const windows = { ...platform, shell: () => 'powershell' }
+    const description = 'PowerShell 7.5.0 (Core)'
+    const op = createPromptOperation({ adapters: { platform: windows, shell: { description } } })
+    const sections = op.contribute?.(ctxFor({}))?.promptSections ?? []
+    expect(sections.map((s) => s.id)).toEqual(['persona', 'environment', 'coding-doctrine'])
+    expect(sections.find((s) => s.id === 'environment')?.text.endsWith(`\n\n${rules}`)).toBe(true)
+    for (const s of contribute(ctxFor({}))) expect(s.text, s.id).not.toContain(rules)
   })
   it('is a before-inference operation that contributes prompt text and the tail runtime context, nothing else', () => {
     const op = createPromptOperation(deps)

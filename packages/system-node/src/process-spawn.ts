@@ -16,7 +16,12 @@ export type WindowsJobProcess = {
   stdin: Writable
   stdout: Readable
   stderr: Readable
-  completion: Promise<ExitStatus & { cancelled: boolean; error?: Error }>
+  /**
+   * `stoppedProcesses`: how many processes the command started were still running when it ended, and
+   * were stopped with it because the Job owns them. Zero when it left nothing behind; this gate always
+   * sets it, and it is optional only so a stand-in for the gate need not.
+   */
+  completion: Promise<ExitStatus & { cancelled: boolean; error?: Error; stoppedProcesses?: number }>
   terminate(): void
 }
 type Options = {
@@ -45,7 +50,10 @@ export function mergeWindowsEnvironment(
   return Object.fromEntries(entries)
 }
 
-/** Owned finite command only. Shared daemons require a separate lifetime and must not use this gate. */
+/**
+ * Owned processes only: a finite command, or a session's background job until it is stopped.
+ * Shared daemons, which nothing owns, must not use this gate.
+ */
 export function startWindowsJobProcess(argv: string[], options: Options): Promise<WindowsJobProcess> {
   if (!windows) return Promise.reject(error('ENOSYS', 'Windows process gate unavailable'))
   const timeout = options.startupTimeoutMs ?? 10_000
@@ -108,7 +116,8 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     let cancelled = false
     let failure: Error | undefined
     let targetExit: ExitStatus | undefined
-    let complete: (status: ExitStatus & { cancelled: boolean; error?: Error }) => void = () => {}
+    let stoppedProcesses = 0
+    let complete: (status: Awaited<WindowsJobProcess['completion']>) => void = () => {}
     const completion: WindowsJobProcess['completion'] = new Promise((done) => {
       complete = done
     })
@@ -215,7 +224,28 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         fail(error(message.code, 'Windows target process could not start'))
       } else fail(error('EPROTO', 'Unexpected process gate reply'))
     })
-    broker.once('exit', stop)
+    // The gate and its target have both exited, so whatever the Job still holds was started by the
+    // command (a server put in the background, a `Start-Process`) and is stopped with it here. A
+    // process already on its way out is given a moment, so only what is still running is counted.
+    broker.once('exit', () => {
+      if (stopped || !targetExit) {
+        stop()
+        return
+      }
+      void (async () => {
+        const settleBy = Date.now() + 200
+        try {
+          for (;;) {
+            stoppedProcesses = job.activeProcessCount()
+            if (stoppedProcesses === 0 || stopped || Date.now() >= settleBy) break
+            await new Promise((done) => setTimeout(done, 10))
+          }
+        } catch (cause) {
+          failure ??= cause as Error
+        }
+        stop()
+      })()
+    })
     broker.once('close', (code, signal) => {
       clearTimeout(timer)
       clearInterval(observation)
@@ -240,7 +270,12 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         if (!targetExit && !cancelled)
           failure ??= error('E_PROCESS_GATE_EXIT', 'Process gate exited without a target result')
         if (!started) reject(failure ?? error('ABORT_ERR', 'Windows process start cancelled'))
-        complete({ ...(targetExit ?? { code, signal }), cancelled, ...(failure ? { error: failure } : {}) })
+        complete({
+          ...(targetExit ?? { code, signal }),
+          cancelled,
+          stoppedProcesses: cancelled ? 0 : stoppedProcesses,
+          ...(failure ? { error: failure } : {}),
+        })
       })()
     })
   })

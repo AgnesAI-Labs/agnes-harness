@@ -21,7 +21,7 @@ export interface OpaqueSandboxConfine {
  * raw handler and isolated HTTP/event capabilities) to this invocation without exposing the scope.
  */
 export type WorkspaceHookSandbox = Readonly<
-  Pick<SandboxSeam, 'exec' | 'enforcement'> & {
+  Pick<SandboxSeam, 'exec' | 'enforcement' | 'start'> & {
     track?<T>(start: (signal: AbortSignal) => T | PromiseLike<T>): Promise<T>
   }
 >
@@ -300,6 +300,16 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
           linked.close()
         }
       }),
+    // Only the start is part of the invocation. The process is meant to outlive it, so its life is
+    // not tied to the scope's signal; the session that holds it stops it.
+    ...(source.hookSandbox.start
+      ? {
+          start: (command: string[], options: { cwd: string; env?: Record<string, string> }) =>
+            scope.track(() =>
+              (source.hookSandbox.start as NonNullable<SandboxSeam['start']>)(command, options),
+            ),
+        }
+      : {}),
   })
 
   return Object.freeze({

@@ -280,6 +280,9 @@ export class HostedSessions {
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
     if (((session.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length ?? 0) > 0) return false
     if (session.state.pendingApprovals.size > 0) return false
+    // Hibernating closes the session, and closing it stops its background jobs: a server the model
+    // started keeps the session awake for as long as it runs.
+    if (session.jobs.running() > 0) return false
     // A child still open keeps its parent open; children hibernate first.
     for (const other of this.options.host.kernel.sessions.values())
       if (other !== session && other.d.log.parent?.key === key) return false

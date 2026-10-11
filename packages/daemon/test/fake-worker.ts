@@ -112,7 +112,10 @@ socket.once('connect', () => {
       // `f.method` is typed as the real (closed) `WorkerMethod` union, which does not include
       // 'crash' - cast through `string` since this test's whole point is sending a method outside
       // that union (see the file header comment).
-      if ((f.method as string) === 'crash') process.exit(1)
+      if ((f.method as string) === 'crash') {
+        process.stderr.write('fake worker: crashing on request\n', () => process.exit(1))
+        continue
+      }
       if ((f.method as string) === 'emit-test-event' && 'sessionKey' in f) {
         const seq = Number((f.params as { seq?: unknown }).seq)
         durableSeq.set(f.sessionKey, seq)

@@ -1,4 +1,15 @@
-import { appendFileSync, chmodSync, closeSync, fsyncSync, mkdirSync, openSync } from 'node:fs'
+import {
+  appendFileSync,
+  chmodSync,
+  closeSync,
+  fstatSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  statSync,
+  truncateSync,
+} from 'node:fs'
 import { dirname } from 'node:path'
 import { windowsAppendPrivateFileSync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { createPlatform } from './adapters/platform.js'
@@ -43,6 +54,15 @@ export const AUDIT_KINDS = [
   'session.close_failed',
   'session.recovered',
   'preset.deprecated',
+  // The daemon runtime log: process lifecycle and failures that no request or session row records.
+  'daemon.started',
+  'daemon.stopped',
+  'daemon.crashed',
+  'daemon.error',
+  'worker.exited',
+  'worker.start_failed',
+  'worker.log',
+  'session.interrupted',
 ] as const
 export type AuditKind = (typeof AUDIT_KINDS)[number]
 export type AuditEvent = { kind: string; detail?: Record<string, unknown>; at?: string }
@@ -105,21 +125,43 @@ export function createMemoryAudit(): AuditSink & { events: AuditEvent[] } {
 
 export function createFileAudit(
   file: string,
-  opts: { redact?: (event: AuditEvent) => AuditEvent } = {},
+  opts: {
+    redact?: (event: AuditEvent) => AuditEvent
+    /**
+     * Bound for a log that would otherwise grow for the life of the data directory. A write that
+     * would take the file past it first moves the file to `<file>.1`, replacing the generation
+     * before, so the pair never holds more than twice this.
+     */
+    maxBytes?: number
+  } = {},
 ): AuditSink & { file: string } {
   const directory = dirname(file)
   const windows = createPlatform().os === 'win32'
+  let size: number
   if (windows) {
     windowsEnsurePrivateDirectorySync(directory)
     windowsAppendPrivateFileSync(file, Buffer.alloc(0))
+    size = statSync(file).size
   } else {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     chmodSync(directory, 0o700)
     // Create and repair modes before the first event. `mode` on appendFileSync only affects a new
     // file, so it cannot fix an existing world-readable audit trail by itself.
     const created = openSync(file, 'a', 0o600)
+    size = fstatSync(created).size
     closeSync(created)
     chmodSync(file, 0o600)
+  }
+  // The renamed generation keeps the private mode or DACL it was written with, and the next append
+  // creates the live file privately again, on either platform.
+  const rotate = (): void => {
+    try {
+      renameSync(file, `${file}.1`)
+    } catch {
+      // A held previous generation must not lift the bound: lose the history, keep the size.
+      truncateSync(file, 0)
+    }
+    size = 0
   }
 
   return {
@@ -137,12 +179,16 @@ export function createFileAudit(
       assertKnown(customized)
       const detail = redactDetail(customized.detail)
       // The sink owns `at`: accepting a caller-supplied time would let an event forge ordering.
-      const line = `${JSON.stringify({ at: new Date().toISOString(), kind: customized.kind, detail })}\n`
-      if (windows) windowsAppendPrivateFileSync(file, Buffer.from(line))
+      const line = Buffer.from(
+        `${JSON.stringify({ at: new Date().toISOString(), kind: customized.kind, detail })}\n`,
+      )
+      if (opts.maxBytes !== undefined && size > 0 && size + line.byteLength > opts.maxBytes) rotate()
+      if (windows) windowsAppendPrivateFileSync(file, line)
       else {
         appendFileSync(file, line, { mode: 0o600 })
         chmodSync(file, 0o600)
       }
+      size += line.byteLength
     },
     async close() {
       if (windows) {

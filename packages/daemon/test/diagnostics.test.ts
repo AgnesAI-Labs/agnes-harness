@@ -152,6 +152,63 @@ describe('diagnostics.collect', () => {
     ])
   })
 
+  it('collect adds the runtime log only when asked, reading across its rotated generation', async () => {
+    const dataDir = tempDataDir()
+    const row = (n: number, message = `line ${n}`) =>
+      `${JSON.stringify({ at: '2026-10-10T07:48:05.000Z', kind: 'worker.log', detail: { n, message } })}\n`
+    writeFileSync(join(dataDir, 'audit', 'runtime.jsonl.1'), [0, 1, 2].map((n) => row(n)).join(''))
+    writeFileSync(
+      join(dataDir, 'audit', 'runtime.jsonl'),
+      row(3) + row(4, 'provider echoed sk-abcdefghijklmnopqrstuvwxyz'),
+    )
+    const { ep } = await setup({ dataDir })
+    const plain = await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', {})
+    expect(plain.result?.logs.map((log) => log.name)).toEqual(['daemon.jsonl', 'host.jsonl'])
+
+    const r = await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', { runtimeLog: true })
+    const runtime = r.result?.logs.find((log) => log.name === 'runtime.jsonl')
+    expect(r.result?.logs.map((log) => log.name)).toEqual(['daemon.jsonl', 'host.jsonl', 'runtime.jsonl'])
+    expect(runtime).toMatchObject({ missing: false, truncated: false })
+    const rows = (runtime?.text.split('\n') ?? []).map(
+      (line) => JSON.parse(line) as { detail: { n: number; message: string } },
+    )
+    expect(rows.map((parsed) => parsed.detail.n)).toEqual([0, 1, 2, 3, 4])
+    expect(rows.at(-1)?.detail.message).toBe('<redacted>')
+  })
+
+  it('collect takes from the previous runtime generation only what the live one leaves of the window', async () => {
+    const dataDir = tempDataDir()
+    const pad = 'x'.repeat(200)
+    const row = (n: number) => `${JSON.stringify({ at: null, kind: 'worker.log', detail: { n, pad } })}\n`
+    const older = Array.from({ length: 6_000 }, (_, n) => row(n)).join('')
+    writeFileSync(join(dataDir, 'audit', 'runtime.jsonl.1'), older)
+    writeFileSync(join(dataDir, 'audit', 'runtime.jsonl'), row(6_000))
+    const { ep } = await setup({ dataDir })
+    const r = await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', { runtimeLog: true })
+    const runtime = r.result?.logs.find((log) => log.name === 'runtime.jsonl')
+    expect(runtime).toMatchObject({ truncated: true, missing: false })
+    expect(Buffer.byteLength(runtime?.text ?? '')).toBeLessThanOrEqual(1024 * 1024)
+    const kept = (runtime?.text.split('\n') ?? []).map(
+      (line) => JSON.parse(line) as { detail: { n: number } },
+    )
+    expect(kept.at(-1)?.detail.n).toBe(6_000)
+    expect(kept.length).toBeGreaterThan(1)
+    expect(kept.length).toBeLessThan(6_001)
+  })
+
+  it('collect marks a missing runtime log and refuses a malformed request for it', async () => {
+    const { ep } = await setup({ dataDir: tempDataDir() })
+    const r = await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', { runtimeLog: true })
+    expect(r.result?.logs.at(-1)).toEqual({
+      name: 'runtime.jsonl',
+      size: 0,
+      text: '',
+      truncated: false,
+      missing: true,
+    })
+    expect(await call(ep, '_agnes/v1/diagnostics.collect', { runtimeLog: 'yes' })).toHaveProperty('error')
+  })
+
   it('collect reports runtime and version', async () => {
     const { ep } = await setup()
     const r = await call<DiagnosticsCollectResult>(ep, '_agnes/v1/diagnostics.collect', {})

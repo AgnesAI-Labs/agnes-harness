@@ -54,7 +54,7 @@ describe('standard-windows through the real approval seam', () => {
     async (root) => {
       const seam = await approvalPolicy(fakeSeamInit({ workspaceRoot: root, preset }))
       for (const path of ['CODE.txt', '中文 空格\\file.txt', `${root}\\src\\file.txt`]) {
-        expect(await seam.ask(request(path))).toBe('allowed-once')
+        expect(await seam.ask(request(path))).toEqual({ verdict: 'allowed-once', reason: 'policy_allowed' })
       }
       for (const path of ['../outside', 'D:/other/file', 'NUL', 'file:stream', '\\\\other\\share\\file']) {
         expect(await seam.ask(request(path))).toBe('unavailable')

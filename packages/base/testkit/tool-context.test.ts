@@ -24,6 +24,14 @@ describe('fakeToolContext', () => {
     await expect(ctx.fs.stat('nope')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('refuses to list a file, as a directory listing does', async () => {
+    // Listing a file as an empty directory would let a tool that lists what it was asked to search
+    // answer "nothing here" about a file it never opened.
+    const ctx = fakeToolContext({ files: { 'dir/a.txt': 'hello' } })
+    await expect(ctx.fs.list('dir/a.txt')).rejects.toMatchObject({ code: 'ENOTDIR' })
+    expect(await ctx.fs.list('dir')).toEqual([{ name: 'a.txt', kind: 'file' }])
+  })
+
   it('lets two contexts share one filesystem under different session keys', async () => {
     const a = fakeToolContext({ sessionKey: 'session-a', files: { 'a.txt': 'one' } })
     const b = fakeToolContext({ sessionKey: 'session-b', mem: a.mem })

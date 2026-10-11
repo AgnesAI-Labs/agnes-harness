@@ -133,6 +133,32 @@ describe('renderDiagnosticsViewer', () => {
     expect(traceText).toContain('250 ms')
   })
 
+  it('names each log for what it holds, so an empty request audit is not read as an empty daemon log', () => {
+    const tail = (text: string) => ({ size: text.length, text, truncated: false, missing: false })
+    const bundle = makeBundle({
+      logs: {
+        runtime: tail('{"kind":"worker.exited","detail":{"code":134}}'),
+        requestAudit: tail(''),
+        host: tail('{"kind":"host.ready"}'),
+        browser: { collectedAt: '2026-09-24T01:02:03.000Z', entries: [], dropped: 0, limit: 1000 },
+      },
+    })
+    document.documentElement.innerHTML = renderDiagnosticsViewer(bundle)
+    const runtime = Array.from(document.querySelectorAll('script')).find(
+      (s) => s.getAttribute('type') !== 'application/json',
+    )
+    new Function(runtime?.textContent ?? '')()
+    const logs = document.getElementById('tab-logs')
+    expect(Array.from(logs?.querySelectorAll('h3') ?? []).map((h) => h.textContent)).toEqual([
+      'Daemon runtime log',
+      'Daemon request audit',
+      'Host audit',
+      'Browser console',
+    ])
+    expect(logs?.textContent).toContain('Failed requests only. An empty audit means no request failed')
+    expect(logs?.textContent).toContain('"code":134')
+  })
+
   it('lists artifacts metadata', () => {
     const bundle = makeBundle({
       artifacts: [

@@ -9,12 +9,16 @@ const VERDICTS: ReadonlySet<string> = new Set([
   'unavailable',
 ])
 const REASONS: ReadonlySet<string> = new Set<ApprovalReason>([
+  'user_allowed',
   'user_rejected',
+  'policy_allowed',
   'timeout',
   'no_approver',
   'stopped',
   'policy_denied',
   'subagent_scope',
+  'approver_failed',
+  'client_cancelled',
 ])
 
 export const isApprovalReason = (value: unknown): value is ApprovalReason =>
@@ -44,7 +48,14 @@ export function approvalRefusal(
   reason: ApprovalReason | undefined,
   timeoutMs: number,
 ): { code: string; text: string } {
-  if (verdict === 'cancelled') return { code: 'CANCELLED', text: 'cancelled while waiting for approval' }
+  if (verdict === 'cancelled')
+    return {
+      code: 'CANCELLED',
+      text:
+        reason === 'client_cancelled'
+          ? "the user's client withdrew the approval request before it was answered, so the action was not run; ask the user before trying again"
+          : 'cancelled while waiting for approval',
+    }
   if (verdict === 'unavailable')
     return {
       code: 'APPROVAL_UNAVAILABLE',
@@ -59,7 +70,9 @@ export function approvalRefusal(
           ? 'blocked by the command policy'
           : reason === 'subagent_scope'
             ? 'this sub-agent was started with a fixed permission scope that cannot be widened from inside the session, and this action needs approval, so it was refused automatically; do not retry it, say in your reply that it needs approval so the agent that delegated to you can decide'
-            : `approval ${verdict}`
+            : reason === 'approver_failed'
+              ? "the approval request failed before anyone answered it (it could not reach the user's client, or the answer could not be read), so the action was not run; the user did not reject it - do not retry the same call, tell the user what needs their approval and ask them to check that approval requests reach them"
+              : `approval ${verdict}`
   return { code: 'APPROVAL_REJECTED', text }
 }
 

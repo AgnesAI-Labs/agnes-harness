@@ -98,6 +98,37 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
     expect(result).toMatchObject({ stdout: '🌱🌱', stderr: 'xxxxxxxx', truncated: true, code: 0 })
   })
 
+  it('decodes output that is not UTF-8 in the console code page, foreground and background', async () => {
+    const { cwd } = setup()
+    const exec = createExec({
+      windowsNodeExecutable: process.execPath,
+      windowsPowerShell: {
+        path: 'C:\\unused\\powershell.exe',
+        version: '5.1.1',
+        edition: 'Desktop',
+        nativeArguments: 'Legacy',
+        codePage: 936,
+      },
+    })
+    adapters.push(exec)
+    // A program writing in a Chinese-locale console's code page, and one writing UTF-8.
+    const argv = [
+      process.execPath,
+      '-e',
+      'process.stdout.write(Buffer.from([0xd6,0xd0,0xce,0xc4,0x0a]));process.stderr.write("错误\\n")',
+    ]
+    expect(await exec.run(argv, { cwd })).toMatchObject({ code: 0, stdout: '中文\n', stderr: '错误\n' })
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(argv, { cwd })
+    let out = ''
+    job.onOutput((chunk) => {
+      out += chunk
+    })
+    await job.done
+    for (let n = 0; n < 100 && out.length < 6; n++) await new Promise((wait) => setTimeout(wait, 50))
+    expect(out).toContain('中文\n')
+    expect(out).toContain('错误\n')
+  })
+
   it.each(['abort', 'killAll'])('waits for the entire tree to exit on %s', async (method) => {
     const { cwd, exec } = setup()
     const marker = join(cwd, 'pid')
@@ -121,6 +152,59 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
     const text = readFileSync(marker, 'utf8')
     expect(text).toMatch(/^[1-9][0-9]*$/)
     expect(windowsProcessStartTimeSync(Number(text))).toBeNull()
+  })
+
+  it('counts what a finished command left running, and stops it', async () => {
+    const { cwd, exec } = setup()
+    const marker = join(cwd, 'left')
+    const leaves = [
+      process.execPath,
+      '-e',
+      `
+      const {spawn}=require('node:child_process');
+      const child=spawn(process.execPath,['-e','setTimeout(()=>{},15000)'],
+        {detached:true,windowsHide:true,stdio:'ignore'});
+      child.once('spawn',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},String(child.pid));process.exit(0)});
+    `,
+    ]
+    const result = await exec.run(leaves, { cwd, timeoutMs: 30_000 })
+    expect(result).toMatchObject({ code: 0, timedOut: false, stoppedProcesses: 1 })
+    expect(windowsProcessStartTimeSync(Number(readFileSync(marker, 'utf8')))).toBeNull()
+    const clean = await exec.run([process.execPath, '-e', 'process.exit(0)'], { cwd })
+    expect(clean.stoppedProcesses).toBeUndefined()
+  })
+
+  it('keeps a background job running after start returns, and stop ends its whole Job', async () => {
+    const { cwd, exec } = setup()
+    const marker = join(cwd, 'bg')
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(tree(marker), { cwd })
+    let text = ''
+    for (let n = 0; n < 200 && !existsSync(marker); n++) await new Promise((wait) => setTimeout(wait, 50))
+    text = readFileSync(marker, 'utf8')
+    expect(text).toMatch(/^[1-9][0-9]*$/)
+    expect(windowsProcessStartTimeSync(job.pid as number)).not.toBeNull()
+    expect(windowsProcessStartTimeSync(Number(text))).not.toBeNull()
+    await job.stop()
+    await job.done
+    expect(windowsProcessStartTimeSync(job.pid as number)).toBeNull()
+    expect(windowsProcessStartTimeSync(Number(text))).toBeNull()
+  })
+
+  it('stops background jobs on killAll', async () => {
+    const { cwd, exec } = setup()
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(
+      [process.execPath, '-e', 'process.stdout.write("up"); setTimeout(()=>{},15000)'],
+      { cwd },
+    )
+    let out = ''
+    job.onOutput((chunk) => {
+      out += chunk
+    })
+    for (let n = 0; n < 200 && out !== 'up'; n++) await new Promise((wait) => setTimeout(wait, 50))
+    expect(out).toBe('up')
+    await exec.killAll()
+    await job.done
+    expect(windowsProcessStartTimeSync(job.pid as number)).toBeNull()
   })
 
   it('includes a not-yet-started command in killAll and never runs its business code', async () => {

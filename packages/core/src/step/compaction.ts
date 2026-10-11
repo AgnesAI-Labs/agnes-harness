@@ -60,6 +60,10 @@ type SummarySegment = {
   wide: boolean
   quote?: { node: SurfaceNode; text: string }
   quoteEstimate?: string
+  /** The narrow form of a wide segment, asked once more when its summary calls a tool or deviates. */
+  withoutTools?: SummarySegment
+  /** Decode against the tools the wide request offered, so a call written out as text still fails. */
+  decodeOfferedTools?: boolean
 }
 
 function isCacheWarm(cache?: { cacheRead: number; input: number }): boolean {
@@ -375,6 +379,10 @@ function summaryRequest(
   return { derived, wire }
 }
 
+const CUT_OFF = 'summary stopped at the max_tokens cap'
+const CALLED_TOOL = 'summary called a tool'
+const DEVIATED = 'summary deviated from the contract'
+
 function summaryInputTokens(wire: ReturnType<typeof summaryRequest>['wire']): number {
   return (
     boundWireInputTokens(wire) ??
@@ -418,16 +426,15 @@ async function summarize(
   try {
     for await (const event of s.d.provider.infer(wire, {
       signal: s.ac.signal,
-      toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
+      toolNames: segment.wide || segment.decodeOfferedTools ? prefix.tools.map((tool) => tool.name) : [],
     })) {
       if (event.type === 'text_delta') text += event.delta
       else if (event.type === 'usage') usage = event
       // A reasoning model can spend the whole budget before (or while) writing: an empty summary
       // fails anyway, but a cut-off one would otherwise replace the history it was meant to keep.
-      else if (event.type === 'done' && event.reason === 'length')
-        fail('permanent', 'summary stopped at the max_tokens cap')
-      else if (event.type === 'toolcall_end') fail('permanent', 'summary called a tool')
-      else if (event.type === 'deviation') fail('permanent', 'summary deviated from the contract')
+      else if (event.type === 'done' && event.reason === 'length') fail('permanent', CUT_OFF)
+      else if (event.type === 'toolcall_end') fail('permanent', CALLED_TOOL)
+      else if (event.type === 'deviation') fail('permanent', DEVIATED)
       else if (event.type === 'error') {
         // Only a closed-shape code travels on: it ends up in a ledger row and an assistant message.
         const code = /^[A-Z0-9_]{1,32}$/.test(event.code) ? event.code : 'UNKNOWN'
@@ -496,10 +503,12 @@ function mergeSummaryResults(first: SummaryResult, retry: SummaryResult): Summar
 }
 
 /**
- * Runs one summary request; if it fails specifically because it hit the max_tokens cap while
- * reasoning, retries exactly once at the lowest thinking level. Any other failure, a retry that
- * fails for a different reason, or a second cap hit is returned as-is — never a second retry, so a
- * model that genuinely cannot summarize this segment fails in one extra step instead of looping.
+ * Runs one summary request and, when its answer had a wrong shape that another form of the request
+ * avoids, asks exactly once more: at the lowest thinking level after it hit the max_tokens cap while
+ * reasoning, or narrow, offering no tool to call, after a wide one called a tool or deviated; that
+ * retry gives up the wide request's cached prefix. Any other failure, a retry that fails for any
+ * reason, or a second cap hit is returned as-is — never a second retry, so a model that genuinely
+ * cannot summarize this segment fails in one extra step instead of looping.
  */
 async function summarizeWithRetry(
   s: SessionImpl,
@@ -508,13 +517,28 @@ async function summarizeWithRetry(
   calls: readonly ToolCallForSummary[],
   target: { route: string; model: string },
   prefix: Prefix,
+  effectId: string,
 ): Promise<SummaryResult> {
   const first = await summarize(s, plan, segment, calls, target, prefix)
-  if (first.cause !== 'summary stopped at the max_tokens cap') return first
-  const configured = s.preset.model.thinking.compaction
-  if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
-  const retry = await summarize(s, plan, segment, calls, target, prefix, 'low')
-  return mergeSummaryResults(first, retry)
+  // A cancelled attempt keeps the cause it saw before the cancel, and must not be asked again.
+  if (first.failure !== 'permanent' || first.cause === undefined) return first
+  let retry: { form: 'low-thinking' | 'without-tools'; segment: SummarySegment; thinking?: ThinkingLevel }
+  if (first.cause === CUT_OFF) {
+    const configured = s.preset.model.thinking.compaction
+    if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
+    retry = { form: 'low-thinking', segment, thinking: 'low' }
+  } else if (segment.withoutTools && (first.cause === CALLED_TOOL || first.cause === DEVIATED)) {
+    // The instruction already says not to call a tool; a model that does anyway was offered them.
+    retry = { form: 'without-tools', segment: segment.withoutTools }
+  } else return first
+  // Written before the retry is sent, so the ledger shows it even if the retry never returns. It
+  // also moves the ledger on, which gives the retry a tree-budget hold and settlement of its own
+  // instead of one keyed like the first attempt's, already settled.
+  await s.append([
+    s.ev('x/core/compaction-retry', { effectId, cause: first.cause, form: retry.form }, { ignorable: true }),
+  ])
+  const second = await summarize(s, plan, retry.segment, calls, target, prefix, retry.thinking)
+  return mergeSummaryResults(first, second)
 }
 
 function failedPhase(phase: Extract<OpStatePhase, { kind: 'compaction' }>, message: string): OpStatePhase {
@@ -942,19 +966,21 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
       wide: true,
       ...('quote' in candidate ? { quote: candidate.quote, quoteEstimate: candidate.quoteEstimate } : {}),
     }
+    const narrow: SummarySegment = { ...wide, nodes: candidate.nodes, wide: false }
     const useWide =
       from === 0 &&
       prefix.model.model === target.model &&
       prefix.model.route === target.route &&
       fitsWindow(wide)
+    // The history it replays still holds tool calls, so the narrow retry repeats the rule too.
+    const withoutTools: SummarySegment = {
+      ...narrow,
+      instruction: `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${candidate.instruction}`,
+      decodeOfferedTools: true,
+    }
     const selected: SummarySegment = useWide
-      ? wide
-      : {
-          nodes: candidate.nodes,
-          instruction: candidate.instruction,
-          wide: false,
-          ...('quote' in candidate ? { quote: candidate.quote, quoteEstimate: candidate.quoteEstimate } : {}),
-        }
+      ? { ...wide, ...(fitsWindow(withoutTools) ? { withoutTools } : {}) }
+      : narrow
     if (!fitsWindow(selected))
       return elide(
         s,
@@ -978,7 +1004,9 @@ export async function runCompaction(s: SessionImpl): Promise<StepOutcome> {
 
   const selected = plan
   const results = await Promise.all(
-    segments.map((segment) => summarizeWithRetry(s, selected, segment, calls, target, prefix)),
+    segments.map((segment) =>
+      summarizeWithRetry(s, selected, segment, calls, target, prefix, effect.effectId),
+    ),
   )
   const tokens = results.reduce((sum, result) => addTokens(sum, result.tokens), zeroTokens())
   const credits = results.reduce<number | undefined>(

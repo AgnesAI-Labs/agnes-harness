@@ -63,6 +63,8 @@ export type HostExecResult = {
   truncated: boolean
   timedOut: boolean
   signal?: string
+  /** Processes the command left running that were stopped when it returned (owned executors only). */
+  stoppedProcesses?: number
 }
 
 /**

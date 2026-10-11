@@ -187,6 +187,7 @@ describe('tool types', () => {
       | 'actor'
       | 'cwd'
       | 'exec'
+      | 'jobs'
       | 'fs'
       | 'net'
       | 'sandbox'
@@ -215,6 +216,12 @@ describe('tool types', () => {
 describe('exec result', () => {
   it('reports a deadline as an optional fact, so an exec that does not know it still conforms', () => {
     expectTypeOf<ExecResult['timedOut']>().toEqualTypeOf<boolean | undefined>()
+    expectTypeOf<ExecResult['stoppedProcesses']>().toEqualTypeOf<number | undefined>()
+    type Jobs = NonNullable<ToolContext['jobs']>
+    expectTypeOf<Awaited<ReturnType<Jobs['output']>>['next']>().toEqualTypeOf<number>()
+    expectTypeOf<Awaited<ReturnType<Jobs['start']>>['status']>().toEqualTypeOf<
+      'running' | 'exited' | 'stopped'
+    >()
     expectTypeOf<{
       code: number
       stdout: string

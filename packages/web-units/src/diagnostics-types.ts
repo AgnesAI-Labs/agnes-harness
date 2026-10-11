@@ -37,7 +37,11 @@ export type DiagnosticsBundle = {
   trace?: UITimeline
   events?: { file: 'events.jsonl'; count: number; lastSeq: number; truncated: boolean }
   artifacts: DiagnosticsArtifact[]
-  logs?: { daemon?: LogTail; host?: LogTail; browser?: BrowserLog }
+  /**
+   * `runtime` is the daemon runtime log (worker exits, session interruptions, daemon errors).
+   * `requestAudit` holds failed requests only, so an empty one is not an empty daemon log.
+   */
+  logs?: { runtime?: LogTail; requestAudit?: LogTail; host?: LogTail; browser?: BrowserLog }
   system?: {
     agh?: unknown
     runtime?: unknown

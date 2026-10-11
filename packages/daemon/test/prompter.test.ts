@@ -19,6 +19,14 @@ const req = {
   scope: 'workspace',
 }
 const never = new AbortController().signal
+/** The next question a client receives, or a failure naming the answer given without asking it. */
+const asked = (it: AsyncIterator<unknown>, answer: Promise<unknown>) =>
+  Promise.race([
+    it.next().then((n) => n.value as { id: string }),
+    answer.then((verdict) => {
+      throw new Error(`answered before this client was asked: ${JSON.stringify(verdict)}`)
+    }),
+  ])
 const mk = (o: Partial<ConstructorParameters<typeof PrompterRouter>[0]> = {}) => {
   const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
   const log: AskOutcome[] = []
@@ -61,7 +69,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_always' } },
     })
-    await expect(p).resolves.toBe('allowed-session')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-session', reason: 'user_allowed' })
     expect(log.map((x) => x.via)).toEqual(['absent', 'answered'])
   })
 
@@ -96,7 +104,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', reason: 'user_allowed' })
   })
 
   it('a request that is not about a tool is kind other and names no tool', async () => {
@@ -109,7 +117,7 @@ describe('PrompterRouter', () => {
     expect(m.params.toolCall.kind).toBe('other')
     expect(m.params.toolCall._meta).toBeUndefined()
     await ep.handle({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'cancelled' } } })
-    await expect(p).resolves.toBe('cancelled')
+    await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'client_cancelled' })
   })
 
   it('routes to an attached connection when the originator cannot answer', async () => {
@@ -139,7 +147,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', reason: 'user_allowed' })
   })
 
   it('an explicit rejection is the user rejecting, and never the policy fallback', async () => {
@@ -188,7 +196,7 @@ describe('PrompterRouter', () => {
         id: m.id,
         result: { outcome: { outcome: 'selected', optionId } },
       })
-      await expect(p).resolves.toBe('rejected')
+      await expect(p).resolves.toEqual({ verdict: 'rejected', reason: 'approver_failed' })
       expect(log.at(-1)?.via).toBe('malformed')
     },
   )
@@ -200,7 +208,7 @@ describe('PrompterRouter', () => {
     const p = r.ask(req as never, { signal: never })
     const m = (await it.next()).value as { id: string }
     await ep.handle({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'cancelled' } } })
-    await expect(p).resolves.toBe('cancelled')
+    await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'client_cancelled' })
     expect(log.at(-1)).toEqual({ requestId: 'r1', via: 'answered', verdict: 'cancelled' })
   })
 
@@ -210,9 +218,14 @@ describe('PrompterRouter', () => {
       'a JSON-RPC error from the client',
       { code: -32603, message: 'boom', data: { code: 'INTERNAL' } },
       'transport',
-      'rejected',
+      { verdict: 'rejected', reason: 'approver_failed' },
     ],
-    ['an outcome shape nobody defined', { outcome: { outcome: 'shrug' } }, 'malformed', 'rejected'],
+    [
+      'an outcome shape nobody defined',
+      { outcome: { outcome: 'shrug' } },
+      'malformed',
+      { verdict: 'rejected', reason: 'approver_failed' },
+    ],
   ] as const)('%s fails closed to rejected, recorded as its own cause', async (_n, answer, via, expected) => {
     const { ep, r, log } = mk({ clock: () => 59_990 }) // deadline is 60_000 ⇒ 10 ms to answer
     ep.conn.capabilities.permission = true
@@ -223,6 +236,83 @@ describe('PrompterRouter', () => {
     else if (answer) await ep.handle({ jsonrpc: '2.0', id: m.id, result: answer })
     await expect(p).resolves.toEqual(expected)
     expect(log.at(-1)).toEqual({ requestId: 'r1', via, verdict: 'rejected' })
+  })
+
+  /**
+   * The daemon keeps the connection that sent a prompt as the turn's origin until the prompt ends,
+   * and the turn outlives that connection: a browser that reconnects mid-turn leaves the origin
+   * pointing at a socket that is gone. Asking it fails at once, and before this was fixed the
+   * failure was written as a bare rejection - the user never saw a card and the model read
+   * "approval rejected". The question belongs to whichever client is still attached.
+   */
+  it('a prompt whose sender has gone away asks a client that is still attached', async () => {
+    const gone = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    gone.conn.capabilities.permission = true
+    const back = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    back.conn.capabilities.permission = true
+    back.conn.attached.set('k', {
+      cursor: { fromSeq: 0, generation: 1 },
+      filter: { preview: false, acpUpdates: true },
+    })
+    const r = new PrompterRouter({
+      // The supervisor's own lookup: a closed connection has left the live set.
+      endpointFor: (c) => {
+        if (c !== back.conn) throw new Error('endpointFor: connection not found among live connections')
+        return back
+      },
+      connections: () => [back.conn],
+      originOf: () => gone.conn,
+      clock: () => 0,
+    })
+    const p = r.ask(req as never, { signal: never })
+    const m = await asked(back.notifications[Symbol.asyncIterator](), p)
+    await back.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', reason: 'user_allowed' })
+  })
+
+  it('a client that drops while it is being asked hands the question to one still attached', async () => {
+    const first = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    first.conn.capabilities.permission = true
+    const second = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    second.conn.capabilities.permission = true
+    second.conn.attached.set('k', {
+      cursor: { fromSeq: 0, generation: 1 },
+      filter: { preview: false, acpUpdates: true },
+    })
+    const live = new Set([first.conn, second.conn])
+    const r = new PrompterRouter({
+      endpointFor: (c) => (c === first.conn ? first : second),
+      connections: () => [...live],
+      originOf: () => first.conn,
+      clock: () => 0,
+    })
+    const secondIt = second.notifications[Symbol.asyncIterator]()
+    const p = r.ask(req as never, { signal: never })
+    await asked(first.notifications[Symbol.asyncIterator](), p)
+    live.delete(first.conn)
+    await first.close()
+    const m = await asked(secondIt, p)
+    await second.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'reject_once' } },
+    })
+    await expect(p).resolves.toEqual({ verdict: 'rejected', reason: 'user_rejected' })
+  })
+
+  it('with no client left to ask, a failed delivery says the approver failed, not the user', async () => {
+    const { ep, r, log } = mk()
+    ep.conn.capabilities.permission = true
+    await ep.close()
+    await expect(r.ask(req as never, { signal: never })).resolves.toEqual({
+      verdict: 'rejected',
+      reason: 'approver_failed',
+    })
+    expect(log.at(-1)).toEqual({ requestId: 'r1', via: 'transport', verdict: 'rejected' })
   })
 
   it("the caller's own abort is a cancellation, not an outage", async () => {

@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto'
 import { promises as fsp } from 'node:fs'
 import { posix, win32 } from 'node:path'
-import type { FsPolicy, FsRule } from '@agnes/core'
+import type { FsPolicy, FsRule, SandboxProcess } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { WorkspaceRuntimeFence, WorkspaceRuntimeHandle } from '../session-workspace-runtime.js'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '../workspace-authority.js'
 import type { WorkspacePathSemantics } from '../workspace-policy.js'
-import { createPolicyExec, type ExecAdapter, type ExecGateState } from './exec.js'
+import { createPolicyExec, createPolicyStart, type ExecAdapter, type ExecGateState } from './exec.js'
 import { createFs, type FencedFs, type FsBinding } from './fs.js'
 import type { FsIo } from './fs-io.js'
 import { localFsIo } from './fs-io-local.js'
@@ -32,6 +32,8 @@ export type SessionWorkspaceFence = WorkspaceRuntimeFence &
     semantics: WorkspacePathSemantics
     fs: FencedFs
     exec: ExecAdapter['run']
+    /** Present when the executor can own a long-lived process; closing the fence stops every one. */
+    start?: NonNullable<ExecAdapter['start']>
     activateGate(state: ExecGateState): void
     binding(): Readonly<{ policyDigest: string | null }>
   }>
@@ -233,11 +235,37 @@ export function createSessionWorkspaceAdapterFactory(
         handle.kind === 'local' ? input.skillReadRoots : undefined,
         handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
       )
-      const exec = createPolicyExec(input.exec, {
+      const execGate = {
         boundDigest: () => bound?.digest ?? null,
         state: () => gate,
-        authorizeCwd: (cwd) => fs.resolveInside(cwd),
-      })
+        authorizeCwd: (cwd: string) => fs.resolveInside(cwd),
+      }
+      const exec = createPolicyExec(input.exec, execGate)
+      // Every background process started through this workspace is stopped when it closes, whatever
+      // its session did or failed to do: nothing the fence admitted outlives it.
+      const processes = new Set<SandboxProcess>()
+      const policyStart = input.exec.start
+        ? createPolicyStart(input.exec.start.bind(input.exec), execGate)
+        : undefined
+      const start: SessionWorkspaceFence['start'] = policyStart
+        ? async (argv, opts) => {
+            if (closed)
+              throw Object.assign(new Error('E_WORKSPACE_CLOSED: workspace fence closed'), {
+                code: 'E_WORKSPACE_CLOSED',
+              })
+            const child = await policyStart(argv, opts)
+            // Kept until it is stopped, not until its leader exits: a group can outlive its leader.
+            const owned: SandboxProcess = Object.freeze({
+              ...child,
+              stop: async () => {
+                await child.stop()
+                processes.delete(owned)
+              },
+            })
+            processes.add(owned)
+            return owned
+          }
+        : undefined
       return Object.freeze({
         root: handle.root,
         fs,
@@ -262,6 +290,7 @@ export function createSessionWorkspaceAdapterFactory(
           holder.policy = policy
         },
         exec,
+        ...(start ? { start } : {}),
         activateGate(next) {
           if (closed) throw fault('workspace fence closed')
           gate = Object.freeze({ ...next })
@@ -270,6 +299,8 @@ export function createSessionWorkspaceAdapterFactory(
         policyDigest: () => bound?.digest ?? null,
         close: async () => {
           closed = true
+          await Promise.allSettled([...processes].map((child) => child.stop()))
+          processes.clear()
         },
       } as SessionWorkspaceFence)
     },

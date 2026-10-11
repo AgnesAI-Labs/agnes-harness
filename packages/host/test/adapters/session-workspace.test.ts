@@ -114,6 +114,54 @@ describe('session workspace adapters', () => {
     await handleB.close()
   })
 
+  it('stops every background process it admitted when it closes, and admits none after', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-jobs-')))
+    roots.push(root)
+    const stops: string[] = []
+    const started = (name: string) => ({
+      pid: 1,
+      onOutput: () => {},
+      done: new Promise<never>(() => {}),
+      stop: async () => void stops.push(name),
+    })
+    const names = ['kept', 'stopped-early']
+    const start = vi.fn<NonNullable<ExecAdapter['start']>>(async () => started(names.shift() as string))
+    const factory = createSessionWorkspaceAdapterFactory({
+      platform: createPlatform(),
+      exec: { run: vi.fn<ExecAdapter['run']>(), start, killAll: async () => undefined },
+    })
+    const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root).bind('jobs'))
+    const fence = await factory.openFence(handle)
+    await fence.bind(policy(root, 'd'.repeat(64)))
+    fence.activateGate({ backend: 'none', onUnavailable: 'allow' })
+    const binding = { policyDigest: 'd'.repeat(64), backend: 'none' as const }
+    const startJob = fence.start as NonNullable<typeof fence.start>
+    await startJob(['serve'], { cwd: root, sandbox: binding })
+    const early = await startJob(['serve'], { cwd: root, sandbox: binding })
+    await early.stop()
+    expect(stops).toEqual(['stopped-early'])
+    await fence.close()
+    // Only the one still held is stopped again; the one its owner stopped is not stopped twice.
+    expect(stops).toEqual(['stopped-early', 'kept'])
+    await expect(startJob(['serve'], { cwd: root, sandbox: binding })).rejects.toThrow('E_WORKSPACE_CLOSED')
+    expect(start).toHaveBeenCalledTimes(2)
+    await handle.close()
+  })
+
+  it('offers no background start when its executor cannot own one', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-nojobs-')))
+    roots.push(root)
+    const factory = createSessionWorkspaceAdapterFactory({
+      platform: createPlatform(),
+      exec: { run: vi.fn<ExecAdapter['run']>(), killAll: async () => undefined },
+    })
+    const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root).bind('nojobs'))
+    const fence = await factory.openFence(handle)
+    expect(fence.start).toBeUndefined()
+    await fence.close()
+    await handle.close()
+  })
+
   it('leases remote roots per session and releases each owner independently', async () => {
     const released: string[] = []
     const pool = {

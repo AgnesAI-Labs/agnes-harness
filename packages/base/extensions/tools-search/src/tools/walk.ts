@@ -57,22 +57,63 @@ export type WalkReport = {
   truncated: boolean
   skipped: Set<string>
   denied: number
-  unreadable: number
+  /** Each path that could not be opened and why, so the result can name it rather than count it. */
+  unreadable: { path: string; reason: string }[]
+  /** The path the search was given could not be opened, so nothing under it was looked at. */
+  rootUnreadable: boolean
   oversize: number
+  binary: number
 }
 
 export function newWalkReport(): WalkReport {
-  return { truncated: false, skipped: new Set(), denied: 0, unreadable: 0, oversize: 0 }
+  return {
+    truncated: false,
+    skipped: new Set(),
+    denied: 0,
+    unreadable: [],
+    rootUnreadable: false,
+    oversize: 0,
+    binary: 0,
+  }
 }
+
+// What the codes a walk meets mean to the caller. The message they come with repeats the path the
+// note already names, and an unknown one is shown as its first line.
+const REASONS: Record<string, string> = {
+  ENOENT: 'not found',
+  ENOTDIR: 'not a directory',
+  EISDIR: 'a directory',
+  EACCES: 'permission denied',
+  EPERM: 'permission denied',
+  EBUSY: 'in use by another process',
+  ELOOP: 'too many symbolic links',
+  E_FS_DENIED: 'outside the workspace or denied by policy',
+}
+
+export function unreadableReason(e: unknown): string {
+  const code = (e as { code?: unknown } | undefined)?.code
+  if (typeof code === 'string' && REASONS[code] !== undefined) return REASONS[code]
+  const first = String((e as Error | undefined)?.message ?? e).split('\n')[0] || 'unknown error'
+  return first.length > 80 ? `${first.slice(0, 77)}...` : first
+}
+
+// A tree with a locked directory in every package would otherwise turn the note into the result.
+const MAX_NAMED_UNREADABLE = 10
 
 export function walkNotes(report: WalkReport, maxEntries: number): string[] {
   const out: string[] = []
   if (report.skipped.size > 0) out.push(`[not searched: ${[...report.skipped].sort().join(', ')}]`)
   if (report.denied > 0)
     out.push(`[${report.denied} path(s) skipped: outside the workspace or denied by policy]`)
-  if (report.unreadable > 0) out.push(`[${report.unreadable} path(s) could not be read]`)
+  if (report.unreadable.length > 0) {
+    const named = report.unreadable.slice(0, MAX_NAMED_UNREADABLE).map((u) => `${u.path} (${u.reason})`)
+    const more = report.unreadable.length - named.length
+    if (more > 0) named.push(`and ${more} more`)
+    out.push(`[${report.unreadable.length} path(s) could not be read: ${named.join('; ')}]`)
+  }
   if (report.oversize > 0)
     out.push(`[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes]`)
+  if (report.binary > 0) out.push(`[${report.binary} binary file(s) not searched]`)
   if (report.truncated) out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked]`)
   return out
 }
@@ -101,6 +142,11 @@ export function globToRegExp(glob: string): RegExp {
  *
  * Symlinks are yielded but never descended: a link is the ordinary way out of a workspace, and
  * following one by name would walk a tree the fence never cleared.
+ *
+ * A root that names a file is yielded as that one file, under its own name: the file `read` opens
+ * for the same path. A listing refuses a file, and a search that took the refusal for an empty tree
+ * would answer "no matches" about a file it never opened. A root that cannot be listed at all is
+ * named with the reason.
  */
 export async function* walk(
   ctx: ToolContext,
@@ -109,6 +155,17 @@ export async function* walk(
   opts: { maxEntries: number },
 ): AsyncGenerator<WalkEntry> {
   const base = root.replace(/\/+$/, '')
+  const asFile: WalkEntry = { rel: base.split(/[\\/]/).at(-1) || root, abs: root, kind: 'file' }
+  // Only asked whether the root is a file. A root this cannot describe is still listed, and a
+  // listing that fails says why.
+  const top = await ctx.fs.stat(root).then(
+    (s) => s.kind,
+    () => undefined,
+  )
+  if (top === 'file') {
+    yield asFile
+    return
+  }
   const queue: string[] = ['']
   let seen = 0
   while (queue.length > 0) {
@@ -116,8 +173,15 @@ export async function* walk(
     let entries: FsEntry[]
     try {
       entries = await ctx.fs.list(rel === '' ? root : `${base}/${rel}`)
-    } catch {
-      report.unreadable++
+    } catch (e) {
+      // A link given as the root is listed through, as one to a directory always was; one that
+      // leads to a file is that file.
+      if (rel === '' && top === 'symlink' && (e as { code?: string }).code === 'ENOTDIR') {
+        yield asFile
+        return
+      }
+      report.unreadable.push({ path: rel === '' ? root : rel, reason: unreadableReason(e) })
+      if (rel === '') report.rootUnreadable = true
       continue
     }
     // Code points, not the machine's collation: a listing whose order moves with the host's locale

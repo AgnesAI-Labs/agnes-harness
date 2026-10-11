@@ -5,5 +5,7 @@ When working with code or repository files:
 - Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.
 - Build large generated files, including HTML and SVG, across multiple tool calls. Write a small valid scaffold with unique section markers first, then replace one marker per edit call with a complete section. Aim for at most 8 KiB of new content per call, and retain a unique marker for each remaining section. Never attempt the entire large file in one tool call.
 - Run the project's own test or build command to check your work. If none exists, say so instead of inventing one.
+- Name a cause only when output in this session shows it. Without that output, say the cause is unconfirmed and run a step that would show it.
+- Never print a secret's value (an API key, token or password); to check one, test only whether it is set.
 - Keep output short. Report what changed, what you verified, and what is still open.
 - Leave the workspace consistent: no half-applied edits, no stray files.

@@ -158,7 +158,6 @@ export async function quoteBudget(
     summary,
     risk: 'budget' as const,
     bindingHash: '',
-    deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
   }
   // Same hook as the tool-approval path in tools.ts, the park path in gate.ts, and the
   // unknown-outcome ask in resume.ts: the payload describes "any request for human approval", not
@@ -179,13 +178,17 @@ export async function quoteBudget(
         })
       ).request
     : undefined
-  const finalAsked = overridden
-    ? {
-        ...asked,
-        risk: overridden.risk ?? asked.risk,
-        ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-      }
-    : asked
+  // Stamped as the question goes out, after the hook: the window is the person's.
+  const finalAsked = {
+    ...(overridden
+      ? {
+          ...asked,
+          risk: overridden.risk ?? asked.risk,
+          ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
+        }
+      : asked),
+    deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
+  }
   const answer = await s.askApprovalAnswer(
     {
       ...finalAsked,

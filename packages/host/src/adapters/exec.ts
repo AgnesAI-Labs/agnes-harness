@@ -1,5 +1,7 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import type { SandboxProcess } from '@agnes/core'
 import { createExecOutput } from './exec-output.js'
+import { ownedProcess } from './exec-owned.js'
 import { createWindowsExec } from './exec-win32.js'
 import type { PowerShellDescriptor } from './powershell.js'
 
@@ -10,6 +12,11 @@ export type ExecResult = {
   truncated: boolean
   timedOut: boolean
   signal?: string
+  /**
+   * Processes the command started that were still running when it returned, and were stopped with
+   * it. Present, and positive, only where the executor owns every process a command starts.
+   */
+  stoppedProcesses?: number
 }
 
 /**
@@ -36,8 +43,19 @@ export type ExecAdapter = {
       sandbox?: SandboxExecBinding
     },
   ): Promise<ExecResult>
+  /**
+   * Starts a process that outlives the call, owned by whoever holds the result: it is stopped by
+   * `stop`, or by `killAll` when the host goes away. Absent where a process cannot be owned.
+   */
+  start?(
+    argv: string[],
+    opts: { cwd: string; env?: Record<string, string>; sandbox?: SandboxExecBinding },
+  ): Promise<SandboxProcess>
   killAll(): Promise<void>
 }
+
+/** How long a stopped background process gets to exit on SIGTERM before its group is killed. */
+export const STOP_GRACE_MS = 2000
 
 /** The per-stream byte cap a command's output is held to when the caller names none. */
 export const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
@@ -97,6 +115,7 @@ export function createExec(
   } = {},
 ): ExecAdapter {
   const live = new Set<ChildProcess>()
+  const started = new Set<ChildProcess>()
   const base = opts.baseEnv ?? baseEnvironment()
   if (opts.windowsNodeExecutable)
     return createWindowsExec({
@@ -170,6 +189,14 @@ export function createExec(
           killGroup(child)
         }
         o.signal?.addEventListener('abort', onAbort, { once: true })
+        // When the command's own process ends, whatever it left in its group (a server sent to the
+        // background, a `nohup` child) is stopped with it and counted, as the Job does on the
+        // other platform. A leftover still holding the output pipes would otherwise keep `close`
+        // from firing until the deadline.
+        let leftovers: Promise<number> = Promise.resolve(0)
+        child.once('exit', () => {
+          if (!timedOut && !cancelled) leftovers = stopLeftovers(child, killGroup)
+        })
         child.on('error', (e) => {
           clearTimeout(timer)
           o.signal?.removeEventListener('abort', onAbort)
@@ -183,12 +210,15 @@ export function createExec(
           // Narrowed to a string before the spread: `signal ?? sig` is `string | undefined`, and an
           // optional property may not be handed an explicit undefined under this repo's settings.
           const ended: string | undefined = signal ?? sig
-          resolve({
-            code: code ?? -1,
-            ...output.result(),
-            timedOut,
-            ...(ended === undefined ? {} : { signal: ended }),
-          })
+          void leftovers.then((stoppedProcesses) =>
+            resolve({
+              code: code ?? -1,
+              ...output.result(),
+              timedOut,
+              ...(ended === undefined ? {} : { signal: ended }),
+              ...(stoppedProcesses > 0 ? { stoppedProcesses } : {}),
+            }),
+          )
         })
         // A child that exits without draining stdin makes this write fail with EPIPE on the stream.
         // A stream error is not the child's `error` event, so unhandled it becomes an
@@ -199,15 +229,113 @@ export function createExec(
         else child.stdin?.end()
       })
     },
+    start(argv, o) {
+      return new Promise<SandboxProcess>((resolve, reject) => {
+        const [cmd, ...args] = argv
+        if (!cmd) {
+          reject(new Error('exec: empty argv'))
+          return
+        }
+        // Its own process group, like a foreground command, so stopping it takes everything it
+        // started; nothing is read from stdin.
+        const child = spawn(cmd, args, {
+          cwd: o.cwd,
+          env: { ...base, ...(o.env ?? {}) },
+          detached: opts.detached ?? true,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+        let exited = false
+        const done = new Promise<{ code: number | null; signal?: string }>((settle) =>
+          child.once('exit', (code, signal) => {
+            exited = true
+            // What the leader left in its group goes with it, as a Job's does on the other
+            // platform. Waiting until someone calls stop would signal a group id that may by then
+            // belong to an unrelated process.
+            killGroup(child)
+            started.delete(child)
+            settle({ code, ...(signal ? { signal } : {}) })
+          }),
+        )
+        let stopping: Promise<void> | undefined
+        const stop = (): Promise<void> => {
+          stopping ??= (async () => {
+            if (exited) return
+            try {
+              process.kill(-(child.pid as number), 'SIGTERM')
+            } catch {
+              child.kill('SIGTERM')
+            }
+            await Promise.race([done, new Promise((wait) => setTimeout(wait, STOP_GRACE_MS).unref())])
+            if (!exited) killGroup(child)
+            await done
+          })()
+          return stopping
+        }
+        child.once('error', reject)
+        child.once('spawn', () => {
+          child.off('error', reject)
+          child.on('error', () => {})
+          started.add(child)
+          resolve(
+            ownedProcess({
+              pid: child.pid,
+              stdout: child.stdout as NonNullable<typeof child.stdout>,
+              stderr: child.stderr as NonNullable<typeof child.stderr>,
+              done,
+              stop,
+            }),
+          )
+        })
+      })
+    },
     async killAll() {
       for (const c of live) killGroup(c)
       live.clear()
+      for (const c of started) killGroup(c)
+      started.clear()
     },
   }
 }
 
+/**
+ * Stops what a finished command left in its process group and says how many processes that was.
+ * The group outlives its leader only while a member is alive, so an empty group answers ESRCH and
+ * nothing is signalled; `ps` gives the count, and a group known to exist counts as one when it
+ * cannot be listed.
+ */
+async function stopLeftovers(child: ChildProcess, kill: (child: ChildProcess) => void): Promise<number> {
+  const group = child.pid
+  if (group === undefined) return 0
+  try {
+    process.kill(-group, 0)
+  } catch {
+    return 0
+  }
+  const count = await new Promise<number>((resolve) =>
+    execFile('ps', ['-A', '-o', 'pgid=,pid='], { windowsHide: true }, (error, stdout) => {
+      if (error) {
+        resolve(1)
+        return
+      }
+      resolve(stdout.split('\n').filter((line) => Number(line.trim().split(/\s+/)[0]) === group).length)
+    }),
+  )
+  kill(child)
+  return count
+}
+
 const unavailable = (why: string): Error =>
   Object.assign(new Error(`SANDBOX_UNAVAILABLE: ${why}`), { code: 'SANDBOX_UNAVAILABLE' })
+
+export type ExecGate = {
+  /** The digest of the policy currently bound to the host FsOps, or null before binding. */
+  boundDigest(): string | null
+  /** The posture the sandbox seam declared; defaults to the closed one before it does. */
+  state(): ExecGateState
+  /** Canonicalizes a cwd against the live filesystem and applies the bound file policy; rejects E_FS_DENIED. */
+  authorizeCwd(cwd: string): Promise<string>
+}
 
 /**
  * The spawn-side half of the sandbox contract. Every process a seam creates goes through this
@@ -217,38 +345,42 @@ const unavailable = (why: string): Error =>
  * carries does not match what is bound, the answer is deny: an assembly that has not finished
  * wiring the sandbox is not one processes get to start in.
  */
-export function createPolicyExec(
-  inner: ExecAdapter,
-  gate: {
-    /** The digest of the policy currently bound to the host FsOps, or null before binding. */
-    boundDigest(): string | null
-    /** The posture the sandbox seam declared; defaults to the closed one before it does. */
-    state(): ExecGateState
-    /** Canonicalizes a cwd against the live filesystem and applies the bound file policy; rejects E_FS_DENIED. */
-    authorizeCwd(cwd: string): Promise<string>
-  },
-): ExecAdapter['run'] {
-  return async (argv, opts) => {
-    const bound = gate.boundDigest()
-    const request = opts.sandbox
-    // Only the sandbox seam can attest that it compiled/wrapped this argv under the active
-    // policy. A package calling its raw SeamAdapters.exec handle must not inherit permission just
-    // because some other caller successfully initialized an L1 or degraded backend.
-    if (request === undefined) throw unavailable('the request carries no sandbox binding')
-    // A request that names a binding must name the live one: a stale seam holding a superseded
-    // policy's digest, or a caller inventing one, is refused rather than debated.
-    if (bound === null || request.policyDigest !== bound || request.backend !== gate.state().backend)
-      throw unavailable('the request carries no valid sandbox binding')
-    if (bound === null) throw unavailable('no sandbox policy is bound')
-    const cwd = await gate.authorizeCwd(opts.cwd)
-    const state = gate.state()
-    // Only 'none' means "there is no backend". A remote posture has one - it is simply not this
-    // machine, so the preset's unconfined-execution allowance has nothing to say about it. A dead
-    // connection surfaces as an error from the remote runner, never as a fallback to local exec.
-    if (state.backend === 'none' && state.onUnavailable !== 'allow')
-      throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
-    return inner.run(argv, { ...opts, cwd })
-  }
+export function createPolicyExec(inner: ExecAdapter, gate: ExecGate): ExecAdapter['run'] {
+  return async (argv, opts) => inner.run(argv, { ...opts, cwd: await authorizeExec(gate, opts) })
+}
+
+/** The same gate for a background process: a long-lived command is admitted on the same terms. */
+export function createPolicyStart(
+  start: NonNullable<ExecAdapter['start']>,
+  gate: ExecGate,
+): NonNullable<ExecAdapter['start']> {
+  return async (argv, opts) => start(argv, { ...opts, cwd: await authorizeExec(gate, opts) })
+}
+
+/** Checks a request against the bound policy and posture, and returns the canonical cwd it may use. */
+async function authorizeExec(
+  gate: ExecGate,
+  opts: { cwd: string; sandbox?: SandboxExecBinding },
+): Promise<string> {
+  const bound = gate.boundDigest()
+  const request = opts.sandbox
+  // Only the sandbox seam can attest that it compiled/wrapped this argv under the active
+  // policy. A package calling its raw SeamAdapters.exec handle must not inherit permission just
+  // because some other caller successfully initialized an L1 or degraded backend.
+  if (request === undefined) throw unavailable('the request carries no sandbox binding')
+  // A request that names a binding must name the live one: a stale seam holding a superseded
+  // policy's digest, or a caller inventing one, is refused rather than debated.
+  if (bound === null || request.policyDigest !== bound || request.backend !== gate.state().backend)
+    throw unavailable('the request carries no valid sandbox binding')
+  if (bound === null) throw unavailable('no sandbox policy is bound')
+  const cwd = await gate.authorizeCwd(opts.cwd)
+  const state = gate.state()
+  // Only 'none' means "there is no backend". A remote posture has one - it is simply not this
+  // machine, so the preset's unconfined-execution allowance has nothing to say about it. A dead
+  // connection surfaces as an error from the remote runner, never as a fallback to local exec.
+  if (state.backend === 'none' && state.onUnavailable !== 'allow')
+    throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
+  return cwd
 }
 
 /**

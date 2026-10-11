@@ -27,7 +27,7 @@ const say = (text: string): InferenceEvent[] => [{ type: 'text_delta', delta: te
 
 /** Every builtin id that a default test host supplies through its own ext: row, with its registrations. */
 const SUPPLIED: Record<string, string[]> = {
-  'agnes/tools-core': ['tool:read', 'tool:write', 'tool:edit', 'tool:shell', 'tool:todo'],
+  'agnes/tools-core': ['tool:read', 'tool:write', 'tool:edit', 'tool:shell', 'tool:job', 'tool:todo'],
   'agnes/tools-search': ['tool:grep', 'tool:find', 'tool:ls'],
   'agnes/tools-web': ['tool:web_fetch'],
   'agnes/compaction': ['tool:compact'],

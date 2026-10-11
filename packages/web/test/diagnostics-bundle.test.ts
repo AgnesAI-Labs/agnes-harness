@@ -75,6 +75,7 @@ const collectResult = {
   logs: [
     { name: 'daemon.jsonl', size: 10, text: '{"kind":"daemon"}\n', truncated: false, missing: false },
     { name: 'host.jsonl', size: 16, text: '{"kind":"host"}\n', truncated: false, missing: false },
+    { name: 'runtime.jsonl', size: 25, text: '{"kind":"worker.exited"}\n', truncated: false, missing: false },
   ],
 }
 const apisResult = {
@@ -169,18 +170,63 @@ describe('collectDiagnostics', () => {
       'index.html',
       'system.json',
       'trace.json',
-      'logs/daemon.jsonl',
+      'logs/daemon-runtime.jsonl',
+      'logs/daemon-request-audit.jsonl',
       'logs/host.jsonl',
       'logs/browser.json',
       'events.jsonl',
     ])
+    expect(files.get('logs/daemon-runtime.jsonl')).toBe('{"kind":"worker.exited"}\n')
     expect(out.bundle.version).toBe('9.9.9')
+    expect(calls.find((c) => c.method === `${P}diagnostics.collect`)?.params).toEqual({ runtimeLog: true })
+  })
+
+  it('asks a daemon from before the runtime log again without it, and says the log is unavailable', async () => {
+    const { call, calls } = fake({
+      ...standard(),
+      'diagnostics.collect': (params) => {
+        // What an older daemon's params check answers for a field it does not know.
+        if ('runtimeLog' in params) throw new JsonRpcError(rpcError('INVALID_PARAMS', { code: 'INVALID' }))
+        return { ...collectResult, logs: collectResult.logs.filter((log) => log.name !== 'runtime.jsonl') }
+      },
+    })
+    const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
+    const files = readZip(out.zip)
+    expect(calls.filter((c) => c.method === `${P}diagnostics.collect`).map((c) => c.params)).toEqual([
+      { runtimeLog: true },
+      {},
+    ])
+    expect(out.bundle.version).toBe('9.9.9')
+    expect(files.has('logs/daemon-request-audit.jsonl')).toBe(true)
+    expect(files.has('logs/daemon-runtime.jsonl')).toBe(false)
+    expect(out.bundle.warnings).toEqual([{ source: 'logs', reason: 'unavailable', detail: 'runtime.jsonl' }])
+  })
+
+  it('does not ask again when the collect failure is anything but refused params', async () => {
+    const { call, calls } = fake({
+      ...standard(),
+      'diagnostics.collect': () => {
+        throw new JsonRpcError(rpcError('INTERNAL_ERROR', { code: 'INTERNAL' }))
+      },
+    })
+    const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
+    expect(calls.filter((c) => c.method === `${P}diagnostics.collect`)).toHaveLength(1)
+    expect(out.bundle.warnings).toContainEqual(
+      expect.objectContaining({ source: 'diagnostics.collect', reason: 'failed' }),
+    )
   })
 
   it('redacts every text file', async () => {
+    const runtime = `${JSON.stringify({ kind: 'worker.exited', detail: { stderr: [`auth ${SECRET_ERROR}`] } })}\n`
     const { call } = fake({
       ...standard([[ev(1, 'tool/result', { content: [{ type: 'text', text: `token ${SECRET_EVENT}` }] })]]),
       'config.get': () => ({ profile: 'default', provider: { note: `key ${SECRET_CONFIG}` } }),
+      'diagnostics.collect': () => ({
+        ...collectResult,
+        logs: collectResult.logs.map((log) =>
+          log.name === 'runtime.jsonl' ? { ...log, text: runtime } : log,
+        ),
+      }),
     })
     const projection = {
       sessionId: 'abc-123_DEF456',
@@ -202,11 +248,12 @@ describe('collectDiagnostics', () => {
     const files = readZip(out.zip)
     expect(files.size).toBeGreaterThanOrEqual(6)
     for (const [name, text] of files) {
-      for (const secret of [SECRET_PROJECTION, SECRET_EVENT, SECRET_BROWSER, SECRET_CONFIG]) {
+      for (const secret of [SECRET_PROJECTION, SECRET_EVENT, SECRET_BROWSER, SECRET_CONFIG, SECRET_ERROR]) {
         expect(text.includes(secret), `${name} leaks ${secret.slice(0, 4)}`).toBe(false)
       }
     }
     expect(files.get('events.jsonl')).toContain('REDACTED')
+    expect(files.get('logs/daemon-runtime.jsonl')).toContain('REDACTED')
   })
 
   it('omits inline base64 media from trace.json and index.html without touching the live projection', async () => {
@@ -341,7 +388,7 @@ describe('collectDiagnostics', () => {
     for (const name of ['trace.json', 'events.jsonl', 'system.json'])
       expect(files.has(name), name).toBe(false)
     expect(files.has('logs/browser.json')).toBe(true)
-    expect(files.has('logs/daemon.jsonl')).toBe(true)
+    expect(files.has('logs/daemon-request-audit.jsonl')).toBe(true)
     expect(calls.some((c) => c.method === `${P}diagnostics.events`)).toBe(false)
     expect(out.bundle.trace).toBeUndefined()
     expect(out.bundle.system).toBeUndefined()
@@ -490,17 +537,22 @@ describe('collectDiagnostics', () => {
         logs: [
           { name: 'daemon.jsonl', ...missing },
           { name: 'host.jsonl', ...missing },
+          { name: 'runtime.jsonl', ...missing },
         ],
       }),
     })
     const out = await collectDiagnostics(input(call), ALL, new AbortController().signal)
-    expect(out.bundle.logs?.daemon?.missing).toBe(true)
+    expect(out.bundle.logs?.requestAudit?.missing).toBe(true)
     expect(out.bundle.logs?.host?.missing).toBe(true)
-    expect(out.bundle.warnings).toContainEqual(
-      expect.objectContaining({ source: 'logs', reason: 'unavailable' }),
-    )
+    expect(out.bundle.logs?.runtime?.missing).toBe(true)
+    expect(out.bundle.warnings).toContainEqual({
+      source: 'logs',
+      reason: 'unavailable',
+      detail: 'daemon.jsonl, host.jsonl, runtime.jsonl',
+    })
     const files = readZip(out.zip)
-    expect(files.has('logs/daemon.jsonl')).toBe(false)
+    expect(files.has('logs/daemon-request-audit.jsonl')).toBe(false)
+    expect(files.has('logs/daemon-runtime.jsonl')).toBe(false)
     expect(files.has('logs/browser.json')).toBe(true)
   })
 

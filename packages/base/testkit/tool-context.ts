@@ -79,6 +79,8 @@ export type FakeToolContextOpts = {
    * the kinds a listing tool has to be able to show - has no other way into a test.
    */
   entries?: Record<string, FsEntry[]>
+  /** The session's background jobs the tool sees; omitted leaves `ctx.jobs` out, as a kernel without them does. */
+  jobs?: ToolContext['jobs']
 }
 
 const enc = new TextEncoder()
@@ -158,6 +160,10 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
         const listFail = listErrors.get(dir)
         if (listFail)
           throw Object.assign(new Error(listFail.message ?? 'list failed'), { code: listFail.code })
+        // A real listing refuses a file. Answering it as an empty directory would hide a tool that
+        // lists what it was asked to open.
+        if (mem.files.has(dir))
+          throw Object.assign(new Error(`ENOTDIR: not a directory, scandir '${p}'`), { code: 'ENOTDIR' })
         const names = new Map<string, 'file' | 'dir'>()
         for (const k of mem.files.keys()) {
           if (!k.startsWith(`${dir}/`)) continue
@@ -205,6 +211,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       list: () => [],
     },
+    ...(opts.jobs ? { jobs: opts.jobs } : {}),
     artifacts: {
       async put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef> {
         if (opts.artifactsFail !== undefined) throw new Error(opts.artifactsFail)

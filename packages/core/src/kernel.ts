@@ -44,9 +44,9 @@ import type {
 } from './workspace/runtime.js'
 
 /**
- * The closed set of `x/core/*` diagnostic names. Five of them are written outside this file:
+ * The closed set of `x/core/*` diagnostic names. Six of them are written outside this file:
  * `registers-rebuilt` by the materialization check on open, `contribute-conflict`,
- * `context-breakdown` and `request-media-window` by the inference segment, plus
+ * `context-breakdown`, `request-media-window` and `inference-retry` by the inference segment, plus
  * `manual-compaction` by the explicit session operation. A name missing from here stops `diag`
  * compiling at its call site, which is the point of closing the set rather than accepting any string.
  */
@@ -73,6 +73,7 @@ export const CORE_DIAG_NAMES = [
   'contribute-conflict',
   'context-breakdown',
   'request-media-window',
+  'inference-retry',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 

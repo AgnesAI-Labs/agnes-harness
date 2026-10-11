@@ -1,5 +1,6 @@
 import type { PublicFetch } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { JobRegistry } from '../src/effects/jobs.js'
 import { buildToolContext, type ChildHandle, type ChildrenFactory } from '../src/effects/tool-context.js'
 import { SeamRuntime } from '../src/effects/wrap.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -11,6 +12,8 @@ function setup(
   over: {
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
+    jobs?: JobRegistry
+    workspace?: Parameters<typeof buildToolContext>[0]['workspace']
   } = {},
 ) {
   const created: unknown[] = []
@@ -46,6 +49,8 @@ function setup(
       runtime,
       preset: presetDefaults(),
       children,
+      ...(over.jobs ? { jobs: over.jobs } : {}),
+      ...(over.workspace ? { workspace: over.workspace } : {}),
       fsOps: {
         read: async () => new Uint8Array(),
         write: async () => undefined,
@@ -333,5 +338,42 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
       'timeoutMs',
       'tools',
     ])
+  })
+})
+
+describe('ctx.jobs', () => {
+  const process = { pid: 3, onOutput: () => {}, done: new Promise<never>(() => {}), stop: async () => {} }
+
+  it('is absent where the session keeps no jobs', () => {
+    expect(setup().context.jobs).toBeUndefined()
+  })
+
+  it("starts through this call's workspace sandbox, in the call's cwd, naming the command without the placeholder", async () => {
+    const start = vi.fn(async () => process)
+    const jobs = new JobRegistry(() => new Date('2026-10-11T00:00:00.000Z'))
+    const workspace = {
+      sandbox: { exec: vi.fn(), enforcement: vi.fn(), start },
+    } as unknown as NonNullable<Parameters<typeof buildToolContext>[0]['workspace']>
+    const { context } = setup(fakeSeams(), undefined, { jobs, workspace })
+    await expect(
+      context.jobs?.start(['$SHELL', 'npm run dev'], { env: { PYTHONUNBUFFERED: '1' } }),
+    ).resolves.toMatchObject({
+      id: 'job-1',
+      command: 'npm run dev',
+      cwd: '/workspace/parent',
+      status: 'running',
+    })
+    expect(start).toHaveBeenCalledWith(['$SHELL', 'npm run dev'], {
+      cwd: '/workspace/parent',
+      env: { PYTHONUNBUFFERED: '1' },
+    })
+    await expect(context.jobs?.list()).resolves.toHaveLength(1)
+  })
+
+  it('refuses a start outside a workspace invocation, where there is no sandbox to start in', async () => {
+    const { context } = setup(fakeSeams(), undefined, { jobs: new JobRegistry() })
+    await expect(context.jobs?.start(['$SHELL', 'serve'])).rejects.toMatchObject({
+      code: 'E_WORKSPACE_CLOSED',
+    })
   })
 })

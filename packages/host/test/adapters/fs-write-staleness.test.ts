@@ -41,12 +41,13 @@ describe('write staleness on the real file system adapter', () => {
   const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
     tool(name).execute(args as never, ctx)
 
+  // A file that is CRLF throughout is written back CRLF; the others take the content as given.
   it.each([
-    ['a byte that is not UTF-8', Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a])],
-    ['a byte order mark', Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x62, 0x0a])],
-    ['CRLF line endings', Buffer.from('one\r\ntwo\r\n')],
-    ['text with no final newline', Buffer.from('one\ntwo')],
-  ])('does not call a file with %s changed when only it was read', async (_label, bytes) => {
+    ['a byte that is not UTF-8', Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]), '\n'],
+    ['a byte order mark', Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x62, 0x0a]), '\n'],
+    ['CRLF line endings', Buffer.from('one\r\ntwo\r\n'), '\r\n'],
+    ['text with no final newline', Buffer.from('one\ntwo'), '\n'],
+  ])('does not call a file with %s changed when only it was read', async (_label, bytes, eol) => {
     const path = join(root, 'f.txt')
     writeFileSync(path, bytes)
     const ctx = session()
@@ -54,7 +55,7 @@ describe('write staleness on the real file system adapter', () => {
     expect(text(await run('write', { path: 'f.txt', content: 'rewritten\n'.repeat(3) }, ctx))).toMatch(
       /^overwrote/,
     )
-    expect(readFileSync(path, 'utf8')).toBe('rewritten\n'.repeat(3))
+    expect(readFileSync(path, 'utf8')).toBe(`rewritten${eol}`.repeat(3))
   })
 
   it('refuses after another writer changed the file, and accepts once it is read again', async () => {

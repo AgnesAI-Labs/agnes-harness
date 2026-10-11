@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "const": "list",
+          "type": "string"
+        },
+        {
+          "const": "output",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "type": "string"
+        }
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "maxLength": 64,
+      "type": "string"
+    },
+    "waitMs": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "action"
+  ]
+}

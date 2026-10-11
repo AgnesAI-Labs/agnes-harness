@@ -106,7 +106,7 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
     const stdout = collect(child.stdout),
       stderr = collect(child.stderr)
     child.stdin.end('输入🌱')
-    expect(await child.completion).toEqual({ code: 7, signal: null, cancelled: false })
+    expect(await child.completion).toEqual({ code: 7, signal: null, cancelled: false, stoppedProcesses: 0 })
     expect(JSON.parse(await stdout)).toEqual({ args, input: '输入🌱', env: '环境值' })
     expect(await stderr).toBe('错误信息')
     expect(windowsProcessStartTimeSync(child.pid)).toBeNull()
@@ -126,7 +126,8 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
     const output = collect(child.stdout)
     child.stderr.resume()
     child.stdin.end()
-    expect(await child.completion).toEqual({ code: 3, signal: null, cancelled: false })
+    // The detached child was still running when the root exited: it is stopped, and counted.
+    expect(await child.completion).toEqual({ code: 3, signal: null, cancelled: false, stoppedProcesses: 1 })
     const pid = await output
     expect(pid).toMatch(/^[1-9][0-9]*$/)
     expect(windowsProcessStartTimeSync(Number(pid))).toBeNull()
@@ -151,7 +152,7 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
     child.stderr.resume()
     child.stdin.end()
     child.terminate()
-    expect(await child.completion).toEqual({ code: 1, signal: null, cancelled: true })
+    expect(await child.completion).toEqual({ code: 1, signal: null, cancelled: true, stoppedProcesses: 0 })
     expect(windowsProcessStartTimeSync(pid)).toBeNull()
   })
 
@@ -175,7 +176,11 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
     const output = collect(child.stdout)
     child.stderr.resume()
     child.stdin.end()
-    expect(await child.completion).toEqual({ code: 9, signal: null, cancelled: false })
+    const done = await child.completion
+    expect(done).toMatchObject({ code: 9, signal: null, cancelled: false })
+    // Six wait 15 s and are surely counted; a short-lived one still starting up may be counted too.
+    expect(done.stoppedProcesses).toBeGreaterThanOrEqual(6)
+    expect(done.stoppedProcesses).toBeLessThanOrEqual(12)
     const pids = JSON.parse(await output) as number[]
     expect(pids).toHaveLength(12)
     for (const pid of pids) expect(windowsProcessStartTimeSync(pid)).toBeNull()
@@ -212,7 +217,7 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
       const output = collect(child.stdout)
       child.stderr.resume()
       child.stdin.end()
-      expect(await child.completion).toEqual({ code: 0, signal: null, cancelled: false })
+      expect(await child.completion).toEqual({ code: 0, signal: null, cancelled: false, stoppedProcesses: 0 })
       expect(await output).toBe('ok')
       expect(existsSync(marker)).toBe(false)
     } finally {

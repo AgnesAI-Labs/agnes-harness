@@ -54,6 +54,8 @@ const UNAVAILABLE = new Set<unknown>([
   'SESSION_NOT_FOUND',
   'NOT_REGISTERED',
 ])
+// JSON-RPC INVALID_PARAMS: what a daemon from before an optional field answers when it is sent.
+const INVALID_PARAMS = -32602
 const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/
 const IMPORT_SOURCES = new Set<unknown>(['claude-code', 'codex', 'pi', 'agnes'])
 const encoder = new TextEncoder()
@@ -146,7 +148,13 @@ export async function collectDiagnostics(
   const warnings: DiagnosticsWarning[] = []
   let expired = false
   // A failed item becomes a warning and `undefined`; only the user's own abort rejects the export.
-  const rpc = async <T>(method: string, params: unknown, quiet = false): Promise<T | undefined> => {
+  // `older` is asked instead when the daemon refuses `params` as invalid, as one built before a field does.
+  const rpc = async <T>(
+    method: string,
+    params: unknown,
+    quiet = false,
+    older?: unknown,
+  ): Promise<T | undefined> => {
     if (expired) return undefined
     try {
       return (await withTimeout(
@@ -157,6 +165,8 @@ export async function collectDiagnostics(
     } catch (error) {
       if (signal.aborted) throw abortError()
       if (total.aborted) expired = true
+      else if (older !== undefined && (error as { code?: unknown } | null)?.code === INVALID_PARAMS)
+        return rpc<T>(method, older, quiet)
       else if (!quiet) warnings.push(warnFor(method, error))
       return undefined
     }
@@ -169,7 +179,12 @@ export async function collectDiagnostics(
   const effective = { ...include, conversation: include.conversation && sessionId !== null }
   const [collected, apis, config] = await Promise.all([
     // Always read for bundle.version, but a failure only matters when logs or system were selected.
-    rpc<DiagnosticsCollectResult>('diagnostics.collect', {}, !(effective.logs || effective.system)),
+    rpc<DiagnosticsCollectResult>(
+      'diagnostics.collect',
+      { runtimeLog: true },
+      !(effective.logs || effective.system),
+      {},
+    ),
     effective.system ? rpc<ApisListResult>('apis.list', {}) : undefined,
     effective.system ? rpc<unknown>('config.get', {}) : undefined,
   ])
@@ -239,9 +254,14 @@ export async function collectDiagnostics(
     const log = collected?.logs.find((l) => l.name === name)
     return log && { size: log.size, text: log.text, truncated: log.truncated, missing: log.missing }
   }
-  const daemonLog = tailOf('daemon.jsonl')
+  // daemon.jsonl is the request audit (failed requests only); runtime.jsonl is the daemon's runtime log.
+  const requestAudit = tailOf('daemon.jsonl')
   const hostLog = tailOf('host.jsonl')
-  const missingLogs = [daemonLog?.missing && 'daemon.jsonl', hostLog?.missing && 'host.jsonl'].filter(Boolean)
+  const runtimeLog = tailOf('runtime.jsonl')
+  // A daemon from before the runtime log returns no entry for it, which is as missing as a missing file.
+  const missingLogs = collected
+    ? ['daemon.jsonl', 'host.jsonl', 'runtime.jsonl'].filter((name) => tailOf(name)?.missing !== false)
+    : []
   if (effective.logs && missingLogs.length)
     warnings.push({ source: 'logs', reason: 'unavailable', detail: missingLogs.join(', ') })
   const bundle: DiagnosticsBundle = redactDiagnostic({
@@ -258,7 +278,8 @@ export async function collectDiagnostics(
     ...(effective.logs
       ? {
           logs: {
-            ...(daemonLog ? { daemon: daemonLog } : {}),
+            ...(runtimeLog ? { runtime: runtimeLog } : {}),
+            ...(requestAudit ? { requestAudit } : {}),
             ...(hostLog ? { host: hostLog } : {}),
             browser: input.browserLog,
           },
@@ -294,7 +315,11 @@ export async function collectDiagnostics(
   const json = (value: unknown) => JSON.stringify(value, null, 2)
   if (bundle.system) add('system.json', json(bundle.system))
   if (bundle.trace) add('trace.json', json(bundle.trace))
-  if (bundle.logs?.daemon && !bundle.logs.daemon.missing) add('logs/daemon.jsonl', bundle.logs.daemon.text)
+  // Named for what each holds: an empty request audit is not an empty daemon log.
+  if (bundle.logs?.runtime && !bundle.logs.runtime.missing)
+    add('logs/daemon-runtime.jsonl', bundle.logs.runtime.text)
+  if (bundle.logs?.requestAudit && !bundle.logs.requestAudit.missing)
+    add('logs/daemon-request-audit.jsonl', bundle.logs.requestAudit.text)
   if (bundle.logs?.host && !bundle.logs.host.missing) add('logs/host.jsonl', bundle.logs.host.text)
   if (bundle.logs) add('logs/browser.json', json(bundle.logs.browser))
   if (ledger) add('events.jsonl', lines.length ? `${lines.join('\n')}\n` : '')

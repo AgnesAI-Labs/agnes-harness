@@ -232,7 +232,13 @@ it('cancels a hung auth recovery and gives the replacement request a first-token
     }),
   )
   expect(timedOut).toMatchObject([
-    { type: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
+    {
+      type: 'error',
+      code: 'TIMEOUT',
+      message:
+        'no answer from the model provider while waiting for the first byte (first-token timeout, 20ms), after 2 attempts',
+      retryable: true,
+    },
   ])
   expect(calls).toBe(2)
 })
@@ -594,7 +600,13 @@ describe('PiAdapter', () => {
     expect(seen).toHaveLength(3)
     expect(waits).toEqual([500, 1000])
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
+    // The retries are otherwise invisible: the one error that leaves says how many requests it took.
+    expect(events[0]).toMatchObject({
+      type: 'error',
+      code: 'TRANSPORT',
+      message: 'status=503, after 3 attempts',
+      retryable: true,
+    })
   })
 
   it.each(['429 Too Many Requests', '503 upstream'])(

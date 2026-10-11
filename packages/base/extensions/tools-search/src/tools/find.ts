@@ -31,6 +31,12 @@ export const findTool = defineTool({
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more]`)
+    // The path itself could not be opened: "no matches" would say it was looked through.
+    if (report.rootUnreadable)
+      return {
+        ...(await guardedResult(ctx, ['nothing could be searched', ...notes].join('\n'))),
+        isError: true,
+      }
     return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
   },
 })

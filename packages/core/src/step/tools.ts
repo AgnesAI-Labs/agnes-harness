@@ -384,9 +384,15 @@ export async function approveAndExecute(
     const risk = policy.requiresApproval
     // A delegated child and its manager run unattended, so taint cannot force an ask nobody answers.
     const isSubagentManagement = SUBAGENT_TOOLS.has(call.name)
+    // Taint escalates a call that changes something, but not one whose band is 'never': that band is
+    // the tool author's declaration that no call of it needs a person (the plan list, a background
+    // job the session started). A tool that declared no band resolves a writing call to 'destructive'
+    // (resolveToolCallPolicy), so taint still reaches it.
     let needsAsk =
       !isSubagentManagement &&
-      (risk === 'always' || (risk === 'destructive' && policy.isDestructive) || (taint && !policy.isReadOnly))
+      (risk === 'always' ||
+        (risk === 'destructive' && policy.isDestructive) ||
+        (taint && !policy.isReadOnly && risk !== 'never'))
     const decision = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
@@ -600,14 +606,19 @@ export async function approveAndExecute(
         kind: 'tool' as const,
         toolUseId: call.toolUseId,
         summary: summarizeCall(call.name, call.args),
-        risk: risk === 'always' ? ('always' as const) : ('destructive' as const),
+        // A 'never' band is asked about only when the deployment's authorization requires approval
+        // whatever the call does, which is what 'always' says; it is not a destructive call.
+        risk: risk === 'destructive' ? ('destructive' as const) : ('always' as const),
         bindingHash,
         scope,
         policyVersion: policy.policyVersion,
         ...(durableBinding ? { profileHash: durableBinding.profileHash } : {}),
         options,
-        deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
       }
+      // The window a person has to answer opens when the question is put to them. Stamped before the
+      // hook and the guardian, their time ran while nothing was on screen, and a guardian that took
+      // most of it to escalate left seconds to read a call the model may have spent minutes writing.
+      const deadline = () => new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString()
       // A transform hook: an extension may adjust risk/context/summary before the question reaches a
       // human, the same waterfall shape `context`/`before_request` already use. `argv` is cast rather
       // than re-validated here because the inference or nested-call entry validated `call.args`
@@ -634,6 +645,7 @@ export async function approveAndExecute(
         : asked
       const approvalRequest = {
         ...finalAsked,
+        deadline: deadline(),
         sessionKey: s.key,
         stepId,
         tool: { name: call.name, args: call.args, meta },
@@ -737,7 +749,7 @@ export async function approveAndExecute(
             ...costEvents,
             ...(guardianVerdict
               ? [
-                  s.ev('approval/asked', finalAsked),
+                  s.ev('approval/asked', { ...finalAsked, deadline: approvalRequest.deadline }),
                   s.ev('approval/decided', {
                     requestId,
                     verdict: guardianVerdict,
@@ -771,7 +783,9 @@ export async function approveAndExecute(
       }
       const storage = s.d.log.storage
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
-      const answer = await s.askApprovalAnswer(approvalRequest, o.signal ?? s.ac.signal)
+      const humanRequest = { ...approvalRequest, deadline: deadline() }
+      const humanAsked = { ...finalAsked, deadline: humanRequest.deadline }
+      const answer = await s.askApprovalAnswer(humanRequest, o.signal ?? s.ac.signal)
       if (hasChildControl(storage) && !isPending(answer))
         await transitionChildState(storage, s.key, 'running')
       if (isPending(answer)) {
@@ -781,7 +795,7 @@ export async function approveAndExecute(
         // every unanswered question with it rather than dropping the ones that lost the race.
         return {
           result: errorResult('parked'),
-          park: s.ev('approval/asked', { ...finalAsked, pending: answer }),
+          park: s.ev('approval/asked', { ...humanAsked, pending: answer }),
         }
       }
       // A delegated sub-agent has no one to ask: unanswered is refused, and says why.
@@ -795,7 +809,7 @@ export async function approveAndExecute(
           : undefined
       await s.transition(
         [
-          s.ev('approval/asked', finalAsked),
+          s.ev('approval/asked', humanAsked),
           s.ev('approval/decided', {
             requestId,
             verdict,
@@ -1033,6 +1047,7 @@ export async function approveAndExecute(
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,
+          jobs: s.jobs,
           fsOps,
           ...(workspace ? { workspace } : {}),
           netFetch: s.d.netFetch,

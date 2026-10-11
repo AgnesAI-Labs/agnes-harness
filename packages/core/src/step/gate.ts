@@ -299,7 +299,6 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       summary: `verifier failed: ${verdict.reasons.join('; ')}`,
       risk: 'unknown' as const,
       bindingHash: '',
-      deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
     }
     // Same hook as the tool-approval path in tools.ts: the payload describes "any request for human
     // approval", not "only a tool approval" — this park has no tool call behind it at all, so `tool`
@@ -319,13 +318,18 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
           })
         ).request
       : undefined
-    const finalAsked = overridden
-      ? {
-          ...asked,
-          risk: overridden.risk ?? asked.risk,
-          ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-        }
-      : asked
+    // The deadline is stamped once the hook has run, as the question goes out: its window is the
+    // person's, and nothing is on their screen before this.
+    const finalAsked = {
+      ...(overridden
+        ? {
+            ...asked,
+            risk: overridden.risk ?? asked.risk,
+            ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
+          }
+        : asked),
+      deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
+    }
     const answer = await s.askApprovalAnswer(
       {
         ...finalAsked,

@@ -297,6 +297,49 @@ describe('v3 approval modes and grants', () => {
     },
   )
 
+  /**
+   * The person's window opens when the question reaches them. It used to be stamped before the
+   * guardian ran, so a guardian that took most of the timeout to escalate left the person seconds to
+   * read the request, and a call the model had spent minutes writing was refused as unanswered.
+   */
+  it('starts the deadline when a person is asked, not before the guardian ran', async () => {
+    let now = 1_757_203_200_000
+    const left: number[] = []
+    const seams = fakeSeams({
+      approval: {
+        guard: async () => {
+          now += 50_000
+          return { decision: 'escalate', ruleVersion: 'guardian-v1', reasons: ['unsure'] }
+        },
+        ask: async (request) => {
+          left.push(Date.parse(request.deadline) - now)
+          return 'allowed-once'
+        },
+      },
+    })
+    const opened = await openSession({
+      provider: fakeProvider([toolTurn('scoped_write', { value: '0' })]),
+      registry: registryWith(
+        scopedTool(['cua:click:background'], async () => ({
+          content: [{ type: 'text' as const, text: 'ok' }],
+        })),
+      ),
+      seams,
+      approvalMode: 'smart',
+      resolvedProfileHash: profileHash,
+      clock: () => now,
+    })
+    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    await opened.session.acceptInput()
+    await opened.session.runInference()
+    await opened.session.runToolsPhase()
+    expect(left).toEqual([60_000])
+    const asked = (await opened.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data as {
+      deadline: string
+    }
+    expect(Date.parse(asked.deadline)).toBe(now + 60_000)
+  })
+
   it('fails smart approval closed when its bounded cost cannot be projected or recorded', async () => {
     for (const mode of ['projection', 'record'] as const) {
       let guards = 0

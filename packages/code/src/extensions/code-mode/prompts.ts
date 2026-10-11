@@ -44,6 +44,7 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
     agnesVersion: ctx.session.d.agnesVersion ?? '0.0.0',
     platform: `${os.os}-${os.arch}`,
     shell: deps.adapters.shell?.description ?? platform.shell(),
+    dialect: platform.shell() === 'powershell' ? 'powershell' : 'posix',
   }
 }
 

@@ -17,6 +17,7 @@ import type { PresetView } from '../step/preset.js'
 import { CoreError, type Seq } from '../types.js'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { assertNotDenied } from './fs-guard.js'
+import type { JobRegistry } from './jobs.js'
 import type { SeamRuntime } from './wrap.js'
 
 export type ChildStatus = { state: 'running' | 'done' | 'error'; lastSeq: Seq; text?: string }
@@ -79,6 +80,8 @@ export type ToolContextDeps = {
   runtime: SeamRuntime
   preset: PresetView
   children: ChildrenFactory
+  /** The session's background jobs; absent leaves `ctx.jobs` out and background execution unavailable. */
+  jobs?: JobRegistry
   fsOps: FsOps
   /** Capabilities from the one tool-level WorkspaceInvocationPort lease. */
   workspace?: Readonly<{
@@ -159,6 +162,7 @@ export function buildToolContext(
         signal: call.signal,
       })
     },
+    ...(d.jobs ? { jobs: toolJobs(d.jobs, d) } : {}),
     fs: {
       read: (path, opts) => d.fsOps.read(path, opts),
       // A write is snapshotted before it happens, so a rewind has something to go back to. An
@@ -343,5 +347,27 @@ export function buildToolContext(
       budget: { remaining: 1 },
     },
     log: d.log,
+  }
+}
+
+/** The session's job registry as a tool sees it: starts go through this call's workspace sandbox. */
+function toolJobs(jobs: JobRegistry, d: ToolContextDeps): NonNullable<ToolContext['jobs']> {
+  return {
+    start: (cmd, opts) => {
+      if (!d.workspace)
+        return Promise.reject(
+          new CoreError('E_WORKSPACE_CLOSED', 'sandbox is unavailable outside a workspace invocation'),
+        )
+      // The shell placeholder in front of a command line is not part of what was asked to run.
+      const command = (cmd[0] === '$SHELL' ? cmd.slice(1) : cmd).join(' ')
+      return jobs.start(d.workspace.sandbox, cmd, {
+        cwd: opts?.cwd ?? d.cwd,
+        command,
+        ...(opts?.env ? { env: opts.env } : {}),
+      })
+    },
+    output: (id, opts) => jobs.output(id, opts),
+    stop: (id) => jobs.stop(id),
+    list: async () => jobs.list(),
   }
 }

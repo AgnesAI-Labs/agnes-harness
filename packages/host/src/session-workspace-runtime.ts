@@ -404,6 +404,12 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       hookSandbox: {
         enforcement: () => sandbox.enforcement(),
         exec: (argv, opts) => withAccess(() => sandbox.exec(argv, opts)),
+        ...(sandbox.start
+          ? {
+              start: (argv: string[], opts: { cwd: string; env?: Record<string, string> }) =>
+                withAccess(() => (sandbox.start as NonNullable<typeof sandbox.start>)(argv, opts)),
+            }
+          : {}),
       },
       approval: services?.approval ?? unavailableApproval,
       checkpoint: {

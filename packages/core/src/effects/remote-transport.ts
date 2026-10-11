@@ -39,6 +39,7 @@ export type RemoteTransport = Readonly<{
     truncated: boolean
     timedOut?: boolean
     signal?: string
+    stoppedProcesses?: number
   }>
   upload(files: readonly { path: string; content: Uint8Array }[]): Promise<void>
   download(paths: readonly string[]): Promise<readonly { path: string; content: Uint8Array }[]>

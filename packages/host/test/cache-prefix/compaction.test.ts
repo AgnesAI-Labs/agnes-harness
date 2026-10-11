@@ -275,7 +275,7 @@ describe('real provider wire compaction prefix', () => {
   })
 
   it.each(['anthropic-messages', 'openai-completions'] as const)(
-    '%s keeps native tools available but rejects a summary tool call',
+    '%s offers native tools to a wide summary, then asks again without them after a tool call',
     async (api) => {
       await fixture(
         api,
@@ -295,28 +295,32 @@ describe('real provider wire compaction prefix', () => {
           await session.requestCompaction({ actor: session.d.actor, admissionId: 'wire-no-tools' })
           await session.run({ until: 'turn-end', signal: new AbortController().signal })
           const summary = requests[2]
-          if (!summary) throw new Error('missing summary request')
+          const retry = requests[3]
+          if (!summary || !retry) throw new Error('missing summary requests')
           expectExtends(primary, summary)
           expect(JSON.stringify(summary.body)).toContain('read')
           expect(JSON.stringify(summary.body)).not.toContain('tool_choice')
+          const parts = renderedParts(retry)
+          expect(parts.find((part) => part.key === 'tools')).toBeUndefined()
+          expect(parts.at(-1)?.bytes).toContain('Do not call any tool')
+          expect(requests).toHaveLength(4)
+          const retries = await session.d.log.scan({ type: 'x/core/compaction-retry', limit: 10 })
+          expect(retries.map((row) => row.data)).toEqual([
+            expect.objectContaining({ cause: 'summary called a tool', form: 'without-tools' }),
+          ])
           const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-          expect(begins).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
-              }),
-            ]),
-          )
+          expect(begins).toHaveLength(1)
+          expect(begins[0]?.data).not.toHaveProperty('mode')
         },
       )
     },
   )
 
-  it('decodes a textual summary tool call and mechanically elides on the OpenAI wire', async () => {
+  it('decodes a textual summary tool call, asked again without tools too, and mechanically elides on the OpenAI wire', async () => {
     await fixture(
       'openai-completions',
       (index) =>
-        index === 2
+        index === 2 || index === 3
           ? { text: '<function=read><parameter=path>probe.txt</parameter></function>' }
           : { text: 'fixture reply' },
       async (session, requests) => {
@@ -331,16 +335,19 @@ describe('real provider wire compaction prefix', () => {
         await session.requestCompaction({ actor: session.d.actor, admissionId: 'wire-text-call' })
         await session.run({ until: 'turn-end', signal: new AbortController().signal })
         const summary = requests[2]
-        if (!summary) throw new Error('missing summary request')
+        const retry = requests[3]
+        if (!summary || !retry) throw new Error('missing summary requests')
         expectExtends(primary, summary)
+        // The retry offers no tool, but a call written out as text is still read as one.
+        expect(renderedParts(retry).find((part) => part.key === 'tools')).toBeUndefined()
+        expect(requests).toHaveLength(4)
         const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-        expect(begins).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
-            }),
-          ]),
-        )
+        expect(begins).toEqual([
+          expect.objectContaining({
+            data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
+          }),
+        ])
+        expect(await session.d.log.scan({ type: 'x/core/compaction-retry', limit: 10 })).toHaveLength(1)
       },
     )
   })

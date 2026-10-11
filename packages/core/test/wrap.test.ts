@@ -48,7 +48,7 @@ const workspacePort = (seams: ReturnType<typeof fakeSeams>, release: () => void 
   }))
 
 describe('SeamRuntime', () => {
-  it('maps approval failures to rejected and reports which seam and op failed', async () => {
+  it('maps approval failures to rejected, says the approver failed, and reports which seam and op failed', async () => {
     const failures: unknown[] = []
     const seams = fakeSeams({
       approval: {
@@ -62,7 +62,8 @@ describe('SeamRuntime', () => {
       clock: () => 0,
       onFailure: (f) => failures.push(f),
     })
-    expect(await rt.approvalAsk(req, sig())).toBe('rejected')
+    // Nobody answered: the refusal is the approver's failure, never something the user decided.
+    expect(await rt.approvalAsk(req, sig())).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
     expect(failures).toEqual([{ seam: 'approval', op: 'ask', message: 'oa down' }])
   })
 
@@ -101,7 +102,7 @@ describe('SeamRuntime', () => {
     expect(events).toEqual(['publication:enter', 'publication:release', 'handler', 'workspace:release'])
   })
 
-  it('approval timeout is rejected with its reason; an out-of-set verdict is rejected without one', async () => {
+  it('approval timeout is rejected with its reason; an out-of-set verdict is the approver failing', async () => {
     const never = fakeSeams({
       approval: { ask: () => new Promise(() => undefined), resume: async () => null },
     })
@@ -122,7 +123,7 @@ describe('SeamRuntime', () => {
         clock: () => 0,
         onFailure: (f) => odd.push(f),
       }).approvalAsk(req, sig()),
-    ).toBe('rejected')
+    ).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
     expect(odd).toEqual([{ seam: 'approval', op: 'ask', message: 'verdict out of set: yes' }])
     const oddAnswer = fakeSeams({
       approval: { ask: async () => ({ verdict: 'yes' }) as never, resume: async () => null },
@@ -132,7 +133,7 @@ describe('SeamRuntime', () => {
         clock: () => 0,
         onFailure: () => undefined,
       }).approvalAsk(req, sig()),
-    ).toBe('rejected')
+    ).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
   })
 
   it.each(['deny', 'park'] as const)(
@@ -172,6 +173,10 @@ describe('SeamRuntime', () => {
       { verdict: 'rejected', reason: 'user_rejected' },
       { verdict: 'rejected', reason: 'because I said so' },
       { verdict: 'allowed-once' },
+      { verdict: 'allowed-once', reason: 'policy_allowed' },
+      { verdict: 'allowed-session', reason: 'user_allowed' },
+      { verdict: 'rejected', reason: 'approver_failed' },
+      { verdict: 'cancelled', reason: 'client_cancelled' },
     ]
     const got: unknown[] = []
     for (const answer of answers) {
@@ -188,6 +193,10 @@ describe('SeamRuntime', () => {
       { verdict: 'rejected', reason: 'user_rejected' },
       'rejected',
       'allowed-once',
+      { verdict: 'allowed-once', reason: 'policy_allowed' },
+      { verdict: 'allowed-session', reason: 'user_allowed' },
+      { verdict: 'rejected', reason: 'approver_failed' },
+      { verdict: 'cancelled', reason: 'client_cancelled' },
     ])
   })
 
@@ -350,7 +359,10 @@ describe('SeamRuntime', () => {
       onFailure: () => undefined,
       workspaceInvocation: workspacePort(failedApproval, failureRelease),
     })
-    await expect(failureRuntime.approvalAsk(req, sig())).resolves.toBe('rejected')
+    await expect(failureRuntime.approvalAsk(req, sig())).resolves.toEqual({
+      verdict: 'rejected',
+      reason: 'approver_failed',
+    })
     expect(failureRelease).toHaveBeenCalledOnce()
 
     const parkRelease = vi.fn()

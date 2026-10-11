@@ -33,6 +33,7 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | `TOOL_ARGS_INVALID` | 按错误中的参数路径补齐符合工具定义的参数再重试。`write` 必须同时传入 `path` 和 `content`；被拒绝的调用不会写文件 |
 | 输出以 `max_tokens` / `OUTPUT_LIMIT` 结束 | 模型回复达到输出额度，保留已生成文字、丢弃未完成的工具调用并停止本轮，不自动重试。可要求分步继续，或在 Provider 支持范围内配置 preset 的 `model.max_tokens`；这与输入上下文超限不同 |
 | `RATE_LIMIT` / HTTP 429 | 模型服务返回限流错误，稍后重试；若持续出现，检查账号的服务限制或联系 Provider。该错误不能证明输入上下文或输出 token 超限 |
+| 模型服务返回 `TRANSPORT` / `TIMEOUT` | 消息会写明出错的环节、所处阶段和错误码，例如 `the connection to the model provider was reset while waiting for the first byte (ECONNRESET)`（等待首字节时连接被重置），或 `the connection to the model provider timed out while connecting (connect timeout, UND_ERR_CONNECT_TIMEOUT)`（建立连接超时）；本地时限会写明是哪个计时器，如 `(first-token timeout, 120s)`。连接重置、连接被拒、DNS 失败、流式中途断开和超时会在本轮失败前自动重试，`after N attempts` 表示所报告的错误背后共发出几次请求，此前每次被重试的失败都会在会话日志中留下一条 `x/core/inference-retry` 记录。请检查网络、代理或 VPN。`CERT_HAS_EXPIRED` 等证书或 TLS 错误不会重试，通常说明有代理在拦截 TLS。Provider 返回的错误原文不会显示；只有 `status=?` 而没有错误码时，表示无法识别失败原因 |
 | 读取文件后显示通用后台错误 | 保留诊断编号并匹配 daemon 审计记录。仅凭通用提示不能判定是 token 超限 |
 | `SANDBOX_UNAVAILABLE` | Linux 检查 bwrap 的真实执行及 user namespace，macOS 检查系统沙箱可用性；不可用时保留拒绝 |
 | 插件安装成功却没有工具 | 看 trusted、desired、actual、行错误、依赖和 manifest；单独旧 `agnes.extensions` 不是现行普通后端插件入口 |
@@ -48,5 +49,7 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
 
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
+
+`audit/daemon.jsonl` 是请求审计，只记录失败的请求；文件为空表示没有请求失败，不表示 daemon 没有日志。工作进程退出（退出码或信号、它承载的会话、它最后写到 stderr 的几行）、工作进程启动失败、会话中断及原因、工作进程日志，以及 daemon 的启动、停止、崩溃和错误，记在同一 dataDir 下的 `audit/runtime.jsonl`。该日志与审计一样脱敏，超过 2 MiB 前轮转为 `audit/runtime.jsonl.1`，不保留更早的一代。一次 daemon 启动之前若没有停止记录，说明上一个 daemon 未经关闭流程就结束了。Web 诊断包分别以 `logs/daemon-runtime.jsonl` 和 `logs/daemon-request-audit.jsonl` 收录两者。运行日志出现之前的旧 daemon 无法提供它，诊断包会提示 `runtime.jsonl` 不可用。
 
 没有自动修复所有 home 迁移的命令。不要删除 owner、锁、SQLite 或回滚快照来让错误消失。要做版本切换，先结束任务、停止对应后台并备份自有数据，再按[安装指南](install.zh-CN.md)启动完整新分发。

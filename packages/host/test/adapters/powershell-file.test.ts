@@ -7,7 +7,7 @@ import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createExec, createPolicyExec, type ExecAdapter } from '../../src/adapters/exec.js'
 import { probePowerShell } from '../../src/adapters/powershell.js'
-import { powerShellCommand } from '../../src/adapters/powershell-command.js'
+import { powerShellCommand, powerShellScript } from '../../src/adapters/powershell-command.js'
 import { preparePowerShellFile } from '../../src/adapters/powershell-file.js'
 
 const roots: string[] = []
@@ -24,7 +24,8 @@ function temporary() {
   vi.stubEnv('TMP', root)
   return root
 }
-const long = (command: string) => `#${'字'.repeat(20000)}\n${command}`
+// Past the command line limit in both forms: 5.1 takes the script as -Command text, 7 encoded.
+const long = (command: string) => `#${'字'.repeat(40000)}\n${command}`
 const paths = [
   win32.join(
     process.env.SystemRoot ?? 'C:\\Windows',
@@ -35,8 +36,19 @@ const paths = [
   ),
   ...(process.env.AGNES_TEST_PWSH ? [process.env.AGNES_TEST_PWSH] : []),
 ]
+it('leaves a 5.1 command on the command line while it fits there as Windows quotes it', () => {
+  const shell = {
+    path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    version: '5.1.0',
+    edition: 'Desktop',
+    nativeArguments: 'Legacy',
+  } as const
+  const argv = powerShellCommand(shell, `#${'字'.repeat(29_000)}`)
+  expect(preparePowerShellFile(shell, argv)).toMatchObject({ argv })
+  expect(preparePowerShellFile(shell, argv).scriptFile).toBeUndefined()
+})
 describe.runIf(process.platform === 'win32').each(paths)('private PowerShell script: %s', (path) => {
-  it('creates private UTF16 content and an encoded bootstrap, then removes exactly its files', async () => {
+  it('creates private UTF16 content and a short bootstrap, then removes exactly its files', async () => {
     const root = temporary()
     const shell = await probePowerShell(path)
     const argv = powerShellCommand(shell, long('exit 7'))
@@ -48,7 +60,9 @@ describe.runIf(process.platform === 'win32').each(paths)('private PowerShell scr
       const file = prepared.scriptFile as string
       expect(hasPrivateDaclSync(file)).toBe(true)
       expect(hasPrivateDaclSync(dirname(file))).toBe(true)
-      expect(readFileSync(file).equals(Buffer.from(argv.at(-1) as string, 'base64'))).toBe(true)
+      expect(readFileSync(file).equals(Buffer.from(powerShellScript(shell, argv) as string, 'utf16le'))).toBe(
+        true,
+      )
     } finally {
       prepared.dispose()
     }
@@ -143,7 +157,7 @@ it.runIf(process.platform === 'win32')(
     import {powerShellCommand} from ${JSON.stringify(commandUrl)};
     import {writeFileSync} from 'node:fs';
     const shell={path:${JSON.stringify(paths[0])},version:'5.1.0',edition:'Desktop',nativeArguments:'Legacy'};
-    const prepared=preparePowerShellFile(shell,powerShellCommand(shell,'#'+'x'.repeat(20000)+'\\nexit 0'));
+    const prepared=preparePowerShellFile(shell,powerShellCommand(shell,'#'+'x'.repeat(40000)+'\\nexit 0'));
     writeFileSync(${JSON.stringify(ready)},JSON.stringify({file:prepared.scriptFile}));
     setInterval(()=>{},1000);
   `,
