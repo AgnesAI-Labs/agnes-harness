@@ -40,7 +40,9 @@ describe('releaseDialogModal', () => {
     // real connected DOM nodes and focus; assertions cover the observable host state.
     let modal = false
     const matches = host.matches.bind(host)
-    host.matches = (selector) => (selector === ':modal' ? modal : matches(selector))
+    vi.spyOn(host, 'matches').mockImplementation((selector) =>
+      selector === ':modal' ? modal : matches(selector),
+    )
     host.showModal = () => {
       host.open = true
       modal = true
