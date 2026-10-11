@@ -164,6 +164,8 @@ for (const locale of ['zh-CN', 'en'])
             await screen('session-tool-info')
           }
           if (id === 'examples') {
+            const more = page.getByTestId('example-more')
+            if (await more.count()) await more.locator('summary').click()
             await expect(page.getByTestId('example-install-dag-loop')).toBeVisible()
             await expect(page.getByTestId('example-install-react-loop')).toBeVisible()
             await expect(page.locator('[data-testid^="example-install-"]')).toHaveCount(17)

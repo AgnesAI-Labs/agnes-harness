@@ -22,7 +22,7 @@ export function PluginProvidesChips({ value }: { value: PluginPresentation | und
   for (const item of value?.provides ?? []) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1)
   if (!counts.size) return null
   return (
-    <MetaText aria-label={t('provides')} data-testid="plugin-provides">
+    <MetaText data-testid="plugin-provides">
       {t('includes', {
         items: [...counts]
           .map(

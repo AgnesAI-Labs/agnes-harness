@@ -19,7 +19,7 @@
   display: grid;
   gap: var(--s8);
 }
-.plugin-candidates .candidate-list button {
+.plugin-candidates .candidate-list > li > button {
   width: 100%;
   height: auto;
   min-height: var(--control-height);
@@ -28,7 +28,7 @@
   gap: var(--s12);
   text-align: start;
 }
-.plugin-candidates .candidate-list button > span:first-child {
+.plugin-candidates .candidate-list > li > button > span:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
