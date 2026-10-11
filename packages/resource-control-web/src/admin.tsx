@@ -20,7 +20,6 @@ import {
   type ResourceDetailAction,
   ResourceListContent,
   type ResourceProgress,
-  releaseDialogModal,
   renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
@@ -774,8 +773,6 @@ class ResourceAdminPage {
     mcpPickers = []
     mcpWizard?.dispose()
     mcpWizard = undefined
-    restoreMcpHost?.()
-    restoreMcpHost = undefined
     mcpPresets?.dispose()
     mcpPresets = undefined
     unmountRegion(list)
@@ -783,9 +780,7 @@ class ResourceAdminPage {
   }
 }
 
-let mcpConfirming = false
 let mcpSubmitting = false
-let restoreMcpHost: (() => void) | undefined
 let editing: McpServerDescriptor | undefined
 function writeDefinition(definition: McpServerDefinitionInput): void {
   $('mcp-workspace', 'input').value =
@@ -833,7 +828,6 @@ function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activ
     : t('form.title.create')
   $('mcp-id', 'input').disabled = !!server
   $('mcp-error', 'p').textContent = ''
-  restoreMcpHost ??= releaseDialogModal(document.querySelector<HTMLDialogElement>('dialog#config'))
   dialog.showModal()
   const focus = server
     ? $('mcp-name', 'input')
@@ -964,12 +958,6 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   )
   $('mcp-create', 'button').addEventListener('click', () => openMcpDialog(undefined, activeResourceText))
   $('mcp-cancel', 'button').addEventListener('click', () => dialog.close())
-  dialog.addEventListener('close', () => {
-    if (!mcpConfirming && !dialog.open) {
-      restoreMcpHost?.()
-      restoreMcpHost = undefined
-    }
-  })
   mcpTransport.addEventListener('change', () => syncTransport(activeResourceText))
   mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText))
   // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
@@ -997,13 +985,11 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
           ? '\n' + activeResourceText('sandbox.' + definition.sandboxProfile)
           : ''
       // Close the form host before confirmation; the draft remains in the mounted form.
-      mcpConfirming = true
       dialog.close()
       let confirmed = false
       try {
         confirmed = await page.confirm(summary + sandboxSummary)
       } finally {
-        mcpConfirming = false
         if (!confirmed) dialog.showModal()
       }
       if (!confirmed) return
@@ -1016,8 +1002,6 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         dialog.showModal()
         throw cause
       }
-      restoreMcpHost?.()
-      restoreMcpHost = undefined
       editing = undefined
       await page.track(receipt)
       // track() already reported success generically; a new server still needs an explicit enable.

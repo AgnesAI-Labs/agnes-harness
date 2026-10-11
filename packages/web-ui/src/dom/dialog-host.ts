@@ -4,6 +4,7 @@ export function releaseDialogModal(host: HTMLDialogElement | null): () => void {
   const focused = host.ownerDocument.activeElement
   host.close()
   host.show()
+  if (focused instanceof HTMLElement && focused.isConnected) focused.focus()
   let restored = false
   return () => {
     if (restored || !host.isConnected) return

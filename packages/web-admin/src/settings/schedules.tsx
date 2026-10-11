@@ -237,6 +237,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
         </p>
       )}
       <Dialog
+        focusTriggerAfterClose={false}
         getContainer={() => document.body}
         open={formOpen}
         title={editing ? t('schedulesSave') : ux('newSchedule')}
@@ -449,6 +450,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
         ))}
       </div>
       <Dialog
+        focusTriggerAfterClose={false}
         getContainer={() => document.body}
         open={!!pending}
         title={t('schedulesConfirm')}

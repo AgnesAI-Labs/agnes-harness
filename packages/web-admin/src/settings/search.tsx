@@ -623,6 +623,7 @@ export function SearchPanel({
         )}
       </Drawer>
       <Dialog
+        focusTriggerAfterClose={false}
         getContainer={() => document.body}
         open={!!confirmClear}
         title={t('searchClearKey')}

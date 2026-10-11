@@ -120,6 +120,7 @@ export function PermissionDefaults({
         {t('saved')}
       </Toast>
       <Dialog
+        focusTriggerAfterClose={false}
         getContainer={() => document.body}
         open={confirm}
         title={t('fullConfirm')}
