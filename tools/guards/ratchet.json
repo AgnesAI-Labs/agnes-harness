@@ -110,7 +110,7 @@
   "packages/core-common/src": 531,
   "packages/core-child-control/src": 397,
   "packages/core-ledger/src": 6749,
-  "packages/core-effects/src": 2750,
+  "packages/core-effects/src": 2850,
   "packages/host-common/src/assemble": 1283,
   "packages/host-common/src": 4619,
   "packages/host-common/src/profile": 1847,

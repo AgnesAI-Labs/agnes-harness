@@ -13,6 +13,7 @@ import type {
   FsEntry,
   FsStat,
   Logger,
+  MemoryFilePort,
   PublicFetch,
   ToolContext,
   ToolDef,
@@ -22,6 +23,7 @@ import { unavailableDecisions, unavailableProjections } from '@agnes/extension-a
 import type { Actor } from '@agnes/protocol'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { assertNotDenied } from './fs-guard.js'
+import { MemoryEffectScope } from './memory-rejection.js'
 import type { SeamRuntime } from './wrap.js'
 
 export type ChildStatus = {
@@ -164,6 +166,7 @@ export function buildToolContext(
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
+  const memoryEffects = d.memory ? new MemoryEffectScope() : undefined
   const workspaceFiles: FsOps = {
     read: (path, opts) => d.fsOps.read(path, opts),
     // A write is snapshotted before it happens, so a rewind has something to go back to. An
@@ -172,6 +175,7 @@ export function buildToolContext(
     // write is about to be refused for - asked, not decided here, and a missing file is not a
     // refusal because the path being written may not exist yet.
     write: async (path, data) => {
+      memoryEffects?.beginEffect()
       await assertNotDenied(d.fsOps, path)
       const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
       if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
@@ -180,15 +184,36 @@ export function buildToolContext(
     list: (path) => d.fsOps.list(path),
     stat: (path) => d.fsOps.stat(path),
   }
-  const files = d.memory
+  const files: MemoryFilePort = d.memory
     ? d.memory.session.files(
         workspaceFiles,
         { sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId },
         call.signal,
-        d.memory.approve,
+        async (proposal) => {
+          // The service must ask before mutation. Bind its proposal to this admitted operation.
+          if (
+            proposal.source.sessionKey !== d.sessionKey ||
+            proposal.source.turn !== d.turn ||
+            proposal.source.toolUseId !== call.toolUseId
+          )
+            throw new CoreError('E_RELATION', 'memory proposal source mismatch')
+          const result = await d.memory!.approve(proposal)
+          if (result.status !== 'approved')
+            memoryEffects!.reject({
+              code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
+              message:
+                result.status === 'rejected'
+                  ? 'Memory file approval was rejected'
+                  : `Memory file approval unanswered: ${result.reason}`,
+              path: proposal.path,
+            })
+          // Once admitted, even a CAS conflict or failed metadata receipt stays uncertain.
+          memoryEffects!.beginEffect()
+          return result
+        },
       )
     : workspaceFiles
-  return {
+  const context: ToolContext = {
     decisions: d.decisions ?? unavailableDecisions,
     ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
     session: {
@@ -468,4 +493,22 @@ export function buildToolContext(
     },
     log: d.log,
   }
+  if (!memoryEffects) return context
+  return memoryEffects.bind({
+    ...memoryEffects.guard(context, ['exec', 'requestCompaction']),
+    fs: {
+      read: (path, options) => files.read(path, options),
+      write: (path, content) => memoryEffects.write(() => files.write(path, content)),
+      list: (path) => files.list(path),
+      stat: (path) => files.stat(path),
+      ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+    },
+    net: memoryEffects.guard(context.net),
+    sandbox: memoryEffects.guard(context.sandbox, ['openProcess']),
+    tools: memoryEffects.guard(context.tools, ['invoke']),
+    artifacts: memoryEffects.guard(context.artifacts),
+    subagent: memoryEffects.guard(context.subagent),
+    decisions: memoryEffects.guard(context.decisions),
+    plan: memoryEffects.guard(context.plan),
+  })
 }

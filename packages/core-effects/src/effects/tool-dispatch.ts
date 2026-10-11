@@ -3,8 +3,9 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ToolContext, ToolResult, ToolRuntime } from '@agnes/extension-api'
 import { type ExecutionDomain, inspectJsonData } from '@agnes/protocol'
 import type { ExecuteAttempt } from './execute-permits.js'
+import { memoryRejection } from './memory-rejection.js'
 
-/** Bounded diagnostic data; only a platform adapter's preflight can attest no effect. */
+/** Bounded diagnostic data; only platform-owned ports can attest no effect. */
 export type RejectedBeforeEffectError = Readonly<{
   code: string
   message: string
@@ -264,7 +265,11 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
         ? { phase: 'responded', result }
         : invalidObservation('workspace tool returned an invalid ToolResult')
     } catch (error) {
-      return { phase: 'may_have_sent', error }
+      const refusal = memoryRejection(input.context, error)
+      const diagnostic = refusal && rejectedBeforeEffect(refusal)
+      return diagnostic
+        ? { phase: 'rejected_before_effect', error: diagnostic }
+        : { phase: 'may_have_sent', error }
     }
   }
 

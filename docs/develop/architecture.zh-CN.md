@@ -57,7 +57,7 @@ flowchart LR
 
 一次 prompt 经 SDK 到 daemon，路由到 session worker。Host 为该会话提供模型、工具、审批、沙箱、存储等接缝；Core 生成下一步、记录状态，再消费模型或工具结果。客户端读取事件或派生投影。取消、失败、停驻、恢复都由后台状态决定。
 
-Core 只接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight` 在 ToolRuntime 或插件执行前提供的 rejected-before-effect 诊断。Core 在运行时验证封闭且有界的 `RejectedBeforeEffectError` 数据，原子记录失败工具结果、`effect: "none"` 和 `error` 结算。可纠正的 `path`、`expected`、`issues` 同时进入模型可见文字和结构化数据。插件自报 `INVALID_PARAMS` 不构成无效果证明。适配器抛错、超时、断连、部分持久化及不完整返回继续保留不确定性；mutation/never-replay 调用结算为 unknown 并发起人工 reconciliation，不自动重派。
+Core 接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight` 在 ToolRuntime 或插件执行前提供的 rejected-before-effect 诊断，或 Core 持有的 memory 审批回调在候选写入前签出的、本次调用专属的拒绝证明。此前其他受控效果或并发写入可能已开始，或已准入写入时，memory 证明不成立；CAS 和写后 metadata 失败仍为 unknown。Core 在运行时验证封闭且有界的 `RejectedBeforeEffectError` 数据，原子记录失败工具结果、`effect: "none"` 和 `error` 结算。可纠正的 `path`、`expected`、`issues` 同时进入模型可见文字和结构化数据。插件自报 `INVALID_PARAMS` 不构成无效果证明。适配器抛错、超时、断连、部分持久化及不完整返回继续保留不确定性；mutation/never-replay 调用结算为 unknown 并发起人工 reconciliation，不自动重派。
 
 ## 接缝与扩展
 

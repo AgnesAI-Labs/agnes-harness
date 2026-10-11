@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,8 +48,10 @@ it.each([
   'no-handler',
   'policy_denied',
   'subagent_scope',
+  'cas-conflict',
+  'metadata-failure',
 ] as const)(
-  'uses normal read/write/edit and refuses an initial %s answer, injects the next revision, and closes access when off',
+  'settles an initial %s memory write without losing revision or approval facts',
   async (initialAnswer) => {
     const home = await mkdtemp(join(tmpdir(), 'agh-host-memory-'))
     homes.push(home)
@@ -94,7 +96,16 @@ it.each([
       approval: async (request) => {
         if (request.scope.startsWith('memory:')) {
           asked.push(request)
-          if (allowed)
+          if (initialAnswer === 'cas-conflict') {
+            if (!memory) throw new Error('missing memory')
+            const before = await memory.readFile('MEMORY.md')
+            await memory.editFile('MEMORY.md', 'Human concurrent revision', before.hash)
+          }
+          if (initialAnswer === 'metadata-failure') {
+            if (!memory) throw new Error('missing memory')
+            await mkdir(join(memory.root, 'writer.json'))
+          }
+          if (allowed || initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure')
             return {
               verdict: 'allowed-once',
               answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
@@ -152,7 +163,7 @@ it.each([
         content: [{ type: 'text', text: 'exercise ordinary memory file tools' }],
       })
       expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'completed',
+        initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure' ? 'parked' : 'completed',
       )
       const request = provider?.calls.at(-1)
       const revision = /Revision: ([a-f0-9]+)/.exec(request?.system ?? '')?.[1]
@@ -161,7 +172,36 @@ it.each([
     }
     try {
       const rejected = await turn('rejected')
-      expect(rejected.results[0]?.data).toMatchObject({ isError: true })
+      if (initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure') {
+        expect(rejected.results[0]?.data).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+        expect((await memory.readFile('MEMORY.md')).content).toBe(
+          initialAnswer === 'cas-conflict' ? 'Human concurrent revision' : 'Prefer short answers.',
+        )
+        const rows = await rejected.session.scan({ type: ['approval/asked', 'effect/settled'], limit: 100 })
+        expect(
+          rows.some(
+            (row) =>
+              row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'unknown-outcome',
+          ),
+        ).toBe(true)
+        expect(
+          rows.some(
+            (row) =>
+              row.type === 'effect/settled' && (row.data as { outcome?: string }).outcome === 'unknown',
+          ),
+        ).toBe(true)
+        return
+      }
+      expect(rejected.results[0]?.data).toMatchObject({
+        isError: true,
+        code: 'TOOL_REJECTED_BEFORE_EFFECT',
+        structured: { effect: 'none' },
+      })
+      expect(
+        (await rejected.session.scan({ type: 'approval/asked', limit: 10 })).some(
+          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        ),
+      ).toBe(false)
       expect(
         (await rejected.session.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data,
       ).toMatchObject(

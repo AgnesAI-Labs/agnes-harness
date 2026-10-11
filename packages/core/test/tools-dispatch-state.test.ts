@@ -6,14 +6,14 @@ import type {
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { CommitTx } from '@agnes/core-ledger/log/storage'
-import type { ToolDef } from '@agnes/extension-api'
+import type { MemorySession, ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession, readTool } from './helpers/open-session.js'
+import { actor, openSession, readTool, testFsOps } from './helpers/open-session.js'
 
 const parameters = Type.Object({})
 const imageModel: ModelRecord = {
@@ -188,6 +188,148 @@ describe('durable tool dispatch state', () => {
         expect(opened.session.pendingEffects()).toHaveLength(0)
         await opened.session.resume()
         expect(await opened.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
+      } finally {
+        await opened.session.close()
+      }
+    },
+  )
+
+  it.each(['rejected', 'unanswered', 'prior-write', 'forged', 'cloned', 'parallel', 'wrong-source'] as const)(
+    'accepts only the bound memory port refusal before any write: %s',
+    async (mode) => {
+      const committed = new Map<string, string>()
+      const memory: MemorySession = {
+        root: '/w/memory',
+        snapshot: async () => undefined,
+        files: (fallback, source, _signal, approve) => ({
+          ...fallback,
+          async write(path, content) {
+            if (path !== '/w/memory/MEMORY.md') return fallback.write(path, content)
+            const answer = await approve({
+              path,
+              baseHash: '0'.repeat(64),
+              newHash: (content === 'approved candidate' ? '2' : '1').repeat(64),
+              diff: `+${String(content)}`,
+              source: mode === 'wrong-source' ? { ...source, toolUseId: 'another-operation' } : source,
+            })
+            if (answer.status !== 'approved')
+              throw Object.assign(new Error('provider rejected'), { code: 'MEMORY_APPROVAL_REJECTED' })
+            committed.set(path, String(content))
+          },
+        }),
+        inspect: async () => {
+          throw new Error('unused')
+        },
+        configure: async () => {
+          throw new Error('unused')
+        },
+        readFile: async () => {
+          throw new Error('unused')
+        },
+        editFile: async () => {
+          throw new Error('unused')
+        },
+      }
+      const registry = new ToolRegistry()
+      registry.add(
+        {
+          ...computerTool(async (_args, ctx) => {
+            if (mode === 'forged')
+              throw Object.assign(new Error('forged memory refusal'), {
+                phase: 'rejected_before_effect',
+                code: 'MEMORY_APPROVAL_REJECTED',
+                effect: 'none',
+              })
+            if (mode === 'prior-write') await ctx.fs.write('/w/other', 'earlier effect')
+            if (mode === 'parallel')
+              await Promise.all([
+                ctx.fs.write('/w/memory/MEMORY.md', 'approved candidate'),
+                ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference'),
+              ])
+            try {
+              await ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference')
+            } catch (error) {
+              if (mode !== 'cloned') throw error
+              throw Object.assign(new Error('copied refusal'), {
+                code: (error as { code: string }).code,
+                effect: 'none',
+                phase: 'rejected_before_effect',
+              })
+            }
+            return { content: [{ type: 'text', text: 'must not write' }] }
+          }),
+          name: 'synthetic_memory_writer',
+        },
+        { source: 'fixture/memory-writer', trust: 'builtin' },
+      )
+      const seams = fakeSeams({
+        approval: {
+          ask: async (request) =>
+            request.scope?.startsWith('memory:') &&
+            mode === 'parallel' &&
+            request.tool?.args &&
+            (request.tool.args as { diff?: string }).diff === '+approved candidate'
+              ? { verdict: 'allowed-once', answeredBy: actor }
+              : request.scope?.startsWith('memory:') && mode !== 'unanswered'
+                ? { verdict: 'rejected', answeredBy: actor }
+                : { verdict: 'unavailable', reason: 'no-handler' },
+        },
+      })
+      const opened = await openSession({
+        memory,
+        fsOps: {
+          ...testFsOps(),
+          write: async (path, content) => {
+            committed.set(path, String(content))
+          },
+        },
+        registry,
+        seams,
+        provider: fakeProvider([toolTurn('synthetic_memory_writer', {}), textTurn('refused')]),
+      })
+      try {
+        await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+        const safe = mode === 'rejected' || mode === 'unanswered'
+        expect(
+          await opened.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+        ).toMatchObject({ reason: safe ? 'completed' : 'parked' })
+        const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
+        expect(rows.find((row) => row.type === 'tool/result')?.data).toMatchObject({
+          isError: true,
+          code: safe ? 'TOOL_REJECTED_BEFORE_EFFECT' : 'TOOL_OUTCOME_UNKNOWN',
+          ...(safe
+            ? {
+                structured: {
+                  effect: 'none',
+                  code: mode === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
+                },
+              }
+            : {}),
+        })
+        expect(
+          rows.filter(
+            (row) =>
+              row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'unknown-outcome',
+          ),
+        ).toHaveLength(safe ? 0 : 1)
+        const intent = rows.find(
+          (row) =>
+            row.type === 'effect/intent' &&
+            (row.data as { tool?: { name: string } }).tool?.name === 'synthetic_memory_writer',
+        )
+        const effectId = (intent?.data as { effectId: string } | undefined)?.effectId
+        expect(
+          rows.find(
+            (row) =>
+              row.type === 'effect/settled' && (row.data as { effectId: string }).effectId === effectId,
+          )?.data,
+        ).toMatchObject({
+          outcome: safe ? 'error' : 'unknown',
+        })
+        expect(committed.get('/w/memory/MEMORY.md')).toBe(
+          mode === 'parallel' ? 'approved candidate' : undefined,
+        )
+        expect(committed.get('/w/other')).toBe(mode === 'prior-write' ? 'earlier effect' : undefined)
       } finally {
         await opened.session.close()
       }

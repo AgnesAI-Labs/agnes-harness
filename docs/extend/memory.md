@@ -24,6 +24,8 @@ Use package `config.memory: { provider: "enterprise", version: "1.0.0" }` to rep
 
 The `approve` callback returns `MemoryApprovalResult`: `{ status: 'approved' }`, `{ status: 'rejected' }` for a real human refusal, or `{ status: 'unanswered', reason }` using the existing approval reasons. Ask mode requires a verified human, once-only answer. Missing identity, agent answers and unoffered session/permanent choices are invalid. The file provider reports `MEMORY_APPROVAL_UNANSWERED` with the original reason; it never converts delivery loss into a rejection or a grant.
 
+In Core-admitted file calls, the platform-owned approval callback stops a rejected or unanswered candidate before the provider can mutate it. Core verifies the proposal source against the current session, turn and tool call and binds a private refusal proof to that invocation. The tool returns `TOOL_REJECTED_BEFORE_EFFECT` with the memory diagnostic and `effect: "none"`, without reconciliation or parking. A copied or plugin-authored error does not carry that proof. The provider must await approval before any mutation and must let a callback failure abort the write. Approval admission, an earlier controlled effect or another concurrent write prevents a no-effect claim: CAS conflicts and failures after file commit remain unknown and are never automatically replayed. This preserves exact-content review and fresh proposals after unanswered attempts; it adds no durable memory continuation.
+
 ## Required behavior
 
 - Default agent permission off; ask reviews an exact file-level proposal before any mutation. Bind approval to `baseHash`, `newHash`, full diff and session/turn. Full-access or broad grants cannot approve it. Reject/cancel/conflict never inject a candidate.

@@ -362,7 +362,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
   'packages/host-common/src/assemble': 1283,
   'packages/core/src/artifacts': 744,
-  'packages/core-effects/src': 2750,
+  'packages/core-effects/src': 2850,
   'packages/core-ledger/src': 6749,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 531,
