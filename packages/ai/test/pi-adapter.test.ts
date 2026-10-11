@@ -17,8 +17,8 @@ import { redact } from '../src/adapters/pi/errors.js'
 import { toContext } from '../src/adapters/pi/to-context.js'
 import type { WireEvent } from '../src/index.js'
 import { createProvider, NullContractStore, PiAdapter, toPiModel } from '../src/index.js'
-import { fakeModel, fakeRequest } from '../testkit/index.js'
 import { memoryRetryLedger } from '../src/retry.js'
+import { fakeModel, fakeRequest } from '../testkit/index.js'
 
 const route = {
   route: 'gw',

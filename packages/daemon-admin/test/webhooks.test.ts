@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import type { WebhookRule } from '@agnes/protocol/gen/app-server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { field, matches, render } from '../src/webhooks/payload.js'
-import { WebhookStore } from '../src/webhooks/store.js'
 import { sampleHeaders, signature } from '../src/webhooks/providers.js'
 import { createWebhookService, type TriggerSessionInput } from '../src/webhooks/service.js'
+import { WebhookStore } from '../src/webhooks/store.js'
 
 const homes: string[] = []
 afterEach(async () => {
