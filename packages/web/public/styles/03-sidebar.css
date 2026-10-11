@@ -94,19 +94,8 @@
 .sidebar-actions {
   display: grid;
 }
-.sidebar-actions .primary-button {
-  height: 2.375rem;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  border-width: 0.5px;
-  border-color: var(--agnes-line-emphasis);
-  border-radius: var(--radius-lg);
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-page);
-  box-shadow: none;
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.375rem;
+.sidebar-actions .agh-btn--primary {
+  width: 100%;
 }
 .section-label {
   margin: 0;
@@ -248,4 +237,15 @@
 }
 .session-rename-error:empty {
   display: none;
+}
+
+.sidebar-footer #settings {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (min-width: 901px) {
+  body[data-agnes-region="app"]:not(.sidebar-collapsed) {
+    grid-template-columns: 264px minmax(0, 1fr);
+  }
 }
