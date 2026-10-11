@@ -3,6 +3,7 @@ import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
 import { intelligentUiKind, UI_PROVIDER_ID, UI_PROVIDER_VERSION } from '@agnes/intelligent-ui-contract'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
+import { UI_DATA_DESCRIPTION } from './data-contracts.js'
 import { reachableParameters } from './parameters.js'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
@@ -44,7 +45,9 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_render',
         description:
-          'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.',
+          'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.' +
+          '\n' +
+          UI_DATA_DESCRIPTION,
         parameters: reachableParameters(UiRenderParams),
         meta: presentational,
         async execute(input, ctx) {
@@ -71,7 +74,9 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_update',
         description:
-          'Replace an open surface at expectedRevision with revision + 1 after the previous action finishes.',
+          'Replace an open surface at expectedRevision with revision + 1 after the previous action finishes.' +
+          '\n' +
+          UI_DATA_DESCRIPTION,
         parameters: reachableParameters(UiUpdateParams),
         meta: presentational,
         async execute(input, ctx) {

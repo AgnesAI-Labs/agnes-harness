@@ -183,7 +183,7 @@
   "packages/base/src/memory": 14,
   "packages/core/src/artifacts": 744,
   "packages/base/extensions/references": 21,
-  "packages/base/extensions/intelligent-ui": 1108,
+  "packages/base/extensions/intelligent-ui": 1134,
   "packages/observability/src": 1363,
   "packages/intelligent-ui-contract/src": 238,
   "packages/git-worktree-contract/src": 34,

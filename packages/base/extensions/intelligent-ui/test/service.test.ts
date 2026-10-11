@@ -23,7 +23,9 @@ import { surfaceText, validIntelligentSurface } from '@agnes/protocol/intelligen
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it } from 'vitest'
+import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { questionSurface } from '../../interaction/src/question.js'
+import { toolDescribeTool } from '../../mcp-search/src/search-tools.js'
 import intelligentUi from '../src/index.js'
 import { reachableParameters } from '../src/parameters.js'
 import { createIntelligentUiService } from '../src/service.js'
@@ -320,7 +322,7 @@ async function opened() {
 }
 
 describe('preset surface contract and ledger lifecycle', () => {
-  it('exposes object roots for all UI tools and keeps nested argument validation', () => {
+  it('exposes bounded deferred data contracts and keeps nested argument validation', async () => {
     const tools: ToolDef[] = []
     intelligentUi({
       providers: { register: () => () => {} },
@@ -334,6 +336,39 @@ describe('preset surface contract and ledger lifecycle', () => {
     for (const tool of tools) {
       expect(tool.parameters.type).toBe('object')
       expect(tool.parameters.$ref).toBeUndefined()
+    }
+    const ctx = fakeToolContext()
+    ctx.tools.list = () => tools
+    const describe = toolDescribeTool({ get: () => undefined, search: () => [] })
+    const contracts = [
+      ['text', 'string'],
+      ['status', 'string'],
+      ['table', 'rowKey'],
+      ['chart', 'categoryKey'],
+      ['form', 'schema'],
+      ['detail-card', 'fields'],
+      ['steps', 'done|active|pending|error'],
+      ['progress', 'value'],
+      ['image', 'source'],
+      ['button-group', 'actionIds'],
+      ['tabs', 'componentIds'],
+    ]
+    for (const name of ['ui_render', 'ui_update']) {
+      const tool = tools.find((item) => item.name === name)!
+      expect(tool.meta.deferLoading).toBe(true)
+      const described = await describe.execute({ name }, ctx)
+      const text = described.content[0] as { text: string }
+      for (const [kind, shape] of contracts) {
+        expect(text.text, kind).toContain(kind + ':')
+        expect(text.text).toContain(shape)
+      }
+      expect(text.text).toContain('{"id":"collect","label":"Collect evidence","state":"done"}')
+      expect(text.text).toContain('{"label":"Checks","value":2,"total":5}')
+      expect(text.text).toContain('surface.data[component.dataKey]')
+      const bytes = (value: string) => new TextEncoder().encode(value).byteLength
+      expect(bytes(tool.description)).toBeLessThan(4500)
+      expect(bytes(JSON.stringify(tool.parameters))).toBeLessThan(10000)
+      expect(bytes(tool.description) + bytes(JSON.stringify(tool.parameters))).toBeLessThan(14000)
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })
