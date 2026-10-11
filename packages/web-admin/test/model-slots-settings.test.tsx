@@ -17,7 +17,7 @@ let state = {
     {
       id: 'local',
       version: '1',
-      api: 'scripted',
+      wireApi: 'scripted',
       sourcePackage: 'local',
       capabilities: { imageInput: false, tools: true, streaming: true },
       models: [{ route: 'local', id: 'reviewer', label: 'Local' }],

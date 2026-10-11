@@ -114,7 +114,7 @@ function instance(
 const capabilities = { imageInput: true, tools: true, streaming: true }
 export const replayAdapter = defineModelAdapter({
   id: 'replay',
-  api: 'replay',
+  wireApi: 'replay',
   version: '1.0.0',
   capabilities,
   async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {
@@ -144,7 +144,7 @@ export const replayAdapter = defineModelAdapter({
 })
 export const scriptedAdapter = defineModelAdapter({
   id: 'scripted',
-  api: 'scripted',
+  wireApi: 'scripted',
   version: '1.0.0',
   capabilities,
   async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {

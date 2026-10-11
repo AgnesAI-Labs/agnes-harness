@@ -22,7 +22,7 @@ describe('model adapter authoring', () => {
     const adapter = defineModelAdapter({
       id: 'demo',
       version: '1.0.0',
-      api: 'demo-wire',
+      wireApi: 'demo-wire',
       capabilities: { imageInput: false, tools: false, streaming: true },
       create(config): ModelAdapterInstance {
         expectTypeOf(config.routes).toMatchTypeOf<readonly unknown[]>()

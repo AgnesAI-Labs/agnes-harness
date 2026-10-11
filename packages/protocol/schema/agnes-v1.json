@@ -6161,7 +6161,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "version", "api", "sourcePackage", "capabilities", "models"],
+            "required": ["id", "version", "wireApi", "sourcePackage", "capabilities", "models"],
             "properties": {
               "id": {
                 "type": "string",
@@ -6170,12 +6170,6 @@
                 "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
               },
               "version": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
-              },
-              "api": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256,

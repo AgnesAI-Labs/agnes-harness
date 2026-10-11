@@ -137,7 +137,7 @@ UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数�
 
 Git worktree 是每个规范工作区一个、作用域为 workspace 的提供者。Host 与内置子 Agent 共用 `@agnes/git-worktree-contract` 的 `gitWorktreeKind`。Host 注册该提供者，插件不能注册。子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。Git 元数据留在 host-infrastructure，子 Agent 得不到 shell 或 argv 端口。
 
-文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，旧 `api` 为弃用兼容别名，二者冲突会被拒绝；目录同时提供两个字段。
+文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，也是 adapter 目录唯一的格式字段；`Route.api` 选择注册 id。
 
 `ProviderError` 独立于闭合的 extension 调用错误集，稳定 code 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`，携带 kind/provider/operation/retryable/hint/cause。unregister 返回幂等、可等待的 Promise。model、compaction、tool-runtime、policy 的 owner 禁止新准入，取消并等待创建与调用完成，再 dispose 实例、cleanup 注册资源；清理失败聚合返回，不吞错。
 

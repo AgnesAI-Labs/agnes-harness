@@ -21,7 +21,6 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
   const adapter = {
     id: 'custom',
     version: '2.0.0',
-    api: 'custom',
     wireApi: 'openai-chat',
     sourcePackage: '@acme/adapter',
     capabilities: { imageInput: true, tools: true, streaming: true },

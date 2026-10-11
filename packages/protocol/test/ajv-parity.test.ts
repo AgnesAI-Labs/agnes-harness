@@ -2340,8 +2340,35 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   SessionAdapterCatalogResult: {
     note: 'Only public adapter descriptions cross the wire',
-    valid: { modelAdapters: [] },
-    invalid: [{ modelAdapters: [{ id: 'x' }] }, { modelAdapters: [], secret: 'private' }],
+    valid: {
+      modelAdapters: [
+        {
+          id: 'adapter',
+          version: '1.0.0',
+          wireApi: 'wire',
+          sourcePackage: '@acme/adapter',
+          capabilities: { imageInput: false, tools: true, streaming: true },
+          models: [],
+        },
+      ],
+    },
+    invalid: [
+      { modelAdapters: [{ id: 'x' }] },
+      { modelAdapters: [], secret: 'private' },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            api: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true },
+            models: [],
+          },
+        ],
+      },
+    ],
   },
   SessionDefaultsState: {
     note: 'Defaults use closed identities and revision CAS',

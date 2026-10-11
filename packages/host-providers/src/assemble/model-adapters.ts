@@ -155,9 +155,8 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         validate(adapter) {
           if (
             !adapter.id ||
-            typeof (adapter.wireApi ?? adapter.api) !== 'string' ||
-            !(adapter.wireApi ?? adapter.api)?.trim() ||
-            (adapter.wireApi !== undefined && adapter.api !== undefined && adapter.wireApi !== adapter.api) ||
+            typeof adapter.wireApi !== 'string' ||
+            !adapter.wireApi.trim() ||
             !adapter.version ||
             typeof adapter.create !== 'function' ||
             !adapter.capabilities ||
@@ -183,8 +182,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
       adapter,
       entry: Object.freeze({
         id: adapter.id,
-        wireApi: adapter.wireApi ?? adapter.api!,
-        api: adapter.wireApi ?? adapter.api!,
+        wireApi: adapter.wireApi,
         version: adapter.version,
         sourcePackage: providerSource(
           this.ctx,

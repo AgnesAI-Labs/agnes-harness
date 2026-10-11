@@ -9,7 +9,7 @@ import {
 export const adapter = defineModelAdapter({
   id: '__PACKAGE_NAME__',
   version: '0.1.0',
-  api: '__SKILL_NAME__-wire',
+  wireApi: '__SKILL_NAME__-wire',
   capabilities: { imageInput: false, tools: false, streaming: true },
   create(config: ModelAdapterConfig): ModelAdapterInstance {
     const lifetime = new AbortController()

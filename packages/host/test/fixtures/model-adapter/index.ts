@@ -8,7 +8,7 @@ export const observations = {
 
 const adapter: ModelAdapter = {
   id: 'community-fake',
-  api: 'fake-wire-v1',
+  wireApi: 'fake-wire-v1',
   version: '1.2.3',
   capabilities: { imageInput: true, tools: true, streaming: true },
   create(config) {

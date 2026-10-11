@@ -231,7 +231,6 @@ it('loads catalog choices and saves their exact identities and revision', async 
   const adapter = {
     ...loop,
     id: 'adapter',
-    api: 'custom',
     wireApi: 'openai-chat',
     capabilities: { imageInput: true, tools: true, streaming: true },
     models: [{ id: 'model' }],

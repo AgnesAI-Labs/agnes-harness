@@ -8,7 +8,7 @@ test('catalog and deterministic stream, including cancellation', async () => {
     id: 'demo-model',
     name: 'Demo',
     route: 'demo',
-    api: adapter.api,
+    api: adapter.wireApi,
     baseUrl: 'https://demo.invalid',
     reasoning: false,
     input: ['text'],
@@ -32,7 +32,7 @@ test('catalog and deterministic stream, including cancellation', async () => {
     tools: [],
   }
   const config = {
-    routes: [{ route: 'demo', api: adapter.api, baseUrl: model.baseUrl, models: [model], keyless: true }],
+    routes: [{ route: 'demo', api: adapter.id, baseUrl: model.baseUrl, models: [model], keyless: true }],
   }
   const result = await runModelAdapter(adapter, {
     config,

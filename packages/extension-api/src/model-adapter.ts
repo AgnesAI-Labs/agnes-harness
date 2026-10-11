@@ -87,19 +87,13 @@ export interface ModelAdapterDefinition {
   cleanup?(): void | Promise<void>
 }
 
-/** At least one wire format name is required; Host refuses conflicting aliases. */
-export type ModelAdapter = ModelAdapterDefinition &
-  (
-    | { readonly wireApi: string /** @deprecated Use wireApi. */; readonly api?: string }
-    | { readonly wireApi?: string /** @deprecated Use wireApi. */; readonly api: string }
-  )
+/** The wire format name is independent of the adapter registration id. */
+export type ModelAdapter = ModelAdapterDefinition & { readonly wireApi: string }
 
 export type ModelAdapterCatalogEntry = Readonly<{
   id: string
   version: string
   wireApi: string
-  /** @deprecated Use wireApi. */
-  api: string
   sourcePackage: string
   capabilities: ModelAdapterCapabilities
 }>

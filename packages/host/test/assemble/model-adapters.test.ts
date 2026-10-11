@@ -27,7 +27,7 @@ afterEach(() => {
 
 const definition = (over: Partial<ModelAdapter> = {}): ModelAdapter => ({
   id: 'custom',
-  api: 'custom-wire',
+  wireApi: 'custom-wire',
   version: '1.0.0',
   capabilities: { imageInput: false, tools: true, streaming: true },
   create: (config) => ({
@@ -62,7 +62,15 @@ it('registers factories with immutable metadata, rejects duplicates and releases
     )
   })
   await expect.poll(() => modelAdapterCatalog(root).length).toBe(1)
-  expect(modelAdapterCatalog(root)[0]).toMatchObject({ id: 'custom', version: '1.0.0' })
+  expect(modelAdapterCatalog(root)[0]).toMatchObject({
+    id: 'custom',
+    version: '1.0.0',
+    wireApi: 'custom-wire',
+  })
+  expect(modelAdapterCatalog(root)[0]).not.toHaveProperty('api')
+  expect(() =>
+    root.modelAdapters.register({ ...definition(), wireApi: undefined, api: 'custom-wire' } as never),
+  ).toThrow('invalid model adapter registration')
   expect(Object.isFrozen(modelAdapterCatalog(root)[0]?.capabilities)).toBe(true)
   expect(() => root.modelAdapters.register(definition())).toThrow('duplicate model adapter')
   const instance = await root.modelAdapters.create('custom', { routes: [] })
@@ -277,7 +285,6 @@ it.each(['@community/fake-model-adapter', 'community-fake'])(
       expect(imported.some((file) => file.endsWith('/index.ts'))).toBe(true)
       expect(assembled.modelAdapterCatalog()).toContainEqual({
         id: 'community-fake',
-        api: 'fake-wire-v1',
         wireApi: 'fake-wire-v1',
         version: '1.2.3',
         sourcePackage: '@community/fake-model-adapter',

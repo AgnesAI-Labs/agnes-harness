@@ -9,6 +9,9 @@ Tool policy/runtime plugins now inject `providers` and register by kind through
 were removed. Read the combined `providers.catalog`; typed backend selection, execution
 and cancellation/disposal remain with their owners.
 
+Model adapter declarations and catalogs now require `wireApi`; the `api` alias was removed.
+`Route.api` still selects the adapter registration id.
+
 `DecisionPort` adds session-owned request/get/wait to ToolContext, LoopContext and admitted
 ServicePorts. Its DTOs come from the protocol schema; `APPROVAL_DEFAULTS` holds the existing
 approval configuration defaults. A checkpoint association can consume decision references

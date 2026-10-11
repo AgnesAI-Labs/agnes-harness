@@ -4,6 +4,7 @@ import {
   defineAgnesPlugin,
   defineChildAgentProvider,
   defineCompactionEngine,
+  defineModelAdapter,
   definePersistenceProvider,
   defineProvider,
   defineSandboxProvider,
@@ -28,6 +29,18 @@ describe('plugin author API', () => {
       decide: () => ({ effect: 'deny' as const, reason: 'test' }),
     }
     expect(defineToolPolicy(policy)).toBe(policy)
+    const adapter = {
+      id: 'custom',
+      version: '1.0.0',
+      wireApi: 'custom-wire',
+      capabilities: { imageInput: false, tools: true, streaming: true },
+      create: () => ({ id: 'custom', routes: () => [], models: () => [], async *stream() {} }),
+    }
+    expect(defineModelAdapter(adapter)).toBe(adapter)
+    for (const wireApi of [undefined, '', ' '])
+      expect(() => defineModelAdapter({ ...adapter, wireApi, api: 'custom-wire' } as never)).toThrow(
+        'Invalid model-adapter',
+      )
     const trigger = { id: 'generic', version: '1.0.0', verify: async () => undefined }
     expect(defineProvider('webhook-trigger', trigger)).toBe(trigger)
     expect(() => defineProvider('webhook-trigger', { ...trigger, verify: undefined } as never)).toThrow()

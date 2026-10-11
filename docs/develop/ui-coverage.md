@@ -59,7 +59,7 @@ The launcher’s private Node SDK connection supplies these fixed HTTP routes, w
 - `GET /admin/api/runtime → RuntimeAdminSnapshot`: description-only `providers`, allowed `presets` and `localPluginFolders`, plus optional sanitized `publication`; no provider factories, preset configuration, source bytes or credentials.
 - `POST /admin/api/reload-local {}`: activation permission and recovery checks; requests the existing owner-configured watcher rescan. The response confirms the rescan request finished; plugin state remains the activation authority.
 - The private daemon methods are `_agnes/v1/sessionSelection.runtime({})` and `_agnes/v1/sessionSelection.reloadLocal({})`. Browser SDK control-plane blocking and daemon grant checks cover the existing `sessionSelection` family.
-- Existing loop/model defaults, bundle selection, preset-specific composition dump, package lifecycle and resource endpoints are reused. No Core/Host provider implementation is added. The adapter catalog now accepts optional `wireApi` (legacy `api` fallback) and matches configured models using the registered wire API.
+- Existing loop/model defaults, bundle selection, preset-specific composition dump, package lifecycle and resource endpoints are reused. No Core/Host provider implementation is added. The adapter catalog requires `wireApi` and matches configured models using the registered wire API.
 
 Official examples use a read-only packaged catalog; local workspace discovery remains separate. The runtime catalog requires a production supervisor. An embedder without this fitted admin port gets an unavailable state, not a fabricated catalog.
 

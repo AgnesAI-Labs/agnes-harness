@@ -37,10 +37,7 @@ export function defineProvider<K extends keyof KindMap, P extends KindMap[NoInfe
     typeof value.version !== 'string' ||
     !parseSemver(value.version) ||
     methods[kind].some((method) => typeof value[method] !== 'function') ||
-    (kind === 'model-adapter' &&
-      (typeof (value.wireApi ?? value.api) !== 'string' ||
-        !(value.wireApi ?? value.api) ||
-        (value.wireApi !== undefined && value.api !== undefined && value.wireApi !== value.api)))
+    (kind === 'model-adapter' && (typeof value.wireApi !== 'string' || !value.wireApi.trim()))
   )
     throw new ProviderError(
       'E_PROVIDER_INVALID',

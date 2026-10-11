@@ -78,7 +78,7 @@ export async function discoverLocalModels(options: {
 /** pi-ai owns inference serialization, streaming, tools and multimodal handling. */
 export const localOpenAIAdapter = defineModelAdapter({
   id: 'local-openai',
-  api: 'openai-completions',
+  wireApi: 'openai-completions',
   version: '1.0.0',
   capabilities: { imageInput: true, tools: true, streaming: true },
   async create(config: ModelAdapterConfig): Promise<ModelAdapterInstance> {

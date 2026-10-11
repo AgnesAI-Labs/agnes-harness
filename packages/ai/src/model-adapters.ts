@@ -4,7 +4,7 @@ import { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 
 const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
   id: api,
-  api,
+  wireApi: api,
   version: '0.0.0',
   capabilities: { imageInput: true, tools: true, streaming: true },
   create: (config: ModelAdapterConfig, signal?: AbortSignal) => {

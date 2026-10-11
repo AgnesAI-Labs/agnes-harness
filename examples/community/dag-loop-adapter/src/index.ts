@@ -58,7 +58,7 @@ function reply(request: RequestBody): string {
 /** A demonstration protocol: no network, credentials, retries, or real inference. */
 export const adapter = defineModelAdapter({
   id: route,
-  api: route,
+  wireApi: route,
   version: '0.1.0',
   capabilities: { imageInput: false, tools: false, streaming: true },
   create(config: ModelAdapterConfig): ModelAdapterInstance {

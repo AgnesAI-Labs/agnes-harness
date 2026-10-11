@@ -4,7 +4,7 @@ import { createPluginTestHost, runModelAdapter } from '@agnes/host/author-testki
 import { adapter, factory, model, modelId, route, toolPlugin } from '../dist/index.js'
 
 const config = {
-  routes: [{ route, api: adapter.api, baseUrl: model.baseUrl, models: [model], keyless: true }],
+  routes: [{ route, api: adapter.id, baseUrl: model.baseUrl, models: [model], keyless: true }],
 }
 const request = {
   kind: 'inference',

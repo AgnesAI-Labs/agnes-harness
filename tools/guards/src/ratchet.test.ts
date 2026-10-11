@@ -295,7 +295,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
-  'packages/daemon-rpc/src': 8378,
+  'packages/daemon-rpc/src': 8377,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
@@ -326,8 +326,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
-  'packages/host-providers/src': 5147,
-  'packages/host-providers/src/assemble': 2387,
+  'packages/host-providers/src': 5145,
+  'packages/host-providers/src/assemble': 2385,
   'packages/host-extensions/src/ext-host/extension-runner-runtime': 187,
   'packages/host-extensions/src/ext-host/extension-seatbelt': 28,
   'packages/host-extensions/src/ext-host/extension-isolation-selector': 160,
@@ -407,7 +407,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // admission diagnostics.
   // countLines: 2171 -> 2306; exact measured cap, no exclusions or spare allocation.
   // Deferred invocation contract beside the drain. countLines: 2577, exact, no spare.
-  'packages/plugin-runtime/src': 2678,
+  'packages/plugin-runtime/src': 2675,
   'packages/cosmokit/src': 356,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1579,7 +1579,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
   // UI data-source bindings, refresh method, and uiData capability field.
   // countLines on this tree: 4633 (HEAD was 4486 against the previous 4207 ceiling; this change adds 147).
-  'packages/protocol/src': 4678,
+  'packages/protocol/src': 4676,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1713,7 +1713,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 3151, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.

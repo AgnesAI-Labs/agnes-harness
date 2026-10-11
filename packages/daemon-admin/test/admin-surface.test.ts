@@ -390,7 +390,7 @@ it('reads real selection catalogs and protects defaults with the existing admin 
   const adapter = {
     ...loop,
     id: 'adapter',
-    api: 'custom',
+    wireApi: 'custom',
     capabilities: { imageInput: true, tools: true, streaming: true },
     models: [{ id: 'model' }],
   }

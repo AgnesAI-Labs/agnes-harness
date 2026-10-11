@@ -385,7 +385,7 @@ it('validates catalogs and sends defaults through fixed same-origin GET/PUT rout
         modelAdapters: [
           {
             ...loop,
-            api: 'custom',
+            wireApi: 'custom',
             capabilities: { imageInput: true, tools: true, streaming: true },
             models: [{ id: 'model' }],
           },
@@ -410,7 +410,7 @@ it('validates catalogs and sends defaults through fixed same-origin GET/PUT rout
       modelAdapters: [
         {
           ...loop,
-          api: 'custom',
+          wireApi: 'custom',
           capabilities: { imageInput: true, tools: true, streaming: true },
           models: [null],
         },

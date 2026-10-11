@@ -33,8 +33,7 @@ export function sessionSelectionProvider(
     {
       presets: async () => (await catalog()).presets?.map((entry) => entry.id) ?? [],
       loops: async () => (await catalog()).loops,
-      modelAdapters: async () =>
-        (await catalog()).modelAdapters.map((entry) => ({ ...entry, wireApi: entry.wireApi ?? entry.api })),
+      modelAdapters: async () => (await catalog()).modelAdapters,
       models: async (adapter) => (isAdminModelAdapter(adapter) ? adapter.models : []),
     },
     configuration as ConfigurationService & SessionDefaultsConfigurationService,
