@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { McpServerDescriptor } from '@agnes/protocol'
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 const revision = 'a'.repeat(64)
 const server: McpServerDescriptor = {
@@ -77,6 +77,12 @@ const submitted = (path: string) => requests.filter((request) => request.path ==
 const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 20))
 }
+
+// Transform the shared UI graph outside the per-case DOM setup budget. Cases still
+// reset modules and mount a fresh controller; no behavior assertion gets extra time.
+beforeAll(async () => {
+  await import('../src/admin.js')
+}, 60_000)
 
 beforeEach(async () => {
   vi.resetModules()
