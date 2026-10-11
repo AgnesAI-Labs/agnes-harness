@@ -41,6 +41,36 @@ describe('SharedSessionChannel', () => {
       channel.settle({ kind: 'reply', sessionKey: 'owner', requestId: sent[0].requestId, result: {} }),
     ).toBe(false)
   })
+  it.each(['abort', 'close', 'closeAll'])(
+    'withdraws a permission offer on %s and ignores late allow',
+    async (way) => {
+      const sent: any[] = []
+      const channel = new SharedSessionChannel((frame) => sent.push(frame))
+      const controller = new AbortController()
+      const pending = channel.run('owner', () => channel.ask({} as never, { signal: controller.signal }))
+      const result =
+        way === 'abort'
+          ? expect(pending).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
+          : expect(pending).rejects.toBeDefined()
+      if (way === 'abort') controller.abort()
+      else if (way === 'close') channel.closeSession('owner')
+      else channel.closeAll()
+      await result
+      expect(sent[1]).toMatchObject({
+        sessionKey: 'owner',
+        method: 'permission-abort',
+        params: { requestId: sent[0].requestId },
+      })
+      expect(
+        channel.settle({
+          kind: 'reply',
+          sessionKey: 'owner',
+          requestId: sent[0].requestId,
+          result: 'allowed-once',
+        }),
+      ).toBe(false)
+    },
+  )
   it('routes screenshot reads to their owning session and rejects a different session reply', async () => {
     const sent: Array<{ requestId: string; sessionKey: string; method: string }> = []
     const channel = new SharedSessionChannel((frame) => sent.push(frame as (typeof sent)[number]))

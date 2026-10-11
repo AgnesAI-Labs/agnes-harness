@@ -32,6 +32,19 @@ function setup() {
   Object.assign(ep.conn, { authKind: 'local', credentialKind: 'local', clientId: 'client' })
   ep.conn.capabilities.permission = true
   ep.conn.attached.set('session', {} as never)
+  let currentEp = ep
+  const liveEndpoints = [ep]
+  const refresh = async () => {
+    const next = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    Object.assign(next.conn, { authKind: 'local', credentialKind: 'local', clientId: 'refreshed' })
+    next.conn.capabilities.permission = true
+    next.conn.attached.set('session', {} as never)
+    vi.spyOn(next, 'request').mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
+    liveEndpoints.push(next)
+    currentEp = next
+    await ep.close()
+    return next
+  }
   const ask = vi
     .spyOn(ep, 'request')
     .mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
@@ -85,8 +98,9 @@ function setup() {
     directory: join(root, 'receipts'),
     profile: 'local-dev',
     service,
-    current: () => ep.conn,
-    endpoint: () => ep,
+    current: () => currentEp.conn,
+    connections: () => liveEndpoints.map((e) => e.conn),
+    endpoint: (conn: typeof ep.conn) => liveEndpoints.find((e) => e.conn === conn),
     owner: () => ({ principalId: 'local', active: true }),
     workspace: () => workspace,
   })
@@ -107,7 +121,7 @@ function setup() {
       ...changes,
       input,
     }) as ReturnType<SkillInstallBridge>
-  return { root, home, source, ep, ask, call, service, handler, invocation, request }
+  return { root, home, source, ep, refresh, ask, call, service, handler, invocation, request }
 }
 
 async function expectReady(request: ReturnType<typeof setup>['request'], proposalId: string) {
@@ -126,11 +140,20 @@ describe('daemon controlled Skill requests', () => {
   it('uses real resource validation and approval to refresh, trust, enable and verify', async () => {
     const s = setup()
     try {
-      const proposal = await s.request()
+      s.ask.mockRestore()
+      const pending = s.request()
+      expect((await s.ep.notifications[Symbol.asyncIterator]().next()).value).toMatchObject({
+        method: 'session/request_permission',
+      })
+      const refreshed = await s.refresh()
+      const proposal = await pending
       await s.request({ action: 'commit', proposalId: proposal.proposalId })
       await expectReady(s.request, proposal.proposalId)
-      expect(s.ask).toHaveBeenCalledTimes(2)
-      expect(s.ask.mock.calls.every(([method]) => method === 'session/request_permission')).toBe(true)
+      expect(refreshed.request).toHaveBeenCalledTimes(2)
+      expect(
+        vi.mocked(refreshed.request).mock.calls.every(([method]) => method === 'session/request_permission'),
+      ).toBe(true)
+      await refreshed.close()
       expect(s.call.mock.calls.map(([method]) => method)).toContain('_agnes/v1/skills.trust.set')
       expect(readFileSync(join(s.home, 'skills', 'demo', 'SKILL.md'), 'utf8')).toContain('Test only.')
     } finally {

@@ -140,7 +140,7 @@ export class WorkerPool {
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
       /** Safe live resource observations are fenced by the resource adapter's active worker key. */
       onResourceStatus?: (input: { sessionKey: string; serverId: string; status: McpStatus }) => void
-      onRequest: (sessionKey: string, f: RequestFrame) => Promise<unknown>
+      onRequest: (sessionKey: string, f: RequestFrame, signal: AbortSignal) => Promise<unknown>
       onLog?: (input: {
         sessionKey: string
         level: 'debug' | 'info' | 'warn' | 'error'
@@ -176,7 +176,7 @@ export class WorkerPool {
       },
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
-      onRequest: (f) => this.o.onRequest(f.sessionKey, f),
+      onRequest: (f, signal) => this.o.onRequest(f.sessionKey, f, signal),
       onLog: (sessionKey, level, message, correlation) =>
         this.o.onLog?.({ sessionKey, level, message, ...correlation }),
       onActivity: (sessionKey) => this.touch(sessionKey),
@@ -722,6 +722,14 @@ export class WorkerPool {
 
   isQuarantined(workerKey: string): boolean {
     return this.quarantined.has(workerKey)
+  }
+
+  resetSessionRequests(sessionKey: string): void {
+    for (const slot of this.slots.values()) slot.link?.resetSessionRequests(sessionKey)
+  }
+
+  revokeSessionRequests(sessionKey: string): void {
+    for (const slot of this.slots.values()) slot.link?.revokeSessionRequests(sessionKey)
   }
 
   /** Test-only equivalent of an idle eviction, for the one worker key idle eviction never touches:

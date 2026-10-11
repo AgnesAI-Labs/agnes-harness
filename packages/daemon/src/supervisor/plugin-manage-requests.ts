@@ -3,6 +3,7 @@ import { localPackageAdminAuthority, type PackageAdminService } from '@agnes/dae
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { type AuthoringCandidate, type PackageAdminMethodName, rpcError } from '@agnes/protocol'
+import { managementConnection } from './management-connection.js'
 import { checkedPluginFiles } from './plugin-files.js'
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -11,34 +12,31 @@ export function createPluginManageRequests(options: {
   directory: string
   profile: string
   service(): PackageAdminService | undefined
+  connections?(): ConnectionState[]
   current(key: string): ConnectionState | undefined
   endpoint(conn: ConnectionState): LocalEndpoint | undefined
   owner(key: string): { principalId: string; active: boolean } | undefined
 }) {
   const pending = new Map<string, AbortController>()
-  return async (sessionKey: string, requestId: string, method: string, raw: unknown): Promise<unknown> => {
+  return async (
+    sessionKey: string,
+    requestId: string,
+    method: string,
+    raw: unknown,
+    workerSignal?: AbortSignal,
+  ): Promise<unknown> => {
     const key = `${sessionKey}\0${requestId}`
     if (method === 'plugin-manage-abort') {
       if (object(raw) && typeof raw.requestId === 'string')
         pending.get(`${sessionKey}\0${raw.requestId}`)?.abort()
       return undefined
     }
-    const conn = options.current(sessionKey)
+    const live = managementConnection(options, sessionKey, 'PLUGIN_LOCAL_OWNER_REQUIRED', {
+      permission: 'PLUGIN_PERMISSION_REQUIRED',
+    })
+    const conn = live.get()
     const assertActive = () => {
-      const owner = options.owner(sessionKey)
-      if (!conn || options.current(sessionKey) !== conn || !options.endpoint(conn))
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_CONNECTION_CLOSED' })
-      if (
-        conn.authKind !== 'local' ||
-        conn.credentialKind !== 'local' ||
-        !owner?.active ||
-        owner.principalId !== conn.principalId
-      )
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_LOCAL_OWNER_REQUIRED' })
-      if (!conn.capabilities.permission)
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_PERMISSION_REQUIRED' })
-      if (!conn.attached.has(sessionKey))
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_SESSION_NOT_ATTACHED' })
+      live.get()
     }
     assertActive()
     if (
@@ -88,12 +86,16 @@ export function createPluginManageRequests(options: {
       throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_REQUEST_LIMIT' })
     const controller = new AbortController()
     pending.set(key, controller)
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+      ...(workerSignal ? [workerSignal] : []),
+    ])
     const call = (suffix: string, params: Record<string, unknown>) => {
       assertActive()
       signal.throwIfAborted()
       const auth = localPackageAdminAuthority(['packages.read', 'packages.install', 'extensions.execute'])({
-        conn,
+        conn: live.get(),
         clock: Date.now,
         signal,
       })
@@ -119,10 +121,10 @@ export function createPluginManageRequests(options: {
       )
     }
     try {
-      const command = { clientId: conn.clientId, commandId: `author-${requestId}` }
+      const command = () => ({ clientId: live.get().clientId, commandId: `author-${requestId}` })
       if (action === 'create' || action === 'prepare') {
         const files = legacy ? checkedPluginFiles(input.files) : input.files
-        const value = (await call('create', { ...command, files })) as AuthoringCandidate
+        const value = (await call('create', { ...command(), files })) as AuthoringCandidate
         return legacy ? { ...value, proposalId: value.candidateId } : value
       }
       const id = input.candidateId ?? input.proposalId
@@ -137,16 +139,16 @@ export function createPluginManageRequests(options: {
       if (action === 'test') {
         const prompt = new PrompterRouter({
           record: () => {},
-          connections: () => [conn],
-          originOf: () => conn,
+          connections: live.candidates,
+          originOf: () => live.candidates()[0],
           clock: Date.now,
-          endpointFor: () => {
-            const ep = options.endpoint(conn)
+          endpointFor: (target) => {
+            const ep = options.endpoint(target)
             if (!ep) throw new Error('closed')
             return ep
           },
         })
-        const verdict = await prompt.askVerdict(
+        const answer = await prompt.ask(
           {
             requestId: `candidate-${randomUUID()}`,
             kind: 'tool',
@@ -160,16 +162,21 @@ export function createPluginManageRequests(options: {
             bindingHash: value.candidateHash,
             deadline: new Date(Date.now() + 110_000).toISOString(),
             scope: 'plugin.test',
+            options: ['allowed-once', 'rejected'],
           },
           { signal },
         )
         assertActive()
         signal.throwIfAborted()
-        if (!['allowed-once', 'allowed-session', 'allowed-permanent'].includes(verdict))
-          throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_TEST_REJECTED' })
+        const verdict = typeof answer === 'string' ? answer : answer.verdict
+        if (verdict !== 'allowed-once')
+          throw rpcError('CAPABILITY_DENIED', {
+            code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
+            reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
+          })
       }
       const result = (await call(action === 'commit' ? 'submit' : action, {
-        ...command,
+        ...command(),
         candidateId: id,
         expectedHash,
         ...(action === 'write' ? { files: input.files } : {}),

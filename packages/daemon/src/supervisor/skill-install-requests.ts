@@ -15,6 +15,7 @@ import {
   type ResourceControlService,
 } from '@agnes/resource-control-store'
 import { discoverSkillRoot, skillRoots } from '@agnes/resource-control-worker'
+import { managementConnection } from './management-connection.js'
 
 /** This receiver is only reached over the authenticated worker channel, never a public model RPC. */
 export function createSkillInstallRequests(options: {
@@ -22,6 +23,7 @@ export function createSkillInstallRequests(options: {
   profile: string
   service: ResourceControlService
   authority?: ResourceAuthorityResolver
+  connections?(): ConnectionState[]
   current(sessionKey: string): ConnectionState | undefined
   endpoint(connection: ConnectionState): LocalEndpoint | undefined
   owner(sessionKey: string): { principalId: string; active: boolean } | undefined
@@ -33,26 +35,25 @@ export function createSkillInstallRequests(options: {
   })
   const pending = new Map<string, AbortController>()
   const key = (session: string, request: string) => `${session}\0${request}`
-  return async (sessionKey: string, requestId: string, method: string, params: unknown): Promise<unknown> => {
+  return async (
+    sessionKey: string,
+    requestId: string,
+    method: string,
+    params: unknown,
+    workerSignal?: AbortSignal,
+  ): Promise<unknown> => {
     if (method === 'skill-install-abort') {
       const id = (params as { requestId?: unknown } | null)?.requestId
       if (typeof id === 'string') pending.get(key(sessionKey, id))?.abort()
       return undefined
     }
-    const conn = options.current(sessionKey)
-    const owner = options.owner(sessionKey)
+    const live = managementConnection(options, sessionKey, 'SKILL_INSTALL_LOCAL_OWNER_REQUIRED', {
+      attachment: 'SKILL_INSTALL_SESSION_NOT_ATTACHED',
+    })
+    const conn = live.get()
     const workspace = options.workspace(sessionKey)
-    // Remote/JWT/channel sessions cannot turn an installation request into local admin authority.
-    if (
-      conn?.authKind !== 'local' ||
-      conn.credentialKind !== 'local' ||
-      !conn.capabilities.permission ||
-      !owner?.active ||
-      owner.principalId !== conn.principalId ||
-      !workspace
-    )
-      throw rpcError('CAPABILITY_DENIED', { code: 'SKILL_INSTALL_LOCAL_OWNER_REQUIRED' })
-    const authority = (options.authority ?? localResourceAuthority())({ conn })
+    if (!workspace) throw rpcError('CAPABILITY_DENIED')
+    const authority = (options.authority ?? localResourceAuthority())({ conn: live.get() })
     if (!authority) throw rpcError('CAPABILITY_DENIED')
     if (!params || typeof params !== 'object' || Array.isArray(params)) throw rpcError('INVALID_PARAMS')
     const input = params as Record<string, unknown>
@@ -83,18 +84,8 @@ export function createSkillInstallRequests(options: {
     )
       throw rpcError('INVALID_PARAMS')
     const assertActive = () => {
-      const activeOwner = options.owner(sessionKey)
-      if (!options.endpoint(conn)) throw new Error('SKILL_INSTALL_CONNECTION_CLOSED')
-      if (!conn.attached.has(sessionKey)) throw new Error('SKILL_INSTALL_SESSION_NOT_ATTACHED')
-      if (
-        conn.authKind !== 'local' ||
-        conn.credentialKind !== 'local' ||
-        !conn.capabilities.permission ||
-        !activeOwner?.active ||
-        activeOwner.principalId !== owner.principalId ||
-        options.workspace(sessionKey) !== workspace
-      )
-        throw new Error('SKILL_INSTALL_PERMISSION_CHANGED')
+      live.get()
+      if (options.workspace(sessionKey) !== workspace) throw new Error('SKILL_INSTALL_PERMISSION_CHANGED')
     }
     assertActive()
     if (
@@ -103,18 +94,22 @@ export function createSkillInstallRequests(options: {
     )
       throw rpcError('CAPABILITY_DENIED', { code: 'SKILL_INSTALL_BUSY' })
     const controller = new AbortController()
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+      ...(workerSignal ? [workerSignal] : []),
+    ])
     pending.set(key(sessionKey, requestId), controller)
     let approvalOutcome: AskOutcome | undefined
     const prompt = new PrompterRouter({
       record: (outcome) => {
         approvalOutcome = outcome
       },
-      connections: () => [conn],
-      originOf: () => conn,
+      connections: live.candidates,
+      originOf: () => live.candidates()[0],
       clock: Date.now,
-      endpointFor: () => {
-        const endpoint = options.endpoint(conn)
+      endpointFor: (target) => {
+        const endpoint = options.endpoint(target)
         if (!endpoint) throw new Error('closed')
         return endpoint
       },
@@ -145,6 +140,7 @@ export function createSkillInstallRequests(options: {
                 bindingHash,
                 deadline: new Date(Date.now() + 110_000).toISOString(),
                 scope: 'skills.install',
+                options: ['allowed-once', 'rejected'],
               },
               { signal: requestSignal },
             )
@@ -153,6 +149,8 @@ export function createSkillInstallRequests(options: {
             if (via === 'transport' || via === 'absent')
               throw new Error('SKILL_INSTALL_PERMISSION_UNAVAILABLE')
             if (via === 'timeout') throw new Error('SKILL_INSTALL_PERMISSION_TIMEOUT')
+            if ((approvalOutcome as AskOutcome | undefined)?.reason === 'no-handler')
+              throw new Error('SKILL_INSTALL_PERMISSION_NO_HANDLER')
             if (via === 'malformed') throw new Error('SKILL_INSTALL_PERMISSION_INVALID')
             if (via === 'aborted' || verdict === 'cancelled') throw new Error('SKILL_INSTALL_CANCELLED')
             return (
@@ -161,7 +159,7 @@ export function createSkillInstallRequests(options: {
           },
           resources: (method, resourceParams) => {
             assertActive()
-            const currentAuthority = (options.authority ?? localResourceAuthority())({ conn })
+            const currentAuthority = (options.authority ?? localResourceAuthority())({ conn: live.get() })
             if (!currentAuthority || currentAuthority.principalId !== authority.principalId)
               throw rpcError('CAPABILITY_DENIED')
             const permitted = new Set([

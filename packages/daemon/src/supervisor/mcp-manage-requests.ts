@@ -5,6 +5,8 @@ import { delimiter, isAbsolute, join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { type PrompterAnswer, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import {
+  type Actor,
+  type ApprovalReason,
   jcs,
   type McpServerDefinitionInput,
   type McpServerDescriptor,
@@ -21,6 +23,7 @@ import {
   type ResourceControlService,
   type ResourceControlStore,
 } from '@agnes/resource-control-store'
+import { managementConnection } from './management-connection.js'
 
 type ReceiptVia = 'rejected' | 'cancelled' | 'unavailable' | 'timeout'
 type Receipt = {
@@ -33,11 +36,13 @@ type Receipt = {
   operationId?: string
   /** Why a non-allow ended. A user decision stays terminal; a deadline or no approver can be asked again. */
   via?: ReceiptVia
+  reason?: ApprovalReason
+  answeredBy?: Actor
 }
 /** Collapse a prompter answer onto the receipt. A deadline is not a user rejection. */
 function receiptVia(answer: PrompterAnswer): ReceiptVia {
   if (typeof answer === 'object') {
-    if (answer.reason === 'timeout') return 'timeout'
+    if (answer.reason === 'deadline') return 'timeout'
     if (answer.verdict === 'cancelled') return 'cancelled'
     if (answer.verdict === 'rejected') return 'rejected'
   }
@@ -77,6 +82,7 @@ export function createMcpManageRequests(options: {
   service: ResourceControlService
   store?: ResourceControlStore
   authority?: ResourceAuthorityResolver
+  connections?(): ConnectionState[]
   current(sessionKey: string): ConnectionState | undefined
   endpoint(conn: ConnectionState): LocalEndpoint | undefined
   owner(sessionKey: string): { principalId: string; active: boolean } | undefined
@@ -92,28 +98,23 @@ export function createMcpManageRequests(options: {
     await writeFile(temporary, JSON.stringify(receipt), { mode: 0o600 })
     await rename(temporary, receiptPath(receipt.proposalId))
   }
-  return async (sessionKey: string, requestId: string, method: string, raw: unknown): Promise<unknown> => {
+  return async (
+    sessionKey: string,
+    requestId: string,
+    method: string,
+    raw: unknown,
+    workerSignal?: AbortSignal,
+  ): Promise<unknown> => {
     const requestKey = `${sessionKey}\0${requestId}`
     if (method === 'mcp-manage-abort') {
       if (object(raw) && typeof raw.requestId === 'string')
         pending.get(`${sessionKey}\0${raw.requestId}`)?.abort()
       return undefined
     }
-    const conn = options.current(sessionKey)
-    const owner = options.owner(sessionKey)
+    const live = managementConnection(options, sessionKey, 'MCP_LOCAL_OWNER_REQUIRED')
+    const conn = live.get()
     const assertActive = () => {
-      const currentOwner = options.owner(sessionKey)
-      if (
-        conn?.authKind !== 'local' ||
-        conn.credentialKind !== 'local' ||
-        !conn.capabilities.permission ||
-        !conn.attached.has(sessionKey) ||
-        !options.endpoint(conn) ||
-        !currentOwner?.active ||
-        currentOwner.principalId !== conn.principalId ||
-        currentOwner.principalId !== owner?.principalId
-      )
-        throw rpcError('CAPABILITY_DENIED', { code: 'MCP_LOCAL_OWNER_REQUIRED' })
+      live.get()
     }
     assertActive()
     if (!conn || !options.store) throw rpcError('CAPABILITY_DENIED')
@@ -141,12 +142,16 @@ export function createMcpManageRequests(options: {
       throw rpcError('INVALID_PARAMS')
     if (pending.size >= 32) fail('MCP_REQUEST_LIMIT')
     const controller = new AbortController()
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+      ...(workerSignal ? [workerSignal] : []),
+    ])
     pending.set(requestKey, controller)
     const authority = () => {
       assertActive()
       signal.throwIfAborted()
-      const value = (options.authority ?? localResourceAuthority())({ conn })
+      const value = (options.authority ?? localResourceAuthority())({ conn: live.get() })
       if (!value) throw rpcError('CAPABILITY_DENIED')
       return value
     }
@@ -182,6 +187,7 @@ export function createMcpManageRequests(options: {
           state: receipt.state,
           serverId: receipt.serverId,
           ...(receipt.via ? { via: receipt.via } : {}),
+          ...(receipt.reason ? { reason: receipt.reason } : {}),
         }
       const row = await get(receipt.serverId)
       const status = (await call('_agnes/v1/mcp.servers.status', { serverId: receipt.serverId })) as {
@@ -325,11 +331,11 @@ export function createMcpManageRequests(options: {
         const summary = `Connect to Agnes Harness: ${proposal.definition.displayName}\n${JSON.stringify(proposal.definition.transport)}${sandbox}\nShared by sessions in the current AGH profile. This registers, trusts, and enables this configuration. The start command may download and run third-party software. This approval covers only this configuration and does not change other clients.`
         const prompt = new PrompterRouter({
           record: () => {},
-          connections: () => [conn],
-          originOf: () => conn,
+          connections: live.candidates,
+          originOf: () => live.candidates()[0],
           clock: Date.now,
-          endpointFor: () => {
-            const ep = options.endpoint(conn)
+          endpointFor: (target) => {
+            const ep = options.endpoint(target)
             if (!ep) throw new Error('closed')
             return ep
           },
@@ -348,11 +354,15 @@ export function createMcpManageRequests(options: {
             bindingHash: receipt.revision,
             deadline: new Date(Date.now() + 110_000).toISOString(),
             scope: 'mcp.connect',
+            options: ['allowed-once', 'rejected'],
           },
           { signal },
         )
         const verdict = typeof answer === 'string' ? answer : answer.verdict
-        authority()
+        if (typeof answer === 'object') {
+          if (answer.answeredBy) receipt.answeredBy = answer.answeredBy
+          if (answer.reason) receipt.reason = answer.reason
+        }
         if (!['allowed-once', 'allowed-session', 'allowed-permanent'].includes(verdict)) {
           receipt.state = 'cancelled'
           receipt.via = receiptVia(answer)
@@ -363,6 +373,7 @@ export function createMcpManageRequests(options: {
         if (prior && prior.revision !== receipt.revision) fail('MCP_DEFINITION_CONFLICT')
         // Persist intent before admission. Recovery never silently repeats approval or an unknown write.
         delete receipt.via
+        delete receipt.reason
         receipt.state = 'registered'
         await save(receipt)
         if (!prior)

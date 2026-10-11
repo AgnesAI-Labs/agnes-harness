@@ -290,7 +290,12 @@ describe('worker command dispatch against a real host+session', () => {
         async () => {
           const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
           expect(rows).toHaveLength(1)
-          expect(rows[0]?.data).toMatchObject({ ticket, via: 'timeout', verdict: 'rejected' })
+          expect(rows[0]?.data).toMatchObject({
+            ticket,
+            via: 'timeout',
+            verdict: 'unavailable',
+            reason: 'deadline',
+          })
           expect(session.state.pendingApprovals.size).toBe(0)
         },
         { timeout: 2_000, interval: 20 },

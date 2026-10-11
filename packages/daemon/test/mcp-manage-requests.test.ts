@@ -37,6 +37,20 @@ async function setup() {
   Object.assign(ep.conn, { authKind: 'local', credentialKind: 'local', clientId: 'client' })
   ep.conn.capabilities.permission = true
   ep.conn.attached.set('session', {} as never)
+  let currentEp = ep
+  const liveEndpoints = [ep]
+  const refresh = async () => {
+    const next = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    Object.assign(next.conn, { authKind: 'local', credentialKind: 'local', clientId: 'refreshed' })
+    next.conn.capabilities.permission = true
+    next.conn.attached.set('session', {} as never)
+    vi.spyOn(next, 'request').mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
+    endpoints.push(next)
+    liveEndpoints.push(next)
+    currentEp = next
+    await ep.close()
+    return next
+  }
   const ask = vi
     .spyOn(ep, 'request')
     .mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
@@ -66,8 +80,9 @@ async function setup() {
     profile: 'local-dev',
     service,
     store,
-    current: () => ep.conn,
-    endpoint: () => ep,
+    current: () => currentEp.conn,
+    connections: () => liveEndpoints.map((e) => e.conn),
+    endpoint: (conn: typeof ep.conn) => liveEndpoints.find((e) => e.conn === conn),
     owner: () => ({ principalId: 'local', active: true }),
   }
   let handler = createMcpManageRequests(options)
@@ -85,6 +100,7 @@ async function setup() {
     }) as Promise<{ proposalId: string; state: string; items: unknown[] }>
   return {
     root,
+    refresh,
     ep,
     ask,
     store,
@@ -103,7 +119,22 @@ it('registers in the real AGH resource list, saves a revision grant and recovers
   const p = await s.request({ action: 'prepare', definition })
   expect((await s.request({ action: 'list' })).items).toEqual([])
   expect(s.ask).not.toHaveBeenCalled()
-  const receipt = await s.request({ action: 'commit', proposalId: p.proposalId })
+  s.ask.mockRestore()
+  const pending = s.request({ action: 'commit', proposalId: p.proposalId })
+  const first = await s.ep.notifications[Symbol.asyncIterator]().next()
+  expect(first.value).toMatchObject({ method: 'session/request_permission' })
+  const refreshed = await s.refresh()
+  const receipt = await pending
+  expect(refreshed.request).toHaveBeenCalledWith(
+    'session/request_permission',
+    expect.objectContaining({
+      options: [
+        expect.objectContaining({ kind: 'allow_once' }),
+        expect.objectContaining({ kind: 'reject_once' }),
+      ],
+    }),
+    expect.anything(),
+  )
   expect(['submitted', 'ready']).toContain(receipt.state)
   await vi.waitFor(
     async () =>
@@ -119,7 +150,7 @@ it('registers in the real AGH resource list, saves a revision grant and recovers
   expect(snapshot.mcp[0].localStartApproval).toBe(revision)
   s.restart()
   expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({ state: 'ready' })
-  expect(s.ask).toHaveBeenCalledTimes(1)
+  expect(refreshed.request).toHaveBeenCalledTimes(1)
   const authority = localResourceAuthority()({ conn: s.ep.conn })
   await s.service.call(
     '_agnes/v1/mcp.servers.trust.set',
@@ -144,6 +175,7 @@ it('denial and malformed identity never register or authorize a server', async (
   expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
     state: 'cancelled',
     via: 'rejected',
+    reason: 'user-rejected',
   })
   expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
     state: 'cancelled',
@@ -178,6 +210,7 @@ it('asks again when the connect approval timed out or never reached an approver'
   expect(await timed.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
     state: 'cancelled',
     via: 'timeout',
+    reason: 'deadline',
   })
   expect((await timed.request({ action: 'list' })).items).toEqual([])
   expect(timed.ask).toHaveBeenCalledTimes(1)
@@ -192,6 +225,7 @@ it('asks again when the connect approval timed out or never reached an approver'
   expect(await missed.request({ action: 'commit', proposalId: q.proposalId })).toMatchObject({
     state: 'cancelled',
     via: 'unavailable',
+    reason: 'transport',
   })
   expect(missed.ask).toHaveBeenCalledTimes(1)
   expect(['submitted', 'ready']).toContain(

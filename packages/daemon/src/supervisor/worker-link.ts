@@ -76,6 +76,8 @@ export class WorkerSessionChannel {
 
 /** One process-wide connection. Session routing remains explicit on every session frame. */
 export class WorkerLink {
+  private readonly requestsLifetime = new AbortController()
+  private readonly sessionRequests = new Map<string, AbortController>()
   readonly hello: Promise<WorkerHello>
   private resolveHello!: (hello: WorkerHello) => void
   private readonly pending = new Map<
@@ -99,7 +101,7 @@ export class WorkerLink {
       onEvent: (sessionKey: string, event: EventEnvelope) => void | Promise<void>
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
       onResourceStatus?: (serverId: string, status: McpStatus) => void
-      onRequest: (frame: RequestFrame) => Promise<unknown>
+      onRequest: (frame: RequestFrame, signal: AbortSignal) => Promise<unknown>
       onLog?: (
         sessionKey: string,
         level: 'debug' | 'info' | 'warn' | 'error',
@@ -195,8 +197,24 @@ export class WorkerLink {
    * it would be an unhandled rejection (fatal to the daemon) and would re-run the handler for the
    * session's next queued frame.
    */
+  revokeSessionRequests(sessionKey: string): void {
+    let lifetime = this.sessionRequests.get(sessionKey)
+    if (!lifetime) {
+      lifetime = new AbortController()
+      this.sessionRequests.set(sessionKey, lifetime)
+    }
+    lifetime.abort('stopped')
+  }
+
+  resetSessionRequests(sessionKey: string): void {
+    // Keep live controllers: a delayed turn/start must not orphan an offer from a later stop.
+    if (this.sessionRequests.get(sessionKey)?.signal.aborted) this.sessionRequests.delete(sessionKey)
+  }
+
   private failSession(sessionKey: string, error: unknown): void {
     this.failedSessions.add(sessionKey)
+    this.sessionRequests.get(sessionKey)?.abort('stopped')
+    this.sessionRequests.delete(sessionKey)
     try {
       this.options.onSessionFailure?.(sessionKey, error)
     } catch (observerError) {
@@ -257,40 +275,48 @@ export class WorkerLink {
       if (replySessionKey) this.options.onActivity?.(replySessionKey)
       return
     }
-    void this.options.onRequest(frame).then(
-      (result) =>
-        this.send({
-          kind: 'reply',
-          requestId: frame.requestId,
-          sessionKey: frame.sessionKey,
-          result,
-        }),
-      (error) =>
-        this.send({
-          kind: 'reply',
-          requestId: frame.requestId,
-          sessionKey: frame.sessionKey,
-          error:
-            frame.method === 'mcp-manage' || frame.method === 'plugin-manage'
-              ? {
-                  code:
-                    typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
-                      ? (error as { data: { code: string } }).data.code
-                      : 'HELPER_MANAGEMENT_FAILED',
-                  message:
-                    'The AGH extension operation did not finish. Check its status or policy in Settings.',
-                }
-              : frame.method === 'skill-install'
-                ? skillInstallReplyError(error)
-                : { code: 'E_REQUEST', message: String(error) },
-        }),
-    )
+    let sessionLifetime = this.sessionRequests.get(frame.sessionKey)
+    if (!sessionLifetime) {
+      sessionLifetime = new AbortController()
+      this.sessionRequests.set(frame.sessionKey, sessionLifetime)
+    }
+    void this.options
+      .onRequest(frame, AbortSignal.any([this.requestsLifetime.signal, sessionLifetime.signal]))
+      .then(
+        (result) =>
+          this.send({
+            kind: 'reply',
+            requestId: frame.requestId,
+            sessionKey: frame.sessionKey,
+            result,
+          }),
+        (error) =>
+          this.send({
+            kind: 'reply',
+            requestId: frame.requestId,
+            sessionKey: frame.sessionKey,
+            error:
+              frame.method === 'mcp-manage' || frame.method === 'plugin-manage'
+                ? {
+                    code:
+                      typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
+                        ? (error as { data: { code: string } }).data.code
+                        : 'HELPER_MANAGEMENT_FAILED',
+                    message:
+                      'The AGH extension operation did not finish. Check its status or policy in Settings.',
+                  }
+                : frame.method === 'skill-install'
+                  ? skillInstallReplyError(error)
+                  : { code: 'E_REQUEST', message: String(error) },
+          }),
+      )
     this.options.onActivity?.(frame.sessionKey)
   }
 
   private markDead(): void {
     if (!this.alive) return
     this.alive = false
+    this.requestsLifetime.abort('stopped')
     for (const requestId of [...this.pending.keys()])
       this.settle(requestId, (pending) => pending.reject(new Error('worker link closed')))
     for (const handler of this.exitHandlers) handler()
@@ -375,6 +401,8 @@ export class WorkerLink {
   }
 
   async closeSession(sessionKey: string, reason: string, options: WorkerCommandOptions = {}): Promise<void> {
+    this.sessionRequests.get(sessionKey)?.abort('stopped')
+    this.sessionRequests.delete(sessionKey)
     try {
       await this.sendSessionLifecycle('session.close', sessionKey, { reason }, options)
     } finally {

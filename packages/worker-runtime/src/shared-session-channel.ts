@@ -50,7 +50,12 @@ export class SharedSessionChannel {
     const requestId = `w${this.nextRequestId++}`
     return new Promise((resolve, reject) => {
       const cancel = (): void => {
-        if (method === 'skill-install' || method === 'mcp-manage' || method === 'plugin-manage') {
+        if (
+          method === 'permission' ||
+          method === 'skill-install' ||
+          method === 'mcp-manage' ||
+          method === 'plugin-manage'
+        ) {
           try {
             this.send({
               kind: 'request',
@@ -67,7 +72,7 @@ export class SharedSessionChannel {
       const onAbort = (): void => {
         this.pending.delete(requestId)
         cancel()
-        if (method === 'permission') resolve('cancelled')
+        if (method === 'permission') resolve({ verdict: 'cancelled', reason: 'stopped' })
         else reject(signal.reason ?? new Error('session request cancelled'))
       }
       this.pending.set(requestId, {

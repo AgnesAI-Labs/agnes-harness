@@ -734,6 +734,7 @@ export type StartSupervisorOptions = {
     lister: SessionLister
     directory: DirectoryPort
     resolveActor: NonNullable<AgnesContext['resolveActor']>
+    verifyApprovalSource?: AgnesContext['verifyApprovalSource']
     /** Server-owned authenticated scope resolver plus bounded content-addressed artifact reader. */
     artifactRead: ArtifactReadRpcOptions
   }>
@@ -1043,6 +1044,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const inflightConn = new Map<string, ConnectionState>()
 
     const prompter = new PrompterRouter({
+      resolveActor: async (conn, key) =>
+        o.ports?.resolveActor
+          ? o.ports.resolveActor(conn.credential, 'approval', key)
+          : registry.require(key).session.resolveActor(conn.credential, 'approval'),
+      ...(o.ports?.verifyApprovalSource ? { verifySource: o.ports.verifyApprovalSource } : {}),
       endpointFor: (conn) => {
         const found = [...conns].find((c) => c.conn === conn)
         // Every candidate PrompterRouter.ask() considers comes from `connections()` below, which is
@@ -1195,6 +1201,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       profile: o.profile.name,
       service: resourceControl.service,
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
+      connections: () => [...conns].map((entry) => entry.conn),
       current: (key) => inflightConn.get(key),
       endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
       owner: (key) => sessionOwnership.resolve(key),
@@ -1205,6 +1212,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       directory: resourceControlDirectory,
       profile: o.profile.name,
       service: () => effectivePackageAdmin?.service,
+      connections: () => [...conns].map((entry) => entry.conn),
       current: (key) => inflightConn.get(key),
       endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
       owner: (key) => sessionOwnership.resolve(key),
@@ -1215,9 +1223,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       service: resourceControl.service,
       ...(localResourceStore ? { store: localResourceStore } : {}),
       ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
+      connections: () => [...conns].map((entry) => entry.conn),
       current: (key) => inflightConn.get(key),
       endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
       owner: (key) => sessionOwnership.resolve(key),
+    })
+    const permissionRequests = new Map<string, AbortController>()
+    startupCleanup.push(() => {
+      for (const controller of permissionRequests.values()) controller.abort('stopped')
     })
     const pool = new WorkerPool({
       config: o.config,
@@ -1234,22 +1247,49 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       ...(o.workerExecArgv ? { execArgv: o.workerExecArgv } : {}),
       workerEntry,
 
-      onEvent: (sessionKey, e) => deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces),
+      onEvent: (sessionKey, e) => {
+        if (e.type === 'turn/start') pool.resetSessionRequests(sessionKey)
+        const control = e.data as { action?: unknown; outcome?: unknown }
+        if (
+          e.type === 'x/core/control' &&
+          e.origin === 'principal' &&
+          control.outcome === 'requested' &&
+          (control.action === 'cancel' || control.action === 'interrupt')
+        )
+          pool.revokeSessionRequests(sessionKey)
+        return deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces)
+      },
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
       onLifecycle: (phase, id) => o.observability?.lifecycle('worker', phase, undefined, id),
       onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
-      onRequest: async (sessionKey, f) => {
+      onRequest: async (sessionKey, f, workerSignal) => {
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
-          return pluginManageRequests(sessionKey, f.requestId, f.method, f.params)
+          return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
-          return mcpManageRequests(sessionKey, f.requestId, f.method, f.params)
+          return mcpManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         if (f.method === 'skill-install' || f.method === 'skill-install-abort')
-          return skillInstallRequests(sessionKey, f.requestId, f.method, f.params)
-        if (f.method === 'permission')
-          return prompter.ask(f.params as ApprovalRequest, { signal: new AbortController().signal })
+          return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
+        const permissionKey = `${sessionKey}\0${f.requestId}`
+        if (f.method === 'permission-abort') {
+          const id = (f.params as { requestId?: unknown })?.requestId
+          if (typeof id === 'string') permissionRequests.get(`${sessionKey}\0${id}`)?.abort('stopped')
+          return undefined
+        }
+        if (f.method === 'permission') {
+          const request = f.params as ApprovalRequest
+          if (request.sessionKey !== sessionKey || permissionRequests.has(permissionKey))
+            throw rpcError('INVALID_PARAMS')
+          const controller = new AbortController()
+          permissionRequests.set(permissionKey, controller)
+          try {
+            return await prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) })
+          } finally {
+            permissionRequests.delete(permissionKey)
+          }
+        }
         if (f.method === 'artifact-media-read') {
           if (!projectedArtifactRead?.workerRead) return undefined
           if (!f.params || typeof f.params !== 'object' || Array.isArray(f.params)) return undefined
@@ -2077,6 +2117,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         lister,
         ...(o.ports?.directory ? { directory: o.ports.directory } : {}),
         resolveActor,
+        ...(o.ports?.verifyApprovalSource ? { verifyApprovalSource: o.ports.verifyApprovalSource } : {}),
         ...(tickets ? { tickets } : {}),
         authKind: 'local',
         credentialKind: 'local',

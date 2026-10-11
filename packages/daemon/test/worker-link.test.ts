@@ -35,6 +35,40 @@ function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('WorkerLink command settlement', () => {
+  it('revokes only the stopped session, keeps late requests stopped, and resets for a new turn', async () => {
+    const socket = new FakeSocket()
+    const signals: AbortSignal[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest(_frame, signal) {
+        signals.push(signal)
+      },
+    })
+    const request = (sessionKey: string, id: string) =>
+      socket.emit(
+        'data',
+        encodeFrame({ kind: 'request', requestId: id, sessionKey, method: 'permission', params: {} }),
+      )
+    request('a', 'first')
+    request('b', 'sibling')
+    await vi.waitFor(() => expect(signals).toHaveLength(2))
+    link.resetSessionRequests('a')
+    link.revokeSessionRequests('a')
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals[0]?.reason).toBe('stopped')
+    expect(signals[1]?.aborted).toBe(false)
+    request('a', 'late')
+    await vi.waitFor(() => expect(signals).toHaveLength(3))
+    expect(signals[2]?.aborted).toBe(true)
+    link.resetSessionRequests('a')
+    request('a', 'new-turn')
+    await vi.waitFor(() => expect(signals).toHaveLength(4))
+    expect(signals[3]?.aborted).toBe(false)
+    socket.emit('close')
+    expect(signals[1]?.aborted).toBe(true)
+    expect(signals[3]?.aborted).toBe(true)
+  })
+
   it('fails the process link on an unsafe hello generation', async () => {
     const { link, socket } = setup()
     socket.emit(

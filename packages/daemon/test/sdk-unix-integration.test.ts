@@ -85,7 +85,7 @@ it('client disconnect rejects the pending SDK prompt and aborts the actual core 
   expect(session.closed).toBe(true)
 })
 
-it('routes real daemon permission requests to SDK sessions and defaults to rejection', async () => {
+it('routes real daemon permission requests to SDK sessions and reports no handler without a human answer', async () => {
   const s = await service()
   const session = await s.client.session.new({ cwd: s.h.dataDir })
   const ep = s.endpoints[0]
@@ -100,7 +100,10 @@ it('routes real daemon permission requests to SDK sessions and defaults to rejec
         { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
       ],
     })
-  expect(await ask()).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+  expect(await ask()).toEqual({
+    outcome: { outcome: 'cancelled' },
+    _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+  })
   session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   expect(await ask()).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } })
   let start!: () => void

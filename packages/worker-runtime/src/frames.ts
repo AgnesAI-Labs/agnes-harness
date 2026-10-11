@@ -176,6 +176,7 @@ export type RequestFrame = {
   requestId: string
   method:
     | 'permission'
+    | 'permission-abort'
     | 'notice'
     | 'artifact-media-read'
     | 'skill-install'

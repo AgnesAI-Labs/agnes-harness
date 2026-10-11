@@ -1,9 +1,11 @@
-import { createReadStream } from 'node:fs'
+import { createReadStream, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
+import { join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent } from '@agnes/protocol'
+import { ConfigEmptyParams } from '@agnes/protocol/gen/agnes-v1'
 import { say } from '../../daemon-rpc/test/host.js'
 
 // A `WorkerPool.workerEntry` override (the same extension point `worker-pool.e2e.test.ts`'s own
@@ -94,7 +96,16 @@ void runWorker(
               type: 'sent' as const,
               stamp: { ...stampFor(request), parser_version: PARSER_VERSION },
             },
-            ...say(env.AGNES_FAKE_WORKER_TEXT ?? 'hello world'),
+            ...(env.AGNES_FAKE_WORKER_PERMISSION === '1'
+              ? [
+                  {
+                    type: 'toolcall_end' as const,
+                    via: 'native' as const,
+                    call: { toolUseId: '', name: 'permission_probe', args: {}, ordinal: 0 },
+                  },
+                  { type: 'done' as const, reason: 'toolUse' as const },
+                ]
+              : say(env.AGNES_FAKE_WORKER_TEXT ?? 'hello world')),
           ],
         ),
         profileInputs: {
@@ -116,6 +127,15 @@ void runWorker(
         },
         prompter: (req, opts) => workerPrompter.ask(req, opts),
         seams: {
+          ...(env.AGNES_FAKE_WORKER_PERMISSION === '1'
+            ? {
+                approval: {
+                  ask: (req: Parameters<typeof workerPrompter.ask>[0], opts?: { signal: AbortSignal }) =>
+                    workerPrompter.ask(req, { signal: opts?.signal ?? new AbortController().signal }),
+                  resume: async () => null,
+                },
+              }
+            : {}),
           principals: {
             resolve: async (credential) => ({
               id: (credential as { userId?: string }).userId ?? 'unknown',
@@ -127,6 +147,29 @@ void runWorker(
           },
         },
       })
+      if (env.AGNES_FAKE_WORKER_PERMISSION === '1')
+        host.kernel.tools.add(
+          {
+            name: 'permission_probe',
+            description: 'Plain permission test tool',
+            parameters: ConfigEmptyParams,
+            meta: {
+              isReadOnly: false,
+              isDestructive: true,
+              isConcurrencySafe: false,
+              isOpenWorld: false,
+              replay: 'never',
+              costHint: {},
+              deferLoading: false,
+              requiresApproval: 'always',
+            },
+            execute: async () => {
+              writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
+              return { content: [{ type: 'text', text: 'ran' }] }
+            },
+          },
+          { source: 'test', trust: 'builtin' },
+        )
       return host
     },
   },

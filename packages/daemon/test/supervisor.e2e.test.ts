@@ -1,4 +1,4 @@
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -1142,3 +1142,61 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
     }
   }, 150_000)
 })
+
+it.each(['session', 'worker'])(
+  'withdraws a real cross-process permission when the %s stops; late allow cannot dispatch',
+  async (way) => {
+    vi.stubEnv('AGNES_FAKE_WORKER_PERMISSION', '1')
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stop-'))
+    const profile = buildProfile(dir)
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const tables = sqliteTables()
+    const sup = await startSupervisor({
+      config: buildConfigFor(dir),
+      profile,
+      profileDir: join(dir, 'profiles', 'local-dev'),
+      profileFile,
+      workspaceRoot: dir,
+      jobTables: tables,
+      processIdentity,
+      ...workerSpawnOpts,
+    })
+    const sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+    try {
+      const session = await sdk.session.new({ cwd: dir })
+      let promptSignal: AbortSignal | undefined
+      let late!: (answer: { verdict: 'allowed-once' }) => void
+      session.onPermissionRequest((_request, { signal }) => {
+        promptSignal = signal
+        return new Promise((resolve) => {
+          late = resolve
+        })
+      })
+      const running = session.prompt('review').catch((error) => error)
+      await vi.waitFor(() => expect(promptSignal).toBeDefined(), { timeout: 15_000 })
+      if (way === 'session') await session.cancel()
+      else expect(sup.retireSharedWorkerNow()).toBe(true)
+      await vi.waitFor(() => expect(promptSignal?.aborted).toBe(true))
+      late({ verdict: 'allowed-once' })
+      await running
+      expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+      {
+        if (way === 'worker') await sdk.session.load(session.id)
+        const timeline = await session.projectUI()
+        expect(timeline.nodes.filter((node) => node.kind === 'approval')).toEqual([
+          expect.objectContaining({
+            state: 'decided',
+            decision: expect.objectContaining({ verdict: 'cancelled', reason: 'stopped' }),
+          }),
+        ])
+      }
+    } finally {
+      await sdk.close()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  },
+  30_000,
+)

@@ -109,6 +109,20 @@ async function setup() {
   Object.assign(ep.conn, { authKind: 'local', credentialKind: 'local', clientId: 'client' })
   ep.conn.capabilities.permission = true
   ep.conn.attached.set('session', {} as never)
+  let currentEp = ep
+  const liveEndpoints = [ep]
+  const refresh = async () => {
+    const next = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    Object.assign(next.conn, { authKind: 'local', credentialKind: 'local', clientId: 'refreshed' })
+    next.conn.capabilities.permission = true
+    next.conn.attached.set('session', {} as never)
+    vi.spyOn(next, 'request').mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
+    endpoints.push(next)
+    liveEndpoints.push(next)
+    currentEp = next
+    await ep.close()
+    return next
+  }
   const ask = vi
     .spyOn(ep, 'request')
     .mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'allow_once' } })
@@ -116,8 +130,9 @@ async function setup() {
     directory: root,
     profile: 'local-dev',
     service: () => admin,
-    current: () => ep.conn,
-    endpoint: () => ep,
+    current: () => currentEp.conn,
+    connections: () => liveEndpoints.map((e) => e.conn),
+    endpoint: (conn: typeof ep.conn) => liveEndpoints.find((e) => e.conn === conn),
     owner: () => ({ principalId: 'local', active: true }),
   }
   let handler = createPluginManageRequests(options)
@@ -135,6 +150,7 @@ async function setup() {
     }) as Promise<AuthoringCandidate & { proposalId: string }>
   return {
     root,
+    refresh,
     profileDir,
     manager,
     admin,
@@ -156,13 +172,23 @@ it('drafts and submits a tested review without installing, trusting or enabling;
   await expect(s.request({ action: 'commit', proposalId: p.proposalId })).rejects.toMatchObject({
     data: { reason: 'E_PACKAGE_PREVIEW_STALE' },
   })
-  await s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash })
+  s.ask.mockRestore()
+  const pending = s.request({
+    action: 'candidate.test',
+    candidateId: p.candidateId,
+    expectedHash: p.candidateHash,
+  })
+  expect((await s.ep.notifications[Symbol.asyncIterator]().next()).value).toMatchObject({
+    method: 'session/request_permission',
+  })
+  const refreshed = await s.refresh()
+  await pending
   const r = await s.request({ action: 'commit', proposalId: p.proposalId })
   expect(r.state).toBe('review')
   expect(r.tests).toMatchObject({ state: 'passed', hash: r.candidateHash })
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
-  expect(s.ask).toHaveBeenCalledOnce()
-  expect(JSON.stringify(s.ask.mock.calls)).toContain(r.candidateHash)
+  expect(refreshed.request).toHaveBeenCalledOnce()
+  expect(JSON.stringify(vi.mocked(refreshed.request).mock.calls)).toContain(r.candidateHash)
   s.restart()
   expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('review')
   await expect(
@@ -178,7 +204,7 @@ it('drafts and submits a tested review without installing, trusting or enabling;
 it('denied test execution and cancelled native prompts leave the candidate inactive, with no passing result', async () => {
   const s = await setup(),
     p = await s.request({ action: 'prepare', files })
-  s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'deny' } })
+  s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'reject_once' } })
   await expect(
     s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash: p.candidateHash }),
   ).rejects.toMatchObject({ data: { code: 'PLUGIN_TEST_REJECTED' } })
