@@ -204,11 +204,20 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-status-danger-text
 --agnes-status-danger-bg
 --agnes-status-info-text
+--agnes-status-info-bg
+--agnes-bg-subtle
+--agnes-status-success-border
+--agnes-status-warning-border
+--agnes-status-danger-border
+--agnes-status-info-border
 --shadow-elevation
 --shadow-hairline
 --shadow-dialog
 --shadow-elevation-soft
 --shadow-elevation-prominent
+--elevation-0
+--elevation-1
+--elevation-2
 --agnes-bg-app-sidebar
 --agnes-bg-app-content
 --agnes-trace-track
@@ -232,6 +241,20 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-trace-badge-compaction-text
 --agnes-trace-badge-compaction-bg
 <!-- theme-tokens:end -->
+
+Status surfaces and elevation levels added to the theme contract:
+
+| Token | Purpose |
+| --- | --- |
+| `--agnes-status-info-bg` | Background for informational notices. |
+| `--agnes-bg-subtle` | Muted background for secondary surfaces. |
+| `--agnes-status-success-border` | Border for success states. |
+| `--agnes-status-warning-border` | Border for warning states. |
+| `--agnes-status-danger-border` | Border for error or danger states. |
+| `--agnes-status-info-border` | Border for informational states. |
+| `--elevation-0` | Flat surfaces without a shadow. |
+| `--elevation-1` | Shadow for small floating surfaces. |
+| `--elevation-2` | Shadow for dialogs and raised surfaces. |
 
 Every token must provide **both** `light` and `dark` values:
 

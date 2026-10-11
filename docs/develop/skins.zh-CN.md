@@ -202,11 +202,20 @@ textarea {
 --agnes-status-danger-text
 --agnes-status-danger-bg
 --agnes-status-info-text
+--agnes-status-info-bg
+--agnes-bg-subtle
+--agnes-status-success-border
+--agnes-status-warning-border
+--agnes-status-danger-border
+--agnes-status-info-border
 --shadow-elevation
 --shadow-hairline
 --shadow-dialog
 --shadow-elevation-soft
 --shadow-elevation-prominent
+--elevation-0
+--elevation-1
+--elevation-2
 --agnes-bg-app-sidebar
 --agnes-bg-app-content
 --agnes-trace-track
@@ -230,6 +239,20 @@ textarea {
 --agnes-trace-badge-compaction-text
 --agnes-trace-badge-compaction-bg
 <!-- theme-tokens:end -->
+
+主题合同新增的状态区域与层级 token：
+
+| Token | 用途 |
+| --- | --- |
+| `--agnes-status-info-bg` | 信息提示的背景。 |
+| `--agnes-bg-subtle` | 次要区域的柔和背景。 |
+| `--agnes-status-success-border` | 成功状态的边框。 |
+| `--agnes-status-warning-border` | 警告状态的边框。 |
+| `--agnes-status-danger-border` | 错误或危险状态的边框。 |
+| `--agnes-status-info-border` | 信息状态的边框。 |
+| `--elevation-0` | 无阴影的平面区域。 |
+| `--elevation-1` | 小型浮层的阴影。 |
+| `--elevation-2` | 弹窗与较高浮层的阴影。 |
 
 每个 token 都要**同时**给出 `light` 与 `dark` 两个值：
 
