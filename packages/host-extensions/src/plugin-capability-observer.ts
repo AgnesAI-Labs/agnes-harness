@@ -60,7 +60,7 @@ export function observePluginCapabilities(
   }
   const fs = (kind: 'read' | 'write', path: string) => {
     const absolute = resolve(context.cwd, path),
-      rel = relative(context.cwd, absolute)
+      rel = relative(context.session.workspaceRoot, absolute)
     const paths = [
       path,
       absolute,

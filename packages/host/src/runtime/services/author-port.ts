@@ -116,9 +116,9 @@ export function createExtensionServiceHost(input: {
     const call: ServiceCall = {
       owner: identity.owner,
       packageId: identity.packageId,
-      session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
+      session: { key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot },
       ...(generationId === undefined ? {} : { generationId }),
-      ...(kind.instanceScope === 'workspace' ? { workspaceKey: session.d.cwd } : {}),
+      ...(kind.instanceScope === 'workspace' ? { workspaceKey: session.workspaceRoot } : {}),
       signal: admitted.signal,
       watermark: session.lastSeq,
       actor: extensionActor(identity.owner),

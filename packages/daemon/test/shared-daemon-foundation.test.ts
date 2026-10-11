@@ -253,7 +253,7 @@ describe('shared daemon scope', () => {
 
     const inputs = await readConfigurationProfileInputs({
       home,
-      cwd: workspace,
+      workspaceRoot: workspace,
       profile: 'local-dev',
       agnesVersion: '0.0.0',
     })

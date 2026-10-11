@@ -259,7 +259,7 @@ async function assembleWithSandbox(opts: {
   const loadedInputs = opts.hooksDeployment
     ? await readConfigurationProfileInputs({
         home: homeDir,
-        cwd: workspace,
+        workspaceRoot: workspace,
         profile: 'local-dev',
         agnesVersion: '0.1.0',
         ...(inputs.lock ? { lock: inputs.lock } : {}),

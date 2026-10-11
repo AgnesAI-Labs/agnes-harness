@@ -188,7 +188,12 @@ describe('grep', () => {
     expect(textOf(r)).toContain('not searched')
   })
 
-  it.each([false, true])('does not walk into a denied path with full access %s', async (fullAccess) => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])('keeps workspace policy with full access %s and nested cwd %s', async (fullAccess, nested) => {
     // These are the paths the deployment defaults refuse to open: the secret store, the seam
     // tables, the audit log and the session database. A tool that walks a tree has to keep away
     // from them on its own - the kernel's own check compares the string it was handed, so a tool
@@ -217,8 +222,9 @@ describe('grep', () => {
         .split('\n')
         .filter((l) => !l.startsWith('[')),
     ).toEqual(['ok.txt'])
+    if (nested) selected.cwd = `${ctx.cwd}/subdir`
     for (const tool of [grepTool, findTool]) {
-      const denied = await tool.execute({ pattern: 'hit', path: 'secrets' }, selected)
+      const denied = await tool.execute({ pattern: 'hit', path: `${ctx.cwd}/secrets` }, selected)
       expect(denied.isError, tool.name).toBe(true)
       expect(textOf(denied), tool.name).toContain('denied by policy')
       expect(textOf(denied), tool.name).not.toContain('完全权限')

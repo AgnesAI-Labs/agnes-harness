@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultToolPolicy } from '@agnes/core'
+import { defaultToolPolicy } from '@agnes/extension-api'
 import type { ToolDef, ToolPolicyInput } from '@agnes/extension-api'
 import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -20,14 +20,19 @@ function workspace(): string {
   return dir
 }
 
-function input(cwd: string, name: string, readOnly: boolean): ToolPolicyInput {
+function input(workspaceRoot: string, name: string, readOnly: boolean, cwd = workspaceRoot): ToolPolicyInput {
   return {
     sessionKey: 's',
+    workspaceRoot,
     cwd,
-    actor: { kind: 'user', id: 'u' },
+    actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
     call: { id: 'c', name, args: {} },
     policy: {
       isReadOnly: readOnly,
+      isPresentational: false,
+      isConcurrencySafe: false,
+      isOpenWorld: false,
+      policyVersion: 'static-v1',
       isDestructive: !readOnly,
       replay: 'never',
       requiresApproval: 'destructive',
@@ -36,32 +41,37 @@ function input(cwd: string, name: string, readOnly: boolean): ToolPolicyInput {
     tainted: false,
     fullAccess: true,
     approvalMode: 'off',
-  } as unknown as ToolPolicyInput
+  }
 }
 
 describe('plan mode policy', () => {
-  it('blocks write and exec, including full access, until the plan is approved', () => {
-    const cwd = workspace()
+  it.each([false, true])('blocks write and exec with a different execution directory: %s', (different) => {
+    const root = workspace()
+    const cwd = different ? workspace() : root
+    if (different) applyPlanCommand(cwd, '/plan off')
     const signal = new AbortController().signal
-    applyPlanCommand(cwd, '/plan ship the smallest change')
-    expect(readPlanMode(cwd)).toMatchObject({ active: true, instruction: 'ship the smallest change' })
-    expect(decidePlanMode(input(cwd, 'shell', false), signal, defaultToolPolicy)).toEqual({
+    applyPlanCommand(root, '/plan ship the smallest change')
+    expect(readPlanMode(root)).toMatchObject({ active: true, instruction: 'ship the smallest change' })
+    expect(decidePlanMode(input(root, 'shell', false, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'deny',
       reason: 'Plan mode blocks write and exec tools until the plan is approved',
     })
-    expect(decidePlanMode(input(cwd, 'subagent_spawn', false), signal, defaultToolPolicy)).toMatchObject({
+    expect(
+      decidePlanMode(input(root, 'subagent_spawn', false, cwd), signal, defaultToolPolicy),
+    ).toMatchObject({
       effect: 'deny',
     })
-    expect(decidePlanMode(input(cwd, 'read', true), signal, defaultToolPolicy)).toEqual({
+    expect(decidePlanMode(input(root, 'read', true, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'allow',
       reason: 'Default tool policy',
     })
-    expect(decidePlanMode(input(cwd, 'exit_plan_mode', false), signal, defaultToolPolicy)).toEqual({
+    expect(decidePlanMode(input(root, 'exit_plan_mode', false, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'ask',
       reason: 'Approve the plan to leave plan mode',
     })
-    applyPlanCommand(cwd, '/plan off')
-    expect(decidePlanMode(input(cwd, 'shell', false), signal, defaultToolPolicy)).toEqual({
+    applyPlanCommand(root, '/plan off')
+    if (different) applyPlanCommand(cwd, '/plan')
+    expect(decidePlanMode(input(root, 'shell', false, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'allow',
       reason: 'Default tool policy',
     })
@@ -108,7 +118,14 @@ describe('plan mode extension', () => {
     ) as { request?: { summary?: string } }
     expect(approval.request?.summary).toContain('do the small thing')
     expect(readPlanMode(cwd).active).toBe(true)
-    const result = await tool?.execute({ plan: 'do the small thing' }, { cwd } as never)
+    const executionDirectory = workspace()
+    applyPlanCommand(executionDirectory, '/plan off')
+    const result = await tool?.execute({ plan: 'do the small thing' }, {
+      ...ctx,
+      cwd: executionDirectory,
+    } as never)
+    expect(readPlanMode(executionDirectory)).toMatchObject({ active: false })
+    expect(readPlanMode(executionDirectory).pendingPlan).toBeUndefined()
     expect(result).toMatchObject({ content: [{ text: expect.stringContaining('Plan mode is off') }] })
     expect(readPlanMode(cwd)).toMatchObject({ active: false, pendingPlan: 'do the small thing' })
     expect(hooks.get('context')?.({}, ctx)).toEqual({})

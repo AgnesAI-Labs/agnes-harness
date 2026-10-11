@@ -37,14 +37,14 @@ export function toolError(text: string): ToolResult {
 
 /** Lexical precheck only; the filesystem port independently enforces the session's access scope. */
 export function allowed(ctx: ToolContext, abs: string): boolean {
-  const w = normalizeWorkspacePath(abs, ctx.cwd)
+  const w = normalizeWorkspacePath(abs, ctx.session.workspaceRoot)
   if (!w.inside) return ctx.session.fullAccess === true
   return !DENIED_PATHS.some((d) => w.rel === d || w.rel.startsWith(`${d}/`))
 }
 
 export function searchPathError(ctx: ToolContext, tool: string, path: string): ToolResult | undefined {
   if (allowed(ctx, path)) return undefined
-  if (!normalizeWorkspacePath(path, ctx.cwd).inside)
+  if (!normalizeWorkspacePath(path, ctx.session.workspaceRoot).inside)
     return toolError(
       `${tool} refused: ${path} is outside the workspace. Switch to Full permissions (完全权限) or select the target directory as the workspace (选择目标目录作为工作区).`,
     )

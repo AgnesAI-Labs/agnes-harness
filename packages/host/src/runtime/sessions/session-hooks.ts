@@ -105,7 +105,12 @@ export function createSessionHookPort(
   >()
   const sessionRef =
     hostSessionRef ??
-    Object.freeze({ key: session.key, lane: session.lane, workspaceRoot: session.d.cwd, telemetryConsent })
+    Object.freeze({
+      key: session.key,
+      lane: session.lane,
+      workspaceRoot: session.workspaceRoot,
+      telemetryConsent,
+    })
   const port = new SessionHookPort(engine, {
     discovery: {
       registered,

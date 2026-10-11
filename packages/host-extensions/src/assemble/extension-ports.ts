@@ -17,7 +17,7 @@ export function bindExtensionInvocations(
   canonicalSession: (session: SessionImpl) => SessionRef = (session) => ({
     key: session.key,
     lane: session.lane,
-    workspaceRoot: session.d.cwd,
+    workspaceRoot: session.workspaceRoot,
   }),
   resolveHook: SessionResolver = resolve,
   readProjections: ProjectionRegistry = ports.projections,

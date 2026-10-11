@@ -20,7 +20,8 @@ import { readBundleSelection } from './bundle-selection.js'
  */
 export type ConfigurationProfileInputsOptions = {
   home: string
-  cwd: string
+  /** Fixed startup workspace identity for workspace-owned profile configuration. */
+  workspaceRoot: string
   profile: string
   agnesVersion: string
   /** Test seam: an explicit lock wins over the profile's own agnes-lock.json. */
@@ -90,7 +91,9 @@ export async function readConfigurationProfileInputs(
   const profile = checkProfileName(options.profile)
   const profileDir = join(options.home, 'profiles', profile)
   const user = readYamlIf<RuntimeProfileManifest>(join(profileDir, 'profile.yaml'))
-  const local = readYamlIf<Partial<RuntimeProfileManifest>>(join(options.cwd, AGH_DIR, 'profile.local.yaml'))
+  const local = readYamlIf<Partial<RuntimeProfileManifest>>(
+    join(options.workspaceRoot, AGH_DIR, 'profile.local.yaml'),
+  )
 
   // A supplied lock is a test seam and wins over the profile's lockfile. If no lockfile exists,
   // leave the lock key absent so the resolver sees the same empty-lock fallback as CLI boot.

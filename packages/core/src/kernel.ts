@@ -142,7 +142,7 @@ export type KernelOptions = {
   /** Host selects one session-pinned memory provider; omission preserves deployments without it. */
   memoryFor?: (input: {
     key: string
-    cwd: string
+    workspaceRoot: string
   }) => import('@agnes/extension-api').MemorySession | undefined
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -233,7 +233,7 @@ const NO_LEASE: HookContext['lease'] = Object.freeze({
  */
 function lifecycleContext(session: SessionImpl, logger: Logger, replayed: boolean): DispatchContext {
   return {
-    session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
+    session: { key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot },
     replayed,
     signal: new AbortController().signal,
     lease: NO_LEASE,
@@ -566,7 +566,8 @@ export class Kernel {
       ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
       const children = this.o.children ?? new KernelChildren(this, () => session)
       const toolFilter = so.toolFilter
-      memory = this.o.memoryFor?.({ key, cwd: so.cwd })
+      const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
+      memory = this.o.memoryFor?.({ key, workspaceRoot })
       session = new SessionImpl({
         ...(memory ? { memory } : {}),
         log,
@@ -576,7 +577,7 @@ export class Kernel {
         slotFills: () => {
           const deadline = Date.now() + 1000
           return this.slots.snapshot(
-            { key, lane, workspaceRoot: so.cwd },
+            { key, lane, workspaceRoot },
             { remainingMs: () => deadline - Date.now() },
           )
         },

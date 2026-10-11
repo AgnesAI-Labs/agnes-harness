@@ -19,7 +19,8 @@ export function fileChangeReceipt(input: FileChangeInput, ctx: Pick<ToolContext,
   const turn = ctx.session.turn
   if (typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 1) return undefined
   if (input.path.includes('\\') || input.path.includes('\0')) return undefined
-  const path = normalizeWorkspacePath(input.path, ctx.cwd)
+  const absolute = normalizeWorkspacePath(input.path, ctx.cwd).abs
+  const path = normalizeWorkspacePath(absolute, ctx.session.workspaceRoot)
   if (!path.inside || path.rel === '.' || path.rel.length > 4096) return undefined
   const text = input.before.length <= REVIEW_TEXT_BYTES && input.after.length <= REVIEW_TEXT_BYTES
   const binary = [input.before, input.after].some(

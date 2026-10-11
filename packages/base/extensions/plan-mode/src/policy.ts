@@ -12,7 +12,7 @@ export function decidePlanMode(
   fallback: ToolPolicy,
   ports?: ToolPolicyPorts,
 ): ToolPolicyDecision | Promise<ToolPolicyDecision> {
-  if (!readPlanMode(input.cwd).active) return fallback.decide(input, signal, ports)
+  if (!readPlanMode(input.workspaceRoot).active) return fallback.decide(input, signal, ports)
   if (input.call.name === 'exit_plan_mode')
     return { effect: 'ask', reason: 'Approve the plan to leave plan mode' }
   if (input.policy.isReadOnly) return fallback.decide(input, signal, ports)

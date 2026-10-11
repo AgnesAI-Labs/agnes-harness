@@ -28,7 +28,7 @@ function validCanonicalRef(ref: SessionRef, session: SessionImpl): boolean {
     if (
       value('key') !== session.key ||
       value('lane') !== session.lane ||
-      value('workspaceRoot') !== session.d.cwd
+      value('workspaceRoot') !== session.workspaceRoot
     )
       return false
     for (const key of ['turn', 'step']) {
@@ -84,7 +84,7 @@ export class ExtensionSessions<T extends Port> {
     const reference = createWithRef
       ? (referenceOrCreate as (session: SessionImpl) => SessionRef)
       : (session: SessionImpl): SessionRef =>
-          Object.freeze({ key: session.key, lane: session.lane, workspaceRoot: session.d.cwd })
+          Object.freeze({ key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot })
     const create = createWithRef
       ? createWithRef
       : (session: SessionImpl) => (referenceOrCreate as (session: SessionImpl) => T)(session)

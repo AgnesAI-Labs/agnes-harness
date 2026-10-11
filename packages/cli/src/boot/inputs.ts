@@ -80,7 +80,7 @@ export async function readProfileInputs(o: {
   try {
     return await readConfigurationProfileInputs({
       home: o.home,
-      cwd: o.cwd,
+      workspaceRoot: o.cwd,
       profile,
       agnesVersion: o.agnesVersion,
       ...(o.demoFallback ? { demoFallback: true } : {}),

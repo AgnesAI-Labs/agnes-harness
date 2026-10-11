@@ -188,7 +188,7 @@ it('runs the fresh local-dev demo through registry and provider without credenti
 
 it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit provider declarations', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agh-demo-profile-'))
-  const options = { home, cwd: home, profile: 'local-dev', agnesVersion: '0.0.0' }
+  const options = { home, workspaceRoot: home, profile: 'local-dev', agnesVersion: '0.0.0' }
   try {
     expect(loadTemplate('local-dev').provider?.routes).toBeUndefined()
     expect((await readConfigurationProfileInputs(options)).user?.provider).toBeUndefined()

@@ -616,40 +616,50 @@ describe('a file longer than read returns in full', () => {
 })
 
 describe('successful file review receipts', () => {
-  it('records confirmed write/edit bytes and keeps completed writes successful if recording fails', async () => {
-    const ctx = await observedCtxOf()
-    const receipts: unknown[] = []
-    const record: Parameters<typeof createWriteTool>[0] = async (input, context) => {
-      receipts.push(fileChangeReceipt(input, context))
-    }
-    const path = 'new\nfile.ts'
-    expect((await createWriteTool(record).execute({ path, content: 'one\n' }, ctx)).isError).not.toBe(true)
-    expect(
-      (await createEditTool(record).execute({ path, edits: [{ oldText: 'one', newText: 'two' }] }, ctx))
-        .isError,
-    ).not.toBe(true)
-    expect(receipts).toMatchObject([
-      {
-        path,
-        operation: 'write',
-        existed: false,
-        before: '',
-        after: 'one\n',
-        turn: 1,
-        toolUseId: ctx.session.toolUseId,
-      },
-      { path, operation: 'edit', existed: true, before: 'one\n', after: 'two\n' },
-    ])
-    const failedRecord = async () => {
-      throw new Error('Event quota exceeded')
-    }
-    const result = await createWriteTool(failedRecord).execute(
-      { path: 'another', content: 'confirmed write' },
-      ctx,
-    )
-    expect(result.isError).not.toBe(true)
-    expect(dec.decode(ctx.mem.files.get('/work/proj/another'))).toBe('confirmed write')
-  })
+  it.each([false, true])(
+    'records workspace-relative write/edit receipts with nested cwd: %s',
+    async (nested) => {
+      const ctx = await observedCtxOf()
+      if (nested) ctx.session = { ...ctx.session, workspaceRoot: '/work' }
+      const receipts: unknown[] = []
+      const record: Parameters<typeof createWriteTool>[0] = async (input, context) => {
+        receipts.push(fileChangeReceipt(input, context))
+      }
+      const path = 'new\nfile.ts'
+      expect((await createWriteTool(record).execute({ path, content: 'one\n' }, ctx)).isError).not.toBe(true)
+      expect(
+        (await createEditTool(record).execute({ path, edits: [{ oldText: 'one', newText: 'two' }] }, ctx))
+          .isError,
+      ).not.toBe(true)
+      expect(receipts).toMatchObject([
+        {
+          path: nested ? `proj/${path}` : path,
+          operation: 'write',
+          existed: false,
+          before: '',
+          after: 'one\n',
+          turn: 1,
+          toolUseId: ctx.session.toolUseId,
+        },
+        {
+          path: nested ? `proj/${path}` : path,
+          operation: 'edit',
+          existed: true,
+          before: 'one\n',
+          after: 'two\n',
+        },
+      ])
+      const failedRecord = async () => {
+        throw new Error('Event quota exceeded')
+      }
+      const result = await createWriteTool(failedRecord).execute(
+        { path: 'another', content: 'confirmed write' },
+        ctx,
+      )
+      expect(result.isError).not.toBe(true)
+      expect(dec.decode(ctx.mem.files.get('/work/proj/another'))).toBe('confirmed write')
+    },
+  )
   it('does not record refusal and caps binary, oversized or escaped JSON content', async () => {
     const recorder = vi.fn(async () => {})
     const ctx = await observedCtxOf({

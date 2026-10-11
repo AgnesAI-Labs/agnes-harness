@@ -2196,7 +2196,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...adapters.fs,
         read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
       },
-      memoryFor: ({ key, cwd }) => memory(cwd, key),
+      memoryFor: ({ key, workspaceRoot }) => memory(workspaceRoot, key),
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
@@ -2236,7 +2236,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           Object.freeze({
             key: session.key,
             lane: session.lane,
-            workspaceRoot: session.d.cwd,
+            workspaceRoot: session.workspaceRoot,
             telemetryConsent: readTelemetryConsent(
               resolvePreset(session.preset.name, presets, { limits: profile.limits }).doc,
             ),
@@ -2474,7 +2474,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       (ref) => kernel.get(ref.key),
       (session) =>
         extensionSessions.ref(session) ??
-        Object.freeze({ key: session.key, lane: session.lane, workspaceRoot: session.d.cwd }),
+        Object.freeze({ key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot }),
       extensionSessions.resolve,
       kernel.projections,
       activationBarrier,

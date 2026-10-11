@@ -16,15 +16,15 @@ export function scopeChain(root: string, target: string): string[] {
     if (path === root) return out
   }
 }
-async function projectRoot(cwd: string): Promise<string> {
-  for (let path = cwd; ; path = dirname(path)) {
+async function projectRoot(workspaceRoot: string): Promise<string> {
+  for (let path = workspaceRoot; ; path = dirname(path)) {
     try {
       await stat(join(path, '.git'))
       return path
     } catch (error) {
       if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
     }
-    if (dirname(path) === path) return cwd
+    if (dirname(path) === path) return workspaceRoot
   }
 }
 async function boundedRead(
@@ -51,13 +51,13 @@ async function boundedRead(
 }
 /** Nearest project baseline followed by directories touched through public tool calls. */
 export async function loadContextRules(
-  cwd: string,
+  workspaceRoot: string,
   scopes: readonly string[] = [],
   config: ContextConfig = readContextConfig(),
   home = contextHome(),
   signal?: AbortSignal,
 ): Promise<RulesSnapshot> {
-  const current = await realpath(cwd)
+  const current = await realpath(workspaceRoot)
   const root = await projectRoot(current)
   const result: RulesSnapshot = { root, files: [], skipped: [], content: '' }
   if (!config.rulesEnabled || config.maxBytes === 0 || config.maxSourceBytes === 0) return result

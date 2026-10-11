@@ -76,11 +76,10 @@ function ready(): HistoryIndex {
 }
 
 function accessOf(index: HistoryIndex, ctx: ToolContext): Extract<HistoryAccess, { kind: 'caller' }> {
-  const rooted = ctx.session.workspaceRoot.trim()
   return {
     kind: 'caller',
     self: ctx.session.key,
-    workspace: rooted || ctx.cwd,
+    workspace: ctx.session.workspaceRoot,
     principal: index.principalOf(ctx.session.key),
   }
 }

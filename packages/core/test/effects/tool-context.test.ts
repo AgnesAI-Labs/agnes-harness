@@ -16,6 +16,7 @@ function setup(
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
     netFetch?: Parameters<typeof buildToolContext>[0]['netFetch']
+    workspaceRoot?: string
     remainingMs?: number
     defaultTimeoutMs?: number
   } = {},
@@ -50,7 +51,7 @@ function setup(
       generationDepth: 0,
       actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       cwd: '/workspace/parent',
-      workspaceRoot: '/workspace/parent',
+      workspaceRoot: over.workspaceRoot ?? '/workspace/parent',
       runtime,
       preset: presetDefaults(),
       children,
@@ -89,12 +90,15 @@ describe('ToolContext subagent options', () => {
     const parent = new AbortController()
     const child = new AbortController()
     const { context } = setup(fakeSeams(), undefined, {
+      workspaceRoot: '/workspace/identity',
       parentSignal: parent.signal,
       invoke: async (_name, _args, opts) => {
         if (opts.signal) signals.push(opts.signal)
         return { content: [] }
       },
     })
+    expect(context.cwd).toBe('/workspace/parent')
+    expect(context.session.workspaceRoot).toBe('/workspace/identity')
     await context.tools.invoke('a', {})
     await context.tools.invoke('b', {}, { signal: child.signal })
     expect(signals).toHaveLength(2)

@@ -26,9 +26,9 @@ export default defineExtension((agnes) => {
           requiresApproval: 'never',
         },
         async execute(args, ctx) {
-          const state = readPlanMode(ctx.cwd)
+          const state = readPlanMode(ctx.session.workspaceRoot)
           if (!state.active) return { content: [{ type: 'text', text: 'Plan mode is not active' }] }
-          writePlanMode(ctx.cwd, {
+          writePlanMode(ctx.session.workspaceRoot, {
             active: false,
             pendingPlan: args.plan,
             updatedAt: new Date().toISOString(),

@@ -53,7 +53,7 @@ export function adminSecurityStatus(
       const workspace = workspaces.securityStatus(session.key)
       return {
         sessionId: session.key,
-        path: workspace?.root ?? session.d.cwd,
+        path: workspace?.root ?? session.workspaceRoot,
         preset: session.preset.name,
         provider: profile.sandbox?.provider ?? 'local',
         state: workspace?.state ?? 'unavailable',

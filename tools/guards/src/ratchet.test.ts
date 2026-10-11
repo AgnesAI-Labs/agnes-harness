@@ -313,13 +313,13 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-foundation/src': 4364,
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
-  'packages/host/src/runtime/profile': 1685,
+  'packages/host/src/runtime/profile': 1687,
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 12817,
+  'packages/host/src/runtime': 12830,
   // UI data-source catalog wiring on that tree. countLines: 3517.
-  'packages/host/src/runtime/assemble': 3521,
+  'packages/host/src/runtime/assemble': 3522,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
@@ -359,7 +359,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
   'packages/host-common/src/assemble': 1259,
   'packages/core/src/artifacts': 744,
-  'packages/core-effects/src': 2638,
+  'packages/core-effects/src': 2639,
   'packages/core-ledger/src': 6496,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 529,
@@ -444,7 +444,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 922 -> 959; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Persistent shell tools delegate to the unified job owner.
   // countLines: 959 -> 962; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/tools-core': 1120,
+  'packages/base/extensions/tools-core': 1121,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 446,
@@ -1241,7 +1241,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 22453,
+  'packages/core/src': 22459,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1710,7 +1710,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 3101, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3107, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2957,7 +2957,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13355,
+  'packages/host/src': 13368,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
@@ -3232,7 +3232,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/history-index/src': 1156,
   // 2026-10-07 gap-fill review: Read-only session history tools over the separate FTS index.
   // countLines: 312; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/session-query': 312,
+  'packages/base/extensions/session-query': 311,
   // 2026-10-07 gap-fill review: Official schedule tools, Vixie cron parsing, reminder delivery and bounded catch-up.
   // countLines: 798; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/schedule': 803,

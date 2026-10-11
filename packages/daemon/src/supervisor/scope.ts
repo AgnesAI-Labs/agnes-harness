@@ -142,7 +142,7 @@ async function profileForScope(
   const configuration = input.configuration ?? createConfigurationService({ home, profile })
   const baseInputs = await readConfigurationProfileInputs({
     home,
-    cwd: workspace,
+    workspaceRoot: workspace,
     profile,
     agnesVersion: input.agnesVersion,
     demoFallback: true,

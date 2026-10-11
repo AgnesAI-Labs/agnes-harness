@@ -192,14 +192,14 @@ function watchSession(
   if (!session) return () => undefined
   const generation = input.sessionGeneration?.(key)
   const resource: ObservabilitySession = {
-    workspace: session.d.cwd,
+    workspace: session.workspaceRoot,
     ...(generation ? { generation, pin: generation } : { pin: input.profileHash }),
     privateRoots: [
       input.home,
       ...privateStateRoots({
         home: input.home,
         dataDir: input.dataDir,
-        workspace: session.d.cwd,
+        workspace: session.workspaceRoot,
         profileDir: input.profileDir,
         ...(input.secretsDir ? { secretsDir: input.secretsDir } : {}),
       }),

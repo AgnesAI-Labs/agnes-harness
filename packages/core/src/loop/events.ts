@@ -111,7 +111,7 @@ export class LoopEventRegistry implements LoopEventRegistryPort {
 }
 
 export const loopEventContext = (s: SessionImpl, signal: AbortSignal): LoopEventContext => ({
-  session: { key: s.key, lane: s.lane, workspaceRoot: s.d.cwd },
+  session: { key: s.key, lane: s.lane, workspaceRoot: s.workspaceRoot },
   signal,
 })
 export const modelRequestPayload = (

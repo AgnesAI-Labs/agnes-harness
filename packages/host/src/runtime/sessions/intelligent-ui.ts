@@ -144,7 +144,7 @@ export function createIntelligentUiBridge(input: {
     const call: ServiceCall = {
       owner: UI_OWNER,
       packageId,
-      session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
+      session: { key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot },
       generationId,
       signal,
       watermark: session.lastSeq,
@@ -207,7 +207,7 @@ export function createIntelligentUiBridge(input: {
           owner: source,
           packageId,
           providerId: UI_PROVIDER_ID,
-          session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
+          session: { key: session.key, lane: session.lane, workspaceRoot: session.workspaceRoot },
           generationId,
           signal,
           live: () => {

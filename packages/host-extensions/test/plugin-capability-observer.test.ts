@@ -13,7 +13,8 @@ it('reports undeclared Host port use without exposing targets or changing port o
     },
   } as ExtensionContext['log']
   const context = {
-    cwd: '/workspace',
+    cwd: '/workspace/subdir',
+    session: { workspaceRoot: '/workspace' },
     exec: async () => ({ stdout: 'ok' }),
     net: { fetch: async () => 'response' },
     fs: { read: async () => new Uint8Array([1]) },

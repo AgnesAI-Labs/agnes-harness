@@ -64,8 +64,8 @@ export type CreateSessionOptions = {
   onRecovered?: (recovery: SessionRecovery) => void
 }
 
-export function sessionKey(profile: ResolvedProfile, actor: Actor, cwd: string): string {
-  const scope = createHash('sha256').update(cwd).digest('hex').slice(0, 16)
+export function sessionKey(profile: ResolvedProfile, actor: Actor, workspaceRoot: string): string {
+  const scope = createHash('sha256').update(workspaceRoot).digest('hex').slice(0, 16)
   return `agnes:${actor.org || 'local'}:${profile.name}:cli:workspace:${scope}`
 }
 
@@ -525,7 +525,12 @@ export async function createSession(
   }
   Object.assign(session, {
     referenceResolvers: a.pluginTree.root.referenceResolvers,
-    referenceSessions: referenceHistory(profile.dataDir, key, cwd, referenceLimits(a.referenceLimits)),
+    referenceSessions: referenceHistory(
+      profile.dataDir,
+      key,
+      session.workspaceRoot,
+      referenceLimits(a.referenceLimits),
+    ),
     referenceLimits: referenceLimits(a.referenceLimits),
   })
   return session
