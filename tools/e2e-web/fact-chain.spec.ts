@@ -27,6 +27,9 @@ for (const locale of ['en', 'zh-CN'])
         await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
       }
       await send('call read {"path":"report.md"}')
+      await expect(
+        page.getByTestId('conversation-turn').last().getByTestId('feedback-down').last(),
+      ).toBeEnabled()
       await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
       await page.getByTestId('tool-detail-toggle').click()
       await expect(page.getByTestId('tool-detail-text')).toContainText('Synthetic delivery')
@@ -73,7 +76,10 @@ for (const locale of ['en', 'zh-CN'])
         .getByRole('article', { name: /\bpresent\b/ })
         .getByTestId('tool-fact-chain')
       await artifactEntry.click()
-      await facts.locator('[data-fact-kind=artifact]').getByRole('button').click()
+      await facts
+        .locator('[data-fact-kind=artifact]')
+        .getByRole('button', { name: locale === 'en' ? 'View related records' : '查看关联记录', exact: true })
+        .click()
       await expect(facts.locator('[data-fact-kind="artifact"]')).toContainText(
         locale === 'en' ? 'Provided by the linked call' : '由关联调用提供',
       )
