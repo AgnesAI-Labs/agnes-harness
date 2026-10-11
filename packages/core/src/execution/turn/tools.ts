@@ -610,7 +610,14 @@ export async function approveAndExecute(
         scope,
         ...(permission.approval ? { subjectRevision: permission.approval.subjectRevision } : {}),
       })
-      const grantKey = sessionGrantKey({ actor: s.d.actor, sessionKey: s.key, toolId: call.name, scope })
+      const grantKey = sessionGrantKey({
+        actor: s.d.actor,
+        sessionKey: s.key,
+        toolId: call.name,
+        scope,
+        definitionFingerprint: call.definitionFingerprint,
+        policyBinding,
+      })
       const profileHash = s.d.resolvedProfileHash
       const durableBinding =
         profileHash !== null && /^sha256-[a-f0-9]{64}$/.test(profileHash)
@@ -620,6 +627,8 @@ export async function approveAndExecute(
               toolId: call.name,
               scope,
               policyVersion: policy.policyVersion,
+              definitionFingerprint: call.definitionFingerprint,
+              policyBinding,
             }
           : undefined
       const durableGrants =
@@ -708,6 +717,8 @@ export async function approveAndExecute(
               ...durableBinding,
               grantId: recorded.grantId,
               createdAt: recorded.decidedAt,
+              sourceDecisionId: recorded.requestId,
+              issuer: recorded.answeredBy,
             }),
             o.signal ?? s.ac.signal,
           ))
@@ -868,6 +879,7 @@ export async function approveAndExecute(
         bindingHash,
         scope,
         policyVersion: policy.policyVersion,
+        policyBinding,
         ...(durableBinding ? { profileHash: durableBinding.profileHash } : {}),
         options,
         ...(permission.approval ? { approval: permission.approval } : {}),
@@ -1124,6 +1136,8 @@ export async function approveAndExecute(
             ...durableBinding,
             grantId,
             createdAt: persisted.decidedAt,
+            sourceDecisionId: persisted.requestId,
+            issuer: persisted.answeredBy,
           }),
           o.signal ?? s.ac.signal,
         )

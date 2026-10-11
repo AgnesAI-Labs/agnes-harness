@@ -62,7 +62,12 @@ async function initial(
   } else expect(first.reason).toBe('completed')
   return { ...h, storage, clock, registry, seams, asks: () => asks, executed: () => executed }
 }
-async function reopen(h: Awaited<ReturnType<typeof initial>>, nextActor = actor, command = 'x') {
+async function reopen(
+  h: Awaited<ReturnType<typeof initial>>,
+  nextActor = actor,
+  command = 'x',
+  changedPolicy = false,
+) {
   await h.session.close()
   const provider = fakeProvider([toolTurn('shell', { command }), textTurn('done')])
   const n = await openSession({
@@ -72,6 +77,7 @@ async function reopen(h: Awaited<ReturnType<typeof initial>>, nextActor = actor,
     seams: h.seams,
     provider,
     actor: nextActor,
+    ...(changedPolicy ? { toolPolicySettings: async () => ({ config: { revision: 'new' } }) } : {}),
   })
   try {
     await n.session.enqueue('next-turn', { actor: nextActor, content: [{ type: 'text', text: 'again' }] })
@@ -120,6 +126,26 @@ describe('durable session approval grants', () => {
     expect(h.asks()).toBe(1)
     expect(h.executed()).toBe(2)
   })
+  it.each(['definition', 'policy'] as const)(
+    'rechecks an executed session grant after %s changes',
+    async (changed) => {
+      const h = await initial('sync')
+      const registry = new ToolRegistry()
+      registry.add(
+        shellTool(async () => {
+          throw new Error('changed tool must not execute')
+        }),
+        {
+          source: 'fixture',
+          trust: 'builtin',
+          ...(changed === 'definition' ? { packageVersion: '2.0.0' } : {}),
+        },
+      )
+      await reopen({ ...h, registry }, actor, 'x', changed === 'policy')
+      expect(h.asks()).toBe(2)
+      expect(h.executed()).toBe(1)
+    },
+  )
   it('refuses to restore a historical grant with an invalid argument binding', async () => {
     const h = await initial('sync', 'allowed-once')
     const call = [...h.session.state.toolCalls.keys()][0]

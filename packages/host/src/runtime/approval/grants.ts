@@ -1,13 +1,14 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { ApprovalGrantQuery, ApprovalSeam } from '@agnes/core'
 import type {
   PersistenceMetadataNamespace,
   PersistenceSqliteTableHandle as TableHandle,
   PersistenceSqliteTableStore as TableStore,
 } from '@agnes/extension-api'
-import { type ApprovalGrant, isDateTime } from '@agnes/protocol'
+import { type ApprovalGrant, isDateTime, validateActor } from '@agnes/protocol'
 
 const PROFILE_HASH = /^sha256-[a-f0-9]{64}$/
-const STORE_VERSION = 1
+const STORE_VERSION = 2
 const BINDING_KEYS = new Set(['profileHash', 'actorId', 'actorOrg', 'toolId', 'scope', 'policyVersion'])
 const GRANT_KEYS = new Set([
   'grantId',
@@ -18,6 +19,10 @@ const GRANT_KEYS = new Set([
   'scope',
   'policyVersion',
   'createdAt',
+  'sourceDecisionId',
+  'issuer',
+  'definitionFingerprint',
+  'policyBinding',
   'revokedAt',
 ])
 const REQUIRED_GRANT_KEYS = [...GRANT_KEYS].filter((key) => key !== 'revokedAt')
@@ -26,7 +31,7 @@ const META_DDL =
 const GRANTS_DDL =
   'CREATE TABLE approval_grants (' +
   'grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
-  'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT)'
+  'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, source_decision_id TEXT NOT NULL, issuer TEXT NOT NULL, definition_fingerprint TEXT NOT NULL, policy_binding TEXT NOT NULL)'
 const BINDING_INDEX_DDL =
   'CREATE INDEX approval_grants_binding ON approval_grants ' +
   '(profile_hash, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
@@ -41,6 +46,10 @@ type GrantRow = {
   policy_version: string
   created_at: string
   revoked_at: string | null
+  source_decision_id: string
+  issuer: string
+  definition_fingerprint: string
+  policy_binding: string
 }
 
 export type ApprovalGrantBinding = ApprovalGrantQuery
@@ -130,11 +139,20 @@ function checked(input: unknown): ApprovalGrant {
     scope: grant.scope,
     policyVersion: grant.policyVersion,
   })
+  if (!validateActor(grant.issuer).ok || (grant.issuer as ApprovalGrant['issuer']).role === 'agent')
+    throw new TypeError('invalid approval grant issuer')
+  for (const field of ['definitionFingerprint', 'policyBinding'] as const)
+    if (typeof grant[field] !== 'string' || !/^[0-9a-f]{64}$/.test(grant[field]))
+      throw new TypeError(`invalid approval grant ${field}`)
   const hasRevokedAt = Object.hasOwn(grant, 'revokedAt')
   return {
     grantId,
     ...bound,
     createdAt: instant(grant.createdAt, 'createdAt'),
+    sourceDecisionId: text(grant.sourceDecisionId, 'sourceDecisionId', 256),
+    issuer: structuredClone(grant.issuer) as ApprovalGrant['issuer'],
+    definitionFingerprint: grant.definitionFingerprint as string,
+    policyBinding: grant.policyBinding as string,
     ...(hasRevokedAt ? { revokedAt: instant(grant.revokedAt, 'revokedAt') } : {}),
   }
 }
@@ -149,13 +167,17 @@ function fromRow(row: GrantRow): ApprovalGrant {
     scope: row.scope,
     policyVersion: row.policy_version,
     createdAt: row.created_at,
+    sourceDecisionId: row.source_decision_id,
+    issuer: JSON.parse(row.issuer),
+    definitionFingerprint: row.definition_fingerprint,
+    policyBinding: row.policy_binding,
     ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
   })
 }
 
 const selectById = (table: TableHandle, grantId: string): GrantRow | undefined =>
   table.get<GrantRow>(
-    'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at FROM approval_grants WHERE grant_id = ?',
+    'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE grant_id = ?',
     [grantId],
   )
 
@@ -168,6 +190,10 @@ const sameGrant = (left: ApprovalGrant, right: ApprovalGrant): boolean =>
   left.scope === right.scope &&
   left.policyVersion === right.policyVersion &&
   left.createdAt === right.createdAt &&
+  left.sourceDecisionId === right.sourceDecisionId &&
+  canonicalJson(left.issuer) === canonicalJson(right.issuer) &&
+  left.definitionFingerprint === right.definitionFingerprint &&
+  left.policyBinding === right.policyBinding &&
   left.revokedAt === right.revokedAt
 
 const matches = (grant: ApprovalGrant, query: ApprovalGrantBinding): boolean =>
@@ -226,13 +252,13 @@ function requireSchemaInventory(
   const rows = table.schema()
   if (rows.length !== allowed.size)
     throw new Error(
-      `E_APPROVAL_GRANT_MIGRATION_REQUIRED: unexpected approval grant schema objects: ${rows
+      `reset-required: unexpected approval grant schema objects: ${rows
         .map((row) => String(row.name))
         .join(',')}`,
     )
   for (const row of rows) {
     if (typeof row.name !== 'string')
-      throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: malformed approval grant schema object')
+      throw new Error('reset-required: malformed approval grant schema object')
     const wanted = allowed.get(row.name)
     if (
       !wanted ||
@@ -242,7 +268,7 @@ function requireSchemaInventory(
         ? row.sql !== null
         : typeof row.sql !== 'string' || normalizedDdl(row.sql) !== normalizedDdl(wanted.ddl))
     )
-      throw new Error(`E_APPROVAL_GRANT_MIGRATION_REQUIRED: incompatible schema object ${row.name}`)
+      throw new Error(`reset-required: incompatible schema object ${row.name}`)
   }
 }
 
@@ -250,10 +276,10 @@ function validateRows(table: TableHandle): void {
   let rows: GrantRow[]
   try {
     rows = table.all<GrantRow>(
-      'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at FROM approval_grants ORDER BY grant_id',
+      'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants ORDER BY grant_id',
     )
   } catch (cause) {
-    throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: unreadable approval grant rows', { cause })
+    throw new Error('reset-required: unreadable approval grant rows', { cause })
   }
   const ids = new Set<string>()
   try {
@@ -263,7 +289,7 @@ function validateRows(table: TableHandle): void {
       ids.add(grant.grantId)
     }
   } catch (cause) {
-    throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: invalid approval grant rows', { cause })
+    throw new Error('reset-required: invalid approval grant rows', { cause })
   }
 }
 
@@ -271,7 +297,6 @@ function initialize(table: TableHandle): void {
   table.transaction(() => {
     const hadMeta = tableExists(table, 'approval_grant_meta')
     const hadGrants = tableExists(table, 'approval_grants')
-    const hadIndex = schemaSql(table, 'index', 'approval_grants_binding') !== undefined
     if (hadMeta) {
       requireSchemaInventory(table, { meta: true, grants: true, bindingIndex: true })
       const versions = table.all<{ id: unknown; version: unknown }>(
@@ -279,22 +304,17 @@ function initialize(table: TableHandle): void {
       )
       const version = versions[0]
       if (!version || versions.length !== 1 || version.id !== 1)
-        throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: grant metadata has no sole version row')
+        throw new Error('reset-required: grant metadata has no sole version row')
       if (version.version !== STORE_VERSION)
         throw new Error(
-          `E_APPROVAL_GRANT_SCHEMA_VERSION: store ${String(version.version)} is incompatible with runtime ${STORE_VERSION}`,
+          `reset-required: E_APPROVAL_GRANT_SCHEMA_VERSION: store ${String(version.version)} is incompatible with runtime ${STORE_VERSION}`,
         )
-      if (!hadGrants)
-        throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: versioned store has no grant table')
+      if (!hadGrants) throw new Error('reset-required: versioned store has no grant table')
       validateRows(table)
     } else {
-      if (hadGrants) {
-        requireSchemaInventory(table, { meta: false, grants: true, bindingIndex: hadIndex })
-        validateRows(table)
-      } else {
-        requireSchemaInventory(table, { meta: false, grants: false, bindingIndex: false })
-        table.exec(GRANTS_DDL)
-      }
+      if (hadGrants) throw new Error('reset-required: unversioned approval grant store')
+      requireSchemaInventory(table, { meta: false, grants: false, bindingIndex: false })
+      table.exec(GRANTS_DDL)
       table.exec(META_DDL)
       table.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, ?)', [STORE_VERSION])
       table.exec(`CREATE INDEX IF NOT EXISTS ${BINDING_INDEX_DDL.slice('CREATE INDEX '.length)}`)
@@ -357,7 +377,7 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
       const query = binding(input)
       return table()
         .all<GrantRow>(
-          'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at FROM approval_grants WHERE profile_hash = ? AND actor_id = ? AND actor_org = ? AND tool_id = ? AND scope = ? AND policy_version = ? AND revoked_at IS NULL ORDER BY created_at, grant_id',
+          'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE profile_hash = ? AND actor_id = ? AND actor_org = ? AND tool_id = ? AND scope = ? AND policy_version = ? AND revoked_at IS NULL ORDER BY created_at, grant_id',
           [query.profileHash, query.actorId, query.actorOrg, query.toolId, query.scope, query.policyVersion],
         )
         .map(fromRow)
@@ -373,7 +393,7 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
           return
         }
         table().run(
-          'INSERT INTO approval_grants (grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+          'INSERT INTO approval_grants (grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
           [
             grant.grantId,
             grant.profileHash,
@@ -383,6 +403,10 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
             grant.scope,
             grant.policyVersion,
             grant.createdAt,
+            grant.sourceDecisionId,
+            canonicalJson(grant.issuer),
+            grant.definitionFingerprint,
+            grant.policyBinding,
           ],
         )
       })
@@ -406,12 +430,13 @@ function createApprovalGrantRuntimeStore(storage: GrantStorage): ApprovalGrantRu
   const initialize = (): void => {
     const version = ns.get('version')
     if (version !== undefined && version !== STORE_VERSION)
-      throw new Error('E_APPROVAL_GRANT_SCHEMA_VERSION: incompatible metadata version')
+      throw new Error('reset-required: E_APPROVAL_GRANT_SCHEMA_VERSION: incompatible metadata version')
+    if (version === undefined && ns.entries().length)
+      throw new Error('reset-required: unversioned approval grant metadata')
     for (const { key, value } of ns.entries()) {
       if (key === 'version') continue
       const grant = checked(value)
-      if (key !== `grant:${grant.grantId}`)
-        throw new Error('E_APPROVAL_GRANT_MIGRATION_REQUIRED: invalid metadata grant identity')
+      if (key !== `grant:${grant.grantId}`) throw new Error('reset-required: invalid metadata grant identity')
     }
     if (version === undefined) ns.set('version', STORE_VERSION)
   }

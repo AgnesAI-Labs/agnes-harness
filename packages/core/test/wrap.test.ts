@@ -257,6 +257,10 @@ describe('SeamRuntime', () => {
           toolId: 'computer_use',
           scope: 'cua:click:background',
           policyVersion: 'cua-v1',
+          sourceDecisionId: 'decision-fixture',
+          issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+          definitionFingerprint: 'd'.repeat(64),
+          policyBinding: 'e'.repeat(64),
           createdAt: '2026-09-17T00:00:00.000Z',
         },
         sig(),
@@ -277,6 +281,10 @@ describe('SeamRuntime', () => {
       toolId: 'computer_use',
       scope: 'cua:click:background',
       policyVersion: 'cua-v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     }
     const rt = new SeamRuntime(
@@ -383,6 +391,10 @@ describe('SeamRuntime', () => {
       toolId: 'shell',
       scope: 'tool:shell:execute',
       policyVersion: 'v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     }
     const globalApproval = vi.fn(async () => {

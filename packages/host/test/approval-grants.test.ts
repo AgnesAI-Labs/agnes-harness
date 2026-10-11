@@ -36,12 +36,17 @@ const query: ApprovalGrantBinding = {
 const grant: ApprovalGrant = {
   grantId: 'grant-1',
   ...query,
+  sourceDecisionId: 'decision-1',
+  issuer: { id: 'reviewer', org: 'org-1', role: 'user', deptPath: [], attrs: {} },
+  definitionFingerprint: 'd'.repeat(64),
+  policyBinding: 'e'.repeat(64),
   createdAt: '2026-09-17T00:00:00.000Z',
 }
 const GRANTS_DDL =
   'CREATE TABLE approval_grants (' +
   'grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
-  'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT)'
+  'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, ' +
+  'source_decision_id TEXT NOT NULL, issuer TEXT NOT NULL, definition_fingerprint TEXT NOT NULL, policy_binding TEXT NOT NULL)'
 const META_DDL =
   'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
 const INDEX_DDL =
@@ -112,7 +117,7 @@ describe('Host approval grant store', () => {
     }
   })
 
-  it('adopts a compatible unversioned table and rejects missing-column or future schemas', async () => {
+  it('requires a reset for unversioned, old or future grant schemas', async () => {
     const compatibleRoot = temp()
     const compatibleStorage = createSqliteStorage({
       file: join(compatibleRoot, 'sessions.db'),
@@ -120,16 +125,8 @@ describe('Host approval grant store', () => {
     })
     const compatibleTables = compatibleStorage.tables('@agnes/host')
     compatibleTables.table('approval_grants').exec(GRANTS_DDL)
-    const migrated = createApprovalGrantStore(compatibleTables)
-    const migratedApproval = bindApprovalGrantStore(fakeSeams().approval, compatibleTables)
-    const put = migratedApproval.putGrant
-    if (!put) throw new Error('Host approval binding did not install putGrant')
-    await put(grant)
-    expect(migrated.list(query)).toEqual([grant])
+    expect(() => createApprovalGrantStore(compatibleTables).list(query)).toThrow(/reset-required/)
     compatibleStorage.close()
-    const reopened = open(compatibleRoot)
-    expect(reopened.store.list(query)).toEqual([grant])
-    reopened.storage.close()
 
     const missingRoot = temp()
     const missingStorage = createSqliteStorage({
@@ -140,9 +137,7 @@ describe('Host approval grant store', () => {
     missingTables
       .table('approval_grants')
       .exec('CREATE TABLE approval_grants (grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL)')
-    expect(() => createApprovalGrantStore(missingTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
+    expect(() => createApprovalGrantStore(missingTables).list(query)).toThrow(/reset-required/)
     missingStorage.close()
 
     const futureRoot = temp()
@@ -155,76 +150,14 @@ describe('Host approval grant store', () => {
     future.exec(
       'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
     )
-    future.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
+    future.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 99)')
     future.exec(GRANTS_DDL)
     future.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(futureTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_SCHEMA_VERSION/,
-    )
+    expect(() => createApprovalGrantStore(futureTables).list(query)).toThrow(/reset-required/)
     futureStorage.close()
   })
 
-  it('rejects unversioned lookalike DDL and rolls back metadata adoption', () => {
-    const root = temp()
-    const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
-    const tables = storage.tables('@agnes/host')
-    const table = tables.table('approval_grants')
-    table.exec(
-      'CREATE TABLE approval_grants (' +
-        'grant_id TEXT, profile_hash TEXT, actor_id TEXT, actor_org TEXT, tool_id TEXT, scope TEXT, ' +
-        'policy_version TEXT, created_at TEXT, revoked_at TEXT)',
-    )
-    const params = [
-      grant.grantId,
-      grant.profileHash,
-      grant.actorId,
-      grant.actorOrg,
-      grant.toolId,
-      grant.scope,
-      grant.policyVersion,
-      grant.createdAt,
-      null,
-    ]
-    table.run('INSERT INTO approval_grants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', params)
-    table.run('INSERT INTO approval_grants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', params)
-    expect(() => createApprovalGrantStore(tables).list(query)).toThrow(/E_APPROVAL_GRANT_MIGRATION_REQUIRED/)
-    expect(
-      table.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'approval_grant_meta'"),
-    ).toBeUndefined()
-    storage.close()
-  })
-
-  it('rejects trigger and view schema objects before adopting a legacy table', () => {
-    for (const [name, extraDdl] of [
-      [
-        'trigger',
-        "CREATE TRIGGER escalate_grant AFTER INSERT ON approval_grants BEGIN INSERT INTO approval_grants (grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at) VALUES (NEW.grant_id || '-escalated', NEW.profile_hash, NEW.actor_id, NEW.actor_org, NEW.tool_id, 'cua:click:foreground', NEW.policy_version, NEW.created_at, NULL); END",
-      ],
-      [
-        'view',
-        'CREATE VIEW active_approval_grants AS SELECT * FROM approval_grants WHERE revoked_at IS NULL',
-      ],
-    ] as const) {
-      const root = temp()
-      const storage = createSqliteStorage({
-        file: join(root, 'sessions.db'),
-        tablesDir: join(root, 'tables'),
-      })
-      const tables = storage.tables('@agnes/host')
-      const table = tables.table('approval_grants')
-      table.exec(GRANTS_DDL)
-      table.exec(extraDdl)
-      expect(() => createApprovalGrantStore(tables).list(query), name).toThrow(
-        /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-      )
-      expect(
-        table.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'approval_grant_meta'"),
-      ).toBeUndefined()
-      storage.close()
-    }
-  })
-
-  it('rejects malformed versioned-v1 table and metadata DDL', () => {
+  it('rejects malformed current-version table and metadata DDL', () => {
     const malformedRoot = temp()
     const malformedStorage = createSqliteStorage({
       file: join(malformedRoot, 'sessions.db'),
@@ -233,16 +166,14 @@ describe('Host approval grant store', () => {
     const malformedTables = malformedStorage.tables('@agnes/host')
     const malformed = malformedTables.table('approval_grants')
     malformed.exec(META_DDL)
-    malformed.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 1)')
+    malformed.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
     malformed.exec(
       'CREATE TABLE approval_grants (' +
         'grant_id TEXT, profile_hash TEXT, actor_id TEXT, actor_org TEXT, tool_id TEXT, scope TEXT, ' +
         'policy_version TEXT, created_at TEXT, revoked_at TEXT)',
     )
     malformed.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(malformedTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
+    expect(() => createApprovalGrantStore(malformedTables).list(query)).toThrow(/reset-required/)
     malformedStorage.close()
 
     const malformedMetaRoot = temp()
@@ -253,16 +184,14 @@ describe('Host approval grant store', () => {
     const malformedMetaTables = malformedMetaStorage.tables('@agnes/host')
     const malformedMeta = malformedMetaTables.table('approval_grants')
     malformedMeta.exec('CREATE TABLE approval_grant_meta (id INTEGER, version INTEGER)')
-    malformedMeta.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 1)')
+    malformedMeta.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
     malformedMeta.exec(GRANTS_DDL)
     malformedMeta.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(malformedMetaTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
+    expect(() => createApprovalGrantStore(malformedMetaTables).list(query)).toThrow(/reset-required/)
     malformedMetaStorage.close()
   })
 
-  it('rejects missing or malformed binding indexes and invalid legacy rows', () => {
+  it('rejects missing or malformed binding indexes', () => {
     const missingIndexRoot = temp()
     const missingIndexStorage = createSqliteStorage({
       file: join(missingIndexRoot, 'sessions.db'),
@@ -271,11 +200,9 @@ describe('Host approval grant store', () => {
     const missingIndexTables = missingIndexStorage.tables('@agnes/host')
     const missingIndex = missingIndexTables.table('approval_grants')
     missingIndex.exec(META_DDL)
-    missingIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 1)')
+    missingIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
     missingIndex.exec(GRANTS_DDL)
-    expect(() => createApprovalGrantStore(missingIndexTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
+    expect(() => createApprovalGrantStore(missingIndexTables).list(query)).toThrow(/reset-required/)
     missingIndexStorage.close()
 
     const malformedIndexRoot = temp()
@@ -286,42 +213,11 @@ describe('Host approval grant store', () => {
     const malformedIndexTables = malformedIndexStorage.tables('@agnes/host')
     const malformedIndex = malformedIndexTables.table('approval_grants')
     malformedIndex.exec(META_DDL)
-    malformedIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 1)')
+    malformedIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
     malformedIndex.exec(GRANTS_DDL)
     malformedIndex.exec('CREATE INDEX approval_grants_binding ON approval_grants (grant_id)')
-    expect(() => createApprovalGrantStore(malformedIndexTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
+    expect(() => createApprovalGrantStore(malformedIndexTables).list(query)).toThrow(/reset-required/)
     malformedIndexStorage.close()
-
-    const badRowRoot = temp()
-    const badRowStorage = createSqliteStorage({
-      file: join(badRowRoot, 'sessions.db'),
-      tablesDir: join(badRowRoot, 'tables'),
-    })
-    const badRowTables = badRowStorage.tables('@agnes/host')
-    const badRow = badRowTables.table('approval_grants')
-    badRow.exec(GRANTS_DDL)
-    badRow.run(
-      'INSERT INTO approval_grants (grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
-      [
-        grant.grantId,
-        grant.profileHash,
-        grant.actorId,
-        grant.actorOrg,
-        grant.toolId,
-        grant.scope,
-        grant.policyVersion,
-        '2026-02-30T00:00:00Z',
-      ],
-    )
-    expect(() => createApprovalGrantStore(badRowTables).list(query)).toThrow(
-      /E_APPROVAL_GRANT_MIGRATION_REQUIRED/,
-    )
-    expect(
-      badRow.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'approval_grant_meta'"),
-    ).toBeUndefined()
-    badRowStorage.close()
   })
 
   it('strictly rejects extra fields and impossible calendar dates', async () => {
@@ -345,6 +241,15 @@ describe('Host approval grant store', () => {
       expect(() => opened.store.list(missing as ApprovalGrantBinding)).toThrow(
         /invalid approval grant binding fields/,
       )
+      for (const changed of [
+        { issuer: { ...grant.issuer, role: 'agent' } },
+        { definitionFingerprint: 'bad' },
+        { policyBinding: 'bad' },
+        { sourceDecisionId: '' },
+      ])
+        await expect(activate(opened, { ...grant, ...changed } as ApprovalGrant)).rejects.toThrow(
+          /invalid approval grant/,
+        )
       expect(Object.keys(opened.store).sort()).toEqual(['list', 'revoke'])
       expect('put' in opened.store).toBe(false)
       expect('revokeById' in opened.store).toBe(false)
@@ -377,6 +282,7 @@ describe('Host approval grant store', () => {
       expect(() => second.store.revoke(query, grant.grantId, '2026-02-30T00:00:00Z')).toThrow(
         /invalid approval grant revokedAt/,
       )
+      await expect(activate(opened, grant)).rejects.toThrow(/id collision/)
       expect(opened.store.list(query)).toEqual([])
     } finally {
       opened.storage.close()

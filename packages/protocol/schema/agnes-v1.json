@@ -1713,7 +1713,11 @@
         "toolId",
         "scope",
         "policyVersion",
-        "createdAt"
+        "createdAt",
+        "sourceDecisionId",
+        "issuer",
+        "definitionFingerprint",
+        "policyBinding"
       ],
       "properties": {
         "grantId": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -1723,6 +1727,10 @@
         "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
         "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "sourceDecisionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "issuer": { "$ref": "#/$defs/Actor" },
+        "definitionFingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "policyBinding": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "createdAt": { "type": "string", "format": "date-time" },
         "revokedAt": { "type": "string", "format": "date-time" }
       }
