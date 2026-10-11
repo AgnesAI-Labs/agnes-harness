@@ -71,7 +71,7 @@
   background: var(--agnes-status-danger-text);
   border-color: var(--agnes-status-danger-text);
 }
-:is(.agh-btn--sm, .secondary-button.compact, .icon-button) {
+:is(.agh-btn--sm, .secondary-button:where(.compact), .icon-button) {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
   padding-inline: var(--s8);
@@ -81,6 +81,11 @@
   min-width: var(--control-height-sm);
   padding: 0;
   border-radius: var(--radius-control);
+}
+/* New icon actions retain 28px visuals even inside the legacy 32px responsive floor. */
+.agh-btn.agh-btn--icon {
+  min-width: var(--control-height-sm);
+  min-height: var(--control-height-sm);
 }
 :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
@@ -217,6 +222,9 @@
 .agh-menu-item:hover:not([aria-disabled="true"]) {
   background: var(--agnes-bg-hover);
 }
+.agh-menu-item[data-danger]:hover:not([aria-disabled="true"]) {
+  background: var(--agnes-status-danger-bg);
+}
 .agh-menu-item:focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
   outline-offset: -2px;
@@ -284,6 +292,11 @@
   justify-content: center;
 }
 /* Shared settings page order: heading, banner, toolbar, content, dirty save bar. */
+:is(.agnes-settings-card, .config-card) {
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-0);
+}
 .agnes-settings-page[data-layout] {
   width: 100%;
   max-width: 720px;
@@ -351,6 +364,10 @@
   width: var(--s48);
   height: var(--s48);
   color: var(--agnes-text-secondary);
+}
+.agh-empty-state-icon > svg {
+  width: var(--s48);
+  height: var(--s48);
 }
 .agh-empty-state h3 {
   margin: 0;
@@ -458,6 +475,10 @@
   gap: var(--s12);
   flex: 0 0 auto;
 }
+.agh-field {
+  width: 100%;
+  max-width: 560px;
+}
 .agh-field-optional {
   color: var(--agnes-text-secondary);
   font-weight: var(--font-weight-regular);
@@ -488,6 +509,9 @@
 .agh-dialog .ant-modal-body {
   overflow: auto;
   min-height: 0;
+  /* Preserve the content inset while keeping 2px focus outlines inside the scrollport. */
+  padding: var(--s4);
+  margin: calc(-1 * var(--s4));
 }
 .agh-dialog .ant-modal-footer,
 .agh-dialog-footer {
@@ -513,6 +537,7 @@
   display: flex;
   flex-direction: column;
   width: min(480px, 100vw);
+  max-width: 100vw;
   height: 100dvh;
   max-height: 100dvh;
   margin: 0;
@@ -572,7 +597,7 @@
   .agh-drawer-content {
     padding-inline: var(--s16);
   }
-  .agh-dialog {
+  .ant-modal-root .agh-dialog {
     top: auto;
     bottom: 0;
     margin: 0;
@@ -584,6 +609,9 @@
     align-items: flex-end;
     justify-content: center;
   }
+  .ant-modal-wrap:has(.agh-dialog)::before {
+    display: none;
+  }
   .agh-dialog .ant-modal-container,
   .agh-dialog .ant-modal-content {
     border-radius: var(--radius-surface) var(--radius-surface) 0 0;
@@ -592,13 +620,14 @@
   .agh-sheet-handle {
     display: flex;
     width: 100%;
-    height: var(--control-height-sm);
-    min-height: var(--control-height-sm);
+    height: var(--control-height-touch);
+    min-height: var(--control-height-touch);
     padding: 0;
     border: 0;
     border-radius: var(--radius-surface) var(--radius-surface) 0 0;
     background: var(--agnes-bg-popover);
     touch-action: none;
+    flex: 0 0 auto;
   }
   .agh-sheet-handle span {
     width: var(--s32);
@@ -606,6 +635,11 @@
     border-radius: var(--radius-pill);
     background: var(--agnes-text-secondary);
   }
+}
+.agh-native-sheet-handle {
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 dialog[data-size="sm"] {
@@ -633,6 +667,14 @@ dialog[data-size="lg"] {
 .agnes-settings-actions .agh-btn--sm {
   height: var(--control-height-sm);
   min-height: var(--control-height-sm);
+}
+@media (max-width: 900px) {
+  /* Preserve existing pages' 32px floor through B3–B8; new icon actions use the 28px contract. */
+  body[data-agnes-region="app"]
+  :is(.agnes-ui-button.agh-btn--sm:not(.agh-btn--icon), .secondary-button:where(.compact), .icon-button) {
+    min-height: var(--s32);
+    min-width: var(--s32);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .skip-link:not(:focus) {

@@ -1,7 +1,5 @@
-/* Keep the final mobile cascade authoritative: several legacy component blocks below the first
-   responsive section intentionally set compact desktop heights. */
+/* Form controls retain physical touch height. Shared buttons expand their hit area in components.css. */
 @media (max-width: 540px) {
-  button,
   input:not([type="checkbox"]):not([type="radio"]),
   select {
     min-height: var(--control-height-touch) !important;

@@ -30,9 +30,9 @@ function luminance(rgb: Color): number {
     .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
 }
 const pairs: [string, string, number][] = [
-  ...['primary', 'secondary', 'tertiary'].flatMap((role): [string, string, number][] =>
+  ...['primary', 'secondary', 'tertiary', 'icon-secondary'].flatMap((role): [string, string, number][] =>
     ['page', 'surface', 'popover', 'subtle', 'card', 'hover'].map((bg) => [
-      `--agnes-text-${role}`,
+      role === 'icon-secondary' ? '--agnes-icon-secondary' : `--agnes-text-${role}`,
       `--agnes-bg-${bg}`,
       4.5,
     ]),

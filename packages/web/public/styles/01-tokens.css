@@ -125,7 +125,7 @@
 
   /* Icon —— 只有 secondary 有"非继承"消费点（连接状态灯）；
      其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
-  --agnes-icon-secondary: var(--agnes-color-neutral-360);
+  --agnes-icon-secondary: var(--agnes-text-secondary);
 
   /* Background */
   --agnes-bg-page: var(--agnes-color-white);
@@ -243,7 +243,7 @@
   --agnes-text-emphasis: var(--agnes-color-brand-indigo-400);
 
   /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
-  --agnes-icon-secondary: var(--agnes-color-neutral-575);
+  --agnes-icon-secondary: var(--agnes-text-secondary);
 
   /* Background */
   /* 深色下三级表面必须拉开：页面底 ≠ 弹窗/输入框底 ≠ 面板底。
