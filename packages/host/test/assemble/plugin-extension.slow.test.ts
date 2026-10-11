@@ -268,22 +268,27 @@ describe('a third-party tool whose package comes back to a state the Host has al
     }
   })
 
-  it('keeps one shared generation across a registry-neutral change to the published target', async () => {
+  it('keeps held and fresh sessions usable across a registry-neutral change to the published target', async () => {
     const driver = caller()
     const h = await pluginHost([pluginSource(echoTool('plugin_echo'))], { provider: driver.provider })
     try {
       await h.host.applyRuntimeTarget(targetOf([pluginRow()]))
       await settle()
       const held = await h.host.createSession({ cwd: h.dataDir, key: 'held-across-neutral' })
-      // A web-only row changes the composite revision but not the registry revision, so the published
-      // generation must not be pruned: a session opened afterwards binds to the same registries.
+      const catalog = held.toolCatalog()
+      // A web-only row changes the composite revision but not the registry revision. Both held and
+      // fresh sessions must retain the published tools and resources through their session bindings.
       await h.host.applyRuntimeTarget(targetOf([pluginRow(), pluginRow('web:acme/plugin-tools')]))
       await settle()
       const fresh = await h.host.createSession({ cwd: h.dataDir, key: 'opened-after-neutral' })
-      expect(fresh.currentTools()).toBe(held.currentTools())
-      expect(fresh.currentResources()).toBe(held.currentResources())
+      expect(fresh.toolCatalog().tools).toEqual(catalog.tools)
+      expect(fresh.toolCatalog().resources).toEqual(catalog.resources)
+      expect(held.toolCatalog().tools).toEqual(catalog.tools)
+      expect(held.toolCatalog().resources).toEqual(catalog.resources)
+      expect(await callTool(h, driver, 'plugin_echo', held)).toContain('plugin_echo')
       expect(await callTool(h, driver, 'plugin_echo', fresh)).toContain('plugin_echo')
       await held.close()
+      expect(await callTool(h, driver, 'plugin_echo', fresh)).toContain('plugin_echo')
       await fresh.close()
     } finally {
       await h.host.close()
