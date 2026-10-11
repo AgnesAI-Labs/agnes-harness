@@ -4,6 +4,16 @@ import type { TSchema } from '@sinclair/typebox'
 export function reachableParameters<T extends TSchema>(schema: T): T {
   const definitions = schema.$defs as Record<string, unknown> | undefined
   if (!definitions) return schema
+  // Preserve the definition's TypeBox kind (Object rather than Import) for Value.Check.
+  const rootKey =
+    typeof schema.$ref === 'string'
+      ? schema.$ref.startsWith('#/$defs/')
+        ? schema.$ref.slice('#/$defs/'.length)
+        : schema.$ref
+      : undefined
+  const root = rootKey && Object.hasOwn(definitions, rootKey) ? (definitions[rootKey] as TSchema) : undefined
+  const normalized = root ? { ...schema, ...root } : { ...schema }
+  if (root) delete normalized.$ref
   const reachable: Record<string, unknown> = {}
   const visit = (value: unknown): void => {
     if (!value || typeof value !== 'object') return
@@ -21,6 +31,6 @@ export function reachableParameters<T extends TSchema>(schema: T): T {
     }
     for (const [key, item] of Object.entries(row)) if (key !== '$defs') visit(item)
   }
-  visit(schema)
-  return { ...schema, $defs: reachable }
+  visit(normalized)
+  return { ...normalized, $defs: reachable }
 }

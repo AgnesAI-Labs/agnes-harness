@@ -603,6 +603,30 @@ function parametersProblem(root: object): string | undefined {
     const bytes = new TextEncoder().encode(JSON.stringify(root)).byteLength
     if (bytes > TOOL_PARAMETERS_MAX_BYTES)
       return `parameters: serialized size must be at most ${TOOL_PARAMETERS_MAX_BYTES} bytes`
+    // Tool arguments are named fields. Module imports are valid when their local root
+    // resolves to an object; the model adapter inlines that root for provider compatibility.
+    const definitions = (root as Record<string, unknown>).$defs
+    let schema: unknown = root
+    const visited = new Set<unknown>()
+    while (schema && typeof schema === 'object' && !Array.isArray(schema)) {
+      const row = schema as Record<string, unknown>
+      if (row.$ref === undefined && row.type === 'object') return
+      if (visited.has(schema)) break
+      visited.add(schema)
+      if (typeof row.$ref !== 'string') break
+      const key = row.$ref.startsWith('#/$defs/')
+        ? row.$ref.slice('#/$defs/'.length).replace(/~1/g, '/').replace(/~0/g, '~')
+        : row.$ref
+      if (
+        !definitions ||
+        typeof definitions !== 'object' ||
+        Array.isArray(definitions) ||
+        !Object.hasOwn(definitions, key)
+      )
+        break
+      schema = (definitions as Record<string, unknown>)[key]
+    }
+    return 'parameters: root must be type "object" or a local $defs reference resolving to an object'
   } catch {
     // A Proxy or exotic object can throw from any reflective read; the check itself stays total.
     return notJson

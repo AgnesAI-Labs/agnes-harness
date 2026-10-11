@@ -1,5 +1,6 @@
 import { CoreError } from '@agnes/core-common/types'
 import type { ToolDef } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 
@@ -122,6 +123,21 @@ describe('ToolRegistry', () => {
 
   it('delegates well-formedness to extension-api checkToolDef and rejects duplicates', () => {
     const r = new ToolRegistry()
+    for (const parameters of [
+      Type.String(),
+      Type.Module({ Params: Type.Array(Type.String()) }).Import('Params'),
+    ]) {
+      expect(() =>
+        r.add({ ...def('community_bad'), parameters }, { source: 'community/widgets', trust: 'trusted' }),
+      ).toThrow(/community\/widgets: community_bad: parameters: root must be type "object"/)
+    }
+    const imported = Type.Module({ Params: Type.Object({ label: Type.String() }) }).Import('Params')
+    const dispose = r.add(
+      { ...def('community_widget'), parameters: imported },
+      { source: 'community/widgets', trust: 'trusted' },
+    )
+    expect(r.resolve('community_widget')?.parameters).toEqual(imported)
+    dispose()
     // CoreError, not ExtensionError: both packages spell E_TOOLDEF_META, so matching the message
     // alone would not say which gate fired.
     expect(() => r.add(def('bad-name'), { source: 's', trust: 'trusted' })).toThrow(CoreError)
@@ -287,10 +303,13 @@ describe('ToolRegistry', () => {
     expect(other.snapshot(99).hash).toBe(one.snapshot(1).hash)
     const changed = new ToolRegistry()
     changed.add(def('a'), { source: 's', trust: 'builtin' })
-    changed.add({ ...def('b'), parameters: { type: 'string' } } as unknown as ToolDef, {
-      source: 's',
-      trust: 'builtin',
-    })
+    changed.add(
+      { ...def('b'), parameters: Type.Object({ label: Type.String() }) },
+      {
+        source: 's',
+        trust: 'builtin',
+      },
+    )
     expect(changed.snapshot(1).hash).not.toBe(one.snapshot(1).hash)
     const renamed = new ToolRegistry()
     renamed.add(def('a'), { source: 's', trust: 'builtin' })

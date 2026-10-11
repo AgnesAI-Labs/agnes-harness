@@ -42,6 +42,8 @@ export default defineTool({
 })
 ```
 
+Tool parameters must have an object root. A `Type.Module(...).Import(...)` is accepted when its root resolves to an object in its own `$defs`; the pi model adapter inlines that root before sending it to a provider. Other root types, missing definitions and root reference cycles fail registration with the owning plugin and tool identified, rather than causing a provider request to fail.
+
 The existing jiti transpiler loads TypeScript on demand. No compilation step is needed. Declare the source export explicitly; a missing `dist/index.js` is an error, not an implicit fallback. Author helpers and TypeBox resolve to the Host namespaces. Third-party dependencies must already be resolvable by the runtime; local discovery does not install dependencies. `node_modules` and `.git` are excluded from source snapshots, and symlinks inside plugins are refused.
 
 Placing source in either configured local root opts it into trusted in-process execution. First discovery installs, trusts and enables it through the package store; existing disabled choices are preserved. Do this only for code you intend to execute. Session tool approvals govern plugin-creator operations and later tool calls; they do not sandbox the module's initialization code. Package identity collisions are errors; neither root silently overrides an installed package.

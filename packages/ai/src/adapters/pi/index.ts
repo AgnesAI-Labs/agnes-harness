@@ -430,7 +430,19 @@ export class PiAdapter extends WireAdapter {
     const networkTimeouts = decl.networkTimeouts
     const requestHeaders = this.requestHeaders(route, req)
     const dropThinking = record.thinkingReplay === 'drop'
-    const { context } = toContext(req, { dropThinking })
+    let context: Context
+    try {
+      context = toContext(req, { dropThinking }).context
+    } catch (error) {
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'FORMAT',
+        message: error instanceof Error ? error.message : 'Invalid tool parameters',
+        retryable: false,
+      }
+      return
+    }
     const transforms: Array<{ event: string; ext: string }> = []
     if (
       dropThinking &&

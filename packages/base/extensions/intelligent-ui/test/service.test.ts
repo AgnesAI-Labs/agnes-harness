@@ -1,3 +1,4 @@
+import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
 import type {
   IntelligentUiInstance,
   UiSourceResolveInput,
@@ -20,8 +21,10 @@ import {
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { surfaceText, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import { Type } from '@sinclair/typebox'
+import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it } from 'vitest'
 import { questionSurface } from '../../interaction/src/question.js'
+import intelligentUi from '../src/index.js'
 import { reachableParameters } from '../src/parameters.js'
 import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
@@ -317,8 +320,25 @@ async function opened() {
 }
 
 describe('preset surface contract and ledger lifecycle', () => {
-  it('keeps full render/update/close validation when unused module definitions are removed', () => {
+  it('exposes object roots for all UI tools and keeps nested argument validation', () => {
+    const tools: ToolDef[] = []
+    intelligentUi({
+      providers: { register: () => () => {} },
+      registerProjection: () => () => {},
+      registerTool: (tool: ToolDef) => {
+        tools.push(tool)
+        return () => {}
+      },
+    } as unknown as ExtensionAPI)
+    expect(tools.map((tool) => tool.name)).toEqual(['ui_render', 'ui_update', 'ui_close', 'ui_submit'])
+    for (const tool of tools) {
+      expect(tool.parameters.type).toBe('object')
+      expect(tool.parameters.$ref).toBeUndefined()
+    }
     const replacement = { ...surface(), revision: 2 }
+    const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })
+    expect(pointerRoot.type).toBe('object')
+    expect(validateAgainst(pointerRoot, { surface: surface() }).ok).toBe(true)
     const rows = [
       { schema: UiRenderParams, good: { surface: surface() } },
       { schema: UiUpdateParams, good: { surfaceId: 'reconcile', expectedRevision: 1, surface: replacement } },
@@ -327,6 +347,7 @@ describe('preset surface contract and ledger lifecycle', () => {
     for (const { schema, good } of rows) {
       const compact = reachableParameters(schema)
       expect(validateAgainst(compact, good).ok).toBe(true)
+      expect(Value.Check(compact, Object.values(compact.$defs), good)).toBe(true)
       for (const invalid of [
         {},
         { ...good, unexpected: true },
@@ -338,6 +359,20 @@ describe('preset surface contract and ledger lifecycle', () => {
       }
       expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(schema).length)
     }
+    const submit = tools.find((tool) => tool.name === 'ui_submit')!.parameters
+    expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 'yes' } }).ok).toBe(true)
+    expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 42 } }).ok).toBe(false)
+  })
+  it('retains a root definition reached recursively after inlining', () => {
+    const schema = Type.Module({
+      Node: Type.Object({ value: Type.String(), child: Type.Optional(Type.Ref('Node')) }),
+      Unused: Type.Number(),
+    }).Import('Node')
+    const compact = reachableParameters(schema)
+    expect(compact.type).toBe('object')
+    expect(Object.keys(compact.$defs)).toEqual(['Node'])
+    expect(validateAgainst(compact, { value: 'a', child: { value: 'b' } }).ok).toBe(true)
+    expect(validateAgainst(compact, { value: 'a', child: { value: 42 } }).ok).toBe(false)
   })
   it('opens, replaces revision n+1, closes and retains a tombstone across restart', async () => {
     const f = await opened(),

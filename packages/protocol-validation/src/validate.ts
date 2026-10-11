@@ -74,8 +74,12 @@ export function isDateTime(value: unknown): value is string {
 }
 
 export function validateAgainst<T>(schema: TSchema, x: unknown, pathPrefix = ''): ValidationResult<T> {
-  if (Value.Check(schema, x)) return { ok: true, value: x as T }
-  const errors = [...Value.Errors(schema, x)].map(classify).map((e) => ({ ...e, path: pathPrefix + e.path }))
+  // Inlined module roots still use TypeBox references to definitions identified by $id.
+  const references: TSchema[] = Object.values(schema.$defs ?? {})
+  if (Value.Check(schema, references, x)) return { ok: true, value: x as T }
+  const errors = [...Value.Errors(schema, references, x)]
+    .map(classify)
+    .map((e) => ({ ...e, path: pathPrefix + e.path }))
   return {
     ok: false,
     errors: errors.length ? errors : [{ path: pathPrefix, message: 'invalid', code: 'OTHER' }],

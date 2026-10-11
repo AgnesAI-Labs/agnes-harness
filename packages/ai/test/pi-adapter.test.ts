@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { JsonValue } from '@agnes/protocol'
 import type {
   Api,
   AssistantMessage,
@@ -10,6 +11,7 @@ import type {
   ProviderStreamOptions,
   UserMessage,
 } from '@earendil-works/pi-ai'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { redact } from '../src/adapters/pi/errors.js'
 import { toContext } from '../src/adapters/pi/to-context.js'
@@ -299,6 +301,39 @@ const err = (m: string): AssistantMessageEvent => ({
 })
 
 describe('toContext', () => {
+  it('inlines third-party Module.Import roots without losing nested definitions or mutating the request', () => {
+    const imported = Type.Module({
+      Params: Type.Object({ item: Type.Ref('Item') }, { additionalProperties: false }),
+      Item: Type.Object({ label: Type.String() }),
+    }).Import('Params')
+    for (const parameters of [imported, { ...imported, $ref: '#/$defs/Params' }]) {
+      const req = fakeRequest({
+        tools: [
+          { name: 'community_widget', description: 'Widget', parameters: parameters as unknown as JsonValue },
+        ],
+      })
+      const { tools } = toContext(req)
+      expect(tools[0]?.parameters).toMatchObject({
+        type: 'object',
+        properties: imported.$defs.Params.properties,
+        $defs: imported.$defs,
+      })
+      expect(tools[0]?.parameters).not.toHaveProperty('$ref')
+      expect(req.tools[0]?.parameters).toBe(parameters)
+      expect(parameters.$ref).toBeDefined()
+    }
+  })
+  it('refuses incompatible tool roots locally with the tool name', () => {
+    for (const parameters of [
+      { type: 'string' },
+      { $ref: '#/$defs/Missing', $defs: {} },
+      { $ref: '#/$defs/A', $defs: { A: { $ref: '#/$defs/A' } } },
+    ]) {
+      expect(() =>
+        toContext(fakeRequest({ tools: [{ name: 'community_widget', description: 'Widget', parameters }] })),
+      ).toThrow(/Tool community_widget: parameters root must resolve to type "object"/)
+    }
+  })
   it('maps system, three message roles and tools one-to-one', () => {
     const req = fakeRequest({
       tools: [
@@ -405,6 +440,25 @@ describe('toContext', () => {
 })
 
 describe('PiAdapter', () => {
+  it('reports incompatible tool schemas before invoking the provider', async () => {
+    const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+    const adapter = bound({ manualRoutes: [route], streamImpl: wire.impl })
+    const result = await collect(
+      adapter.stream(
+        'gw',
+        fakeRequest({
+          route: 'gw',
+          model: 'flash',
+          tools: [{ name: 'community_bad', description: 'Bad schema', parameters: { type: 'array' } }],
+        }),
+        opts(),
+      ),
+    )
+    expect(result).toMatchObject([
+      { type: 'error', code: 'FORMAT', retryable: false, message: expect.stringContaining('community_bad') },
+    ])
+    expect(wire.seen).toEqual([])
+  })
   it('declares the manual route without its catalogue, and the catalogue separately', () => {
     const a = new PiAdapter({ manualRoutes: [route] })
     expect(a.routes()).toEqual([

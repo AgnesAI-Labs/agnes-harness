@@ -75,7 +75,15 @@ export class ToolRegistry {
         ? [`description: exceeds ${TOOL_DESCRIPTION_MAX_LENGTH} after sanitization`]
         : []
     if (problems.length)
-      throw new CoreError('E_TOOLDEF_META', `${String(name)}: ${problems.join('; ')}`, { name, problems })
+      throw new CoreError(
+        'E_TOOLDEF_META',
+        `${registeredSource.source}: ${String(name)}: ${problems.join('; ')}`,
+        {
+          name,
+          source: registeredSource.source,
+          problems,
+        },
+      )
     const registeredDefinition: ToolDef = {
       ...candidateDefinition,
       meta: snapshotToolMeta(candidateDefinition.meta),

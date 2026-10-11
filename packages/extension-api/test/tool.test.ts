@@ -421,7 +421,7 @@ describe('checkToolDef bounds on what a model is shown', () => {
   const nested = (depth: number): Record<string, unknown> => {
     let value: unknown = 'leaf'
     for (let i = 0; i < depth; i++) value = { a: value }
-    return value as Record<string, unknown>
+    return { ...(value as Record<string, unknown>), type: 'object' }
   }
   /** `{"type":"object","description":"…"}` padded to exactly `bytes` UTF-8 bytes. */
   const sized = (bytes: number) => ({ type: 'object', description: 'x'.repeat(bytes - 34) })
