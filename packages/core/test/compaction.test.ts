@@ -1,5 +1,5 @@
 import type { HookPayloadMap } from '@agnes/extension-api'
-import type { ModelRecord, ThinkingLevel } from '@agnes/protocol'
+import type { ModelRecord, RequestBody, ThinkingLevel } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { HookBlockedError } from '../src/hooks/block.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
@@ -10,7 +10,7 @@ import { contextTokens } from '../src/step/gate.js'
 import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
 import { withPhase } from '../src/step/op-state.js'
 import { presetDefaults } from '../src/step/preset.js'
-import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { fakeProvider, type Script, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
 
@@ -1451,18 +1451,29 @@ describe('length-cap retry', () => {
         .map((row) => (row.data as { reason: string }).reason),
       replaced: rows.filter((row) => row.surfaceOp),
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
+      retries: rows.filter((row) => row.type === 'x/core/compaction-retry'),
       provider,
     }
   }
 
   it('retries once with thinking forced to low, then falls back to an elided compaction', async () => {
-    const { reasons, replaced, begins, provider } = await compactWithScripts([capped(''), capped('')])
+    const { reasons, replaced, begins, retries, provider } = await compactWithScripts([
+      capped(''),
+      capped(''),
+    ])
     // old-one, old-two, first summary attempt, retry attempt — no third attempt.
     expect(provider.calls).toBe(4)
     expect(provider.requests.at(-1)?.sampling?.thinking).toBe('low')
     expect(reasons).toEqual([])
     expect(replaced).toHaveLength(1)
     expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
+    expect(retries.map((row) => row.data)).toEqual([
+      {
+        effectId: (begins[0]?.data as { effectId?: string } | undefined)?.effectId,
+        cause: 'summary stopped at the max_tokens cap',
+        form: 'low-thinking',
+      },
+    ])
   })
 
   it('does not retry when the configured level is already low or below', async () => {
@@ -1567,6 +1578,7 @@ describe('routing a summary that is unavailable', () => {
         begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
         ends: rows.filter((row) => row.type === 'x/core/compaction-end'),
         failed: rows.filter((row) => row.type === 'x/core/compaction-failed'),
+        retries: rows.filter((row) => row.type === 'x/core/compaction-retry'),
         spends: rows.filter(
           (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
         ),
@@ -1660,14 +1672,114 @@ describe('routing a summary that is unavailable', () => {
   ]
 
   it.each([
-    ['a summary that calls a tool', toolTurn('read', { path: 'x' }), /tool/],
+    // A narrow summary offered no tool already, so asking again in the same form would repeat it.
+    ['a narrow summary that calls a tool', toolTurn('read', { path: 'x' }), /tool/],
     ['an empty summary', textTurn(''), /empty/],
     ['a summary request over its window', errorOf('OVERFLOW', false), /OVERFLOW/],
   ])('elides after %s', async (_label, script, cause) => {
     const h = await toolHistory([script])
     expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
     expect(h.provider.calls).toBe(5)
-    await expectElided(h, cause, true)
+    const o = await expectElided(h, cause, true)
+    expect(o.retries).toEqual([])
+  })
+
+  /** The same history summarized by the primary model itself: a wide request that offers its tools. */
+  async function wideToolHistory(summaryScripts: Script[]) {
+    const h = await toolHistory(summaryScripts)
+    h.session.preset.model.id.compaction = 'answer-model'
+    const toolNames: string[][] = []
+    const infer = h.provider.infer.bind(h.provider)
+    h.provider.infer = (req, options) => {
+      if (req.kind === 'summary') toolNames.push([...options.toolNames])
+      return infer(req, options)
+    }
+    const summaries = () => h.provider.requests.filter((req) => req.kind === 'summary')
+    return { ...h, toolNames, summaries }
+  }
+  const deviating: Script = [
+    sent(),
+    { type: 'text_delta', delta: '{"name": "read", "args": ' },
+    { type: 'deviation', rule: 'unparsed', sampleHash: 'c'.repeat(64) },
+    usage(),
+    { type: 'done', reason: 'stop' },
+  ]
+  const lastText = (req: RequestBody | undefined) =>
+    (req?.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text ?? ''
+  const effectOf = (row: { data: unknown } | undefined) =>
+    (row?.data as { effectId?: string } | undefined)?.effectId
+
+  it.each([
+    ['calls a tool', toolTurn('read', { path: 'x' }), 'summary called a tool'],
+    ['deviates from the contract', deviating, 'summary deviated from the contract'],
+  ])(
+    'retries a wide summary that %s once without tools and keeps its summary',
+    async (_label, script, cause) => {
+      const h = await wideToolHistory([script, textTurn('Goal: read three files. Progress: done.')])
+      h.session.preset.treeBudgetCredits = 1_000_000
+      const holds: string[] = []
+      const reserve = h.storage.reserve.bind(h.storage)
+      h.storage.reserve = async (request) => {
+        holds.push(request.effectId)
+        return reserve(request)
+      }
+      expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
+      const [wide, retry, ...more] = h.summaries()
+      expect(more).toEqual([])
+      expect(wide?.tools.map((tool) => tool.name)).toContain('read')
+      // The retry offers no tool, so it cannot call one; one written out as text is still decoded.
+      expect(retry?.tools).toEqual([])
+      expect(retry?.system).not.toBe(wide?.system)
+      expect(lastText(retry)).toContain('Do not call any tool')
+      expect(h.toolNames[0]).toContain('read')
+      expect(h.toolNames[1]).toEqual(h.toolNames[0])
+      const o = await h.outcome()
+      expect(o.failed).toEqual([])
+      expect(o.replaces).toHaveLength(1)
+      expect(o.replaces[0]?.origin).toBe('model')
+      expect(o.begins[0]?.data).not.toHaveProperty('mode')
+      expect(o.retries.map((row) => row.data)).toEqual([
+        { effectId: effectOf(o.begins[0]), cause, form: 'without-tools' },
+      ])
+      // Each call held budget of its own, and both are charged on the one compaction spend row.
+      expect(holds).toHaveLength(2)
+      expect(new Set(holds).size).toBe(2)
+      expect(o.spends).toHaveLength(1)
+      expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 20, output: 10 }, credits: 2 })
+    },
+  )
+
+  it('elides without a third request when the retry without tools is cut off too', async () => {
+    const partial = 'Goal: read three files. Progress: read a and'
+    const cut: Script = [
+      sent(),
+      { type: 'text_delta', delta: partial },
+      usage(),
+      { type: 'done', reason: 'length' },
+    ]
+    const h = await wideToolHistory([toolTurn('read', { path: 'x' }), cut])
+    expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
+    expect(h.summaries()).toHaveLength(2)
+    const o = await expectElided(h, /max_tokens/, true)
+    expect(o.retries.map((row) => row.data)).toEqual([
+      { effectId: effectOf(o.begins[0]), cause: 'summary called a tool', form: 'without-tools' },
+    ])
+    expect(JSON.stringify(o.replaces[0]?.data)).not.toContain(partial)
+    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 20, output: 10 } })
+  })
+
+  it('reports, without eliding, a retry without tools whose route then fails', async () => {
+    const h = await wideToolHistory([toolTurn('read', { path: 'x' }), errorOf('AUTH', false)])
+    await h.enter('threshold')
+    const o = await h.outcome()
+    expect(o.replaces).toEqual([])
+    expect(o.begins).toEqual([])
+    expect(o.retries).toHaveLength(1)
+    expect(o.failed[0]?.data).toMatchObject({
+      effectId: effectOf(o.retries[0]),
+      reason: expect.stringMatching(/AUTH/),
+    })
+    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 10, output: 5 } })
   })
 
   // A broken or exhausted compaction route has to show up as a failure, not as a lossy fallback.
