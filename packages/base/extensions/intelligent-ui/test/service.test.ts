@@ -337,7 +337,7 @@ describe('preset surface contract and ledger lifecycle', () => {
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })
-    expect(pointerRoot.type).toBe('object')
+    expect(pointerRoot).toMatchObject({ type: 'object' })
     expect(validateAgainst(pointerRoot, { surface: surface() }).ok).toBe(true)
     const rows = [
       { schema: UiRenderParams, good: { surface: surface() } },

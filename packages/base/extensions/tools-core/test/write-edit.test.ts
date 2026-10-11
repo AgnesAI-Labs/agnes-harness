@@ -619,8 +619,10 @@ describe('successful file review receipts', () => {
   it.each([false, true])(
     'records workspace-relative write/edit receipts with nested cwd: %s',
     async (nested) => {
-      const ctx = await observedCtxOf()
-      if (nested) ctx.session = { ...ctx.session, workspaceRoot: '/work' }
+      const original = await observedCtxOf()
+      const ctx = nested
+        ? { ...original, session: { ...original.session, workspaceRoot: '/work' } }
+        : original
       const receipts: unknown[] = []
       const record: Parameters<typeof createWriteTool>[0] = async (input, context) => {
         receipts.push(fileChangeReceipt(input, context))

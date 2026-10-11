@@ -30,9 +30,6 @@ function input(workspaceRoot: string, name: string, readOnly: boolean, cwd = wor
     policy: {
       isReadOnly: readOnly,
       isPresentational: false,
-      isConcurrencySafe: false,
-      isOpenWorld: false,
-      policyVersion: 'static-v1',
       isDestructive: !readOnly,
       replay: 'never',
       requiresApproval: 'destructive',

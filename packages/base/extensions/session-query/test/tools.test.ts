@@ -102,8 +102,13 @@ describe('session query tools', () => {
     expect(text(found)).not.toContain('other-owner')
     expect(text(found)).not.toContain('away')
     expect(text(found)).not.toContain('secret')
-    const byCwd = await sessionSearchTool.execute({ query: 'alpha bridge' }, caller('', '/work/a'))
-    expect(text(byCwd)).toContain('peer')
+    const nested = await sessionSearchTool.execute(
+      { query: 'alpha bridge' },
+      caller('/work/a', '/work/a/nested'),
+    )
+    expect(text(nested)).toBe(text(found))
+    const missingRoot = await sessionSearchTool.execute({ query: 'alpha bridge' }, caller('', '/work/a'))
+    expect(text(missingRoot)).toBe('No matching history.')
   })
 
   it('uses one denial for a hidden session and a missing session', async () => {
