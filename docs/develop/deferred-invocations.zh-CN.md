@@ -30,3 +30,5 @@ Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。�
 通用 drain 在没有活动 turn 且该 invocation 有原审批 decision request 时，通过公开 `input.resumeParked` 恢复该 decision request。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。
 
 可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出。队列和回执类型位于 `@agnes/plugin-runtime/deferred-contract`。账本端口仍是 Host 适配器。Loop 插件从公开作者运行库命名空间导入 helper，并用 `deferredQueueKind` 读取队列。
+
+决策 key 由 session 与插件 owner 限定命名空间。只有同一 operation、同一 spec 重用 key，才返回原 handle 和期限；其他 operation 得到 `DECISION_KEY_CONFLICT`，应使用自己的 key。Loop 恢复保持 `loop:<id>` 的 operation 身份。重复 request 不表示允许重放原 operation。

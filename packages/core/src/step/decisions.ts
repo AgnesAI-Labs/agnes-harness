@@ -196,7 +196,11 @@ export class DecisionCommands {
           value.request.spec.key === spec.key,
       )
       if (existing) {
-        if (canonicalJson(existing.value.request.spec) !== canonicalJson(spec)) fail('KEY_CONFLICT')
+        if (
+          existing.value.request.operationId !== source.operationId ||
+          canonicalJson(existing.value.request.spec) !== canonicalJson(spec)
+        )
+          fail('KEY_CONFLICT')
         this.read(existing.value.handle, source)
         await this.expire(existing.value)
         return detached(existing.value.handle)

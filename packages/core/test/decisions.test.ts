@@ -113,6 +113,16 @@ describe('session decision authority', () => {
     await first.session.step()
     const inFlight = first.session.step().catch(() => undefined)
     await called
+    const original = await first.session.decisions.get(handle)
+    const anotherOperation = first.session.decisions.port({
+      owner: original.request.owner,
+      sourcePackage: original.request.sourcePackage,
+      packageVersion: original.request.packageVersion,
+      operationId: 'tool-call-B',
+      alive() {},
+    })
+    await expect(anotherOperation.request(spec)).rejects.toThrow('KEY_CONFLICT')
+    expect((await first.session.decisions.get(handle)).request).toEqual(original.request)
     await first.log.close()
     release()
     await inFlight
