@@ -95,8 +95,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(JSON.stringify(saved)).not.toContain(provider.apiKey)
         // Add another account through the two-step dialog; it must reuse the restored native region.
         await settings(page, locale)
-        await page.getByTestId('settings-advanced').locator('summary').click()
-        await page.getByTestId('settings-nav-models').click()
+        await page.getByTestId('settings-nav-model').click()
         await page.locator('#config-add-account').click()
         const account = page.locator('#account-dialog')
         await expect(account.locator('.account-dialog-body')).toHaveAttribute('data-account-step', 'provider')
