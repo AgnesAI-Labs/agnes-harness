@@ -106,7 +106,9 @@ export function PresetTabs({
   if (tabs.length === 0) return null
   return (
     <div data-testid={`ui-tabs-${id}`} role="group" aria-label={label}>
+      {/* Two placements mount the same tabs. A shared rc-tabs id would duplicate the tab, panel, and overflow ids. */}
       <Tabs
+        id={reactId}
         activeKey={active}
         onChange={setActive}
         items={tabs.map((tab) => ({
