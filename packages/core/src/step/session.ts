@@ -1971,7 +1971,8 @@ export class SessionImpl {
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
           const error = {
-            code: 'E_STEP_FAILED',
+            // Integrity refusals must remain recognizable in turn/end and client outcomes.
+            code: err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? err.code : 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
           }
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but

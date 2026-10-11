@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
@@ -96,36 +97,56 @@ describe('Core quiet gate', () => {
     await kernel.close()
   })
 
-  it('balances enter and leave on a thrown step and still reaches the turn yield', async () => {
-    const calls: string[] = []
-    let stepping = 0
-    const { session } = await openSession({
-      provider: fakeProvider([textTurn('unused')]),
-      quiet: {
-        enter: () => {
-          stepping++
-          calls.push('enter')
+  it.each([false, true])(
+    'balances a thrown step and surfaces integrity errors (integrity=%s)',
+    async (integrity) => {
+      const calls: string[] = []
+      let stepping = 0
+      const { session } = await openSession({
+        provider: fakeProvider([textTurn('unused')]),
+        quiet: {
+          enter: () => {
+            stepping++
+            calls.push('enter')
+          },
+          leave: () => {
+            stepping--
+            calls.push('leave')
+          },
+          yieldPoint: async (kind) => {
+            calls.push(`yield:${kind}`)
+          },
         },
-        leave: () => {
-          stepping--
-          calls.push('leave')
-        },
-        yieldPoint: async (kind) => {
-          calls.push(`yield:${kind}`)
-        },
-      },
-    })
-    session.step = async () => {
-      throw new Error('broken phase')
-    }
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await session.step()
+      calls.length = 0
+      const failure = integrity
+        ? new CoreError(
+            'E_LEDGER_INTEGRITY',
+            'deferred chain: session=s lane=main invocation=test seq=9 previous-seq-mismatch',
+          )
+        : new Error('broken phase')
+      session.step = async () => {
+        throw failure
+      }
 
-    await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
-      reason: 'error',
-      error: { code: 'E_STEP_FAILED', message: 'broken phase' },
-    })
-    expect(calls).toEqual(['enter', 'leave', 'yield:turn'])
-    expect(stepping).toBe(0)
-  })
+      await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
+        reason: 'error',
+        error: { code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED', message: failure.message },
+      })
+      const ends = await session.scan({ type: 'turn/end', limit: 10 })
+      expect(ends.at(-1)?.data).toMatchObject({
+        error: {
+          code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED',
+          message: failure.message,
+        },
+      })
+      await session.close()
+      expect(calls).toEqual(['enter', 'leave', 'yield:turn'])
+      expect(stepping).toBe(0)
+    },
+  )
 
   it('surfaces a yield failure and still runs the turn-finally yield', async () => {
     const failed = new Error('reconciler unavailable')

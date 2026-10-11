@@ -72,3 +72,9 @@ Linux daemon 身份绑定 `/proc/sys/kernel/random/boot_id`、PID 与 `/proc/<pi
 ## 首次运行检查
 
 详见[首次运行指南](getting-started.zh-CN.md)：`agh home info` 只读检查唯一支持的布局；`agh doctor --json` 不连接模型，`--probe` 才主动测试。
+
+## 延迟调用链损坏
+
+带有 `kind: deferred-invocation-chain` 的 `E_LEDGER_INTEGRITY` 表示保存的延迟调用队列无法安全重建。错误包含 `sessionKey`、`lane`、`invocationId`、出错的 `seq` 和 `reason`：`previous-seq-mismatch`（前序记录断链）、`invocation-changed`（调用绑定变化或会话/分支不符）、`not-queued-first`（缺少最初的 queued 记录）、`terminal-reset`（已完成/失败的调用被再次使用）。队列会停止，绝不会静默跳过。
+
+停止使用受影响会话。保留错误并[导出会话记录](sessions.zh-CN.md)，停止本地服务并备份数据目录，再交由维护者诊断。查看该调用的工具回执，在人工向新会话提交工作前，先核对任何结果不明的外部操作。不要编辑或删除 ledger 行、重置终态调用或反复重试损坏队列。此版本没有自动修复命令；维护者指导下的恢复必须保留原始证据。

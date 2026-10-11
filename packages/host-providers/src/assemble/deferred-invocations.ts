@@ -1,4 +1,5 @@
 import type { Context } from '@agnes/cordis'
+import { CoreError } from '@agnes/core'
 import type { ToolResult } from '@agnes/extension-api'
 import { providerSource } from '@agnes/host-common/assemble/provider-registry'
 import { isHostError } from '@agnes/host-common/errors'
@@ -76,17 +77,33 @@ export function createDeferredInvocationQueue(
       const data = row.data as unknown as Omit<DeferredInvocationReceipt, 'seq'> & { previousSeq?: number }
       const call = data.invocation
       const previous = states.get(call?.id)
-      if (
-        !call ||
-        call.sessionKey !== sessionKey ||
-        call.lane !== lane ||
-        (previous
-          ? data.previousSeq !== previous.seq || jcs(call) !== jcs(previous.invocation)
-          : data.state !== 'queued')
-      )
-        throw new Error('Deferred invocation ledger chain is corrupt')
-      if (previous && terminal(previous.state))
-        throw new Error('Terminal deferred invocation cannot be reset')
+      let reason:
+        | 'previous-seq-mismatch'
+        | 'invocation-changed'
+        | 'not-queued-first'
+        | 'terminal-reset'
+        | undefined
+      if (!call || call.sessionKey !== sessionKey || call.lane !== lane) reason = 'invocation-changed'
+      else if (!previous && data.state !== 'queued') reason = 'not-queued-first'
+      else if (data.previousSeq !== previous?.seq) reason = 'previous-seq-mismatch'
+      else if (previous && jcs(call) !== jcs(previous.invocation)) reason = 'invocation-changed'
+      else if (previous && terminal(previous.state)) reason = 'terminal-reset'
+      if (reason) {
+        const detail = {
+          kind: 'deferred-invocation-chain',
+          sessionKey,
+          lane,
+          invocationId: call?.id ?? null,
+          seq: row.seq,
+          reason,
+        }
+        // Keep operands in the message too: turn/end and clients expose code/message only.
+        throw new CoreError(
+          'E_LEDGER_INTEGRITY',
+          `Deferred invocation ledger chain is corrupt: ${jcs(detail)}. See Troubleshooting: deferred invocation chain corruption.`,
+          detail,
+        )
+      }
       states.set(call.id, { ...data, seq: row.seq })
     }
     return { states, notified }

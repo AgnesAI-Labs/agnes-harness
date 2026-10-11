@@ -1,6 +1,6 @@
 import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
-import { MemoryStorage, SessionLogImpl } from '@agnes/core'
+import { CoreError, MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import type { LoopContext, LoopFactory, ToolResult } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
@@ -169,6 +169,53 @@ async function fixture() {
     },
   }
 }
+
+it.each(['previous-seq-mismatch', 'invocation-changed', 'not-queued-first', 'terminal-reset'] as const)(
+  'diagnoses deferred chain corruption: %s',
+  async (reason) => {
+    const { ports, rows } = memoryLedger()
+    const append = (data: unknown) =>
+      ports.append(DEFERRED_INVOCATION_EVENT, JSON.parse(JSON.stringify(data)), actor)
+    let seq: number
+    if (reason === 'not-queued-first') {
+      seq = await append({ invocation: call, state: 'running' })
+    } else {
+      const first = await append({ invocation: call, state: 'queued' })
+      const previousSeq =
+        reason === 'terminal-reset'
+          ? await append({ invocation: call, state: 'succeeded', previousSeq: first })
+          : first
+      seq = await append({
+        invocation: reason === 'invocation-changed' ? { ...call, args: { cents: 101 } } : call,
+        state: reason === 'terminal-reset' ? 'queued' : 'running',
+        previousSeq: reason === 'previous-seq-mismatch' ? first + 100 : previousSeq,
+      })
+    }
+    const queue = createDeferredInvocationQueue('s', 'main', ports, () => undefined)
+    const diagnostic = {
+      code: 'E_LEDGER_INTEGRITY',
+      detail: {
+        kind: 'deferred-invocation-chain',
+        sessionKey: 's',
+        lane: 'main',
+        invocationId: call.id,
+        seq,
+        reason,
+      },
+    }
+    await expect(queue.next(signal)).rejects.toBeInstanceOf(CoreError)
+    await expect(queue.read(call.id, signal)).rejects.toMatchObject(diagnostic)
+    await expect(queue.enqueue(call, signal)).rejects.toMatchObject(diagnostic)
+    try {
+      await queue.next(signal)
+    } catch (error) {
+      expect((error as Error).message).toContain(reason)
+      expect((error as Error).message).toContain(call.id)
+      expect((error as Error).message).toContain(`"seq":${seq}`)
+    }
+    expect(rows).toHaveLength(seq)
+  },
+)
 
 it('deduplicates canonical bindings across restart and validates session/tool ownership', async () => {
   const f = await fixture()

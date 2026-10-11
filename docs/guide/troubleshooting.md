@@ -70,3 +70,9 @@ The supported home layout is described in [first run](getting-started.md). If AG
 Linux daemon identity binds `/proc/sys/kernel/random/boot_id`, PID and `/proc/<pid>/stat` start ticks. Clock adjustments cannot change that identity. PID reuse and reboot change it; unreadable or malformed records remain unknown. Zombies/dead tasks retain a PID but cannot run a daemon and are reported dead. Never repair an unknown identity by matching only PID or by deleting locks.
 
 Missing native helpers require a rebuild with matching Node headers and a C toolchain. For a browser launch failure, provision Chromium with `playwright install --with-deps chromium` before the gate; do not download a browser during tests. Computer Use currently refuses Linux platform admission; installing a desktop alone does not establish driver evidence. Do not inject fake desktop capabilities.
+
+## Deferred invocation chain corruption
+
+`E_LEDGER_INTEGRITY` with `kind: deferred-invocation-chain` means the saved deferred queue cannot be reconstructed safely. The error includes `sessionKey`, `lane`, `invocationId`, the offending `seq`, and `reason`: `previous-seq-mismatch` (broken predecessor), `invocation-changed` (binding changed or wrong session/lane), `not-queued-first` (missing initial queued record), or `terminal-reset` (a completed/failed invocation was reused). The queue stops; it is never silently skipped.
+
+Stop using the affected session. Preserve the error and [export its records](sessions.md), stop the local service, and back up its data directory before a maintainer investigates. Inspect the invocation's tool receipts and reconcile any uncertain external effect before manually submitting work in a new session. Do not edit/delete ledger rows, reset a terminal invocation, or keep retrying the corrupt queue. This version has no automatic repair command; maintainer-guided recovery must preserve the original evidence.
