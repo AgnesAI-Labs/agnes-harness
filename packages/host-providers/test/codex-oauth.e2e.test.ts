@@ -503,6 +503,7 @@ it('production Host assembly reads OAuth at request time and preserves compresse
     models: [record],
   }
   const profile = {
+    dataDir: join(home, 'data'),
     provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
     limits: {},
     adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
@@ -596,6 +597,7 @@ it.each(['anthropic', 'kimi-coding', 'xai'] as const)(
     const secrets = vi.fn(() => 'fixture-api-key')
     const built = await buildProvider(
       {
+        dataDir: join(home, 'data'),
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
         limits: {},
         adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
