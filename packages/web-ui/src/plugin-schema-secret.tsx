@@ -1,17 +1,19 @@
 import { type InputHTMLAttributes, useEffect, useRef, useState } from 'react'
 import { PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog } from './locales/plugin-config.js'
-import { SettingsInput } from './settings-layout.js'
+import { SettingsInput, SettingsSelect } from './settings-layout.js'
 import { useUiText } from './ui-locale.js'
 
 /** Partial reference typing stays local; plaintext never enters the configuration draft. */
 export function PluginSchemaSecret({
   value,
+  options,
   path,
   onChange,
   onInvalid,
   ...props
 }: {
   value: unknown
+  options?: readonly { value: string; label: string }[] | undefined
   path: string
   onChange(value: unknown): void
   onInvalid(path: string, invalid: boolean): void
@@ -32,6 +34,30 @@ export function PluginSchemaSecret({
   useEffect(() => () => onInvalid(path, false), [path, onInvalid])
   return (
     <>
+      {options && options.length > 0 && (
+        <SettingsSelect
+          aria-label={props['aria-label']}
+          data-testid={`plugin-config-credential${path || '/'}`}
+          disabled={props.disabled}
+          value={options.some((item) => item.value === encoded) ? encoded : ''}
+          onChange={(event) => {
+            const next = event.target.value
+            if (!next) return
+            setText(next)
+            setInvalid(false)
+            onInvalid(path, false)
+            published.current = next
+            onChange(next)
+          }}
+        >
+          <option value="">{t('credential.choose')}</option>
+          {options.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </SettingsSelect>
+      )}
       <SettingsInput
         {...props}
         type="text"

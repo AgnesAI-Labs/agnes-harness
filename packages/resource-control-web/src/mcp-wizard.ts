@@ -1,7 +1,9 @@
 import { validateMethod } from '@agnes/protocol'
 import { createSelectPicker, type LocaleTranslator } from '@agnes/web-ui'
 import { $ } from './admin-dom.js'
+import { CREDENTIALS_CHANGED, CredentialsApi } from './credentials-api.js'
 import { formatMcpCommand, parseMcpCommand } from './mcp-command.js'
+import { mountMcpCredentialCreate } from './mcp-credentials.js'
 
 /** A presentation adapter over the existing form: managed definitions and confirmation are unchanged. */
 export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
@@ -19,6 +21,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   let editingMode = false
   let fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
   let known: string[] = []
+  const labels = new Map<string, string>()
+  let loadVersion = 0
   const transport = $('mcp-transport', 'select')
   const submit = $('mcp-form', 'form').querySelector<HTMLButtonElement>('[type="submit"]')!
   const back = $('mcp-back', 'button')
@@ -75,7 +79,18 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     }
     credential.replaceChildren(
       option(text()('shell.form.secret-none'), ''),
-      ...refs.map((ref) => option(ref.replace(/^secret:\/\//, '').replace(/\//g, ' · '), ref)),
+      ...refs.map((ref) => {
+        const label = labels.get(ref)
+        const duplicate = label && [...labels.values()].filter((value) => value === label).length > 1
+        return option(
+          label
+            ? duplicate
+              ? `${label} · ${ref.slice(-8)}`
+              : label
+            : ref.replace(/^secret:\/\//, '').replace(/\//g, ' · '),
+          ref,
+        )
+      }),
     )
     credential.value = selected ?? ''
     picker.sync()
@@ -139,6 +154,17 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     $('mcp-command-row', 'label').hidden = transport.value !== 'stdio'
   })
   async function loadCredentials() {
+    const version = ++loadVersion
+    try {
+      const items = await new CredentialsApi().list(abort.signal)
+      if (abort.signal.aborted || version !== loadVersion) return
+      labels.clear()
+      for (const item of items) labels.set(item.id, item.label)
+      known = items.map((item) => item.id)
+      choices(credential.value || undefined)
+    } catch {
+      /* The legacy catalog may still be available; never infer permission to write. */
+    }
     try {
       // This existing read-only control surface exposes names, never secret values.
       const response = await fetch('/api/triggers', {
@@ -152,15 +178,24 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
       if (!response.ok || !validateMethod('_agnes/v1/admin.triggers', 'result', value).ok)
         throw new Error('credentials unavailable')
       const refs = (value as { snapshot?: { secretRefs: string[] } }).snapshot?.secretRefs ?? []
-      if (abort.signal.aborted) return
-      known = refs
+      if (abort.signal.aborted || version !== loadVersion) return
+      known = [...new Set([...known, ...refs])]
       choices(credential.value || undefined)
       $('mcp-credential-status', 'p').textContent = known.length ? '' : text()('wizard.noCredentials')
     } catch {
-      if (!abort.signal.aborted)
+      if (!abort.signal.aborted && version === loadVersion)
         $('mcp-credential-status', 'p').textContent = text()('wizard.credentialsUnavailable')
     }
   }
+  const disposeCreate = mountMcpCredentialCreate(credential, (item) => {
+    if (abort.signal.aborted) return
+    known = [...new Set([...known, item.id])]
+    labels.set(item.id, item.label)
+    choices(item.id)
+    applyCredential()
+    $('mcp-credential-status', 'p').textContent = ''
+  })
+  window.addEventListener(CREDENTIALS_CHANGED, () => void loadCredentials(), { signal: abort.signal })
   function localize() {
     picker.destroy()
     picker = createSelectPicker(credential, { label: text()('wizard.credential') })
@@ -184,6 +219,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     localize,
     dispose() {
       abort.abort()
+      disposeCreate()
       picker.destroy()
     },
   }

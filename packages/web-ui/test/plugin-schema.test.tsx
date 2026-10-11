@@ -139,6 +139,10 @@ describe('plugin schema form projection', () => {
         invalid = next
       }, [])
       return createElement(PluginSchemaFields, {
+        secretOptions: [
+          { value: 'secret://generic/12345678-1234-1234-1234-123456789012', label: 'Saved service key' },
+          { value: 'secret://demo/key', label: 'Legacy key' },
+        ],
         root: schema,
         schema,
         value: draft,
@@ -199,6 +203,17 @@ describe('plugin schema form projection', () => {
     expect(invalid).toBe(true)
     expect(json.value).toBe('{\n  "typing":')
     expect((value as Record<string, unknown>).raw).toEqual({ original: true })
+    const saved = host.querySelector<HTMLSelectElement>('[data-testid="plugin-config-credential/secret"]')!
+    expect(saved.textContent).toContain('Saved service key')
+    await act(async () => {
+      saved.value = 'secret://generic/12345678-1234-1234-1234-123456789012'
+      saved.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect((value as Record<string, unknown>).secret).toBe(saved.value)
+    await act(async () => {
+      saved.value = 'secret://demo/key'
+      saved.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     const secret = host.querySelector<HTMLInputElement>('[data-testid="plugin-config-field/secret"]')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(

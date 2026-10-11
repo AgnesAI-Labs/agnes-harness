@@ -4,6 +4,7 @@ import type {
   PluginGenerationStatus,
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
+import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import { Banner, Button, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -222,6 +223,7 @@ const definitions: readonly [
     ),
   ],
   ['skills', 'feedback', 21, () => <FeedbackAdminPanel />],
+  ['tools', 'credentials', 33, () => <CredentialsPage />],
   ['tools', 'search', 31, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
   ['automation', 'schedules', 40, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
   ['automation', 'triggers', 41, (c) => <TriggersPanel canSave={c.canSave} />],
@@ -293,7 +295,12 @@ for (const [group, id, order, render] of definitions) {
     id,
     order,
     icon: group,
-    titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
+    titleKey:
+      id === 'credentials'
+        ? 'credentials.nav'
+        : id === 'plugins'
+          ? 'settings-shell.page.installed'
+          : `settings-shell.page.${id}`,
     groupTitleKey: `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),

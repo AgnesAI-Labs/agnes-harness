@@ -14,6 +14,7 @@ export default defineConfig({
     'auto-review.spec.ts',
     'memory.spec.ts',
     'webhooks.spec.ts',
+    'credentials.spec.ts',
     'diagnostics.spec.ts',
     'observability.spec.ts',
     'prompt-trace.spec.ts',

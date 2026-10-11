@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./credentials": "./src/credentials.tsx",
+    "./credentials-api": "./src/credentials-api.ts",
     "./admin": "./src/admin.tsx",
     "./api": "./src/api.ts",
     "./locale-shell": "./src/locales/shell.ts",

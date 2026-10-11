@@ -1,3 +1,4 @@
+import { credentialsCatalog } from '@agnes/resource-control-web/credentials'
 import type { LocaleCatalog } from '@agnes/web-ui'
 import { settingsShellLocaleCatalog } from '@agnes/web-units/locales/settings-shell'
 import { knowledgeCatalog } from './locales/knowledge.js'
@@ -11,6 +12,7 @@ export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 export const settingsCatalog: LocaleCatalog = {
   en: {
     ...settingsShellLocaleCatalog.en,
+    'credentials.nav': credentialsCatalog.en['credentials.nav'],
     feedback: 'Feedback',
     ...shellCatalog.en,
     ...providersCatalog.en,
@@ -20,6 +22,7 @@ export const settingsCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     ...settingsShellLocaleCatalog['zh-CN'],
+    'credentials.nav': credentialsCatalog['zh-CN']['credentials.nav'],
     feedback: '反馈',
     ...shellCatalog['zh-CN'],
     ...providersCatalog['zh-CN'],

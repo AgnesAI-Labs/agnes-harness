@@ -2,6 +2,7 @@ import type { LocaleCatalog } from './index.js'
 export const PLUGIN_CONFIG_NAMESPACE = '@agnes/web-ui/plugin-config'
 export const pluginConfigCatalog: LocaleCatalog = {
   en: {
+    'credential.choose': 'Choose a saved credential',
     format: 'Expected format: {format}.',
     title: 'Configuration',
     variant: 'Variant',
@@ -24,6 +25,7 @@ export const pluginConfigCatalog: LocaleCatalog = {
       'Choose a variant, then use its defaults to replace the value. Switching the view preserves your draft.',
   },
   'zh-CN': {
+    'credential.choose': '选择已保存的凭据',
     format: '字段格式：{format}。',
     title: '配置',
     variant: '方案',

@@ -4,6 +4,7 @@ import type {
   WebhookRule,
   WebhookSnapshot,
 } from '@agnes/protocol/gen/app-server'
+import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
   Button,
   Dialog,
@@ -59,6 +60,7 @@ export async function triggersRequest(input: WebhookRequest, signal?: AbortSigna
 export function TriggersPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/triggers', triggersCatalog)
   const [formOpen, setFormOpen] = useState(false)
+  const credentials = useCredentialOptions(formOpen)
   const [removing, setRemoving] = useState<string>()
   const lifetime = useRef<AbortController>()
   const [snapshot, setSnapshot] = useState<WebhookSnapshot>()
@@ -383,10 +385,15 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
               >
                 <option value="">{t('choose')}</option>
                 {[
-                  ...new Set([...(snapshot?.secretRefs ?? []), ...(rule.secretRef ? [rule.secretRef] : [])]),
+                  ...new Set([
+                    ...credentials.map((item) => item.value),
+                    ...(snapshot?.secretRefs ?? []),
+                    ...(rule.secretRef ? [rule.secretRef] : []),
+                  ]),
                 ].map((ref) => (
                   <option key={ref} value={ref}>
-                    {ref.replace(/^secret:\/\//, '').replace(/\//g, ' · ')}
+                    {credentials.find((item) => item.value === ref)?.label ??
+                      ref.replace(/^secret:\/\//, '').replace(/\//g, ' · ')}
                   </option>
                 ))}
               </SettingsSelect>

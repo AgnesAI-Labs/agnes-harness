@@ -31,6 +31,7 @@ export async function section(page: Page, id: string) {
     examples: 'plugins',
     providers: 'diagnostics',
     search: 'mcp',
+    credentials: 'mcp',
     'computer-use': 'mcp',
     triggers: 'schedules',
     jobs: 'schedules',

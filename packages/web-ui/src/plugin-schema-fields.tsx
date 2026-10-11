@@ -22,6 +22,7 @@ export interface PluginSchemaFieldsProps {
   value: unknown
   path: string
   depth?: number
+  secretOptions?: readonly { value: string; label: string }[] | undefined
   disabled?: boolean
   issues: readonly PluginFormIssue[]
   onChange(value: unknown): void
@@ -72,6 +73,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
       path={childPath(path, key)}
       depth={depth + 1}
       disabled={common.disabled}
+      secretOptions={props.secretOptions}
       issues={issues}
       onChange={change}
       onInvalid={onInvalid}
@@ -82,7 +84,14 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   let control: ReactNode
   if (secret) {
     control = (
-      <PluginSchemaSecret {...common} path={path} value={value} onChange={onChange} onInvalid={onInvalid} />
+      <PluginSchemaSecret
+        options={props.secretOptions}
+        {...common}
+        path={path}
+        value={value}
+        onChange={onChange}
+        onInvalid={onInvalid}
+      />
     )
   } else if (kind === 'json') {
     control = (

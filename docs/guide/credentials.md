@@ -24,6 +24,14 @@ const secretBinding = {
 
 The daemon generates an immutable `secret://generic/<UUID>` id. MCP uses this in `secretBinding.credentialRef` or the existing `stdio-env` binding. Plugin secret fields and trigger `secretRef` use the same reference unchanged. Changing the label leaves every reference valid. Rotating the value takes effect when the consuming service next resolves the reference; an existing connection may need reconnecting.
 
+## Manage credentials in the Web UI
+
+Open **Settings → Tools and connections → Credentials**. The list shows each name, API-key type, creation date, and the configurations using it. Choose **New credential**, enter a name and secret value, then save. The value starts masked, can be shown while entering it, and is cleared after saving; saved values cannot be retrieved.
+
+The row menu offers rename, replace value, and delete. Renaming keeps the reference unchanged. Replacement may require reconnecting MCP services. Deletion shows the using configurations and is refused while referenced. Remove those references first, or explicitly acknowledge that the configurations will stop working and choose **Delete anyway**.
+
+The MCP add and edit dialog also offers **New credential** beside its saved-credential picker. Saving selects the new credential and preserves the connection draft. Generic credentials are also available in plugin secret-field and trigger credential pickers, alongside existing references. Read-only recovery, insufficient permissions, and an unavailable credential store show an explanation in the page or dialog.
+
 ## Public contract
 
 | SDK method | App Server method suffix after `_agnes/v1/admin.credentials.` | Input | Result |

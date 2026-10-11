@@ -1,4 +1,5 @@
 import type { PluginConfigSnapshot } from '@agnes/protocol'
+import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
   Button,
   type PluginFormIssue,
@@ -23,6 +24,7 @@ export function PluginConfigPanel({
   canSave: boolean
 }) {
   const { t } = useUiText(PLUGIN_CONFIG_ADMIN_NAMESPACE, pluginConfigAdminCatalog)
+  const credentials = useCredentialOptions(id)
   const [snapshot, setSnapshot] = useState<PluginConfigSnapshot>()
   const [rowId, setRowId] = useState('')
   const [draft, setDraft] = useState<unknown>()
@@ -194,6 +196,7 @@ export function PluginConfigPanel({
             }}
           >
             <PluginSchemaFields
+              secretOptions={credentials}
               key={`${entry.rowId}:${loadVersion}:${editorVersion}`}
               root={entry.schema as PluginSchema}
               schema={entry.schema as PluginSchema}
