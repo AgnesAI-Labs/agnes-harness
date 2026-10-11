@@ -1,125 +1,222 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
+import { initializeHome } from '@agnes/host'
+import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
-import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
-import { startSupervisor } from '../src/supervisor/supervisor.js'
-import { localSdkTransport } from './local-socket-path.js'
+import { startLoopProvider } from './fixtures/loop-provider.js'
 
-// Same worker entry as supervisor.e2e.test.ts. AGNES_EXAMPLE_LOOP selects the example Host
-// inside that entry; the supervisor profile file stays the faux profile those tests already hello with.
-const fakeWorkerEntry = fileURLToPath(new URL('./fake-worker-entry.ts', import.meta.url))
-const workerSpawnOpts = {
-  workerExecPath: process.execPath,
-  workerEntry: fakeWorkerEntry,
-  workerExecArgv: ['--import', 'tsx'],
-}
-const processIdentity = async (pid: number) =>
-  pid === process.pid
-    ? ({ state: 'alive', startId: 'example-loop-e2e' } as const)
-    : ({ state: 'dead' } as const)
+const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
+const examples = fileURLToPath(new URL('../../../examples/loops/', import.meta.url))
 
-const prompt = 'Read report.md and summarize the refund window using the selected loop.'
-const reply = 'Refund window is 30 days.'
-
-function buildProfile(dataDir: string): ResolvedProfile {
-  const body = {
-    name: 'local-dev',
-    dataDir,
-    seams: { principals: '@agnes/base' },
-    approvals: { mode: 'manual' },
-    computerUse: DEFAULT_COMPUTER_USE,
-    presets: { default: 'standard', allowed: ['standard'] },
-    provider: {
-      routes: [
-        {
-          route: 'faux',
-          api: 'faux',
-          baseUrl: 'https://invalid.test',
-          models: [{ route: 'faux', id: 'faux-1' }],
-        },
-      ],
-    },
-  } as unknown as Omit<ResolvedProfile, 'hash'>
-  return { ...body, hash: `sha256-${sha256hex(canonicalJson(hashInput(body)))}` }
-}
-
-function buildConfigFor(dir: string): DaemonConfig {
-  const paths = daemonSocketPaths({ dataDir: dir, ipc: process.platform === 'win32' ? 'pipe' : 'unix' })
-  return {
-    profileName: 'local-dev',
-    dataDir: dir,
-    ...paths,
-    limits: { ...DEFAULT_LIMITS, workerStartupMs: 20_000, jobsTickMs: 60_000 },
+async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), 30_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-async function runExample(kind: 'react' | 'dag'): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-ex-loop-'))
-  const previous = process.env.AGNES_EXAMPLE_LOOP
-  process.env.AGNES_EXAMPLE_LOOP = kind
-  let sup: Awaited<ReturnType<typeof startSupervisor>> | undefined
-  let sdk: ReturnType<typeof createClient> | undefined
-  let tables: ReturnType<typeof sqliteTables> | undefined
+async function operation(sdk: ReturnType<typeof createClient>, receipt: PackageOperationReceipt) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const result = await sdk.packages.operation.get({
+      profile: receipt.profile,
+      operationId: receipt.operationId,
+    })
+    if (result.state === 'completed') return result
+    if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
+      throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`package ${receipt.operationId} timed out`)
+}
+
+async function stop(child: ChildProcess, exited: Promise<number | null>) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill('SIGTERM')
   try {
-    const profile = buildProfile(dir)
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify(profile))
-    tables = sqliteTables(join(dir, 'daemon.sqlite'))
-    sup = await startSupervisor({
-      config: buildConfigFor(dir),
-      profile,
-      profileDir: join(dir, 'profiles', 'local-dev'),
-      profileFile,
-      workspaceRoot: dir,
-      jobTables: tables,
-      processIdentity,
-      ...workerSpawnOpts,
+    expect(await bounded(exited, 'daemon shutdown')).toBe(0)
+  } catch (error) {
+    child.kill('SIGKILL')
+    await exited
+    throw error
+  }
+}
+
+async function runExample(kind: 'react' | 'dag') {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-source-loop-'))
+  const provider = await startLoopProvider()
+  const profileDir = join(root, 'profiles', 'local-dev')
+  initializeHome(root, 'local-dev')
+  const secretDir = join(root, 'secrets')
+  mkdirSync(join(secretDir, 'fixture'), { mode: 0o700 })
+  writeFileSync(join(secretDir, 'fixture', 'model'), 'synthetic-loop-fixture', { mode: 0o600 })
+  const model = {
+    id: 'loop-script',
+    name: 'Scripted loop fixture',
+    route: 'loop-fixture',
+    api: 'openai-completions',
+    baseUrl: provider.baseUrl,
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 8192,
+    toolCallFormats: ['native'],
+    thinkingReplay: 'drop',
+    contract_id: null,
+  }
+  writeFileSync(
+    join(profileDir, 'profile.yaml'),
+    JSON.stringify({
+      name: 'local-dev',
+      computerUse: { enabled: false },
+      adapters: { secrets: { kind: 'file', path: secretDir } },
+      provider: {
+        package: '@agnes/ai',
+        adapters: ['@agnes/ai'],
+        catalog: { include: [] },
+        routes: [
+          {
+            route: model.route,
+            api: 'openai-completions',
+            baseUrl: provider.baseUrl,
+            credentialRef: 'secret://fixture/model',
+            models: [model],
+          },
+        ],
+      },
+    }),
+  )
+  const daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
+    env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  const exited = new Promise<number | null>((resolve) => daemon.once('exit', resolve))
+  let stderr = ''
+  const ready = new Promise<void>((resolve, reject) => {
+    daemon.once('error', reject)
+    daemon.stderr?.on('data', (data) => {
+      stderr += String(data)
+      if (stderr.includes('agnesd listening on ')) resolve()
     })
-    sdk = createClient({
-      journal: memoryJournal(),
-      transport: localSdkTransport(sup.socketPath),
-    })
-    const sessionKey = `example-${kind}-turn`
+    daemon.once('exit', (code) => reject(new Error(`source daemon exited ${code}: ${stderr}`)))
+  })
+  let sdk: ReturnType<typeof createClient> | undefined
+  let socketPath: string | undefined
+  let stage = 'boot'
+  try {
+    await bounded(ready, 'source daemon boot')
+    const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+    socketPath = owner.socketPath
+    sdk = createClient({ journal: memoryJournal(), transport: { kind: 'unix', path: owner.socketPath } })
+    await sdk.initialize()
+    stage = 'install'
+    const source = { type: 'file' as const, ref: `file:${join(examples, `${kind}-loop`)}` }
+    const common = { profile: 'local-dev', clientId: await sdk.clientId() }
+    const inspection = await operation(
+      sdk,
+      await sdk.packages.inspect({ ...common, commandId: 'inspect', source }),
+    )
+    expect(inspection.preview?.blockers).toEqual([])
+    const preview = inspection.preview!
+    await operation(
+      sdk,
+      await sdk.packages.install({
+        ...common,
+        commandId: 'install',
+        source,
+        expectedIntegrity: preview.integrity,
+      }),
+    )
+    await operation(
+      sdk,
+      await sdk.packages.trust({
+        ...common,
+        commandId: 'trust',
+        id: `@agnes-example/${kind}-loop`,
+        expectedIntegrity: preview.integrity,
+        capabilityHash: preview.capabilityHash ?? '',
+      }),
+    )
+    await operation(
+      sdk,
+      await sdk.packages.enable({ ...common, commandId: 'enable', id: `@agnes-example/${kind}-loop` }),
+    )
+    const loop = { id: `example.${kind}`, version: '1.0.0' }
+    expect(await sdk.sessionSelection.loops()).toContainEqual(
+      expect.objectContaining({
+        ...loop,
+        sourcePackage: `@agnes-example/${kind}-loop`,
+      }),
+    )
+    stage = 'complete'
     const session = await sdk.session.new({
-      cwd: dir,
-      sessionKey,
-      loop: { id: `example.${kind}`, version: '1.0.0' },
+      cwd: root,
+      sessionKey: `source-${kind}-turn`,
+      loop,
       preset: 'standard',
     })
-    expect(session.id).toBe(sessionKey)
-    const result = await session.prompt(prompt)
-    let rendered = ''
-    try {
-      rendered = JSON.stringify((await session.projectUI()).nodes)
-    } catch (error) {
-      rendered = error instanceof Error ? error.message : String(error)
-    }
-    expect({ sessionId: session.id, result, rendered }).toMatchObject({
-      sessionId: sessionKey,
-      result: { reason: 'completed' },
-    })
-    expect(rendered).toContain(reply)
+    const result = await bounded(
+      session.prompt('Summarize the refund window using the selected loop.'),
+      `${kind} completion`,
+    )
+    expect(result.reason).toBe('completed')
+    expect(JSON.stringify((await session.projectUI()).nodes)).toContain('Refund window is 30 days.')
+    if (kind === 'dag')
+      expect(provider.requests.some((request) => request.includes('<dag-planner-protocol>'))).toBe(true)
+
+    stage = 'cancel'
+    const blocked = provider.block()
+    const cancelled = session.prompt('Cancel this blocked turn')
+    void cancelled.catch(() => undefined)
+    await bounded(blocked.entered, `${kind} active inference`)
+    await bounded(session.cancel(), `${kind} cancel acknowledgement`)
+    expect((await bounded(cancelled, `${kind} cancelled turn`)).reason).toBe('aborted')
+    await bounded(blocked.disconnected, `${kind} provider abort`)
+    provider.unblock()
+    stage = 'recover'
+    expect(
+      (await bounded(session.prompt('Summarize again after cancellation.'), `${kind} recovery`)).reason,
+    ).toBe('completed')
+  } catch (error) {
+    throw new Error(`${kind} ${stage}: ${String(error)}\nSource daemon stderr:\n${stderr}`, { cause: error })
   } finally {
-    await sdk?.close()
-    await sup?.close()
-    await tables?.close()
-    rmSync(dir, { recursive: true, force: true })
-    if (sup && process.platform !== 'win32') rmSync(dirname(sup.socketPath), { recursive: true, force: true })
-    if (previous === undefined) delete process.env.AGNES_EXAMPLE_LOOP
-    else process.env.AGNES_EXAMPLE_LOOP = previous
+    const failures: unknown[] = []
+    for (const close of [
+      () => sdk?.close(),
+      () => stop(daemon, exited),
+      () => provider.close(),
+      () => {
+        rmSync(root, { recursive: true, force: true })
+        if (socketPath) rmSync(dirname(socketPath), { recursive: true, force: true })
+      },
+    ]) {
+      try {
+        await close()
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, 'source loop fixture cleanup failed')
   }
 }
 
-it('completes a scripted ReAct example turn through daemon session/new and session/prompt', async () => {
-  await runExample('react')
-}, 90_000)
-
-it('completes a scripted dynamic DAG example turn through daemon session/new and session/prompt', async () => {
-  await runExample('dag')
-}, 90_000)
+// POSIX signal shutdown and Unix transport; Windows stop-request coverage lives in daemon lifecycle tests.
+it.skipIf(process.platform === 'win32').each(['react', 'dag'] as const)(
+  'completes, cancels and resumes the %s example through the source daemon and production loader',
+  async (kind) => {
+    await runExample(kind)
+  },
+  150_000,
+)
