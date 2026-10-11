@@ -90,6 +90,11 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 `filters`、`controls` 槽。调用方持有 dirty/busy 状态与持久化操作。
 Field 自动关联说明/错误，错误取代说明。Drawer 桌面宽 480px、≤767px 全屏；
 打开前关闭其它 modal。`Dialog size="sm|md|lg"` 为 420/560/720px，窄屏为底部抽屉。
+原生宿主用 `bindDialogSheets(document)`：拖动请求原生 cancel，忙碌拒绝与焦点恢复
+继续归宿主；pagehide 时释放返回的绑定。关闭或删除弹层时清理监听，语言变化更新把手的无障碍名。
+
+页面迁移期间保留旧紧凑控件的窄屏 32px 最小尺寸；≤767px 扩大命中区到 44px，
+新 IconButton 保持 28px 视觉。不得降低既有 narrow 验收阈值。
 
 稳定公共 CSS API 位于 `@agnes/web-ui/components.css`：`.agh-btn` 及
 `--primary|secondary|ghost|danger|link`、`--sm|md`、`--icon`、`--danger-filled`，

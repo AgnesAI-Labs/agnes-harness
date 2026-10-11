@@ -65,3 +65,8 @@ including explicit width. Narrow confirmations use a bottom sheet with a draggab
 The public `.agh-btn*`, `.agh-tag`, `.agh-banner` and other `.agh-*` classes live in
 `components.css`; legacy `.primary-button` / `.secondary-button` / `.icon-button` are internal aliases.
 Both Web build paths compose the component rules into the existing theme bridge asset.
+
+`bindDialogSheets(document)` adds narrow native-dialog handles after opening, preserves autofocus,
+routes dragging through the native cancel contract (including busy vetoes), updates its close label
+on locale changes, and returns a disposer. Hosts release it on pagehide; closed/removed dialogs
+release their own listeners. Existing IDs and controllers remain authoritative.

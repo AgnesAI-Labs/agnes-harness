@@ -90,6 +90,14 @@ Use `SettingsPage variant="form|list"` (720/960px maximum), and toolbar `search`
 Fields connect their help/error to controls; an error replaces help. `Drawer` is
 480px on desktop and full screen at ≤767px; close other modals before opening.
 `Dialog size="sm|md|lg"` uses 420/560/720px and a narrow bottom sheet.
+Native hosts use `bindDialogSheets(document)`: dragging requests native cancellation,
+so pending-state vetoes and focus restoration stay with the host. Release the returned
+binding on pagehide. Closed/removed dialogs release their listeners; locale changes
+update the handle's accessible name.
+
+During page migration the app retains its existing narrow 32px minimum for legacy
+compact controls. The expanded hit area is 44px at ≤767px; new `IconButton` keeps
+28px visuals. Do not lower the existing narrow acceptance threshold.
 
 The stable public CSS API is `@agnes/web-ui/components.css`: `.agh-btn` with
 `--primary|secondary|ghost|danger|link`, `--sm|md`, `--icon`, `--danger-filled`,

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindAutoDismissDisclosure, bindDismissibleDialog } from '../src/dom/dialog-binding.js'
+import { bindDialogSheets } from '../src/dom/dialog-sheets.js'
 
 /** The admin panes own pending-state policy; this helper owns only when a modal may be dismissed. */
 function setup(canClose: () => boolean = () => true) {
@@ -63,14 +64,54 @@ describe('bindDismissibleDialog', () => {
     expect(close).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses every dismissal path while the caller is not closable', () => {
+  it('refuses every dismissal path while the caller is not closable', async () => {
     const { dialog, close, restoreFocus } = setup(() => false)
     ;(document.getElementById('cancel') as HTMLButtonElement).click()
     ;(document.getElementById('alternative') as HTMLButtonElement).click()
     dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
     dialog.dispatchEvent(new Event('click', { bubbles: false }))
+    const unbind = bindDialogSheets(document)
+    try {
+      dialog.open = true
+      await vi.waitFor(() => expect(dialog.querySelector('.agh-native-sheet-handle')).not.toBeNull())
+      dialog.querySelector<HTMLButtonElement>('.agh-native-sheet-handle')?.click()
+      expect(dialog.open).toBe(true)
+    } finally {
+      unbind()
+    }
     expect(close).not.toHaveBeenCalled()
     expect(restoreFocus).not.toHaveBeenCalled()
+  })
+
+  it('routes native sheet gestures through cancel and removes handles/listeners on cleanup', async () => {
+    let pending = true
+    const { dialog, close, restoreFocus } = setup(() => !pending)
+    const unbind = bindDialogSheets(document)
+    try {
+      dialog.open = true
+      await vi.waitFor(() => expect(dialog.querySelector('.agh-native-sheet-handle')).not.toBeNull())
+      const handle = dialog.querySelector<HTMLButtonElement>('.agh-native-sheet-handle')!
+      const drag = () => {
+        handle.dispatchEvent(new PointerEvent('pointerdown', { clientY: 10, pointerId: 1 }))
+        handle.dispatchEvent(new PointerEvent('pointerup', { clientY: 120, pointerId: 1 }))
+      }
+      drag()
+      expect(close).not.toHaveBeenCalled()
+      pending = false
+      // Keyboard activation still works after a refused drag.
+      handle.click()
+      expect(close).toHaveBeenCalledTimes(1)
+      expect(restoreFocus).toHaveBeenCalledTimes(1)
+      dialog.dispatchEvent(new Event('close'))
+      await vi.waitFor(() => expect(dialog.querySelector('.agh-native-sheet-handle')).not.toBeNull())
+      expect(dialog.querySelector('.agh-native-sheet-handle')).not.toBe(handle)
+      unbind()
+      expect(dialog.querySelector('.agh-native-sheet-handle')).toBeNull()
+      handle.click()
+      expect(close).toHaveBeenCalledTimes(1)
+    } finally {
+      unbind()
+    }
   })
 })
 

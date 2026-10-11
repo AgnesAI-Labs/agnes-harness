@@ -3,6 +3,7 @@ import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks } from '@agnes/web-client'
 import {
+  bindDialogSheets,
   bindDismissibleDialog,
   createCatalogTranslator,
   createSettingsButton,
@@ -94,6 +95,8 @@ import { createTitleRefresh } from './session-title.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
+
+const unbindDialogSheets = bindDialogSheets(document)
 
 /** Live bindings keep selection guards and asynchronous cleanup on the app's shared state. */
 export interface AppSessionContext {
@@ -2324,6 +2327,7 @@ const modelRefreshTimer = setInterval(() => {
     })
 }, 2000)
 window.addEventListener('pagehide', () => {
+  unbindDialogSheets()
   unmountIntelligentUi()
   firstRun.dispose()
   const dockHost = dockControlsHost

@@ -32,7 +32,8 @@ export function SheetHandle({
         start.current = undefined
       }}
       onClick={(event) => {
-        if (!dragged.current) onDismiss(event)
+        if (!dragged.current || event.detail === 0) onDismiss(event)
+        dragged.current = false
       }}
     >
       <span aria-hidden="true" />
