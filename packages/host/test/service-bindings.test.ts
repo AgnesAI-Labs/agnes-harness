@@ -1720,13 +1720,14 @@ describe('deferred invocation service binding', () => {
     }
     register('producer-alpha', packageId, 'alpha')
     register('producer-beta', '@fixture/beta', 'beta')
-    const admitted = (who: string, sourcePackage: string) =>
+    const admitted = (who: string, sourcePackage: string, providerId?: string) =>
       call({
         owner: who,
         packageId: sourcePackage,
         session: sessionRef,
         generationId: 'gen-1',
         actor: extensionActor(who),
+        ...(providerId === undefined ? {} : { providerId }),
       })
     const rows: { seq: number; type: string; data: unknown; origin: string; trust: string; lane: string }[] =
       []
@@ -1747,12 +1748,18 @@ describe('deferred invocation service binding', () => {
         'bind',
         'deferred-invocations',
       )
-      const alpha = await bindings.bind(deferredProducerKind, admitted(owner, packageId), { now: () => 1 })
-      const beta = await bindings.bind(deferredProducerKind, admitted(otherOwner, '@fixture/beta'), {
+      const alpha = await bindings.bind(deferredProducerKind, admitted(owner, packageId, 'producer-alpha'), {
         now: () => 1,
       })
+      const beta = await bindings.bind(
+        deferredProducerKind,
+        admitted(otherOwner, '@fixture/beta', 'producer-beta'),
+        { now: () => 1 },
+      )
       await expectClosed(
-        bindings.bind(deferredProducerKind, admitted(otherOwner, packageId), { now: () => 1 }),
+        bindings.bind(deferredProducerKind, admitted(otherOwner, packageId, 'producer-alpha'), {
+          now: () => 1,
+        }),
         'bind',
         'deferred-producer',
       )

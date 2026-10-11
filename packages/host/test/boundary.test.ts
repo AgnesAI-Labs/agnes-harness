@@ -59,6 +59,8 @@ describe('host boundaries', () => {
             '@agnes/protocol',
             '@agnes/protocol-validation',
             '@agnes/extension-api',
+            '@agnes/git-worktree-contract',
+            '@agnes/intelligent-ui-contract',
             '@agnes/cordis',
             '@agnes/core',
             '@agnes/core-ledger',

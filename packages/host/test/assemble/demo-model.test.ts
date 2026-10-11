@@ -22,7 +22,12 @@ import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 
 it('runs the fresh local-dev demo through registry and provider without credentials, across repeated turns', async () => {
-  const profile = { ...loadTemplate('local-dev'), provider: demoProvider() } as ResolvedProfile
+  const dataDir = await mkdtemp(join(tmpdir(), 'agh-demo-session-'))
+  const profile = {
+    ...loadTemplate('local-dev'),
+    provider: demoProvider(),
+    dataDir,
+  } as ResolvedProfile
   const routes = materializeRoutes(presetDefaults(), profile)
   expect(routes.primary).toEqual({ route: 'demo', model: 'demo-model' })
   const root = new Context()
@@ -51,7 +56,6 @@ it('runs the fresh local-dev demo through registry and provider without credenti
       )
       expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
     }
-    const dataDir = await mkdtemp(join(tmpdir(), 'agh-demo-session-'))
     const collector = await memoryCollector()
     vi.stubEnv('AGH_HOME', dataDir)
     const correlations: unknown[] = []

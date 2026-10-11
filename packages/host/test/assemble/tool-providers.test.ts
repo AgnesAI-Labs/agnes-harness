@@ -48,6 +48,7 @@ it('assembles the bundled default policy row before opening a real Host session'
         'loop',
         'model-adapter',
         'compaction',
+        'git-worktree',
         'persistence',
         'sandbox',
         'tool-runtime',

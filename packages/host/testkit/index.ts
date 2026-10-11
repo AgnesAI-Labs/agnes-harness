@@ -399,7 +399,13 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
     ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
-    ...(o.runtimePluginSources ? { runtimePluginSources: o.runtimePluginSources } : {}),
+    // A lockless host trusts a package only when the live source re-read returns that same snapshot.
+    // The catalogue is that re-read unless the test supplies its own.
+    ...(o.runtimePluginSources
+      ? { runtimePluginSources: o.runtimePluginSources }
+      : o.runtimePluginCatalogue
+        ? { runtimePluginSources: async () => o.runtimePluginCatalogue ?? [] }
+        : {}),
     ...(o.ordinaryStartTimeoutMs === undefined ? {} : { ordinaryStartTimeoutMs: o.ordinaryStartTimeoutMs }),
     ...(o.extensionLoader ? { extensionLoader: o.extensionLoader } : {}),
     ...(o.extensionIsolation ? { extensionIsolation: o.extensionIsolation } : {}),
