@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
-import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
+import type { DecisionSnapshot, InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as decisionModule from '../../../examples/loops/decision-loop/index.mjs'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
@@ -349,43 +349,47 @@ it.each(['waiting', 'before-waiting-checkpoint'] as const)(
     const provider = new GatedProvider([])
     const f = await openExample('decision', provider)
     const first = await f.host.createSession({ key: 'decision-cold', cwd: f.dataDir })
-    await first.enqueue('next-turn', {
-      actor: first.d.actor,
-      content: [{ type: 'text', text: 'Review the synthetic phase.' }],
-    })
-    if (cut === 'before-waiting-checkpoint') {
-      const append = first.d.log.append.bind(first.d.log)
-      const injection = vi.spyOn(first.d.log, 'append').mockImplementation(async (events, options) => {
-        if (
-          events.some(
-            (event) =>
-              event.type === 'x/core/loop-checkpoint' &&
-              (event.data as { checkpoint?: { state?: { stage?: string } } }).checkpoint?.state?.stage ===
-                'waiting',
-          )
-        )
-          throw new Error('synthetic checkpoint cut')
-        return append(events, options)
+    let original: DecisionSnapshot
+    try {
+      await first.enqueue('next-turn', {
+        actor: first.d.actor,
+        content: [{ type: 'text', text: 'Review the synthetic phase.' }],
       })
-      try {
-        await expect(first.step()).rejects.toThrow('synthetic checkpoint cut')
-      } finally {
-        injection.mockRestore()
+      if (cut === 'before-waiting-checkpoint') {
+        const append = first.d.log.append.bind(first.d.log)
+        const injection = vi.spyOn(first.d.log, 'append').mockImplementation(async (events, options) => {
+          if (
+            events.some(
+              (event) =>
+                event.type === 'x/core/loop-checkpoint' &&
+                (event.data as { checkpoint?: { state?: { stage?: string } } }).checkpoint?.state?.stage ===
+                  'waiting',
+            )
+          )
+            throw new Error('synthetic checkpoint cut')
+          return append(events, options)
+        })
+        try {
+          await expect(first.step()).rejects.toThrow('synthetic checkpoint cut')
+        } finally {
+          injection.mockRestore()
+        }
+      } else {
+        expect((await first.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'parked',
+        )
       }
-    } else {
-      expect((await first.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'parked',
-      )
+      const [pending] = first.state.registers.decisionStates.values()
+      if (!pending) throw new Error('missing durable community decision')
+      original = pending.value
+      expect(original.request).toMatchObject({
+        owner: 'example.decision',
+        sourcePackage: '@agnes-example/decision-loop',
+        operationId: 'loop:example.decision',
+      })
+    } finally {
+      await f.host.close()
     }
-    const [pending] = first.state.registers.decisionStates.values()
-    if (!pending) throw new Error('missing durable community decision')
-    const original = pending.value
-    expect(original.request).toMatchObject({
-      owner: 'example.decision',
-      sourcePackage: '@agnes-example/decision-loop',
-      operationId: 'loop:example.decision',
-    })
-    await f.host.close()
     const second = await f.reopen()
     try {
       const reopened = await second.host.createSession({ key: first.key, cwd: f.dataDir })
