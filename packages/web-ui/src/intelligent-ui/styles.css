@@ -97,21 +97,78 @@
 .agnes-custom-ui-frame[hidden] {
   display: none;
 }
+.agnes-intelligent-detail-card {
+  container-type: inline-size;
+  background: var(--agnes-bg-card);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  padding: var(--s16);
+  display: grid;
+  gap: var(--s12);
+  min-width: 0;
+}
+.agnes-intelligent-subtitle {
+  margin: 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.agnes-intelligent-tag {
+  display: inline-flex;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: var(--s2) var(--s8);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--agnes-status-info-text);
+  background: var(--agnes-bg-surface);
+}
+.agnes-intelligent-tag[data-tone="success"] {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
+.agnes-intelligent-tag[data-tone="warning"] {
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+}
+.agnes-intelligent-tag[data-tone="error"] {
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
 .agnes-intelligent-detail {
   display: grid;
-  gap: var(--s8);
   margin: 0;
 }
-.agnes-intelligent-detail div {
+.agnes-intelligent-detail > div {
   display: grid;
-  gap: var(--s4);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--s8) var(--s16);
+  padding-block: var(--s10);
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.agnes-intelligent-detail > div:last-child {
+  border-bottom: 0;
 }
 .agnes-intelligent-detail dt {
   color: var(--agnes-text-secondary);
+  overflow-wrap: anywhere;
 }
 .agnes-intelligent-detail dd {
   margin: 0;
   color: var(--agnes-text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.agnes-intelligent-detail dd[data-numeric] {
+  font-size: var(--font-size-lg);
+  font-variant-numeric: tabular-nums;
+}
+@container (max-width: 320px) {
+  .agnes-intelligent-detail > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
 }
 .agnes-intelligent-steps {
   list-style: none;

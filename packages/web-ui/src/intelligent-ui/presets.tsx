@@ -53,6 +53,26 @@ function formatUtcDate(value: string, locale: string): string | undefined {
   }).format(date)
 }
 
+// Presentation only: unknown business states retain their literal label and an info tone.
+export function PresetStatus({ value }: { value: string }) {
+  const normalized = value.trim().toLowerCase()
+  const tone =
+    /^(success|succeeded|done|complete|completed|approved|posted|已成功|已完成|已通过|已入账)$/.test(
+      normalized,
+    )
+      ? 'success'
+      : /^(warning|pending|needs-review|review|待审核|待审批|待处理|需复核)$/.test(normalized)
+        ? 'warning'
+        : /^(error|failed|failure|rejected|blocked|出错|已失败|已拒绝|受阻)$/.test(normalized)
+          ? 'error'
+          : 'info'
+  return (
+    <span className="agnes-intelligent-tag" data-tone={tone}>
+      {value}
+    </span>
+  )
+}
+
 export function DetailCard({
   id,
   fields,
@@ -71,21 +91,27 @@ export function DetailCard({
   const status = statusKey ? record[statusKey] : undefined
   const secondary = secondaryKey ? record[secondaryKey] : undefined
   return (
-    <div data-testid={`ui-detail-${id}`}>
+    <div className="agnes-intelligent-detail-card" data-testid={`ui-detail-${id}`}>
       {typeof status === 'string' && (
         <div data-testid={`ui-detail-status-${id}`}>
-          <Badge tone="off">{status}</Badge>
+          <PresetStatus value={status} />
         </div>
+      )}
+      {typeof secondary === 'string' && (
+        <p className="agnes-intelligent-subtitle" data-testid={`ui-detail-secondary-${id}`}>
+          {secondary}
+        </p>
       )}
       <dl className="agnes-intelligent-detail">
         {fields.map((field) => (
           <div key={field.key} data-testid={`ui-detail-field-${id}-${field.key}`}>
             <dt>{field.label}</dt>
-            <dd>{formatFieldValue(record[field.key], field.format, locale)}</dd>
+            <dd data-numeric={typeof record[field.key] === 'number' || undefined}>
+              {formatFieldValue(record[field.key], field.format, locale)}
+            </dd>
           </div>
         ))}
       </dl>
-      {typeof secondary === 'string' && <p data-testid={`ui-detail-secondary-${id}`}>{secondary}</p>}
     </div>
   )
 }

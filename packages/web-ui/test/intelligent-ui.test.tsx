@@ -355,11 +355,15 @@ function localeSource(locale: UiLocale): UiLocaleSource {
 
 describe('expanded preset catalog', () => {
   it.each([
-    ['', 'en', 'Active', '(25%)'],
-    ['dark', 'en', 'Active', '(25%)'],
-    ['', 'zh-CN', '进行中', '（25%）'],
-    ['dark', 'zh-CN', '进行中', '（25%）'],
-  ] as const)('renders every new preset in %s %s', async (theme, locale, active, percent) => {
+    ['', 'en', 'Active', '(25%)', 'open', 'info'],
+    ['', 'en', 'Active', '(25%)', 'completed', 'success'],
+    ['', 'en', 'Active', '(25%)', 'needs-review', 'warning'],
+    ['', 'en', 'Active', '(25%)', 'failed', 'error'],
+    ['dark', 'en', 'Active', '(25%)', 'business-state', 'info'],
+    ['', 'zh-CN', '进行中', '（25%）', '已完成', 'success'],
+    ['dark', 'zh-CN', '进行中', '（25%）', '待审核', 'warning'],
+    ['dark', 'zh-CN', '进行中', '（25%）', '已失败', 'error'],
+  ] as const)('renders every new preset in %s %s', async (theme, locale, active, percent, status, tone) => {
     if (typeof window.matchMedia !== 'function') {
       Object.defineProperty(window, 'matchMedia', {
         configurable: true,
@@ -387,7 +391,10 @@ describe('expanded preset catalog', () => {
             UiLocaleProvider,
             { source: localeSource(locale) },
             createElement(IntelligentCatalog, {
-              surface: presets,
+              surface: {
+                ...presets,
+                data: { ...presets.data, record: { ...(presets.data.record as object), status } },
+              },
               input: {},
               selection: {},
               disabled: false,
@@ -406,7 +413,10 @@ describe('expanded preset catalog', () => {
       expect(rootIds).toContain('ui-component-sections')
       expect(rootIds).not.toContain('ui-component-note')
       expect(host.querySelectorAll('[data-testid="ui-component-note"]')).toHaveLength(1)
-      expect(host.querySelector('[data-testid="ui-detail-status-card"]')?.textContent).toBe('open')
+      expect(host.querySelector('[data-testid="ui-detail-status-card"]')?.textContent).toBe(status)
+      expect(
+        host.querySelector('[data-testid="ui-detail-status-card"] [data-tone]')?.getAttribute('data-tone'),
+      ).toBe(tone)
       expect(host.querySelector('[data-testid="ui-detail-field-card-amount"]')?.textContent).toContain('250')
       expect(host.querySelector('[data-testid="ui-detail-field-card-posted"]')?.textContent).toContain('2026')
       expect(host.querySelector('[data-testid="ui-detail-secondary-card"]')?.textContent).toBe('Draft')
