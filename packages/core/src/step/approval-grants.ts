@@ -14,6 +14,8 @@ export type ApprovalGrantBinding = {
   toolId: string
   scope: string
   policyVersion: string
+  definitionFingerprint: string
+  policyBinding: string
 }
 
 export const sessionGrantKey = (input: {
@@ -21,6 +23,8 @@ export const sessionGrantKey = (input: {
   sessionKey: string
   toolId: string
   scope: string
+  definitionFingerprint: string
+  policyBinding: string
 }): string => sha256Hex(canonicalJson(input))
 
 export function approvalScopesForCall(toolId: string, scopes: readonly string[]): string[] {
@@ -36,7 +40,9 @@ export function permanentGrantMatches(grant: ApprovalGrant, binding: ApprovalGra
     grant.actorOrg === binding.actor.org &&
     grant.toolId === binding.toolId &&
     grant.scope === binding.scope &&
-    grant.policyVersion === binding.policyVersion
+    grant.policyVersion === binding.policyVersion &&
+    grant.definitionFingerprint === binding.definitionFingerprint &&
+    grant.policyBinding === binding.policyBinding
   )
 }
 
@@ -198,8 +204,14 @@ export async function persistedToolApproval(
 }
 
 export function newPermanentGrant(
-  input: ApprovalGrantBinding & { grantId: string; createdAt: string },
+  input: ApprovalGrantBinding & {
+    grantId: string
+    createdAt: string
+    sourceDecisionId: string
+    issuer: Actor | undefined
+  },
 ): ApprovalGrant {
+  if (!input.issuer || input.issuer.role === 'agent') throw new Error('DECISION_GRANT_ISSUER_INVALID')
   return {
     grantId: input.grantId,
     profileHash: input.profileHash,
@@ -209,6 +221,10 @@ export function newPermanentGrant(
     scope: input.scope,
     policyVersion: input.policyVersion,
     createdAt: input.createdAt,
+    sourceDecisionId: input.sourceDecisionId,
+    issuer: input.issuer,
+    definitionFingerprint: input.definitionFingerprint,
+    policyBinding: input.policyBinding,
   }
 }
 
@@ -246,7 +262,8 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
     const subject = value.request.spec.subject as {
       scope?: string
       bindingHash?: string
-      call?: { name?: string; argsSeq?: number; policyHash?: string }
+      policyBinding?: string
+      call?: { name?: string; argsSeq?: number; policyHash?: string; definitionFingerprint?: string }
     }
     const call = s.state.toolCalls.get(value.request.operationId)
     if (
@@ -254,7 +271,9 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
       call.lane !== s.lane ||
       call.seq !== subject.call?.argsSeq ||
       !subject.scope ||
-      !subject.call.policyHash
+      !subject.call.policyHash ||
+      !subject.call.definitionFingerprint ||
+      !subject.policyBinding
     )
       continue
     const [row] = await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane })
@@ -273,7 +292,14 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
     )
       continue
     s.sessionAllows.add(
-      sessionGrantKey({ actor: s.d.actor, sessionKey: s.key, toolId: data.name, scope: subject.scope }),
+      sessionGrantKey({
+        actor: s.d.actor,
+        sessionKey: s.key,
+        toolId: data.name,
+        scope: subject.scope,
+        definitionFingerprint: subject.call.definitionFingerprint,
+        policyBinding: subject.policyBinding,
+      }),
     )
   }
   for (const [requestId, decision] of s.state.decisions) {
@@ -312,10 +338,18 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
     if (!call || call.lane !== s.lane) continue
     const row = (await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane }))[0]
     if (row?.type !== 'tool/call') continue
-    const data = row.data as { toolUseId: string; name: string; args: unknown; policyHash?: string }
+    const data = row.data as {
+      toolUseId: string
+      name: string
+      args: unknown
+      policyHash?: string
+      definitionFingerprint?: string
+    }
     if (data.toolUseId !== asked.toolUseId || data.name !== call.name) continue
     if (!asked.scope || !asked.policyVersion) continue
     if (!data.policyHash) continue
+    if (!data.definitionFingerprint || !asked.policyBinding)
+      throw new Error('reset-required: obsolete session grant binding')
     const binding = approvalBindingHash({
       sessionKey: s.key,
       stepId: `${call.turn}/${call.step}`,
@@ -331,6 +365,8 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
         sessionKey: s.key,
         toolId: data.name,
         scope: asked.scope,
+        definitionFingerprint: data.definitionFingerprint,
+        policyBinding: asked.policyBinding,
       }),
     )
   }

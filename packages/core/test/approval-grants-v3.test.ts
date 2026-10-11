@@ -16,12 +16,23 @@ const grant: ApprovalGrant = {
   toolId: 'computer_use',
   scope: 'cua:click:background',
   policyVersion: 'cua-v1',
+  sourceDecisionId: 'decision-1',
+  issuer: actor,
+  definitionFingerprint: 'd'.repeat(64),
+  policyBinding: 'e'.repeat(64),
   createdAt: '2026-09-17T00:00:00.000Z',
 }
 
 describe('v3 approval grants', () => {
   it('binds session grants to owner, session, tool and scope instead of argv', () => {
-    const base = { actor, sessionKey: 's1', toolId: 'computer_use', scope: grant.scope }
+    const base = {
+      actor,
+      sessionKey: 's1',
+      toolId: 'computer_use',
+      scope: grant.scope,
+      definitionFingerprint: grant.definitionFingerprint,
+      policyBinding: grant.policyBinding,
+    }
     expect(sessionGrantKey(base)).toBe(sessionGrantKey({ ...base }))
     expect(sessionGrantKey(base)).not.toBe(sessionGrantKey({ ...base, scope: 'cua:click:foreground' }))
     expect(sessionGrantKey(base)).not.toBe(
@@ -36,6 +47,8 @@ describe('v3 approval grants', () => {
       toolId: grant.toolId,
       scope: grant.scope,
       policyVersion: grant.policyVersion,
+      definitionFingerprint: grant.definitionFingerprint,
+      policyBinding: grant.policyBinding,
     }
     expect(permanentGrantMatches(grant, binding)).toBe(true)
     expect(permanentGrantMatches({ ...grant, revokedAt: grant.createdAt }, binding)).toBe(false)
@@ -45,6 +58,8 @@ describe('v3 approval grants', () => {
     expect(permanentGrantMatches(grant, { ...binding, toolId: 'other' })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, scope: 'cua:click:foreground' })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, policyVersion: 'cua-v2' })).toBe(false)
+    for (const changed of [{ definitionFingerprint: 'f'.repeat(64) }, { policyBinding: 'f'.repeat(64) }])
+      expect(permanentGrantMatches(grant, { ...binding, ...changed })).toBe(false)
   })
 
   it('preserves ordered action/front scopes and supplies a stable fallback for legacy tools', () => {

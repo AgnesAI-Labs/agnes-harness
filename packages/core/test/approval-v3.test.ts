@@ -626,6 +626,16 @@ describe('v3 approval modes and grants', () => {
       response: { option: 'allowed-permanent' },
       answeredBy: actor,
     })
+    const request = facts[0]!.request
+    const subject = request.spec.subject as { policyBinding: string; call: { definitionFingerprint: string } }
+    expect(originalGrants).toMatchObject([
+      {
+        sourceDecisionId: facts[0]!.handle.id,
+        issuer: actor,
+        definitionFingerprint: subject.call.definitionFingerprint,
+        policyBinding: subject.policyBinding,
+      },
+    ])
     const activation = events.find((row) => row.type === 'x/core/approval-grant-activated')
     if (!activation) throw new Error('missing activation boundary')
     const crashed = events.filter((row) => row.seq < activation.seq)

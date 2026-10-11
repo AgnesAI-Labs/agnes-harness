@@ -326,6 +326,10 @@ describe('permanent approval grant RPC', () => {
         toolId: binding.toolId,
         scope: binding.scope,
         policyVersion: binding.policyVersion,
+        sourceDecisionId: 'decision-fixture',
+        issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+        definitionFingerprint: 'd'.repeat(64),
+        policyBinding: 'e'.repeat(64),
         createdAt: '2026-09-19T00:00:00Z',
       }
       await expect(session.d.runtime.approvalPutGrant(grant, new AbortController().signal)).resolves.toBe(
