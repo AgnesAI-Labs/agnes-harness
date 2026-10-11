@@ -1,11 +1,7 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Event } from '@agnes/core-common/types'
-import {
-  type DecisionSnapshot,
-  inspectJsonData,
-  DecisionSnapshot as SnapshotSchema,
-  validateAgainst,
-} from '@agnes/protocol'
+import { type DecisionSnapshot, inspectJsonData, validateAgainst } from '@agnes/protocol'
+import { DecisionSnapshot as SnapshotSchema } from '@agnes/protocol/gen/session-v1'
 
 function fail(message: string): never {
   throw new CoreError('E_RELATION', `decision/state: ${message}`)

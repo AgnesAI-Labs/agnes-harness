@@ -18,9 +18,9 @@ import {
 } from '../src/index.js'
 
 describe('constants', () => {
-  it('freezes 31 event types', () => {
-    expect(EVENT_TYPES).toHaveLength(31)
-    expect(new Set(EVENT_TYPES).size).toBe(31)
+  it('freezes 32 event types', () => {
+    expect(EVENT_TYPES).toHaveLength(32)
+    expect(new Set(EVENT_TYPES).size).toBe(32)
     // The program counter is a register cell, not a row.
     expect(EVENT_TYPES).not.toContain('op.state')
     for (const t of [
@@ -30,6 +30,7 @@ describe('constants', () => {
       'tool/result',
       'request/sent',
       'subagent/cost',
+      'decision/state',
     ])
       expect(EVENT_TYPES).toContain(t)
   })

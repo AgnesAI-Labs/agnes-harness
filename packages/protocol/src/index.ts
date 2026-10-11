@@ -488,6 +488,14 @@ export type {
   BudgetState,
   ContentBlock,
   CostLedger,
+  DecisionCommandReceipt,
+  DecisionConsumption,
+  DecisionHandle,
+  DecisionRequest,
+  DecisionResponse,
+  DecisionResult,
+  DecisionSnapshot,
+  DecisionSpec,
   DispatchPhase,
   EffectIntent,
   EffectSettled,
@@ -527,16 +535,6 @@ export type {
   UserMessage,
   Verdict,
   VerifierSignal,
-} from '../gen/ts/session-v1.js'
-export {
-  DecisionCommandReceipt,
-  DecisionConsumption,
-  DecisionHandle,
-  DecisionRequest,
-  DecisionResponse,
-  DecisionResult,
-  DecisionSnapshot,
-  DecisionSpec,
 } from '../gen/ts/session-v1.js'
 export type {
   SurfaceArtifact,

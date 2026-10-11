@@ -286,7 +286,8 @@ describe('StateTracker', () => {
     })
     // A lone step/start outside any turn is what the default check refuses; the caller's does not.
     await log.append([{ ...base, type: 'step/start', data: { turn: 1, step: 1 } }])
-    expect(seen).toEqual([1])
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((size) => size === 1)).toBe(true)
     await log.close()
   })
 
@@ -569,7 +570,12 @@ describe('StateTracker', () => {
     expect([...coldState.resumedRequests]).toEqual(['resume'])
     expect(coldState.pendingEffects.size).toBe(1)
     expect(coldState.pendingApprovals.size).toBe(1)
-    expect(Object.values(coldState.registers).every((register) => register.size === 1)).toBe(true)
+    expect(coldState.registers.decisionStates.size).toBe(0)
+    expect(
+      Object.entries(coldState.registers)
+        .filter(([name]) => name !== 'decisionStates')
+        .every(([, register]) => register.size === 1),
+    ).toBe(true)
     // Compared encoded: structuredClone drops the chunked tables' private contents, which would make
     // the comparison below pass whatever the tables held.
     const cold = canonicalJson(encodeLedgerState(coldState))

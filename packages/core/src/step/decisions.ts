@@ -13,13 +13,15 @@ import {
   compilePluginConfig,
   type DecisionCommandReceipt,
   type DecisionResponse,
-  DecisionHandle as HandleSchema,
   inspectJsonData,
-  DecisionResponse as ResponseSchema,
-  DecisionSpec as SpecSchema,
   validateActor,
   validateAgainst,
 } from '@agnes/protocol'
+import {
+  DecisionHandle as HandleSchema,
+  DecisionResponse as ResponseSchema,
+  DecisionSpec as SpecSchema,
+} from '@agnes/protocol/gen/session-v1'
 import type { SessionImpl } from './session.js'
 
 export interface DecisionSource {
