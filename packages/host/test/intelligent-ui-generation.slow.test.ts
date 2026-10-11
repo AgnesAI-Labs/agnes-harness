@@ -15,7 +15,7 @@ import {
 } from '@agnes/package-manager'
 import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
-import type { InferenceEvent, ToolCall } from '@agnes/protocol'
+import type { InferenceEvent, ToolCall, UserMessage } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { readUiComponentDeclarations } from '../src/runtime/sessions/ui-component-declarations.js'
 import { createTestHost } from '../testkit/index.js'
@@ -218,7 +218,14 @@ it('keeps a pending action on the old generation and delivers its result once', 
     )
     const delivered = async (current: typeof session) =>
       (await current.scan({ type: 'user/message', toSeq: current.lastSeq })).filter((event) =>
-        JSON.stringify(event).includes('ui-result:late'),
+        (event.data as UserMessage).content.some((block) => {
+          const prefix = 'Intelligent UI action result: '
+          if (block.type !== 'text' || !block.text.startsWith(prefix)) return false
+          const receipt = JSON.parse(block.text.slice(prefix.length)) as Record<string, unknown>
+          if (receipt.commandId !== 'late') return false
+          expect(receipt).toMatchObject({ status: 'succeeded', submitted: { answers: { choice: 'B' } } })
+          return true
+        }),
       )
     expect(await delivered(session)).toHaveLength(1)
     const sessionKey = session.key

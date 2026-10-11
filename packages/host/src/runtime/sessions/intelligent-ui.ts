@@ -206,6 +206,7 @@ export function createIntelligentUiBridge(input: {
         {
           owner: source,
           packageId,
+          providerId: UI_PROVIDER_ID,
           session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
           generationId,
           signal,
