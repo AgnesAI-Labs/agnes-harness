@@ -18,7 +18,7 @@ export function fakeSeams(
   let approval!: SeamImplementations['approval']
   approval = {
     forWorkspace: async () => approval,
-    ask: async () => 'allowed-once',
+    ask: async () => ({ verdict: 'allowed-once', answeredBy: actor }),
     resume: async () => null,
     guard: async () => ({ decision: 'escalate', ruleVersion: 'fake-v1', reasons: ['human-test'] }),
     listGrants: async () => [],

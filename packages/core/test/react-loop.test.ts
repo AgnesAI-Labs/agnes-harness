@@ -1,3 +1,4 @@
+import { answerToolDecision } from './helpers/decision.js'
 import { bindChildAgentSession, inProcessChildAgentProvider } from '@agnes/core'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
@@ -173,11 +174,13 @@ it.each([
   'cold-resumes %s approval for %i calls without replacing their identities',
   async (verdict, count) => {
     const receipts = new Map<string, { requestId: string; bindingHash: string; expiresAt: string }>()
+    const delivered: Array<{ id: string; deadline: string }> = []
     let asks = 0,
       executions = 0
     const seams = fakeSeams({
       approval: {
         ask: async (request) => {
+          delivered.push({ id: request.requestId, deadline: request.deadline })
           const ticket = 'ticket-' + ++asks,
             expiresAt = new Date(Date.now() + 60000).toISOString()
           receipts.set(ticket, { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt })
@@ -219,6 +222,7 @@ it.each([
     expect(await run(session)).toMatchObject({ reason: 'parked' })
     expect(await run(session)).toMatchObject({ reason: 'parked' })
     expect(executions).toBe(0)
+    const originals = await session.decisions.list()
     // New Kernel and writer: neither the driver nor its public effect cache survives in memory.
     await session.close()
     expect(parkedRows).toBeTruthy()
@@ -236,15 +240,20 @@ it.each([
       { source: 'test', trust: 'builtin' },
     )
     session = await reopened.k.session('approval', approvalOptions)
+    expect(await session.decisions.list()).toEqual(originals)
     for (let i = 1; i <= count; i++)
-      await session.resumeApproval(`ticket-${i}`, verdict, { ...actor, id: 'approver' })
+      await answerToolDecision(session, i, verdict, { ...actor, id: 'approver' })
     if (count === 2) expect(await run(session)).toMatchObject({ reason: 'parked' })
     expect(await run(session)).toMatchObject({ reason: 'completed' })
-    expect(asks).toBe(count)
+    for (const entry of delivered) {
+      const original = originals.find((value) => value.handle.id === entry.id)
+      expect(entry.deadline).toBe(original?.request.expiresAt)
+    }
+    expect(new Set(delivered.map((entry) => entry.id)).size).toBe(count)
     expect(executions).toBe(verdict === 'allowed-once' ? count : 0)
     expect(await session.scan({ type: 'tool/call', limit: 10 })).toHaveLength(count)
     expect(JSON.stringify(reopened.provider.requests[0]?.messages)).toContain(
-      verdict === 'allowed-once' ? 'approved result' : 'approval rejected',
+      verdict === 'allowed-once' ? 'approved result' : 'the user rejected this action',
     )
   },
 )

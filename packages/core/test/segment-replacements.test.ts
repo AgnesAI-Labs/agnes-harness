@@ -34,12 +34,21 @@ describe('typed core segment replacements', () => {
       replay: 'never',
       applicable,
       run: compatibilityRun,
-      replace: async () => verdict as never,
+      replace: async () => ({ verdict, answeredBy: actor }) as never,
     }
     const operations: Operation[] = [approval]
     const registry = new ToolRegistry()
     registry.add(shellTool(), { source: 'test', trust: 'builtin' })
+    const grants: import('@agnes/protocol').ApprovalGrant[] = []
     const opened = await openSession({
+      seams: fakeSeams({
+        approval: {
+          listGrants: async () => grants,
+          putGrant: async (grant) => {
+            grants.push(grant)
+          },
+        },
+      }),
       provider: fakeProvider([toolTurn('shell', { command: 'x' }), textTurn('done')]),
       registry,
       operations,
@@ -50,8 +59,8 @@ describe('typed core segment replacements', () => {
     const outcome = await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(outcome.reason).toBe(reason)
     if (verdict === 'allowed-permanent') {
-      expect((await opened.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-        verdict: 'allowed-permanent',
+      expect((await opened.session.decisions.list())[0]?.result).toMatchObject({
+        response: { option: 'allowed-permanent' },
       })
     } else {
       expect(await opened.log.scan({ type: 'x/core/operation-failed', limit: 5 })).toHaveLength(1)
@@ -124,7 +133,7 @@ describe('typed core segment replacements', () => {
       run: compatibilityRun,
       replace: async ({ input }) => {
         seen.push(`Approval:${input.request.kind}`)
-        return 'allowed-once'
+        return { verdict: 'allowed-once', answeredBy: actor }
       },
     }
     const toolExecution: ReplacementOperation<'ToolExecution'> = {

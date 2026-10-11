@@ -3,9 +3,10 @@ import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ToolContext, ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@agnes/extension-api'
-import type { ApprovalGrant, Provider } from '@agnes/protocol'
+import type { ApprovalGrant, DecisionSnapshot, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { permanentGrantId } from '../src/step/approval-grants.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -155,12 +156,13 @@ describe('v3 approval modes and grants', () => {
           }),
         })
         await opened.session.runToolsPhase()
-        await opened.session.runInference()
-        await opened.session.runToolsPhase()
-        expect(offered).toEqual([
-          ['allowed-once', 'rejected'],
-          ['allowed-once', 'rejected'],
-        ])
+        if (answer === 'verified') {
+          await opened.session.runInference()
+          await opened.session.runToolsPhase()
+        }
+        expect(offered).toEqual(
+          Array.from({ length: answer === 'verified' ? 2 : 1 }, () => ['allowed-once', 'rejected']),
+        )
         expect(executions).toBe(answer === 'verified' ? 2 : 0)
         expect(proofs).toEqual(
           answer === 'verified'
@@ -171,16 +173,20 @@ describe('v3 approval modes and grants', () => {
               }))
             : [],
         )
-        const decisions = await opened.log.scan({ type: 'approval/decided', limit: 10 })
-        expect(decisions.map((row) => row.data)).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining(
-              answer === 'verified'
-                ? { verdict: 'allowed-once', answeredBy: { ...actor, id: 'reviewer' } }
-                : { verdict: 'unavailable', reason: 'invalid-answer' },
-            ),
-          ]),
-        )
+        const decisions = await opened.session.decisions.list()
+        expect(decisions).toHaveLength(answer === 'verified' ? 2 : 1)
+        for (const snapshot of decisions) {
+          if (answer === 'verified')
+            expect(snapshot).toMatchObject({
+              result: {
+                reason: 'answered',
+                response: { option: 'allowed-once' },
+                answeredBy: { ...actor, id: 'reviewer' },
+              },
+              consumption: { effectId: expect.any(String) },
+            })
+          else expect(snapshot.result).toBeNull()
+        }
         await opened.log.close()
       }
     },
@@ -226,7 +232,7 @@ describe('v3 approval modes and grants', () => {
               offers.push(request.options)
               return humanOnly
                 ? { verdict: 'rejected' as const, answeredBy: { ...actor, id: 'reviewer' } }
-                : grantVerdict
+                : { verdict: grantVerdict, answeredBy: actor }
             },
             listGrants: async () => grants,
             putGrant: async (grant) => {
@@ -243,8 +249,9 @@ describe('v3 approval modes and grants', () => {
         expect(offers).toHaveLength(2)
         expect(offers[1]).toEqual(['allowed-once', 'rejected'])
         expect(executions).toBe(1)
-        expect((await opened.log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
-          verdict: 'rejected',
+        expect((await opened.session.decisions.list()).at(-1)?.result).toMatchObject({
+          reason: 'answered',
+          response: { option: 'rejected' },
           answeredBy: { ...actor, id: 'reviewer' },
         })
       } finally {
@@ -261,13 +268,74 @@ describe('v3 approval modes and grants', () => {
         approval: {
           ask: async (request) => {
             seen.push(request.scope)
-            return 'allowed-once'
+            return { verdict: 'allowed-once' as const, answeredBy: actor }
           },
         },
       }),
     })
     await opened.session.runToolsPhase()
     expect(seen).toEqual(['cua:click:foreground', 'cua:bring_to_front:foreground'])
+  })
+
+  it('keeps partial multi-scope answers unconsumed, then commits all scopes with one original intent', async () => {
+    let executions = 0
+    const opened = await atTools({
+      scopes: ['synthetic:first', 'synthetic:second'],
+      tail: 1,
+      execute: async () => {
+        executions++
+        return { content: [] }
+      },
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) =>
+            request.scope === 'synthetic:first'
+              ? { verdict: 'allowed-once', answeredBy: actor }
+              : { verdict: 'unavailable', reason: 'no-handler' },
+        },
+      }),
+    })
+    const commits = vi.spyOn(opened.log.storage, 'commit')
+    try {
+      expect(
+        await opened.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).toMatchObject({ reason: 'parked' })
+      const values = await opened.session.decisions.list()
+      expect(values).toHaveLength(2)
+      expect(values[0]?.result).toMatchObject({ reason: 'answered' })
+      expect(values[1]?.result).toBeNull()
+      expect(values.every((value) => value.consumption === null)).toBe(true)
+      expect(executions).toBe(0)
+      const pending = values[1]!
+      await opened.session.decisions.answer(
+        {
+          handle: pending.handle,
+          revision: pending.revision,
+          commandId: 'second-scope',
+          response: { option: 'allowed-once', value: null },
+        },
+        { actor, category: 'human', authorize() {} },
+      )
+      expect(
+        await opened.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+      ).toMatchObject({ reason: 'completed' })
+      const transaction = commits.mock.calls
+        .map((call) => call[1])
+        .find((tx) =>
+          tx.events.some(
+            (row) => row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'tool',
+          ),
+        )!
+      const states = transaction.events
+        .filter((row) => row.type === 'decision/state')
+        .map((row) => row.data as DecisionSnapshot)
+      expect(states.map((value) => value.handle.id)).toEqual(values.map((value) => value.handle.id))
+      expect(new Set(states.map((value) => value.consumption?.effectId)).size).toBe(1)
+      expect(transaction.opState).toBeDefined()
+      expect(executions).toBe(1)
+    } finally {
+      await opened.session.close()
+    }
   })
 
   it('binds allowed-session to each ordered scope, not argv', async () => {
@@ -279,7 +347,7 @@ describe('v3 approval modes and grants', () => {
         approval: {
           ask: async (request) => {
             seen.push(request.scope ?? '')
-            return 'allowed-session'
+            return { verdict: 'allowed-session' as const, answeredBy: actor }
           },
         },
       }),
@@ -298,7 +366,7 @@ describe('v3 approval modes and grants', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-permanent'
+          return { verdict: 'allowed-permanent' as const, answeredBy: actor }
         },
         listGrants: async (query) =>
           grants.filter(
@@ -311,9 +379,18 @@ describe('v3 approval modes and grants', () => {
               grant.policyVersion === query.policyVersion,
           ),
         putGrant: async (grant) => {
-          const decisions = await opened?.log.scan({ type: 'approval/decided', limit: 10 })
+          const decisions = await opened?.session.decisions.list()
           expect(
-            decisions?.some((row) => (row.data as { grantId?: unknown }).grantId === grant.grantId),
+            decisions?.some(
+              (value) =>
+                value.result?.reason === 'answered' &&
+                value.result.response.option === 'allowed-permanent' &&
+                permanentGrantId({
+                  sessionKey: value.handle.sessionId,
+                  toolUseId: value.request.operationId,
+                  scope: (value.request.spec.subject as { scope: string }).scope,
+                }) === grant.grantId,
+            ),
           ).toBe(true)
           grants.push(grant)
         },
@@ -352,7 +429,7 @@ describe('v3 approval modes and grants', () => {
       },
       seams: fakeSeams({
         approval: {
-          ask: async () => 'allowed-permanent',
+          ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }),
           putGrant: async () => {
             throw new Error('store unavailable')
           },
@@ -361,8 +438,9 @@ describe('v3 approval modes and grants', () => {
     })
     await opened.session.runToolsPhase()
     expect(executions).toBe(0)
-    expect((await opened.log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
-      verdict: 'allowed-permanent',
+    expect((await opened.session.decisions.list()).at(-1)?.result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'allowed-permanent' },
     })
     expect(
       (await opened.log.scan({ type: 'x/core/approval-grant-activation-failed', limit: 10 })).at(-1)?.data,
@@ -383,7 +461,7 @@ describe('v3 approval modes and grants', () => {
         },
         ask: async () => {
           asks++
-          return 'rejected'
+          return { verdict: 'rejected' as const, answeredBy: actor }
         },
       },
     })
@@ -488,7 +566,7 @@ describe('v3 approval modes and grants', () => {
             },
             ask: async () => {
               asks++
-              return 'allowed-once'
+              return { verdict: 'allowed-once' as const, answeredBy: actor }
             },
           },
           ledger: {
@@ -529,7 +607,7 @@ describe('v3 approval modes and grants', () => {
       profile: profileHash,
       seams: fakeSeams({
         approval: {
-          ask: async () => 'allowed-permanent',
+          ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }),
           listGrants: async () => originalGrants,
           putGrant: async (grant) => {
             originalGrants.push(grant)
@@ -539,11 +617,14 @@ describe('v3 approval modes and grants', () => {
     })
     await original.session.runToolsPhase()
     const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
-    expect(events.filter((row) => row.type === 'approval/asked')).toHaveLength(1)
-    expect(events.find((row) => row.type === 'approval/decided')?.data).toMatchObject({
-      verdict: 'allowed-permanent',
-      via: 'sync',
-      grantId: expect.stringMatching(/^grant-[a-f0-9]{64}$/),
+    const facts = events
+      .filter((row) => row.type === 'decision/state')
+      .map((row) => row.data as unknown as DecisionSnapshot)
+    expect(facts.filter((value) => value.revision === 1)).toHaveLength(1)
+    expect(facts.find((value) => value.result)?.result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'allowed-permanent' },
+      answeredBy: actor,
     })
     const activation = events.find((row) => row.type === 'x/core/approval-grant-activated')
     if (!activation) throw new Error('missing activation boundary')
@@ -571,7 +652,7 @@ describe('v3 approval modes and grants', () => {
           approval: {
             ask: async () => {
               asks++
-              return 'rejected'
+              return { verdict: 'rejected' as const, answeredBy: actor }
             },
             listGrants: async () => grants,
             putGrant: async (grant) => {
@@ -645,7 +726,7 @@ describe('v3 approval modes and grants', () => {
           },
           ask: async () => {
             asks++
-            return 'allowed-once'
+            return { verdict: 'allowed-once' as const, answeredBy: actor }
           },
         },
       }),
@@ -677,13 +758,13 @@ describe('v3 approval modes and grants', () => {
               if (mode === 'failed') throw new Error('guardian unavailable')
               return { decision: 'escalate', ruleVersion: 'guardian-v1', reasons: [] }
             },
-            ask: async () => 'allowed-once',
+            ask: async () => ({ verdict: 'allowed-once' as const, answeredBy: actor }),
           },
         }),
       })
       await original.session.runToolsPhase()
       const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
-      const asked = events.find((row) => row.type === 'approval/asked')
+      const asked = events.find((row) => row.type === 'decision/state')
       if (!asked) throw new Error('missing human approval boundary')
       const crashed = events.filter((row) => row.seq < asked.seq)
       let guards = 0
@@ -710,7 +791,7 @@ describe('v3 approval modes and grants', () => {
             },
             ask: async () => {
               asks++
-              return 'allowed-once'
+              return { verdict: 'allowed-once' as const, answeredBy: actor }
             },
           },
         }),
@@ -787,7 +868,7 @@ describe('v3 approval modes and grants', () => {
             ask: async (req) => {
               asks++
               expect(req.summary).toContain('Scripted reviewer reason')
-              return 'rejected'
+              return { verdict: 'rejected' as const, answeredBy: actor }
             },
           },
         }),
@@ -811,9 +892,7 @@ describe('v3 approval modes and grants', () => {
         const reopened = await openSession({
           provider: fakeProvider([]),
           toolPolicies: policies,
-          toolPolicySettings: async () => {
-            throw new Error('Must reuse the persisted review')
-          },
+          toolPolicySettings: async () => ({ policy: 'scripted-review' }),
           registry: registryWith(
             scopedTool(['tool:write'], async () => {
               executions++
@@ -986,7 +1065,9 @@ describe('v3 approval modes and grants', () => {
       scopes: ['tool:write'],
       toolPolicies: policies,
       toolPolicySettings: async () => ({ policy: 'budget-review' }),
-      seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
+      seams: fakeSeams({
+        approval: { ask: async () => ({ verdict: 'rejected' as const, answeredBy: actor }) },
+      }),
     })
     await opened.session.runToolsPhase()
     await opened.session.runInference()
@@ -1019,7 +1100,7 @@ describe('v3 approval modes and grants', () => {
         approval: {
           ask: async () => {
             asks++
-            return 'allowed-once'
+            return { verdict: 'allowed-once' as const, answeredBy: actor }
           },
         },
         principals: {

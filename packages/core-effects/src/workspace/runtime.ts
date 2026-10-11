@@ -262,6 +262,12 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
     stat: (path) => scope.track(() => source.fs.stat(path)),
   })
   const approval: ApprovalWorkspaceContext = Object.freeze({
+    ...(source.approval.policy
+      ? {
+          policy: (request: ApprovalRequest) =>
+            scope.track(() => source.approval.policy!(request), { cancelOnAbort: true }),
+        }
+      : {}),
     ...(source.approval.checkTool
       ? {
           checkTool: (name: string, args: unknown) =>

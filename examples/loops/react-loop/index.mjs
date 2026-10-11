@@ -94,6 +94,7 @@ export function createReactLoop(config = {}) {
                 try {
                   await ctx.tools.resume(call.invocationId, signal)
                 } catch (error) {
+                  if (error?.code === 'PARKED') return { outcome: 'parked', reason: 'parked' }
                   if (error?.code !== 'E_LANE_BUSY') throw error
                   waiting = true
                 }

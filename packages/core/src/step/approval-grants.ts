@@ -1,7 +1,11 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { argvHash } from '@agnes/core-effects/effects/runtime'
+import { CoreError } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { ApprovalAsked } from '@agnes/core-ledger/reduce/shapes'
 import type { Actor, ApprovalGrant, ApprovalVerdict } from '@agnes/protocol'
+import type { DecisionHandle } from '@agnes/extension-api'
+import { TOOL_DECISION_OWNER } from '../execution/turn/tool-decision.js'
 import type { SessionImpl } from './session.js'
 
 export type ApprovalGrantBinding = {
@@ -66,7 +70,8 @@ export type PersistedToolApproval = {
   requestId: string
   verdict: ApprovalVerdict
   grantId?: string
-  via: 'sync' | 'callback' | 'timeout' | 'guardian'
+  via: 'human' | 'guardian'
+  decisionRef?: DecisionHandle
   decidedAt: string
   answeredBy?: Actor
   subjectRevision?: string
@@ -85,6 +90,7 @@ export async function persistedToolApproval(
     scope: string
     policyHash: string
     policyVersion: string
+    policyBinding: string
     approval?: import('@agnes/extension-api').ApprovalConstraints
   },
 ): Promise<PersistedToolApproval | undefined> {
@@ -99,6 +105,48 @@ export async function persistedToolApproval(
     scope: input.scope,
     ...(input.approval ? { subjectRevision: input.approval.subjectRevision } : {}),
   })
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== TOOL_DECISION_OWNER ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.operationId !== input.toolUseId
+    )
+      continue
+    const subject = value.request.spec.subject as {
+      scope?: string
+      bindingHash?: string
+      policyVersion?: string
+      policyBinding?: string
+      approval?: { subjectRevision?: string }
+    }
+    if (subject.scope !== input.scope) continue
+    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
+      throw new Error('DECISION_REQUESTER_CHANGED')
+    if (
+      subject.bindingHash !== expected ||
+      subject.policyVersion !== input.policyVersion ||
+      subject.policyBinding !== input.policyBinding
+    )
+      throw new Error('DECISION_SUBJECT_CHANGED')
+    const snapshot = await s.decisions.get(value.handle)
+    if (snapshot.invalidation || snapshot.result?.reason !== 'answered') return undefined
+    if (snapshot.consumption) throw new Error('DECISION_ALREADY_CONSUMED')
+    const option = snapshot.result.response.option
+    if (!['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option))
+      throw new Error('DECISION_UNOFFERED_ANSWER')
+    return {
+      requestId: snapshot.handle.id,
+      verdict: option as ApprovalVerdict,
+      via: 'human',
+      decisionRef: snapshot.handle,
+      decidedAt: snapshot.result.at,
+      answeredBy: snapshot.result.answeredBy,
+      ...(subject.approval?.subjectRevision ? { subjectRevision: subject.approval.subjectRevision } : {}),
+      ...(option === 'allowed-permanent'
+        ? { grantId: permanentGrantId({ sessionKey: s.key, toolUseId: input.toolUseId, scope: input.scope }) }
+        : {}),
+    }
+  }
   for (const [requestId, decision] of [...s.state.decisions].reverse()) {
     if (decision.lane !== s.lane || !decision.askedSeq) continue
     if (decision.via === 'callback' && !s.state.resumedRequests.has(requestId)) continue
@@ -123,21 +171,21 @@ export async function persistedToolApproval(
       asked.bindingHash !== expected
     )
       continue
+    if (decision.via !== 'guardian') throw new Error('reset-required: obsolete tool approval record')
     if (input.approval && asked.approval?.subjectRevision !== input.approval.subjectRevision) continue
     const decidedRow = (await s.d.log.scan({ fromSeq: decision.seq, toSeq: decision.seq, lane: s.lane }))[0]
     if (decidedRow?.type !== 'approval/decided') continue
     if (
-      decision.via !== 'callback' &&
-      (decidedRow.origin !== 'system' ||
-        decidedRow.trust !== 'trusted' ||
-        decidedRow.actor.id !== s.d.actor.id ||
-        decidedRow.actor.org !== s.d.actor.org)
+      decidedRow.origin !== 'system' ||
+      decidedRow.trust !== 'trusted' ||
+      decidedRow.actor.id !== s.d.actor.id ||
+      decidedRow.actor.org !== s.d.actor.org
     )
       continue
     return {
       requestId,
       verdict: decision.verdict,
-      via: decision.via,
+      via: 'guardian',
       decidedAt: decidedRow.ts,
       ...((decidedRow.data as { answeredBy?: Actor }).answeredBy
         ? { answeredBy: (decidedRow.data as { answeredBy: Actor }).answeredBy }
@@ -166,6 +214,68 @@ export function newPermanentGrant(
 
 /** Restores only grants whose original identity and argument binding can still be proved. */
 export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
+  const old = await scanAll((query) => s.d.log.scan(query), {
+    type: 'approval/asked',
+    lane: s.lane,
+    toSeq: s.lastSeq,
+  })
+  if (
+    old.some((row) => {
+      const asked = row.data as ApprovalAsked
+      return (
+        asked.kind === 'tool' &&
+        !asked.scope?.startsWith('memory:') &&
+        s.state.decisions.get(asked.requestId)?.via !== 'guardian'
+      )
+    })
+  )
+    throw new CoreError('E_RELATION', 'reset-required: obsolete tool approval record')
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== TOOL_DECISION_OWNER ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.lane !== s.lane ||
+      value.request.requestedBy.id !== s.d.actor.id ||
+      value.request.requestedBy.org !== s.d.actor.org ||
+      !value.consumption ||
+      value.invalidation ||
+      value.result?.reason !== 'answered' ||
+      value.result.response.option !== 'allowed-session'
+    )
+      continue
+    const subject = value.request.spec.subject as {
+      scope?: string
+      bindingHash?: string
+      call?: { name?: string; argsSeq?: number; policyHash?: string }
+    }
+    const call = s.state.toolCalls.get(value.request.operationId)
+    if (
+      !call ||
+      call.lane !== s.lane ||
+      call.seq !== subject.call?.argsSeq ||
+      !subject.scope ||
+      !subject.call.policyHash
+    )
+      continue
+    const [row] = await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane })
+    if (row?.type !== 'tool/call') continue
+    const data = row.data as { name: string; args: unknown }
+    if (
+      subject.bindingHash !==
+      approvalBindingHash({
+        sessionKey: s.key,
+        stepId: `${call.turn}/${call.step}`,
+        toolUseId: value.request.operationId,
+        args: data.args,
+        policyHash: subject.call.policyHash,
+        scope: subject.scope,
+      })
+    )
+      continue
+    s.sessionAllows.add(
+      sessionGrantKey({ actor: s.d.actor, sessionKey: s.key, toolId: data.name, scope: subject.scope }),
+    )
+  }
   for (const [requestId, decision] of s.state.decisions) {
     if (decision.verdict !== 'allowed-session' || decision.lane !== s.lane || !decision.askedSeq) continue
     // Callback decisions become usable only after their continuation was consumed. A guardian
@@ -197,6 +307,7 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
       continue
     const asked = askedRow.data as ApprovalAsked
     if (asked.requestId !== requestId || asked.kind !== 'tool' || !asked.toolUseId) continue
+    if (decision.via !== 'guardian') throw new Error('reset-required: obsolete tool approval record')
     const call = s.state.toolCalls.get(asked.toolUseId)
     if (!call || call.lane !== s.lane) continue
     const row = (await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane }))[0]

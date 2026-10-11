@@ -1,3 +1,4 @@
+import { answerToolDecision } from './helpers/decision.js'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
 import { resolvedToolPolicyHash } from '../src/registry/tool-policy.js'
@@ -14,7 +15,7 @@ async function setup(scripts: Script[] = [toolTurn('shell', { command: 'echo ok'
     executions = 0,
     authorizations = 0
   const clock = () => now,
-    storage = new MemoryStorage({ clock }),
+    storage = new MemoryStorage(),
     registry = new ToolRegistry()
   registry.add(
     shellTool(async (args) => {
@@ -88,7 +89,7 @@ describe('single-tool parked continuation', () => {
     'continues %s through core and feeds the real result to the next request',
     async (verdict) => {
       const h = await setup()
-      await h.session.resumeApproval('ticket-1', verdict, approver)
+      await answerToolDecision(h.session, 1, verdict, approver)
       expect((await run(h)).reason).toBe('completed')
       expect(h.asks()).toBe(1)
       expect(h.executions()).toBe(verdict === 'allowed-once' ? 1 : 0)
@@ -97,8 +98,10 @@ describe('single-tool parked continuation', () => {
       const result = (await h.log.scan({ type: 'tool/result', toSeq: h.log.lastSeq }))[0]
       expect(result?.data).toMatchObject({ isError: verdict !== 'allowed-once' })
       const text = JSON.stringify(h.provider.requests[1]?.messages)
-      expect(text).toContain(verdict === 'allowed-once' ? 'ran:' : 'approval rejected')
-      expect(h.session.state.resumedRequests.size).toBe(1)
+      expect(text).toContain(verdict === 'allowed-once' ? 'ran:' : 'the user rejected this action')
+      expect((await h.session.decisions.list()).filter((item) => item.consumption)).toHaveLength(
+        verdict === 'allowed-once' ? 1 : 0,
+      )
       expect(h.session.pendingEffects()).toEqual([])
       const seq = h.log.lastSeq
       await run(h)
@@ -107,14 +110,15 @@ describe('single-tool parked continuation', () => {
   )
   it('continues an expired unanswered request without executing the tool', async () => {
     const h = await setup()
-    h.advance()
-    expect(await h.session.expireApprovals()).toBe(1)
+    h.advance(86400000)
+    await h.storage.renew(h.session.key, h.session.writerRunId)
+    expect((await h.session.decisions.list())[0]?.result?.reason).toBe('expired')
     expect((await run(h)).reason).toBe('completed')
     expect(h.executions()).toBe(0)
     expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('approval unavailable')
-    expect((await h.log.scan({ type: 'approval/decided', limit: 10 }))[0]?.data).toMatchObject({
-      verdict: 'unavailable',
-      reason: 'deadline',
+    expect((await h.session.decisions.list())[0]?.result).toMatchObject({
+      reason: 'expired',
+      code: 'deadline',
     })
   })
   it('blocks a continuation whose persisted tool policy hash no longer matches its policy', async () => {
@@ -132,7 +136,7 @@ describe('single-tool parked continuation', () => {
       writerRunId: 'tampered-policy',
     })
     try {
-      await reopened.session.resumeApproval('ticket-1', 'allowed-once', approver)
+      await answerToolDecision(reopened.session, 1, 'allowed-once', approver)
       expect(await continueParked(reopened.session)).toBe('blocked')
       expect(h.executions()).toBe(0)
       expect(reopened.session.op()).toBeNull()
@@ -158,7 +162,7 @@ describe('single-tool parked continuation', () => {
       writerRunId: 'legacy-policy',
     })
     try {
-      await reopened.session.resumeApproval('ticket-1', 'allowed-once', approver)
+      await answerToolDecision(reopened.session, 1, 'allowed-once', approver)
       expect(await continueParked(reopened.session)).toBe('blocked')
       expect(h.executions()).toBe(0)
       expect(reopened.session.op()).toBeNull()
@@ -182,7 +186,7 @@ describe('single-tool parked continuation', () => {
       writerRunId: 'untrusted-call',
     })
     try {
-      await reopened.session.resumeApproval('ticket-1', 'allowed-once', approver)
+      await answerToolDecision(reopened.session, 1, 'allowed-once', approver)
       expect(await continueParked(reopened.session)).toBe('blocked')
       expect(h.executions()).toBe(0)
       expect(reopened.session.op()).toBeNull()
@@ -192,19 +196,19 @@ describe('single-tool parked continuation', () => {
   })
   it('does not reuse the grant for the next model call with identical name and arguments', async () => {
     const h = await setup([toolTurn('shell', {}), toolTurn('shell', {}), textTurn('done')])
-    await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
     expect((await run(h)).reason).toBe('parked')
     expect(h.executions()).toBe(1)
     expect(h.asks()).toBe(2)
     const calls = await h.log.scan({ type: 'tool/call', toSeq: h.log.lastSeq })
     expect(calls.map((e) => (e.data as { ordinal: number }).ordinal)).toEqual([0, 1])
-    await h.session.resumeApproval('ticket-2', 'allowed-once', approver)
+    await answerToolDecision(h.session, 2, 'allowed-once', approver)
     expect((await run(h)).reason).toBe('completed')
     expect(h.executions()).toBe(2)
   })
   it('honors an allowed-session callback for subsequent identical calls in the same live session', async () => {
     const h = await setup([toolTurn('shell', {}), toolTurn('shell', {}), textTurn('done')])
-    await h.session.resumeApproval('ticket-1', 'allowed-session', approver)
+    await answerToolDecision(h.session, 1, 'allowed-session', approver)
     expect((await run(h)).reason).toBe('completed')
     expect(h.executions()).toBe(2)
     expect(h.asks()).toBe(1)
@@ -212,7 +216,7 @@ describe('single-tool parked continuation', () => {
 
   it('still refuses execution when current authorization denies after its cache expires', async () => {
     const h = await setup()
-    await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
     h.advance(30_000)
     await h.storage.renew(h.session.key, h.session.writerRunId)
     h.advance(31_000)
@@ -230,7 +234,7 @@ describe('single-tool parked continuation', () => {
     { ...actor, org: 'other' },
   ])('keeps another principal from consuming a parked decision: %j', async (other) => {
     const h = await setup()
-    await h.session.resumeApproval('ticket-1', 'allowed-session', approver)
+    await answerToolDecision(h.session, 1, 'allowed-session', approver)
     await h.session.close()
     const foreign = await openSession({
       storage: h.storage,
@@ -260,7 +264,7 @@ describe('single-tool parked continuation', () => {
       expect((await run(owner)).reason).toBe('completed')
       expect(h.executions()).toBe(1)
       expect(h.asks()).toBe(1)
-      expect(owner.session.state.resumedRequests.size).toBe(1)
+      expect((await owner.session.decisions.list()).filter((item) => item.consumption)).toHaveLength(1)
     } finally {
       await owner.session.close()
     }
@@ -270,7 +274,7 @@ describe('single-tool parked continuation', () => {
     'does not reuse %s after an opened continuation is reopened by another principal',
     async (verdict) => {
       const h = await setup()
-      await h.session.resumeApproval('ticket-1', verdict, approver)
+      await answerToolDecision(h.session, 1, verdict, approver)
       expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
       expect(h.executions()).toBe(0)
       await h.session.close()
@@ -283,11 +287,10 @@ describe('single-tool parked continuation', () => {
         provider: fakeProvider([textTurn('should not run')]),
       })
       try {
-        expect((await run(foreign)).reason).toBe('parked')
-        expect(h.asks()).toBe(2)
+        expect((await run(foreign)).reason).toBe('error')
+        expect(h.asks()).toBe(1)
         expect(h.executions()).toBe(0)
-        const asked = await foreign.log.scan({ type: 'approval/asked', toSeq: foreign.log.lastSeq })
-        expect(asked[1]?.actor.id).toBe('other')
+        expect((await foreign.session.decisions.list())[0]?.consumption).toBeNull()
       } finally {
         await foreign.session.close()
       }
@@ -297,7 +300,7 @@ describe('single-tool parked continuation', () => {
   it('cancels a resumed call before execution and keeps the next turn usable', async () => {
     const h = await setup()
     try {
-      await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
+      await answerToolDecision(h.session, 1, 'allowed-once', approver)
       expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
       await h.session.abort(actor)
       expect((await run(h)).reason).toBe('aborted')
@@ -317,7 +320,7 @@ describe('single-tool parked continuation', () => {
 
   it('restores a recorded cancellation after reopening the continuation', async () => {
     const h = await setup()
-    await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
     await h.session.step()
     await h.session.abort(actor)
     await h.session.close()
@@ -346,7 +349,7 @@ describe('single-tool parked continuation', () => {
 
   it('reopens after callback and resumes from persisted records without another ask', async () => {
     const h = await setup()
-    await h.session.resumeApproval('ticket-1', 'allowed-once', approver)
+    await answerToolDecision(h.session, 1, 'allowed-once', approver)
     await h.session.close()
     const provider = fakeProvider([textTurn('finished')])
     const reopened = await openSession({

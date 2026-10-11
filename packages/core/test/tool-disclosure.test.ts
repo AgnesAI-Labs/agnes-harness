@@ -43,7 +43,7 @@ it.each(['allowed-once', 'rejected'] as const)(
       approval: {
         ask: async (request) => {
           approvals.push(request.tool?.name ?? '')
-          return verdict
+          return { verdict, answeredBy: actor }
         },
       },
     })

@@ -812,28 +812,28 @@ describe('approval cards', () => {
       const { session } = await open({
         provider: fakeProvider([toolTurn('shell', {}), textTurn('done')]),
         registry,
-        seams: fakeSeams({ approval: { ask: async () => verdict } }),
+        seams: fakeSeams({ approval: { ask: async () => ({ verdict, answeredBy: actor }) } }),
       })
       await input(session)
       await run(session)
       const timeline = await session.projectUI()
       const card = kind(timeline.nodes, 'approval')[0]
-      expect(card).toMatchObject({
-        state: 'decided',
-        decision: { verdict, via: 'sync', ...(reason ? { reason } : {}) },
-      })
-      // A decision with no reason on the ledger, which is every one written before reasons existed,
-      // shows none rather than a guess.
-      if (!reason) expect(card?.decision).not.toHaveProperty('reason')
+      expect(card).toMatchObject(
+        verdict === 'unavailable'
+          ? { state: 'pending', decisionRef: { sessionId: 'k', revision: 1 } }
+          : { state: 'decided', decision: { verdict, via: 'human', byLabel: actor.id } },
+      )
       expect(kind(timeline.nodes, 'tool')[0]?.status).toBe(
-        verdict === 'allowed-once' ? 'completed' : 'failed',
+        verdict === 'unavailable' ? 'awaiting_approval' : verdict === 'allowed-once' ? 'completed' : 'failed',
       )
     },
   )
   it('reconstructs parked state despite the op tombstone, then honors only ledger timeout decisions', async () => {
     const registry = new ToolRegistry()
     registry.add(shellTool(), { source: 'test', trust: 'builtin' })
+    let now = 1_757_203_200_000
     const { session } = await open({
+      clock: () => now,
       provider: fakeProvider([toolTurn('shell', {})]),
       registry,
       seams: fakeSeams({
@@ -848,16 +848,12 @@ describe('approval cards', () => {
       phase: 'parked',
       turn: 1,
       step: 1,
-      parked: { ticket: 'ticket' },
+      parked: { decisionRef: { sessionId: 'k', id: expect.any(String), revision: 1 } },
     })
     expect(kind(timeline.nodes, 'tool')[0]?.status).toBe('awaiting_approval')
     expect(kind(timeline.nodes, 'approval')[0]?.state).toBe('pending')
-    const asked = (await session.scan({ type: 'approval/asked', toSeq: session.lastSeq }))[0]
-    if (!asked) throw new Error('missing approval request')
-    const requestId = (asked.data as { requestId: string }).requestId
-    await session.append([
-      row('approval/decided', { requestId, verdict: 'rejected', via: 'timeout', ticket: 'ticket' }),
-    ])
+    now += session.preset.approval.pendingTtlMs
+    await session.decisions.list()
     expect(kind((await session.projectUI()).nodes, 'approval')[0]?.state).toBe('expired')
     expect((await session.projectUI()).opState).toBeNull()
     expect(kind((await session.projectUI(parkedAt)).nodes, 'approval')[0]?.state).toBe('pending')

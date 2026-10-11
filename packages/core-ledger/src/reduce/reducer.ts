@@ -203,20 +203,37 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (s.openTurn.has(lane)) throw new CoreError('E_RELATION', 'turn already open', { seq: e.seq, lane })
       const requestId = (d?.continues as { requestId?: unknown } | undefined)?.requestId
       if (requestId !== undefined) {
-        const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
-        if (
-          d?.trigger !== 'approval-resume' ||
-          !decision ||
-          decision.via === 'sync' ||
-          decision.lane !== lane
-        )
-          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
-            seq: e.seq,
-            lane,
-          })
-        if (s.resumedRequests.has(requestId as string))
-          throw new CoreError('E_RELATION', 'approval decision already consumed', { seq: e.seq, lane })
-        resumed().add(requestId as string)
+        const durable =
+          typeof requestId === 'string' ? s.registers.decisionStates.get(requestId)?.value : undefined
+        if (durable) {
+          if (
+            d?.trigger !== 'approval-resume' ||
+            durable.request.owner !== 'core/tool-permission' ||
+            durable.request.sourcePackage !== '@agnes/core' ||
+            durable.request.lane !== lane ||
+            durable.consumption ||
+            durable.request.operationId !== (d?.continues as { toolUseId?: string })?.toolUseId
+          )
+            throw new CoreError('E_RELATION', 'continuation does not match the original decision gate', {
+              seq: e.seq,
+              lane,
+            })
+        } else {
+          const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
+          if (
+            d?.trigger !== 'approval-resume' ||
+            !decision ||
+            decision.via === 'sync' ||
+            decision.lane !== lane
+          )
+            throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
+              seq: e.seq,
+              lane,
+            })
+          if (s.resumedRequests.has(requestId as string))
+            throw new CoreError('E_RELATION', 'approval decision already consumed', { seq: e.seq, lane })
+          resumed().add(requestId as string)
+        }
       }
       table('openTurn').set(lane, { turn: Number(d?.turn), startSeq: e.seq, trigger: String(d?.trigger) })
       table('lastTurn').set(lane, Number(d?.turn))

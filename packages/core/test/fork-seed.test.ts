@@ -1,3 +1,4 @@
+import { answerToolDecision } from './helpers/decision.js'
 import { defaultIds } from '@agnes/core-common/ids'
 import { newOpState } from '@agnes/core-common/step/op-state'
 import type { Event, EventInput, Seq } from '@agnes/core-common/types'
@@ -174,7 +175,7 @@ describe('the parent keeps a fork point', () => {
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const signal = new AbortController().signal
     expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
-    await h.session.resumeApproval('t1', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
     await h.session.step()
     const c = triggerOf(h)
     await expectTriggerAt(h, c)

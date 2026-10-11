@@ -1,3 +1,4 @@
+import { answerToolDecision } from './helpers/decision.js'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
@@ -386,9 +387,9 @@ describe('re-entry and slots', () => {
       'parked',
     )
     expect(execute).not.toHaveBeenCalled()
-    const asked = (await h.log.scan({ type: 'approval/asked', limit: 10 }))[0]
-    expect(asked?.data).toMatchObject({ kind: 'tool' })
-    await h.session.resumeApproval('nested-ticket', 'allowed-once', { ...actor, id: 'approver' })
+    const [asked] = await h.session.decisions.list()
+    expect(asked?.request).toMatchObject({ owner: 'core/tool-permission' })
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
     expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )

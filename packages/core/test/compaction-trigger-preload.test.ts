@@ -1,3 +1,4 @@
+import { answerToolDecision } from './helpers/decision.js'
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -113,7 +114,7 @@ describe('the current prompt once compaction has masked the trigger', () => {
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('parked')
-    await session.resumeApproval('ticket-1', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(session, 1, 'allowed-once', { ...actor, id: 'approver' })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(provider.calls).toBe(2)
     // Only the user-triggered turn had a prompt to preload for; the resumed turn has none.

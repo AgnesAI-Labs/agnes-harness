@@ -8,7 +8,7 @@ import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
 } from '../../registry/tool-policy.js'
-import { approvalBindingHash } from '../../step/approval-grants.js'
+import { TOOL_DECISION_OWNER } from './tool-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier } from '../../step/verifier-continuation.js'
 
@@ -33,74 +33,52 @@ export async function approvalContinuation(
     : undefined
 }
 
-/** A continuation's grant applies to its original call only, never to a later model call. */
-export async function continuationAllows(
-  s: SessionImpl,
-  toolUseId: string,
-  args: unknown,
-  scope: string,
-  policyHash: string,
-): Promise<'allowed-once' | 'allowed-session' | 'allowed-permanent' | false> {
-  const continuation = await approvalContinuation(s)
-  if (!continuation || continuation.toolUseId !== toolUseId) return false
-  const { requestId } = continuation
-  const decision = s.state.decisions.get(requestId)
-  const call = s.state.toolCalls.get(toolUseId)
-  if (
-    !decision?.verdict.startsWith('allowed') ||
-    decision.lane !== s.lane ||
-    !decision.askedSeq ||
-    !call ||
-    call.lane !== s.lane
-  )
-    return false
-  const askedRow = (
-    await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
-  )[0]
-  if (
-    askedRow?.type !== 'approval/asked' ||
-    askedRow.actor.id !== s.d.actor.id ||
-    askedRow.actor.org !== s.d.actor.org
-  )
-    return false
-  const asked = askedRow.data as ApprovalAsked
-  if (asked.kind !== 'tool' || asked.toolUseId !== toolUseId || asked.scope !== scope) return false
-  const binding = approvalBindingHash({
-    sessionKey: s.key,
-    stepId: `${call.turn}/${call.step}`,
-    toolUseId,
-    args,
-    policyHash,
-    scope,
-    ...(asked.approval ? { subjectRevision: asked.approval.subjectRevision } : {}),
-  })
-  if (!s.state.resumedRequests.has(requestId) || asked.bindingHash !== binding) return false
-  if (asked.approval && decision.verdict !== 'allowed-once') return false
-  if (decision.verdict === 'allowed-session' || decision.verdict === 'allowed-permanent')
-    return decision.verdict
-  return 'allowed-once'
-}
-
 /** Opens the single-call continuation. Multi-call batch policy remains explicitly pending. */
 export async function continueParked(s: SessionImpl): Promise<'opened' | 'waiting' | 'blocked' | false> {
   if (s.op()) return false
+  // Unmigrated verifier work retains its existing domain continuation.
   for (const [requestId, decision] of s.state.decisions) {
-    // Only a ticketed answer outlives its turn; a guardian decision was acted on inside it.
-    if (decision.via === 'guardian') continue
-    if (decision.lane !== s.lane || decision.via === 'sync' || s.state.resumedRequests.has(requestId))
+    if (
+      decision.lane !== s.lane ||
+      !['callback', 'timeout'].includes(decision.via) ||
+      s.state.resumedRequests.has(requestId) ||
+      !decision.askedSeq
+    )
       continue
-    if (!decision.askedSeq) throw new CoreError('E_RELATION', 'approval decision has no source request')
-    const askedRow = (
-      await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
-    )[0]
-    if (askedRow?.type !== 'approval/asked') throw new CoreError('E_RELATION', 'approval source missing')
-    if (askedRow.actor.id !== s.d.actor.id || askedRow.actor.org !== s.d.actor.org) return 'waiting'
-    const asked = askedRow.data as ApprovalAsked
-    if (asked.kind === 'unknown-outcome' && !asked.toolUseId)
-      return continueVerifier(s, requestId, askedRow.seq, decision.verdict.startsWith('allowed'))
-    if (asked.kind !== 'tool' || !asked.toolUseId) continue
-    const call = s.state.toolCalls.get(asked.toolUseId)
-    if (!call || call.lane !== s.lane) throw new CoreError('E_RELATION', 'parked tool call missing')
+    const [row] = await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
+    const asked = row?.data as ApprovalAsked | undefined
+    if (asked?.kind === 'tool')
+      throw new CoreError('E_RELATION', 'reset-required: obsolete tool approval record')
+    if (asked?.kind === 'unknown-outcome' && !asked.toolUseId)
+      return continueVerifier(s, requestId, decision.askedSeq, decision.verdict.startsWith('allowed'))
+  }
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== TOOL_DECISION_OWNER ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.lane !== s.lane ||
+      value.consumption
+    )
+      continue
+    const requestId = value.handle.id
+    const toolUseId = value.request.operationId
+    const call = s.state.toolCalls.get(toolUseId)
+    if (!call || call.lane !== s.lane) throw new CoreError('E_RELATION', 'DECISION_CALL_MISSING')
+    if (
+      (await s.d.log.scan({ type: 'tool/result', lane: s.lane, fromSeq: call.seq, toSeq: s.lastSeq })).some(
+        (row) => (row.data as { toolUseId?: string }).toolUseId === toolUseId,
+      )
+    )
+      continue
+    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
+      return 'waiting'
+    const snapshot = await s.decisions.get(value.handle)
+    if (
+      !snapshot.result &&
+      !snapshot.invalidation &&
+      ((s.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length ?? 0) > 0
+    )
+      return false
     const turnStart = (
       await s.d.log.scan({
         fromSeq: 1,
@@ -127,14 +105,14 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
       throw new CoreError('E_RELATION', 'parked step missing')
     const batch = await scanAll((q) => s.d.log.scan(q), {
       fromSeq: step.seq,
-      toSeq: askedRow.seq,
+      toSeq: s.lastSeq,
       lane: s.lane,
       type: 'tool/call',
     })
     const row = batch.find(
       (candidate) =>
         candidate.seq === call.seq &&
-        (candidate.data as { toolUseId?: unknown } | null)?.toolUseId === asked.toolUseId,
+        (candidate.data as { toolUseId?: unknown } | null)?.toolUseId === toolUseId,
     )
     if (!row) throw new CoreError('E_RELATION', 'parked call mismatch')
     if (!hasTrustedToolCallProvenance(row)) return 'blocked'
@@ -170,11 +148,14 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
       })
     )[0]
     if (!assistant) throw new CoreError('E_RELATION', 'parked assistant missing')
-    const allowed = decision.verdict.startsWith('allowed')
+    const allowed =
+      !snapshot.invalidation &&
+      (!snapshot.result ||
+        (snapshot.result.reason === 'answered' && snapshot.result.response.option.startsWith('allowed')))
     const continuedCall: ToolCallState = allowed
       ? {
           ordinal: original.ordinal,
-          toolUseId: asked.toolUseId,
+          toolUseId: toolUseId,
           name: original.name,
           argsSeq: call.seq,
           status: 'planned',
@@ -185,7 +166,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         }
       : {
           ordinal: original.ordinal,
-          toolUseId: asked.toolUseId,
+          toolUseId: toolUseId,
           name: original.name,
           argsSeq: call.seq,
           status: 'completed',
@@ -199,7 +180,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
       s.ev('turn/start', {
         turn,
         trigger: 'approval-resume',
-        continues: { turn: call.turn, step: call.step, toolUseId: asked.toolUseId, requestId },
+        continues: { turn: call.turn, step: call.step, toolUseId: toolUseId, requestId },
       }),
       s.ev('step/start', { turn, step: 1 }),
     ]
@@ -208,8 +189,16 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         s.ev(
           'tool/result',
           {
-            toolUseId: asked.toolUseId,
-            content: [{ type: 'text', text: `approval ${decision.verdict}` }],
+            toolUseId: toolUseId,
+            content: [
+              {
+                type: 'text',
+                text:
+                  snapshot.result?.reason === 'answered'
+                    ? 'the user rejected this action; do not retry the same call without asking'
+                    : 'approval unavailable: deadline',
+              },
+            ],
             isError: true,
             code: 'APPROVAL_REJECTED',
             enforcement: s.d.runtime.enforcement(),

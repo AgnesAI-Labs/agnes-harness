@@ -225,6 +225,7 @@ export class UIProjectionCell {
   private readonly nodeIndexes = new Map<string, number>()
   private readonly tools = new Map<string, ToolNode>()
   private readonly approvals = new Map<string, ApprovalNode>()
+  private readonly plans = new Map<string, string>()
   private readonly approvalTools = new Map<string, string>()
   private readonly effectTools = new Map<string, string>()
   private readonly assistantEffects = new Map<string, AssistantNode>()
@@ -780,6 +781,13 @@ export class UIProjectionCell {
         break
       }
       case 'tool/call': {
+        const planCall = data as { name?: string; toolUseId?: string; args?: { plan?: string } }
+        if (
+          planCall.name === 'exit_plan_mode' &&
+          planCall.toolUseId &&
+          typeof planCall.args?.plan === 'string'
+        )
+          this.plans.set(planCall.toolUseId, planCall.args.plan)
         const call = data as ToolCall
         const node: ToolNode = {
           kind: 'tool',
@@ -825,6 +833,73 @@ export class UIProjectionCell {
         ) {
           node.review = structuredClone(review.review as ToolReviewFact)
           changed.add(node.id)
+        }
+        break
+      }
+      case 'decision/state': {
+        const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
+        if (value.request.owner !== 'core/tool-permission' || value.request.sourcePackage !== '@agnes/core')
+          break
+        const old = this.approvals.get(value.handle.id)
+        const result = value.result
+        const node: ApprovalNode = {
+          kind: 'approval',
+          id: old?.id ?? id,
+          seq: old?.seq ?? seq,
+          state:
+            value.invalidation || (result && result.reason !== 'answered')
+              ? 'expired'
+              : result
+                ? 'decided'
+                : 'pending',
+          summary: clip(value.request.spec.prompt, 4096),
+          risk: (value.request.spec.subject as { risk?: 'destructive' | 'always' }).risk ?? 'always',
+          options: value.request.spec.options.map((option) =>
+            option === 'allowed-once'
+              ? 'allow_once'
+              : option === 'allowed-session'
+                ? 'allow_always'
+                : option === 'allowed-permanent'
+                  ? 'allow_permanent'
+                  : 'reject_once',
+          ),
+          decisionRef: { ...value.handle, revision: value.revision },
+          ...(value.request.expiresAt ? { expiresAt: value.request.expiresAt } : {}),
+          ...(this.plans.has(value.request.operationId)
+            ? { subjectText: this.plans.get(value.request.operationId)! }
+            : {}),
+          ...(result
+            ? {
+                decision: {
+                  verdict: result.reason === 'answered' ? result.response.option : result.reason,
+                  via: 'human',
+                  ...(value.invalidation
+                    ? { reason: value.invalidation.code }
+                    : result.reason !== 'answered'
+                      ? { reason: result.code }
+                      : result.response.option === 'rejected'
+                        ? { reason: 'user-rejected' }
+                        : {}),
+                  ...(result.reason === 'answered' ? { byLabel: result.answeredBy.id } : {}),
+                },
+              }
+            : {}),
+        }
+        this.approvals.set(value.handle.id, node)
+        if (old) this.nodes[this.nodeIndexes.get(old.id)!] = node
+        else this.pushNode(node)
+        changed.add(node.id)
+        const tool = this.tools.get(value.request.operationId)
+        if (tool && !value.consumption) {
+          tool.status =
+            node.state === 'pending'
+              ? 'awaiting_approval'
+              : node.state === 'expired'
+                ? 'cancelled'
+                : result?.reason === 'answered' && result.response.option !== 'rejected'
+                  ? 'planned'
+                  : 'failed'
+          changed.add(tool.id)
         }
         break
       }
@@ -1012,9 +1087,17 @@ export class UIProjectionCell {
 
   private metadata(): Pick<CoreUITimeline, 'opState' | 'budget'> {
     const op = this.op
-    const parked = [...this.state.pendingApprovals.values()].find(
-      (approval) => approval.lane === this.lane && approval.pending,
-    )
+    const parked = [...this.state.registers.decisionStates.values()]
+      .map((cell) => cell.value)
+      .find(
+        (value) =>
+          value.request.lane === this.lane &&
+          value.request.owner === 'core/tool-permission' &&
+          value.request.sourcePackage === '@agnes/core' &&
+          (!value.result || value.result.reason === 'answered') &&
+          !value.invalidation &&
+          !value.consumption,
+      )
     const opState: CoreUITimeline['opState'] = op
       ? {
           turn: op.meta.turn,
@@ -1023,8 +1106,16 @@ export class UIProjectionCell {
         }
       : op === undefined && this.state.openTurn.has(this.lane)
         ? { turn: this.turn, step: this.step, phase: 'running' }
-        : parked?.pending
-          ? { turn: this.turn, step: this.step, phase: 'parked', parked: { ...parked.pending } }
+        : parked
+          ? {
+              turn: this.turn,
+              step: this.step,
+              phase: 'parked',
+              parked: {
+                decisionRef: { ...parked.handle, revision: parked.revision },
+                expiresAt: parked.request.expiresAt ?? '',
+              },
+            }
           : null
     const budget = this.state.registers.budgetState.get(this.lane)?.value
     return {

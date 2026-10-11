@@ -25,8 +25,8 @@ async function initial(
   const seams = fakeSeams({
     approval: {
       ask: async (req) => {
-        if (++asks > 1) return 'rejected'
-        if (mode === 'sync') return verdict
+        if (++asks > 1) return { verdict: 'rejected' as const, answeredBy: actor }
+        if (mode === 'sync') return { verdict, answeredBy: actor }
         receipt = {
           requestId: req.requestId,
           bindingHash: req.bindingHash,
@@ -49,7 +49,15 @@ async function initial(
   const first = await run()
   if (mode === 'callback') {
     expect(first.reason).toBe('parked')
-    await h.session.resumeApproval('ticket', verdict, { ...actor, id: 'approver' })
+    await h.session.decisions.answer(
+      {
+        handle: [...h.session.state.registers.decisionStates.values()][0]!.value.handle,
+        revision: 1,
+        commandId: 'answer',
+        response: { option: verdict, value: null },
+      },
+      { actor, category: 'human', authorize() {} },
+    )
     expect((await run()).reason).toBe('completed')
   } else expect(first.reason).toBe('completed')
   return { ...h, storage, clock, registry, seams, asks: () => asks, executed: () => executed }
@@ -94,7 +102,7 @@ describe('durable session approval grants', () => {
       const request = await reopen(h)
       expect(h.asks()).toBe(2)
       expect(h.executed()).toBe(1)
-      expect(JSON.stringify(request?.messages)).toContain('approval rejected')
+      expect(JSON.stringify(request?.messages)).toContain('the user rejected this action')
     },
   )
   it.each([
@@ -127,8 +135,17 @@ describe('durable session approval grants', () => {
       }),
       h.session.ev('approval/decided', { requestId: 'bad-grant', verdict: 'allowed-session', via: 'sync' }),
     ])
-    await reopen(h)
-    expect(h.asks()).toBe(2)
+    await h.session.close()
+    await expect(
+      openSession({
+        storage: h.storage,
+        clock: h.clock,
+        registry: h.registry,
+        seams: h.seams,
+        provider: fakeProvider([]),
+      }),
+    ).rejects.toThrow('reset-required')
+    expect(h.asks()).toBe(1)
     expect(h.executed()).toBe(1)
   })
 })

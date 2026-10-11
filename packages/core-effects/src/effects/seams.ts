@@ -23,6 +23,8 @@ export type { ApprovalReason } from '@agnes/protocol'
 /** answeredBy is supplied by the trusted connection/source adapter, separately from the requester. */
 export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason; answeredBy?: Actor }
 export type ApprovalRequest = {
+  /** Present only for Core's already-persisted human gate; this is delivery metadata, not authority. */
+  decision?: { handle: import('@agnes/extension-api').DecisionHandle; revision: number }
   requestId: string
   kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
   sessionKey: string
@@ -38,6 +40,7 @@ export type ApprovalRequest = {
   scope: string
   profileHash?: string | null
   policyVersion?: string
+  policyBinding?: string
   options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
   context?: string
   approval?: import('@agnes/extension-api').ApprovalConstraints
@@ -62,6 +65,8 @@ export interface ApprovalSeam {
   /** Dynamic seams fit the shared implementation to the session before it enters an invocation. */
   forWorkspace?(workspace: ApprovalWorkspaceBinding): ApprovalSeam | Promise<ApprovalSeam>
   checkTool?(name: string, args: unknown): Promise<boolean>
+  /** Intrinsic command rules run before a durable human question, never impersonate its responder. */
+  policy?(req: ApprovalRequest): Promise<'allow' | 'ask' | 'deny'>
   ask(req: ApprovalRequest, opts?: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer | Pending>
   resume(
     ticket: string,

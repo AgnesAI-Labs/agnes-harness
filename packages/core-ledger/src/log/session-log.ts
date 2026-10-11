@@ -33,7 +33,7 @@ import { prepareEvents } from './validate.js'
 
 export type AppendOptions = {
   /** Backend command authority recheck after queued writes, immediately before storage commit. */
-  beforeCommit?: () => void
+  beforeCommit?: () => void | Promise<void>
 
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
@@ -393,7 +393,9 @@ export class SessionLogImpl {
       // `closed` is deliberately not re-checked, because close() promises to drain what it admitted.
       this.sealCheck()
       this.o.relationCheck?.(events, this, op)
-      opts.beforeCommit?.()
+      if (opts.beforeCommit) await opts.beforeCommit()
+      this.o.relationCheck?.(events, this, op)
+      this.sealCheck()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)

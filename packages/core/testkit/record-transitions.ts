@@ -1,3 +1,4 @@
+import { answerToolDecision } from '../test/helpers/decision.js'
 // Records, commit by commit, what a set of scripted sessions writes: the batch of rows, the
 // program-counter value each batch carries, every register cell after the commit and the UI
 // summary of the running operation. The checked-in recordings under `fixtures/op-state-golden/`
@@ -260,7 +261,7 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
     })
     await h.session.enqueue('next-turn', say('parks for approval'))
     await h.session.run(turnEnd())
-    await h.session.resumeApproval('golden-ticket', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
     await h.session.run(turnEnd())
   },
   async 'abort-with-pending'(open) {

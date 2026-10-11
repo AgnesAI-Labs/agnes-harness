@@ -1495,7 +1495,7 @@ describe('allowed-session grants (F17)', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-session'
+          return { verdict: 'allowed-session' as const, answeredBy: actor }
         },
         resume: async () => null,
       },

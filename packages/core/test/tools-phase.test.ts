@@ -208,7 +208,7 @@ describe('tools phase', () => {
     })
     await heldStarted
     await Promise.resolve()
-    expect(acquisitions).toBe(2)
+    expect(acquisitions).toBe(3)
     expect(events.lastIndexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
     expect(events).toEqual(
       expect.arrayContaining([
@@ -224,12 +224,12 @@ describe('tools phase', () => {
       ]),
     )
     expect(settled).toBe(false)
-    expect(release).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledTimes(acquisitions - 1)
     for (const operation of Object.values(fallbackFs)) expect(operation).not.toHaveBeenCalled()
 
     finishHeldRead()
     await expect(running).resolves.toEqual({ phase: 'checkpoint' })
-    expect(release).toHaveBeenCalledTimes(2)
+    expect(release).toHaveBeenCalledTimes(acquisitions)
     expect(events.at(-1)).toBe('release')
   })
 
@@ -315,7 +315,7 @@ describe('tools phase', () => {
     await opened.session.acceptInput()
     await opened.session.runInference()
     await expect(opened.session.runToolsPhase()).resolves.toEqual({ phase: 'checkpoint' })
-    expect(releases).toBe(2)
+    expect(releases).toBe(3)
     await expect(cached.fs.stat('.')).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.exec(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.sandbox.confine(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
@@ -360,19 +360,18 @@ describe('tools phase', () => {
   it('asks approval for a destructive tool; a rejection yields an error result and no effect', async () => {
     const ok = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()))
     await ok.session.runToolsPhase()
-    const asked = await ok.log.scan({ type: 'approval/asked', limit: 5 })
+    const asked = await ok.session.decisions.list()
     expect(asked).toHaveLength(1)
-    expect(asked[0]?.data).toMatchObject({ kind: 'tool', risk: 'destructive' })
+    expect(asked[0]?.request.spec.purpose).toBe('tool.permission')
     // The line the approver reads is built by summarizeCall: command in front, nothing cut silently.
-    expect(asked[0]?.data).toMatchObject({ summary: 'shell rm' })
-    expect((await ok.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'allowed-once',
-      via: 'sync',
-    })
+    expect(asked[0]?.request.spec.prompt).toBe('shell rm')
+    expect(asked[0]?.result).toMatchObject({ reason: 'answered', response: { option: 'allowed-once' } })
     const no = await atTools(
       [toolTurn('shell', { command: 'rm' })],
       withTool(shellTool()),
-      fakeSeams({ approval: { ask: async () => 'rejected', resume: async () => null } }),
+      fakeSeams({
+        approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }), resume: async () => null },
+      }),
     )
     await no.session.runToolsPhase()
     // Only the inference's intent: a refused call never becomes an effect, so there is nothing to settle.
@@ -383,66 +382,20 @@ describe('tools phase', () => {
     })
   })
 
-  // The reason table: each way an approval can end is its own fact on the ledger and its own words
-  // for the model. A bare verdict from a seam that gives no reason keeps the line it always had.
-  it.each([
-    {
-      answer: { verdict: 'rejected', reason: 'user-rejected' },
-      decided: { verdict: 'rejected', reason: 'user-rejected' },
-      code: 'APPROVAL_REJECTED',
-      text: /^the user rejected this action; do not retry the same call without asking$/,
+  it.each(['deadline', 'no-approver', 'stopped', 'policy_denied', 'invalid-answer'] as const)(
+    'keeps an undelivered %s request pending without fabricating a human refusal',
+    async (reason) => {
+      const t = await atTools(
+        [toolTurn('shell', { command: 'rm' })],
+        withTool(shellTool()),
+        fakeSeams({ approval: { ask: async () => ({ verdict: 'unavailable', reason }) } }),
+      )
+      expect(await t.session.runToolsPhase()).toMatchObject({ reason: 'parked' })
+      expect((await t.session.decisions.list())[0]?.result).toBeNull()
+      expect(await t.log.scan({ type: 'tool/result', limit: 5 })).toEqual([])
+      expect(await t.log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
     },
-    {
-      answer: { verdict: 'unavailable', reason: 'deadline' },
-      decided: { verdict: 'unavailable', reason: 'deadline' },
-      code: 'APPROVAL_UNAVAILABLE',
-      text: /^no one answered within 60s, so the action was not run; ask the user before trying again$/,
-    },
-    {
-      answer: 'unavailable',
-      decided: { verdict: 'unavailable', reason: 'no-approver' },
-      code: 'APPROVAL_UNAVAILABLE',
-      text: /^no eligible approver was connected, so the action was not run; ask the user before trying again$/,
-    },
-    {
-      answer: { verdict: 'cancelled', reason: 'stopped' },
-      decided: { verdict: 'cancelled', reason: 'stopped' },
-      code: 'CANCELLED',
-      text: /^cancelled while waiting for approval$/,
-    },
-    {
-      answer: { verdict: 'rejected', reason: 'policy_denied' },
-      decided: { verdict: 'rejected', reason: 'policy_denied' },
-      code: 'APPROVAL_REJECTED',
-      text: /^blocked by the command policy$/,
-    },
-    {
-      answer: 'rejected',
-      decided: { verdict: 'rejected' },
-      code: 'APPROVAL_REJECTED',
-      text: /^approval rejected$/,
-    },
-  ] as const)('records $decided and tells the model why when approval ends as $answer', async (row) => {
-    const t = await atTools(
-      [toolTurn('shell', { command: 'rm' })],
-      withTool(shellTool()),
-      fakeSeams({ approval: { ask: async () => row.answer as never, resume: async () => null } }),
-    )
-    await t.session.runToolsPhase()
-    const decided = (await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data as Record<
-      string,
-      unknown
-    >
-    expect(decided).toMatchObject({ ...row.decided, via: 'sync' })
-    if (!('reason' in row.decided)) expect(decided).not.toHaveProperty('reason')
-    const result = (await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as {
-      code: string
-      content: Array<{ text: string }>
-    }
-    expect(result.code).toBe(row.code)
-    expect(result.content[0]?.text).toMatch(row.text)
-    expect(await t.log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
-  })
+  )
 
   it('an abort while the approval is open is cancelled for the stop, not rejected', async () => {
     let abort!: () => void
@@ -460,12 +413,9 @@ describe('tools phase', () => {
       }),
     )
     abort = () => void t.session.abort(actor)
-    await t.session.runToolsPhase()
-    expect((await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'cancelled',
-      via: 'sync',
-      reason: 'stopped',
-    })
+    await expect(t.session.runToolsPhase()).rejects.toBe('stopped')
+    await t.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect((await t.session.decisions.list())[0]?.result).toMatchObject({ reason: 'stopped' })
     expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
       code: 'CANCELLED',
     })
@@ -477,7 +427,7 @@ describe('tools phase', () => {
       approval: {
         ask: async (req) => {
           seenRequest = req
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -498,8 +448,7 @@ describe('tools phase', () => {
     }
     await s.session.runToolsPhase()
     expect(seenRequest).toMatchObject({ risk: 'always', summary: 'operator flagged this' })
-    const asked = await s.log.scan({ type: 'approval/asked', limit: 5 })
-    expect(asked[0]?.data).toMatchObject({ risk: 'always', summary: 'operator flagged this' })
+    expect((await s.session.decisions.list())[0]?.request.spec.prompt).toBe('operator flagged this')
   })
 
   it('allowed-session covers later argv for the same owner/session/tool/scope', async () => {
@@ -508,7 +457,7 @@ describe('tools phase', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-session'
+          return { verdict: 'allowed-session', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -539,7 +488,7 @@ describe('tools phase', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -579,7 +528,7 @@ describe('tools phase', () => {
         approval: {
           ask: async () => {
             asks++
-            return 'allowed-once'
+            return { verdict: 'allowed-once', answeredBy: actor }
           },
           resume: async () => null,
         },
@@ -618,11 +567,9 @@ describe('tools phase', () => {
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 2, limit: 3 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'step/end', 'turn/end'])
+    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'turn/end'])
     expect(s.session.op()).toBeNull()
-    expect((await s.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      pending: { ticket: 'T1' },
-    })
+    expect((await s.session.decisions.list())[0]?.result).toBeNull()
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
   })
 
@@ -1061,7 +1008,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -1089,10 +1036,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     await s.session.step() // the second inference, which plans the write
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
     expect(asks).toEqual([{ name: 'write_note', taint: true }])
-    expect((await s.log.scan({ type: 'approval/asked', limit: 10 }))[0]?.data).toMatchObject({
-      risk: 'destructive',
-      kind: 'tool',
-    })
+    expect((await s.session.decisions.list())[0]?.request.spec.purpose).toBe('tool.permission')
   })
 
   /**
@@ -1109,7 +1053,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -1182,7 +1126,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -1208,7 +1152,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push(req.tool?.name ?? '')
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
         resume: async () => null,
       },
@@ -1263,7 +1207,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     expect(s.session.op()).toBeNull()
     const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'approval/asked', 'step/end', 'turn/end'])
+    expect(tail).toEqual(['x/core/decision-delivery', 'x/core/decision-delivery', 'step/end', 'turn/end'])
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // Exactly one step/end and one turn/end: the batch is closed once, not once per member.
     expect(await s.log.scan({ type: 'step/end', limit: 10 })).toHaveLength(1)

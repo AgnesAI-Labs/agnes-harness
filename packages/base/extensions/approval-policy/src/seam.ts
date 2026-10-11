@@ -1,4 +1,4 @@
-import type { ApprovalAnswer, ApprovalSeam, Pending, Verdict } from '@agnes/core'
+import type { ApprovalAnswer, ApprovalRequest, ApprovalSeam, Pending, Verdict } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { matchPolicy, normalizeArgv } from './normalize.js'
 import { readApprovalConfig } from './policy.js'
@@ -15,7 +15,44 @@ import { createTicketStore } from './tickets.js'
 export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
   const cfg = readApprovalConfig(ctx.profile.preset)
   const tickets = createTicketStore(ctx, cfg.pendingTtlMs)
+  const policy = async (req: ApprovalRequest, workspaceRoot: string): Promise<'allow' | 'ask' | 'deny'> => {
+    const tool = req.tool
+    // A budget quote or an unknown-outcome question carries no tool, so the command table has
+    // nothing to say about it and it goes straight to the prompter. Deliberate: an allow list
+    // written about command lines is not a mandate to spend money, nor to decide what a
+    // half-finished tool did.
+    if (tool) {
+      let argv: string | null = null
+      try {
+        argv = normalizeArgv(tool.name, tool.args, workspaceRoot)
+      } catch (e) {
+        // The argument cannot be reduced to one identity, so no rule may be matched against it and
+        // no grant may be bound to it. It is a question for a human, not a policy miss to wave
+        // through. `null` rather than an empty string, because an empty argv is a value this can
+        // legitimately return - a shell command of nothing but whitespace normalizes to it.
+        ctx.log.warn('approval argv is not canonical; asking', {
+          tool: tool.name,
+          message: (e as Error).message,
+        })
+      }
+      if (argv !== null) {
+        const action = matchPolicy(cfg.rules, tool.name, argv)
+        if (action === 'deny') return 'deny'
+        // Tainted context and an `always` tool both keep the human in the loop whatever the table
+        // says: a rule cannot pre-approve a call the model may have been talked into.
+        if (
+          req.approval?.reviewerRequirement !== 'human' &&
+          action === 'allow' &&
+          tool.meta.requiresApproval !== 'always' &&
+          (!req.taint || req.scope.includes('/'))
+        )
+          return 'allow'
+      }
+    }
+    return 'ask'
+  }
   const bind = (workspaceRoot: string): ApprovalSeam => ({
+    policy: (req) => policy(req, workspaceRoot),
     async checkTool(name, args) {
       if (cfg.rules.length === 0) return true
       try {
@@ -25,39 +62,9 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
       }
     },
     async ask(req, opts): Promise<Verdict | ApprovalAnswer | Pending> {
-      const tool = req.tool
-      // A budget quote or an unknown-outcome question carries no tool, so the command table has
-      // nothing to say about it and it goes straight to the prompter. Deliberate: an allow list
-      // written about command lines is not a mandate to spend money, nor to decide what a
-      // half-finished tool did.
-      if (tool) {
-        let argv: string | null = null
-        try {
-          argv = normalizeArgv(tool.name, tool.args, workspaceRoot)
-        } catch (e) {
-          // The argument cannot be reduced to one identity, so no rule may be matched against it and
-          // no grant may be bound to it. It is a question for a human, not a policy miss to wave
-          // through. `null` rather than an empty string, because an empty argv is a value this can
-          // legitimately return - a shell command of nothing but whitespace normalizes to it.
-          ctx.log.warn('approval argv is not canonical; asking', {
-            tool: tool.name,
-            message: (e as Error).message,
-          })
-        }
-        if (argv !== null) {
-          const action = matchPolicy(cfg.rules, tool.name, argv)
-          if (action === 'deny') return { verdict: 'rejected', reason: 'policy_denied' }
-          // Tainted context and an `always` tool both keep the human in the loop whatever the table
-          // says: a rule cannot pre-approve a call the model may have been talked into.
-          if (
-            req.approval?.reviewerRequirement !== 'human' &&
-            action === 'allow' &&
-            tool.meta.requiresApproval !== 'always' &&
-            (!req.taint || req.scope.includes('/'))
-          )
-            return 'allowed-once'
-        }
-      }
+      const action = req.decision ? 'ask' : await policy(req, workspaceRoot)
+      if (action === 'deny') return { verdict: 'rejected', reason: 'policy_denied' }
+      if (action === 'allow') return 'allowed-once'
       const prompter = ctx.adapters.prompter
       if (prompter) {
         try {

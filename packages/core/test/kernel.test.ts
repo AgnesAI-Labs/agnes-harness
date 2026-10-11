@@ -576,7 +576,7 @@ describe('Kernel (fix round 1)', () => {
         approval: {
           ask: async (req) => {
             asked.push({ tool: req.tool?.name, taint: req.taint })
-            return 'allowed-once'
+            return { verdict: 'allowed-once' as const, answeredBy: actor }
           },
           resume: async () => null,
         },
@@ -602,8 +602,8 @@ describe('Kernel (fix round 1)', () => {
     expect(counters[0]).toBe(false)
     expect(counters.at(-1)).toBe(true)
     expect(counters.indexOf(true)).toBeGreaterThan(0)
-    const ask = rows.find((e) => e.type === 'approval/asked')
-    expect(ask?.data).toMatchObject({ kind: 'tool', risk: 'destructive' })
+    const ask = rows.find((e) => e.type === 'decision/state')
+    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'destructive' } } } })
     await k.close()
   })
 })

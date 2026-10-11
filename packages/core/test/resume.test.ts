@@ -378,11 +378,7 @@ describe('resume', () => {
       humanAsks: 1,
       executions: 0,
     })
-    expect(
-      (await reopened.log.scan({ type: 'approval/asked', order: 'desc', limit: 1 }))[0]?.data,
-    ).toMatchObject({
-      pending: { ticket: 'guardian-fallback' },
-    })
+    expect((await reopened.session.decisions.list())[0]?.result).toBeNull()
   })
 
   it('settles a durable responded result without dispatching the tool again', async () => {

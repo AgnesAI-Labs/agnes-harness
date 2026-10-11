@@ -32,9 +32,8 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
   }
   const requestedAt = new Date(s.d.clock()).toISOString()
   try {
-    const seqs = await s.transition(
-      [],
-      withPhase(op, op.phase, { control: { status: 'cancel_requested', requestedAt, by } }),
+    const seqs = await s.transition([], (cur) =>
+      cur ? withPhase(cur, cur.phase, { control: { status: 'cancel_requested', requestedAt, by } }) : null,
     )
     s.ac.abort('stopped')
     await stopPendingApprovals(s)

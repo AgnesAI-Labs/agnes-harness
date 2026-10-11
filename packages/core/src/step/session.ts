@@ -147,6 +147,7 @@ import type {
 } from '../runtime/current.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
+import { continueParked } from './parked.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
@@ -905,6 +906,7 @@ export class SessionImpl {
       if (!this.initialModelSettingsRestored)
         this.restoreInitialModelSettings(this.state.session.modelSettings)
       await this.restoreYolo()
+      await this.restoreGrants()
       await this.initializeLoop(this.d.loopResume ?? true)
       return
     }
@@ -1123,7 +1125,10 @@ export class SessionImpl {
    * like the function form of `transition`. Returns the seqs of each step's own rows; the op-mark a
    * chain with no rows at all writes belongs to its last step.
    */
-  transitionChain(steps: ChainStep[], opts: { refineCaller?: boolean } = {}): Promise<Seq[][]> {
+  transitionChain(
+    steps: ChainStep[],
+    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void> } = {},
+  ): Promise<Seq[][]> {
     return this.commitChain(steps, undefined, opts, (seqs) => {
       let at = 0
       return steps.map((step, index) => {
@@ -1138,7 +1143,7 @@ export class SessionImpl {
   private commitChain<T>(
     steps: ChainStep[],
     expected: Seq | null | undefined,
-    opts: { refineCaller?: boolean },
+    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void> },
     receipt: (seqs: Seq[]) => T,
   ): Promise<T> {
     if (steps.length === 0) throw new CoreError('E_RELATION', 'a transition chain needs at least one step')
@@ -1407,6 +1412,7 @@ export class SessionImpl {
     try {
       await this.abort(by)
       if (draining) await draining
+      if (!this.op() && (await continueParked(this)) === 'opened') await this.abort(by)
       // A parked/recovered turn has no run promise; close its cancelled state before the new run.
       if (this.op()?.control.status === 'cancel_requested')
         await this.run({ until: 'turn-end', signal: new AbortController().signal })
@@ -2099,8 +2105,11 @@ export class SessionImpl {
     return resumeApproval(this, ticket, verdict, decidedBy)
   }
 
-  expireApprovals(): Promise<number> {
-    return expireApprovals(this)
+  async expireApprovals(): Promise<number> {
+    const before = this.lastSeq
+    await this.decisions.list()
+    const expired = this.lastSeq - before
+    return expired + (await expireApprovals(this))
   }
 
   invokeTool(

@@ -18,6 +18,7 @@ import type {
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
 import { approveAndExecute, refuse } from './tools.js'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
 export const CORE_OPS = ['Inbox', 'Budget', 'Inference', 'Approval', 'ToolExecution', 'StopGate'] as const
@@ -297,8 +298,9 @@ function validReplacementOutput<K extends CoreOpName>(
       value === 'unavailable'
     )
       return true
-    const pending = value as { ticket?: unknown; expiresAt?: unknown } | null
-    return typeof pending?.ticket === 'string' && typeof pending.expiresAt === 'string'
+    if (!value || typeof value !== 'object') return false
+    if (isPending(value)) return typeof value.expiresAt === 'string'
+    return normalizeApproval(value as never) !== null
   }
   if (segment === 'ToolExecution') {
     const result = value as { content?: unknown } | null

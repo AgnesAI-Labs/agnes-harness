@@ -5,6 +5,7 @@
     "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
   },
   "include": [
+    "test/helpers/decision.ts",
     "test/helpers/fake-provider.ts",
     "test/helpers/fake-seams.ts",
     "test/helpers/op-history.ts",

@@ -50,7 +50,7 @@ async function check(args: unknown, schema: ToolDef['parameters'] = parameters, 
     approval: {
       ask: async () => {
         reached.push('approval')
-        return 'allowed-once'
+        return { verdict: 'allowed-once' as const, answeredBy: actor }
       },
     },
   })

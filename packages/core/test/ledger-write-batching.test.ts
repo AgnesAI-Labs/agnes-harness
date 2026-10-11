@@ -220,7 +220,14 @@ describe('a stop around the pre-dispatch commit', () => {
     const runs = counted('shell', () => opened?.session)
     // The stop arrives while the approval's answer is being written, so it is seen before dispatch.
     const { proxy } = tapped(({ tx }) => {
-      if (tx.events.some((e) => e.type === 'approval/decided')) opened?.session.ac.abort()
+      if (
+        tx.events.some(
+          (e) =>
+            e.type === 'decision/state' &&
+            (e.data as { result?: { reason?: string } }).result?.reason === 'answered',
+        )
+      )
+        opened?.session.ac.abort()
       return false
     })
     opened = await openSession({
@@ -231,15 +238,18 @@ describe('a stop around the pre-dispatch commit', () => {
     await opened.session.enqueue('next-turn', go)
     await opened.session.acceptInput()
     await opened.session.runInference()
-    await opened.session.runToolsPhase()
+    await expect(opened.session.runToolsPhase()).resolves.toMatchObject({ reason: 'aborted' })
+    await opened.session.run(turnEnd())
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
-    const decided = rows.findIndex((row) => row.type === 'approval/decided')
-    expect(rows.slice(decided + 1, decided + 3).map((row) => row.type)).toEqual([
-      'x/core/op-mark',
-      'tool/result',
-    ])
-    expect(rows[decided + 1]?.data).toMatchObject({ calls: [{ status: 'approved' }] })
-    expect(rows[decided + 2]?.data).toMatchObject({ code: 'CANCELLED', isError: true })
+    const decided = rows.findIndex(
+      (row) =>
+        row.type === 'decision/state' &&
+        (row.data as { result?: { reason?: string } }).result?.reason === 'answered',
+    )
+    expect(rows.slice(decided + 1).find((row) => row.type === 'tool/result')?.data).toMatchObject({
+      code: 'CANCELLED',
+      isError: true,
+    })
     expect(rows.filter(isToolIntentRow)).toEqual([])
     expect(runs.seen).toEqual([])
   })

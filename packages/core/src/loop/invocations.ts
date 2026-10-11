@@ -178,22 +178,17 @@ export class LoopInvocations {
     ])
   }
   async awaitingApproval(toolUseId: string): Promise<boolean> {
-    const requests = await scanAll((query) => this.s.d.log.scan(query), {
-      type: 'approval/asked',
-      lane: this.s.lane,
-      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
-      toSeq: this.s.lastSeq,
-    })
-    return requests.some((row) => {
-      const asked = row.data as { kind: string; toolUseId?: string; requestId: string; pending?: unknown }
-      return (
-        asked.kind === 'tool' &&
-        asked.toolUseId === toolUseId &&
-        asked.pending !== undefined &&
-        !this.s.state.resumedRequests.has(asked.requestId)
-      )
-    })
+    return [...this.s.state.registers.decisionStates.values()].some(
+      ({ value }) =>
+        value.request.owner === 'core/tool-permission' &&
+        value.request.sourcePackage === '@agnes/core' &&
+        value.request.operationId === toolUseId &&
+        !value.consumption &&
+        !value.invalidation &&
+        (!value.result || value.result.reason === 'answered'),
+    )
   }
+
   async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
     const fingerprint = sha256Hex(canonicalJson(input))
     let cached: ToolResult | readonly InferenceEvent[] | undefined

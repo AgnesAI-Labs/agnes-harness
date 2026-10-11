@@ -1,7 +1,8 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { hasChildControl, transitionChildState } from '@agnes/core-child-control/child/store'
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
-import { approvalRefusal, isPending } from '@agnes/core-effects/effects/approval-answer'
+import { approvalRefusal } from '@agnes/core-effects/effects/approval-answer'
 import { type EffectHandle, type EffectOutcome, effectOutcome } from '@agnes/core-effects/effects/effect'
 import type { ExecuteAttempt } from '@agnes/core-effects/effects/execute-permits'
 import type { NestedToolLease } from '@agnes/core-effects/effects/scheduler'
@@ -10,7 +11,7 @@ import type { HostDispatchObservation } from '@agnes/core-effects/effects/tool-d
 import { toLedgerContent } from '@agnes/core-effects/effects/tool-result'
 import { settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import type { ToolResult } from '@agnes/extension-api'
+import type { DecisionHandle, ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
@@ -41,6 +42,7 @@ import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { discloseTool } from './tool-disclosure.js'
+import { deliverToolDecision, requestToolDecision, toolDecisionSource } from './tool-decision.js'
 
 export type ExecOpts = {
   depth: number
@@ -366,6 +368,10 @@ export async function approveAndExecute(
     throw new CoreError('E_RELATION', 'recovered dispatch does not match its pending effect')
   let decisionId = 'n/a'
   let approvalProof: import('@agnes/extension-api').ToolContext['approval']
+  const approvalRefs: DecisionHandle[] = []
+  const sessionActivations: string[] = []
+  const grantChecks: (() => Promise<void>)[] = []
+  let recheckPermission: (() => Promise<void>) | undefined
   if (!o.resumeDispatch) {
     // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
     // that taints, so the first call after an untrusted result would be judged against a clean turn.
@@ -390,7 +396,8 @@ export async function approveAndExecute(
     // A hook denial is not an approval question: nobody is asked, because the answer is already no.
     if (!gate.allow) return { result: await refuse(s, call.toolUseId, 'HOOK_DENIED', gate.reason) }
     const risk = policy.requiresApproval
-    const stepId = `${op.meta.turn}/${op.step}`
+    const originalCall = s.state.toolCalls.get(call.toolUseId)
+    const stepId = originalCall ? `${originalCall.turn}/${originalCall.step}` : `${op.meta.turn}/${op.step}`
     const decision = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
@@ -469,15 +476,22 @@ export async function approveAndExecute(
     }
     if (!(await s.d.runtime.approvalToolAllowed(call.name, call.args)))
       return {
-        result: await refuse(
-          s,
-          call.toolUseId,
-          'POLICY_DENIED',
-          'Command deny-list refuses the call',
-          decisionId,
-        ),
+        result: await refuse(s, call.toolUseId, 'POLICY_DENIED', 'blocked by the command policy', decisionId),
       }
     const approvalMode = s.d.approvalMode ?? 'manual'
+    const initialSettings = await s.d.toolPolicySettings?.(
+      s.preset.approval.policy ?? 'default',
+      o.signal ?? s.ac.signal,
+    )
+    const selectedPolicy = s.toolPolicy(initialSettings?.policy)
+    const policyBinding = sha256Hex(
+      canonicalJson({
+        policy,
+        settings: initialSettings ?? null,
+        id: selectedPolicy.id,
+        version: selectedPolicy.version,
+      }),
+    )
     const permission = await decideToolPolicy(
       s,
       structuredClone({
@@ -522,6 +536,59 @@ export async function approveAndExecute(
       permission.effect === 'ask' ||
       (decision.effect === 'require_approval' && !s.yolo && approvalMode !== 'off')
     const scopes = approvalScopesForCall(call.name, policy.approvalScopes)
+    recheckPermission = async () => {
+      toolDecisionSource(s, call).alive()
+      const authority = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
+      if (authority.effect === 'deny' || !(await s.d.runtime.approvalToolAllowed(call.name, call.args)))
+        throw new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED')
+      const settings = await s.d.toolPolicySettings?.(
+        s.preset.approval.policy ?? 'default',
+        o.signal ?? s.ac.signal,
+      )
+      if (
+        canonicalJson(settings ?? null) !== canonicalJson(initialSettings ?? null) ||
+        s.toolPolicy(settings?.policy) !== selectedPolicy
+      )
+        throw new CoreError('E_RELATION', 'DECISION_POLICY_CHANGED')
+      // Human exact-content policies re-read their subject revision. Model review is a persisted
+      // advisory fact; replaying it here could spend twice or deadlock the writer with ledger writes.
+      const current = humanOnly
+        ? await selectedPolicy.decide(
+            {
+              sessionKey: s.key,
+              workspaceRoot: s.workspaceRoot,
+              cwd: s.d.cwd,
+              actor: s.d.actor,
+              call: {
+                id: call.toolUseId,
+                name: call.name,
+                args: call.args as JsonValue,
+                description: def.description,
+                parameters: def.parameters as JsonValue,
+                definitionFingerprint: call.definitionFingerprint,
+              },
+              policy,
+              category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
+              tainted: s.laneTaint(),
+              fullAccess: s.yolo,
+              approvalMode,
+              ...(settings?.config === undefined ? {} : { config: settings.config }),
+            },
+            o.signal ?? s.ac.signal,
+          )
+        : permission
+      if (
+        !current ||
+        current.effect === 'deny' ||
+        (!humanOnly && current.approval) ||
+        (humanOnly &&
+          (current.effect !== 'ask' ||
+            current.approval?.subjectRevision !== permission.approval?.subjectRevision))
+      )
+        throw new CoreError('E_RELATION', 'DECISION_POLICY_CHANGED')
+      for (const check of grantChecks) await check()
+      toolDecisionSource(s, call).alive()
+    }
     const guardianFailed = (
       await scanAll((q) => s.d.log.scan(q), {
         fromSeq: call.argsSeq,
@@ -571,12 +638,36 @@ export async function approveAndExecute(
               )
             ).filter((grant) => permanentGrantMatches(grant, durableBinding))
           : []
+      const recheckGrant = (grantId?: string) => {
+        if (!durableBinding) throw new CoreError('E_RELATION', 'DECISION_GRANT_UNBOUND')
+        grantChecks.push(async () => {
+          const current = await s.d.runtime.approvalGrants(
+            {
+              profileHash: durableBinding.profileHash,
+              actorId: durableBinding.actor.id,
+              actorOrg: durableBinding.actor.org,
+              toolId: call.name,
+              scope,
+              policyVersion: policy.policyVersion,
+            },
+            o.signal ?? s.ac.signal,
+          )
+          if (
+            !current.some(
+              (grant) =>
+                permanentGrantMatches(grant, durableBinding) && (!grantId || grant.grantId === grantId),
+            )
+          )
+            throw new CoreError('E_RELATION', 'DECISION_GRANT_REVOKED')
+        })
+      }
       const recorded = await persistedToolApproval(s, {
         toolUseId: call.toolUseId,
         args: call.args,
         scope,
         policyHash: call.policyHash,
         policyVersion: policy.policyVersion,
+        policyBinding,
         ...(permission.approval ? { approval: permission.approval } : {}),
       })
       if (
@@ -595,8 +686,10 @@ export async function approveAndExecute(
             decisionId,
           ),
         }
-      if (recorded?.verdict === 'allowed-session') s.sessionAllows.add(grantKey)
+      if (recorded?.decisionRef) approvalRefs.push(recorded.decisionRef)
+      if (recorded?.verdict === 'allowed-session') sessionActivations.push(grantKey)
       if (recorded?.verdict === 'allowed-permanent') {
+        recheckGrant(recorded.grantId)
         if (!durableBinding || !recorded.grantId)
           return {
             result: await refuse(
@@ -706,7 +799,11 @@ export async function approveAndExecute(
           ),
         }
       }
-      if (!humanOnly && (s.sessionAllows.has(grantKey) || durableGrants.length > 0)) continue
+      if (!humanOnly && s.sessionAllows.has(grantKey)) continue
+      if (!humanOnly && durableGrants.length > 0) {
+        recheckGrant()
+        continue
+      }
       const priorGuardian = (
         await scanAll((q) => s.d.log.scan(q), {
           fromSeq: call.argsSeq,
@@ -753,7 +850,7 @@ export async function approveAndExecute(
             decisionId,
           ),
         }
-      const requestId = priorGuardianData?.requestId ?? s.d.ids.requestId()
+      let requestId = priorGuardianData?.requestId ?? s.d.ids.requestId()
       const options = [
         'allowed-once' as const,
         ...(!humanOnly ? (['allowed-session'] as const) : []),
@@ -810,6 +907,7 @@ export async function approveAndExecute(
         scope,
         profileHash: s.d.resolvedProfileHash,
         policyVersion: policy.policyVersion,
+        policyBinding,
         options: [...options],
         ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       }
@@ -943,52 +1041,73 @@ export async function approveAndExecute(
             ),
           }
       }
+      // Command rules are policy authority. They cannot manufacture a human answer.
+      const existing = [...s.state.registers.decisionStates.values()].some(
+        ({ value }) =>
+          value.request.owner === 'core/tool-permission' &&
+          value.request.sourcePackage === '@agnes/core' &&
+          value.request.operationId === call.toolUseId &&
+          (value.request.spec.subject as { scope?: string }).scope === scope,
+      )
+      const intrinsic = existing ? 'ask' : await s.d.runtime.approvalPolicy(approvalRequest)
+      if (intrinsic === 'deny')
+        return {
+          result: await refuse(
+            s,
+            call.toolUseId,
+            'POLICY_DENIED',
+            'blocked by the command policy',
+            decisionId,
+          ),
+        }
+      if (!humanOnly && intrinsic === 'allow') continue
       const storage = s.d.log.storage
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
-      const answer = await s.askApprovalAnswer(approvalRequest, o.signal ?? s.ac.signal)
-      if (hasChildControl(storage) && !isPending(answer))
-        await transitionChildState(storage, s.key, 'running')
-      if (isPending(answer)) {
-        // The ask is handed back rather than written here. Parking closes the turn, and a member of a
-        // concurrent batch that closes the turn under its siblings leaves the next one writing a
-        // `step/end` into a turn that is already over. One writer ends the batch, and it carries
-        // every unanswered question with it rather than dropping the ones that lost the race.
-        return {
-          result: errorResult('parked'),
-          park: s.ev('approval/asked', { ...finalAsked, pending: answer }),
+      const delivery = await deliverToolDecision(
+        s,
+        await requestToolDecision(s, call, approvalRequest),
+        approvalRequest,
+        o.signal ?? s.ac.signal,
+      )
+      if (delivery.park) {
+        if (hasChildControl(storage) && (await storage.lookupByKey(s.key))) {
+          await transitionChildState(storage, s.key, 'running')
+          await s.append([delivery.park])
+          const refusal = approvalRefusal('rejected', 'subagent_scope', s.preset.approval.timeoutMs)
+          return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
         }
+        return { result: errorResult('parked'), park: delivery.park }
       }
-      // A delegated sub-agent has no one to ask: unanswered is refused, and says why.
-      const refused =
-        answer.verdict === 'unavailable' && hasChildControl(storage) && !!(await storage.lookupByKey(s.key))
-      const verdict = refused ? 'rejected' : answer.verdict
-      const reason = refused ? 'subagent_scope' : answer.reason
+      if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'running')
+      const snapshot = delivery.snapshot
+      requestId = snapshot.handle.id
+      if (snapshot.invalidation || snapshot.result?.reason !== 'answered') {
+        const reason =
+          snapshot.invalidation?.code ?? (snapshot.result?.reason === 'stopped' ? 'stopped' : 'deadline')
+        const refusal = approvalRefusal(
+          reason === 'stopped' ? 'cancelled' : 'unavailable',
+          reason === 'stopped' ? 'stopped' : 'deadline',
+          s.preset.approval.timeoutMs,
+        )
+        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
+      }
+      const answer = snapshot.result
+      const verdict = answer.response.option
+      const reason = verdict === 'rejected' ? ('user-rejected' as const) : undefined
+      approvalRefs.push(snapshot.handle)
       const grantId =
         verdict === 'allowed-permanent'
           ? permanentGrantId({ sessionKey: s.key, toolUseId: call.toolUseId, scope })
           : undefined
-      await s.transition(
-        [
-          s.ev('approval/asked', finalAsked),
-          s.ev('approval/decided', {
-            requestId,
-            verdict,
-            via: 'sync',
-            scope,
-            ...(reason ? { reason } : {}),
-            ...(answer.answeredBy ? { answeredBy: answer.answeredBy } : {}),
-            ...(grantId ? { grantId } : {}),
-          }),
-        ],
-        (cur) => updateCall(cur, call.toolUseId, { status: 'planned' }),
-      )
       if (verdict === 'allowed-permanent') {
+        recheckGrant(grantId)
         const persisted = await persistedToolApproval(s, {
           toolUseId: call.toolUseId,
           args: call.args,
           scope,
           policyHash: call.policyHash,
           policyVersion: policy.policyVersion,
+          policyBinding,
         })
         if (!grantId || !durableBinding || !persisted || persisted.grantId !== grantId)
           return {
@@ -1053,9 +1172,13 @@ export async function approveAndExecute(
           subjectRevision: permission.approval.subjectRevision,
           answeredBy: answer.answeredBy,
         }
-      if (verdict === 'allowed-session') s.sessionAllows.add(grantKey)
+      if (verdict === 'allowed-session') sessionActivations.push(grantKey)
       if (!verdict.startsWith('allowed')) {
-        const refusal = approvalRefusal(verdict, reason, s.preset.approval.timeoutMs)
+        const refusal = approvalRefusal(
+          verdict as import('@agnes/protocol').ApprovalVerdict,
+          reason,
+          s.preset.approval.timeoutMs,
+        )
         return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
       }
     }
@@ -1146,12 +1269,16 @@ export async function approveAndExecute(
       { events: [], next: (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }) },
       {
         events: [started.intent],
-        next: (cur) =>
-          updateCall(cur, call.toolUseId, {
+        next: (cur) => {
+          chain[1]!.events.push(
+            ...s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId),
+          )
+          return updateCall(cur, call.toolUseId, {
             status: 'dispatch_pending',
             effectId: started.effectId,
             dispatchAttempt: 1,
-          }),
+          })
+        },
       },
     ]
     if (call.executionDomain === 'workspace')
@@ -1166,7 +1293,13 @@ export async function approveAndExecute(
           }),
       })
     // The intent's own seq: the only one a dispatch permit may be bound to.
-    const [, startedSeqs] = await s.transitionChain(chain)
+    const [, startedSeqs] = await s.transitionChain(chain, {
+      beforeCommit: async () => {
+        await recheckPermission?.()
+        s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId)
+      },
+    })
+    for (const key of sessionActivations) s.sessionAllows.add(key)
     const committed = startedSeqs?.[0]
     if (committed === undefined)
       throw new CoreError('E_RELATION', 'effect intent commit returned no sequence')

@@ -35,7 +35,7 @@ export interface DecisionSource {
 export interface DecisionAnswerContext {
   readonly actor: Actor
   readonly category: 'human'
-  authorize(snapshot: DecisionSnapshot): void
+  authorize(snapshot: DecisionSnapshot): void | Promise<void>
 }
 function fail(message: string): never {
   throw new CoreError('E_RELATION', `DECISION_${message}`)
@@ -80,12 +80,15 @@ export class DecisionCommands {
   private event(value: DecisionSnapshot): EventInput {
     return this.s.ev('decision/state', value, { register: 'decision/state' })
   }
-  private async write(value: DecisionSnapshot, recheck: () => void = () => undefined): Promise<void> {
+  private async write(
+    value: DecisionSnapshot,
+    recheck: () => void | Promise<void> = () => undefined,
+  ): Promise<void> {
     const cell = this.s.state.registers.decisionStates.get(value.handle.id)
     await this.s.d.log.append([this.event(value)], {
       expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
-      beforeCommit: () => {
-        recheck()
+      beforeCommit: async () => {
+        await recheck()
         if (
           !value.invalidation &&
           (value.result?.reason === 'answered' || value.consumption) &&
@@ -218,8 +221,9 @@ export class DecisionCommands {
     return this.s.locked(async () => {
       this.live()
       const original = this.read(command.handle)
-      context.authorize(detached(original))
-      if (!validateActor(context.actor).ok || context.category !== 'human') fail('HUMAN_REQUIRED')
+      await context.authorize(detached(original))
+      if (!validateActor(context.actor).ok || context.category !== 'human' || context.actor.role === 'agent')
+        fail('HUMAN_REQUIRED')
       if (original.answerCommand?.commandId === command.commandId) {
         if (original.answerCommand.digest !== digest) fail('COMMAND_CONFLICT')
         return detached(original.answerCommand)
@@ -257,9 +261,10 @@ export class DecisionCommands {
             answeredBy: detached(context.actor),
           },
         },
-        () => {
+        async () => {
           this.live()
-          context.authorize(detached(this.read(command.handle)))
+          await context.authorize(detached(this.read(command.handle)))
+          this.live()
         },
       )
       return detached(receipt)

@@ -118,6 +118,24 @@ describe('resume matrix (core Task 39)', () => {
   for (const f of fixtures) {
     it(`${f}: continue resume does not throw and leaves no call unresolved outside a park`, async () => {
       const storage = crashStorage(f)
+      if (
+        load(f).some(
+          (row) =>
+            row.type === 'approval/asked' &&
+            dataOf(row).kind === 'tool' &&
+            !load(f).some(
+              (decided) =>
+                decided.type === 'approval/decided' &&
+                dataOf(decided).requestId === dataOf(row).requestId &&
+                dataOf(decided).via === 'guardian',
+            ),
+        )
+      ) {
+        await expect(
+          openSession({ provider: fakeProvider([]), registry: registry(), storage, key: 'k' }),
+        ).rejects.toThrow('reset-required')
+        return
+      }
       const { session, log } = await openSession({
         provider: fakeProvider([textTurn('after'), textTurn('after2'), textTurn('after3')]),
         registry: registry(),
@@ -149,6 +167,24 @@ describe('resume matrix (core Task 39)', () => {
 
     it(`${f}: close mode synthesizes closers, clears the program counter, and leaves no open turn`, async () => {
       const storage = crashStorage(f)
+      if (
+        load(f).some(
+          (row) =>
+            row.type === 'approval/asked' &&
+            dataOf(row).kind === 'tool' &&
+            !load(f).some(
+              (decided) =>
+                decided.type === 'approval/decided' &&
+                dataOf(decided).requestId === dataOf(row).requestId &&
+                dataOf(decided).via === 'guardian',
+            ),
+        )
+      ) {
+        await expect(
+          openSession({ provider: fakeProvider([]), registry: registry(), storage, key: 'k' }),
+        ).rejects.toThrow('reset-required')
+        return
+      }
       const { session, log } = await openSession({
         provider: fakeProvider([]),
         registry: registry(),

@@ -543,10 +543,8 @@ describe('a delegated sub-agent with nobody to ask', () => {
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'tool' })
     await child.run('tool')
     expect(runs).toBe(0)
-    expect((await storage.scan(child.key, { type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'rejected',
-      via: 'sync',
-      reason: 'subagent_scope',
+    expect((await storage.scan(child.key, { type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+      result: null,
     })
     const result = (await storage.scan(child.key, { type: 'tool/result', limit: 5 }))[0]?.data as {
       code: string

@@ -224,6 +224,17 @@ export class SeamRuntime {
     }
   }
 
+  async approvalPolicy(req: ApprovalRequest): Promise<'allow' | 'ask' | 'deny'> {
+    try {
+      const result = await this.withApproval(
+        (approval) => approval.policy?.(structuredClone(req)) ?? Promise.resolve('ask' as const),
+      )
+      return result === 'allow' || result === 'ask' ? result : 'deny'
+    } catch {
+      return 'deny'
+    }
+  }
+
   async approvalGuard(req: ApprovalRequest, signal: AbortSignal): Promise<ApprovalGuardianDecision> {
     try {
       const value = await withTimeout(
