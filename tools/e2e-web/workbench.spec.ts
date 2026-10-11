@@ -87,6 +87,18 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   expect(
     await page.locator('#workbench-right').evaluate((node) => node.contains(document.activeElement)),
   ).toBe(true)
+  // Complete the cycle in both directions, including wraparound to the originating region.
+  for (const key of ['F6', 'Shift+F6']) {
+    await page.getByTestId('workbench-tab-files').focus()
+    const regions =
+      key === 'F6'
+        ? ['#composer', '.sidebar', '.conversation-shell', '#workbench-right']
+        : ['.conversation-shell', '.sidebar', '#composer', '#workbench-right']
+    for (const region of regions) {
+      await page.keyboard.press(key)
+      expect(await page.locator(region).evaluate((node) => node.contains(document.activeElement))).toBe(true)
+    }
+  }
   await page.getByRole('button', { name: 'Expand', exact: true }).click()
   expect(
     await page

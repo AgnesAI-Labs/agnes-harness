@@ -3,9 +3,10 @@ import { resolve } from 'node:path'
 import { workbenchPanels } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { Dock } from '../src/workbench/dock.js'
+import { cycleTaskFocus } from '../src/workbench/focus.js'
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
   const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
@@ -148,5 +149,69 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     for (const remove of plugins) remove()
     document.body.replaceChildren()
     localStorage.clear()
+  }
+})
+
+it('cycles visible trace and plugin docks in both directions and leaves modal focus intact', () => {
+  document.body.innerHTML = `
+    <aside class="sidebar"><button id="sidebar-action">New session</button></aside>
+    <section class="conversation-shell" hidden><button>Hidden conversation</button></section>
+    <aside id="trace-panel"><select aria-label="Trace type"><option>All</option></select></aside>
+    <aside id="workbench-right" hidden><button>Hidden dock</button></aside>
+    <aside id="rightbar-panel"><button id="plugin-action">Plugin action</button></aside>
+    <aside id="workbench-bottom"><button id="bottom-action">Terminal</button></aside>
+    <form id="composer"><textarea aria-label="Task content"></textarea></form>`
+  const geometry = vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return (this.closest('[hidden]') ? [] : [{}]) as unknown as DOMRectList
+  })
+  try {
+    const selectors = [
+      '#sidebar-action',
+      '#trace-panel select',
+      '#plugin-action',
+      '#bottom-action',
+      '#composer textarea',
+    ]
+    document.querySelector<HTMLElement>(selectors[0]!)!.focus()
+    for (const reverse of [false, true]) {
+      const expected = reverse ? [...selectors].reverse() : [...selectors.slice(1), selectors[0]!]
+      for (const selector of expected) {
+        cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', shiftKey: reverse, cancelable: true }))
+        expect(document.activeElement).toBe(document.querySelector(selector))
+      }
+    }
+    const bottom = document.getElementById('workbench-bottom')!
+    bottom.style.position = 'fixed'
+    bottom.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') bottom.hidden = true
+    })
+    document.getElementById('bottom-action')!.focus()
+    cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', cancelable: true }))
+    expect(bottom.hidden).toBe(true)
+    expect(document.activeElement).toBe(document.querySelector('#composer textarea'))
+    const right = document.getElementById('workbench-right')!
+    right.hidden = false
+    right.style.position = 'absolute'
+    right.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') right.hidden = true
+    })
+    right.querySelector('button')!.focus()
+    cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', cancelable: true }))
+    expect(right.hidden).toBe(true)
+    expect(document.activeElement).toBe(document.getElementById('plugin-action'))
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    modal.innerHTML = '<button>Close</button>'
+    document.body.append(modal)
+    const close = modal.querySelector('button')!
+    close.focus()
+    cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', cancelable: true }))
+    expect(document.activeElement).toBe(close)
+  } finally {
+    geometry.mockRestore()
+    document.body.replaceChildren()
   }
 })

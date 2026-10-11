@@ -5,7 +5,7 @@ import { test as base, expect } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 import { settled } from './quality.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
-import { section } from './ui.js'
+import { chooseWorkspace, section } from './ui.js'
 
 const root = process.env.AGH_UI_REPORT
 const test = base.extend<{ uiServer: Runtime | undefined }>({
@@ -76,25 +76,30 @@ for (const locale of ['zh-CN', 'en'])
           }
         }
         await visit('/?new=1')
-        await expect(page.locator('#settings')).toBeVisible()
-        await page.waitForTimeout(1000)
-        if (await page.locator('#new-session[open]').count()) {
-          if (!workspace) throw new Error('Set AGH_UI_WORKSPACE to an isolated workspace for a fresh home')
-          await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
-            element.open = true
-          })
-          await page.locator('#new-session-cwd').fill(workspace)
-          await page.locator('#new-session-create').click()
+        if (uiServer) {
+          await chooseWorkspace(page, uiServer, locale)
+          await expect(page.locator('#settings')).toBeVisible()
         } else {
-          await page.locator('#new').click()
-          await page.waitForTimeout(350)
+          await expect(page.locator('#settings')).toBeVisible()
+          await page.waitForTimeout(1000)
           if (await page.locator('#new-session[open]').count()) {
-            if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for workspace selection')
+            if (!workspace) throw new Error('Set AGH_UI_WORKSPACE to an isolated workspace for a fresh home')
             await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
               element.open = true
             })
             await page.locator('#new-session-cwd').fill(workspace)
             await page.locator('#new-session-create').click()
+          } else {
+            await page.locator('#new').click()
+            await page.waitForTimeout(350)
+            if (await page.locator('#new-session[open]').count()) {
+              if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for workspace selection')
+              await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
+                element.open = true
+              })
+              await page.locator('#new-session-cwd').fill(workspace)
+              await page.locator('#new-session-create').click()
+            }
           }
         }
         await screen('home-empty')

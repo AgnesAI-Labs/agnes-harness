@@ -70,7 +70,13 @@ for (const locale of ['en', 'zh-CN']) {
           .fill(runtime.workspace)
         await guide.getByRole('button', { name: name('Use folder', '使用此文件夹'), exact: true }).click()
         await expect(page.getByTestId('first-run-workspace')).toHaveText('w')
+        const manualPath = guide.getByRole('textbox', {
+          name: name('Folder path', '文件夹路径'),
+          exact: true,
+        })
+        await expect(manualPath).toHaveValue(runtime.workspace)
         await quality('setup-workspace')
+        await expect(manualPath).toHaveValue(runtime.workspace)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'ready')
         await page.getByTestId('first-run-examples').click()

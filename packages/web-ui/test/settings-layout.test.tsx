@@ -152,3 +152,14 @@ it('closes the native detail drawer on Escape and returns focus to its trigger',
   await vi.waitFor(() => expect(document.querySelector('dialog')).toBeNull())
   expect(document.activeElement).toBe(trigger)
 })
+
+it('announces loading once, marks it busy and removes the decorative skeleton after completion', async () => {
+  const { SettingsState, renderRegion } = await import('../src/index.js')
+  const host = render(createElement(SettingsState, { tone: 'loading' }, 'Loading skills…'))
+  expect(host.querySelector('[role="status"]')?.textContent).toBe('Loading skills…')
+  expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBe('true')
+  expect(host.querySelector('.agh-skeleton')?.getAttribute('aria-hidden')).toBe('true')
+  renderRegion(host, createElement(SettingsState, { tone: 'success' }, 'Loaded'))
+  expect(host.querySelector('.agh-skeleton')).toBeNull()
+  expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBeNull()
+})

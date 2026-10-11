@@ -10,6 +10,7 @@ import { forwardRef, useEffect, useId, useState } from 'react'
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
 import { Icon } from './ui/icon.js'
+import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -94,7 +95,9 @@ export function SettingsState({
       data-tone={tone}
       role={props.role ?? (tone === 'error' ? 'alert' : 'status')}
       aria-live={props['aria-live'] ?? 'polite'}
+      aria-busy={props['aria-busy'] ?? (tone === 'loading' || undefined)}
     >
+      {tone === 'loading' && <Skeleton />}
       {children}
     </div>
   )

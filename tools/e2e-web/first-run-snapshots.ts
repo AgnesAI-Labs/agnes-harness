@@ -121,10 +121,8 @@ export async function firstRunSnapshots() {
     async show(page: Page, name: string, appearance: string, width: number) {
       const path = framePath(name, appearance, width)
       if (!frames.has(path)) throw new Error(`Real first-run flow did not capture ${path}`)
+      await page.setViewportSize({ width, height: width === 1440 ? 900 : 800 })
       await page.goto(url + path)
-      // Preserve keyboard/pointer focus styling as well as the active control.
-      if (await page.locator('[data-fixture-focus-visible]').count()) await page.keyboard.press('Shift')
-      else await page.mouse.click(0, 0)
       await page.evaluate(() => {
         document.querySelectorAll<HTMLDialogElement>('dialog[data-fixture-modal]').forEach((dialog) => {
           dialog.showModal()
@@ -135,8 +133,20 @@ export async function firstRunSnapshots() {
         document.querySelectorAll<HTMLElement>('[data-fixture-scroll-left]').forEach((element) => {
           element.scrollLeft = Number(element.dataset.fixtureScrollLeft)
         })
-        document.querySelector<HTMLElement>('[data-fixture-focus]')?.focus({ preventScroll: true })
       })
+      // A programmatic focus after clicking the backdrop can leave the modal's
+      // focus outline active. Replay the captured control's real input modality.
+      const focus = page.locator('[data-fixture-focus]')
+      if (await focus.count()) {
+        const keyboard = await page.locator('[data-fixture-focus-visible]').count()
+        if (keyboard) {
+          await page.keyboard.press('Shift')
+          await focus.focus()
+        } else await focus.click()
+        await expect(focus).toBeFocused()
+        await expect.poll(() => focus.evaluate((node) => node.matches(':focus-visible'))).toBe(!!keyboard)
+      }
+      expect(page.viewportSize()).toEqual({ width, height: width === 1440 ? 900 : 800 })
       await settled(page)
     },
     async close() {

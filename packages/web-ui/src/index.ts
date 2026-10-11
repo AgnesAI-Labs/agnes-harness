@@ -117,6 +117,7 @@ export { ListRow, type ListRowProps } from './ui/list-row.js'
 export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
 export { Popover } from './ui/popover.js'
 export { Select, type SelectProps } from './ui/select.js'
+export { Skeleton } from './ui/skeleton.js'
 export {
   type StateLight,
   StateLights,

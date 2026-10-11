@@ -1341,7 +1341,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           createElement(
             'div',
             {
-              className: 'trace-gantt-track',
+              className: 'trace-gantt-track agh-touch-target',
               ref: lane === 'input' ? timelineTrackRef : undefined,
               tabIndex: lane === 'input' ? 0 : -1,
               role: 'group',

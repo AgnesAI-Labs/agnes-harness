@@ -8,7 +8,7 @@ import { preferences, section, settings } from './ui.js'
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
-const viewports = [phone, tablet]
+const viewports = [phone, { width: 390, height: 844 }, tablet]
 const sections = [
   'model',
   'models',
@@ -43,7 +43,7 @@ async function usable(page: Page, info: TestInfo, name: string) {
     const dialogs = [...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')].filter(
       visible,
     )
-    const sheet = [...document.querySelectorAll<HTMLElement>('#workbench-right, #workbench-right')].find(
+    const sheet = [...document.querySelectorAll<HTMLElement>('#workbench-right, #workbench-bottom')].find(
       (node) => visible(node) && getComputedStyle(node).position === 'fixed',
     )
     const root = dialogs.at(-1) ?? sheet ?? document
@@ -51,7 +51,7 @@ async function usable(page: Page, info: TestInfo, name: string) {
     if (Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > innerWidth + 1)
       issues.push('Document overflows horizontally')
     for (const node of root.querySelectorAll<HTMLElement>(
-      'button, a[href], summary, select, input:not([type="hidden"]), [role="combobox"], [role="tab"], [role="switch"], hr[tabindex], [tabindex="0"]',
+      'button, a[href], summary, select, input:not([type="hidden"]), [role="combobox"], [role="tab"], [role="switch"], [role="option"], hr[tabindex], [tabindex="0"]',
     )) {
       if (!visible(node) || node.closest('[inert]') || node.matches(':disabled, [aria-disabled="true"]'))
         continue
@@ -67,8 +67,15 @@ async function usable(page: Page, info: TestInfo, name: string) {
         node.getAttribute('aria-label') ||
         node.textContent?.trim().slice(0, 50) ||
         `${node.tagName}.${node.className}`
-      if (rect.width < 31.5 || rect.height < 31.5)
-        issues.push(`${label}: target ${Math.round(rect.width)}×${Math.round(rect.height)}`)
+      // Read-only code scrollports keep their original 32px floor; actions need 44px.
+      const minimum = innerWidth <= 767 && !node.matches('pre') ? 44 : 32
+      const after = getComputedStyle(target, '::after')
+      const expanded =
+        after.content !== 'none' && after.position === 'absolute' && after.pointerEvents !== 'none'
+      const width = Math.max(rect.width, expanded ? Number.parseFloat(after.width) || 0 : 0)
+      const height = Math.max(rect.height, expanded ? Number.parseFloat(after.height) || 0 : 0)
+      if (width < minimum - 0.5 || height < minimum - 0.5)
+        issues.push(`${label}: target ${Math.round(width)}×${Math.round(height)}`)
       const scrollable = (axis: 'x' | 'y') => {
         for (let parent = target.parentElement; parent; parent = parent.parentElement) {
           const style = getComputedStyle(parent)
@@ -100,7 +107,9 @@ async function usable(page: Page, info: TestInfo, name: string) {
     body: JSON.stringify(layout, null, 2),
     contentType: 'application/json',
   })
-  expect.soft(layout.issues, `${name}: controls fit and have at least 32px tap targets`).toEqual([])
+  expect
+    .soft(layout.issues, `${name}: controls fit and have 44px phone / 32px tablet tap targets`)
+    .toEqual([])
   await translated(page)
   await accessible(page, info, name)
 }
@@ -113,6 +122,7 @@ for (const locale of ['en', 'zh-CN'])
       const name = (english: string, chinese: string) => (en ? english : chinese)
       let shots = 0
       const capture = async (surface: string, width: number) => {
+        if (width === 390) return // Additional behavioural coverage keeps the existing pixel matrix.
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
         if (surface === 'settings') {
@@ -122,6 +132,14 @@ for (const locale of ['en', 'zh-CN'])
           await page.locator('#settings-everyday').evaluate((button) => {
             if (button.parentElement) button.parentElement.scrollLeft = 0
           })
+          if (width === 768) {
+            // The merged Agent page can retain a different reading position after
+            // loading Memory. Frame its requested subsection after those reads.
+            await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+            await page.getByTestId('settings-subsection-memory').evaluate((section) => {
+              section.scrollIntoView({ block: 'start', behavior: 'instant' })
+            })
+          }
         }
         if (surface === 'session') {
           // Opening a tool after the phone flow can retain the previous reading position.
@@ -367,6 +385,15 @@ for (const locale of ['en', 'zh-CN'])
           ).toBe(true)
           await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
           await page.locator('#view-trace').click()
+          await page.locator('.trace-type-filter').focus()
+          // The trace layout hides the composer at these widths; cycle only visible regions.
+          await expect(page.locator('#composer')).toBeHidden()
+          for (const key of ['F6', 'Shift+F6']) {
+            await page.keyboard.press(key)
+            expect(
+              await page.locator('#trace-panel').evaluate((node) => node.contains(document.activeElement)),
+            ).toBe(true)
+          }
           await page.locator('.trace-type-filter').selectOption('assistant')
           await usable(page, info, `trace-${viewport.width}`)
           await page.locator('.trace-row').first().click()

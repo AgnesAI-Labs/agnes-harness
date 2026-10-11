@@ -717,3 +717,100 @@ dialog[data-size="lg"] {
 .agh-list-row[data-highlighted="true"] {
   background: var(--agnes-bg-hover);
 }
+
+/* Loading remains quiet under reduced motion and never adds duplicate status text. */
+.agh-skeleton {
+  display: grid;
+  width: 100%;
+  gap: var(--s12);
+  margin-bottom: var(--s16);
+}
+.agh-skeleton > span {
+  display: block;
+  height: var(--s16);
+  border-radius: var(--radius-sm);
+  background: var(--agnes-bg-subtle);
+}
+.agh-skeleton > span:last-child {
+  width: 60%;
+}
+@media (max-width: 767px) {
+  /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */
+  :is(
+    .agnes-settings-checkbox,
+    .appearance-option,
+    .agnes-settings-details > summary,
+    .agnes-settings-card summary,
+    .ant-tabs-tab,
+    .agnes-settings-section-tabs button
+  ) {
+    min-height: var(--control-height-touch);
+    min-width: var(--control-height-touch);
+  }
+  .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: var(--control-height-touch);
+  }
+  .agnes-ui-switch {
+    position: relative;
+  }
+  .agnes-ui-switch::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+  }
+}
+
+@media (max-width: 767px) {
+  /* Native hosts share the same hit-area contract as React controls. Low specificity
+     preserves positioned actions and the existing disclosure/choice presentation. */
+  :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"]) {
+    position: relative;
+  }
+  :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"])::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+  }
+  body[data-agnes-region="app"]
+    :is(.agnes-settings-checkbox, .appearance-option, .ant-checkbox-wrapper, .ant-radio-wrapper) {
+    min-height: var(--control-height-touch);
+  }
+}
+
+@media (max-width: 767px) {
+  .agnes-ui-select.ant-select,
+  .ant-select-item-option {
+    min-height: var(--control-height-touch);
+  }
+  .agh-touch-target {
+    position: relative;
+  }
+  .agh-touch-target::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+  }
+}
+
+/* Long localized session labels must shrink inside their shared field. */
+.agh-field > .agnes-ui-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 768px) and (max-width: 900px) {
+  /* Compact tablet actions retain their 28px visual and a 32px pointer target. */
+  .ant-tabs-tab {
+    min-width: var(--s32);
+    justify-content: center;
+  }
+  .agh-btn--sm {
+    position: relative;
+  }
+  .agh-btn--sm::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - var(--s32)) / 2));
+  }
+}

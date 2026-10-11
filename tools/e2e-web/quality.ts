@@ -217,6 +217,15 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     await expect(latest).toBeHidden()
     await page.mouse.move(0, 0)
   }
+  // The new workspace step can show its manual path. Normalize only the isolated
+  // home-dependent value; retain the field, localized label and expanded disclosure.
+  const workspacePaths = page.locator('[data-testid="first-run-guide"][data-step="workspace"] input')
+  await workspacePaths.evaluateAll((nodes) => {
+    for (const node of nodes as HTMLInputElement[]) {
+      node.setAttribute('data-e2e-workspace-path-original', node.value)
+      node.value = '/workspace/w'
+    }
+  })
   const options = { animations: 'disabled' as const, fullPage: true, mask }
   try {
     await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
@@ -227,6 +236,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
     await expect(page).toHaveScreenshot(`${name}.png`, options)
   } finally {
+    await workspacePaths.evaluateAll((nodes) => {
+      for (const node of nodes as HTMLInputElement[]) {
+        node.value = node.getAttribute('data-e2e-workspace-path-original') ?? ''
+        node.removeAttribute('data-e2e-workspace-path-original')
+      }
+    })
     await page.evaluate(() => document.getElementById('e2e-visual-style')?.remove())
     await jobReceipts.evaluateAll((rows) => {
       for (const row of rows) {

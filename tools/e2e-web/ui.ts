@@ -15,6 +15,10 @@ export async function preferences(page: Page, locale = 'en', theme = 'light') {
 
 export async function settings(page: Page, locale = 'en') {
   await page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }).click()
+  // A reopened phone dialog retains its last detail page; return through its real navigation.
+  await expect(page.locator('#config')).toBeVisible()
+  const back = page.getByTestId('settings-back')
+  if (await back.isVisible()) await back.click()
   await expect(page.getByTestId('settings-navigation')).toBeVisible()
 }
 

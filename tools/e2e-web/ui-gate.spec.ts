@@ -114,6 +114,7 @@ for (const locale of ['en', 'zh-CN'])
           exact: true,
         })
         .click()
+      await expect(add).toBeFocused()
       let fieldSurface = ''
       for (const id of pages) {
         await section(page, id)
