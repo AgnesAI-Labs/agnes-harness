@@ -10,7 +10,7 @@ import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
-import { createSkillCandidateRegistry } from '@agnes/resource-control-runtime'
+import { createSkillCandidateRegistry, type SkillCandidate } from '@agnes/resource-control-runtime'
 import {
   createWorkerMcpServerOpener,
   syncManagedMcpExecutableAllowlist,
@@ -234,24 +234,38 @@ describe('createMcpRowRuntime against a real Host', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'mcp-composition-live-'))
     cleanup.push(() => rm(dataDir, { recursive: true, force: true }))
     const { opener, connects, closes } = countingOpener()
-    const skills = (body: string) => {
+    const skills = async (body: string) => {
       const registry = createSkillCandidateRegistry({
         barrier: { quiesce: async (_id, publish) => publish({}) },
       })
-      for (const [name, digit] of [
-        ['visible', 'a'],
-        ['hidden', 'b'],
-      ] as const)
-        registry.registerRuntime({
-          resourceId: `skill/runtime/runtime/${digit.repeat(64)}`,
-          name,
-          description: name,
-          revision: (body === 'archived body' ? 'a' : 'b').repeat(64),
-          capabilityHash: 'c'.repeat(64),
-          sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: digit.repeat(64) },
-          priority: 450,
-          body: `${name}: ${body}`,
-        })
+      // Disk resources refresh independently of code. Runtime contributions belong to plugin rows
+      // and deliberately do not change the reconstructible Skills row revision.
+      const candidates: SkillCandidate[] = (
+        [
+          ['visible', 'a'],
+          ['hidden', 'b'],
+        ] as const
+      ).map(([name, digit]) => ({
+        resourceId: `skill/user/user-agnes/${digit.repeat(64)}`,
+        name,
+        description: name,
+        revision: createHash('sha256').update(`${name}: ${body}`).digest('hex'),
+        capabilityHash: 'c'.repeat(64),
+        sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: digit.repeat(64) },
+        priority: 400,
+        body: `${name}: ${body}`,
+      }))
+      registry.replaceRoot('user-agnes', candidates)
+      registry.setControl({
+        desired: candidates.map(({ resourceId }) => ({ resourceId, state: 'enabled' })),
+        trust: candidates.map(({ resourceId, revision, capabilityHash }) => ({
+          resourceId,
+          revision,
+          capabilityHash,
+          state: 'trusted',
+        })),
+      })
+      await registry.activate('fixture-skills', async () => undefined)
       return registry.snapshot()
     }
     const options = {
@@ -283,7 +297,7 @@ describe('createMcpRowRuntime against a real Host', () => {
           ],
         }),
     }
-    const test = await createTestHost({ ...options, skillResources: skills('archived body') })
+    const test = await createTestHost({ ...options, skillResources: await skills('archived body') })
     let host = test.host
     cleanup.push(() => host.close())
     let runtime = createMcpRowRuntime({ host, opener })
@@ -321,13 +335,13 @@ describe('createMcpRowRuntime against a real Host', () => {
     expect(connects.sort()).toEqual(['alpha', 'beta'])
     expect(closes).toEqual([])
     await runtime.apply([entry('gamma'), entry('beta')])
-    await host.refreshSkillRow(skills('current body'))
+    await host.refreshSkillRow(await skills('current body'))
     expect(await nextTurn(old)).toContain('current body')
     expect(old.pluginGenerationId).toBe(pin)
     expect(old.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
     expect(old.currentTools().resolve(`${mcpLocalToolPrefix('gamma')}ping`)).toBeDefined()
     await host.close()
-    host = (await createTestHost({ ...options, skillResources: skills('cold current body') })).host
+    host = (await createTestHost({ ...options, skillResources: await skills('cold current body') })).host
     runtime = createMcpRowRuntime({ host, opener })
     await runtime.apply([entry('gamma'), entry('beta')])
     const resumed = await host.createSession({ key: old.key, cwd: dataDir })
