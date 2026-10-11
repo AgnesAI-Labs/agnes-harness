@@ -538,8 +538,8 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         setCallsCompleted(setCallCompleted(cur, root.tool.toolUseId), nestedCallIds),
       )
       actions.push({ effectId: root.effectId, action: 'unknown' })
-      if (recoveryRefusal !== 'decision-continuation-blocked')
-        await askUnknownOutcome(s, root.tool.toolUseId, root.tool.name)
+      // Reentry refusal says nothing about effects that may already have occurred.
+      await askUnknownOutcome(s, root.tool.toolUseId, root.tool.name)
       continue
     }
     if (root.kind === 'compaction') {

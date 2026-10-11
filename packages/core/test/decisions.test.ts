@@ -3,7 +3,8 @@ import { loopCheckpointCodec } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
-import { actor, openSession, readTool } from './helpers/open-session.js'
+import { fakeSeams } from './helpers/fake-seams.js'
+import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
 
 const spec: DecisionSpec = {
   key: 'review',
@@ -84,72 +85,113 @@ describe('session decision authority', () => {
       await f.session.close()
     }
   })
-  it('blocks cold reentry into a tool that requested a decision even when its replay policy is safe', async () => {
-    let entered!: () => void
-    let release!: () => void
-    const called = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    let handle!: Awaited<ReturnType<LoopContext['decisions']['request']>>
-    let executions = 0
-    const registry = new ToolRegistry()
-    registry.add(
-      readTool(async (_args, ctx) => {
-        executions++
-        handle = await ctx.decisions.request(spec)
-        entered()
-        await gate
-        return { content: [] }
-      }),
-      { source: 'fixture/author', trust: 'trusted' },
-    )
-    const first = await openSession({ registry, provider: fakeProvider([toolTurn('read', {})]) })
-    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
-    await first.session.step()
-    await first.session.step()
-    await first.session.step()
-    const inFlight = first.session.step().catch(() => undefined)
-    await called
-    const original = await first.session.decisions.get(handle)
-    const anotherOperation = first.session.decisions.port({
-      owner: original.request.owner,
-      sourcePackage: original.request.sourcePackage,
-      packageVersion: original.request.packageVersion,
-      operationId: 'tool-call-B',
-      alive() {},
-    })
-    await expect(anotherOperation.request(spec)).rejects.toThrow('KEY_CONFLICT')
-    expect((await first.session.decisions.get(handle)).request).toEqual(original.request)
-    await first.log.close()
-    release()
-    await inFlight
-    const second = await openSession({
-      registry,
-      storage: first.storage,
-      writerRunId: 'cold-tool',
-      provider: fakeProvider([]),
-    })
-    try {
-      expect((await second.session.resume()).actions).toEqual([
-        { effectId: expect.any(String), action: 'unknown' },
-      ])
-      expect(executions).toBe(1)
-      expect((await second.session.decisions.get(handle)).result).toBeNull()
-      expect((await second.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
-        code: 'DECISION_CONTINUATION_BLOCKED',
+  it.each(['safe', 'never'] as const)(
+    'blocks cold decision reentry and reconciles an unknown %s outcome',
+    async (replay) => {
+      let entered!: () => void
+      let release!: () => void
+      const called = new Promise<void>((resolve) => {
+        entered = resolve
       })
-      expect(
-        (await second.log.scan({ type: 'effect/intent', limit: 20 })).filter(
-          (row) => (row.data as { kind?: string })?.kind === 'tool',
-        ),
-      ).toHaveLength(1)
-    } finally {
-      await second.session.close()
-    }
-  })
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let handle!: Awaited<ReturnType<LoopContext['decisions']['request']>>
+      let executions = 0
+      const registry = new ToolRegistry()
+      const toolName = replay === 'never' ? 'shell' : 'read'
+      const tool = replay === 'never' ? shellTool : readTool
+      const seams = fakeSeams({
+        approval: {
+          ask: async (request) =>
+            request.kind === 'unknown-outcome'
+              ? { ticket: 'reconcile-original', expiresAt: request.deadline }
+              : { verdict: 'allowed-once', answeredBy: actor },
+        },
+      })
+      registry.add(
+        tool(async (_args, ctx) => {
+          executions++
+          handle = await ctx.decisions.request(spec)
+          entered()
+          await gate
+          return { content: [] }
+        }),
+        { source: 'fixture/author', trust: 'trusted' },
+      )
+      const first = await openSession({ registry, seams, provider: fakeProvider([toolTurn(toolName, {})]) })
+      await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
+      await first.session.step()
+      await first.session.step()
+      await first.session.step()
+      const inFlight = first.session.step().catch(() => undefined)
+      await called
+      const original = await first.session.decisions.get(handle)
+      const anotherOperation = first.session.decisions.port({
+        owner: original.request.owner,
+        sourcePackage: original.request.sourcePackage,
+        packageVersion: original.request.packageVersion,
+        operationId: 'tool-call-B',
+        alive() {},
+      })
+      await expect(anotherOperation.request(spec)).rejects.toThrow('KEY_CONFLICT')
+      expect((await first.session.decisions.get(handle)).request).toEqual(original.request)
+      await first.log.close()
+      release()
+      await inFlight
+      const second = await openSession({
+        registry,
+        storage: first.storage,
+        writerRunId: 'cold-tool',
+        seams,
+        provider: fakeProvider([]),
+      })
+      try {
+        expect((await second.session.resume()).actions).toEqual([
+          { effectId: expect.any(String), action: 'unknown' },
+        ])
+        expect(executions).toBe(1)
+        expect((await second.session.decisions.get(handle)).result).toBeNull()
+        expect((await second.log.scan({ type: 'tool/result', limit: 20 })).at(-1)?.data).toMatchObject({
+          code: 'DECISION_CONTINUATION_BLOCKED',
+        })
+        expect(
+          (await second.log.scan({ type: 'effect/intent', limit: 20 })).filter(
+            (row) => (row.data as { kind?: string })?.kind === 'tool',
+          ),
+        ).toHaveLength(1)
+        const reconciliations = (await second.log.scan({ type: 'approval/asked', limit: 20 })).filter(
+          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        )
+        expect(reconciliations).toHaveLength(1)
+        expect(reconciliations[0]?.data).toMatchObject({ pending: { ticket: 'reconcile-original' } })
+        expect((await second.log.scan({ type: 'effect/settled', limit: 20 })).at(-1)?.data).toMatchObject({
+          outcome: 'unknown',
+        })
+        await second.session.close()
+        const third = await openSession({
+          registry,
+          seams,
+          storage: first.storage,
+          writerRunId: 'second-restart',
+          provider: fakeProvider([]),
+        })
+        try {
+          await third.session.resume()
+          expect(
+            (await third.log.scan({ type: 'approval/asked', limit: 20 })).filter(
+              (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+            ),
+          ).toEqual(reconciliations)
+          expect(executions).toBe(1)
+        } finally {
+          await third.session.close()
+        }
+      } finally {
+        await second.session.close()
+      }
+    },
+  )
   it('reopens the original request and consumes its human answer with the next checkpoint', async () => {
     const first = await fixture()
     const handle = await first.ctx.decisions.request(spec)
