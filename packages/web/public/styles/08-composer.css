@@ -365,8 +365,12 @@ body.session-switching #approval {
 #composer-attach {
   order: -3;
 }
-.model-field {
+.composer-controls .model-field {
   order: -2;
+  margin-left: 0;
+}
+#send {
+  margin-left: auto;
 }
 #composer-permission {
   order: -1;

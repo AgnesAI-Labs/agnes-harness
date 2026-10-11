@@ -140,9 +140,7 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
             aria-busy={loading}
             onClick={() => setRefresh((value) => value + 1)}
           >
-            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 7v5h-5M4 17v-5h5M19 11a7 7 0 0 0-12-5L4 9m16 6-3 3A7 7 0 0 1 5 13" />
-            </svg>
+            <Icon name="refresh-cw" />
           </Button>,
           header,
         )}

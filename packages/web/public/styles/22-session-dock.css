@@ -280,3 +280,10 @@
     display: none;
   }
 }
+@media (max-width: 900px) {
+  #workbench-right .workbench-dock-heading button,
+  #workbench-bottom .workbench-dock-heading button {
+    min-width: var(--s32);
+    min-height: var(--s32);
+  }
+}

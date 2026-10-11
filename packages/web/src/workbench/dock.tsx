@@ -13,8 +13,9 @@ import {
   type IconName,
   icons,
   Menu,
-  Tooltip,
   renderRegion,
+  Toast,
+  Tooltip,
   unmountRegion,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -44,8 +45,15 @@ function readLayout(): Layout {
 }
 export function Dock({ context }: { context: UiExtensionContext }) {
   useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
+  const bottomAvailable = workbenchPanels
+    .entries()
+    .some((panel) => panel.edge === 'bottom' && (panel.visibility !== 'contextual' || panel.when?.(context)))
   const [layout, setLayout] = useState(readLayout)
   const [expanded, setExpanded] = useState(false)
+  const [copyMessage, setCopyMessage] = useState('')
+  useEffect(() => {
+    if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
+  }, [bottomAvailable])
   const [factTarget, setFactTarget] = useState<FactChainParams>()
   const returnFocus = useRef<Partial<Record<'right' | 'bottom', HTMLElement>>>({})
   const sessionId = (context.data as WorkbenchContext)?.session?.id
@@ -93,7 +101,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       target.focus()
     else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
   }, [])
-  useEffect(() => setFactTarget(undefined), [sessionId])
+  useEffect(() => setFactTarget((value) => (value?.sessionId === sessionId ? value : undefined)), [sessionId])
   useEffect(() => {
     const sheet = window.matchMedia('(max-width: 767px)')
     const reconcile = () => {
@@ -153,15 +161,15 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     const split = surfaces.split
     if (!split) return
     split.classList.toggle('workbench-right-open', layout.rightOpen)
-    split.classList.toggle('workbench-bottom-open', layout.bottomOpen)
+    split.classList.toggle('workbench-bottom-open', layout.bottomOpen && bottomAvailable)
     split.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
     split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
-      if (host) host.hidden = !layout[`${edge}Open`]
+      if (host) host.hidden = !layout[`${edge}Open`] || (edge === 'bottom' && !bottomAvailable)
     }
-  }, [layout, surfaces, expanded, selected])
+  }, [layout, surfaces, expanded, selected, bottomAvailable])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
@@ -232,19 +240,29 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         : { bottomHeight: Math.max(120, Math.min(window.innerHeight / 2, value.bottomHeight + amount)) }),
     }))
   const workspaceHost = document.querySelector('.topbar')
+  const workspace = workbench?.workspace
+  const copyWorkspace = async () => {
+    if (!workspace) return
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(workspace.path)
+      setCopyMessage(t('workbench.copied'))
+    } catch {
+      setCopyMessage(t('workbench.copyFailed'))
+    }
+  }
   return (
     <div ref={controls} className="workbench-controls">
-      {workbench?.workspace &&
+      <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
+        {copyMessage}
+      </Toast>
+      {workspace &&
         workspaceHost &&
         createPortal(
           <Tooltip title={t('workbench.workspace')}>
-            <Button
-              appearance="ghost"
-              className="topbar-workspace"
-              onClick={() => void navigator.clipboard?.writeText(workbench.workspace!.path)}
-            >
+            <Button appearance="ghost" className="topbar-workspace" onClick={() => void copyWorkspace()}>
               <Icon name="folder" />
-              {workbench.workspace.name}
+              {workspace.name}
             </Button>
           </Tooltip>,
           workspaceHost,
@@ -333,7 +351,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                         .slice(0, entries.length > 5 ? 4 : 5)
                         .concat(
                           entries.length > 5
-                            ? [active && entries.indexOf(active) >= 4 ? active : entries[4]!]
+                            ? active && entries.indexOf(active) >= 4
+                              ? [active]
+                              : entries.slice(4, 5)
                             : [],
                         )
                         .map((panel) => (

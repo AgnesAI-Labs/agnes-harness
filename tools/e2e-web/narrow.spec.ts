@@ -277,11 +277,11 @@ for (const locale of ['en', 'zh-CN'])
         // Inspect the recorded deliverable through both placements, then return to the conversation.
         const delivery = page
           .getByTestId('intelligent-ui-inline')
+          .locator('[data-testid^="ui-surface-"]')
           .filter({ hasText: 'Deliverables / 交付物' })
         await expect(delivery).toContainText('Delivery report.md')
         const rightToggle = page.getByTestId('workbench-right-toggle')
-        if ((await rightToggle.getAttribute('aria-expanded')) !== 'true') await rightToggle.click()
-        await page.getByTestId('workbench-tab-intelligent-ui').click()
+        await delivery.getByTestId('ui-expand').click()
         await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
         await page
           .locator('#workbench-right')
@@ -349,6 +349,12 @@ for (const locale of ['en', 'zh-CN'])
           await expect(first).toBeFocused()
           await page.keyboard.press('Escape')
           await expect(evidence).toBeFocused()
+          await evidence.click()
+          await page.keyboard.press('F6')
+          await expect(page.locator('#workbench-right')).toBeHidden()
+          expect(
+            await page.locator('#composer').evaluate((node) => node.contains(document.activeElement)),
+          ).toBe(true)
           await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
           await page.locator('#view-trace').click()
           await page.locator('.trace-type-filter').selectOption('assistant')

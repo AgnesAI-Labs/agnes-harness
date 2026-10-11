@@ -41,8 +41,8 @@ import {
   type ComposerView,
   INITIAL_VIEW,
 } from './composer/contracts.js'
-import type { ComposerAttachment } from './composer/image-files.js'
 import { ComposerExtras } from './composer/extras.js'
+import type { ComposerAttachment } from './composer/image-files.js'
 import { useComposerPickers } from './composer/pickers.js'
 import { renderComposerQueue } from './composer/queue.js'
 import { ReferencePicker } from './reference-picker.js'
@@ -333,16 +333,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           },
           createElement(Icon, { name: 'folder' }),
           createElement('span', { 'data-workspace-label': true }, view.workspace.label),
-          createElement(
-            'svg',
-            {
-              className: 'icon model-chevron',
-              'data-agnes-region': 'icon',
-              viewBox: '0 0 24 24',
-              'aria-hidden': true,
-            },
-            createElement('path', { d: 'm6 9 6 6 6-6' }),
-          ),
+          createElement(Icon, { name: 'chevron-down', className: 'model-chevron' }),
         ),
         slots?.permission,
         createElement(
@@ -366,16 +357,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             { 'data-permission-label': true },
             dependencies.translate('composer.permission.workspace'),
           ),
-          createElement(
-            'svg',
-            {
-              className: 'icon model-chevron',
-              'data-agnes-region': 'icon',
-              viewBox: '0 0 24 24',
-              'aria-hidden': true,
-            },
-            createElement('path', { d: 'm6 9 6 6 6-6' }),
-          ),
+          createElement(Icon, { name: 'chevron-down', className: 'model-chevron' }),
         ),
         slots?.model,
         createElement(
@@ -392,16 +374,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               'aria-label': view.model.accessibleName,
             },
             createElement('span', { 'data-model-label': true }, view.model.label),
-            createElement(
-              'svg',
-              {
-                className: 'icon model-chevron',
-                'data-agnes-region': 'icon',
-                viewBox: '0 0 24 24',
-                'aria-hidden': true,
-              },
-              createElement('path', { d: 'm6 9 6 6 6-6' }),
-            ),
+            createElement(Icon, { name: 'chevron-down', className: 'model-chevron' }),
           ),
         ),
         createElement(
@@ -522,11 +495,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             title: view.send.title,
           },
           createElement('span', null, view.send.label),
-          createElement(
-            'svg',
-            { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-            createElement('path', { d: 'M12 19V5M6.5 10.5 12 5l5.5 5.5' }),
-          ),
+          createElement(Icon, { name: 'arrow-up' }),
         ),
         slots?.dock,
       ),

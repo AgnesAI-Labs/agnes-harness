@@ -215,3 +215,9 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   border-radius: var(--radius-control);
   padding: var(--s8) var(--s12);
 }
+@media (max-width: 900px) {
+  #sidebar-toggle {
+    min-width: var(--s32);
+    min-height: var(--s32);
+  }
+}

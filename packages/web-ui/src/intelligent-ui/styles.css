@@ -481,9 +481,20 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
+.agnes-intelligent-surface [data-testid="ui-summary"] {
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 .agnes-intelligent-surface > header {
   gap: var(--s8);
 }
 .agnes-intelligent-surface > header h3 {
   flex: 1;
+}
+@media (max-width: 900px) {
+  body[data-agnes-region="app"] .agnes-intelligent-surface > header button {
+    min-width: var(--s32);
+    min-height: var(--s32);
+  }
 }

@@ -8,15 +8,16 @@ import type {
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useId, useState } from 'react'
 import { SettingsState, SettingsToolbar } from '../settings-layout.js'
+import { Badge } from '../ui/badge.js'
+import { Button } from '../ui/button.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu } from '../ui/menu.js'
 import { Tag } from '../ui/tag.js'
-import { Badge } from '../ui/badge.js'
-import { Button } from '../ui/button.js'
+import { Toast } from '../ui/toast.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
-import { SurfaceRenderBoundary } from './render-boundary.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
+import { SurfaceRenderBoundary } from './render-boundary.js'
 
 export interface IntelligentSurfaceProps {
   renderCustom?: IntelligentCatalogProps['renderCustom']
@@ -54,6 +55,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const titleId = useId()
   const [sourceVisible, setSourceVisible] = useState(false)
+  const [copyMessage, setCopyMessage] = useState('')
   const textComponent = surface.components.find((component) => component.kind === 'text')
   const text = textComponent && 'dataKey' in textComponent ? surface.data[textComponent.dataKey] : undefined
   const summaryOnly = props.placement === 'inline' && surface.placement.workbench
@@ -65,6 +67,15 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       : receipts.some((receipt) => receipt.status === 'pending-approval')
         ? t('ui.pending-approval')
         : t('ui.summary', { count: record.status === 'open' && !props.locked ? surface.actions.length : 0 }))
+  const copySummary = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(summary)
+      setCopyMessage(t('ui.copied'))
+    } catch {
+      setCopyMessage(t('ui.copyFailed'))
+    }
+  }
   return (
     <article
       className="agnes-intelligent-surface"
@@ -73,6 +84,9 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       data-revision={surface.revision}
       aria-labelledby={titleId}
     >
+      <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
+        {copyMessage}
+      </Toast>
       <header>
         <h3 id={titleId} title={t('ui.revision', { revision: surface.revision })}>
           {surface.title}
@@ -86,7 +100,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
             {
               id: 'copy',
               label: t('ui.copy'),
-              onSelect: () => void navigator.clipboard?.writeText(surface.summary ?? surface.title),
+              onSelect: () => void copySummary(),
             },
           ]}
         />

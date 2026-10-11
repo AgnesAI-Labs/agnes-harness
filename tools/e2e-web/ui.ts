@@ -119,6 +119,8 @@ export async function fullAccess(page: Page, locale = 'en') {
   })
   await option.click()
   await expect(permission).toContainText(locale === 'en' ? 'Full access' : '完全访问')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('agent-options')).toBeHidden()
   await page
     .getByRole('textbox', { name: locale === 'en' ? 'Task content' : '任务内容', exact: true })
     .click()

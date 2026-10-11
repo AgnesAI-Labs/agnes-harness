@@ -13,6 +13,9 @@ export function cycleTaskFocus(event: KeyboardEvent): void {
   const next = regions[(index + (event.shiftKey ? -1 : 1) + regions.length) % regions.length]
   if (!next) return
   event.preventDefault()
+  const overlay = document.getElementById('workbench-right')
+  if (window.innerWidth < 1280 && overlay?.contains(document.activeElement) && !overlay.contains(next))
+    overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   const target =
     [
       ...next.querySelectorAll<HTMLElement>(

@@ -14,7 +14,7 @@ import {
 } from '@agnes/web-admin/settings/choices'
 import { tr as hostText } from '@agnes/web-foundation/locale-bridge'
 import { composerLocaleCatalog } from '@agnes/web-foundation/locales/composer'
-import { Button, Field, Popover, Select, SettingsInput, useUiText } from '@agnes/web-ui'
+import { Button, Field, Icon, Popover, Select, SettingsInput, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 export type LoopSelection = { id: string; version: string }
@@ -267,7 +267,7 @@ export function LoopPicker() {
     </section>
   )
   return (
-    <Popover open={open} onOpenChange={setOpen} trigger="click" placement="topLeft" content={content}>
+    <Popover open={open} onOpenChange={setOpen} trigger="click" placement="top" content={content}>
       <Button
         ref={trigger}
         type="text"
@@ -282,9 +282,7 @@ export function LoopPicker() {
         <span className="agent-chip-value" hidden={state.loops.length < 2}>
           {active ? choiceName(active, tr) : tr('composer.agent.unresolved')}
         </span>
-        <svg className="icon model-chevron" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <Icon name="chevron-down" className="model-chevron" />
       </Button>
     </Popover>
   )

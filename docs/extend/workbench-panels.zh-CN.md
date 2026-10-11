@@ -14,11 +14,13 @@ const dispose = workbenchPanels.register({
 
 组件收到 `{ context, headerId? }`。可选 `headerId` 指向仅用于展示的停靠面板标题栏操作容器，面板可把图标按钮通过 portal 放入其中。`context` 提供翻译函数、可选会话/资源服务以及宿主专用 `data`。将身份绑定的注销函数纳入模块生命周期。ID 必须唯一，排序值必须有限。`edge` 可为 `right` 或 `bottom`。壳负责页签、键盘导航、折叠和尺寸记忆。所选注册被移除时回退到剩余的首个面板。使用 `@agnes/web-ui` 原语并提供完整的中英文文案。
 
+可选 `visibility: 'contextual'` 与 `when(context)` 使面板仅在内容存在时显示，默认值为 `always`。可选 `title(context)` 以内容标题替代 `titleKey`，`icon` 接受共享图标名。这些钩子只控制展示，不做授权判断。内置面板共用右侧工作台；插件仍可使用 `bottom`。超过五个页签时使用「更多」菜单。
+
 注册面板不会授予文件、进程或目标权限。通过已认证宿主客户端的受支持会话 API 操作。内置文件面板使用 `Session.workspaceList(path?)` 和 `Session.workspaceRead(path)`，路径均相对工作区。目录懒加载并遵守 `.gitignore`/`.aghignore`（通配符、目录规则与否定规则）。预览只读，上限为 1 MiB，拒绝二进制文件、符号链接和安装目录。Git 状态标记按可用情况显示。引用只向输入框添加带引号的相对路径，不提交提示词。
 
-原有 `workbench.panel` 插槽继续挂载在右侧面板中以保持兼容。新浏览器默认关闭停靠区。桌面宽度为 240–480 像素，小屏幕使用浮层。尺寸分隔条支持方向键，页签支持方向键及 Home/End，Escape 关闭面板。
+原有 `workbench.panel` 插槽继续挂载在右侧面板中以保持兼容。新浏览器默认关闭停靠区。桌面宽度为 240–480 像素，可主动展开至窗口的 60%；小屏幕使用浮层。尺寸分隔条支持方向键，页签支持方向键及 Home/End，Escape 关闭面板。F6 与 Shift+F6 在可见任务区域间循环；离开浮层工作台时会收起它。
 
-手机上同时只打开一个停靠区 sheet，缩小窗口时也保持此规则。浮层内 Tab 只经过可见且启用的控件，关闭后焦点返回打开入口。提及路径与记录导航先关闭浮层，再聚焦目标。平板中的行内终端不限制 Tab 离开。
+手机上同时只打开一个停靠区 sheet，缩小窗口时也保持此规则。浮层内 Tab 只经过可见且启用的控件，关闭后焦点返回打开入口。提及路径与记录导航先关闭浮层，再聚焦目标。插件在平板中的行内底部面板不限制 Tab 离开。
 
 worker 在会话 workspace invocation 内执行 list/read，使用与工具一致的文件策略。native 逐层打开规范路径，拒绝链接并保留同一个经过校验的 descriptor 完成有上限的读取；native 不可用时拒绝操作。POSIX 使用 `openat`；Windows 持有真实目录句柄阻止替换并拒绝 reparse point（仅本地盘路径）。list revision 描述可见目录列表；read revision 是返回字节的 SHA-256，超大文件明确标为 `weak:mtime:size`。`observedAt` 是服务端读取时间，不保证后续预览仍然最新。Git 超时或溢出返回 `gitStatus: unavailable`，不能显示为干净状态。
 
