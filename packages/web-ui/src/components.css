@@ -123,3 +123,134 @@
   background: transparent;
   border-color: var(--agnes-input-border);
 }
+.agh-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s4);
+  max-width: 100%;
+  padding: var(--s2) var(--s8);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-sm);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-subtle);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-sm);
+  overflow-wrap: anywhere;
+}
+.agh-tag[data-tone="warn"] {
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+  border-color: var(--agnes-status-warning-border);
+}
+.agh-tag[data-tone="bad"] {
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  border-color: var(--agnes-status-danger-border);
+}
+.agh-tag[data-tone="info"] {
+  color: var(--agnes-status-info-text);
+  background: var(--agnes-status-info-bg);
+  border-color: var(--agnes-status-info-border);
+}
+/* Legacy Badge keeps its public tones; business-page status selection is migrated separately. */
+.agh-tag[data-tone="ok"] {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+  border-color: var(--agnes-status-success-border);
+}
+.agh-meta {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.agh-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--s16);
+  padding-inline: var(--s4);
+  border-radius: var(--radius-pill);
+  background: var(--agnes-bg-selected);
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-xs);
+}
+.agh-tooltip-anchor,
+.agh-menu-anchor {
+  display: inline-flex;
+  max-width: 100%;
+}
+.agh-tooltip-anchor:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.agh-tooltip .ant-tooltip-inner,
+.agh-tooltip .ant-tooltip-container {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-popover);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-1);
+  font-size: var(--font-size-sm);
+}
+.agh-tooltip .ant-tooltip-arrow {
+  --antd-arrow-background-color: var(--agnes-bg-popover);
+}
+.agh-menu {
+  display: grid;
+  min-width: 180px;
+  gap: var(--s4);
+}
+.agh-menu-item {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--s12);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--agnes-text-primary);
+  font-weight: var(--font-weight-regular);
+}
+.agh-menu-item[data-danger] {
+  color: var(--agnes-status-danger-text);
+}
+.agh-menu-item[aria-disabled="true"] {
+  color: var(--agnes-text-tertiary);
+  cursor: not-allowed;
+}
+.agh-menu-separator {
+  height: 1px;
+  margin-block: var(--s4);
+  background: var(--agnes-line-primary);
+}
+.agh-toast {
+  position: fixed;
+  z-index: 1100;
+  bottom: max(var(--s24), env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - var(--s32));
+  padding: var(--s12) var(--s16);
+  border: 1px solid var(--agnes-status-success-border);
+  border-radius: var(--radius-control);
+  background: var(--agnes-status-success-bg);
+  color: var(--agnes-status-success-text);
+  box-shadow: var(--elevation-1);
+  font-size: var(--font-size-body);
+}
+@media (max-width: 767px) {
+  .agh-menu-item {
+    min-height: var(--control-height-touch);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agh-toast {
+    left: var(--s16);
+    right: var(--s16);
+    margin-inline: auto;
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+    inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
+  }
+}

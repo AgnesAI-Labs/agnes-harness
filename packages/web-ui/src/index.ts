@@ -114,3 +114,8 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
+
+export { Tag, MetaText, Count, type TagProps, type TagTone } from './ui/tag.js'
+export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
+export { Tooltip, type TooltipProps } from './ui/tooltip.js'
+export { Toast, type ToastProps } from './ui/toast.js'

@@ -1,5 +1,6 @@
 import { Button as AntButton, type ButtonProps as AntButtonProps } from 'antd'
 import { forwardRef } from 'react'
+import { Tooltip } from './tooltip.js'
 
 export type ButtonAppearance = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link'
 export type ButtonProps = AntButtonProps & {
@@ -37,7 +38,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ]
     .filter(Boolean)
     .join(' ')
-  return (
+  const button = (
     // Preserve Ant's public props/ref while contract CSS owns the presentation.
     <AntButton
       ref={ref}
@@ -49,5 +50,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     >
       {children}
     </AntButton>
+  )
+  return props.disabled && disabledReason ? (
+    <Tooltip title={disabledReason} disabled>
+      {button}
+    </Tooltip>
+  ) : (
+    button
   )
 })
