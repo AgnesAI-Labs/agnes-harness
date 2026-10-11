@@ -187,11 +187,15 @@ describe('real subagent tools on sqlite', () => {
         writerRunId: 'r0',
       })
       await parent0.enqueue('next-turn', { content: [{ type: 'text', text: 'fork' }], actor })
-      await parent0.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(await parent0.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
       const forkResult = (await parent0.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
         | { isError?: boolean }
         | undefined
       expect(forkResult?.isError).toBe(true)
+      expect(JSON.stringify(forkResult)).toContain('E_CHILD_LIMIT')
+      expect(await parent0.scan({ type: 'approval/asked', limit: 5 })).toEqual([])
       expect(await storage0.listByParent('parent')).toEqual([])
       expect(limited.requests.length).toBe(2)
       log.push(`pass ${pass} over-limit providerCalls=${limited.requests.length} children=0`)

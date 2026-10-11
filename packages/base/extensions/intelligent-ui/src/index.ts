@@ -4,7 +4,7 @@ import { intelligentUiKind, UI_PROVIDER_ID, UI_PROVIDER_VERSION } from '@agnes/i
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
 import { UI_DATA_DESCRIPTION } from './data-contracts.js'
-import { correctableUiInput } from './input-rejection.js'
+import { correctableUiRejection } from './input-rejection.js'
 import { reachableParameters } from './parameters.js'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
@@ -52,7 +52,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiRenderParams),
         meta: presentational,
         async execute(input, ctx) {
-          return correctableUiInput(async () => {
+          return correctableUiRejection(async () => {
             const record = await bound((ui) => ui.render(input, ctx.signal))
             return {
               content: [
@@ -83,7 +83,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiUpdateParams),
         meta: presentational,
         async execute(input, ctx) {
-          return correctableUiInput(async () => {
+          return correctableUiRejection(async () => {
             const record = await bound((ui) => ui.update(input, ctx.signal))
             return {
               content: [
@@ -111,7 +111,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiCloseParams),
         meta: presentational,
         async execute(input, ctx) {
-          return correctableUiInput(async () => {
+          return correctableUiRejection(async () => {
             const record = await bound((ui) => ui.close(input, ctx.signal))
             return {
               content: [{ type: 'text', text: `Closed ${record.surface.title}.` }],

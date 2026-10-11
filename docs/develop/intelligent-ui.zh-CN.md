@@ -135,6 +135,8 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 三个 surface 工具的确定性输入验证发生在读取状态、解析 source 或写入 ledger 之前。拒绝输入时返回 `isError`，包含 `UI_INVALID`、`effect: "none"` 和有界 issues（JSON 路径与期望形状），模型可以修正后重试。RPC 调用方仍收到 `INVALID_PARAMS`。状态错误、取消及持久化失败继续走原有错误路径。
 
+数据源 resolver 明确拒绝 render/update 时，工具返回错误 ToolResult，包含对应的 `UI_SOURCE_*`（或 `UI_STALE`）及 `published: false`，保留原 surface revision。数据源读取和审计可能已经执行，因此不声明 `effect: "none"`。RPC 调用方仍收到 `SEMANTIC_REJECTED`；resolver 的未知异常及持久化失败继续传播。
+
 | 入口 | 合同 |
 | --- | --- |
 | `ui_render(UiRenderParams)` | 创建 revision 1；后台绑定归属插件/generation、任务和通道。同一普通工具 invocation 重入时使用已有回执，不重复 render。 |

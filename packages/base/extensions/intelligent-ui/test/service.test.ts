@@ -13,6 +13,7 @@ import {
   type Actor,
   type EventEnvelope,
   jcs,
+  rpcError,
   type UiActionParams,
   type UiSourceStatus,
   type UiSurface,
@@ -1007,15 +1008,57 @@ describe('bound UI data sources', () => {
     expect(JSON.stringify(audits)).not.toContain('amount')
     expect(JSON.stringify(audits)).not.toContain('$source')
   })
-  it('rejects a write when resolution fails and stores nothing', async () => {
-    const f = fixture()
-    f.source(async (input) => resolved(input, false))
-    await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({
-      data: { code: 'UI_SOURCE_DENIED' },
-    })
-    expect(f.rows.some((item) => item.type.endsWith('/surface.opened'))).toBe(false)
-    expect(f.rows.some((item) => item.type.endsWith('/source.refused'))).toBe(true)
-  })
+  it.each(['UI_SOURCE_UNKNOWN', 'UI_SOURCE_DENIED'] as const)(
+    'returns %s from surface tools without publishing or swallowing resolver errors',
+    async (code) => {
+      const f = fixture()
+      const tools: ToolDef[] = []
+      intelligentUi({
+        providers: { register: () => () => {}, bindOwn: async () => f.service() },
+        registerProjection: () => () => {},
+        registerTool: (tool: ToolDef) => {
+          tools.push(tool)
+          return () => {}
+        },
+      } as unknown as ExtensionAPI)
+      f.source(async (input) => ({ ...resolved(input, false), ok: false, code }))
+      await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({
+        data: { code },
+      })
+      const ctx = fakeToolContext()
+      const render = tools.find((tool) => tool.name === 'ui_render')!
+      const update = tools.find((tool) => tool.name === 'ui_update')!
+      expect(await render.execute({ surface: bound() }, ctx)).toMatchObject({
+        isError: true,
+        structured: { code, published: false },
+      })
+      expect(f.rows.some((item) => item.type.endsWith('/surface.opened'))).toBe(false)
+      expect(f.rows.some((item) => item.type.endsWith('/source.refused'))).toBe(true)
+      // A refused replacement keeps the original surface revision.
+      f.source(async (input) => resolved(input))
+      await f.service().render({ surface: bound() }, signal)
+      f.source(async (input) => ({ ...resolved(input, false), ok: false, code }))
+      expect(
+        await update.execute(
+          {
+            surfaceId: 'reconcile',
+            expectedRevision: 1,
+            surface: { ...bound(), revision: 2 },
+          },
+          ctx,
+        ),
+      ).toMatchObject({ isError: true, structured: { code, published: false } })
+      expect(f.rows.some((item) => item.type.endsWith('/surface.updated'))).toBe(false)
+      f.source(async (input) => resolved(input))
+      expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]?.surface.revision).toBe(1)
+      // Matching public error fields are not proof of a known publication refusal.
+      const unknown = rpcError('SEMANTIC_REJECTED', { code })
+      f.source(async () => {
+        throw unknown
+      })
+      await expect(render.execute({ surface: { ...bound(), id: 'other' } }, ctx)).rejects.toBe(unknown)
+    },
+  )
   it('fails closed when a binding has no resolver', async () => {
     const f = fixture()
     await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({

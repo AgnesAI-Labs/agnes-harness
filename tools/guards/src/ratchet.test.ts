@@ -256,7 +256,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // GT1: register new round scopes; exact values are remeasured once at the end.
   'packages/base/extensions/references': 21,
   // Source bindings resolve to scalars. Measured 1094, exact, no spare.
-  'packages/base/extensions/intelligent-ui': 1237,
+  'packages/base/extensions/intelligent-ui': 1252,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
@@ -2544,7 +2544,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // lifecycle is the first slice; the same extension will also own Task 32's three tool
   // registrations. The shared bundled-extension guard below already caps every extension at 800,
   // so this registers that fixed package budget rather than raising an existing allowance.
-  'packages/base/extensions/subagent': 711,
+  'packages/base/extensions/subagent': 713,
   // 2026-09-11: Bridges Task 5 seeds these two planned bundled extensions with generated fact
   // tables. Register their fixed per-extension ceilings now; generated JSON counts as zero source
   // lines today, while the universal bundled-extension guard keeps future implementations ≤800.

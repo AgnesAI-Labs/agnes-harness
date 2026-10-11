@@ -348,21 +348,55 @@ describe('subagent_spawn', () => {
     await first
   })
 
-  it('persists identity before preparing a worktree, so a failed create never leaves a tree', async () => {
-    const wt = worktrees()
-    const d = deps({ worktrees: wt.manager })
-    const c = context({
-      spawn: async () => {
-        throw new Error('child backend unavailable')
-      },
-    })
+  it.each([
+    { name: 'backend failure', error: new Error('child backend unavailable'), born: false, refused: false },
+    {
+      name: 'Core admission refusal',
+      error: new CoreError('E_CHILD_LIMIT', 'generation limit'),
+      born: false,
+      refused: true,
+    },
+    {
+      name: 'lookalike error code',
+      error: Object.assign(new Error('limit'), { code: 'E_CHILD_LIMIT' }),
+      born: false,
+      refused: false,
+    },
+    {
+      name: 'budget recovery failure',
+      error: new CoreError('E_BUDGET', 'uncertain reservation'),
+      born: false,
+      refused: false,
+    },
+    {
+      name: 'failure after child identity',
+      error: new CoreError('E_CHILD_LIMIT', 'resume failed'),
+      born: true,
+      refused: false,
+    },
+  ])(
+    'settles only a Core admission refusal and preserves cleanup: $name',
+    async ({ error, born, refused }) => {
+      const wt = worktrees()
+      const d = deps({ worktrees: wt.manager })
+      const c = context({
+        spawn: async () => {
+          if (!born) throw error
+          return { childKey: 'created-child' }
+        },
+        resume: async () => {
+          throw error
+        },
+      })
 
-    await expect(subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)).rejects.toThrow(
-      'child backend unavailable',
-    )
-    expect(wt.calls.create).toEqual([])
-    expect(wt.calls.finish).toEqual([])
-  })
+      const execution = subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)
+      if (refused)
+        expect(await execution).toMatchObject({ isError: true, details: { code: 'E_CHILD_LIMIT' } })
+      else await expect(execution).rejects.toBe(error)
+      expect(wt.calls.create).toEqual(born ? [c.ctx] : [])
+      expect(wt.calls.finish).toEqual(born ? [['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']] : [])
+    },
+  )
 
   it('rejects invalid direct-call budgets before reserving capacity', async () => {
     const d = deps({ isolation: 'shared' })

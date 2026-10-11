@@ -135,6 +135,8 @@ Detail cards, steps, progress, images and tabs are data only. The percentage bel
 
 Deterministic input validation for the three surface tools runs before state, source resolution or ledger writes. Rejected input returns `isError` with `UI_INVALID`, `effect: "none"`, and bounded issues containing JSON paths and expected shapes; the model can correct and retry. RPC callers still receive `INVALID_PARAMS`. Stateful failures, cancellation and persistence failures retain their existing error paths.
 
+A source resolver that explicitly refuses render/update returns an error ToolResult with its `UI_SOURCE_*` code (or `UI_STALE`) and `published: false`. The existing surface revision is preserved. Source reads and audits may already have run, so this does not claim `effect: "none"`. RPC callers still receive `SEMANTIC_REJECTED`; unexpected resolver errors and persistence failures continue to propagate.
+
 | Entry | Contract |
 | --- | --- |
 | `ui_render(UiRenderParams)` | Create revision 1; backend binds owner plugin/generation, task and lane. Re-entering the same normal tool invocation uses its existing receipt, not a second render. |

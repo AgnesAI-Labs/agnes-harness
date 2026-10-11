@@ -21,6 +21,7 @@ import {
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui-runtime.js'
+import { rejectUiSource } from './input-rejection.js'
 import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
 import { bindArguments, bounded, json, validateSurface, validateUiParameters } from './validation.js'
 
@@ -279,7 +280,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_LIMIT' })
         const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
-        if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
+        if (view && !view.ok) rejectUiSource(view.code)
         return storeSurface(
           'surface.opened',
           {
@@ -311,7 +312,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_STALE' })
         if (blocked(value, input.surfaceId)) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_BUSY' })
         const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
-        if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
+        if (view && !view.ok) rejectUiSource(view.code)
         return storeSurface('surface.updated', { ...old, surface: structuredClone(input.surface) }, value)
       }),
     close: (input, signal) =>

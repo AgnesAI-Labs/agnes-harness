@@ -330,6 +330,9 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
       } catch (error) {
         if (childKey) await ctx.subagent.cancel(childKey)
         await rollbackWorktree(deps, ctx, worktree)
+        // Core's admission limit refuses creation; failures after a child handle remain uncertain.
+        if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
+          return { ...fail(error.message), details: { code: error.code } }
         throw error
       } finally {
         state.pending -= 1

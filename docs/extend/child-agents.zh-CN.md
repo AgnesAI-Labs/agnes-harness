@@ -65,6 +65,8 @@ ctx.childAgents.setSessionAllowlist(sessionKey, {
 
 `subagent_fork` 和 `subagent_spawn` 在深度和扇出限制之前检查这份名单。它们启动的是 `in-process`。
 
+Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork/spawn 工具返回包含该 code 的错误 ToolResult，父代理可以报告限制。未知后端异常、预算恢复异常及已有 child handle 后的失败继续经过原有清理和未知效果处理路径。
+
 ## 工具
 
 这些工具保持原名：

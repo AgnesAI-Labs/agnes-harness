@@ -65,6 +65,8 @@ Extension config has the same shape under `allow`, plus `sessions` for individua
 
 `subagent_fork` and `subagent_spawn` check this allowlist before the depth and fan-out limits. They start the in-process provider.
 
+If Core refuses child creation with `E_CHILD_LIMIT` before returning a child handle, the official fork/spawn tools return an error ToolResult carrying that code, so the parent can report the limit. Unexpected backend errors, budget recovery errors and failures after a child handle exists still propagate through the existing cleanup and uncertain-effect path.
+
 ## Tools
 
 These tools keep their current names:
