@@ -142,6 +142,7 @@ describe('plugin schema form projection', () => {
         secretOptions: [
           { value: 'secret://generic/12345678-1234-1234-1234-123456789012', label: 'Saved service key' },
           { value: 'secret://demo/key', label: 'Legacy key' },
+          { value: 'synthetic-plaintext', label: 'Invalid plaintext option' },
         ],
         root: schema,
         schema,
@@ -205,6 +206,7 @@ describe('plugin schema form projection', () => {
     expect((value as Record<string, unknown>).raw).toEqual({ original: true })
     const saved = host.querySelector<HTMLSelectElement>('[data-testid="plugin-config-credential/secret"]')!
     expect(saved.textContent).toContain('Saved service key')
+    expect(host.innerHTML.includes('synthetic-plaintext')).toBe(false)
     await act(async () => {
       saved.value = 'secret://generic/12345678-1234-1234-1234-123456789012'
       saved.dispatchEvent(new Event('change', { bubbles: true }))

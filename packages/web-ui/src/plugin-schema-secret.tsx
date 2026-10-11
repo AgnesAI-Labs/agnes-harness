@@ -19,6 +19,8 @@ export function PluginSchemaSecret({
   onInvalid(path: string, invalid: boolean): void
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onInvalid'>) {
   const { t } = useUiText(PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog)
+  const reference = (value: string) => /^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/.test(value)
+  const choices = options?.filter((item) => reference(item.value)) ?? []
   const encoded = typeof value === 'string' && value.startsWith('secret://') ? value : 'secret://'
   const published = useRef(encoded)
   const [text, setText] = useState(encoded)
@@ -34,15 +36,15 @@ export function PluginSchemaSecret({
   useEffect(() => () => onInvalid(path, false), [path, onInvalid])
   return (
     <>
-      {options && options.length > 0 && (
+      {choices.length > 0 && (
         <SettingsSelect
           aria-label={props['aria-label']}
           data-testid={`plugin-config-credential${path || '/'}`}
           disabled={props.disabled}
-          value={options.some((item) => item.value === encoded) ? encoded : ''}
+          value={choices.some((item) => item.value === encoded) ? encoded : ''}
           onChange={(event) => {
             const next = event.target.value
-            if (!next) return
+            if (!reference(next)) return
             setText(next)
             setInvalid(false)
             onInvalid(path, false)
@@ -51,7 +53,7 @@ export function PluginSchemaSecret({
           }}
         >
           <option value="">{t('credential.choose')}</option>
-          {options.map((item) => (
+          {choices.map((item) => (
             <option key={item.value} value={item.value}>
               {item.label}
             </option>

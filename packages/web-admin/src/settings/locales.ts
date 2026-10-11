@@ -1,4 +1,4 @@
-import { credentialsCatalog } from '@agnes/resource-control-web/credentials'
+import { credentialsCatalog } from '@agnes/resource-control-web/credentials-locale'
 import type { LocaleCatalog } from '@agnes/web-ui'
 import { settingsShellLocaleCatalog } from '@agnes/web-units/locales/settings-shell'
 import { knowledgeCatalog } from './locales/knowledge.js'

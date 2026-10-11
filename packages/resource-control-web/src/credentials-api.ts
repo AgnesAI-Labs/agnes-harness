@@ -35,7 +35,8 @@ export const credentialFailure = (cause: unknown): CredentialFailure =>
 export class CredentialsApi {
   constructor(private readonly fetcher: typeof fetch = fetch) {}
   async context(signal?: AbortSignal): Promise<PackageAdminContext> {
-    const response = await this.fetcher('/admin/plugins/api/context', {
+    const fetcher = this.fetcher
+    const response = await fetcher('/admin/plugins/api/context', {
       credentials: 'same-origin',
       cache: 'no-store',
       ...(signal ? { signal } : {}),
@@ -68,7 +69,8 @@ export class CredentialsApi {
   ): Promise<unknown> {
     const method = `_agnes/v1/admin.credentials.${action}` as const
     if (!validateMethod(method, 'params', input).ok) throw new CredentialError('invalid')
-    const response = await this.fetcher(`/admin/api/credentials${action === 'list' ? '' : `/${action}`}`, {
+    const fetcher = this.fetcher
+    const response = await fetcher(`/admin/api/credentials${action === 'list' ? '' : `/${action}`}`, {
       method: action === 'list' ? 'GET' : 'POST',
       credentials: 'same-origin',
       cache: 'no-store',

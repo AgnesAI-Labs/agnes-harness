@@ -8,7 +8,7 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   runtime,
 }) => {
   test.setTimeout(120_000)
-  const canary = 'SYNTHETIC_WEB_CREDENTIAL_CANARY_71053'
+  const canary = `synthetic-canary-${crypto.randomUUID()}`
   const leakedResponses: boolean[] = []
   const responseChecks: Promise<void>[] = []
   const leakedConsole: boolean[] = []

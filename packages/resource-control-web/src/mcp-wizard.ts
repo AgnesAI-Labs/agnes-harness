@@ -97,7 +97,14 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   }
   function applyCredential() {
     const local = transport.value === 'stdio'
-    $('mcp-secret-kind', 'select').value = credential.value ? (local ? 'stdio-env' : 'http-bearer') : 'none'
+    const kind = $('mcp-secret-kind', 'select')
+    kind.value = credential.value
+      ? local
+        ? 'stdio-env'
+        : kind.value === 'http-header'
+          ? 'http-header'
+          : 'http-bearer'
+      : 'none'
     $('mcp-secret', 'textarea').value = credential.value
       ? local
         ? `${$('mcp-token-env', 'input').value}=${credential.value}`

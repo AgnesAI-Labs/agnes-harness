@@ -142,9 +142,11 @@ it.each([
   ['readOnly', { ...context, readOnly: true, permissions: ['packages.read', 'credentials.read'] }],
   ['denied', { ...context, permissions: ['packages.read', 'credentials.read'] }],
 ] as const)('keeps metadata readable in %s mode and prevents writes', async (reason, access) => {
-  const fetcher: typeof fetch = vi.fn(async (input) =>
-    Response.json(String(input).endsWith('/context') ? access : { items: [item] }),
-  )
+  const paths: string[] = []
+  const fetcher: typeof fetch = vi.fn(async (input) => {
+    paths.push(String(input))
+    return Response.json(String(input).endsWith('/context') ? access : { items: [item] })
+  })
   const host = document.createElement('div')
   document.body.append(host)
   let dispose!: () => void
@@ -155,14 +157,22 @@ it.each([
     expect(node<HTMLButtonElement>('credential-create').disabled).toBe(true)
     expect(node('credential-row').textContent).toContain('Service key')
     expect(document.body.textContent).toContain(reason === 'readOnly' ? 'read-only' : 'permission')
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(
+      paths.every((path) => path === '/admin/plugins/api/context' || path === '/admin/api/credentials'),
+    ).toBe(true)
   } finally {
     await act(async () => dispose())
   }
 })
 
 it('rejects value echoes and reduces permission, storage and read-only failures to safe reasons', async () => {
-  const echo = new CredentialsApi(async () => Response.json({ ...item, value: canary }))
+  const echo = new CredentialsApi(function (this: unknown, input) {
+    if (this !== undefined) throw new Error('invalid fetch receiver')
+    return Promise.resolve(
+      Response.json(String(input).endsWith('/context') ? context : { ...item, value: canary }),
+    )
+  })
+  await expect(echo.context()).resolves.toEqual(context)
   await expect(echo.create('Service key', canary)).rejects.toEqual(new CredentialError('unavailable'))
   for (const [status, code, reason] of [
     [403, 'E_ADMIN_FORBIDDEN', 'denied'],

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./credentials": "./src/credentials.tsx",
+    "./credentials-locale": "./src/credentials-locale.ts",
     "./credentials-api": "./src/credentials-api.ts",
     "./admin": "./src/admin.tsx",
     "./api": "./src/api.ts",
