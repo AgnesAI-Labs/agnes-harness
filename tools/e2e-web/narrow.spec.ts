@@ -275,6 +275,14 @@ for (const locale of ['en', 'zh-CN'])
         })
         await page.goto(`${runtime.url}/?session=${session.id}`)
         await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
+        // The recorded deliverable opens its reviewed workbench placement on attachment.
+        // Return through the dock's real close control before inspecting the conversation.
+        await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
+        await page
+          .locator('#workbench-right')
+          .getByRole('button', { name: name('Close this dock', '关闭此停靠面板'), exact: true })
+          .click()
+        await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
         for (const viewport of viewports) {
           await page.setViewportSize(viewport)
           await expect(page.locator('#model')).toContainText(model)

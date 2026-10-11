@@ -114,6 +114,14 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       row.textContent = (row.textContent ?? '').replace(/\d+(?:\.\d+)?/g, '0')
     }
   })
+  // A masked locale timestamp can still reflow a narrow summary as its width changes.
+  const requestClocks = page.getByTestId('request-trace').locator('time')
+  await requestClocks.evaluateAll((rows) => {
+    for (const row of rows) {
+      row.setAttribute('data-e2e-request-clock-original', row.textContent ?? '')
+      row.textContent = new Date(2026, 9, 11, 12).toLocaleString(document.documentElement.lang || 'en')
+    }
+  })
   const disk = page.getByTestId('doctor-space')
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {
@@ -231,6 +239,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       for (const row of rows) {
         row.textContent = row.getAttribute('data-e2e-duration-original')
         row.removeAttribute('data-e2e-duration-original')
+      }
+    })
+    await requestClocks.evaluateAll((rows) => {
+      for (const row of rows) {
+        row.textContent = row.getAttribute('data-e2e-request-clock-original')
+        row.removeAttribute('data-e2e-request-clock-original')
       }
     })
     await disk.evaluateAll((rows) => {
