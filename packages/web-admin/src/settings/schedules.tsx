@@ -1,15 +1,25 @@
+import { useSettingsOverlay } from './overlay.js'
 import {
   Button,
   Dialog,
   Field,
-  SettingsCard,
+  Icon,
+  EmptyState,
+  SettingsToolbar,
+  ListRow,
+  Tag,
+  Menu,
+  IconButton,
+  SettingsDetails,
+  useUiText,
   SettingsInput,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
   StateSwitch,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AUTOMATION_NAMESPACE, automationCatalog } from './automation-locale.js'
 
 export type SchedulesApi = {
   list(params: { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }): Promise<unknown>
@@ -61,6 +71,11 @@ function selectorOf(
 }
 
 export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(key: string): string }) {
+  const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
+  const alive = useRef(true)
+  const epoch = useRef(0)
+  const [loading, setLoading] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
   const [scope, setScope] = useState<'session' | 'all'>('session')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [rows, setRows] = useState<ScheduleRow[]>([])
@@ -76,6 +91,14 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
   const [zone, setZone] = useState('UTC')
   const [weekdays, setWeekdays] = useState<number[]>([1])
   const [cron, setCron] = useState('0 9 * * 1-5')
+  useSettingsOverlay(formOpen || !!pending)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+      epoch.current++
+    }
+  }, [])
   const sessionKey = api?.sessionKey()
   const refresh = useCallback(() => {
     if (!api) return Promise.resolve()
@@ -88,13 +111,21 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
       scope === 'session'
         ? { scope, ...(sessionKey ? { sessionKey } : {}), includeArchived }
         : { scope, includeArchived }
+    const request = ++epoch.current
+    setLoading(true)
     return api
       .list(params)
       .then((value) => {
+        if (!alive.current || request !== epoch.current) return
         setRows(rowsOf(value))
         setError(undefined)
       })
-      .catch((reason: unknown) => setError(reason))
+      .catch((reason: unknown) => {
+        if (alive.current && request === epoch.current) setError(reason)
+      })
+      .finally(() => {
+        if (alive.current && request === epoch.current) setLoading(false)
+      })
   }, [api, scope, sessionKey, includeArchived])
   useEffect(() => {
     void refresh()
@@ -116,22 +147,48 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
         prompt,
         selector: selectorOf(kind, when, zone, weekdays, cron),
       })) as { id?: string; code?: string; updated?: boolean }
+      if (!alive.current) return
       if (result.code || result.updated === false) {
         setError('schedulesError')
         return
       }
       setNotice(id ? 'schedulesSaved' : 'schedulesCreated')
       setEditing(undefined)
+      setFormOpen(false)
       await refresh()
     } catch {
-      setError('schedulesError')
+      if (alive.current) setError('schedulesError')
     } finally {
-      setBusy(false)
+      if (alive.current) setBusy(false)
     }
   }
   return (
-    <SettingsCard data-testid="schedules-page">
+    <section data-testid="schedules-page">
+      <SettingsToolbar
+        controls={
+          <Button
+            appearance="primary"
+            data-testid="schedules-new"
+            disabled={!api || !sessionKey || busy}
+            disabledReason={t('schedulesOpenSession')}
+            onClick={() => {
+              setEditing(undefined)
+              setTitle('')
+              setPrompt('')
+              setKind('daily')
+              setWhen('09:00')
+              setZone('UTC')
+              setWeekdays([1])
+              setCron('0 9 * * 1-5')
+              setFormOpen(true)
+            }}
+          >
+            {ux('newSchedule')}
+          </Button>
+        }
+      />
       <p>{t('schedulesHelp')}</p>
+      {loading && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {!api && (
         <SettingsState tone="error" data-testid="schedules-error">
           {t('schedulesUnavailable')}
@@ -146,7 +203,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           htmlType="button"
           data-testid="schedules-scope-session"
           aria-pressed={scope === 'session'}
-          type={scope === 'session' ? 'primary' : 'default'}
+          appearance="ghost"
           onClick={() => setScope('session')}
         >
           {t('schedulesSession')}
@@ -155,7 +212,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           htmlType="button"
           data-testid="schedules-scope-all"
           aria-pressed={scope === 'all'}
-          type={scope === 'all' ? 'primary' : 'default'}
+          appearance="ghost"
           onClick={() => setScope('all')}
         >
           {t('schedulesAll')}
@@ -179,102 +236,122 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           </a>
         </p>
       )}
-      <form
-        aria-busy={busy}
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (!busy && api && sessionKey) void save(editing)
+      <Dialog
+        getContainer={() => document.body}
+        open={formOpen}
+        title={editing ? t('schedulesSave') : ux('newSchedule')}
+        onCancel={() => {
+          if (!busy) setFormOpen(false)
         }}
+        footer={
+          <>
+            <Button disabled={busy} onClick={() => setFormOpen(false)}>
+              {t('schedulesCancel')}
+            </Button>
+            <Button
+              appearance="primary"
+              htmlType="submit"
+              form="schedules-editor"
+              disabled={!api || !sessionKey || busy || !title.trim() || !prompt.trim()}
+              loading={busy}
+              data-testid={editing ? 'schedules-save' : 'schedules-create'}
+            >
+              {editing ? t('schedulesSave') : t('schedulesCreate')}
+            </Button>
+          </>
+        }
       >
-        <Field label={t('schedulesTitle')}>
-          <SettingsInput
-            disabled={!api || !sessionKey || busy}
-            required
-            data-testid="schedules-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-        <Field label={t('schedulesPrompt')}>
-          <SettingsTextArea
-            disabled={!api || !sessionKey || busy}
-            required
-            data-testid="schedules-prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-        </Field>
-        <Field label={t('schedulesKind')}>
-          <SettingsSelect
-            data-testid="schedules-kind"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as Kind)}
-          >
-            {KINDS.map((item) => (
-              <option key={item} value={item}>
-                {t(`schedulesKind.${item}`)}
-              </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-        {kind !== 'cron' && (
-          <Field label={t('schedulesWhen')}>
-            <SettingsInput
-              data-testid="schedules-when"
-              value={when}
-              onChange={(event) => setWhen(event.target.value)}
-            />
-          </Field>
-        )}
-        {(kind === 'daily' || kind === 'weekly' || kind === 'cron') && (
-          <Field label={t('schedulesZone')}>
-            <SettingsInput
-              data-testid="schedules-zone"
-              value={zone}
-              onChange={(event) => setZone(event.target.value)}
-            />
-          </Field>
-        )}
-        {kind === 'weekly' && (
-          <fieldset data-testid="schedules-weekdays">
-            <legend>{t('schedulesWeekdays')}</legend>
-            {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-              <label key={day} htmlFor={`schedule-weekday-${day}`}>
-                <StateSwitch
-                  id={`schedule-weekday-${day}`}
-                  testId={`schedule-weekday-${day}`}
-                  label={t(`schedulesDay.${day}`)}
-                  disabled={busy || !api || !sessionKey}
-                  checked={weekdays.includes(day)}
-                  onToggle={(checked) =>
-                    setWeekdays((current) =>
-                      checked ? [...current, day].sort() : current.filter((item) => item !== day),
-                    )
-                  }
-                />
-                {t(`schedulesDay.${day}`)}
-              </label>
-            ))}
-          </fieldset>
-        )}
-        {kind === 'cron' && (
-          <Field label={t('schedulesCron')}>
-            <SettingsInput
-              data-testid="schedules-cron"
-              value={cron}
-              onChange={(event) => setCron(event.target.value)}
-            />
-          </Field>
-        )}
-        <Button
-          htmlType="submit"
-          disabled={!api || !sessionKey || busy || !title.trim() || !prompt.trim()}
-          loading={busy}
-          data-testid={editing ? 'schedules-save' : 'schedules-create'}
+        <form
+          id="schedules-editor"
+          aria-busy={busy}
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!busy && api && sessionKey) void save(editing)
+          }}
         >
-          {editing ? t('schedulesSave') : t('schedulesCreate')}
-        </Button>
-      </form>
+          <Field label={t('schedulesTitle')}>
+            <SettingsInput
+              disabled={!api || !sessionKey || busy}
+              required
+              data-testid="schedules-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </Field>
+          <Field label={t('schedulesPrompt')}>
+            <SettingsTextArea
+              disabled={!api || !sessionKey || busy}
+              required
+              data-testid="schedules-prompt"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+            />
+          </Field>
+          <Field label={t('schedulesKind')}>
+            <SettingsSelect
+              data-testid="schedules-kind"
+              value={kind}
+              onChange={(event) => setKind(event.target.value as Kind)}
+            >
+              {KINDS.map((item) => (
+                <option key={item} value={item}>
+                  {t(`schedulesKind.${item}`)}
+                </option>
+              ))}
+            </SettingsSelect>
+          </Field>
+          {kind !== 'cron' && (
+            <Field label={t('schedulesWhen')}>
+              <SettingsInput
+                data-testid="schedules-when"
+                value={when}
+                onChange={(event) => setWhen(event.target.value)}
+              />
+            </Field>
+          )}
+          {(kind === 'daily' || kind === 'weekly' || kind === 'cron') && (
+            <Field label={t('schedulesZone')}>
+              <SettingsInput
+                data-testid="schedules-zone"
+                value={zone}
+                onChange={(event) => setZone(event.target.value)}
+              />
+            </Field>
+          )}
+          {kind === 'weekly' && (
+            <fieldset data-testid="schedules-weekdays">
+              <legend>{t('schedulesWeekdays')}</legend>
+              {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+                <label key={day} htmlFor={`schedule-weekday-${day}`}>
+                  <StateSwitch
+                    id={`schedule-weekday-${day}`}
+                    testId={`schedule-weekday-${day}`}
+                    label={t(`schedulesDay.${day}`)}
+                    disabled={busy || !api || !sessionKey}
+                    checked={weekdays.includes(day)}
+                    onToggle={(checked) =>
+                      setWeekdays((current) =>
+                        checked ? [...current, day].sort() : current.filter((item) => item !== day),
+                      )
+                    }
+                  />
+                  {t(`schedulesDay.${day}`)}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {kind === 'cron' && (
+            <Field label={t('schedulesCron')}>
+              <SettingsInput
+                data-testid="schedules-cron"
+                value={cron}
+                onChange={(event) => setCron(event.target.value)}
+              />
+            </Field>
+          )}
+        </form>
+        {error !== undefined && <SettingsState tone="error">{t('schedulesError')}</SettingsState>}
+      </Dialog>
       {notice && (
         <SettingsState tone="success" data-testid="schedules-notice">
           {t(notice)}
@@ -285,48 +362,80 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           {t(typeof error === 'string' && error === 'schedulesOpenSession' ? error : 'schedulesError')}
         </SettingsState>
       )}
-      {api && rows.length === 0 && !error && <p data-testid="schedules-empty">{t('schedulesEmpty')}</p>}
-      <ul className="agnes-settings-list">
+      {api && rows.length === 0 && !error && (
+        <EmptyState
+          data-testid="schedules-empty"
+          icon={<Icon name="clock" size={48} />}
+          title={t('schedulesEmpty')}
+          description={t('schedulesHelp')}
+        />
+      )}
+      <div className="agnes-settings-list">
         {rows.map((row) => (
-          <li key={row.id} data-testid="schedules-row">
-            <Button
-              htmlType="button"
-              onClick={() => {
-                setEditing(row.id)
-                setTitle(row.title)
-                setPrompt(row.prompt)
-                const selected = KINDS.find((item) => item in row.selector)
-                if (selected) {
-                  setKind(selected)
-                  const value = row.selector[selected]
-                  if (value && typeof value === 'object') {
-                    const fields = value as {
-                      time?: string
-                      timeZone?: string
-                      weekdays?: number[]
-                      expr?: string
-                    }
-                    setWhen(fields.time ?? '09:00')
-                    setZone(fields.timeZone ?? 'UTC')
-                    setWeekdays(fields.weekdays ?? [1])
-                    setCron(fields.expr ?? '0 9 * * 1-5')
-                  } else setWhen(String(value ?? ''))
-                }
-              }}
-            >
-              {row.title}
-            </Button>
+          <ListRow
+            key={row.id}
+            data-testid="schedules-row"
+            title={row.title}
+            onOpen={() => {
+              setFormOpen(true)
+              setEditing(row.id)
+              setTitle(row.title)
+              setPrompt(row.prompt)
+              const selected = KINDS.find((item) => item in row.selector)
+              if (selected) {
+                setKind(selected)
+                const value = row.selector[selected]
+                if (value && typeof value === 'object') {
+                  const fields = value as {
+                    time?: string
+                    timeZone?: string
+                    weekdays?: number[]
+                    expr?: string
+                  }
+                  setWhen(fields.time ?? '09:00')
+                  setZone(fields.timeZone ?? 'UTC')
+                  setWeekdays(fields.weekdays ?? [1])
+                  setCron(fields.expr ?? '0 9 * * 1-5')
+                } else setWhen(String(value ?? ''))
+              }
+            }}
+            status={
+              row.status !== 'paused' && row.status !== 'failed' ? undefined : (
+                <Tag tone={row.status === 'failed' ? 'bad' : 'warn'}>
+                  {t(`schedulesStatus.${row.status}`)}
+                </Tag>
+              )
+            }
+            actions={
+              row.status === 'active' ? (
+                <Menu
+                  label={ux('actions')}
+                  trigger={
+                    <IconButton name="ellipsis" label={ux('actions')} data-testid="schedules-archive" />
+                  }
+                  items={[
+                    {
+                      id: 'archive',
+                      label: t('schedulesArchive'),
+                      danger: true,
+                      disabled: busy,
+                      onSelect: () => {
+                        setError(undefined)
+                        setPending(row.id)
+                      },
+                    },
+                  ]}
+                />
+              ) : undefined
+            }
+          >
             <span data-testid="schedules-next">
               {t('schedulesNext')}:{' '}
               {row.nextRunAt === null
                 ? t('schedulesNone')
                 : new Date(row.nextRunAt).toLocaleString(document.documentElement.lang || 'en')}
             </span>
-            <span>
-              {t('schedulesStatus')}: {t(`schedulesStatus.${row.status}`)}
-            </span>
-            <details data-testid="schedules-history">
-              <summary>{t('schedulesHistory')}</summary>
+            <SettingsDetails title={t('schedulesHistory')} data-testid="schedules-history">
               <ul>
                 {row.deliveries.map((delivery) => (
                   <li key={`${delivery.at}:${delivery.seq ?? ''}`}>
@@ -335,24 +444,12 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
                   </li>
                 ))}
               </ul>
-            </details>
-            {row.status === 'active' && (
-              <Button
-                htmlType="button"
-                disabled={busy}
-                data-testid="schedules-archive"
-                onClick={() => {
-                  setError(undefined)
-                  setPending(row.id)
-                }}
-              >
-                {t('schedulesArchive')}
-              </Button>
-            )}
-          </li>
+            </SettingsDetails>
+          </ListRow>
         ))}
-      </ul>
+      </div>
       <Dialog
+        getContainer={() => document.body}
         open={!!pending}
         title={t('schedulesConfirm')}
         footer={null}
@@ -362,38 +459,48 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
       >
         <p>{t('schedulesConfirmBody')}</p>
         {typeof error === 'string' && <SettingsState tone="error">{t(error)}</SettingsState>}
-        <Button
-          htmlType="button"
-          data-testid="schedules-archive-confirm"
-          disabled={busy}
-          loading={busy}
-          onClick={() => {
-            const id = pending
-            if (!api || !id || busy) return
-            setError(undefined)
-            setBusy(true)
-            void api
-              .archive({ id })
-              .then(() => {
-                setNotice('schedulesArchived')
-                setPending(undefined)
-                return refresh()
-              })
-              .catch(() => setError('schedulesError'))
-              .finally(() => setBusy(false))
-          }}
-        >
-          {t('schedulesConfirm')}
-        </Button>
-        <Button
-          htmlType="button"
-          data-testid="schedules-archive-cancel"
-          disabled={busy}
-          onClick={() => setPending(undefined)}
-        >
-          {t('schedulesCancel')}
-        </Button>
+        <SettingsToolbar>
+          <Button
+            htmlType="button"
+            data-testid="schedules-archive-cancel"
+            disabled={busy}
+            onClick={() => setPending(undefined)}
+          >
+            {t('schedulesCancel')}
+          </Button>
+          <Button
+            htmlType="button"
+            danger
+            dangerFilled
+            data-testid="schedules-archive-confirm"
+            disabled={busy}
+            loading={busy}
+            onClick={() => {
+              const id = pending
+              if (!api || !id || busy) return
+              setError(undefined)
+              setBusy(true)
+              void api
+                .archive({ id })
+                .then((result) => {
+                  if (!alive.current) return
+                  if ((result as { deleted?: boolean }).deleted === false) throw new Error('archive refused')
+                  setNotice('schedulesArchived')
+                  setPending(undefined)
+                  return refresh()
+                })
+                .catch(() => {
+                  if (alive.current) setError('schedulesError')
+                })
+                .finally(() => {
+                  if (alive.current) setBusy(false)
+                })
+            }}
+          >
+            {t('schedulesConfirm')}
+          </Button>
+        </SettingsToolbar>
       </Dialog>
-    </SettingsCard>
+    </section>
   )
 }

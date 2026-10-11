@@ -71,32 +71,34 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     root.render(createElement(SearchPanel, { t, canSave: true, fetcher }))
   })
-  await vi.waitFor(() => {
-    expect(host.querySelector<HTMLInputElement>('[data-testid="search-endpoint"]')?.value).toBe(
-      'https://api.search.brave.com',
-    )
-  })
-  expect(host.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search provider')
-  expect(host.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
-  expect(host.querySelector<HTMLDetailsElement>('[data-testid="search-technical-exa"]')?.open).toBe(false)
-  expect(host.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="search-settings-brave"]')?.click(),
+  )
+  const panel = document.body
+  expect(panel.querySelector<HTMLInputElement>('[data-testid="search-endpoint"]')?.value).toBe(
+    'https://api.search.brave.com',
+  )
+  expect(panel.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search provider')
+  expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
+  expect(panel.querySelector<HTMLDetailsElement>('[data-testid="search-technical-exa"]')?.open).toBe(false)
+  expect(panel.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
   expect(settingsCatalog.en.searchApiKeyHint).not.toContain('secret://')
-  expect(host.querySelector('[data-testid="search-secret-exa"]')?.textContent).toContain(
+  expect(panel.querySelector('[data-testid="search-secret-exa"]')?.textContent).toContain(
     'secret://search/exa',
   )
-  const input = host.querySelector<HTMLInputElement>('[data-testid="search-api-key"]')
+  const input = panel.querySelector<HTMLInputElement>('[data-testid="search-api-key"]')
   if (!input) throw new Error('missing key field')
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-  const count = host.querySelector<HTMLInputElement>('[data-testid="search-max-results"]')
+  const count = panel.querySelector<HTMLInputElement>('[data-testid="search-max-results"]')
   expect(count?.type).toBe('text')
   expect(count?.inputMode).toBe('numeric')
   await act(async () => {
     setter?.call(count, '2.5')
     count?.dispatchEvent(new Event('input', { bubbles: true }))
   })
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click())
+  await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click())
   expect(saved).toBe(false)
-  expect(host.querySelector('#search-max-results-error')?.textContent).toContain('whole number from 1 to 10')
+  expect(panel.querySelector('#search-max-results-error')?.textContent).toContain('whole number from 1 to 10')
   expect(count?.getAttribute('aria-invalid')).toBe('true')
   expect(count?.getAttribute('aria-describedby')).toBe('search-max-results-error')
   expect(document.activeElement).toBe(count)
@@ -107,17 +109,19 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     setter?.call(input, key)
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    host.querySelector<HTMLInputElement>('[data-testid="search-enabled"]')?.click()
-    host.querySelector<HTMLInputElement>('[data-testid="search-make-default"]')?.click()
   })
   await act(async () => {
-    host.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click()
+    panel.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click()
   })
-  expect(host.querySelector('[data-testid="search-enabled"]')?.getAttribute('role')).toBe('switch')
-  expect(host.querySelector('[data-testid="search-enabled"]')?.getAttribute('aria-checked')).toBe('true')
+  expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('role')).toBe('switch')
+  expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('aria-checked')).toBe(
+    'true',
+  )
   expect(count?.getAttribute('aria-invalid')).toBeNull()
   expect(saved).toBe(true)
   expect(host.textContent).not.toContain(key)
-  expect(host.querySelector('[data-testid="search-api-key"]')?.getAttribute('value') ?? '').not.toContain(key)
+  expect(panel.querySelector('[data-testid="search-api-key"]')?.getAttribute('value') ?? '').not.toContain(
+    key,
+  )
   expect(settingsCatalog['zh-CN'].searchEmpty).toContain('尚未配置')
 })

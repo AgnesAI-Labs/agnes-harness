@@ -90,13 +90,14 @@ it('creates a reminder and archives it after confirmation', async () => {
     }),
   }
   const host = await mount(createElement(SchedulesPage, { api, t }))
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="schedules-new"]')?.click())
   expect(host.querySelector('[data-testid="schedules-empty"]')).not.toBeNull()
   await act(async () => {
-    fill(host, 'schedules-title', 'Standup')
-    fill(host, 'schedules-prompt', 'Check mail')
+    fill(document.body, 'schedules-title', 'Standup')
+    fill(document.body, 'schedules-prompt', 'Check mail')
   })
   await act(async () => {
-    must(host.querySelector('form'), 'form').dispatchEvent(
+    must(document.querySelector('form#schedules-editor'), 'form').dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
     )
   })
@@ -113,13 +114,25 @@ it('creates a reminder and archives it after confirmation', async () => {
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
   )
-  expect(host.querySelector<HTMLSelectElement>('[data-testid="schedules-kind"]')?.value).toBe('weekly')
-  expect(host.querySelector<HTMLInputElement>('[data-testid="schedules-when"]')?.value).toBe('14:30')
-  expect(host.querySelector<HTMLInputElement>('[data-testid="schedules-zone"]')?.value).toBe('Asia/Shanghai')
+  expect(document.querySelector<HTMLSelectElement>('[data-testid="schedules-kind"]')?.value).toBe('weekly')
+  expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-when"]')?.value).toBe('14:30')
+  expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-zone"]')?.value).toBe(
+    'Asia/Shanghai',
+  )
   expect(host.querySelector('[data-testid="schedules-history"]')).not.toBeNull()
   expect(host.querySelector('[data-testid="schedules-notice"]')?.getAttribute('role')).toBe('status')
   await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('[data-testid="schedules-editor"]')
+      ?.closest('[role="dialog"]')
+      ?.querySelector<HTMLButtonElement>('.ant-modal-close')
+      ?.click(),
+  )
+  await act(async () =>
     must(host.querySelector<HTMLButtonElement>('[data-testid="schedules-archive"]'), 'archive').click(),
+  )
+  await act(async () =>
+    must(document.querySelector<HTMLButtonElement>('[role="menuitem"]'), 'archive menu').click(),
   )
   expect(document.querySelector('[role="dialog"]')).not.toBeNull()
   await act(async () =>
