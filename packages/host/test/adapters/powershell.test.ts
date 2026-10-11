@@ -1,5 +1,7 @@
+import { tmpdir } from 'node:os'
 import { win32 } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { createExec } from '../../src/adapters/exec.js'
 import {
   type PowerShellCandidate,
   type PowerShellDescriptor,
@@ -85,6 +87,16 @@ it('refuses a renamed executable from the wrong version family', async () => {
     attempts: [{ path: modern.path, reason: 'version-mismatch' }],
   })
 })
+it("keeps the console's code page, and leaves out one that is not a code page", async () => {
+  expect(await resolvePowerShell('7', candidates, async () => ({ ...modern, codePage: 936 }))).toEqual({
+    ...modern,
+    codePage: 936,
+  })
+  for (const codePage of [0, 65536, 1.5, '936'])
+    expect(
+      await resolvePowerShell('7', candidates, async () => ({ ...modern, codePage }) as PowerShellDescriptor),
+    ).toEqual(modern)
+})
 it.each([{ version: '6.2.7' }, { edition: 'Desktop' }, { nativeArguments: 'unknown' }, { path: 'pwsh.exe' }])(
   'rejects incomplete or inconsistent probe facts: %o',
   async (override) => {
@@ -105,7 +117,23 @@ describe.runIf(process.platform === 'win32')('real Windows PowerShell probes', (
       version: expect.stringMatching(/^5\.1\./),
       edition: 'Desktop',
       nativeArguments: 'Legacy',
+      codePage: expect.any(Number),
     })
+  })
+  it('reads the code page that the console of a command starts in', async () => {
+    const root = process.env.SystemRoot
+    if (!root) throw new Error('Windows SystemRoot is missing')
+    const shell = await probePowerShell(
+      win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    )
+    const exec = createExec({ windowsNodeExecutable: process.execPath })
+    try {
+      const result = await exec.run([win32.join(root, 'System32', 'chcp.com')], { cwd: tmpdir() })
+      expect(result.code).toBe(0)
+      expect(Number(/(\d+)\D*$/.exec(result.stdout)?.[1])).toBe(shell.codePage)
+    } finally {
+      await exec.killAll()
+    }
   })
   it.runIf(Boolean(process.env.AGNES_TEST_PWSH))('reads explicitly supplied PS7 metadata', async () => {
     const path = process.env.AGNES_TEST_PWSH
@@ -114,6 +142,7 @@ describe.runIf(process.platform === 'win32')('real Windows PowerShell probes', (
       version: expect.stringMatching(/^7\./),
       edition: 'Core',
       nativeArguments: expect.stringMatching(/^(Legacy|Standard|Windows)$/),
+      codePage: expect.any(Number),
     })
   })
 })

@@ -40,7 +40,7 @@ describe('shell', () => {
     expect(ctx.calls.execOpts[0]).toEqual({
       cwd: ctx.cwd,
       timeoutMs: ctx.timeoutMs,
-      env: { PYTHONUNBUFFERED: '1' },
+      env: { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
     })
     expect(r.isError).toBeUndefined()
     expect(r.content[0]).toEqual({ type: 'text', text: 'ran echo hi\n[exit 0]' })
@@ -377,7 +377,7 @@ describe('shell background jobs', () => {
     const r = await pending
     expect(ctx.calls.exec).toHaveLength(0)
     expect(calls.start).toEqual([
-      [[SHELL_SENTINEL, 'uvicorn app:app'], { cwd: 'srv', env: { PYTHONUNBUFFERED: '1' } }],
+      [[SHELL_SENTINEL, 'uvicorn app:app'], { cwd: 'srv', env: { PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' } }],
     ])
     expect(r.isError).toBeUndefined()
     expect(textOf(r)).toBe(

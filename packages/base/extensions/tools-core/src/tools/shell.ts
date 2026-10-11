@@ -16,7 +16,11 @@ const DEFAULT_FOREGROUND_MS = 120_000
 // limit takes that buffer with it: the model saw only "[timed out]" and could not tell where it hung.
 // Python is what models run most and the one that buffers by default, so its buffering is turned off
 // for every command this tool runs, foreground or background (a server's log is read the same way).
-const COMMAND_ENV: Readonly<Record<string, string>> = Object.freeze({ PYTHONUNBUFFERED: '1' })
+// Its UTF-8 mode is turned on too: otherwise it writes to a pipe, and reads and writes files, in the
+// locale's code page (GBK on a Chinese Windows), while the model's files and the output it is shown
+// are UTF-8. PYTHONIOENCODING would cover only the standard streams, and would override the error
+// handlers UTF-8 mode gives them.
+const COMMAND_ENV = Object.freeze({ PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' })
 // How long a background start watches the job before returning: long enough for "address in use"
 // or a missing module to show, short enough that starting a server is not a wait.
 const FIRST_LOOK_MS = 1000

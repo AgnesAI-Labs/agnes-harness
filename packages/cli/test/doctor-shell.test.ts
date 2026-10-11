@@ -36,6 +36,7 @@ it('reports the selected runtime shell without changing sandbox availability', a
     version: '5.1.26100.9444',
     edition: 'Desktop',
     nativeArguments: 'Legacy',
+    codePage: 936,
   })
   const result = await doctorPlatform(deps)
   expect(resolveConfiguredPowerShell).toHaveBeenCalledWith(expect.objectContaining(deps.env))
@@ -45,6 +46,7 @@ it('reports the selected runtime shell without changing sandbox availability', a
       'PowerShell 5.1.26100.9444 (Desktop)',
       'shell path C:\\Windows\\powershell.exe',
       'native arguments Legacy',
+      'console code page 936',
       'sandbox.l1=unavailable',
     ]),
   )

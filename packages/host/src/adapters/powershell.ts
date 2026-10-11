@@ -8,6 +8,11 @@ export type PowerShellDescriptor = Readonly<{
   version: string
   edition: 'Desktop' | 'Core'
   nativeArguments: 'Legacy' | 'Standard' | 'Windows'
+  /**
+   * The code page a new console starts in, which is what a program that does not write UTF-8 writes
+   * to a pipe. Command output that is not UTF-8 is decoded in it.
+   */
+  codePage?: number
 }>
 export type PowerShellCandidate = Readonly<{ path: string; family: '5.1' | '7' }>
 type Probe = (path: string) => Promise<PowerShellDescriptor>
@@ -22,14 +27,17 @@ export function resolveConfiguredPowerShell(env: NodeJS.ProcessEnv): Promise<Pow
 }
 
 const execute = promisify(execFile)
+// The probe runs in a new console as a command does, so the code page it reads before switching
+// to UTF-8 is the one a command's console starts in.
 const probeScript = [
   "$ErrorActionPreference = 'Stop'",
+  '$codePage = [Console]::OutputEncoding.CodePage',
   '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
   "$mode = 'Legacy'",
   'if (Test-Path variable:PSNativeCommandArgumentPassing) { $mode = [string]$PSNativeCommandArgumentPassing }',
   '@{ path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;',
   'version = $PSVersionTable.PSVersion.ToString(); edition = $PSVersionTable.PSEdition;',
-  'nativeArguments = $mode } | ConvertTo-Json -Compress',
+  'nativeArguments = $mode; codePage = $codePage } | ConvertTo-Json -Compress',
 ].join('\n')
 
 const absolutePath = (path: string): boolean =>
@@ -58,11 +66,18 @@ function checked(value: unknown): PowerShellDescriptor {
     (d.version.startsWith('7.') && d.edition !== 'Core')
   )
     throw new Error('invalid-probe')
+  // Only output decoding depends on the code page, so a value that is not one is left out rather
+  // than failing the shell.
+  const codePage =
+    typeof d.codePage === 'number' && Number.isInteger(d.codePage) && d.codePage > 0 && d.codePage < 65536
+      ? d.codePage
+      : undefined
   return Object.freeze({
     path: d.path,
     version: d.version,
     edition: d.edition,
     nativeArguments: d.nativeArguments,
+    ...(codePage === undefined ? {} : { codePage }),
   })
 }
 
