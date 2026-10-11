@@ -55,19 +55,21 @@ export function settingsNavigationGroups(
 /** Title, group and localized synonyms support case/accent/spacing tolerant subsequence search. */
 export function matchesSettings(query: string, text: string): boolean {
   const normalize = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase()
-  const source = normalize(text)
+  const sources = normalize(text).split(/\s+/)
   return normalize(query)
     .trim()
     .split(/\s+/)
-    .every((word) => {
-      let cursor = 0
-      for (const character of word) {
-        const at = source.indexOf(character, cursor)
-        if (at < 0) return false
-        cursor = at + 1
-      }
-      return true
-    })
+    .every((word) =>
+      sources.some((source) => {
+        let cursor = 0
+        for (const character of word) {
+          const at = source.indexOf(character, cursor)
+          if (at < 0) return false
+          cursor = at + 1
+        }
+        return true
+      }),
+    )
 }
 
 export function revealSettingsAnchor(anchor: string): void {

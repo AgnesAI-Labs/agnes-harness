@@ -226,7 +226,12 @@ describe('independent core web-unit implementations', () => {
     ]
     const options = {
       sections: { entries: () => entries, subscribe: () => () => undefined },
-      translate: (key: string) => key,
+      translate: (key: string) =>
+        key === 'settings-shell.keywords.accounts'
+          ? 'model account provider key connection'
+          : key === 'settings-shell.keywords.agent'
+            ? 'loop system prompt memory context engine bundle'
+            : key,
       onClose: () => closed++,
     }
     flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
@@ -247,6 +252,10 @@ describe('independent core web-unit implementations', () => {
     search.value = 'agt bvr'
     search.dispatchEvent(new Event('input', { bubbles: true }))
     expect(advanced.open).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
+    search.value = 'memory'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
     expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
     expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
     search.value = 'no-such-setting'

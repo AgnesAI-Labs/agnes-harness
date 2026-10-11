@@ -215,7 +215,7 @@ function buildNavigation(rail: HTMLElement, entries: readonly SettingsNavigation
       const item = createSettingsButton(document, 'ghost')
       item.id = entry.navigationId ?? `runtime-settings-${entry.id}`
       item.dataset.settingsSection = entry.id
-      item.dataset.testid = `settings-nav-${entry.id}`
+      item.dataset.testid = `settings-nav-${entry.id}${entry.nativePane ? '-tab' : ''}`
       reserve.append(item)
     }
   }

@@ -70,7 +70,7 @@ for (const [id, group, pane, navigationId, key, order] of [
               ? 'settings-shell.archivedNav'
               : `settings-shell.${key}`,
       groupTitleKey: `settings-shell.${key}`,
-      icon: group,
+      icon: group === 'skills' ? 'sparkles' : group,
       order,
       component: NativePaneBridge,
     })
