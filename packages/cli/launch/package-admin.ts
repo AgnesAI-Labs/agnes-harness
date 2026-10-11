@@ -231,6 +231,32 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    credentials: {
+      async call(action, input) {
+        await initialize()
+        // The surface validated the matching generated schema; no browser-selected RPC forwarding.
+        switch (action) {
+          case 'list':
+            return client.credentials.list()
+          case 'create':
+            return client.credentials.create(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialCreate,
+            )
+          case 'set':
+            return client.credentials.set(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialSet,
+            )
+          case 'rename':
+            return client.credentials.rename(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialRename,
+            )
+          case 'delete':
+            return client.credentials.delete(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialDelete,
+            )
+        }
+      },
+    },
     async factChain(input) {
       await initialize()
       return client.factChain(input)

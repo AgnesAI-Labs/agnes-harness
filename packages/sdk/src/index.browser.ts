@@ -55,6 +55,7 @@ function normalizeBrowserOptions(opts: BrowserCreateClientOptions): CreateClient
 function browserControlPlaneMethod(method: string): boolean {
   return (
     method.startsWith('_agnes/v1/packages.') ||
+    method.startsWith('_agnes/v1/admin.credentials.') ||
     method.startsWith('_agnes/v1/sessionSelection.') ||
     method.startsWith('_agnes/v1/autoReview.') ||
     method.startsWith('_agnes/v1/config.modelSlots.') ||

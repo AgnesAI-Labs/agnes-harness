@@ -329,6 +329,19 @@ export class Client {
     ): Promise<import('@agnes/protocol').ModelRequestResult> =>
       this.call('_agnes/v1/trace.request', input, options),
   }
+  /** Local admin generic credentials. Values are write-only and never enter the replay journal. */
+  readonly credentials = {
+    list: () => this.request('_agnes/v1/admin.credentials.list', {}),
+    create: (input: import('@agnes/protocol/gen/app-server').AdminCredentialCreate) =>
+      this.request('_agnes/v1/admin.credentials.create', input),
+    set: (input: import('@agnes/protocol/gen/app-server').AdminCredentialSet) =>
+      this.request('_agnes/v1/admin.credentials.set', input),
+    rename: (input: import('@agnes/protocol/gen/app-server').AdminCredentialRename) =>
+      this.request('_agnes/v1/admin.credentials.rename', input),
+    delete: (input: import('@agnes/protocol/gen/app-server').AdminCredentialDelete) =>
+      this.request('_agnes/v1/admin.credentials.delete', input),
+  }
+
   /** Shared deployment configuration. Secrets are submitted only, never returned or journaled. */
   readonly config = {
     oauth: (input: ConfigOAuthInput): Promise<ConfigOAuthResult> =>
