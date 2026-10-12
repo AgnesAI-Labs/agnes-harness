@@ -4,10 +4,6 @@
     "packages/resource-control-web/src/admin.tsx": {
       "className": 3
     },
-    "packages/resource-control-web/src/mcp-presets.ts": {
-      "dom": 4,
-      "className": 2
-    },
     "packages/resource-control-web/src/mcp-wizard.ts": {
       "dom": 1
     },
@@ -61,9 +57,6 @@
     },
     "packages/web-ui/src/conversation/turn-actions.tsx": {
       "intrinsic": 4
-    },
-    "packages/web-ui/src/diagnostics-dialog.tsx": {
-      "className": 7
     },
     "packages/web-ui/src/dom/dialog-sheets.ts": {
       "dom": 2,
@@ -128,10 +121,6 @@
     "packages/web-units/src/conversation/tool-card.ts": {
       "dom": 1
     },
-    "packages/web-units/src/diagnostics-viewer.ts": {
-      "dom": 4,
-      "intrinsic": 2
-    },
     "packages/web/public/admin.html": {
       "intrinsic": 14,
       "className": 9
@@ -155,9 +144,6 @@
     },
     "packages/web/src/client-modules/timeline-slot.ts": {
       "dom": 1
-    },
-    "packages/web/src/diagnostics-dialog.ts": {
-      "dom": 2
     },
     "packages/web/src/intelligent-ui/artifact-file.tsx": {
       "dom": 1

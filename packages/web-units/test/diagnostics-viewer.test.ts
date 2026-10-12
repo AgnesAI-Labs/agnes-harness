@@ -131,6 +131,18 @@ describe('renderDiagnosticsViewer', () => {
     expect(traceText).toContain('child-tool')
     expect(traceText).toMatch(/1\.5 s|1500 ms/)
     expect(traceText).toContain('250 ms')
+
+    const traceTab = document.querySelector<HTMLButtonElement>('[data-tab="trace"]')
+    traceTab?.click()
+    expect(document.getElementById('tab-trace')?.hidden).toBe(false)
+    expect(document.getElementById('tab-overview')?.hidden).toBe(true)
+    traceTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    const logsTab = document.querySelector<HTMLButtonElement>('[data-tab="logs"]')
+    expect(document.activeElement).toBe(logsTab)
+    expect(logsTab?.getAttribute('aria-selected')).toBe('true')
+    expect(traceTab?.tabIndex).toBe(-1)
+    expect(document.getElementById('tab-logs')?.hidden).toBe(false)
+    expect(document.querySelector('script[src], link[rel="stylesheet"]')).toBeNull()
   })
 
   it('lists artifacts metadata', () => {

@@ -1,13 +1,13 @@
 import { getBrowserLog } from '@agnes/web-foundation/browser-log'
 import {
   createAntdRoot,
+  createRegionHost,
   type DiagnosticsDialogSnapshot,
   DiagnosticsDialogView,
   type DiagnosticsInclude,
   type DiagnosticsStep,
 } from '@agnes/web-ui'
 import { diagnosticsLocale, diagnosticsText } from '@agnes/web-units/diagnostics-locale'
-import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type CollectedDiagnostics,
@@ -69,13 +69,32 @@ export async function saveZip(
   const picker = (win as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker
   if (!picker) {
     const url = URL.createObjectURL(blob)
-    const a = win.document.createElement('a')
-    a.href = url
-    a.download = fileName
-    // Attached for the click: older Firefox ignores clicks on detached anchors.
-    win.document.body.append(a)
-    a.click()
-    a.remove()
+    const host = createRegionHost(win.document.body, 'span')
+    const root = createAntdRoot(host)
+    let link: HTMLAnchorElement | null = null
+    // Commit before clicking so older Firefox sees an attached download anchor.
+    try {
+      flushSync(() =>
+        root.render(
+          <a
+            href={url}
+            download={fileName}
+            aria-label={fileName}
+            hidden
+            ref={(node) => {
+              link = node
+            }}
+          >
+            {fileName}
+          </a>,
+        ),
+      )
+      const anchor = link as HTMLAnchorElement | null
+      anchor?.click()
+    } finally {
+      root.unmount()
+      host.remove()
+    }
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
     return 'saved'
   }
@@ -106,12 +125,9 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
 } {
   const collect = deps.collect ?? collectDiagnostics
   const save = deps.save ?? saveZip
-  const dialog = document.createElement('dialog')
-  dialog.className = 'diagnostics-dialog'
-  dialog.setAttribute('aria-labelledby', 'diagnostics-heading')
-  dialog.dataset.agnesRegion = 'dialog'
-  document.body.append(dialog)
-  const root = createAntdRoot(dialog)
+  const host = createRegionHost(document.body, 'div')
+  const root = createAntdRoot(host)
+  let dialog: HTMLDialogElement
   let snapshot: DiagnosticsDialogSnapshot = {
     step: 'menu',
     title: titleFor('menu'),
@@ -134,11 +150,28 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     const locale = diagnosticsLocale()
     flushSync(() =>
       root.render(
-        createElement(DiagnosticsDialogView, {
-          snapshot,
-          actions,
-          text: (key) => diagnosticsText(key as Parameters<typeof diagnosticsText>[0], undefined, locale),
-        }),
+        // biome-ignore lint/a11y/useKeyWithClickEvents: native dialog cancel supplies Escape dismissal; only its backdrop handles clicks.
+        <dialog
+          ref={(node) => {
+            if (node) dialog = node
+          }}
+          className="diagnostics-dialog"
+          aria-labelledby="diagnostics-heading"
+          data-agnes-region="dialog"
+          onCancel={(event) => {
+            event.preventDefault()
+            dismiss()
+          }}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) dismiss()
+          }}
+        >
+          <DiagnosticsDialogView
+            snapshot={snapshot}
+            actions={actions}
+            text={(key) => diagnosticsText(key as Parameters<typeof diagnosticsText>[0], undefined, locale)}
+          />
+        </dialog>,
       ),
     )
   }
@@ -263,13 +296,6 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   } satisfies import('@agnes/web-ui').DiagnosticsDialogActions
 
   render()
-  dialog.addEventListener('cancel', (event) => {
-    event.preventDefault()
-    dismiss()
-  })
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dismiss()
-  })
   const dispose = () => {
     if (disposed) return
     retire()
@@ -277,7 +303,8 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     window.removeEventListener('agnes:locale-changed', onLocale)
     window.removeEventListener('pagehide', dispose)
     root.unmount()
-    dialog.remove()
+    dialog.replaceChildren()
+    host.remove()
   }
   const onLocale = () => {
     if (disposed) return

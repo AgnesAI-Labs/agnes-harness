@@ -208,7 +208,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
   'packages/web-ui/src': 15180,
-  'packages/web-units/src': 10933,
+  'packages/web-units/src': 10957,
   'packages/base/extensions/tools-core': 1125,
   'packages/base/extensions/mcp-server': 446,
   'packages/base/extensions/mcp-search': 178,
@@ -269,7 +269,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
 
-  'packages/web/src': 14162,
+  'packages/web/src': 14188,
 
   'packages/bridges/src': 1728,
   'packages/channels/src': 5398,

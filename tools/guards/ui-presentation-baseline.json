@@ -1,6 +1,6 @@
 {
   "scope": "Legacy business presentation baseline. Counts are ceilings by file, rule and literal; only remove allowances as pages migrate. Shared web-ui controls and the authoritative token palette own presentation.",
-  "count": 49,
+  "count": 38,
   "files": {
     "packages/web-admin/src/admin/plugins/admin/page.tsx": {
       "internal-button-class:primary-button": 2,
@@ -8,18 +8,6 @@
     },
     "packages/web-admin/src/oauth-controls.ts": {
       "internal-button-class:secondary-button": 1
-    },
-    "packages/web-units/src/diagnostics-viewer.ts": {
-      "hex-color:#fff": 2,
-      "hex-color:#1a1a1a": 1,
-      "hex-color:#666": 1,
-      "hex-color:#ddd": 1,
-      "hex-color:#2563eb": 1,
-      "hex-color:#111318": 1,
-      "hex-color:#e6e6e6": 1,
-      "hex-color:#9aa0a6": 1,
-      "hex-color:#333": 1,
-      "hex-color:#7aa2f7": 1
     },
     "packages/web/public/admin.html": {
       "internal-button-class:secondary-button": 5,

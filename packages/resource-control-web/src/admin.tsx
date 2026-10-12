@@ -438,8 +438,10 @@ class ResourceAdminPage {
     $('mcp-create', 'button').hidden = this.#tab !== 'mcp'
     $('mcp-create', 'button').disabled = !this.writable() || busy || this.#activeOperation !== undefined
     if (mcpPresets) {
-      mcpPresets.button.hidden = this.#tab !== 'mcp'
-      mcpPresets.button.disabled = !this.writable() || busy || this.#activeOperation !== undefined
+      mcpPresets.setAvailability({
+        hidden: this.#tab !== 'mcp',
+        disabled: !this.writable() || busy || this.#activeOperation !== undefined,
+      })
     }
     list.dataset.state = this.#loadState
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))

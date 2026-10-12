@@ -43,6 +43,10 @@
     "packages/web/src/workbench/dock.tsx",
     "packages/web-units/src/trace-inspector.tsx",
     "packages/web-units/src/trace.tsx",
-    "packages/web/src/regions/trace.tsx"
+    "packages/web/src/regions/trace.tsx",
+    "packages/resource-control-web/src/mcp-presets.tsx",
+    "packages/web-ui/src/diagnostics-dialog.tsx",
+    "packages/web-units/src/diagnostics-viewer.tsx",
+    "packages/web/src/diagnostics-dialog.tsx"
   ]
 }

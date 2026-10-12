@@ -55,10 +55,10 @@ export function DiagnosticsDialogView({
           {label('diagnostics.redaction', 'Secrets are redacted before sharing.')}
         </p>
         <div className="dialog-actions">
-          <Button className="secondary-button" htmlType="button" data-action="cancel" onClick={actions.close}>
+          <Button appearance="secondary" htmlType="button" data-action="cancel" onClick={actions.close}>
             {label('diagnostics.cancel', 'Cancel')}
           </Button>
-          <Button className="primary-button" htmlType="button" data-action="share" onClick={actions.share}>
+          <Button appearance="primary" htmlType="button" data-action="share" onClick={actions.share}>
             {label('diagnostics.share', 'Share diagnostics')}
           </Button>
         </div>
@@ -87,7 +87,7 @@ export function DiagnosticsDialogView({
         </fieldset>
         <div className="dialog-actions">
           <Button
-            className="secondary-button"
+            appearance="secondary"
             htmlType="button"
             data-back="menu"
             disabled={snapshot.generating}
@@ -96,7 +96,7 @@ export function DiagnosticsDialogView({
             {label('diagnostics.back', 'Back')}
           </Button>
           <Button
-            className="primary-button"
+            appearance="primary"
             htmlType="button"
             data-action="generate"
             disabled={snapshot.generating}
@@ -120,7 +120,7 @@ export function DiagnosticsDialogView({
         </p>
         <div className="dialog-actions">
           <Button
-            className="secondary-button"
+            appearance="secondary"
             htmlType="button"
             data-back="share"
             onClick={() => actions.back('share')}
@@ -128,7 +128,7 @@ export function DiagnosticsDialogView({
             {label('diagnostics.back', 'Back')}
           </Button>
           <Button
-            className="primary-button"
+            appearance="primary"
             htmlType="button"
             data-action="save"
             disabled={snapshot.saving}
@@ -149,7 +149,7 @@ export function DiagnosticsDialogView({
           {snapshot.savedName}
         </p>
         <div className="dialog-actions">
-          <Button className="primary-button" htmlType="button" data-action="close" onClick={actions.close}>
+          <Button appearance="primary" htmlType="button" data-action="close" onClick={actions.close}>
             {label('diagnostics.close', 'Close')}
           </Button>
         </div>
