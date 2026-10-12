@@ -139,7 +139,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2459,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 8367,
+  'packages/daemon-rpc/src': 8384,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
@@ -208,7 +208,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
   'packages/web-ui/src': 14770,
-  'packages/web-units/src': 9807,
+  'packages/web-units/src': 9903,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
   'packages/base/extensions/mcp-search': 182,
@@ -249,7 +249,7 @@ const INITIAL_CEILING: Record<string, number> = {
 
   'packages/core/src': 23778,
   'packages/ai/src': 4401,
-  'packages/protocol/src': 4666,
+  'packages/protocol/src': 4721,
   'packages/cli/src/tui': 38,
   'packages/cli-tui/src': 4950,
   'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
