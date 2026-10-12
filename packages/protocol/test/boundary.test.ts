@@ -110,6 +110,8 @@ describe('protocol src boundary', () => {
         'toAcpPrompt',
         'SESSION_TITLE_EVENT',
         'SessionTitleRecord',
+        'SessionRuntimeDescriptor',
+        'SessionRuntimeParams',
         'SessionToolsParams',
         'SessionToolsResult',
         'CapabilitySource',
