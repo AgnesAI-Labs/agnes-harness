@@ -37,6 +37,7 @@ export function ListRow({
         props.onClick?.(event)
         if (
           !event.defaultPrevented &&
+          event.currentTarget.contains(event.target as Node) &&
           !(event.target as Element).closest(
             'button, a, input, select, textarea, details, [role="button"], [role="combobox"], [role="option"], [role="listbox"]',
           )

@@ -78,7 +78,7 @@ test.beforeAll(async () => {
         <Dialog open={dialog} title="Confirm changes" size="sm" onCancel={() => setDialog(false)} footer={<Button onClick={() => setDialog(false)}>Cancel</Button>}>
           <p>Review your changes.</p><Field label="Name" error="Enter a name"><input /></Field>
         </Dialog>
-        <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description="A short description" onOpen={() => setDrawer(true)} actions={<Button>Open</Button>}/>
+        <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description="A short description" onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -134,6 +134,10 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   await expect(page.getByRole('dialog', { name: 'Details', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: 'Synthetic row', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: 'Row actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Copy row', exact: true }).click()
+  await expect(page.getByRole('status')).toHaveText('Row copied')
+  await expect(page.getByRole('dialog', { name: 'Details', exact: true })).toBeHidden()
   await settled(page)
   const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(scan.violations).toEqual([])
