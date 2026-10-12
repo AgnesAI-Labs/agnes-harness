@@ -366,6 +366,7 @@
     margin-bottom: 0;
   }
   .select-picker-panel {
+    pointer-events: auto;
     position: fixed;
     inset: auto;
     z-index: var(--agh-z-dropdown);
