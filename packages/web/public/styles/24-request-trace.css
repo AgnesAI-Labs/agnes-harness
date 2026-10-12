@@ -149,7 +149,7 @@
   }
   .workbench-terminal-tabs [aria-selected="true"] {
     background: var(--agnes-bg-hover);
-    color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
   }
   .workbench-terminal-job {
     /* Keep the controls and output in flow when a short dock needs to scroll. */
