@@ -125,7 +125,9 @@ function summarize(rows: Event[], provider: ToolLoopProvider) {
       .map((row) => (row.data as { reason: string }).reason)
       .slice(0, 3),
     quotes: rows.filter(
-      (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
+      (row) =>
+        row.type === 'decision/state' &&
+        (row.data as { request?: { spec?: { purpose?: string } } }).request?.spec?.purpose === 'budget',
     ).length,
     summaryRequests: provider.summaries,
     summaryOutputTokens: summaryOutputs,

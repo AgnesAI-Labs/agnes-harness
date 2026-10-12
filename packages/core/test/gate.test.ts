@@ -116,7 +116,7 @@ describe('checkpointRoutine compaction threshold', () => {
           expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
           expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
         ])
-        expect(await log.scan({ type: 'approval/asked', limit: 10 })).toEqual([])
+        expect(await log.scan({ type: 'decision/state', limit: 10 })).toEqual([])
         expect((await session.projectUI()).usage?.context.window).toBe(window)
       }
     },
@@ -169,12 +169,18 @@ describe('checkpointRoutine compaction threshold', () => {
     session.compaction = new CompactionRunner({ plan: async () => null, onCompact: async () => undefined })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    const asked = await log.scan({ type: 'approval/asked', limit: 10 })
-    expect(asked).toHaveLength(1)
+    const asked = await log.scan({ type: 'decision/state', limit: 10 })
+    expect(
+      (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'budget'),
+    ).toHaveLength(1)
     expect(asked[0]?.data).toMatchObject({
-      summary: expect.stringContaining(
-        'context 9838 tokens reached the 7500-token compaction threshold (9999-token session budget, 2499 reserved)',
-      ),
+      request: {
+        spec: {
+          prompt: expect.stringContaining(
+            'context 9838 tokens reached the 7500-token compaction threshold (9999-token session budget, 2499 reserved)',
+          ),
+        },
+      },
     })
     expect(provider.requests).toHaveLength(1)
   })

@@ -38,7 +38,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
   if (s.op()) return false
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (
-      value.request.owner !== 'core/unknown-outcome' ||
+      !['core/unknown-outcome', 'core/budget'].includes(value.request.owner) ||
       value.request.lane !== s.lane ||
       value.request.sourcePackage !== '@agnes/core' ||
       value.consumption
@@ -53,7 +53,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         await s.d.log.append([
           ...s.decisions.consumptionEvents(
             [snapshot.handle],
-            domainDecisionSource(s, 'unknown-outcome', snapshot.request.operationId),
+            domainDecisionSource(s, snapshot.request.spec.purpose, snapshot.request.operationId),
             null,
           ),
           s.ev(

@@ -119,7 +119,9 @@ it.each([
       seams: fakeSeams({
         verifier: await verifierT0(fakeSeamInit()),
         repair: { decide: async () => 'park' },
-        approval: { ask: async () => (++approvals === 1 ? verdict : 'rejected') },
+        approval: {
+          ask: async () => ({ verdict: ++approvals === 1 ? verdict : 'rejected', answeredBy: actor }),
+        },
       }),
     })
     const run = () => session.run({ until: 'turn-end', signal: new AbortController().signal })
@@ -128,14 +130,16 @@ it.each([
       await enqueue()
       expect((await run()).reason).toBe(reason)
       expect(provider.calls).toBe(4)
-      const asks = await log.scan({ type: 'approval/asked', limit: 100 })
+      const asks = (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate')
       expect(asks).toHaveLength(readOnly ? 0 : 1)
-      if (!readOnly) expect(asks[0]?.data).toMatchObject({ summary: 'verifier failed: repeated_write:3' })
+      if (!readOnly) expect(asks[0]?.request.spec.prompt).toBe('verifier failed: repeated_write:3')
       if (!readOnly && reason === 'completed') {
         // Even allowed-session does not waive a fresh set of repeated writes.
         await enqueue()
         expect((await run()).reason).toBe('blocked')
-        expect(await log.scan({ type: 'approval/asked', limit: 100 })).toHaveLength(2)
+        expect(
+          (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate'),
+        ).toHaveLength(2)
         expect(await log.scan({ type: 'tool/call', limit: 100 })).toHaveLength(6)
       }
     } finally {
