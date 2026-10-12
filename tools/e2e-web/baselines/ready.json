@@ -16,7 +16,8 @@
     "Turn timing: runtime duration varies. Metadata clock only is normalized to 12:00.",
     "Workspace file read clock only is normalized to 12:00; its localized label stays visible.",
     "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible.",
-    "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible."
+    "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible.",
+    "First-run manual workspace input value only is normalized to /workspace/w; its field, localized label and expanded disclosure remain visible, and the original value is restored."
   ],
   "ready": [
     "first-run-en-light",
@@ -311,7 +312,15 @@
     "narrow-facts-en-light-375",
     "narrow-facts-en-dark-375",
     "narrow-facts-zh-CN-light-375",
-    "narrow-facts-zh-CN-dark-375"
+    "narrow-facts-zh-CN-dark-375",
+    "setup-workspace-en-light-1440",
+    "setup-workspace-en-light-1280",
+    "setup-workspace-en-dark-1440",
+    "setup-workspace-en-dark-1280",
+    "setup-workspace-zh-CN-light-1440",
+    "setup-workspace-zh-CN-light-1280",
+    "setup-workspace-zh-CN-dark-1440",
+    "setup-workspace-zh-CN-dark-1280"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],
@@ -320,5 +329,16 @@
     "browserDependencies": "Playwright install --with-deps chromium",
     "localArchitecture": "arm64",
     "ciArchitecture": "x64"
+  },
+  "lastRefresh": {
+    "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
+    "platform": "darwin",
+    "specs": ["ui-gate", "narrow", "first-run", "ui-flows"],
+    "initialBatch": {
+      "sourceCommit": "1c9474a0bc358d7f99873bfc90f3cd5153300f9d",
+      "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
+    },
+    "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
+    "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
   }
 }
