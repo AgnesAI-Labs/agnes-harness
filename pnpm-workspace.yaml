@@ -5,6 +5,7 @@ packages:
   - examples/loops/decision-loop
   - examples/loops/dag-loop
   - examples/loops/react-loop
+  - examples/loops/plan-execute-loop
   - examples/demos
   - examples/persistence
   - examples/sandbox/docker
