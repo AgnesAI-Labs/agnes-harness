@@ -3,14 +3,11 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ToolRegistry } from '@agnes/core'
 import {
-  type CurrentSessionRuntime,
   DEFAULT_LOOP,
   type HookPort,
   Kernel,
-  noopHooks,
   type Operation,
   platformFacts,
-  type SeamImplementations,
   type SessionImpl,
 } from '@agnes/core'
 import {
@@ -19,12 +16,10 @@ import {
   type MemorySession,
   memoryKind,
   type ResourceEntry,
-  type SystemPromptProvider,
   systemPromptKind,
 } from '@agnes/extension-api'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
 import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
-import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError } from '@agnes/host-common/errors'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import {
@@ -34,7 +29,7 @@ import {
   resolveComposition,
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import { bindApprovalTicket, businessLimit } from '@agnes/host-common/profile-policy'
+import { businessLimit } from '@agnes/host-common/profile-policy'
 import {
   buildExtensionRow,
   composeExtensionRowTarget,
@@ -46,7 +41,6 @@ import {
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
 import type { OperationDeps, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
-import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { type BuiltinRowHandle, createBuiltinRowHost } from '@agnes/host-extensions/ext-host/builtin-row-host'
 import { createExtensionFactorySelector } from '@agnes/host-extensions/ext-host/extension-isolation-selector'
 import { mergeExtensionStatus } from '@agnes/host-extensions/ext-host/extension-status-book'
@@ -66,30 +60,20 @@ import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/sk
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
 import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fetch/index'
-import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import {
   composeSecrets,
   createSecretsEnv,
   createSecretsFile,
 } from '@agnes/host-infrastructure/adapters/secrets'
-import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
-import {
-  installSandboxProviders,
-  sandboxProviderCatalog,
-} from '@agnes/host-providers/adapters/sandbox-providers'
+import { sandboxProviderCatalog } from '@agnes/host-providers/adapters/sandbox-providers'
 import { assembleCompaction } from '@agnes/host-providers/assemble/compaction'
-import {
-  compactionEngineCatalog,
-  installCompactionEngines,
-} from '@agnes/host-providers/assemble/compaction-engines'
+import { compactionEngineCatalog } from '@agnes/host-providers/assemble/compaction-engines'
 import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
-import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
-import { installLoops } from '@agnes/host-providers/assemble/loops'
-import { installModelAdapters, modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
+import { modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
 import { modelRuntime } from '@agnes/host-providers/assemble/model-runtime'
 import {
   buildProvider,
@@ -98,49 +82,24 @@ import {
 } from '@agnes/host-providers/assemble/provider'
 import {
   applyProviderSelections,
-  providerConfigurationScopes,
   selectConfiguredProviders,
 } from '@agnes/host-providers/assemble/provider-selection'
-import { installReferenceResolvers } from '@agnes/host-providers/assemble/reference-resolvers'
 import {
   materializeRoutes,
   pinPresetRoutes,
   sweepAwsDestination,
   verifyRoutes,
 } from '@agnes/host-providers/assemble/routes'
-import { REQUIRED_SEAM_ROW_IDS } from '@agnes/host-providers/assemble/seam-rows'
 import { skillRowRevision, withSkillRows } from '@agnes/host-providers/assemble/skill-row'
-import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import {
-  type GenerationRegistries,
   generationRegistries,
   prepareGenerationOwnerReplacement,
-  publishedSessionRuntime,
-  retainGenerationRegistries,
 } from '@agnes/host-providers/runtime-generation-view'
-import {
-  type IsolatedSessionOverlay,
-  isolateSessionOverlay,
-  syncHotPolicyFromTarget,
-} from '@agnes/host-providers/runtime-hot-policy'
-import { sessionOverlayDesired } from '@agnes/host-providers/runtime-session-overlay'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { RuntimeTargetPublisher } from '@agnes/host-providers/runtime-target-publisher'
-import {
-  createHostRuntimeTargetResourceFactory,
-  type HostRuntimeTargetResources,
-} from '@agnes/host-providers/runtime-target-resource-bootstrap'
 import { correlatedLogger } from '@agnes/observability'
-import { developmentPluginRows } from '@agnes/package-manager'
-import {
-  createMutableSeamImplementations,
-  type EntryRow,
-  type RuntimeConvergenceReport,
-  type RuntimeTarget,
-} from '@agnes/plugin-runtime/host'
+import type { EntryRow } from '@agnes/plugin-runtime/host'
 import type { RouteTable } from '@agnes/protocol'
 import { createNetFetch, lazyPackageTables, toSeamAdapters } from '../adapters/index.js'
-import { createApprovalGrantControlPlane, migrateApprovalGrants } from '../approval/grants.js'
 import { mountComputerUse } from '../computer-use/index.js'
 import { compositionSkills, compositionTools } from '../profile/composition-visibility.js'
 import {
@@ -149,21 +108,19 @@ import {
   capabilityToolCatalog,
   resolveSessionCapabilities,
 } from '../profile/session-capabilities.js'
-import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
-import { installGitWorktreeService } from '../services/git-worktrees.js'
-import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
-import { rememberDeferredInvocations } from '../sessions/deferred-invocations.js'
-import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
+import { startObservabilityFeed } from '../services/observability-feed.js'
 import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
-import type { Assembled, OrdinaryReconciliationLifecycle } from './assembled.js'
+import type { Assembled } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { buildBootRows } from './boot-rows.js'
-import { childAgentCatalog, installChildAgents } from './child-agents.js'
+import { childAgentCatalog } from './child-agents.js'
 import { createAssemblyContext, duplicateContribution, failAssembly } from './context.js'
+import { bindSeams } from './package-seams.js'
 import { loadPackages } from './packages.js'
 import { resolvePresetCatalog } from './presets.js'
 import { openProcessServices } from './process-services.js'
 import { createRowHosts } from './row-hosts.js'
+import { mountRuntimeTarget } from './runtime-target.js'
 import { openSeamContexts } from './seam-contexts.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 import { createSkillState } from './skills.js'
@@ -260,41 +217,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const skillState = createSkillState(ctx, proc)
     const { owners: skillOwners } = skillState
     let kernel!: Kernel
-    const generationViews = new Map<string, GenerationRegistries>()
-    const rawSessionRuntime = (
-      sessionKey: string,
-      runtimeRegistryRevision?: string,
-    ): CurrentSessionRuntime => {
-      const session = kernel.get(sessionKey)
-      const revision =
-        runtimeRegistryRevision ??
-        runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision ??
-        'unspecified'
-      const runtime = publishedSessionRuntime({
-        runtimeRegistryRevision: revision,
-        cache: generationViews,
-        hooks: session?.hooks ?? noopHooks,
-        ...(kernel ? { seed: { tools: kernel.tools, resources: kernel.resources } } : {}),
-        ...(skillState.promptPreloader ? { runtimePromptPreloader: skillState.promptPreloader } : {}),
-      })
-      return runtime
-    }
-    const sessionRuntimeView = (
-      sessionKey: string,
-      runtimeRegistryRevision?: string,
-    ): CurrentSessionRuntime => {
-      const runtime = rawSessionRuntime(sessionKey, runtimeRegistryRevision)
-      if (!ctx.profile.composition) return runtime
-      return {
-        ...runtime,
-        tools: compositionTools(
-          runtime.tools,
-          ctx.profile.composition ?? {},
-          ctx.profile.compositionToolScope,
-          (tools) => sessionCapabilities(sessionKey, tools),
-        ),
-      }
-    }
     const bootRows = buildBootRows(ctx, pkgs, presetCatalog, seamContexts)
     const {
       builtSeams,
@@ -305,315 +227,32 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       bootTreeRows,
       builtin,
     } = bootRows
-    let replacePublishedSeamRoot: ((root: import('@agnes/cordis').Context) => void) | undefined
+    const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
+    const { pluginCatalogue, extensionInfo, extensionOrder, extensionOwners, rowExtensions, rowServices } =
+      rowHosts
+    const runtimeTarget = await mountRuntimeTarget(ctx, {
+      pkgs,
+      proc,
+      presets: presetCatalog,
+      bootRows,
+      hosts: rowHosts,
+      skillState,
+    })
     const {
-      pluginCatalogue,
-      extensionInfo,
-      extensionOrder,
-      extensionOwners,
-      rowExtensions,
-      rowServices,
-      refreshPluginCatalogue,
-    } = createRowHosts(ctx, pkgs, workspaceRuntime)
-    const extensionServices: { current?: ExtensionServiceHost } = {}
-    let intelligentUi!: ReturnType<typeof createIntelligentUiBridge>
-    const runtimeTargetPublisher = new RuntimeTargetPublisher<
-      HostRuntimeTargetResources,
-      IsolatedSessionOverlay
-    >({
-      catalogue: pluginCatalogue,
-      publication: publicationGate,
-      mutation: runtimeMutationGate,
-      ...(deps.ordinaryStartTimeoutMs === undefined ? {} : { startTimeoutMs: deps.ordinaryStartTimeoutMs }),
-      resourceFactory: createHostRuntimeTargetResourceFactory({
-        ...(deps.skillResources ? { skills: deps.skillResources } : {}),
-      }),
-      load: async (source) => {
-        if (!deps.extensionLoader) return undefined
-        const loaded = await loadRuntimeModule(source)
-        return loaded?.module
-      },
-      trust: (source) => {
-        const resolved = ctx.profile.packages.find((pkg) => pkg.id === source.snapshot.packageId)
-        if (resolved?.trust === 'builtin' || resolved?.trust === 'trusted') return resolved.trust
-        // A package the user trusted after this Host booted is not in the boot profile.
-        return source.trusted ? 'trusted' : undefined
-      },
-      staticClaims: () => builtin.claims,
-      privateInput: () => {
-        // Asked once claims have resolved, right before the candidate tree starts mounting rows.
-        candidateMounting = true
-        return {
-          bootRows: Object.freeze([...staticBootRows, ...builtin.hostExtensionRows]),
-          exactExtras: builtSeams.exactExtras,
-          thirdPartyExtras: builtSeams.thirdPartyExtras,
-          requiredRowIds: REQUIRED_SEAM_ROW_IDS,
-          rootServices: (root, origins) => {
-            const providers = installProviders(root)
-            extensionServices.current?.attachBinder(providers)
-            providers.configurationSource((entry) =>
-              providerConfigurationScopes(entry, ctx.profile, defaultPreset.view),
-            )
-            const persistence = persistenceProviderRegistry(adapters.storage)
-            if (persistence) providers.add(persistence)
-            rowExtensions.installRoot(root, origins)
-            rowServices.installRoot(root, origins)
-            installModelAdapters(root, origins)
-            const deferred = new DeferredInvocationsService(root, origins)
-            rememberDeferredInvocations(root, deferred)
-            intelligentUi.attach(root, origins, deferred)
-            installLoops(root, origins, deferred)
-            installReferenceResolvers(root)
-            const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
-              installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
-                promptRegistry.register(source, provider, owner),
-              )
-            const extensionHost = extensionServices.current
-            if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
-            installGitWorktreeService(extensionHost, root, origins, gitWorktrees)
-            installObservabilityService(extensionHost, root, origins)
-            const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
-              import('@agnes/extension-api').MemoryProvider
-            > = installProviderRegistry(root, memoryKind, (owner, source, provider) =>
-              memoryRegistry.register(source, provider, owner),
-            )
-            installToolProviders(root, origins)
-            installCompactionEngines(root, origins)
-            installChildAgents(root, origins, providerSelections['child-agent'])
-            const sandboxProviders = installSandboxProviders(root, origins)
-            root.providers.register(
-              'sandbox',
-              '@agnes/host',
-              createLocalSandboxProvider(adapters.exec, adapters.platform.os),
-            )
-            sandboxProviderSlot.registry = sandboxProviders
-          },
-          ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
-          afterApply: () => {
-            const backend = sandboxProviderSlot.registry
-              ?.catalog()
-              .find((entry) => entry.id === ctx.profile.sandbox?.provider)
-            if (backend) deps.onGenerationBasePackages?.([backend.sourcePackage])
-            if (kernel) kernel.invalidateSeams()
-          },
-        }
-      },
-      verifyCandidate: (candidate, tree) => {
-        // The candidate has mounted, so the Kernel tables hold its registrations and leases. A revision
-        // cached by an earlier delivery (or by a candidate that was rejected) describes older ones.
-        retainGenerationRegistries(
-          generationViews,
-          runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision,
-        )
-        rowExtensions.assertReplacements(candidate.tree.rows, tree)
-      },
-      rebuildSessionScope: async (sessionKey, desired, candidate) => {
-        const overlay = isolateSessionOverlay(
-          candidate.ordinary.pluginTree.root,
-          sessionKey,
-          sessionOverlayDesired(desired).preset,
-        )
-        return Object.freeze({
-          desired: { preset: overlay.preset },
-          overlay,
-          runtime: sessionRuntimeView(sessionKey, candidate.runtimeRegistryRevision),
-          close: () => undefined,
-        })
-      },
-      onPublished: (target) => {
-        const root = runtimeTargetPublisher.current().value.current?.ordinary.pluginTree.root
-        if (root) replacePublishedSeamRoot?.(root)
-        syncHotPolicyFromTarget(hotPolicy, target)
-      },
-    })
-    rollback.push('runtime-target-publisher', () => runtimeTargetPublisher.close())
-    const publishedOrdinary = (): HostPluginTreeBase => {
-      const current = runtimeTargetPublisher.current().value.current
-      if (!current) {
-        throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no ordinary tree', {
-          detail: { reason: 'runtime-target-unpublished' },
-        })
-      }
-      return current.ordinary.pluginTree
-    }
-    extensionServices.current = createExtensionServiceHost({
-      providers: () => publishedOrdinary().root.providers,
-      sessionGeneration: (key) => deps.sessionGeneration?.(key),
-    })
-    intelligentUi = createIntelligentUiBridge({
-      extensionHost: extensionServices.current,
-      profileDir: deps.profileDir,
-      profileName: ctx.profile.name,
-      agnesVersion: deps.agnesVersion ?? '0.0.0',
-      sessionGeneration: (key) => deps.sessionGeneration?.(key),
-      session: (key) => kernel?.get(key),
-      providers: () => publishedOrdinary().root.providers as UiDataSourceCatalog,
-    })
-    // Host admission for the one ordinary convergence path. `closeHost` seals this synchronously and
-    // then joins the queue, so a target already admitted finishes loading and applying before the
-    // rollback disposes the tree it is mounting into, and a target handed in after that is refused.
-    // A rejected candidate leaves the previous tree published, but the candidate's rows have already
-    // taken over the extension ids they share with it (the kernel tables are shared), so the previous
-    // tree's tools and hooks are gone. Mounting the published target again puts them back; nothing
-    // else would, because applying an unchanged target is a no-op.
-    let candidateMounting = false
-    const rebuildLiveTree = async () => {
-      const live = runtimeTargetPublisher.current().value.current?.target
-      if (!live) return
-      try {
-        await runtimeTargetPublisher.apply(live, { rebuild: true })
-      } catch (error) {
-        deps.log.error('could not restore the published runtime target after a rejected one', {
-          message: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    let applyQueue: Promise<unknown> = Promise.resolve()
-    let applyClosed = false
-    let applyDrain: Promise<void> | undefined
-    // `resolveTarget` runs when this apply's turn in the queue comes, not when it is enqueued: a
-    // target derived from the live one (the ext: rows' own composition) must see every apply queued
-    // ahead of it, or it would be built on the tree before them and, published after them, drop them.
-    const enqueueRuntimeTarget = (
-      resolveTarget: () => Parameters<typeof runtimeTargetPublisher.apply>[0],
-    ): Promise<RuntimeConvergenceReport> => {
-      if (applyClosed)
-        throw new HostError('E_HOST_CLOSED', 'ordinary runtime target application is closed', {
-          detail: { reason: 'ordinary-reconciliation-closed' },
-        })
-      const applied = applyQueue.then(async () => {
-        const target = resolveTarget()
-        await refreshPluginCatalogue()
-        let published: Awaited<ReturnType<typeof runtimeTargetPublisher.apply>>
-        candidateMounting = false
-        try {
-          published = await runtimeTargetPublisher.apply(target)
-        } catch (error) {
-          // A transaction compensates on the live tree itself, and a tree holding a row that never
-          // finished mounting must not be retired: waiting on that fiber would hold the mutation
-          // gate for ever. Only a failed whole-tree candidate, which had already taken the shared
-          // ids over, needs the published target mounted again — UNLESS the transaction's own
-          // compensation failed (the live tree may be left half-recovered: a row unmounted but
-          // still tracked, so it silently vanishes from the plugin table on the next delivery).
-          // A tainted tree already gets the backgrounded-retirement safety net either way.
-          const live = runtimeTargetPublisher.current().value.current?.ordinary.pluginTree
-          const compensationFailed =
-            runtimeTargetPublisher.lastAttempt === 'transaction' &&
-            error instanceof Error &&
-            error.message.includes('recovery failed')
-          // Compensation failing leaves the tree tainted, but a tainted tree must still be repaired
-          // here — the backgrounded-retirement path only runs on the next retire/close, and does not
-          // by itself put the vanished row back. Only the ordinary (non-transaction) candidate-failure
-          // branch below stays gated on `!tainted`, since a plain tainted tree is otherwise healthy and
-          // does not need rebuilding.
-          if (compensationFailed)
-            deps.log.error('a transaction failed to compensate; rebuilding the whole tree to repair it', {
-              message: error instanceof Error ? error.message : String(error),
-            })
-          if (
-            candidateMounting &&
-            (compensationFailed ||
-              (!live?.tainted?.() && runtimeTargetPublisher.lastAttempt !== 'transaction'))
-          ) {
-            await rebuildLiveTree()
-          }
-          throw error
-        }
-        const report = published.value.current?.report
-        if (!report) {
-          throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no report', {
-            detail: { reason: 'runtime-target-unpublished' },
-          })
-        }
-        return report
-      })
-      applyQueue = applied.catch(() => undefined)
-      return applied
-    }
-    const applyRuntimeTarget = (target: RuntimeTarget): Promise<RuntimeConvergenceReport> =>
-      enqueueRuntimeTarget(() => target)
-    const ordinaryReconciliation: OrdinaryReconciliationLifecycle = Object.freeze({
-      close: () => {
-        applyClosed = true
-        applyDrain ??= applyQueue.then(() => undefined)
-        return applyDrain
-      },
-    })
-    const initialRuntimeTarget = buildCompleteRuntimeTarget({
-      rows: [
-        ...bootTreeRows,
-        ...activeRuntimeSources.flatMap((source) =>
-          ctx.profile.packages.some((pkg) => pkg.id === source.snapshot.packageId && pkg.enabled)
-            ? developmentPluginRows(source, bootTreeRows).filter((row) => row.id.startsWith('web:'))
-            : [],
-        ),
-      ],
-      resources: { mcp: [], skills: {} },
-    }).target
-    await applyRuntimeTarget(initialRuntimeTarget)
-    const pluginTree: HostPluginTreeBase = {
-      get root() {
-        return publishedOrdinary().root
-      },
-      get tree() {
-        return publishedOrdinary().tree
-      },
-      get leases() {
-        return publishedOrdinary().leases
-      },
-      get bootRows() {
-        return publishedOrdinary().bootRows
-      },
-      currentRows: () => publishedOrdinary().currentRows(),
-      applyRows: () => {
-        throw new HostError('E_EXT_LOAD', 'ordinary rows apply only through applyRuntimeTarget', {
-          detail: { reason: 'ordinary-apply-via-runtime-target' },
-        })
-      },
-    }
-    ctx.live.pluginTree.set(pluginTree)
-    const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
-      deps.onGenerationSessionBinding?.(sessionKey)
-      const published = runtimeTargetPublisher.current().value.current
-      if (!published) return
-      const overlay = isolateSessionOverlay(published.ordinary.pluginTree.root, sessionKey, preset)
-      await runtimeTargetPublisher.setSessionScope(sessionKey, { preset: overlay.preset }, async () =>
-        Object.freeze({
-          desired: { preset: overlay.preset },
-          overlay,
-          runtime: sessionRuntimeView(sessionKey, published.runtimeRegistryRevision),
-          close: () => undefined,
-        }),
-      )
-    }
-    const unbindRuntimeSession = async (sessionKey: string): Promise<void> => {
-      await runtimeTargetPublisher.closeSessionScope(sessionKey)
-    }
-    const mutablePackageSeams = createMutableSeamImplementations<SeamImplementations>(
-      pluginTree.root,
-      {
-        sandbox: staticSeams.sandbox,
-        platform: staticSeams.platform,
-      },
-      publicationDispatch,
-    )
-    const packageSeams = mutablePackageSeams.seams
-    replacePublishedSeamRoot = mutablePackageSeams.replaceRoot
-    const approvalGrantControl = createApprovalGrantControlPlane(
-      (() => {
-        const ns = adapters.storage.metadata.namespace('@agnes/host/approval-grants', 'grants')
-        if (adapters.storage.sqlite)
-          migrateApprovalGrants(lazyPackageTables(adapters.storage, '@agnes/host/approval-grants'), ns)
-        return ns
-      })(),
-      (grantId) => {
-        bindApprovalTicket(hotPolicy, grantId)
-      },
-    )
-    const seams: SeamImplementations = {
-      ...packageSeams,
-      approval: approvalGrantControl.bind(packageSeams.approval),
-    }
+      publisher: runtimeTargetPublisher,
+      generationViews,
+      rawSessionRuntime,
+      sessionRuntimeView,
+      extensionServices,
+      intelligentUi,
+      enqueueRuntimeTarget,
+      applyRuntimeTarget,
+      ordinaryReconciliation,
+      pluginTree,
+      bindRuntimeSession,
+      unbindRuntimeSession,
+    } = runtimeTarget
+    const { seams, approvalGrantControl } = bindSeams(ctx, proc, seamContexts, runtimeTarget)
     ctx.live.seams.set(seams)
     const computerUse = mountComputerUse({
       profile: ctx.profile,

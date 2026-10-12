@@ -103,3 +103,5 @@ export function createRowHosts(
     refreshPluginCatalogue,
   }
 }
+
+export type RowHosts = ReturnType<typeof createRowHosts>
