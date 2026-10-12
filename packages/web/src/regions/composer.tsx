@@ -9,7 +9,7 @@ import {
   type ComposerRegionOptions,
   type ComposerView,
 } from '@agnes/web-units'
-import { createElement } from 'react'
+import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { LoopPicker } from '../loop-picker.js'
 import {
@@ -34,50 +34,48 @@ export function ComposerDshFrame({
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
   dependencies: ComposerDependencies
-}): ReturnType<typeof createElement> {
-  const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
-  return createElement(
-    SlotsProvider,
-    { registry },
-    createElement(
-      'div',
-      { 'data-agnes-composer-dsh': true },
-      createElement(SlotOutlet, {
-        name: 'conversation.composer',
-        props: { owner: { composerId: 'composer' } },
-        owner: { composerId: 'composer' },
-        hideWhenEmpty: true,
-      }),
-      createElement(Composer, {
-        ref: setHandle,
-        dependencies,
-        ...options,
-        slots: {
-          attachments: outlet('conversation.input.attachments'),
-          dock: createElement(
-            'span',
-            { style: { display: 'contents' }, 'data-agnes-composer-dock': true },
-            createElement(SlotOutlet, {
-              name: 'conversation.composer.dock',
-              props: { owner: { composerId: 'composer' } },
-              hideWhenEmpty: true,
-            }),
-            outlet('conversation.input.dock'),
-          ),
-          left: createElement(
-            'span',
-            { style: { display: 'contents' } },
-            createElement(LoopPicker),
-            outlet('conversation.input.left'),
-          ),
-          model: outlet('conversation.input.model'),
-          overlay: outlet('conversation.input.overlay'),
-          permission: outlet('conversation.input.permission'),
-          plan: outlet('conversation.input.plan'),
-          right: outlet('conversation.input.right'),
-        },
-      }),
-    ),
+}): ReactElement {
+  const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty={true} />
+  return (
+    <SlotsProvider registry={registry}>
+      <div data-agnes-composer-dsh={true}>
+        <SlotOutlet
+          name="conversation.composer"
+          props={{ owner: { composerId: 'composer' } }}
+          owner={{ composerId: 'composer' }}
+          hideWhenEmpty={true}
+        />
+        <Composer
+          ref={setHandle}
+          dependencies={dependencies}
+          {...options}
+          slots={{
+            attachments: outlet('conversation.input.attachments'),
+            dock: (
+              <span className="composer-dsh-control" data-agnes-composer-dock={true}>
+                <SlotOutlet
+                  name="conversation.composer.dock"
+                  props={{ owner: { composerId: 'composer' } }}
+                  hideWhenEmpty={true}
+                />
+                {outlet('conversation.input.dock')}
+              </span>
+            ),
+            left: (
+              <span className="composer-dsh-control">
+                <LoopPicker />
+                {outlet('conversation.input.left')}
+              </span>
+            ),
+            model: outlet('conversation.input.model'),
+            overlay: outlet('conversation.input.overlay'),
+            permission: outlet('conversation.input.permission'),
+            plan: outlet('conversation.input.plan'),
+            right: outlet('conversation.input.right'),
+          }}
+        />
+      </div>
+    </SlotsProvider>
   )
 }
 
@@ -92,11 +90,7 @@ export function mountComposerRegion(
     ...COMPOSER_DEPENDENCIES,
     translate: (key, vars) => locale.t(key, vars),
     // Wrap the usage panel so the shared React component renders with the current locale.
-    UsagePanel: (props) =>
-      createElement(ConversationUsage, {
-        ...props,
-        t: (key, vars) => locale.t(key, vars),
-      }),
+    UsagePanel: (props) => <ConversationUsage {...props} t={(key, vars) => locale.t(key, vars)} />,
     createUsagePanel: (parent) => createUsagePanel(parent, (key, vars) => locale.t(key, vars)),
   }
   const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
@@ -158,17 +152,15 @@ export function mountComposerRegion(
       owner: '@agnes/web-composer',
       priority: 0,
     },
-    () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
+    () => <SlotOutlet name="conversation.composer.bar" />,
   )
   const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry: rootStableRegistry(registry) },
-        createElement(SlotOutlet, { name: COMPOSER_SLOT }),
-      ),
+      <SlotsProvider registry={rootStableRegistry(registry)}>
+        <SlotOutlet name={COMPOSER_SLOT} />
+      </SlotsProvider>,
     )
   })
   let disposed = false

@@ -86,6 +86,10 @@ describe('rendered composer region', () => {
     expect(document.querySelector('#composer-workspace')).toBeTruthy()
     expect(document.querySelector('#composer-permission')).toBeTruthy()
     expect(document.querySelector('#model')).toBeTruthy()
+    const fileInput = document.querySelector<HTMLInputElement>('[data-testid="attachment-file-input"]')
+    expect(fileInput?.type).toBe('file')
+    expect(fileInput?.hidden).toBe(true)
+    expect(fileInput?.multiple).toBe(true)
     expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(
       usage.context.tokens / usage.context.window < 0.6,
     )
@@ -103,6 +107,17 @@ describe('rendered composer region', () => {
     prompt.dispatchEvent(enter)
     expect(enter.defaultPrevented).toBe(true)
     expect(drafts).toEqual(['键盘提交'])
+    expect(submitted).toEqual(['submit'])
+    expect(document.activeElement).toBe(prompt)
+    const newline = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Enter',
+      keyCode: 13,
+      shiftKey: true,
+    })
+    prompt.dispatchEvent(newline)
+    expect(newline.defaultPrevented).toBe(false)
     expect(submitted).toEqual(['submit'])
     expect(document.activeElement).toBe(prompt)
   })

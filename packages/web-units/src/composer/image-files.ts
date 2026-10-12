@@ -4,6 +4,7 @@ import {
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
+import { createRegionHost } from '@agnes/web-ui'
 import type { ComposerAttachmentBlock } from './contracts.js'
 
 export type ComposerAttachment = ComposerAttachmentBlock & {
@@ -64,7 +65,8 @@ export async function downscaleImageFile(file: File, policy = userImagePolicy(un
         // 浏览器已成功解码；通过 canvas 去掉尾部附加数据等不兼容结构。
       }
     }
-    const canvas = document.createElement('canvas')
+    const canvas = createRegionHost(document.body, 'canvas') as HTMLCanvasElement
+    canvas.remove()
     canvas.width = Math.max(1, Math.round(bitmap.width * ratio))
     canvas.height = Math.max(1, Math.round(bitmap.height * ratio))
     const context = canvas.getContext('2d')

@@ -94,18 +94,6 @@
       "intrinsic": 4,
       "className": 1
     },
-    "packages/web-units/src/approval.ts": {
-      "intrinsic": 1
-    },
-    "packages/web-units/src/composer.ts": {
-      "intrinsic": 1
-    },
-    "packages/web-units/src/composer/image-files.ts": {
-      "dom": 1
-    },
-    "packages/web-units/src/composer/queue.ts": {
-      "intrinsic": 2
-    },
     "packages/web-units/src/conversation.ts": {
       "intrinsic": 1
     },

@@ -426,6 +426,7 @@
     display: none;
   }
 
+  .composer-dsh-control,
   .composer-extras,
   .composer-extras[data-overflow="false"] details,
   .composer-extras[data-overflow="false"] details > div {
