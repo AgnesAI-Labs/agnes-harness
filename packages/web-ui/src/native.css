@@ -42,12 +42,9 @@
     border-color: var(--agnes-line-emphasis);
     background: var(--agnes-bg-hover);
   }
-  button:active:not(:disabled) {
-    transform: none;
-  }
-  @media (hover: hover) and (pointer: fine) {
-    button:active:not(:disabled):not(:focus-visible) {
-      transform: translateY(1px);
+  @media (prefers-reduced-motion: no-preference) {
+    :is(button, a.agh-btn):not(:empty):active:not(:disabled):not(:focus-visible):not([aria-disabled="true"]) {
+      translate: 0 1px;
     }
   }
   button:focus-visible,

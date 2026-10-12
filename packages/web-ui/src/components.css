@@ -36,11 +36,6 @@
     background: var(--agnes-bg-hover);
     border-color: var(--agnes-input-border-emphasis);
   }
-  @media (prefers-reduced-motion: no-preference) {
-    .agh-btn:not(:empty):active:not(:focus-visible):not(:disabled):not([aria-disabled="true"]) {
-      translate: 0 1px;
-    }
-  }
   :is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-button-primary-content);
     background: var(--agnes-button-primary-bg);
