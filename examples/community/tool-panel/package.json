@@ -21,6 +21,7 @@
     "@sinclair/typebox": "0.34.33"
   },
   "devDependencies": {
+    "@agnes/cordis": "0.0.0",
     "typescript": "7.0.2",
     "@types/node": "26.4.1",
     "@agnes/host": "0.0.0",
