@@ -282,6 +282,7 @@ function CatalogComponent(
               rowSelection: {
                 type: component.selection === 'single' ? 'radio' : 'checkbox',
                 columnTitle: t('ui.select', { row: '' }),
+                columnWidth: 80,
                 hideSelectAll: true,
                 preserveSelectedRowKeys: true,
                 selectedRowKeys: selection,
