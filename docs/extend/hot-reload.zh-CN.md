@@ -28,10 +28,10 @@ agh plugins reload --profile local-dev
 
 ## 声明实时资源消费
 
-扩展 row 通过公开的 `agnes.extension.json` manifest 声明消费实时 Skills：
+随包发布的扩展通过 `package.json` 里的插件条目声明消费实时 Skills：
 
 ```json
-{ "liveResources": ["skills"] }
+{ "agnes": { "plugins": [{ "id": "ext:agnes/skills", "liveResources": ["skills"] }] } }
 ```
 
 可选数组目前支持 `skills`，重复或未知种类会被拒绝。省略或空数组表示资源变化不触发该 row 刷新。声明后，扩展工厂上下文会获得按 composition 过滤、按工作区限定的 Skill 输入；声明不会额外授予 capability，也不会绕过资源信任或读取授权。

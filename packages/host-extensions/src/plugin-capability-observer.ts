@@ -35,7 +35,7 @@ export function observePluginCapabilities(
     reported.add(capability)
     // Never log argv, paths, URLs, environment, prompts, secret names or credential values.
     log.warn(
-      'Plugin used an undeclared capability; declare it in agnes.capabilities. See docs/guide/packages.md#capabilities',
+      'Plugin used an undeclared capability; declare it in agnes.plugins[].capabilities. See docs/guide/packages.md#capabilities',
       { capability },
     )
   }

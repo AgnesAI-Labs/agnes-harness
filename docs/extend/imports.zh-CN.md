@@ -25,7 +25,7 @@
 | 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin` | 作者面。注入 `providers`，调用 `ctx.providers.register(modelAdapterKind, packageName, adapter)`。 |
 | 实现适配器配置和流式输出 | `@agnes/extension-api` | 类型 `ModelAdapter`、`ModelAdapterConfig`、`ModelAdapterInstance`、`ModelAdapterEvent`、`ProviderPluginContext` | 作者合同；见[适配器模板](../../templates/model-adapter/src/index.ts)。 |
 | 打包 MCP + Skills | `@agnes/plugin-runtime`、`@agnes/protocol` | 分别为 `defineAgnesPlugin`、类型 `Context`；类型 `McpServerDefinitionInput` | 作者面。MCP 定义和 `SKILL.md` 是包数据，不是工具 helper。注入 `skills`，调用 `ctx.skills.register(...)`；源码模板导入 `@agnes/resource-control-runtime` 以获得 context 类型。该包不是 Host 提供的 external；候选 creator 会省略此导入。见[模板](../../templates/mcp-skills/src/index.ts)和 [MCP 管理](../guide/mcp.zh-CN.md)。 |
-| 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → `agnes.capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
+| 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → 各 `agnes.plugins[].capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
 | 描述扩展能力 / 工具审批策略 | `@agnes/extension-api` | 类型 `ExtensionCapabilities`、`ExtensionManifest`、`ToolMeta`、`ResolvedToolCallPolicy` | 作者合同。描述文件能力与包能力的形状不同。使用调用时的 `ToolContext` 端口执行已授权 I/O；见[工具策略](tool-runtime.zh-CN.md)。 |
 | 通过 kind token 使用 Host 服务 | 下表中的所属合同包 | 从 `@agnes/extension-api` 导入类型 `BindableKind`、`LoopServiceReader` | 专用合同。使用实际提供的服务端口；导入 token 不会安装、选择或授权 provider。 |
 | 测试工具、Skills、Loop 和适配器 | `@agnes/host/author-testkit` | `createPluginTestHost`、`driveLoop`、`scriptedModel`、`runModelAdapter` | 作者面，仅测试文件。自动提供 Host 注册桥；轻量合同测试可显式提供服务替身。 |

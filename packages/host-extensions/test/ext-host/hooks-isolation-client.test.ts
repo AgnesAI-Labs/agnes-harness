@@ -18,7 +18,7 @@ import type {
   PlatformFacts,
   SessionRef,
 } from '@agnes/extension-api'
-import { unavailableProjections } from '@agnes/extension-api'
+import { bundledPackageJson, unavailableProjections } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   connectIsolatedHooksRunner,
@@ -302,27 +302,31 @@ describe('isolated hooks-runner spike', () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-isolated-capability-drain-'))
     const ext = join(root, 'extension')
     mkdirSync(ext)
-    const manifestFile = join(ext, 'agnes.extension.json')
+    const manifestFile = join(ext, 'package.json')
     const entry = join(ext, 'index.js')
     writeFileSync(
       manifestFile,
-      JSON.stringify({
-        id: 'fixture/unawaited-event',
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.js',
-        runtime: { supports: ['isolated'] },
-        capabilities: { hooks: ['before_step'] },
-      }),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'fixture/unawaited-event',
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './index.js',
+          runtime: { supports: ['isolated'] },
+          capabilities: { hooks: ['before_step'] },
+        }),
+      ),
     )
     writeFileSync(
       entry,
-      `export default (api) => {
+      `const factory = (api) => {
   api.registerHook('before_step', () => {
     void api.events.append('audit', { source: 'unawaited' });
     return {};
   });
-};`,
+};
+export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) => factory({ registerTool: (d) => ctx.tools.register(d), registerHook: (e, h) => ctx.hooks.register(e, h), events: ctx.eventLog, get ctx() { return ctx.self } }) }
+`,
     )
     const digest = (file: string) => `sha256-${createHash('sha256').update(readFileSync(file)).digest('hex')}`
     const nonce = randomUUID()

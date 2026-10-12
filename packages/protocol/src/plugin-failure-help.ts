@@ -17,7 +17,7 @@ export function pluginFailureHelp(reason: string): PluginFailureHelp {
   else if (/schema|invalid.*config|config.*invalid/i.test(reason))
     fixHint = 'Correct the plugin manifest or configuration to match its schema.'
   else if (/capability|E_PACKAGE_BLOCKED|E_PACKAGE_TRUST|policy/i.test(reason)) {
-    fixHint = 'Review agnes.capabilities and the administrator allow/deny policy before retrying.'
+    fixHint = 'Review agnes.plugins[].capabilities and the administrator allow/deny policy before retrying.'
     anchor = 'capabilities'
   } else if (/frontend|client module|browser/i.test(reason))
     fixHint = 'Rebuild the frontend, verify its declared asset paths, then reload the page.'

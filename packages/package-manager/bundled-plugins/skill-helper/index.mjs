@@ -202,9 +202,14 @@ export function createTools({ adapters = sourceAdapters } = {}) {
               exports: './index.mjs',
               agnes: {
                 kinds: ['skills'],
-                capabilities: {},
                 plugins: [
-                  { apiRange: '^3.0.0', id: 'ext:' + name + '/main', export: 'main', inject: ['skills'] },
+                  {
+                    apiRange: '^3.0.0',
+                    id: 'ext:' + name + '/main',
+                    export: 'main',
+                    inject: ['skills'],
+                    capabilities: {},
+                  },
                 ],
               },
             }),

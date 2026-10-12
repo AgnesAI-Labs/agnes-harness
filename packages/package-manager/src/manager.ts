@@ -34,7 +34,7 @@ import {
 } from './local-source.js'
 import { type LocalPluginReload, type LocalPluginWatcher, watchLocalPlugins } from './local-watcher.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
-import { readManifestIn } from './manifest.js'
+import { readBundledManifest } from './manifest.js'
 import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
@@ -254,7 +254,7 @@ function readPackageJson(dir: string): PackageJson {
   }
 }
 
-export { readManifestIn } from './manifest.js'
+export { readBundledManifest } from './manifest.js'
 
 function verifyIdentity(
   id: string,
@@ -911,7 +911,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               fetched.source ?? source,
               fetched,
               readPackageJson(stage),
-              readManifestIn(stage),
+              undefined,
               stamp(),
               current,
             )
@@ -1024,7 +1024,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               throw new PackageError('E_API_RANGE', 'package installation is blocked', {
                 detail: { blockers: preview.blockers },
               })
-            const manifest = readManifestIn(stage)
+            const manifest = undefined
             const entry = entryFrom(
               fetched.source ?? source,
               fetched,
@@ -1082,7 +1082,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             throw new PackageError('E_LOCK_MISMATCH', 'fetched package version changed before install', {
               detail: { reason: 'version', id: pkg.name },
             })
-          const manifest = readManifestIn(stage)
+          const manifest = undefined
           const installed = stamp()
           const entry = entryFrom(
             fetched.source ?? source,
@@ -1142,7 +1142,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               })
           }
           verifyInstalledIntegrity(id, entry, dir, reference)
-          const manifest = readManifestIn(dir)
+          const manifest = undefined
           verifyIdentity(id, entry, dir, manifest)
           const trusted = stamp()
           runTrustGate({
@@ -1390,7 +1390,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               detail: { id, reason: 'integrity' },
             })
           const pkg = readPackageJson(stage)
-          const manifest = readManifestIn(stage)
+          const manifest = undefined
           const trusted = stamp()
           const entry = entryFrom(fetched.source ?? source, fetched, pkg, manifest, trusted, current)
           verifyInstalledIntegrity(id, entry, stage, stage)
@@ -1454,7 +1454,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             throw new PackageError('E_EXT_LOAD', 'workspace extension path escapes its deploy directory', {
               detail: { reason: 'path-escape', id: extension.id },
             })
-          const author = readManifestIn(dir)
+          const author = readBundledManifest(dir)
           const pkg = readPackageJson(dir)
           if (
             !author ||

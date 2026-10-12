@@ -60,7 +60,7 @@ The current package format registers a plugin row through `package.json` and bin
 
 Key rules:
 
-- `clientDescriptors.rowId` must match the plugin row ID. The descriptor's `skins` field registers skins. The legacy `agnes.extension.json` format is not the entry point for new packages.
+- `clientDescriptors.rowId` must match the plugin row ID. The descriptor's `skins` field registers skins. There is no separate extension manifest file; a plugin entry carries its own `capabilities` and `contributes`.
 - `css` must be a **package-relative path**, starting with `./` and containing no `..`, drive letters, or backslashes.
 - Skin IDs cannot be `light`, `dark`, `system`, or `none`, which are reserved for built-in themes. IDs must be **unique across installed skins**.
 

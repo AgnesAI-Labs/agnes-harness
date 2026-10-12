@@ -38,28 +38,33 @@ agh plugins add ./hello-tool.tgz
 
 ## Capabilities
 
-Declare requested access in `package.json`. The same declaration appears for installed packages, local plugins, and plugins scaffolded by the agent:
+Declare requested access in each plugin's `agnes.plugins[].capabilities`. One shape serves installed packages, local plugins, plugins scaffolded by the agent and the bundled official plugins:
 
 ```json
 {
   "agnes": {
-    "plugins": [{ "apiRange": "^3.0.0", "export": "main" }],
-    "capabilities": {
-      "network": ["api.example.com", "*.example.org"],
-      "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
-      "exec": ["node"],
-      "secrets": ["weather-api-key"],
-      "credentials": ["example-account"],
-      "model": true,
-      "childAgents": true,
-      "ui": true,
-      "uiData": ["finance.differences.read"]
-    }
+    "plugins": [
+      {
+        "apiRange": "^3.0.0",
+        "export": "main",
+        "capabilities": {
+          "network": ["api.example.com", "*.example.org"],
+          "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },
+          "exec": ["node"],
+          "secrets": ["weather-api-key"],
+          "credentials": ["example-account"],
+          "model": true,
+          "childAgents": true,
+          "ui": true,
+          "uiData": ["finance.differences.read"]
+        }
+      }
+    ]
   }
 }
 ```
 
-List names/scopes, never secret values. String lists support `*` globs. `uiData` is the exception: each entry is an exact capability name such as `finance.differences.read` (`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`), at most 32 names. Trust shows the atom `uiData:<name>`, and the capability hash covers the list. A glob does not match that pattern. Filesystem scopes can be absolute, relative, or `workspace/` paths rooted at the tool cwd. Booleans request model access, child agents or UI. An empty object requests no capabilities; an omitted declaration is shown as undeclared for compatibility. Changes to a declaration change the trust hash and require review.
+List names/scopes, never secret values. String lists support `*` globs. `uiData` is the exception: each entry is an exact capability name such as `finance.differences.read` (`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`), at most 32 names. Trust shows the atom `uiData:<name>`, and the capability hash covers the list. A glob does not match that pattern. Filesystem scopes can be absolute, relative, or `workspace/` paths rooted at the tool cwd. Booleans request model access, child agents or UI. The same object also carries what a plugin registers: `tools` (`prefix`, `names`), `hooks`, `slots`, `events`, `resources`, `services`, `projections`, plus `tools.invoke`, `network.publicRead`, `artifacts` and `subagent`. `network` is always a list of host patterns and `ui` is a flag; skins and client modules sit under the entry's `contributes`. A package shows the union of its plugins' authority. An empty object requests no capabilities; an omitted declaration is shown as undeclared for compatibility. Changes to a declaration change the trust hash and require review.
 
 Administrators can create `plugin-capabilities.json` beside the profile's `agnes-lock.json`:
 

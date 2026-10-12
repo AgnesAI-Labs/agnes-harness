@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { LeaseView, PlatformFacts, SessionRef } from '@agnes/extension-api'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import {
   connectIsolatedHooksRunner,
@@ -62,18 +63,20 @@ function fixture() {
   const { handler: _, ...cap } = serviceFixture()
   writeFileSync(join(pkg, 'package.json'), JSON.stringify({ agnes: { extensions: ['./consumer'] } }))
   writeFileSync(
-    join(ext, 'agnes.extension.json'),
-    JSON.stringify({
-      id: 'fixture/seam-consumer',
-      version: '1.0.0',
-      apiRange: '^3.0.0',
-      entry: './index.js',
-      capabilities: {
-        tools: { prefix: 'sx_', names: ['sx_probe'] },
-        hooks: ['session_start'],
-        services: [cap],
-      },
-    }),
+    join(ext, 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: 'fixture/seam-consumer',
+        version: '1.0.0',
+        apiRange: '^3.0.0',
+        entry: './index.js',
+        capabilities: {
+          tools: { prefix: 'sx_', names: ['sx_probe'] },
+          hooks: ['session_start'],
+          services: [cap],
+        },
+      }),
+    ),
   )
   writeFileSync(
     join(ext, 'index.js'),
@@ -85,7 +88,7 @@ const facts = (v) => ({ shell: v.shell, fs: v.fs, terminal: v.terminal });
 // object with that marker via the global symbol registry (Symbol.for), which needs no import at all -
 // the same shape Type.Object({}, { additionalProperties: false }) produces.
 const parameters = { [Symbol.for('TypeBox.Kind')]: 'Object', type: 'object', properties: {}, required: [], additionalProperties: false };
-export default (api) => {
+const factory = (api) => {
   report({ at: 'factory', keys: Object.keys(api.ctx).sort(), platform: api.ctx.platform });
   api.registerHook('session_start', (_payload, hctx) => {
     report({ at: 'hook', keys: Object.keys(hctx).sort(), platform: hctx.platform });
@@ -108,7 +111,9 @@ export default (api) => {
       capability: sctx.platform.capability('fixture.probe') });
     return { value: input.value };
   } });
-};`,
+};
+export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) => factory({ registerTool: (d) => ctx.tools.register(d), registerHook: (e, h) => ctx.hooks.register(e, h), events: ctx.eventLog, get ctx() { return ctx.self } }) }
+`,
   )
   return { root, pkg, cap }
 }
@@ -157,28 +162,32 @@ describe('seam exposure: what a third-party extension can reach at each moment (
     const root = mkdtempSync(join(tmpdir(), 'agnes-seam-exposure-isolated-'))
     const ext = join(root, 'isolated')
     mkdirSync(ext, { recursive: true })
-    const manifestFile = join(ext, 'agnes.extension.json')
+    const manifestFile = join(ext, 'package.json')
     const entry = join(ext, 'index.js')
     writeFileSync(
       manifestFile,
-      JSON.stringify({
-        id: 'fixture/isolated-consumer',
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.js',
-        runtime: { supports: ['isolated'] },
-        capabilities: { hooks: ['before_step'] },
-      }),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'fixture/isolated-consumer',
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './index.js',
+          runtime: { supports: ['isolated'] },
+          capabilities: { hooks: ['before_step'] },
+        }),
+      ),
     )
     writeFileSync(
       entry,
       `import { defineTool } from '@agnes/plugin-runtime';
-export default (api) => {
+const factory = (api) => {
   api.registerHook('before_step', (_payload, hctx) => ({
     block: true,
     reason: JSON.stringify({ sdk: typeof defineTool, factory: api.ctx.platform, factoryKeys: Object.keys(api.ctx).sort(), hook: hctx.platform, hookKeys: Object.keys(hctx).sort() }),
   }));
-};`,
+};
+export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) => factory({ registerTool: (d) => ctx.tools.register(d), registerHook: (e, h) => ctx.hooks.register(e, h), events: ctx.eventLog, get ctx() { return ctx.self } }) }
+`,
     )
     const digest = (file: string) => `sha256-${createHash('sha256').update(readFileSync(file)).digest('hex')}`
     const nonce = randomUUID(),

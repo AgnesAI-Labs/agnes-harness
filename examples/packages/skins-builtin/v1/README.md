@@ -1,7 +1,7 @@
 # Built-in skins
 
 设计 §14 冻结的四套内置预设皮肤（`high-contrast` / `midnight` / `paper` / `aurora`），
-走的是与第三方皮肤**完全相同**的契约：`capabilities.ui: ["skin"]` + `contributes.skins`。
+走的是与第三方皮肤**完全相同**的契约：`capabilities.ui: true` + `contributes.skins`。
 
 - 三套零资产（`high-contrast` 纯 token、`midnight` 纯 CSS 渐变、`paper` CSS 纹理），
   因此它们只需要清单内联的样式表即可工作，不依赖资产通路。

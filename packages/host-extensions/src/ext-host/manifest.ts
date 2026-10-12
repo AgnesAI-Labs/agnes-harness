@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   API_VERSION,
   type ExtensionManifest as AuthorManifest,
+  bundledExtensionManifest,
   checkManifest,
   satisfiesApiRange,
 } from '@agnes/extension-api'
@@ -10,8 +11,8 @@ import { HostError } from '@agnes/host-common/errors'
 import { compat } from '@agnes/host-common/packages/compat'
 import { containedEntry, resolveEntry as resolvePackageEntry } from '@agnes/package-manager'
 
-/** The file a bundled extension declares itself in. It is read before its entry is executed. */
-export const MANIFEST_FILE = 'agnes.extension.json'
+/** The file a bundled extension declares itself in (its one `agnes.plugins` entry). Read before its entry runs. */
+export const MANIFEST_FILE = 'package.json'
 
 /**
  * What a manifest grants on the tool surface. `names: null` means the declared prefix is the only
@@ -108,10 +109,16 @@ function toolAuthority(file: string, capabilities: unknown): ToolAuthority {
   return { prefix, names }
 }
 
+function bundledRaw(file: string): Record<string, unknown> {
+  const raw = bundledExtensionManifest(readJsonFile(file))
+  if (!isObject(raw)) fail(file, 'must declare exactly one agnes.plugins entry', { reason: 'bad-package' })
+  return raw
+}
+
 /** Reads and checks one extension's manifest. Nothing in the extension has been executed yet. */
 export function readExtensionManifest(dir: string): ExtensionManifest {
   const file = join(dir, MANIFEST_FILE)
-  const raw = readJsonFile(file)
+  const raw = bundledRaw(file)
   const apiRange = stringField(file, raw, 'apiRange')
   checkApiRange(file, apiRange)
   const entry = stringField(file, raw, 'entry')
@@ -166,7 +173,7 @@ export function readBundledExtensionDirs(pkgDir: string, allowBuiltinDescriptors
 /** Full contract for the planned loader; the legacy tool-only reader is retired at assembly migration. */
 export function readAuthorManifest(dir: string, apiVersion: string = API_VERSION): AuthorManifest {
   const file = join(dir, MANIFEST_FILE)
-  const checked = checkManifest(readJsonFile(file))
+  const checked = checkManifest(bundledRaw(file))
   if (!checked.ok) fail(file, 'invalid extension manifest', { reason: 'invalid-manifest' })
   checkApiRange(file, checked.value.apiRange, apiVersion)
   return checked.value

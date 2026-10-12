@@ -292,7 +292,7 @@ describe('complete extension API capability boundary', () => {
     const m = manifest()
     m.capabilities = {
       ...m.capabilities,
-      network: { hosts: ['example.test:8443'] },
+      network: ['example.test:8443'],
       'tools.invoke': true,
       artifacts: true,
       subagent: true,

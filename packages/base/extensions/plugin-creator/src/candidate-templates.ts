@@ -19,8 +19,15 @@ export function candidateTemplate(template: string, name: string): { path: strin
           exports: './index.mjs',
           agnes: {
             kinds: ['skills'],
-            capabilities: {},
-            plugins: [{ apiRange: '^3.0.0', id: `ext:${name}/main`, export: 'main', inject: ['skills'] }],
+            plugins: [
+              {
+                apiRange: '^3.0.0',
+                id: `ext:${name}/main`,
+                export: 'main',
+                inject: ['skills'],
+                capabilities: {},
+              },
+            ],
           },
         }),
       },

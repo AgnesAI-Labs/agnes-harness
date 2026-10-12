@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExtensionFactory } from '@agnes/extension-api'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SeamInitContext } from '../../src/assemble/packages.js'
 import { createExtensionFactorySelector } from '../../src/ext-host/extension-isolation-selector.js'
@@ -15,15 +16,17 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 function select(mode: 'off' | 'preferred' | 'required', supports?: ('in-process' | 'isolated')[]) {
   writeFileSync(
-    join(dir, 'agnes.extension.json'),
-    JSON.stringify({
-      id,
-      version: '1.0.0',
-      apiRange: '^3.0.0',
-      entry: './index.js',
-      capabilities: {},
-      ...(supports ? { runtime: { supports } } : {}),
-    }),
+    join(dir, 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id,
+        version: '1.0.0',
+        apiRange: '^3.0.0',
+        entry: './index.js',
+        capabilities: {},
+        ...(supports ? { runtime: { supports } } : {}),
+      }),
+    ),
   )
   const factory: ExtensionFactory = () => {},
     prepare = vi.fn(() => factory),

@@ -34,19 +34,6 @@
       "tool",
       "skills"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/**",
-          "skills/playbook/SKILL.md",
-          "fde-output/compliance-audit/**"
-        ],
-        "write": [
-          "fde-output/compliance-audit/**"
-        ]
-      }
-    },
     "plugins": [
       {
         "export": "main",
@@ -68,6 +55,19 @@
               "summary": "按清单检查本地样例证据，列出需要人工跟进的缺项。",
               "description": "按清单检查本地样例证据，列出需要人工跟进的缺项。"
             }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/compliance-audit/**"
+            ],
+            "write": [
+              "fde-output/compliance-audit/**"
+            ]
           }
         }
       }

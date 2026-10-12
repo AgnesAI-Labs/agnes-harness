@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { checkManifest } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkManifest } from '@agnes/extension-api'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
 import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
@@ -14,7 +14,11 @@ const questions = [
 describe('surface questions', () => {
   it('validates single/multiple/free text and rejects incomplete or invalid answers', () => {
     expect(
-      checkManifest(JSON.parse(readFileSync(new URL('../agnes.extension.json', import.meta.url), 'utf8'))).ok,
+      checkManifest(
+        bundledExtensionManifest(
+          JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
+        ),
+      ).ok,
     ).toBe(true)
     const surface = questionSurface('question', questions)
     const form = surface.components[0]!

@@ -8,7 +8,7 @@ const manifest = (enabled = false): ExtensionManifest => ({
   version: '1.0.0',
   apiRange: '^3.0.0',
   entry: './index.js',
-  capabilities: { network: { hosts: ['example.com'] }, ...(enabled ? { 'network.publicRead': true } : {}) },
+  capabilities: { network: ['example.com'], ...(enabled ? { 'network.publicRead': true } : {}) },
 })
 const raw = () =>
   ({ net: { fetch: vi.fn(), fetchPublic: vi.fn(async () => ({ url: 'ok' })) } }) as unknown as ToolContext

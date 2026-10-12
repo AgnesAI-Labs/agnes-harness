@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkManifest, type ExtensionManifest } from '@agnes/extension-api'
+import { bundledPackageJson, checkManifest, type ExtensionManifest } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   CLIENT_ASSET_EXTENSIONS,
@@ -15,7 +15,7 @@ import {
 } from '../src/index.js'
 import { inspectStaged } from '../src/inspect.js'
 import { snapshotHash } from '../src/integrity.js'
-import { readManifestIn } from '../src/manifest.js'
+import { readBundledManifest } from '../src/manifest.js'
 
 const roots: string[] = []
 function makePackage(): string {
@@ -156,24 +156,26 @@ describe('client asset resolution', () => {
       /escapes the directory/,
     )
   })
-  it('makes readManifestIn fail the package when declared client files are missing', () => {
-    // 运行时读取路径（readManifestIn → checkManifest → resolveClientAssets）与 staging 走同一道门。
+  it('makes readBundledManifest fail the package when declared client files are missing', () => {
+    // 运行时读取路径（readBundledManifest → checkManifest → resolveClientAssets）与 staging 走同一道门。
     const dir = makePackage()
     writeFileSync(join(dir, 'index.mjs'), 'export {}\n')
     writeFileSync(
-      join(dir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'agnes/example',
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.mjs',
-        capabilities: { ui: ['client'] },
-        contributes: { client: { entry: 'dist/client/index.js' } },
-      }),
+      join(dir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'agnes/example',
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './index.mjs',
+          capabilities: { ui: true },
+          contributes: { client: { entry: 'dist/client/index.js' } },
+        }),
+      ),
     )
-    expect(() => readManifestIn(dir)).toThrow(/cannot be resolved/)
+    expect(() => readBundledManifest(dir)).toThrow(/cannot be resolved/)
     writeClientFiles(dir)
-    expect(readManifestIn(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
+    expect(readBundledManifest(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
   })
 })
 
@@ -189,14 +191,14 @@ describe('client capability/contribution coupling', () => {
     expect(
       checkManifest({
         ...base,
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: { client: { entry: 'dist/client/index.js' } },
       }).ok,
     ).toBe(true)
     expect(checkManifest({ ...base, capabilities: {} }).ok).toBe(true)
-    expect(checkManifest({ ...base, capabilities: { ui: ['skin'] } }).ok).toBe(false)
+    expect(checkManifest({ ...base, capabilities: { ui: true } }).ok).toBe(true)
   })
-  it('rejects a contribution without the capability and a capability without the contribution', () => {
+  it('rejects a contribution without the ui capability', () => {
     const withoutCapability = checkManifest({
       ...base,
       capabilities: {},
@@ -204,12 +206,8 @@ describe('client capability/contribution coupling', () => {
     })
     expect(withoutCapability.ok).toBe(false)
     if (!withoutCapability.ok)
-      expect(withoutCapability.problems.join(' ')).toContain("capabilities.ui to include 'client'")
-    const withoutContribution = checkManifest({ ...base, capabilities: { ui: ['client'] } })
-    expect(withoutContribution.ok).toBe(false)
-    if (!withoutContribution.ok)
-      expect(withoutContribution.problems.join(' ')).toContain('requires a contributes.client')
-    // ui 为空数组同样不满足「含 client」。
+      expect(withoutCapability.problems.join(' ')).toContain('requires capabilities.ui')
+    // ui is a flag: a list is not the capability.
     expect(
       checkManifest({
         ...base,
@@ -421,7 +419,7 @@ describe('client capability hash integration', () => {
     const { preview } = staged(
       {
         ...baseManifest,
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: {
           client: {
             entry: './dist/client/index.js',
@@ -451,7 +449,7 @@ describe('client capability hash integration', () => {
     const files = { 'dist/client/index.js': 64 }
     const withServices = (services: string[]) => ({
       ...baseManifest,
-      capabilities: { ui: ['client'] },
+      capabilities: { ui: true },
       contributes: { client: { entry: 'dist/client/index.js', services } },
     })
     const first = staged(withServices(['hello.query']), files).preview.capabilityHash
@@ -464,7 +462,7 @@ describe('client capability hash integration', () => {
       staged(
         {
           ...baseManifest,
-          capabilities: { ui: ['client'] },
+          capabilities: { ui: true },
           contributes: { client: { entry: 'dist/client/index.js' } },
         },
         {},

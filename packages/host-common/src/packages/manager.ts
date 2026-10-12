@@ -3,7 +3,7 @@ import * as packages from '@agnes/package-manager'
 import { compat } from './compat.js'
 
 export type { ManagerOptions, PackageStatus } from '@agnes/package-manager'
-export const readManifestIn = compat(packages.readManifestIn)
+export const readBundledManifest = compat(packages.readBundledManifest)
 export type PackageManager = Pick<
   packages.PackageManager,
   'add' | 'trust' | 'enable' | 'remove' | 'rollback' | 'trustWorkspace' | 'status'

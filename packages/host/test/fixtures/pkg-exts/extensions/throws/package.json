@@ -1,0 +1,24 @@
+{
+  "name": "@fixture/throws",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:fixture/throws",
+        "export": "default",
+        "apiRange": "^3.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "tx_"
+          }
+        }
+      }
+    ]
+  }
+}

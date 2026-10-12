@@ -155,7 +155,7 @@ export function resolveClientAssets(
   const client = manifest.contributes?.client
   if (client === undefined) return undefined
   if (client.publicConfig !== undefined) validatePublicClientConfig(client.publicConfig)
-  const file = join(dir, 'agnes.extension.json')
+  const file = join(dir, 'package.json')
   const assets = [
     { path: client.entry, extensions: CLIENT_ENTRY_EXTENSIONS, reason: 'client-entry-extension' },
     ...(client.styles ?? []).map((path) => ({

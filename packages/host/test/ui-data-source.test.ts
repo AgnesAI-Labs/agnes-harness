@@ -576,7 +576,15 @@ describe('ui data source resolution', () => {
       JSON.stringify({
         name: '@agnes-fde/finance-reconcile',
         version: '1.1.0',
-        agnes: { capabilities: { uiData: ['finance.differences.read'] } },
+        agnes: {
+          plugins: [
+            {
+              export: 'main',
+              apiRange: '^3.0.0',
+              capabilities: { uiData: ['finance.differences.read'] },
+            },
+          ],
+        },
       }),
     )
     const packageId = '@agnes-fde/finance-reconcile'
@@ -646,9 +654,9 @@ describe('ui data source resolution', () => {
       })
       const copy = join(profile, '.runtime-generations', open.id, '0')
       const manifest = JSON.parse(readFileSync(join(copy, 'package.json'), 'utf8')) as {
-        agnes: { capabilities: { uiData: string[] } }
+        agnes: { plugins: { capabilities: { uiData: string[] } }[] }
       }
-      manifest.agnes.capabilities.uiData.push('finance.other.read')
+      manifest.agnes.plugins[0]!.capabilities.uiData.push('finance.other.read')
       writeFileSync(join(copy, 'package.json'), JSON.stringify(manifest))
       const recordPath = join(profile, '.runtime-generations', open.id, 'generation.json')
       const record = JSON.parse(readFileSync(recordPath, 'utf8')) as {
@@ -711,9 +719,9 @@ describe('ui data source resolution', () => {
       const copy = join(profile, '.runtime-generations', generation.id, '0')
       const manifestPath = join(copy, 'package.json')
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-        agnes: { capabilities: { uiData: string[] } }
+        agnes: { plugins: { capabilities: { uiData: string[] } }[] }
       }
-      manifest.agnes.capabilities.uiData.push('finance.other.read')
+      manifest.agnes.plugins[0]!.capabilities.uiData.push('finance.other.read')
       writeFileSync(manifestPath, JSON.stringify(manifest))
       const recordPath = join(profile, '.runtime-generations', generation.id, 'generation.json')
       const record = JSON.parse(readFileSync(recordPath, 'utf8')) as {

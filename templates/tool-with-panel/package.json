@@ -36,7 +36,10 @@
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
           "tools"
-        ]
+        ],
+        "capabilities": {
+          "ui": true
+        }
       }
     ],
     "clientDescriptors": [
@@ -53,9 +56,6 @@
     "kinds": [
       "tool",
       "ui"
-    ],
-    "capabilities": {
-      "ui": true
-    }
+    ]
   }
 }

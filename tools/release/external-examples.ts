@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { SyntaxKind } from 'typescript/unstable/ast'
 import { createScanner } from 'typescript/unstable/ast/scanner'
+import { bundledManifests } from '../../packages/cli/tools/bundled-manifests.mjs'
 import { AGH_DIR } from '../../packages/protocol/src/index.js'
 import { packNpxPackage } from './pack-npx.js'
 
@@ -215,16 +216,8 @@ async function portableProtocolFacade(directory: string): Promise<void> {
   }
 }
 
-async function extensionManifests(directory: string): Promise<readonly unknown[]> {
-  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as {
-    agnes?: { extensions?: readonly string[] }
-  }
-  return Promise.all(
-    (manifest.agnes?.extensions ?? []).map(async (path) =>
-      JSON.parse(await readFile(join(directory, path, 'agnes.extension.json'), 'utf8')),
-    ),
-  )
-}
+const extensionManifests = async (directory: string): Promise<readonly unknown[]> =>
+  bundledManifests(directory)
 
 async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   const packages = await manifests()

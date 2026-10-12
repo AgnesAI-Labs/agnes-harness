@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import postject from 'postject'
+import { bundledManifests } from '../tools/bundled-manifests.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'dist', 'sea')
@@ -54,12 +55,7 @@ const hookMap = readFileSync(
   join(workspace, 'base', 'extensions', 'hooks-runner', 'generated', 'cc-hook-map.json'),
   'utf8',
 )
-const extensionManifests = (packageDirectory) => {
-  const pkg = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'))
-  return (pkg.agnes?.extensions ?? []).map((relative) =>
-    JSON.parse(readFileSync(join(packageDirectory, relative, 'agnes.extension.json'), 'utf8')),
-  )
-}
+const extensionManifests = bundledManifests
 const baseExtensionManifests = extensionManifests(join(workspace, 'base'))
 const codeExtensionManifests = extensionManifests(join(workspace, 'code'))
 

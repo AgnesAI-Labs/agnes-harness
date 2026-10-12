@@ -58,7 +58,7 @@
 
 要点：
 
-- `clientDescriptors.rowId` 必须与插件行 id 相同；描述中的 `skins` 注册皮肤。旧 `agnes.extension.json` 格式不作为新包入口。
+- `clientDescriptors.rowId` 必须与插件行 id 相同；描述中的 `skins` 注册皮肤。不再有单独的扩展清单文件；插件条目自带 `capabilities` 和 `contributes`。
 - `css` 必须是**包内相对路径**（以 `./` 开头，不含 `..`、盘符、反斜杠）。
 - 皮肤 id 不能用 `light` / `dark` / `system` / `none`（内置主题保留字），且在**已安装的整套皮肤里唯一**。
 

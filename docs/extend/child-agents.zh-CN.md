@@ -128,7 +128,7 @@ acpChildAgentsPlugin({
 | `child-agent:claude-code` | `claudeCodeChildAgentsPlugin` |
 | `child-agent:sdk` | `sdkChildAgentsPlugin` |
 
-插件行解析器拒绝 `capabilities` 字段，所以这三行不带该字段。如实能力写在提供者对象上：Codex、Claude Code 和 SDK 模式都是单轮（`continuable: false`，`interrupt: true`，其余子代理标志为 false）。SDK 协议选 `acp` 时注册现有的可继续 `acp` 提供者，并保留该提供者的标志。各扩展清单声明的 hooks、slots、events、resources、network 都是空的。包本身不加包级 `agnes.capabilities`。测试里仍可用 `childEnginePlugins(settings)` 做显式进程内挂载。
+Honest flags live on the provider objects:Codex、Claude Code 和 SDK 模式都是单轮（`continuable: false`，`interrupt: true`，其余子代理标志为 false）。SDK 协议选 `acp` 时注册现有的可继续 `acp` 提供者，并保留该提供者的标志。各扩展清单声明的 hooks、slots、events、resources、network 都是空的。包本身不加包级 `agnes.capabilities`。测试里仍可用 `childEnginePlugins(settings)` 做显式进程内挂载。
 
 设置里的「子代理引擎」通过宿主配置服务读写配置档的 `configuration.json`。守护进程方法是 `_agnes/v1/config.childEngines.get` 和 `_agnes/v1/config.childEngines.save`。网页调用 `GET` 与 `PUT /admin/api/child-engines`。保存的文档包含 `enabled`、`command`、`args`、`allow`，SDK 行另有 `protocol`。文档不保存 `env`。已启用的命令必须非空，并且与允许名单中的某一项完全一致。加载时如果 `childEngines` 字段损坏，会丢掉该字段，账号和会话默认值仍然可以打开。
 

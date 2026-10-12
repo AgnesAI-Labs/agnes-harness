@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookEngine, HookRegistry, ResourceRegistry, SlotRegistry } from '@agnes/core'
-import { API_VERSION, type ExtensionAPI, type ExtensionManifest } from '@agnes/extension-api'
+import {
+  API_VERSION,
+  bundledPackageJson,
+  type ExtensionAPI,
+  type ExtensionManifest,
+} from '@agnes/extension-api'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { createManagedExtHost, type ExtensionSpec } from '@agnes/host-extensions/ext-host/managed-host'
@@ -61,14 +66,16 @@ function extension(root: string, name: string, source: string, capabilities = ca
   const dir = join(root, name)
   mkdirSync(dir)
   writeFileSync(
-    join(dir, 'agnes.extension.json'),
-    JSON.stringify({
-      id: `fixture/${name}`,
-      version: '1.0.0',
-      apiRange: `^${API_VERSION}`,
-      entry: './index.ts',
-      capabilities,
-    }),
+    join(dir, 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: `fixture/${name}`,
+        version: '1.0.0',
+        apiRange: `^${API_VERSION}`,
+        entry: './index.ts',
+        capabilities,
+      }),
+    ),
   )
   // The fixtures below are written against the backend API; the module still has to be a plugin.
   const module = source.includes('export default')
@@ -357,11 +364,11 @@ it.each(['identity', 'api', 'json', 'trust', 'version'] as const)(
     else if (kind === 'version') spec.packageVersion = ''
     else if (kind === 'identity') spec.id = 'fixture/wrong'
     else if (kind === 'api') {
-      const file = join(spec.dir, 'agnes.extension.json')
+      const file = join(spec.dir, 'package.json')
       const manifest = JSON.parse(readFileSync(file, 'utf8'))
-      manifest.apiRange = '^999.0.0'
+      manifest.agnes.plugins[0].apiRange = '^999.0.0'
       writeFileSync(file, JSON.stringify(manifest))
-    } else writeFileSync(join(spec.dir, 'agnes.extension.json'), '{invalid')
+    } else writeFileSync(join(spec.dir, 'package.json'), '{invalid')
     const result = await h.managed.load(spec)
     expect(() => readFileSync(marker)).toThrow(/ENOENT/)
     expect(result).toMatchObject({

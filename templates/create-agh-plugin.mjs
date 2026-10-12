@@ -51,7 +51,7 @@ npm --prefix "$AGH_PLUGIN" run build
 node "$AGH_SOURCE/agnes.mjs" plugin test "$AGH_PLUGIN"
 \`\`\`
 
-The linker is safe to repeat and uses the checkout's dependencies and built declarations. Edit \`agnes.kinds\` and \`agnes.capabilities\` when you add functionality or side effects. See the [extension quickstart](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/extend/quickstart.md).
+The linker is safe to repeat and uses the checkout's dependencies and built declarations. Edit \`agnes.kinds\` and each plugin's \`capabilities\` when you add functionality or side effects. See the [extension quickstart](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/extend/quickstart.md).
 `
   const replacements = {
     __PACKAGE_NAME__: name,

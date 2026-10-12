@@ -34,19 +34,6 @@
       "tool",
       "skills"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/**",
-          "skills/playbook/SKILL.md",
-          "fde-output/recruiting-screen/**"
-        ],
-        "write": [
-          "fde-output/recruiting-screen/**"
-        ]
-      }
-    },
     "plugins": [
       {
         "export": "main",
@@ -68,6 +55,19 @@
               "summary": "按固定标准评估模拟申请材料，并生成供人工审核的报告。",
               "description": "按固定标准评估模拟申请材料，并生成供人工审核的报告。"
             }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/recruiting-screen/**"
+            ],
+            "write": [
+              "fde-output/recruiting-screen/**"
+            ]
           }
         }
       }

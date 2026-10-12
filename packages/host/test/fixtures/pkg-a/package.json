@@ -8,5 +8,22 @@
   },
   "dependencies": {
     "@agnes/extension-api": "2.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:acme/pkg-a",
+        "export": "default",
+        "apiRange": "^3.0.0",
+        "capabilities": {
+          "tools": {
+            "prefix": "pkga_",
+            "names": [
+              "pkga_echo"
+            ]
+          }
+        }
+      }
+    ]
   }
 }

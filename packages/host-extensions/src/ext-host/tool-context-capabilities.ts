@@ -29,7 +29,7 @@ function hostAllowed(url: string, declarations: readonly string[]): boolean {
 /** Projects the ambient core ToolContext down to the package manifest's runtime capabilities. */
 export function capabilityToolContext(manifest: ExtensionManifest, context: ToolContext): ToolContext {
   const { capabilities: caps, id } = manifest
-  const hosts = caps.network && !Array.isArray(caps.network) ? [...caps.network.hosts] : []
+  const hosts = [...(caps.network ?? [])]
   const projected: ToolContext = {
     ...context,
     net: Object.freeze({

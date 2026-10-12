@@ -5808,7 +5808,7 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     { hooks: ['invalid'] },
     { slots: ['invalid'] },
     { resources: ['exec'] },
-    { network: { hosts: ['https://x'] } },
+    { network: ['https://x'] },
     { artifacts: 'yes' },
     { subagent: 'yes' },
     { extra: true },

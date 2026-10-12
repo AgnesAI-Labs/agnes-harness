@@ -6,7 +6,7 @@ import { surfaceReferences } from './deployment-refs.js'
 import { PackageError } from './errors.js'
 import { capabilityHash, type InstalledPackage, readInventory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
-import { readManifestIn } from './manifest.js'
+import { readBundledManifest } from './manifest.js'
 import type { PackageStore } from './store.js'
 import { runTrustGate } from './trust-gate.js'
 import { verifyWorkspace } from './workspace.js'
@@ -83,7 +83,7 @@ export function trustPackageEntry(
   for (const c of entry.contributions ?? [])
     if (c.kind === 'extension') {
       if (!directory) throw new PackageError('E_EXT_LOAD', 'package directory missing')
-      const manifest = readManifestIn(dirname(resolve(directory, c.path)))
+      const manifest = readBundledManifest(dirname(resolve(directory, c.path)))
       if (!manifest) throw new PackageError('E_EXT_LOAD', 'extension manifest missing')
       runTrustGate({ id, entry, manifest, ceiling, now: trusted, minimumReleaseAgeMin })
     }

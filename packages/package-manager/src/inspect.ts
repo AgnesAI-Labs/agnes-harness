@@ -19,8 +19,8 @@ import { presentPluginRows } from './package-presentation.js'
 import {
   capabilityAtoms,
   capabilityPolicyBlockers,
+  mergePluginCapabilities,
   type PluginCapabilityPolicy,
-  parsePluginCapabilities,
 } from './plugin-capabilities.js'
 import {
   isReservedPluginRowIdError,
@@ -78,7 +78,7 @@ function diff(
           {
             kind: 'extension' as const,
             id,
-            path: './agnes.extension.json',
+            path: './package.json',
             apiRange: previous.apiRange ?? '*',
             capabilities: previous.capabilities,
           },
@@ -173,7 +173,6 @@ export function inspectVerifiedTree(
           'clientDescriptors',
           'kinds',
           'bundles',
-          'capabilities',
           'hostProvidedExternals',
         ].includes(k),
     )
@@ -193,13 +192,14 @@ export function inspectVerifiedTree(
       Object.keys(bundles).length > 64)
   )
     invalid('bundles')
-  const declaredCapabilities = parsePluginCapabilities(metadata.capabilities)
   let kinds: ReturnType<typeof parseAgnesPluginKinds>
+  let declaredCapabilities: ReturnType<typeof mergePluginCapabilities>
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
     kinds = parseAgnesPluginKinds(metadata.kinds)
     if (bundles !== undefined && !kinds?.includes('bundle')) invalid('bundles-kind')
     plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
+    declaredCapabilities = mergePluginCapabilities(plugins.map((entry) => entry.capabilities))
   } catch (error) {
     if (isReservedPluginRowIdError(error))
       throw new PackageError('E_EXT_LOAD', 'plugin row id prefix web: is reserved; choose another id', {
@@ -264,7 +264,7 @@ export function inspectVerifiedTree(
         version: pkg.version,
         apiRange: '*',
         entry: './index.mjs',
-        capabilities: { ui: descriptor.client ? ['client'] : ['skin'] },
+        capabilities: { ui: true },
         contributes: {
           ...(descriptor.client === undefined ? {} : { client: descriptor.client }),
           ...(descriptor.skins === undefined ? {} : { skins: descriptor.skins }),

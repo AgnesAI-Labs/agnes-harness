@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { checkManifest, type PublicFetchResult } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkManifest, type PublicFetchResult } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { webFetchTool } from '../src/fetch.js'
@@ -16,7 +16,11 @@ const result = (content: string, kind: 'html' | 'text' = 'html'): PublicFetchRes
 describe('web_fetch tool', () => {
   it('registers a valid manifest and stable model schema', () => {
     expect(
-      checkManifest(JSON.parse(readFileSync(new URL('../agnes.extension.json', import.meta.url), 'utf8'))).ok,
+      checkManifest(
+        bundledExtensionManifest(
+          JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
+        ),
+      ).ok,
     ).toBe(true)
     const schema = JSON.parse(
       readFileSync(new URL('../../../fixtures/tool-schemas/web_fetch.json', import.meta.url), 'utf8'),

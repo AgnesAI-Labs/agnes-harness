@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { bundledExtensionManifest } from '@agnes/extension-api'
 import { type PackagePresentation, validateExtensionManifest } from '@agnes/protocol'
 import { containedEntry } from './entry-path.js'
 import { readStaticJson } from './integrity.js'
@@ -23,13 +24,8 @@ export function readPackagePresentation(directory: string, builtin: boolean): Pa
   if (builtin && Array.isArray(author?.extensions)) {
     for (const path of author.extensions) {
       if (typeof path !== 'string' || result.rows.length >= 256) throw new TypeError('Invalid bundled rows')
-      const file = containedEntry(
-        directory,
-        `${path}/agnes.extension.json`,
-        'file',
-        join(directory, 'package.json'),
-      )
-      const manifest = validateExtensionManifest(readStaticJson(file))
+      const file = containedEntry(directory, `${path}/package.json`, 'file', join(directory, 'package.json'))
+      const manifest = validateExtensionManifest(bundledExtensionManifest(readStaticJson(file)))
       if (!manifest.ok) throw new TypeError('Invalid bundled extension metadata')
       result.rows.push({
         id: `ext:${manifest.value.id}`,
