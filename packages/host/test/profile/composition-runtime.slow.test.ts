@@ -425,7 +425,12 @@ it('publishes model changes per composition and reports a partial provider refus
       cwd: root,
       bundles: ['@fixture/session#reader'],
     })
-    const next = structuredClone(host.profile)
+    // Worker profiles arrive as JSON; object field order cannot prevent a model-only publication.
+    const next = JSON.parse(JSON.stringify(host.profile), (_key, value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).reverse())
+        : value,
+    ) as ResolvedProfile
     const route = next.provider.routes?.find((route) => route.route === 'gw')
     const first = route?.models?.[0]
     if (!route || !first) throw new Error('fixture route missing')
