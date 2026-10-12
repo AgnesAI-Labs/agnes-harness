@@ -52,6 +52,8 @@ const entry = (
   capabilities: [],
   restartRequired: scope === 'process',
   authority: 'open',
+  required: false,
+  pinned: false,
   scope,
   active,
   selectedFor: active ? ['default'] : [],

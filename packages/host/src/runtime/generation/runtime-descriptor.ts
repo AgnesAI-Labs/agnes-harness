@@ -6,6 +6,9 @@ type Provider = SessionRuntimeDescriptor['providers'][number]
 type Pending = NonNullable<Provider['pending']>
 type Effect = Pending['effect']
 
+const selectedProviders = (seams: Host['profile']['seams']): Readonly<Record<string, string>> =>
+  Object.fromEntries(Object.entries(seams).map(([kind, selection]) => [kind, selection.provider]))
+
 /** One container's view: what its own configuration selects, independent of any session. */
 export type ContainerView = Readonly<{
   catalog: readonly ProviderCatalogEntry[]
@@ -185,8 +188,8 @@ export function describeHostSession(
       ...(generation.newerId ? { newerId: generation.newerId } : {}),
     },
     capabilities: host.sessionCapabilities!(sessionKey),
-    running: { catalog: host.providers.catalog(), seams: host.profile.seams },
-    configured: { catalog: head.providers.catalog(), seams: head.profile.seams },
+    running: { catalog: host.providers.catalog(), seams: selectedProviders(host.profile.seams) },
+    configured: { catalog: head.providers.catalog(), seams: selectedProviders(head.profile.seams) },
     profileHash: host.profile.hash,
     modelRevision: host.providerFingerprint,
     resourceRows: host.extensionRows.current(),
