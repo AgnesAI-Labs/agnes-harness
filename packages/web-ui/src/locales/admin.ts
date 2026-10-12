@@ -87,7 +87,7 @@ export const adminLocaleCatalog: LocaleCatalog = {
     'contribution.client': '浏览器 UI',
     'contribution.extension': '扩展',
     'contribution.seam': '服务接缝',
-    'contribution.provider': 'Provider',
+    'contribution.provider': '提供商',
     'contribution.runtime': '运行时',
     'contribution.skill': '技能',
     'contribution.preset': '预设',

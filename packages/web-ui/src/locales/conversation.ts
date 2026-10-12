@@ -459,7 +459,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'accounts.network.invalid': '超时必须是 1 到 3600000 之间的整数毫秒。',
     'accounts.nameLabel': '账户名称',
     'accounts.namePlaceholder': '例如：工作账户、本地模型',
-    'accounts.providerLabel': 'Provider',
+    'accounts.providerLabel': '提供商',
     'accounts.baseUrlLabel': '服务地址',
     'accounts.apiKeyLabel': 'API Key',
     'accounts.validationLegend': '验证与默认模型',

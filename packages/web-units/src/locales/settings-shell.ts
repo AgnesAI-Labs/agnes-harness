@@ -277,7 +277,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.connectionLegend': '连接信息',
     'settings-shell.accountNameLabel': '账户名称',
     'settings-shell.accountNamePlaceholder': '例如：工作账户、本地模型',
-    'settings-shell.providerLabel': 'Provider',
+    'settings-shell.providerLabel': '提供商',
     'settings-shell.baseUrlLabel': '服务地址',
     'settings-shell.apiKeyLabel': 'API Key',
     'settings-shell.keyPlaceholder': '输入新密钥或保留当前密钥',
