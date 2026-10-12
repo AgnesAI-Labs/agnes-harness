@@ -829,7 +829,13 @@
   @media (max-width: 767px) {
     /* Native hosts share the same hit-area contract as React controls. Low specificity
      preserves positioned actions and the existing disclosure/choice presentation. */
-    :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"]) {
+    :where(
+        button:not(.agh-btn, .ant-modal-close),
+        summary,
+        a[href],
+        [role="tab"],
+        .agh-tooltip-anchor[tabindex="0"]
+      ) {
       position: relative;
     }
     :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"])::after {
