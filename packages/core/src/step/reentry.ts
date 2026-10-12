@@ -7,6 +7,7 @@ import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
+import { operationDecisionPort } from './operation-decisions.js'
 import type {
   CoreReplacementInputMap,
   CoreReplacementOutputMap,
@@ -200,8 +201,9 @@ export async function runSlot(
 ): Promise<void> {
   for (const o of sortedOps(s.d.operations, slot)) {
     try {
-      if ((await o.applicable(ctx)) !== 'applied') continue
-      const out = await o.run(ctx)
+      const admitted = { ...ctx, decisions: operationDecisionPort(s, o.name) }
+      if ((await o.applicable(admitted)) !== 'applied') continue
+      const out = await o.run(admitted)
       if (out.effects?.length)
         await s.d.log.append(out.effects.map((e) => ({ ...e, lane: s.lane })) as EventInput[])
     } catch (err) {
