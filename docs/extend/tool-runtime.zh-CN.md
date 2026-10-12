@@ -22,6 +22,8 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 策略可在 `ask` 决策中附带 `approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision }`。`subjectRevision` 是待审领域状态的 SHA-256。Core 只提供单次批准/拒绝，跳过 session/permanent grants，将决策绑定到该 revision 与精确调用。执行端得到只读事实 `ToolContext.approval`（`requestId`、`subjectRevision`、`answeredBy`）；领域 continuation 必须先原子比较当前 revision，才能应用变更。这些事实字段不会给 extension-api 增加决策方法。
 
+内置 approval-policy 插件注册默认策略。profile 的 `approval.command_policy` 命令表是部署的安全底线，由 Host 包在会话所选的任何工具策略（包括自定义策略）外面：命中 deny 的调用被拒绝；命中 allow 的调用，若所选策略给出 `ask`，则不再询问（`always` 工具、仅限人工的审核、被污染的上下文除外）；所选策略可以收紧、但不能放宽命令表的结论。读不懂的命令表会让装配失败并指出出错的规则。人工审批与持久工具请求走 Core 决策。永久授权由 Host 存储和撤销，绑定批准人与工具定义；审批 provider 只负责送达问题（`ask`）。
+
 参见[只读策略示例](../../examples/policies/read-only/)和[循环事件](loop-events.zh-CN.md)。
 
 设置 `meta.deferLoading: true` 可从初始模型请求中省略工具 schema。官方 `tool_search` 同时搜索当前可用的延迟插件工具与 MCP 索引。查询按词计分，含确切工具名的词优先（例如 `ui_render render detail card UI`）；结果上限与显式 Skill 发现槽位仍生效；`tool_describe` 调用可选端口 `ToolContext.tools.disclose(name): Promise<void>`，使可用 schema 出现在后续请求中。Core 持久化这项选择，并拒绝冻结的 turn 目录之外或当前模型能力不支持的名称。披露与授权独立：调用仍经过原有参数校验、策略、审批与取消通道。已知工作流所需工具的自定义 Loop，可以通过 `prepareRequest({ tools: [...] })` 显式选择确切名称。

@@ -28,6 +28,19 @@ API additions require a minor version; removals or semantic changes require a ma
 - The approval seam's `guard` and `resume` methods and the guardian effect kind. The seam
   keeps `ask`, the command table and the grant methods.
 
+### Changed (approval responsibilities)
+
+- The approval contract is `ask` only. `ApprovalSeam.policy`, `checkTool` and `forWorkspace` are
+  gone: the `approval.command_policy` table is a deployment floor the Host wraps around whichever
+  tool policy a session selects (`@agnes/core/command-table`), so a selected policy may tighten but
+  never loosen it. `ToolPolicy` and `ToolPolicyInput` are unchanged.
+- `ApprovalSeam.listGrants`, `putGrant`, `revokeGrant` and `onGrantRevoked` are gone. Permanent
+  grants are a Host-owned port (`ApprovalGrantsPort`: `list`, `put`) handed to the Kernel; storage,
+  revocation and its broadcast stay in the Host. `SeamRuntime.approvalRevokeGrant` is removed.
+- An unreadable `approval.command_policy` stops assembly with `E_PRESET_UNSUPPORTED` naming the rule.
+  A third-party principals seam answering `require_approval` is no longer overridden by a table
+  `allow`.
+
 ### Changed
 
 - The cost seam is renamed `billing` (`BillingSeam`, `BillingRow`, `seams.billing`, runtime

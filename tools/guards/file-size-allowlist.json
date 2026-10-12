@@ -6,7 +6,7 @@
   "packages/core/src/child/factory.ts": 1162,
   "packages/core/src/execution/turn/compaction.ts": 1051,
   "packages/core/src/execution/turn/inference.ts": 1402,
-  "packages/core/src/execution/turn/tools.ts": 1743,
+  "packages/core/src/execution/turn/tools.ts": 1720,
   "packages/core/src/step/session.ts": 2280,
   "packages/daemon-admin/src/packages/admin-surface.ts": 990,
   "packages/daemon-admin/src/packages/client-modules.ts": 1476,
