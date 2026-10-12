@@ -16,7 +16,6 @@ export type ObserveHookEvent = {
  * the simplified observe-only entry it always was).
  */
 export interface PluginExtensionAPI {
-  readonly providers: ExtensionAPI['providers']
   readonly ctx: ExtensionAPI['ctx']
   on<E extends ObserveHookEvent>(event: E, handler: NoInfer<HookHandler<E>>): Disposer
   registerHook: ExtensionAPI['registerHook']

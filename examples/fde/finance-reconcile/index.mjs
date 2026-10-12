@@ -171,7 +171,7 @@ export const { main, factory, createFactory, policy } = makeBundle({
   guardToolCall: guardAdjustment,
   recordToolResult: recordAdjustment,
   onApply(ctx) {
-    const off = ctx.providers.register(uiDataSourceKind, '@agnes-fde/finance-reconcile', {
+    ctx.providers.register(uiDataSourceKind, '@agnes-fde/finance-reconcile', {
       id: 'finance/differences',
       version: '1.0.0',
       paramsSchema: sourceParams,
@@ -187,6 +187,5 @@ export const { main, factory, createFactory, policy } = makeBundle({
         }
       },
     })
-    ctx.effect(() => off)
   },
 })

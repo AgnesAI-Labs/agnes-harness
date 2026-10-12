@@ -20,7 +20,10 @@ API additions require a minor version; removals or semantic changes require a ma
   `registerLoopPlugin`. Use `ctx.providers.register(kind, packageId, provider)`;
   registration cleanup is owned by the calling plugin fiber. Runtime operations stay
   with their backend owners.
-- `PluginExtensionAPI.registerTool`. Inject `tools` and use `ctx.tools.register(tool)`.
+- `PluginExtensionAPI.registerTool` and its duplicate `providers` facade. Inject
+  `tools` and use `ctx.tools.register(tool)`; register and bind service providers
+  through `ctx.providers`. The embedding-only `ExtensionAPI` retains its backend
+  adapter for official extensions.
 - `extension-api.defineTool`. Import the sole `defineTool` from `@agnes/plugin-runtime`
   in official extensions and community plugins alike; it also validates optional
   structured result schemas.

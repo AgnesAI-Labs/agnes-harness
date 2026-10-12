@@ -10,14 +10,12 @@ import {
   type HookHandler,
   type PluginExtensionAPI,
   type ToolDef,
-  unavailableProjections,
 } from '@agnes/extension-api'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
 import type { Lease } from './lease.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
-import { serviceAuthor } from './service-author.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
 /** Hook events whose kernel table entry is observe-only; a plugin row may listen to these and nothing else. */
@@ -125,26 +123,6 @@ export function buildRowExtensionAPI(
   const denied = (what: string) => () => refuse(`${what} is not open to plugin rows`)
   const api = {
     ctx,
-    providers: serviceAuthor({
-      owner: source,
-      packageId: input.packageIdentity,
-      packageVersion: input.packageVersion,
-      trust: 'trusted',
-      projections: unavailableProjections,
-      alive,
-      registering,
-      ports: input.ports,
-      checkGrants(required) {
-        if (required?.events && !lease.allows('event', '')) refuse('service requires events grant')
-        if (required?.projections.length) refuse('service projection not declared')
-      },
-      install(name, create) {
-        const dispose = input.attach('provider', name, create)
-        return async () => {
-          await dispose()
-        }
-      },
-    }),
     tools: {
       register(def: ToolDef) {
         registering()

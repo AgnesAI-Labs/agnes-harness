@@ -9,7 +9,7 @@ import {
 } from '@agnes/extension-api'
 import type { KernelPorts } from './ports.js'
 
-/** Both loader paths stamp the same owner/package and use Host's current admission factory. */
+/** The embedding facade stamps its owner/package and uses Host's current admission factory. */
 export function serviceAuthor(input: {
   owner: string
   packageId: string
