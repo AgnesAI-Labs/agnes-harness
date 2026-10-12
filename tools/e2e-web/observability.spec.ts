@@ -52,6 +52,7 @@ test('OTLP settings save and collector connection test in both languages', async
       await page.locator('#config-close').click()
     }
     await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime, 'zh-CN')
     await settings(page, 'zh-CN')
     await section(page, 'diagnostics')
     await expect(page.getByTestId('otlp-enabled')).toHaveValue('on')
