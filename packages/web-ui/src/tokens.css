@@ -822,7 +822,7 @@ button {
 }
 .agnes-first-run-choices > .agh-btn[aria-pressed="true"]:not(:disabled) {
   border-color: var(--agnes-input-border-focus);
-  color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-primary);
   background: var(--agnes-brand-emphasis-soft);
   box-shadow: 0 0 0 1px var(--agnes-input-border-focus);
 }
