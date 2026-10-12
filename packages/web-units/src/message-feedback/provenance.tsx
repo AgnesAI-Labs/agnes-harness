@@ -1,38 +1,50 @@
 import type { FeedbackGrowth, FeedbackItem } from '@agnes/protocol/gen/app-server'
 import { Button } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import { feedbackRequest } from './api.js'
+import { invalidateSessionFeedback, loadSessionFeedback, subscribeSessionFeedback } from './api.js'
 import { useFeedbackText } from './feedback-locale.js'
 
 export function FeedbackProvenance({ sessionId, candidateId }: { sessionId: string; candidateId?: string }) {
   const { t } = useFeedbackText()
   const [growth, setGrowth] = useState<FeedbackGrowth[]>([])
   const [items, setItems] = useState<FeedbackItem[]>([])
-  const [reload, setReload] = useState(0)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
-    void reload
     const abort = new AbortController()
     setGrowth([])
     setFailed(false)
-    void feedbackRequest({ action: 'list', sessionId }, abort.signal)
-      .then((value) => {
-        if (!abort.signal.aborted) {
-          setGrowth(value.growth)
-          setItems(value.items)
-        }
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) setFailed(true)
-      })
-    return () => abort.abort()
-  }, [sessionId, reload])
+    const load = () => {
+      setFailed(false)
+      return loadSessionFeedback(sessionId)
+        .then((value) => {
+          if (!abort.signal.aborted) {
+            setGrowth(value.growth)
+            setItems(value.items)
+          }
+        })
+        .catch(() => {
+          if (!abort.signal.aborted) setFailed(true)
+        })
+    }
+    const off = subscribeSessionFeedback(sessionId, () => {
+      void load()
+    })
+    void load()
+    return () => {
+      abort.abort()
+      off()
+    }
+  }, [sessionId])
   const entries = growth.filter((item) => !candidateId || item.candidateId === candidateId)
   if (!entries.length && !failed) return null
   return (
     <section aria-label={t('chain')} data-testid="feedback-provenance">
       <h3>{t('chain')}</h3>
-      <Button size="small" data-testid="feedback-refresh-provenance" onClick={() => setReload((v) => v + 1)}>
+      <Button
+        size="small"
+        data-testid="feedback-refresh-provenance"
+        onClick={() => invalidateSessionFeedback(sessionId)}
+      >
         {t('refreshChain')}
       </Button>
       {failed && <p role="alert">{t('error')}</p>}

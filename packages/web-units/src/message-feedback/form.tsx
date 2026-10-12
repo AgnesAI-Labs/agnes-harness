@@ -8,7 +8,12 @@ import {
   SettingsToolbar,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
-import { feedbackRequest } from './api.js'
+import {
+  feedbackRequest,
+  invalidateSessionFeedback,
+  loadSessionFeedback,
+  subscribeSessionFeedback,
+} from './api.js'
 import { feedbackCategories, useFeedbackText } from './feedback-locale.js'
 
 export function MessageFeedback({
@@ -29,37 +34,51 @@ export function MessageFeedback({
   const [status, setStatus] = useState('')
   const [error, setError] = useState(false)
   const [expanded, setExpanded] = useState(target.messageSeq === null)
-  const [reload, setReload] = useState(0)
+  const resetFields = useRef(false)
   const lifetime = useRef<AbortController | undefined>(undefined)
   const { messageSeq, turn } = target
   const changed = !!item && (rating !== item.rating || category !== item.category || note !== item.note)
   useEffect(() => {
-    void reload
     const abort = new AbortController()
     lifetime.current = abort
     setItem(undefined)
     setBusy(true)
     setError(false)
     setStatus('')
-    void feedbackRequest({ action: 'list', sessionId }, abort.signal)
-      .then((result) => {
-        const current = result.items.find(
-          (value) => value.target.messageSeq === messageSeq && value.target.turn === turn,
-        )
-        if (abort.signal.aborted) return
-        setItem(current)
-        setRating(current?.rating ?? 'up')
-        setCategory(current?.category ?? '')
-        setNote(current?.note ?? '')
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) setError(true)
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) setBusy(false)
-      })
-    return () => abort.abort()
-  }, [sessionId, messageSeq, turn, reload])
+    const load = (reset: boolean) => {
+      if (reset) setBusy(true)
+      setError(false)
+      return loadSessionFeedback(sessionId)
+        .then((result) => {
+          const current = result.items.find(
+            (value) => value.target.messageSeq === messageSeq && value.target.turn === turn,
+          )
+          if (abort.signal.aborted) return
+          setItem(current)
+          if (reset) {
+            setRating(current?.rating ?? 'up')
+            setCategory(current?.category ?? '')
+            setNote(current?.note ?? '')
+          }
+        })
+        .catch(() => {
+          if (!abort.signal.aborted) setError(true)
+        })
+        .finally(() => {
+          if (!abort.signal.aborted) setBusy(false)
+        })
+    }
+    const off = subscribeSessionFeedback(sessionId, () => {
+      const reset = resetFields.current
+      resetFields.current = false
+      void load(reset)
+    })
+    void load(true)
+    return () => {
+      abort.abort()
+      off()
+    }
+  }, [sessionId, messageSeq, turn])
   async function mutate(action: 'put' | 'withdraw' | 'generate', selected = rating) {
     if (busy || error) return
     const signal = lifetime.current?.signal
@@ -206,7 +225,16 @@ export function MessageFeedback({
       >
         {error ? t('error') : status ? t(status) : ''}
       </SettingsState>
-      {error && <Button onClick={() => setReload((value) => value + 1)}>{t('reload')}</Button>}
+      {error && (
+        <Button
+          onClick={() => {
+            resetFields.current = true
+            invalidateSessionFeedback(sessionId)
+          }}
+        >
+          {t('reload')}
+        </Button>
+      )}
     </section>
   )
 }
