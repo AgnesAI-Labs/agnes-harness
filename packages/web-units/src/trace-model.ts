@@ -552,3 +552,9 @@ export const traceStats = (turns: readonly UITurn[]): Array<[string, string]> =>
     [traceText('trace.stat.calls'), String(calls)],
   ]
 }
+
+/** Localize conventional step numbers consistently in the list and inspector. */
+export const traceStepLabel = (step: string | undefined): string | undefined => {
+  const number = /^Step (\d+)$/i.exec(step ?? '')?.[1]
+  return number ? traceText('trace.stepNumber', { n: number }) : step
+}

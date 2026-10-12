@@ -2,11 +2,9 @@ import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createAntdRoot } from '@agnes/web-ui'
 import type { TracePanelOptions } from '@agnes/web-units'
 import { Trace, type TraceHandle } from '@agnes/web-units'
-import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import type { EmptyStateRegionMount } from './contracts.js'
 import { TRACE_SLOT } from './contracts.js'
-
 /** The trace pane retains outer visibility semantics while its renderer owns a slot leaf. */
 export function mountTraceRegion(
   registry: SlotRegistry,
@@ -17,11 +15,15 @@ export function mountTraceRegion(
   const handle = { current: null as TraceHandle | null }
   const removeBuiltin = registry.register(
     { name: TRACE_SLOT as string, id: 'builtin-trace', owner: '@agnes/web-trace', priority: 0 },
-    () => createElement(Trace, { ref: handle, root: container, options }),
+    () => <Trace ref={handle} root={container} options={options} />,
   )
   const root = createAntdRoot(container)
   flushSync(() => {
-    root.render(createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: TRACE_SLOT })))
+    root.render(
+      <SlotsProvider registry={registry}>
+        <SlotOutlet name={TRACE_SLOT} />
+      </SlotsProvider>,
+    )
   })
   let disposed = false
   return {
@@ -45,7 +47,5 @@ export function mountTraceRegion(
     },
   }
 }
-
 export type TraceRegionOptions = Omit<TracePanelOptions, 'root'>
-
 export interface TraceRegionMount extends EmptyStateRegionMount, TraceHandle {}

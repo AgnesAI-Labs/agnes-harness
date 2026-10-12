@@ -132,9 +132,6 @@
       "dom": 4,
       "intrinsic": 2
     },
-    "packages/web-units/src/trace.ts": {
-      "intrinsic": 14
-    },
     "packages/web/public/admin.html": {
       "intrinsic": 14,
       "className": 9

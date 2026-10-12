@@ -406,6 +406,12 @@
     justify-content: flex-start;
     font-weight: 400;
   }
+  .trace-inspector-tabs-root {
+    display: contents;
+  }
+  .trace-inspector-tabs-root > .ant-tabs-content-holder {
+    display: none;
+  }
   .trace-inspector-tabs {
     display: flex;
     gap: var(--s12);

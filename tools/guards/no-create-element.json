@@ -40,6 +40,9 @@
     "packages/web/src/regions/session-views.tsx",
     "packages/web/src/regions/shell.tsx",
     "packages/web/src/regions/topbar.tsx",
-    "packages/web/src/workbench/dock.tsx"
+    "packages/web/src/workbench/dock.tsx",
+    "packages/web-units/src/trace-inspector.tsx",
+    "packages/web-units/src/trace.tsx",
+    "packages/web/src/regions/trace.tsx"
   ]
 }
