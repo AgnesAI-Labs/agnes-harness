@@ -120,7 +120,6 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          ...(next.capabilities ? { capabilities: next.capabilities } : {}),
           ...(next.clientModule
             ? { clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }] }
             : {}),
@@ -129,6 +128,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
               export: 'main',
               id: `ext:${id}/main`,
               apiRange: '^3.0.0',
+              ...(next.capabilities ? { capabilities: next.capabilities } : {}),
               default: true,
               inject: Object.keys(entry.inject),
               provide: entry.provides,

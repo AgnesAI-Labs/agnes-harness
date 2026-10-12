@@ -67,6 +67,8 @@ try {
 
 完整 fixture 装配真实 Host/Core，使用隔离 SQLite ledger 和正常 runtime generation。默认 `author.invoke` Loop 通过 Core 策略、审批与 effect 路径调用工具。审批默认 `rejected`；需要允许时明确返回 `allowed-once`、`allowed-session` 等支持的 verdict。`assertApproval` 读取持久审批事实。`assertRefused` 检查最后一次匹配调用的错误结果及执行 intent 缺失；先执行再返回错误不能冒充拒绝。
 
+需要声明 UI 数据权限时，传入 `capabilities: { uiData: ['acme.records.read'] }`。testkit 会在静态检查与能力哈希计算前，将声明写入合成的 `agnes.plugins` 条目；`reload` 的新版本同样接受该选项。
+
 验证插件注册的业务 Loop 时，调用 `kit.openSession({ loop: { id: 'acme.business', version: '1.0.0' } })`，再 `session.enqueue('合成请求')` 和 `session.drive(5)`。最多推进五条公共 Loop edge，遇到 idle、parked 或 turn-end 停止；可继续 `drive(N)` 并查看 `facts()`/`effects()`。传 AbortSignal 可取消。直接 `invoke` 使用另开的默认会话。
 
 `reload` 要求新版本，通过生产 Host 发布新 generation。已有会话保留代码和 Loop pin，新会话采用新 generation。返回值是 testkit 默认 preset 与 Loop 实际选择的 pin；`reload` 创建并关闭一个临时会话，不推进 Loop step，随后释放该会话的 pin。单次 `openSession` 显式选择其他 Loop 时，可能进入另一 composition。除 pin 外还应断言可观察的工具结果，覆盖工具执行途中升级及候选失败后旧 generation 仍可用。fixture 通过受控 importer 注入已导入的作者模块，并生成带 hash 的合成 snapshot 文件及 generation 归档。它验证注册与 pin；源码 Loader 转译、打包和安装另行验证。sandbox/network 使用测试 seam，不能为任意插件代码提供操作系统隔离。
