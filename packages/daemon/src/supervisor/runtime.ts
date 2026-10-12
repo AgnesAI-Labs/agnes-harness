@@ -240,6 +240,7 @@ import {
   workerServiceCaller,
   workerServiceInspector,
 } from './service-worker.js'
+import { recencyCursor, registerWorkerSessionReads } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -592,25 +593,6 @@ export function supervisorHostFacade(
 }
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
-
-/** Decodes the `[activity, key]` keyset position this lister issued for the previous page. */
-function recencyCursor(cursor: string | undefined): { at: string; key: string } | undefined {
-  if (cursor === undefined) return undefined
-  let value: unknown
-  try {
-    value = JSON.parse(cursor)
-  } catch {
-    value = undefined
-  }
-  if (
-    !Array.isArray(value) ||
-    value.length !== 2 ||
-    typeof value[0] !== 'string' ||
-    typeof value[1] !== 'string'
-  )
-    throw rpcError('INVALID_PARAMS', { reason: 'session list cursor is malformed' })
-  return { at: value[0], key: value[1] }
-}
 
 export function supervisorLister(
   registry: SupervisorRegistry,
@@ -2203,6 +2185,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         effectivePackageAdmin?.service,
       )
       registerSessionPreferences(ep, lister, preferences)
+      registerWorkerSessionReads(ep, pool, requireSessionOwner(cx))
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)
       registerAgnes(ep, cx, feeds, attached)

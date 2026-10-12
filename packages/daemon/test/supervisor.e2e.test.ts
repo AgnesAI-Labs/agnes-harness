@@ -586,6 +586,28 @@ describe('agnesd supervisor: real end-to-end', () => {
           const sessionId = (made.result as { sessionId: string }).sessionId
           expect(typeof sessionId).toBe('string')
 
+          expect(await c.call(60, '_agnes/v1/session.runtime', { sessionId })).toMatchObject({
+            result: { sessionKey: sessionId, loop: { id: expect.any(String) } },
+          })
+          const beforeView = await c.call(61, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })
+          expect(beforeView).toMatchObject({
+            result: { sessionId, readOnly: true, lastSeq: expect.any(Number) },
+          })
+          expect(await c.call(62, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })).toEqual({
+            ...beforeView,
+            id: 62,
+          })
+          expect(ownership.bindNew('foreign-session', 'other-principal')).toBe(true)
+          expect(ownership.activateNew('foreign-session', 'other-principal')).toBe(true)
+          for (const method of ['session.runtime', 'session.view']) {
+            expect(await c.call(63, `_agnes/v1/${method}`, { sessionId: 'foreign-session' })).toMatchObject({
+              error: { data: { code: 'CAPABILITY_DENIED' } },
+            })
+            expect(await c.call(64, `_agnes/v1/${method}`, { sessionId: 'unknown-session' })).toMatchObject({
+              error: { data: { code: 'SESSION_NOT_FOUND' } },
+            })
+          }
+
           expect(
             await c.call(4, '_agnes/v1/session.setModel', {
               sessionId,

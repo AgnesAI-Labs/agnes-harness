@@ -57,6 +57,8 @@ export type WorkerMethod =
   | 'pluginGenerations.collect'
   | 'configuration.apply'
   | 'session.catalog'
+  | 'session.runtime'
+  | 'session.view'
   | 'systemPrompt.defaults'
   | 'memory.manage'
   | 'observability.health'

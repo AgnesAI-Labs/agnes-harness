@@ -80,6 +80,39 @@ it('returns the Host capability set with the tool catalog and accepts older Host
   )
 })
 
+it('reads recorded sessions and runtime descriptors without creating a session', async () => {
+  const view = { sessionId: 'saved', readOnly: true, lastSeq: 7 }
+  const runtime = { sessionKey: 'saved' }
+  const host = {
+    kernel: { get: () => undefined },
+    sessionGeneration: (key: string) => (key === 'saved' ? 'pinned' : undefined),
+    sessionRuntime: () => runtime,
+    readSessionView: async (key: string) => {
+      if (key !== 'saved') throw Object.assign(new Error('missing'), { code: 'E_SESSION_NOT_FOUND' })
+      return view
+    },
+    createSession() {
+      throw new Error('A read must not open the writer')
+    },
+  } as unknown as Host
+  for (const [method, result] of [
+    ['session.runtime', runtime],
+    ['session.view', view],
+  ] as const) {
+    const frame = (sessionId: string) => ({
+      kind: 'command' as const,
+      requestId: 'read',
+      method,
+      params: { sessionId },
+    })
+    await expect(handleServiceCommand(host, frame('saved'), new Map())).resolves.toEqual(result)
+    await expect(handleServiceCommand(host, frame('missing'), new Map())).rejects.toMatchObject({
+      data: { code: 'SESSION_NOT_FOUND' },
+    })
+    await expect(handleServiceCommand(undefined, frame('saved'), new Map())).rejects.toThrow('assembled Host')
+  }
+})
+
 it.each([true, false])(
   'acknowledges model deployment input only after publication succeeds: %s',
   async (ok) => {

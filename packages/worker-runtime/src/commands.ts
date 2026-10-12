@@ -839,6 +839,26 @@ export async function handleServiceCommand(
         })),
       }
     }
+    case 'session.runtime': {
+      if (!host?.sessionRuntime) throw new Error('Session runtime requires an assembled Host')
+      if (typeof p.sessionId !== 'string') throw new TypeError('invalid session key')
+      if (!host.kernel.get(p.sessionId) && host.sessionGeneration?.(p.sessionId) === undefined)
+        throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      return host.sessionRuntime(p.sessionId)
+    }
+    case 'session.view': {
+      if (!host) throw new Error('Session view requires an assembled Host')
+      if (typeof p.sessionId !== 'string') throw new TypeError('invalid session key')
+      try {
+        return await host.readSessionView(p.sessionId, {
+          ...(typeof p.maxNodes === 'number' ? { maxNodes: p.maxNodes } : {}),
+        })
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'E_SESSION_NOT_FOUND')
+          throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+        throw error
+      }
+    }
     case 'pluginGenerations.publicationStatus':
       if (!host) throw new Error('Publication status requires an assembled Host')
       return { publication: host.compositionPublicationStatus?.() ?? null }

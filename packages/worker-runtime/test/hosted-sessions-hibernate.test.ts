@@ -431,14 +431,18 @@ describe('the session idle limit', () => {
 })
 
 describe('session-scoped worker commands', () => {
-  it('lists every worker command that names a session, and main.ts wakes the session for each', () => {
+  it('wakes session commands but leaves recorded views and runtime reads independent of the writer', () => {
     const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8')
     const service = commands.slice(commands.indexOf('export async function handleServiceCommand'))
     const scoped = [...service.matchAll(/case '([\w.]+)': \{[\s\S]*?(?=\n {4}case |\n {4}default:)/g)]
       .filter(([body]) => /\bp\.(sessionKey|sessionId)\b/.test(body))
       .map(([, method]) => method)
     expect(scoped.length).toBeGreaterThan(0)
-    expect([...SESSION_SCOPED_WORKER_METHODS].sort()).toEqual([...scoped].sort())
+    const reads = ['session.runtime', 'session.view']
+    expect(scoped).toEqual(expect.arrayContaining(reads))
+    expect([...SESSION_SCOPED_WORKER_METHODS].sort()).toEqual(
+      scoped.filter((method) => !reads.includes(method!)).sort(),
+    )
     const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
     expect(main).toMatch(/SESSION_SCOPED_WORKER_METHODS/)
     expect(main).toMatch(/withSession\(/)
