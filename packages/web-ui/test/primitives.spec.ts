@@ -51,6 +51,7 @@ test.beforeAll(async () => {
     function Fixture() {
       const [drawer, setDrawer] = useState(false), [dialog, setDialog] = useState(false)
       const [selected, select] = useState('')
+      const [description, setDescription] = useState(true)
       const [refreshed, refresh] = useState(0)
       const native = useRef(null), [locked, lock] = useState(false)
       useEffect(() => bindDialogSheets(document), [])
@@ -79,7 +80,8 @@ test.beforeAll(async () => {
           <p>Review your changes.</p><Field label="Name" error="Enter a name"><input /></Field>
         </Dialog>
         <Dialog open={false} forceRender title="Closed confirmation" onCancel={() => select('Closed dialog canceled')} footer={null} />
-        <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description="A short description" onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
+        <Button onClick={() => setDescription(value => !value)}>Toggle row description</Button>
+        <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description={description ? 'A short description' : undefined} onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -130,7 +132,19 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   await page.getByRole('menuitem', { name: 'Copy' }).click()
   await expect(page.getByRole('status')).toHaveText('Copied')
   await expect(trigger).toBeFocused()
-  await expect(page.locator('.agh-list-row')).toHaveCSS('height', '56px')
+  const row = page.locator('.agh-list-row')
+  await expect(row).toHaveCSS('min-height', '56px')
+  const rowBounds = await row.boundingBox()
+  if (!rowBounds) throw new Error('List row is missing')
+  for (const child of [row.locator('h3'), row.locator('p'), row.locator('.agh-list-row-actions')]) {
+    const bounds = await child.boundingBox()
+    if (!bounds) throw new Error('List row content is missing')
+    expect(bounds.y).toBeGreaterThanOrEqual(rowBounds.y)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(rowBounds.y + rowBounds.height)
+  }
+  await page.getByRole('button', { name: 'Toggle row description', exact: true }).click()
+  await expect(row).toHaveCSS('height', '56px')
+  await page.getByRole('button', { name: 'Toggle row description', exact: true }).click()
   await page.locator('.agh-list-row p').click()
   await expect(page.getByRole('dialog', { name: 'Details', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
