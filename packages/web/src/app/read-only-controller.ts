@@ -47,11 +47,19 @@ export function createReadOnlyController(
   >,
   commands: { open(id: string): Promise<void>; beginNewDraft(): Promise<void> },
 ) {
-  async function load(id: string, maxNodes: number): Promise<void> {
+  // Bumped by every request and by clear(), so only the newest request of the current selection
+  // may write shared state.
+  let latest = 0
+
+  /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
+  async function load(id: string, maxNodes: number, epoch: number): Promise<boolean> {
+    const ticket = ++latest
     const view = await context.client.session.view(id, { maxNodes })
+    if (ticket !== latest || epoch !== context.selection) return false
     context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
     context.projection = view.timeline
     context.windowAtStart = !view.history.hasEarlier
+    return true
   }
 
   function banner(notice: SessionViewNotice): void {
@@ -84,8 +92,7 @@ export function createReadOnlyController(
     const refusal = refusalNotice(error, id)
     if (!refusal) return false
     try {
-      await load(id, PAGE)
-      if (epoch !== context.selection) return true
+      if (!(await load(id, PAGE, epoch))) return true
       banner(refusal)
     } catch {
       return false
@@ -98,12 +105,12 @@ export function createReadOnlyController(
   async function loadEarlier(): Promise<void> {
     const state = context.readOnly
     if (!state?.hasEarlier) return
-    await load(state.id, state.maxNodes + PAGE)
-    if (context.readOnly?.id !== state.id) return
+    if (!(await load(state.id, state.maxNodes + PAGE, context.selection))) return
     context.render()
   }
 
   function clear(): void {
+    latest++
     context.readOnly = undefined
     appReadOnly.clear()
   }
