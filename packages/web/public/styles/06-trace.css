@@ -382,6 +382,8 @@ button.trace-gantt-bar:focus-visible {
 }
 .trace-inspector-title {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   color: var(--agnes-text-primary);
   font-size: var(--font-size-sm);
