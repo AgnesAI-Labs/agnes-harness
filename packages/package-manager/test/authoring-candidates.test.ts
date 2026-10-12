@@ -41,7 +41,6 @@ const files = [
       license: 'MIT',
       exports: './index.mjs',
       agnes: {
-        capabilities: {},
         plugins: [
           {
             apiRange: '^3.0.0',

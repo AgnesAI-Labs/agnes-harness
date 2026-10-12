@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { codexChildAgentsPlugin, DISABLED_CHILD_ENGINES } from '@agnes/base'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { childAgentKind } from '@agnes/extension-api'
 import { createConfigurationService } from '@agnes/host'
 import { expect, it } from 'vitest'
 import { registerConfiguration } from '../src/local/methods/config.js'
@@ -77,8 +78,8 @@ it('enables Codex through the admin RPC and starts a child with the fake CLI', a
     codexChildAgentsPlugin.apply(
       {
         providers: {
-          register(kind: string, source: string, next: NonNullable<typeof provider>) {
-            expect(kind).toBe('child-agent')
+          register(kind: typeof childAgentKind, source: string, next: NonNullable<typeof provider>) {
+            expect(kind).toBe(childAgentKind)
             expect(source).toBe('@agnes/base')
             provider = next
             return async () => undefined
