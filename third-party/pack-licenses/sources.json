@@ -82,5 +82,12 @@
     "declaredLicense": "MIT",
     "source": "npm package metadata and README.md; release owner must verify full license notice",
     "file": "use-composed-ref.txt"
+  },
+  {
+    "name": "victory-vendor",
+    "version": "37.3.6",
+    "declaredLicense": "MIT AND ISC",
+    "source": "https://raw.githubusercontent.com/FormidableLabs/victory/v37.3.6/LICENSE.txt and published victory-vendor@37.3.6 lib-vendor/*/LICENSE",
+    "file": "victory-vendor.txt"
   }
 ]

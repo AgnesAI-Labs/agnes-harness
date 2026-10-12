@@ -42,6 +42,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     '@agnes/web-client',
     '@agnes/web-ui/assistant-ui',
     'antd',
+    'recharts',
   ]
   const metafiles: BuildResult[] = []
   metafiles.push(
@@ -102,6 +103,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       absWorkingDir: root,
       entryPoints: {
         antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
+        recharts: join(root, 'tools', 'vendor', 'recharts-entry.js'),
         'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
         'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
         'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),

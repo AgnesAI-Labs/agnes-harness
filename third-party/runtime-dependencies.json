@@ -306,6 +306,24 @@
       "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
       "rationale": "The shared safe-image validator does not decode raster pixels or resize images; native codec and transitive license notices ship with the runtime.",
       "consumers": ["packages/base"]
+    },
+    {
+      "name": "recharts",
+      "version": "3.10.1",
+      "license": "MIT",
+      "source": "https://github.com/recharts/recharts",
+      "purpose": "Token-themed bar, line, area and pie rendering in the shared Chart primitive.",
+      "rationale": "Uses the approved React-native chart library with a preserved accessible source table and shared React vendor instance.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "react-is",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/v18.3.1/packages/react-is",
+      "purpose": "React element identification for the Recharts peer dependency.",
+      "rationale": "Matches the pinned React 18 runtime so chart children and fragments are recognized correctly.",
+      "consumers": ["packages/web-ui"]
     }
   ]
 }

@@ -22,8 +22,8 @@ const root = repoRoot()
  * suite must go red; removing it must go green again.
  */
 
-const FORBIDDEN_PREFIXES = ['antd/', '@assistant-ui/', '@ant-design/']
-const FORBIDDEN_EXACT = new Set(['antd'])
+const FORBIDDEN_PREFIXES = ['antd/', 'recharts/', '@assistant-ui/', '@ant-design/']
+const FORBIDDEN_EXACT = new Set(['antd', 'recharts'])
 const ALLOWED_PKG = '@agnes/web-ui'
 const ALLOWED_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 
@@ -64,7 +64,14 @@ function violationsFor(pkgDir: string): string[] {
 }
 
 it('also fences private library entry points and dynamic imports', () => {
-  for (const name of ['antd', 'antd/es/button', '@assistant-ui/react', '@ant-design/icons'])
+  for (const name of [
+    'antd',
+    'antd/es/button',
+    'recharts',
+    'recharts/lib/chart',
+    '@assistant-ui/react',
+    '@ant-design/icons',
+  ])
     expect(isExternalUI(name)).toBe(true)
   expect(isExternalUI('@agnes/web-ui')).toBe(false)
 })

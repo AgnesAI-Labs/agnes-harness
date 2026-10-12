@@ -40,6 +40,13 @@ it('builds local web assets with the shared platform vendor modules', async () =
     expect(chunkSources.some((source) => /from\s+["']antd["']/.test(source))).toBe(true)
     expect(app).toMatch(/from\s+["']@agnes\/web-ui\/assistant-ui["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
+    expect(html).toContain('"recharts": "/vendor/recharts.js"')
+    expect(chunkSources.some((source) => /from\s+["']recharts["']/.test(source))).toBe(true)
+    const chartNotice = await readFile(join(output, 'THIRD-PARTY-NOTICES/recharts.txt'), 'utf8')
+    expect(chartNotice).toContain('recharts')
+    const victoryNotice = await readFile(join(output, 'THIRD-PARTY-NOTICES/victory-vendor.txt'), 'utf8')
+    expect(victoryNotice).toContain('Formidable Labs')
+    expect(victoryNotice).toContain('Mike Bostock')
     const reactIsNotice = 'Copyright (c) Meta Platforms, Inc. and affiliates.'
     expect(antdVendorSources.some((source) => source.includes(reactIsNotice))).toBe(true)
     expect(markdownVendor).toContain('x-markdown')
@@ -50,6 +57,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
       'react-jsx-runtime.js',
       'react-dom.js',
       'react-dom-client.js',
+      'recharts.js',
       'cordis.js',
       'web-client.js',
     ]) {
@@ -114,6 +122,7 @@ it('rejects a local package when an HTML or import-map asset is missing', async 
       'vendor/react-dom.js',
       'vendor/react-dom-client.js',
       'vendor/antd.js',
+      'vendor/recharts.js',
       'vendor/assistant-ui.js',
       'vendor/cordis.js',
       'vendor/web-client.js',

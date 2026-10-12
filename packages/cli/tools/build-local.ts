@@ -219,6 +219,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     '@agnes/web-client',
     '@agnes/web-ui/assistant-ui',
     'antd',
+    'recharts',
   ]
   await buildWithMetadata({
     entryPoints: {
@@ -273,6 +274,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   await buildWithMetadata({
     entryPoints: {
       antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
+      recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
       'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
       'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
       'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
