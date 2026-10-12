@@ -96,9 +96,7 @@ describe('count calibration', () => {
       'completed',
     )
     expect(quotedProvider.calls).toBe(1)
-    expect(
-      (await q.log.scan({ type: 'approval/asked', limit: 5 })).map((e) => (e.data as { kind: string }).kind),
-    ).toEqual(['budget'])
+    expect((await q.session.decisions.list()).map((value) => value.request.spec.purpose)).toEqual(['budget'])
   })
 
   it.each([
@@ -252,9 +250,8 @@ describe('count calibration', () => {
       risk: 'budget',
       actor: expect.objectContaining({ id: 'u' }),
     })
-    expect((await log.scan({ type: 'approval/asked', limit: 5 })).at(-1)?.data).toMatchObject({
-      kind: 'budget',
-      summary: 'escalated by extension',
+    expect((await log.scan({ type: 'decision/state', limit: 5 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'budget', prompt: 'escalated by extension' } },
     })
   })
 
@@ -263,7 +260,7 @@ describe('count calibration', () => {
       ledger: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
-      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) },
+      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected', answeredBy: actor }) },
     })
     const { session, log } = await openSession({
       provider: withCount(9000),
@@ -274,10 +271,9 @@ describe('count calibration', () => {
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'budget',
     )
-    expect((await log.scan({ type: 'approval/decided', limit: 5 })).at(-1)?.data).toMatchObject({
-      verdict: 'rejected',
-      via: 'sync',
-      reason: 'user-rejected',
+    expect((await session.decisions.list()).at(-1)?.result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'rejected' },
     })
   })
 

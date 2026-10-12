@@ -1,10 +1,11 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
-import { decidedFields, isPending } from '@agnes/core-effects/effects/approval-answer'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import { type CountResult, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { CountResult as CountResultSchema } from '@agnes/protocol/gen/model'
+import { domainDecisionEvents, requestDomainDecision } from './domain-decision.js'
 import type { SessionImpl, TurnEndReason } from './session.js'
 
 /** How long a recount may take before the estimate is used instead. */
@@ -186,7 +187,18 @@ export async function quoteBudget(
         ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
       }
     : asked
-  const answer = await s.askApprovalAnswer(
+  const review = await requestDomainDecision(
+    s,
+    'budget',
+    `${op.meta.turn}:${op.step + 1}:${sha256Hex(summary)}`,
+    {
+      turn: op.meta.turn,
+      step: op.step + 1,
+      triggerSeq: op.meta.triggerSeq,
+      cap: s.turnBudgetCap(),
+      creditsUsed: s.state.creditsUsed,
+      risk: finalAsked.risk,
+    },
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -198,18 +210,27 @@ export async function quoteBudget(
     },
     s.ac.signal,
   )
-  if (isPending(answer)) {
+  if (review.park && review.pending) {
     await s.endTurn('parked', {
-      events: [...events, s.ev('approval/asked', { ...finalAsked, pending: answer })],
+      events: [...events, review.park],
     })
     return { reason: 'parked' }
   }
-  await s.d.log.append([
-    ...events,
-    s.ev('approval/asked', finalAsked),
-    s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' }),
-  ])
-  if (!answer.verdict.startsWith('allowed')) {
+  if (review.park)
+    await s.decisions.withdraw(
+      review.snapshot.handle,
+      review.source,
+      (review.park.data as { waitEndedBy: string }).waitEndedBy,
+    )
+  await s.locked(async () => {
+    const rows = [...events, ...domainDecisionEvents(s, review.snapshot, review.source)]
+    if (rows.length) await s.d.log.append(rows)
+  })
+  if (
+    review.snapshot.result?.reason !== 'answered' ||
+    review.snapshot.invalidation ||
+    !review.snapshot.result.response.option.startsWith('allowed')
+  ) {
     // An interrupt reaches the approval seam as a refusal, because that is how it fails closed.
     // The turn still ended because someone stopped it, not because it ran out of credit, and the
     // ledger has to say which.
