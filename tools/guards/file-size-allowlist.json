@@ -16,7 +16,6 @@
   "packages/daemon/src/supervisor/runtime.ts": 2784,
   "packages/host-computer-use/src/computer-use/windows-driver-backend.ts": 1599,
   "packages/host-infrastructure/src/configuration.ts": 1479,
-  "packages/host/src/runtime/assemble/assemble.ts": 2974,
   "packages/host/src/runtime/generation/host.ts": 1181,
   "packages/package-manager/src/manager.ts": 1502,
   "packages/package-manager/src/runtime-snapshots.ts": 810,
