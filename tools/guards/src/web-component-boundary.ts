@@ -26,6 +26,13 @@ export function webComponentViolations(source: string, file: string): ComponentV
     // Literal class tokens also catch multiline arrays, ternaries and class-name constants.
     // Selectors retain their leading dot and therefore do not match a class token.
     for (const literal of code.matchAll(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g)) {
+      // IDs and protocol message types can share a namespace with classes without being class writes.
+      if (
+        /(?:<[\w.-]+\b[^<>]*\b(?:id|type)\s*=|\b(?:id|type)\s*:|\.\s*(?:id|type)\s*(?:===|!==|==|!=|=))\s*$/.test(
+          code.slice(0, literal.index),
+        )
+      )
+        continue
       for (const name of literal[0].slice(1, -1).matchAll(componentClass))
         out.push({ rule: 'className', offset: literal.index, text: name[0].trim() })
     }

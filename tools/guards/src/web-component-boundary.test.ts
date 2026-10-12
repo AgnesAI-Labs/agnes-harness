@@ -16,6 +16,10 @@ it('rejects DOM writes, intrinsic controls and copied component classes across W
     ['<div className="agnes-ui-button agh-btn--danger" />', 'className'],
     ['node.classList.add("primary-button")', 'className'],
     ['const classes = [\n"agh-table",\n"agnes-ui-button"\n]', 'className'],
+    ['<div id="report" className="agh-meta" />', 'className'],
+    ['<div className="agnes-ui-ready" />', 'className'],
+    ['const type = "agh-btn"; node.className = type', 'className'],
+    ['const id = "agnes-ui-button"; node.className = id', 'className'],
   ])
     expect(
       webComponentViolations(source ?? '', 'packages/web/src/new.tsx').some((v) => v.rule === rule),
@@ -29,6 +33,12 @@ it('rejects DOM writes, intrinsic controls and copied component classes across W
   expect(webComponentViolations('node.querySelector(".agnes-ui-button")', 'packages/web/src/new.ts')).toEqual(
     [],
   )
+  expect(
+    webComponentViolations(
+      '<p id="agh-meta" />; const message = { type: "agnes-ui-init" }; if (message.type === "agnes-ui-loaded" || message.type !== "agnes-ui-error") {}',
+      'packages/web/src/new.tsx',
+    ),
+  ).toEqual([])
   expect(
     webComponentViolations('<button className="agh-btn" />', 'packages/web-ui/src/ui/button.tsx'),
   ).toEqual([])
