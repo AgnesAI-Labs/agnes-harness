@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { resolveToolCallPolicy } from '@agnes/extension-api'
+import { loopKind, resolveToolCallPolicy, toolPolicyKind } from '@agnes/extension-api'
 import { createPluginTestHost, driveLoop } from '@agnes/host/author-testkit'
 import { readOnlyTool, writeTool } from '@agnes/plugin-runtime'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
@@ -195,11 +195,11 @@ export async function runWorkflow(
     services: {
       providers: {
         register(kind, source, provider) {
-          assert.ok(['loop', 'tool-policy'].includes(kind))
-          return registry(kind === 'loop' ? loops : policies).register(source, provider)
+          assert.ok([loopKind, toolPolicyKind].includes(kind))
+          return registry(kind === loopKind ? loops : policies).register(source, provider)
         },
         resolve(kind, id) {
-          assert.equal(kind, 'tool-policy')
+          assert.equal(kind, toolPolicyKind)
           return registry(policies).resolve(id)
         },
       },
