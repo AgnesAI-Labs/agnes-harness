@@ -1,5 +1,14 @@
 import { Dropdown as AntDropdown } from 'antd'
-import { cloneElement, type HTMLAttributes, type ReactElement, useId, useMemo, useRef, useState } from 'react'
+import {
+  cloneElement,
+  type HTMLAttributes,
+  type ReactElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useReducedMotion } from './overlay.js'
 import { Tooltip } from './tooltip.js'
 
@@ -33,11 +42,34 @@ export function Menu({ trigger, label, items }: MenuProps) {
     () => [...items.filter((item) => !item.danger), ...items.filter((item) => item.danger)],
     [items],
   )
-  const enabled = ordered.flatMap((item, i) => (item.disabled ? [] : [i]))
+  const enabled = useMemo(() => ordered.flatMap((item, i) => (item.disabled ? [] : [i])), [ordered])
   const focus = (index: number | undefined) => {
     if (index !== undefined) popup.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')[index]?.focus()
     else popup.current?.querySelector<HTMLElement>('[role="menu"]')?.focus()
   }
+  useEffect(() => {
+    if (!open) return
+    const index = endOnOpen.current ? enabled.at(-1) : enabled[0]
+    let frame = 0,
+      remaining = 3
+    const ready = () => {
+      // Dropdown can reuse an exiting popup. Wait for its visibility/alignment frames on reopen.
+      if (--remaining > 0) {
+        frame = requestAnimationFrame(ready)
+        return
+      }
+      const triggerNode = anchor.current?.querySelector<HTMLElement>('button, a, [tabindex]')
+      if (document.activeElement === triggerNode || document.activeElement === document.body) {
+        const menu = popup.current?.querySelector<HTMLElement>('[role="menu"]')
+        const node =
+          index === undefined ? menu : menu?.querySelectorAll<HTMLElement>('[role="menuitem"]')[index]
+        node?.focus()
+      }
+      endOnOpen.current = false
+    }
+    frame = requestAnimationFrame(ready)
+    return () => cancelAnimationFrame(frame)
+  }, [open, enabled])
   const close = () => {
     setOpen(false)
     anchor.current?.querySelector<HTMLElement>('button, a, [tabindex]')?.focus({ preventScroll: true })
@@ -115,6 +147,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
               return
             }
             if (event.key === 'Tab') {
+              event.stopPropagation()
               close()
               return
             }

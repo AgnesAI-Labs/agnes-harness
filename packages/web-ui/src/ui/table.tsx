@@ -46,7 +46,7 @@ export function Table<T extends object>({
         if ((typeof rendered === 'string' || typeof rendered === 'number') && column.ellipsis !== false) {
           const text = String(rendered)
           return (
-            <AntTooltip title={text}>
+            <AntTooltip title={text} rootClassName="agh-tooltip" mouseEnterDelay={0.5}>
               <span className="agh-table-cell" title={text}>
                 {text}
               </span>
@@ -70,6 +70,7 @@ export function Table<T extends object>({
           size="small"
           pagination={false}
           sticky
+          showSorterTooltip={{ rootClassName: 'agh-tooltip' }}
           scroll={{ x: 'max-content' }}
           {...props}
           className={['agh-table', className].filter(Boolean).join(' ')}

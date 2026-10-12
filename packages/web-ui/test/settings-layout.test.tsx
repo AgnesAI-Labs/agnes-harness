@@ -9,6 +9,7 @@ import {
   Field,
   Icon,
   ListRow,
+  Menu,
   mountRegion,
   SettingsPage,
   SettingsSaveBar,
@@ -140,7 +141,11 @@ it('closes the detail drawer on Escape and returns focus to its trigger', async 
       createElement(
         Drawer,
         { id: 'detail-drawer', open, title: 'Plugin details', onClose: () => setOpen(false) },
-        'Contents',
+        createElement(Menu, {
+          label: 'Detail actions',
+          trigger: createElement(Button, { id: 'drawer-menu-trigger' }, 'Actions'),
+          items: [{ id: 'inspect', label: 'Inspect', onSelect: () => {} }],
+        }),
       ),
     )
   }
@@ -153,6 +158,19 @@ it('closes the detail drawer on Escape and returns focus to its trigger', async 
   expect(document.querySelectorAll('#detail-drawer')).toHaveLength(1)
   const labelledBy = drawer.getAttribute('aria-labelledby')
   expect(labelledBy && document.getElementById(labelledBy)?.textContent).toBe('Plugin details')
+  const innerTrigger = drawer.querySelector<HTMLElement>('#drawer-menu-trigger')!
+  innerTrigger.focus()
+  innerTrigger.click()
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Inspect'))
+  const menuEscape = new KeyboardEvent('keydown', {
+    key: 'Escape',
+    keyCode: 27,
+    bubbles: true,
+    cancelable: true,
+  })
+  document.activeElement?.dispatchEvent(menuEscape)
+  await vi.waitFor(() => expect(document.activeElement).toBe(innerTrigger))
+  expect(document.querySelector('[role="dialog"]')).toBe(drawer)
   const cancel = new KeyboardEvent('keydown', {
     key: 'Escape',
     code: 'Escape',

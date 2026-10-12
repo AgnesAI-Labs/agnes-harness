@@ -98,6 +98,13 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
   key(document.querySelector('[role="menuitem"]')!, 'Enter')
   expect(selected).toBe('edit')
   expect(document.activeElement).toBe(trigger)
+  await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+  key(trigger, 'ArrowUp')
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Delete'))
+  key(document.activeElement!, 'Escape')
+  await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+  trigger.click()
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Edit'))
 })
 it('explains a disabled action immediately on keyboard focus', async () => {
   const host = render(

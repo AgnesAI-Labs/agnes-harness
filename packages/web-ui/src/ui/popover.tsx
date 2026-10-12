@@ -18,6 +18,7 @@ export function Popover({ content, children, onOpenChange, ...props }: PopoverPr
       onOpenChange={change}
       content={
         <div
+          role="group"
           onKeyDown={(event) => {
             if (event.key === 'Escape' && !event.defaultPrevented) {
               event.preventDefault()
