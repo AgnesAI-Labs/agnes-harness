@@ -456,11 +456,10 @@
     align-items: flex-start;
   }
   .composer-queue-row > div:has([data-testid="queued-steer-editor"]) {
-    flex: 1 1 100%;
-    min-width: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s8);
+    display: contents;
+  }
+  .composer-queue-row:has([data-testid="queued-steer-editor"]) > .composer-queue-remove {
+    margin-inline-start: auto;
   }
   .composer-queue-row [data-testid="queued-steer-editor"] {
     flex: 1 1 100%;

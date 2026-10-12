@@ -92,6 +92,7 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 `Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
 `dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
 纯图标动作必带 label 和共享 tooltip。动作菜单用 `role="menu"`，值选择器用 `role="listbox"`。
+原生 `positionSubmenu` 优先放在父面板右/左侧；两侧空间不足时回退到上/下方。
 `Toast` 支持 `tone="success|info|error"`（默认 `success`）；导航提示用 `info`，失败操作用 `error`。
 `duration` 仍以毫秒为单位。
 

@@ -90,7 +90,8 @@ Review each inventory surface in en and zh-CN, light and dark, at desktop and 39
 `Button` additionally accepts `appearance="primary|secondary|ghost|danger|link"`;
 `dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
 explain unavailable actions. Icon actions require a label and shared tooltip.
-Menus contain actions (`role="menu"`); value pickers use `role="listbox"`.
+Menus contain actions (`role="menu"`); value pickers use `role="listbox"`. Native `positionSubmenu`
+prefers the right/left side and falls back above/below the parent when neither side fits.
 `Toast` accepts `tone="success|info|error"` (default `success`). Use `info` for navigation
 notices and `error` for failed operations. Its `duration` remains milliseconds.
 

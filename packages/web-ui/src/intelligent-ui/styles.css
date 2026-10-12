@@ -401,10 +401,9 @@
   }
   .agnes-intelligent-catalog fieldset.agnes-intelligent-form {
     margin: 0;
-    padding: var(--s16);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-md);
-    background: var(--agnes-bg-card);
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
   .agnes-intelligent-form .config-field {
     display: grid;
@@ -449,9 +448,7 @@
   .agnes-intelligent-chart {
     display: grid;
     gap: var(--s12);
-    padding: var(--s12);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-md);
+    min-width: 0;
   }
   .agnes-intelligent-chart svg {
     display: block;

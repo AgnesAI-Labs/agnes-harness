@@ -1005,4 +1005,8 @@
     transition-duration: 0s !important;
   }
 
+  /* Tabs are frequent navigation; their final indicator/scroll positions remain immediate. */
+  .agnes-ui-tabs :is(.ant-tabs-ink-bar, .ant-tabs-nav-list) {
+    transition: none;
+  }
 }
