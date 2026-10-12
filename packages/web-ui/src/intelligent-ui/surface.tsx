@@ -12,12 +12,14 @@ import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu } from '../ui/menu.js'
-import { Tag } from '../ui/tag.js'
+import { MetaText } from '../ui/tag.js'
 import { Toast } from '../ui/toast.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
+import { IntelligentSurfaceChip } from './chip.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { SurfaceRenderBoundary } from './render-boundary.js'
+import { docksInConversation, surfaceTitle } from './summary.js'
 
 export interface IntelligentSurfaceProps {
   renderArtifact?: IntelligentCatalogProps['renderArtifact']
@@ -46,24 +48,36 @@ export interface IntelligentSurfaceProps {
   onReview(): void
   onRecover(): void
   onExpand(): void
+  /** Offered on the docked chip only: take it out of the conversation, keep it in the workbench. */
+  onDismiss?: (() => void) | undefined
   onApproval(receipt: UiActionReceipt): void
   onEvidence?(seq: number): void
 }
 
 export function IntelligentSurface(props: IntelligentSurfaceProps) {
+  if (props.placement === 'inline' && docksInConversation(props.record.surface))
+    return (
+      <IntelligentSurfaceChip
+        record={props.record}
+        workbenchOpen={props.workbenchOpen}
+        locked={props.locked}
+        needsReview={props.needsReview}
+        pendingApproval={props.receipts.some((receipt) => receipt.status === 'pending-approval')}
+        onExpand={props.onExpand}
+        onDismiss={props.onDismiss}
+      />
+    )
+  return <SurfaceCard {...props} />
+}
+function SurfaceCard(props: IntelligentSurfaceProps) {
   const { record, receipts } = props
   const { surface } = record
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
-  const translatedTitle = surface.titleKey ? t(surface.titleKey) : surface.title
   const titleId = useId()
   const [sourceVisible, setSourceVisible] = useState(false)
   const [copyMessage, setCopyMessage] = useState('')
   const textComponent = surface.components.find((component) => component.kind === 'text')
   const text = textComponent && 'dataKey' in textComponent ? surface.data[textComponent.dataKey] : undefined
-  const summaryOnly =
-    props.placement === 'inline' &&
-    surface.placement.workbench &&
-    (!surface.placement.inline || !surface.components.some((component) => component.kind === 'artifact-file'))
   const summary =
     surface.summary ??
     (typeof text === 'string' ? text.slice(0, 240) : undefined) ??
@@ -94,9 +108,9 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       </Toast>
       <header>
         <h3 id={titleId} title={t('ui.revision', { revision: surface.revision })}>
-          {translatedTitle === surface.titleKey ? surface.title : translatedTitle}
+          {surfaceTitle(surface, t)}
         </h3>
-        <Tag tone="info">{t(`ui.${record.status}`)}</Tag>
+        {record.status === 'closed' && <MetaText>{t('ui.closed')}</MetaText>}
         <Menu
           label={t('ui.menu')}
           trigger={<IconButton name="ellipsis" label={t('ui.menu')} />}
@@ -110,15 +124,19 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
           ]}
         />
         {props.placement === 'inline' && surface.placement.workbench && (
-          <Button htmlType="button" data-testid="ui-expand" onClick={props.onExpand}>
-            {t(props.workbenchOpen ? 'ui.opened' : 'ui.expand')}
+          <Button
+            htmlType="button"
+            {...(props.workbenchOpen ? { appearance: 'ghost' as const } : {})}
+            data-testid="ui-expand"
+            aria-pressed={!!props.workbenchOpen}
+            title={t(props.workbenchOpen ? 'ui.dock.focus' : 'ui.expand')}
+            onClick={props.onExpand}
+          >
+            {t(props.workbenchOpen ? 'ui.dock.shown' : 'ui.expand')}
           </Button>
         )}
       </header>
-      <p
-        hidden={record.owner === 'agnes/intelligent-ui' || (summaryOnly && props.workbenchOpen)}
-        className="agnes-intelligent-attribution"
-      >
+      <p hidden={record.owner === 'agnes/intelligent-ui'} className="agnes-intelligent-attribution">
         {t('ui.from', { owner: record.owner })}
       </p>
       {sourceVisible && (
@@ -132,106 +150,96 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
           </dl>
         </details>
       )}
-      {summaryOnly ? (
-        <p hidden={props.workbenchOpen} data-testid="ui-summary">
-          {summary}
-        </p>
-      ) : (
-        <>
-          <SettingsState
-            hidden={!props.draftChanged && !props.needsReview && !props.error && !props.invalid}
-            tone={props.error || props.invalid ? 'error' : 'empty'}
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            {props.draftChanged && <p data-testid="ui-draft-changed">{t('ui.draftChanged')}</p>}
-            {props.needsReview && <p data-testid="ui-reconfirm-message">{t('ui.changed')}</p>}
-            {props.error && <p>{t(props.error)}</p>}
-            {props.invalid && <p>{t('ui.invalidJson')}</p>}
-          </SettingsState>
-          {props.needsReview && (
-            <Button htmlType="button" data-testid="ui-review-current" onClick={props.onReview}>
-              {t('ui.reconfirm')}
-            </Button>
-          )}
-          <div className="agnes-intelligent-body">
-            <SurfaceRenderBoundary
-              key={surface.revision}
-              message={t('ui.renderError')}
-              retry={t('ui.refresh')}
-            >
-              <IntelligentCatalog
-                {...(props.renderArtifact ? { renderArtifact: props.renderArtifact } : {})}
-                {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
-                surface={surface}
-                {...(record.sources
-                  ? { sources: record.sources as Readonly<Record<string, UiSourceStatus>> }
-                  : {})}
-                {...(props.onRefreshSource ? { onRefreshSource: props.onRefreshSource } : {})}
-                instance={props.placement}
-                input={props.input}
-                selection={props.selection}
-                disabled={props.locked}
-                invalid={props.invalid}
-                onInput={props.onInput}
-                onSelection={props.onSelection}
-                onInvalid={props.onInvalid}
-                onAction={props.onAction}
-              />
-            </SurfaceRenderBoundary>
-          </div>
-          {props.confirmation && (
-            <section role="group" aria-label={t('ui.confirm')} data-testid="ui-confirmation">
-              <p>{props.confirmation.action.confirm ?? props.confirmation.action.label}</p>
-              <p>{t('ui.approvalHelp')}</p>
-              <SettingsToolbar>
-                <Button htmlType="button" data-testid="ui-confirm-cancel" onClick={props.onCancel}>
-                  {t('ui.cancel')}
-                </Button>
-                <Button
-                  htmlType="button"
-                  appearance="primary"
-                  data-testid="ui-confirm"
-                  disabled={props.locked || props.invalid || props.confirmation.revision !== surface.revision}
-                  onClick={props.onConfirm}
-                >
-                  {t('ui.confirm')}
-                </Button>
-              </SettingsToolbar>
-            </section>
-          )}
-          {props.transportPending && (
-            <Button htmlType="button" data-testid="ui-recover-command" onClick={props.onRecover}>
-              {t('ui.resend')}
-            </Button>
-          )}
-          <ol data-testid="ui-receipts" aria-live="polite" aria-relevant="additions text">
-            {receipts.map((receipt) => (
-              <Receipt
-                key={receipt.commandId}
-                receipt={receipt}
-                locked={props.locked}
-                onRetry={() => props.onRetry(receipt)}
-                onApproval={() => props.onApproval(receipt)}
-                evidence={
-                  props.onEvidence ? (
-                    <Button htmlType="button" onClick={() => props.onEvidence?.(receipt.seq)}>
-                      {'#'}
-                      {receipt.seq}
-                    </Button>
-                  ) : (
-                    <span>
-                      {'#'}
-                      {receipt.seq}
-                    </span>
-                  )
-                }
-              />
-            ))}
-          </ol>
-        </>
-      )}
+      <>
+        <SettingsState
+          hidden={!props.draftChanged && !props.needsReview && !props.error && !props.invalid}
+          tone={props.error || props.invalid ? 'error' : 'empty'}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {props.draftChanged && <p data-testid="ui-draft-changed">{t('ui.draftChanged')}</p>}
+          {props.needsReview && <p data-testid="ui-reconfirm-message">{t('ui.changed')}</p>}
+          {props.error && <p>{t(props.error)}</p>}
+          {props.invalid && <p>{t('ui.invalidJson')}</p>}
+        </SettingsState>
+        {props.needsReview && (
+          <Button htmlType="button" data-testid="ui-review-current" onClick={props.onReview}>
+            {t('ui.reconfirm')}
+          </Button>
+        )}
+        <div className="agnes-intelligent-body">
+          <SurfaceRenderBoundary key={surface.revision} message={t('ui.renderError')} retry={t('ui.refresh')}>
+            <IntelligentCatalog
+              {...(props.renderArtifact ? { renderArtifact: props.renderArtifact } : {})}
+              {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
+              surface={surface}
+              {...(record.sources
+                ? { sources: record.sources as Readonly<Record<string, UiSourceStatus>> }
+                : {})}
+              {...(props.onRefreshSource ? { onRefreshSource: props.onRefreshSource } : {})}
+              instance={props.placement}
+              input={props.input}
+              selection={props.selection}
+              disabled={props.locked}
+              invalid={props.invalid}
+              onInput={props.onInput}
+              onSelection={props.onSelection}
+              onInvalid={props.onInvalid}
+              onAction={props.onAction}
+            />
+          </SurfaceRenderBoundary>
+        </div>
+        {props.confirmation && (
+          <section role="group" aria-label={t('ui.confirm')} data-testid="ui-confirmation">
+            <p>{props.confirmation.action.confirm ?? props.confirmation.action.label}</p>
+            <p>{t('ui.approvalHelp')}</p>
+            <SettingsToolbar>
+              <Button htmlType="button" data-testid="ui-confirm-cancel" onClick={props.onCancel}>
+                {t('ui.cancel')}
+              </Button>
+              <Button
+                htmlType="button"
+                appearance="primary"
+                data-testid="ui-confirm"
+                disabled={props.locked || props.invalid || props.confirmation.revision !== surface.revision}
+                onClick={props.onConfirm}
+              >
+                {t('ui.confirm')}
+              </Button>
+            </SettingsToolbar>
+          </section>
+        )}
+        {props.transportPending && (
+          <Button htmlType="button" data-testid="ui-recover-command" onClick={props.onRecover}>
+            {t('ui.resend')}
+          </Button>
+        )}
+        <ol data-testid="ui-receipts" aria-live="polite" aria-relevant="additions text">
+          {receipts.map((receipt) => (
+            <Receipt
+              key={receipt.commandId}
+              receipt={receipt}
+              locked={props.locked}
+              onRetry={() => props.onRetry(receipt)}
+              onApproval={() => props.onApproval(receipt)}
+              evidence={
+                props.onEvidence ? (
+                  <Button htmlType="button" onClick={() => props.onEvidence?.(receipt.seq)}>
+                    {'#'}
+                    {receipt.seq}
+                  </Button>
+                ) : (
+                  <span>
+                    {'#'}
+                    {receipt.seq}
+                  </span>
+                )
+              }
+            />
+          ))}
+        </ol>
+      </>
     </article>
   )
 }

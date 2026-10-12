@@ -7,7 +7,12 @@ import {
   type SlotRegistry,
   workbenchPanels,
 } from '@agnes/web-client'
-import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
+import {
+  createDocumentLocaleSource,
+  INTELLIGENT_UI_NAMESPACE,
+  intelligentUiCatalog,
+  surfaceTitle,
+} from '@agnes/web-ui'
 import { IntelligentUiClient } from './client.js'
 import type { CustomUiModuleSource } from './custom-host.js'
 import {
@@ -138,9 +143,10 @@ export function mountIntelligentUi(options: {
       when: (context) =>
         (context.data as { session?: { id: string } } | undefined)?.session?.id === current?.sessionId &&
         !!current?.getSnapshot().surfaces.some((record) => record.surface.placement.workbench),
-      title: () =>
-        current?.getSnapshot().surfaces.find((record) => record.surface.placement.workbench)?.surface.title ??
-        options.locale.t('ui.title'),
+      title: () => {
+        const first = current?.getSnapshot().surfaces.find((record) => record.surface.placement.workbench)
+        return first ? surfaceTitle(first.surface, options.locale.t) : options.locale.t('ui.title')
+      },
       component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
     })
   refreshPanel = () => {

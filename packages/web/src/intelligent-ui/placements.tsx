@@ -2,10 +2,13 @@ import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intel
 import { type ClientResourceService, type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
+  docksInConversation,
   INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
+  Menu,
   SettingsState,
+  surfaceTitle,
   UiLocaleProvider,
   type UiLocaleSource,
   useUiText,
@@ -93,6 +96,17 @@ function SurfaceList({
     })
     return () => observer.disconnect()
   }, [placement])
+  const [dismissed, setDismissed] = useState(() => readDismissed(client.sessionId))
+  const dismiss = (id: string) =>
+    setDismissed((current) => {
+      const next = new Set(current).add(id)
+      try {
+        sessionStorage.setItem(DISMISSED_KEY + client.sessionId, JSON.stringify([...next]))
+      } catch {
+        /* browser policy may disallow storage */
+      }
+      return next
+    })
   const snapshot = client.getSnapshot(),
     target = binding.target()
   const sorted = snapshot.surfaces
@@ -104,8 +118,31 @@ function SurfaceList({
       }
       return Number(b.status === 'open') - Number(a.status === 'open') || b.updatedSeq - a.updatedSeq
     })
+  const bound = (record: UiSurfaceRecord) => (
+    <BoundSurface
+      key={`${record.surface.id}:${record.surface.revision}`}
+      binding={binding}
+      client={client}
+      id={record.surface.id}
+      placement={placement}
+      workbenchOpen={workbenchOpen}
+      {...(placement === 'inline' ? { onDismiss: () => dismiss(record.surface.id) } : {})}
+    />
+  )
+  // In the conversation a surface is either a full card or a one-line chip pointing at the workbench.
+  const docked =
+    placement === 'inline'
+      ? sorted.filter((record) => docksInConversation(record.surface) && !dismissed.has(record.surface.id))
+      : []
+  const cards =
+    placement === 'inline' ? sorted.filter((record) => !docksInConversation(record.surface)) : sorted
+  const overflow = docked.slice(DOCK_VISIBLE)
   return (
-    <section data-testid={`intelligent-ui-${placement}`} aria-label={t('ui.title')}>
+    <section
+      className={placement === 'inline' ? 'agnes-intelligent-inline' : undefined}
+      data-testid={`intelligent-ui-${placement}`}
+      aria-label={t('ui.title')}
+    >
       {snapshot.error && <SettingsState tone="error">{t(snapshot.error)}</SettingsState>}
       {placement === 'workbench' && snapshot.error && (
         <Button htmlType="button" data-testid="ui-refresh" onClick={() => void client.refresh()}>
@@ -113,18 +150,44 @@ function SurfaceList({
         </Button>
       )}
       {!sorted.length && placement === 'workbench' && <Empty />}
-      {sorted.map((record) => (
-        <BoundSurface
-          key={`${record.surface.id}:${record.surface.revision}`}
-          binding={binding}
-          client={client}
-          id={record.surface.id}
-          placement={placement}
-          workbenchOpen={workbenchOpen}
-        />
-      ))}
+      {cards.map(bound)}
+      {docked.length > 0 && (
+        <nav className="agnes-intelligent-dock" data-testid="ui-dock" aria-label={t('ui.dock.label')}>
+          {docked.slice(0, DOCK_VISIBLE).map(bound)}
+          {overflow.length > 0 && (
+            <Menu
+              label={t('ui.dock.moreLabel', { count: overflow.length })}
+              trigger={
+                <Button
+                  htmlType="button"
+                  appearance="ghost"
+                  data-testid="ui-dock-more"
+                  aria-label={t('ui.dock.moreLabel', { count: overflow.length })}
+                >
+                  {t('ui.dock.more', { count: overflow.length })}
+                </Button>
+              }
+              items={overflow.map((record) => ({
+                id: record.surface.id,
+                label: surfaceTitle(record.surface, t),
+                onSelect: () => binding.expand(record.surface.id, record.surface.revision),
+              }))}
+            />
+          )}
+        </nav>
+      )}
     </section>
   )
+}
+const DOCK_VISIBLE = 2
+const DISMISSED_KEY = 'agnes.ui.dock.dismissed:'
+function readDismissed(sessionId: string): ReadonlySet<string> {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(DISMISSED_KEY + sessionId) ?? '[]')
+    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
 }
 export function BoundSurface({
   binding,
@@ -132,12 +195,14 @@ export function BoundSurface({
   id,
   placement,
   workbenchOpen,
+  onDismiss,
 }: {
   binding: UiPlacementBinding
   client: IntelligentUiClient
   id: string
   placement: 'inline' | 'workbench'
   workbenchOpen?: boolean
+  onDismiss?: () => void
 }) {
   const record = client.record(id)!
   const draft = client.draft(id),
@@ -198,6 +263,7 @@ export function BoundSurface({
       onReview={() => void client.review(id)}
       onRecover={() => void client.resend(id)}
       onExpand={() => binding.expand(id, record.surface.revision)}
+      onDismiss={onDismiss}
       onApproval={binding.approval}
     />
   )

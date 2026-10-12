@@ -6,6 +6,7 @@ import type { StateTone } from '../ui/state-lights.js'
 import { Tabs } from '../ui/tabs.js'
 import { useUiText } from '../ui-locale.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
+import { stateLabel } from './summary.js'
 import { uiObject } from './validate.js'
 
 const PRESET_IMAGE_LIMITS: SafeImageLimits = {
@@ -55,20 +56,21 @@ function formatUtcDate(value: string, locale: string): string | undefined {
 
 // Presentation only: unknown business states retain their literal label and an info tone.
 export function PresetStatus({ value }: { value: string }) {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const normalized = value.trim().toLowerCase()
   const tone =
-    /^(success|succeeded|done|complete|completed|approved|posted|已成功|已完成|已通过|已入账)$/.test(
+    /^(success|succeeded|done|complete|completed|approved|posted|active|running|已成功|已完成|已通过|已入账)$/.test(
       normalized,
     )
       ? 'success'
-      : /^(warning|pending|needs-review|review|待审核|待审批|待处理|需复核)$/.test(normalized)
+      : /^(warning|pending|paused|needs-review|review|待审核|待审批|待处理|需复核)$/.test(normalized)
         ? 'warning'
         : /^(error|failed|failure|rejected|blocked|出错|已失败|已拒绝|受阻)$/.test(normalized)
           ? 'error'
           : 'info'
   return (
-    <span className="agnes-intelligent-tag" data-tone={tone}>
-      {value}
+    <span className="agnes-intelligent-tag" data-tone={tone} data-state={normalized}>
+      {stateLabel(value, t)}
     </span>
   )
 }

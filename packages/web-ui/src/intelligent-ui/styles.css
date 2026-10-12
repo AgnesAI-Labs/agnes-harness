@@ -484,11 +484,6 @@
     overflow: auto;
     overscroll-behavior: contain;
   }
-  .agnes-intelligent-surface [data-testid="ui-summary"] {
-    max-height: 320px;
-    overflow: auto;
-    overscroll-behavior: contain;
-  }
   .agnes-intelligent-surface > header {
     gap: var(--s8);
   }
@@ -499,6 +494,143 @@
     body[data-agnes-region="app"] .agnes-intelligent-surface > header button {
       min-width: var(--s32);
       min-height: var(--s32);
+    }
+  }
+
+  /* Conversation placement: the list shares the message column, so cards and chips line up with
+     the messages above and the composer below instead of spanning the pane. */
+  .agnes-intelligent-inline {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    width: min(100%, var(--chat-content-width, 57.5rem));
+    margin-inline: auto;
+    padding: 0 var(--s32) var(--s16);
+  }
+  .agnes-intelligent-inline:empty {
+    display: none;
+  }
+  .agnes-intelligent-dock {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-intelligent-chip {
+    display: inline-flex;
+    align-items: stretch;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+    transition:
+      border-color var(--transition-fast),
+      background var(--transition-fast);
+  }
+  .agnes-intelligent-chip:hover {
+    border-color: var(--agnes-line-emphasis);
+  }
+  .agnes-intelligent-chip[data-active] {
+    border-color: var(--agnes-input-border-focus);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-intelligent-chip-main {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--s32);
+    margin: 0;
+    padding: var(--s4) var(--s10) var(--s4) var(--s12);
+    border: 0;
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .agnes-intelligent-chip-main:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-intelligent-chip :focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: 2px;
+  }
+  .agnes-intelligent-chip-main > .agh-icon {
+    flex: none;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-chip-title {
+    flex: 0 1 auto;
+    min-width: 3rem;
+    max-width: 16rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+  .agnes-intelligent-chip-summary {
+    flex: 0 10 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-chip[data-attention] .agnes-intelligent-chip-summary {
+    color: var(--agnes-status-warning-text);
+  }
+  .agnes-intelligent-chip-state {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+  .agnes-intelligent-chip[data-active] .agnes-intelligent-chip-state {
+    color: var(--agnes-text-emphasis);
+  }
+  .agnes-intelligent-chip > :not(.agnes-intelligent-chip-main):has(.agh-btn--icon) {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    padding-inline: var(--s2);
+    border-inline-start: 1px solid var(--agnes-line-primary);
+  }
+  @media (max-width: 900px) {
+    .agnes-intelligent-inline {
+      padding-inline: var(--s16);
+    }
+  }
+  @media (max-width: 540px) {
+    .agnes-intelligent-dock {
+      flex-wrap: wrap;
+    }
+    .agnes-intelligent-chip {
+      flex: 1 1 100%;
+    }
+    .agnes-intelligent-chip-title {
+      max-width: none;
+    }
+  }
+  @media (max-width: 380px) {
+    .agnes-intelligent-inline {
+      padding-inline: var(--s12);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agnes-intelligent-chip {
+      transition: none;
     }
   }
 }

@@ -34,6 +34,7 @@ import {
   displayableIntelligentSurface,
   sourceBacked,
 } from './source-state.js'
+import { columnLabel, uiInstant, useNow } from './summary.js'
 import { uiObject } from './validate.js'
 
 export interface IntelligentCatalogProps {
@@ -113,6 +114,7 @@ function CatalogComponent(
 ) {
   const { component, surface, disabled } = props
   const { t, locale } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const now = useNow()
   const instance = useId()
   const reportInvalid = useCallback(
     (path: string, invalid: boolean) => props.onInvalid(component.id, path, invalid),
@@ -280,7 +282,7 @@ function CatalogComponent(
               {component.selection !== 'none' && <th scope="col">{t('ui.select', { row: '' })}</th>}
               {component.columns.map((column) => (
                 <th key={column.key} scope="col" data-numeric={numericKeys.has(column.key) || undefined}>
-                  {column.label}
+                  {columnLabel(column.label, t)}
                 </th>
               ))}
               {component.rowActionIds?.length ? <th scope="col">{t('ui.actions')}</th> : null}
@@ -330,15 +332,25 @@ function CatalogComponent(
                   {component.columns.map((column, i) => {
                     const Cell = i === 0 ? 'th' : 'td'
                     const text = format(row[column.key], column.format)
+                    const instant =
+                      column.format === 'date' ? uiInstant(row[column.key], locale, now) : undefined
                     return (
                       <Cell
                         key={column.key}
                         scope={i === 0 ? 'row' : undefined}
                         data-numeric={numericKeys.has(column.key) || undefined}
                       >
-                        <span className="agnes-intelligent-cell" title={text}>
-                          {text}
-                        </span>
+                        {instant ? (
+                          <time className="agnes-intelligent-cell" dateTime={instant.iso} title={instant.iso}>
+                            {t('ui.instant', { time: instant.time, relative: instant.relative })}
+                          </time>
+                        ) : column.format === 'status' && text ? (
+                          <PresetStatus value={text} />
+                        ) : (
+                          <span className="agnes-intelligent-cell" title={text}>
+                            {text}
+                          </span>
+                        )}
                       </Cell>
                     )
                   })}

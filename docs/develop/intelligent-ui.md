@@ -357,7 +357,7 @@ The session envelope accepts extension names with the same generated rule used b
 
 ### Conversation summary and complete view
 
-A surface with both `placement.inline` and `placement.workbench` displays a summary in the conversation and the complete interactive view in the workbench. Both placement flags are required booleans, and at least one must be true. Optional `summary` text is bounded to 1024 characters; when omitted the UI shows the available action count. Inline-only surfaces remain complete in the conversation. Workbench-only surfaces show a conversation pointer and open the workbench once on first appearance. Revision updates never reopen it or steal focus. Confirmations, drafts, receipts and tool approvals belong to the same session client.
+A surface with both `placement.inline` and `placement.workbench` displays a summary in the conversation and the complete interactive view in the workbench. Both placement flags are required booleans, and at least one must be true. Optional `summary` text is bounded to 1024 characters; when omitted the UI reads one line from the surface data (text, a table's nearest time and row count, or the available action count). Inline-only surfaces remain complete in the conversation. Workbench-only surfaces show a conversation pointer and open the workbench once on first appearance. Revision updates never reopen it or steal focus. Confirmations, drafts, receipts and tool approvals belong to the same session client.
 
 ### Artifact file cards
 

@@ -357,7 +357,7 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 
 ### 对话摘要与完整界面
 
-同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。两个位置字段都是必填布尔值，且至少一个为 true。可选 `summary` 最长 1024 字符；省略时显示可用操作数量。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。
+同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。两个位置字段都是必填布尔值，且至少一个为 true。可选 `summary` 最长 1024 字符；省略时从界面数据读出一行摘要（文本、表格的最近时间与行数，或可用操作数量）。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。
 
 ### 交付文件卡片
 
