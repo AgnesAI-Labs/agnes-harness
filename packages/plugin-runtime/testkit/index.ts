@@ -14,6 +14,7 @@ import {
 } from '../src/row-mount.js'
 import type { RowOrigin, RowOriginLookup } from '../src/row-origin.js'
 
+export { scriptedDecisions } from './decisions.js'
 export { driveLoop, type LoopTestOptions } from './loop.js'
 export { type ModelReply, scriptedModel } from './model.js'
 export { type ModelAdapterTestOptions, runModelAdapter } from './model-adapter.js'

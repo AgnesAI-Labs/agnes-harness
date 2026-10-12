@@ -9,7 +9,7 @@ import type {
   LoopStepOutcome,
   LoopTurnView,
 } from '@agnes/extension-api'
-import { loopShouldStop, unavailableDecisions } from '@agnes/extension-api'
+import { type DecisionPort, loopShouldStop, unavailableDecisions } from '@agnes/extension-api'
 import { type ModelReply, scriptedModel } from './model.js'
 
 export interface LoopTestOptions {
@@ -17,7 +17,15 @@ export interface LoopTestOptions {
   inputs?: readonly (Pick<LoopInput, 'content'> &
     Partial<LoopInput> & { target?: 'next-turn' | 'next-step' })[]
   checkpoint?: LoopCheckpoint
-  tools?: Pick<LoopContext['tools'], 'execute' | 'batch'>
+  /** The resumed checkpoint belongs to a turn that is still open, so next-step claims are legal. */
+  turnOpen?: boolean
+  /** Defaults to a port that refuses every request. */
+  decisions?: DecisionPort
+  /** Durable receipts that exist before the first step, keyed by invocation id. */
+  effects?: Readonly<Record<string, LoopEffectStatus>>
+  tools?: Pick<LoopContext['tools'], 'execute' | 'batch'> & Partial<Pick<LoopContext['tools'], 'resume'>>
+  /** Result of the approval-continuation probe; defaults to false (nothing parked). */
+  resumeParked?: Awaited<ReturnType<LoopContext['input']['resumeParked']>>
   context?: LoopContext
   turnView?: LoopTurnView
   signal?: AbortSignal
@@ -40,12 +48,22 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     ...structuredClone(input),
   }))
   let checkpoint = options.checkpoint ? structuredClone(options.checkpoint) : null
-  let current: (typeof inputs)[number] | null = null
+  let current: (typeof inputs)[number] | null = options.turnOpen
+    ? {
+        id: '0',
+        turnId: options.turnView?.turnId ?? 1,
+        kind: 'prompt',
+        trust: 'trusted',
+        actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
+        target: 'next-turn',
+        content: [],
+      }
+    : null
   let finished: Parameters<LoopContext['events']['finish']> | undefined
   const signal = options.signal ?? new AbortController().signal
   const maxSteps = options.maxSteps ?? 20
   if (!Number.isSafeInteger(maxSteps) || maxSteps < 1) throw new RangeError('maxSteps must be positive')
-  const statuses = new Map<string, LoopEffectStatus>()
+  const statuses = new Map<string, LoopEffectStatus>(Object.entries(structuredClone(options.effects ?? {})))
   const unavailable = async (): Promise<never> => {
     throw new Error('Controlled ledger operation requires a real Core context')
   }
@@ -59,7 +77,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     return input
   }
   const ctx: LoopContext = options.context ?? {
-    decisions: unavailableDecisions,
+    decisions: options.decisions ?? unavailableDecisions,
     session: { key: 'author-loop-test', lane: 'main', workspaceRoot: '/fixture' },
     sessionKey: 'author-loop-test',
     lane: 'main',
@@ -108,7 +126,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     model: { ...scripted.model, respond: unavailable },
     tools: {
       drain: unavailable,
-      resume: unavailable,
+      resume: options.tools?.resume ?? unavailable,
       async execute(call, signal) {
         const id = call.invocationId ?? 'tool-' + statuses.size
         const previous = statuses.get(id)
@@ -132,7 +150,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     input: {
       accept: () => claim('next-turn'),
       claim,
-      resumeParked: async () => false,
+      resumeParked: async () => options.resumeParked ?? false,
       pending: () => inputs.length > 0,
     },
     events: {
