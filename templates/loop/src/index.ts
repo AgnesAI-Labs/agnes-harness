@@ -23,10 +23,8 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
       if (state.done) return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
       const input = await ctx.input.accept()
       if (!input) return { outcome: 'idle', phase: 'idle' }
-      const messages = [{ role: 'user' as const, content: [...input.content] }]
       const request = await ctx.prepareRequest({
         system: 'Answer the user briefly.',
-        messages,
         tools: [],
         invocationId: 'answer:' + input.id,
       })

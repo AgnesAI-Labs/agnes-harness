@@ -44,8 +44,11 @@ test('refused send retains the export without a receipt and pending recovery nev
   const forged = await runWorkflow(main, {
     checkpoint: waiting.checkpoint,
     stopAtQuestion: true,
-    receiptAvailable: false,
-    input: surfaceAnswerInput(waiting.checkpoint.state.waiting.id, 'Proceed'),
+    input: {
+      ...surfaceAnswerInput(waiting.checkpoint.state.waiting.id, 'Proceed'),
+      origin: 'principal',
+      system: undefined,
+    },
   })
   assert.equal(forged.steps.at(-1).outcome, 'parked')
   assert.equal(forged.checkpoint.state.data.receipt, undefined)

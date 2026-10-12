@@ -7,44 +7,25 @@ import {
   defineTool,
   drainDeferredToolInvocations,
   toolError,
-, readOnlyTool, } from '@agnes/plugin-runtime'
-import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
+  readOnlyTool,
+} from '@agnes/plugin-runtime'
 
-/** Only a backend-linked successful collector receipt can continue a business review. */
-async function submittedAnswers(ctx, input, surfaceId, signal) {
-  if (input.kind !== 'follow_up' || input.trust !== 'untrusted') return undefined
-  const prefix = 'Intelligent UI action result: '
-  const content = input.content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-  if (!content.startsWith(prefix)) return undefined
-  let receipt
-  try {
-    receipt = JSON.parse(content.slice(prefix.length))
-  } catch {
+/** Host authenticates the notification; this Loop only checks its business contract. */
+function submittedAnswers(_ctx, input, surfaceId, _signal) {
+  if (
+    input.origin !== 'system' ||
+    input.system?.source !== 'agnes/intelligent-ui' ||
+    input.system.type !== 'action-result'
+  )
     return undefined
-  }
+  const receipt = input.system.data
   if (
     receipt.status !== 'succeeded' ||
     receipt.surfaceId !== surfaceId ||
-    typeof receipt.invocationId !== 'string'
+    receipt.invocation?.tool !== 'ui_submit'
   )
     return undefined
-  const original = await (await ctx.services?.get(deferredQueueKind))?.read(receipt.invocationId, signal)
-  if (
-    original?.state !== 'succeeded' ||
-    original.resultSeq !== receipt.resultSeq ||
-    original.invocation.source !== 'agnes/intelligent-ui' ||
-    original.invocation.tool !== 'ui_submit' ||
-    original.invocation.sessionKey !== ctx.sessionKey ||
-    original.invocation.lane !== ctx.lane ||
-    original.invocation.actor.id !== input.actor.id ||
-    original.invocation.actor.org !== input.actor.org ||
-    original.invocation.args?.surfaceId !== surfaceId
-  )
-    return undefined
-  const answers = original.invocation.args.answers
+  const answers = receipt.submitted?.answers
   return answers && Object.keys(answers).length === 1 && ['Proceed', 'Cancel'].includes(answers.proceed)
     ? answers
     : undefined

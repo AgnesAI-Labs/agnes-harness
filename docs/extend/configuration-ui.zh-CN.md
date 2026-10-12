@@ -88,7 +88,7 @@ const unregister = settingsSections.register({
 {
   "export": "businessAgent",
   "id": "ext:acme/support",
-  "apiRange": "^1.4.0",
+  "apiRange": "^2.0.0",
   "configReload": "next-session",
   "configSchema": {
     "type": "object",
