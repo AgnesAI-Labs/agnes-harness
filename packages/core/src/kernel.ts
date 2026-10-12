@@ -39,6 +39,7 @@ import type {
 } from '@agnes/extension-api'
 import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
+import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'
 import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
@@ -652,6 +653,7 @@ export class Kernel {
       if (so.toolFilter) bindChildSessionToolFilter(session, so.toolFilter)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)
+      let resumed = false
       const cancelCreation = () => {
         void session.close().catch(() => undefined)
       }
@@ -678,6 +680,7 @@ export class Kernel {
           session.hooks = lifecyclePort(session, sessionHooks, logger)
         }
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
+        resumed = reason === 'resume'
         await session.start()
         this.construction.signal.throwIfAborted()
         if (!(so.skipSessionStartHooks && reason === 'new'))
@@ -700,6 +703,7 @@ export class Kernel {
           await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
       }
       this.sessions.set(key, session)
+      if (resumed) await recoverChildCompletions(session)
       return session
     } catch (error) {
       if (factoryPort) this.factoryHooks.delete(factoryPort)

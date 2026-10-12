@@ -15,6 +15,7 @@ import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agn
 import type { Actor, Provider } from '@agnes/protocol'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
+import { deliverChildCompletion } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { bindChildFactory, childBackend } from './sessions.js'
@@ -669,7 +670,8 @@ export class KernelChildren implements ChildrenFactory {
               : { creditSource: 'unknown' as const }),
           }),
         ])
-        .catch(() => undefined)
+        .catch(() => undefined) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
+      await deliverChildCompletion(parent, record, outcome, { credits }).catch(() => undefined)
     }
     const handle: ChildHandle = {
       key: record.childKey,
@@ -743,6 +745,11 @@ export class KernelChildren implements ChildrenFactory {
               await store.casState(record.childKey, parked.stateRevision, 'ready')
             const status: ChildAgentStatus = result.reason === 'completed' ? 'idle' : 'interrupted'
             this.noteTurn(record.childKey, text, status)
+            if (status === 'idle')
+              await deliverChildCompletion(parent, record, 'completed', {
+                credits: Math.max(0, child.state.creditsUsed),
+                continuable: true,
+              }).catch(() => undefined)
             queueMicrotask(() => this.pump(record.childKey))
             return { text, lastSeq: child.lastSeq }
           }
