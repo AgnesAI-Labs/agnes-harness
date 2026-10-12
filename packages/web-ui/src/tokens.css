@@ -775,6 +775,7 @@
     margin-block: var(--s12) var(--s24);
   }
   .agnes-setup-progress li {
+    flex: 1 1 0;
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -788,8 +789,8 @@
   }
   .agnes-setup-progress li + li::before {
     content: "";
-    flex: 1 1 var(--s16);
-    min-width: var(--s16);
+    flex: 0 0 var(--s12);
+    min-width: var(--s12);
     height: 1px;
     background: var(--agnes-line-emphasis);
     transition: background-color var(--transition);
@@ -816,13 +817,14 @@
       color var(--transition);
   }
   .agnes-setup-progress-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
+    text-wrap: balance;
+    line-height: 1.6;
   }
-  /* The current step always shows its full name; the others give way first. */
+  /* Step names remain readable; narrow screens already keep only the current label. */
   .agnes-setup-progress li[aria-current] {
-    flex: 0 0 auto;
+    flex: 1 1 0;
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-semibold);
   }
@@ -919,6 +921,9 @@
     }
     .agnes-setup-progress li:not([aria-current]) {
       flex: 0 1 auto;
+    }
+    .agnes-setup-progress li[aria-current] {
+      flex: 1 1 auto;
     }
     .agnes-first-run-actions .agh-btn {
       min-height: var(--control-height-touch);

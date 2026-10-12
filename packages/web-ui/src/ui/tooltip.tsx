@@ -15,7 +15,6 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
   return (
     <AntTooltip
       {...props}
-      motion={{ motionName: '' }}
       id={id}
       title={title}
       open={open}

@@ -14,7 +14,6 @@ export function Popover({ content, children, onOpenChange, ...props }: PopoverPr
   return (
     <AntPopover
       {...props}
-      motion={{ motionName: '' }}
       open={open}
       onOpenChange={change}
       content={

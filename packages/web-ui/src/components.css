@@ -991,4 +991,10 @@
     overflow-wrap: anywhere;
     line-height: 1.6;
   }
+  /* Keep Ant's popup lifecycle and nested Escape handling; frequent controls have no visual motion. */
+  :is(.agh-menu-popup, .agnes-ui-popover, .agh-tooltip, .ant-select-dropdown) {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+
 }
