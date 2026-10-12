@@ -51,11 +51,11 @@ beforeAll(async () => {
     effect: (factory: () => () => Promise<void>) => {
       dispose = factory()
     },
-    extension: () => ({
-      registerTool: (registered: Tool) => {
+    tools: {
+      register: (registered: Tool) => {
         tool = registered
       },
-    }),
+    },
   })
   const require = createRequire(join(documentReaderSource, 'package.json'))
   const { PDFiumLibrary } = await import(pathToFileURL(require.resolve('@hyzyla/pdfium')).href)

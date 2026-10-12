@@ -52,7 +52,7 @@ function bundleFixture() {
         {
           exportName: 'plugin',
           rowId: 'ext:' + vendor,
-          body: `agnes.registerTool(tool('fixture_${index}'))
+          body: `ctx.tools.register(tool('fixture_${index}'))
 ${
   index === 0
     ? `ctx.providers.register('loop', 'acme/a', {
@@ -75,11 +75,14 @@ ${
         index === 0 ? { profile: { loop: { provider: 'fixture.business', version: '1.0.0' } } } : {},
     }
     if (index === 0) {
-      manifest.agnes.plugins[0].inject.push('loops')
+      manifest.agnes.plugins[0].inject.push('providers')
       const entry = join(source.snapshot.directory, 'index.js')
       writeFileSync(
         entry,
-        readFileSync(entry, 'utf8').replace("inject: ['tools']", "inject: ['tools', 'providers']"),
+        readFileSync(entry, 'utf8').replace(
+          "inject: ['extension', 'tools']",
+          "inject: ['extension', 'tools', 'providers']",
+        ),
       )
     }
     writeFileSync(file, JSON.stringify(manifest))
@@ -102,7 +105,7 @@ ${
       ...pluginRow('ext:' + vendor, 'plugin', disabled, { vendor }),
       snapshotDigest: `sha256-${'8'.repeat(64)}`,
       exportName: 'plugin',
-      inject: vendor === 'acme/a' ? ['extension', 'loops'] : ['extension'],
+      inject: vendor === 'acme/a' ? ['extension', 'tools', 'providers'] : ['extension', 'tools'],
     })
   return { ids, sources, options, row }
 }

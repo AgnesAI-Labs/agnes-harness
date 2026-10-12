@@ -81,6 +81,7 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
     expect(generationId).not.toBe(session.pluginGenerationId)
     await fresh.close()
     await host.close()
+    const { adapters: _selectedAdapters, ...providerInput } = broadcast.provider
     const cold = await createTestHost({
       dataDir: root,
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
@@ -89,7 +90,7 @@ it('publishes a new catalogue to existing sessions and keeps the old runtime aft
         user: {
           name: next.name,
           provider: {
-            ...broadcast.provider,
+            ...providerInput,
             routes: (broadcast.provider.routes ?? []).filter((row) => row.route !== 'demo'),
           },
           adapters: next.adapters,
