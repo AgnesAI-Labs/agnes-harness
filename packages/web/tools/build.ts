@@ -66,6 +66,11 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       platform: 'browser',
       target: ['es2023'],
       sourcemap: true,
+      // Bundle the offline diagnostics renderer while preserving the shared React imports.
+      alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [root] }) },
+      banner: {
+        js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+      },
       external: platformExternals,
       metafile: true,
     }),

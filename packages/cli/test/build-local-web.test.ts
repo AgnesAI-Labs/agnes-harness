@@ -69,6 +69,14 @@ it('builds local web assets with the shared platform vendor modules', async () =
       const importMap = source.match(/<script type="importmap">([\s\S]*?)<\/script>/)?.[1]
       expect(importMap, `${page} import map`).toBeDefined()
       const imports = (JSON.parse(importMap ?? '{}') as { imports: Record<string, string> }).imports
+      for (const source of [app, ...chunkSources]) {
+        for (const [, specifier] of source.matchAll(
+          /^import\s+(?:\{[^}]*\}|[^;\n]+)\s+from\s+["']([^"']+)["']/gm,
+        )) {
+          if (specifier?.startsWith('.') || specifier?.startsWith('/')) continue
+          expect(imports, `${page} resolves browser import ${specifier}`).toHaveProperty(specifier ?? '')
+        }
+      }
       const linkedAssets = [...source.matchAll(/<(?:link|script)\b[^>]*\b(?:href|src)="(\/[^"#?]+)"/g)]
         .map((match) => match[1])
         .filter((asset): asset is string => asset !== undefined)
