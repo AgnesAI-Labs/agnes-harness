@@ -18,11 +18,13 @@ import {
 } from '../src/index.js'
 
 describe('constants', () => {
-  it('freezes 32 event types', () => {
-    expect(EVENT_TYPES).toHaveLength(32)
-    expect(new Set(EVENT_TYPES).size).toBe(32)
+  it('freezes 30 event types', () => {
+    expect(EVENT_TYPES).toHaveLength(30)
+    expect(new Set(EVENT_TYPES).size).toBe(30)
     // The program counter is a register cell, not a row.
     expect(EVENT_TYPES).not.toContain('op.state')
+    expect(EVENT_TYPES).not.toContain('approval/request')
+    expect(EVENT_TYPES).not.toContain('approval/decision')
     for (const t of [
       'session/start',
       'turn/end',
