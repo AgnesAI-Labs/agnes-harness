@@ -125,7 +125,10 @@ export function checkedPluginFiles(value: unknown): { path: string; content: str
       (!(skinRows.has(row.id) && row.inject === undefined) &&
         (!Array.isArray(row.inject) ||
           !row.inject.length ||
-          row.inject.some((s: unknown) => s !== 'extension' && s !== 'tools' && s !== 'skills')))
+          row.inject.some(
+            (s: unknown) =>
+              typeof s !== 'string' || !['tools', 'skills', 'hooks', 'eventLog', 'self'].includes(s),
+          )))
     )
       return invalid()
   }
