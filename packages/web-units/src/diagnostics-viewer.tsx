@@ -285,5 +285,5 @@ export function renderDiagnosticsViewer(
   const title = renderToStaticMarkup(
     <title>{diagnosticsText('diagnostics.viewer.title', undefined, locale)}</title>,
   )
-  return `<!doctype html>\n<html lang="${locale}"><head><meta charset="utf-8">${title}<style>${STYLE}</style></head><body>${markup}<script type="application/json" id="agh-bundle">${escapeBundleJson(bundle)}</script><script>${RUNTIME_SCRIPT}</script></body></html>`
+  return `<!doctype html>\n<html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${title}<style>${STYLE}</style></head><body>${markup}<script type="application/json" id="agh-bundle">${escapeBundleJson(bundle)}</script><script>${RUNTIME_SCRIPT}</script></body></html>`
 }
