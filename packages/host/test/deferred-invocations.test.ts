@@ -1052,9 +1052,7 @@ it.each(['allowed-once', 'rejected'] as const)(
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          plugins: [
-            { export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools', 'providers'] },
-          ],
+          plugins: [{ export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools', 'providers'] }],
         },
       }),
     )
@@ -1103,8 +1101,13 @@ it.each(['allowed-once', 'rejected'] as const)(
       profileInputs: {
         user: {
           name: 'local-dev',
-          packages: [{ id: packageId, source: `file:${directory}` }],
-          loop: { id: loop.id, version: loop.version },
+          packages: [
+            {
+              id: packageId,
+              source: `file:${directory}`,
+              config: { loop: { provider: loop.id, version: loop.version } },
+            },
+          ],
         },
       },
       runtimePluginSnapshots: [source],
