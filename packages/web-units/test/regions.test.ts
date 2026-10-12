@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode } from '@agnes/protocol'
-import { createElement, createRef } from 'react'
+import { act, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -226,7 +226,7 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
   })
 
-  it('searches everyday and advanced settings, routes merged links and restores search focus', () => {
+  it('searches everyday and advanced settings, routes merged links and restores search focus', async () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
@@ -330,13 +330,14 @@ describe('independent core web-unit implementations', () => {
     host.querySelector<HTMLButtonElement>('#settings-back')?.click()
     expect(form.dataset.settingsView).toBe('list')
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')
-    flushSync(() =>
-      form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true })),
-    )
+    await act(async () => {
+      form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true }))
+    })
     expect(closed).toBe(1)
     expect(terminal).toBe(1)
     expect(new URL(location.href).searchParams.has('settings')).toBe(false)
-    expect(document.querySelector('.agh-toast')?.parentElement).toBe(document.body)
+    expect(document.querySelector('.agh-toast')).not.toBeNull()
+    expect(document.querySelector('.agh-toast-host')?.parentElement).toBe(document.body)
   })
 
   it('renders the appearance controls in English', () => {

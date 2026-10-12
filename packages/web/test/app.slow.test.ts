@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import type { LedgerEvent } from '@agnes/sdk/browser'
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sdk = vi.hoisted(() => ({
@@ -2684,8 +2685,12 @@ describe('session action review regressions', () => {
     await boot({ value: false }, true)
     document.getElementById('sidebar-toggle')?.click()
     expect(document.querySelector('main')?.inert).toBe(true)
-    document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click()
-    menuItem('分叉会话')?.click()
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click()
+    })
+    const fork = menuItem('分叉会话')
+    expect(fork).toBeDefined()
+    fork?.click()
     await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('没有可分叉'))
     expect(document.body.classList.contains('sidebar-open')).toBe(false)
     expect(document.querySelector('main')?.inert).toBe(false)
