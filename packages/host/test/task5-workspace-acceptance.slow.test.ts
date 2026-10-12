@@ -343,7 +343,7 @@ describe('Task 5 production workspace acceptance', () => {
     }
   })
 
-  it('recovers stale child creation attempts during production startup and close', async () => {
+  it('recovers orphan child attempts at startup and preserves another owner on close', async () => {
     const dataDir = tempDir()
     await seedCreatingAttempt(dataDir, 'startup-parent', 'startup-child', 'startup')
 
@@ -373,13 +373,39 @@ describe('Task 5 production workspace acceptance', () => {
       }
 
       await seedCreatingAttempt(dataDir, 'close-parent', 'close-child', 'close')
+      const beforeClose = await readAttempt(dataDir, 'close-child')
+      expect(beforeClose).toMatchObject({ creationPhase: 'creating', state: 'creating' })
       await host.close()
       closed = true
-      expect(await readAttempt(dataDir, 'close-child')).toMatchObject({
-        creationPhase: 'cancelled',
-        cancelledFact: { reason: 'open_failed' },
-        state: 'failed',
-      })
+      // This independent store never attached through this Host's child factory. Closing one
+      // container must not sweep another owner's attempt; the next startup reclaims the orphan.
+      expect(await readAttempt(dataDir, 'close-child')).toEqual(beforeClose)
+      const restarted = await createTestHost({ dataDir, disableSessionTitle: true })
+      try {
+        expect(await readAttempt(dataDir, 'close-child')).toMatchObject({
+          creationPhase: 'cancelled',
+          cancelledFact: { reason: 'open_failed' },
+          state: 'failed',
+        })
+        const storage = createSqliteStorage({
+          file: join(dataDir, 'sessions.db'),
+          tablesDir: join(dataDir, 'tables'),
+        })
+        try {
+          expect(
+            await storage.createDelegatedChild({
+              ...childAttempt('close-parent', 'close-next', 'close'),
+              creationId: 'creation:close-next',
+              workspaceId: 'workspace:close-next',
+              maxFanOut: 1,
+            }),
+          ).toMatchObject({ status: 'created' })
+        } finally {
+          await storage.close()
+        }
+      } finally {
+        await restarted.host.close()
+      }
     } finally {
       if (!closed) await host.close()
     }
