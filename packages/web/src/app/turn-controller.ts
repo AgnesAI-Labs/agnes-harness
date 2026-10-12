@@ -38,6 +38,8 @@ export function createTurnController(
     | 'permissionRefreshPending'
     | 'permissionSelectionSeq'
     | 'projection'
+    | 'readOnly'
+    | 'readOnlyController'
     | 'receipts'
     | 'renderControls'
     | 'renderer'
@@ -70,7 +72,8 @@ export function createTurnController(
     // 会话切换的尾流（旧审批收尾、事件竞态）可能在这时触发渲染，而投影仍属于
     // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
     // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
-    if (!context.current || context.projection.sessionId !== context.current.id) return
+    const viewId = context.current?.id ?? context.readOnly?.id
+    if (!viewId || context.projection.sessionId !== viewId) return
     if (
       typeof context.projection.yolo === 'boolean' &&
       !context.permissionChangePending &&
@@ -114,7 +117,7 @@ export function createTurnController(
       return
     }
     const firstInput = context.windowAtStart ? view.nodes.find((node) => node.kind === 'user') : undefined
-    const selectedId = context.current?.id
+    const selectedId = viewId
     const title = sessionTitle(
       selectedId
         ? (context.sessionTitles.get(selectedId) ??
@@ -131,14 +134,16 @@ export function createTurnController(
       context.sending = false
     }
     if (!view.busy && receipt?.reason && receipt.endSeq > context.stopAfterSeq) context.stopping = false
-    context.topbarRuntime.setStatus(
-      context.stopping
-        ? context.t('app.status.stoppingWait')
-        : context.liveApproval
-          ? context.t('app.status.awaitingApproval')
-          : view.status,
-      context.liveApproval ? 'approval' : view.busy ? 'running' : (receipt?.reason ?? 'idle'),
-    )
+    if (context.readOnly) context.topbarRuntime.setStatus(context.t('app.readOnly.label'), 'idle')
+    else
+      context.topbarRuntime.setStatus(
+        context.stopping
+          ? context.t('app.status.stoppingWait')
+          : context.liveApproval
+            ? context.t('app.status.awaitingApproval')
+            : view.status,
+        context.liveApproval ? 'approval' : view.busy ? 'running' : (receipt?.reason ?? 'idle'),
+      )
     const meta = transcriptMeta()
     context.renderer.render(view.nodes, context.projection.turns, meta)
     renderTrace(view, context.projection.turns, meta)
@@ -285,6 +290,14 @@ export function createTurnController(
     loop?: { id: string; version: string }
     controlFacts?: NonNullable<SessionControlStateResult['facts']>
   } {
+    const readOnly = context.readOnly
+    if (readOnly)
+      return readOnly.hasEarlier
+        ? {
+            hasEarlier: true,
+            loadEarlier: () => void context.readOnlyController.loadEarlier().catch(context.showError),
+          }
+        : { hasEarlier: false }
     const session = context.live
     const loop =
       sessionLoopSelection(context.projection) ??
@@ -330,7 +343,8 @@ export function createTurnController(
   function paintTrace(): void {
     const pending = context.tracePending
     context.tracePending = undefined
-    if (!pending || !context.current || pending.sessionId !== context.current.id) return
+    const viewId = context.current?.id ?? context.readOnly?.id
+    if (!pending || !viewId || pending.sessionId !== viewId) return
     context.tracePaintedAt = Date.now()
     context.tracePanel.render(pending.view.nodes, pending.turns, pending.meta)
   }
@@ -340,8 +354,9 @@ export function createTurnController(
     turns: readonly UITurn[] | undefined,
     meta: ReturnType<typeof transcriptMeta>,
   ): void {
-    if (!context.current) return
-    context.tracePending = { sessionId: context.current.id, view, turns, meta }
+    const viewId = context.current?.id ?? context.readOnly?.id
+    if (!viewId) return
+    context.tracePending = { sessionId: viewId, view, turns, meta }
     const immediate = !view.busy || Date.now() - context.tracePaintedAt >= context.TRACE_THROTTLE_MS
     if (immediate) {
       if (context.traceTrailing !== undefined) clearTimeout(context.traceTrailing)

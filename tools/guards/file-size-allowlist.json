@@ -16,7 +16,7 @@
   "packages/daemon/src/supervisor/runtime.ts": 2786,
   "packages/host-computer-use/src/computer-use/windows-driver-backend.ts": 1599,
   "packages/host-infrastructure/src/configuration.ts": 1479,
-  "packages/host/src/runtime/generation/host.ts": 1337,
+  "packages/host/src/runtime/generation/host.ts": 1302,
   "packages/package-manager/src/manager.ts": 1502,
   "packages/package-manager/src/runtime-snapshots.ts": 810,
   "packages/resource-control-cli/src/resources.ts": 803,
@@ -28,7 +28,7 @@
   "packages/web-admin/src/settings.ts": 1034,
   "packages/web-ui/src/ui/icons.ts": 1305,
   "packages/web-units/src/trace.tsx": 1167,
-  "packages/web/src/app.ts": 2361,
+  "packages/web/src/app.ts": 2379,
   "packages/web/src/model-picker.ts": 832,
   "tools/e2e-web/ui-flows.spec.ts": 1184
 }

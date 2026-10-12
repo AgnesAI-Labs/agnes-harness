@@ -49,6 +49,7 @@ export function createComposerController(
     | 'permissionMode'
     | 'permissionRefreshPending'
     | 'projection'
+    | 'readOnly'
     | 'queueAction'
     | 'recoveryDisabled'
     | 'references'
@@ -184,9 +185,10 @@ export function createComposerController(
       },
       connected: context.connected,
       configured: context.configured,
-      hasSession: context.current !== undefined || context.draftingNew,
-      hint:
-        busy && context.sessionControls?.value.controls.steer !== true
+      hasSession: context.current !== undefined || context.draftingNew || context.readOnly !== undefined,
+      hint: context.readOnly
+        ? { kind: 'state', text: context.t('composer.hint.readOnly') }
+        : busy && context.sessionControls?.value.controls.steer !== true
           ? {
               kind: 'state',
               text: context.t(

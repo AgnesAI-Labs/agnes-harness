@@ -68,7 +68,8 @@ export async function readSessionView(
       generation: 1,
       opState: null,
       nodes: page.nodes,
-      turns: turnsForNodes(full.turns, page.nodes, false),
+      // Forking needs a live parent; a read has none.
+      turns: turnsForNodes(full.turns, page.nodes, false).map((turn) => ({ ...turn, forkable: false })),
       ...(full.usage ? { usage: full.usage } : {}),
     },
     history: { hasEarlier: page.hasEarlier, startIndex: page.startIndex, totalNodes: page.totalNodes },

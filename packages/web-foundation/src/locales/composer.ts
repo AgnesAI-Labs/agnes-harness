@@ -70,6 +70,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.loop.unavailable': 'This Loop is unavailable; choose another',
     'composer.loop.loadFailed': 'Could not load execution methods',
     'composer.hint.disconnected': 'Connect to the backend to start',
+    'composer.hint.readOnly':
+      'This session is read-only here, so you cannot send messages. Start a new session to keep working.',
     'composer.hint.unconfigured': 'Configure a model to start',
     'composer.hint.preparing': 'Preparing…',
     'composer.hint.newTask': 'Ready for a new task',
@@ -184,6 +186,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.loop.unavailable': '此 Loop 已不可用，请重新选择',
     'composer.loop.loadFailed': '无法加载执行方式列表',
     'composer.hint.disconnected': '连接后台后开始',
+    'composer.hint.readOnly': '这个会话在这里只读，无法发送消息。请新开会话继续工作。',
     'composer.hint.unconfigured': '配置模型后开始',
     'composer.hint.preparing': '正在准备…',
     'composer.hint.newTask': '准备新任务',

@@ -53,7 +53,7 @@ macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启
 
 子进程能写入私有启动诊断时，本地 launcher 会在 early-exit 错误中附上真实拒绝原因，例如 `daemon or package mutation lock is held`。启动成功或失败后均清理诊断文件。
 
-在当前版本上无法继续的会话会返回 `E_SESSION_VERSION_NEWER`（升级 AGH）、`E_SESSION_VERSION_OLDER`（新开会话，或由管理员用 `agh sessions migrate <key> <kind> ...` 切换）或 `E_SESSION_CORRUPT`，并给出会话 id 和原始账本位置。此类拒绝不会改动账本和固定记录；见 [Seam](../extend/seams.zh-CN.md)。
+在当前版本上无法继续的会话会返回 `E_SESSION_VERSION_NEWER`（升级 AGH）、`E_SESSION_VERSION_OLDER`（新开会话，或由管理员用 `agh sessions migrate <key> <kind> ...` 切换）或 `E_SESSION_CORRUPT`，并给出会话 id 和原始账本位置。此类拒绝不会改动账本和固定记录；见 [Seam](../extend/seams.zh-CN.md)。Web 界面仍会基于已记录的行以只读方式展示这样的会话（对话、轨迹和交付物），顶部横幅说明原因，输入框被禁用；背后的方法是 `_agnes/v1/session.view`。账本损坏时只显示能安全解码的行，并附上完整性提示。
 
 `E_SEAM_INIT` 会话初始化失败返回 `INTERNAL_ERROR`，其 `data.code` 为稳定的 `E_SEAM_INIT`；若 Provider 注册或初始化失败，则保留具体的 `E_PROVIDER_*` 原因码。daemon 审计记录该码，不记录异常消息或请求参数。缺少 loop 时，检查其精确 id/version 是否已安装、启用，并被会话 bundle 选中。
 

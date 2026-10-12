@@ -1,10 +1,15 @@
 import { tr as t } from '@agnes/web-foundation/locale-bridge'
-import { Button, createExternalStore, useStoreSelector } from '@agnes/web-ui'
+import { Banner, Button, createExternalStore, useDocumentLanguage, useStoreSelector } from '@agnes/web-ui'
 import type { ReconnectPhase } from './reconnect.js'
 
 type RecoveryNotice = { message: string; error: string; disabled: boolean; retry(): void; create(): void }
 type NoticeSnapshot = { text: string; kind: string; recovery?: RecoveryNotice; repair?: () => void }
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
+type ReadOnlyNoticeView = {
+  message: Readonly<{ en: string; 'zh-CN': string }>
+  actions: readonly { id: string; label: string; onSelect(): void }[]
+}
+const readOnlyStore = createExternalStore<ReadOnlyNoticeView | undefined>(undefined)
 const reconnectStore = createExternalStore<{ phase: ReconnectPhase; retry?: () => void }>({ phase: 'idle' })
 
 /** Controllers own notices and their commands; the shell only renders their snapshots. */
@@ -25,6 +30,16 @@ export const appNotice = {
     const snapshot = store.getSnapshot()
     if (snapshot.recovery && snapshot.recovery.disabled !== disabled)
       store.set({ ...snapshot, recovery: { ...snapshot.recovery, disabled } })
+  },
+}
+
+/** A session shown from its record alone: why it cannot continue, and what the person can do. */
+export const appReadOnly = {
+  show(view: ReadOnlyNoticeView) {
+    readOnlyStore.set(view)
+  },
+  clear() {
+    if (readOnlyStore.getSnapshot()) readOnlyStore.set(undefined)
   },
 }
 
@@ -67,6 +82,25 @@ export function AppNotice() {
         </>
       )}
     </p>
+  )
+}
+
+export function ReadOnlyNotice() {
+  const view = useStoreSelector(readOnlyStore, (value) => value)
+  const language = useDocumentLanguage()
+  if (!view) return null
+  return (
+    <Banner
+      tone="warning"
+      data-testid="session-read-only"
+      action={view.actions.map((action) => (
+        <Button key={action.id} data-read-only-action={action.id} onClick={action.onSelect}>
+          {action.label}
+        </Button>
+      ))}
+    >
+      <strong>{t('app.readOnly.label')}</strong> {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
+    </Banner>
   )
 }
 

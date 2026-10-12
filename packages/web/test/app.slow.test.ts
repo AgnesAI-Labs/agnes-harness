@@ -3161,3 +3161,116 @@ it.skipIf(!process.env.AGH_WEB_PERFORMANCE_OUTPUT).each([1, 2, 3])(
     }
   },
 )
+
+describe('session that cannot continue on this build', () => {
+  const refusals = [
+    {
+      issue: 'newer',
+      code: 'E_SESSION_VERSION_NEWER',
+      actions: ['upgrade'],
+      text: '你的这个会话由更新版本的 AGH 写入，请升级。',
+      buttons: ['升级后重新打开'],
+    },
+    {
+      issue: 'older',
+      code: 'E_SESSION_VERSION_OLDER',
+      // The administrator switch is a per-kind CLI operation; the page never offers it.
+      actions: ['new-session', 'repin'],
+      text: '你的这个会话是用较旧版本创建的，已不可用。',
+      buttons: ['新开会话'],
+    },
+    {
+      issue: 'corrupt',
+      code: 'E_SESSION_CORRUPT',
+      actions: ['new-session'],
+      text: '你的这个会话记录没有通过完整性检查。',
+      buttons: ['新开会话'],
+    },
+  ] as const
+
+  it.each(refusals)(
+    'keeps a %s session readable with a banner and a disabled composer',
+    async ({ code, actions, text, buttons, issue }) => {
+      installPublicFixture()
+      const error = Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+        data: { code, issue, actions, localized: { en: 'English text.', 'zh-CN': text } },
+      })
+      const view = vi.fn(async (id: string) => ({
+        sessionId: id,
+        readOnly: true as const,
+        lastSeq: 2,
+        timeline: {
+          ...idleTimeline(id),
+          upto: 2,
+          nodes: [
+            {
+              kind: 'user' as const,
+              id: 'u1',
+              seq: 1,
+              content: [{ type: 'text' as const, text: '历史问题' }],
+            },
+          ],
+        },
+        history: { hasEarlier: false, startIndex: 0, totalNodes: 1 },
+      }))
+      sdk.createClient.mockReturnValue({
+        apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+        close: vi.fn(async () => undefined),
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn(),
+        config: {
+          get: vi.fn(async () => ({ configured: true })),
+          providers: vi.fn(async () => ({ providers: [] })),
+        },
+        workspace: { list: vi.fn(async () => ({ items: [] })) },
+        session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })), view },
+      })
+      binding.loadWebSession.mockRejectedValue(error)
+      await import('../src/app.js')
+      const banner = await vi.waitFor(() => {
+        const found = document.querySelector<HTMLElement>('[data-testid="session-read-only"]')
+        expect(found).toBeTruthy()
+        return found as HTMLElement
+      })
+      expect(view).toHaveBeenCalledWith('old', expect.objectContaining({ maxNodes: expect.any(Number) }))
+      expect(banner.textContent).toContain('只读')
+      expect(banner.textContent).toContain(text)
+      expect([...banner.querySelectorAll('button')].map((button) => button.textContent)).toEqual(buttons)
+      // The conversation is rendered from the record, and nothing can be sent into it.
+      expect(document.getElementById('transcript')?.textContent).toContain('历史问题')
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+      expect(document.body.textContent).toContain('这个会话在这里只读')
+      // The ordinary recovery card is not shown on top of the readable record.
+      expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    },
+  )
+
+  it('falls back to the ordinary recovery when the record itself cannot be read', async () => {
+    installPublicFixture()
+    const error = Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+      data: { code: 'E_SESSION_CORRUPT', actions: ['new-session'] },
+    })
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      close: vi.fn(async () => undefined),
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })),
+        view: vi.fn(async () => {
+          throw new Error('denied')
+        }),
+      },
+    })
+    binding.loadWebSession.mockRejectedValue(error)
+    await import('../src/app.js')
+    const notice = document.getElementById('notice') as HTMLElement
+    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+    expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
+  })
+})

@@ -1,8 +1,8 @@
 import type { Event } from '@agnes/core'
+import { HostError } from '@agnes/host-common/errors'
 import { validateAgainst } from '@agnes/protocol'
 import { SessionViewResult } from '@agnes/protocol/gen/agnes-v1'
 import { expect, it } from 'vitest'
-import { HostError } from '@agnes/host-common/errors'
 import { readSessionView, type SessionRowsReader } from '../../src/runtime/sessions/session-view.js'
 
 function rows(count: number): Event[] {
@@ -42,6 +42,8 @@ it('projects a whole ledger read-only and never reports a running operation', as
   expect(view).toMatchObject({ sessionId: 'quiet', readOnly: true, lastSeq: 9 })
   expect(view.notice).toBeUndefined()
   expect(view.timeline.opState).toBeNull()
+  expect(view.timeline.turns.length).toBeGreaterThan(0)
+  expect(view.timeline.turns.every((turn) => !turn.forkable)).toBe(true)
   expect(view.timeline.nodes.filter((node) => node.kind === 'user')).toHaveLength(3)
   expect(validateAgainst(SessionViewResult, view).ok).toBe(true)
 })
@@ -55,15 +57,18 @@ it('windows long histories and says there is earlier history', async () => {
 it.each([
   ['E_FORMAT_NEWER', 'newer', 'E_SESSION_VERSION_NEWER', ['upgrade']],
   ['E_FORMAT_OLDER', 'older', 'E_SESSION_VERSION_OLDER', ['new-session']],
-] as const)('a %s ledger still reads what decodes and says why with a localized notice', async (code, issue, notice, actions) => {
-  const view = await readSessionView(readerOf(rows(6), { seq: 4, code }), 's-1')
-  expect(view.notice).toMatchObject({ code: notice, issue, actions })
-  expect(view.notice?.localized['zh-CN']).toContain('你')
-  expect(view.notice?.localized.en).toContain('s-1')
-  // A page that cannot be decoded is dropped whole; nothing after it is guessed.
-  expect(view.lastSeq).toBe(0)
-  expect(validateAgainst(SessionViewResult, view).ok).toBe(true)
-})
+] as const)(
+  'a %s ledger still reads what decodes and says why with a localized notice',
+  async (code, issue, notice, actions) => {
+    const view = await readSessionView(readerOf(rows(6), { seq: 4, code }), 's-1')
+    expect(view.notice).toMatchObject({ code: notice, issue, actions })
+    expect(view.notice?.localized['zh-CN']).toContain('你')
+    expect(view.notice?.localized.en).toContain('s-1')
+    // A page that cannot be decoded is dropped whole; nothing after it is guessed.
+    expect(view.lastSeq).toBe(0)
+    expect(validateAgainst(SessionViewResult, view).ok).toBe(true)
+  },
+)
 
 it('keeps the rows before a corrupt page and reports corruption', async () => {
   const all = rows(1200)

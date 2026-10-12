@@ -6,6 +6,7 @@ import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
 import { settingsRoute } from '@agnes/web-units'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
+import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
@@ -203,6 +204,8 @@ export interface AppSessionContext {
   updateTitle: typeof updateTitle
   windowAtStart: typeof windowAtStart
   workspaceRows: typeof workspaceRows
+  readOnly: typeof readOnly
+  readOnlyController: typeof readOnlyController
 }
 const appSessionContext: AppSessionContext = {
   get SESSION_WATCH_STOP_TIMEOUT_MS() {
@@ -661,6 +664,15 @@ const appSessionContext: AppSessionContext = {
   get updateTitle() {
     return updateTitle
   },
+  get readOnly() {
+    return readOnly
+  },
+  set readOnly(value: typeof readOnly) {
+    readOnly = value
+  },
+  get readOnlyController() {
+    return readOnlyController
+  },
   get windowAtStart() {
     return windowAtStart
   },
@@ -679,6 +691,10 @@ const composerController = createComposerController(appSessionContext)
 const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext)
 const turnController = createTurnController(appSessionContext)
+const readOnlyController = createReadOnlyController(appSessionContext, {
+  open: (id) => open(id),
+  beginNewDraft: () => beginNewDraft(),
+})
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
@@ -1054,6 +1070,8 @@ let listGeneration = 0
 let live: LiveProjection | undefined
 // The window's first node is the session's first, so its first user message titles the task.
 let windowAtStart = true
+// A session that cannot continue on this build, shown from its record alone.
+let readOnly: { id: string; maxNodes: number; hasEarlier: boolean } | undefined
 let approvalSearch: 'idle' | 'searching' | 'not-found' = 'idle'
 let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
@@ -1195,7 +1213,7 @@ function updateSidebar(): void {
     workspaces: workspaceRows,
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
-    ...(current ? { currentId: current.id } : {}),
+    ...(current ? { currentId: current.id } : readOnly ? { currentId: readOnly.id } : {}),
     ...(sessionNext ? { next: sessionNext } : {}),
     sessionPending,
     newDisabled: !connected || sending || sessionPending || newSessionCreating,
@@ -1369,6 +1387,7 @@ function renderSessionRecovery(message = ''): void {
   })
 }
 function clearSessionRecovery(): void {
+  readOnlyController.clear()
   if (!sessionRecovery) return
   sessionRecovery = undefined
   notice.setText('')

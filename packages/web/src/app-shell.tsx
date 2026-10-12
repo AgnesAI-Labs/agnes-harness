@@ -2,7 +2,7 @@ import { tr as t } from '@agnes/web-foundation/locale-bridge'
 import { Button, mountApplication, RegionErrorBoundary, useDocumentLanguage } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
-import { AppNotice, ReconnectNotice } from './app-notices.js'
+import { AppNotice, ReadOnlyNotice, ReconnectNotice } from './app-notices.js'
 import { SessionViews } from './regions/session-views.js'
 
 /** React owns the page structure; controller views and plugin outlets are children via portals. */
@@ -31,6 +31,9 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
         <RegionErrorBoundary region="notice">
           <AppNotice />
+        </RegionErrorBoundary>
+        <RegionErrorBoundary region="read-only">
+          <ReadOnlyNotice />
         </RegionErrorBoundary>
         <RegionErrorBoundary region="reconnect">
           <ReconnectNotice />

@@ -60,6 +60,7 @@ export function createSessionController(
     | 't'
     | 'titleRefresh'
     | 'transcriptMeta'
+    | 'readOnlyController'
     | 'windowAtStart'
     | 'workspaceRows'
   >,
@@ -264,6 +265,7 @@ export function createSessionController(
     } catch (error) {
       if (epoch !== context.selection) return
       if (!selectionReady) {
+        context.readOnlyController.clear()
         const failed = context.current
         context.current = undefined
         context.moduleSessionId = undefined
@@ -294,6 +296,9 @@ export function createSessionController(
           context.initialModelPending = undefined
         }
         context.sessionPending = false
+        // A session that cannot continue here stays readable from its record.
+        if (!options.created && !options.preserveSending && (await context.readOnlyController.show(id, error, epoch)))
+          return
         context.render()
         if (!options.created && !options.preserveSending) {
           context.showSessionRecovery(error, id)
