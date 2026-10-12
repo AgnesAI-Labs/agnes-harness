@@ -78,9 +78,6 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
       // have no parked continuation here; absence of a human is never an answer.
       return { verdict: 'unavailable', reason: 'no-approver' }
     },
-    async resume() {
-      throw new Error('DECISION_CONTINUATION_BLOCKED: this seam has no legacy approval continuation')
-    },
   })
   return Object.assign(bind(ctx.profile.workspaceRoot), {
     forWorkspace: (workspace: Readonly<{ root: string }>) => bind(workspace.root),

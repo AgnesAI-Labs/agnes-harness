@@ -186,7 +186,6 @@ it.each([
           receipts.set(ticket, { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt })
           return { ticket, expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const planned = toolTurn('shell', {})
@@ -478,7 +477,7 @@ it.each(['steps', 'credits'] as const)('enforces Core %s admission for the low-l
     {},
     {
       preset,
-      seams: fakeSeams({ ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) } }),
+      seams: fakeSeams({ billing: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) } }),
     },
   )
   const session = await f.k.session('budget', { ...options, loop: f.loop })

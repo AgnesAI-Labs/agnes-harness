@@ -379,7 +379,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
     ).rejects.toBeInstanceOf(CoreError)
     const init = fakeSeamInit({ dataDir: dir, workspaceRoot: dir })
     init.adapters = toSeamAdapters(bundle, { owner: '@agnes/base' })
-    const ledger = await seams.ledger(init)
+    const ledger = await seams.billing(init)
     const cost = {
       sessionKey: 's',
       lane: 'main',
@@ -398,17 +398,6 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
       credits: 5,
       creditSource: 'estimated',
     })
-    const harness = await seams.harness(init)
-    expect(
-      await harness.propose({
-        proposalId: 'proposal',
-        trigger: 'auto',
-        edits: [{ op: 'delete', kind: 'memory', id: 'old' }],
-        baseline: [],
-        rationale: 'test',
-        evidenceSeqs: [],
-      }),
-    ).toBe('queued')
     const hub = mcpCatalogHubFor(init)
     hub.upsert('server', [{ name: 'lookup', description: '查找订单', schema: '{}' }])
     expect(hub.search('查找', 10)).toEqual([{ name: 'lookup', score: 1 }])

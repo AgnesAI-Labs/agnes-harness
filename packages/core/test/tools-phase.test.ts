@@ -371,7 +371,7 @@ describe('tools phase', () => {
       [toolTurn('shell', { command: 'rm' })],
       withTool(shellTool()),
       fakeSeams({
-        approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }), resume: async () => null },
+        approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }) },
       }),
     )
     await no.session.runToolsPhase()
@@ -409,7 +409,6 @@ describe('tools phase', () => {
             queueMicrotask(abort)
             return new Promise(() => undefined)
           },
-          resume: async () => null,
         },
       }),
     )
@@ -430,7 +429,6 @@ describe('tools phase', () => {
           seenRequest = req
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
@@ -460,7 +458,6 @@ describe('tools phase', () => {
           asks++
           return { verdict: 'allowed-session', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools(
@@ -491,7 +488,6 @@ describe('tools phase', () => {
           asks++
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
@@ -531,7 +527,6 @@ describe('tools phase', () => {
             asks++
             return { verdict: 'allowed-once', answeredBy: actor }
           },
-          resume: async () => null,
         },
       }),
     )
@@ -562,7 +557,6 @@ describe('tools phase', () => {
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )
@@ -1019,7 +1013,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
 
@@ -1064,7 +1057,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
 
@@ -1137,7 +1129,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
 
@@ -1163,7 +1154,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
           asks.push(req.tool?.name ?? '')
           return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
@@ -1209,7 +1199,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )
@@ -1253,7 +1242,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       seams: fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     })
@@ -1306,7 +1294,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )

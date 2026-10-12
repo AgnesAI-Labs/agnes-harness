@@ -85,9 +85,6 @@ const NO_WORKSPACE_FS: FsOps = Object.freeze({
   list: unavailableFs,
   stat: unavailableFs,
 })
-/** Conservative fixed reservation until the guardian seam publishes a countable request body. */
-const GUARDIAN_RESERVATION_TOKENS = 1024
-
 /** The harness itself, named as the canceller when a call is cut short by its own deadline. */
 const timeoutActor = (a: Actor): Actor => ({
   id: 'timeout',
@@ -598,17 +595,6 @@ export async function approveAndExecute(
       for (const check of grantChecks) await check()
       toolDecisionSource(s, call).alive()
     }
-    const guardianFailed = (
-      await scanAll((q) => s.d.log.scan(q), {
-        fromSeq: call.argsSeq,
-        toSeq: s.lastSeq,
-        type: 'x/core/approval-guardian-failed',
-        lane: s.lane,
-      })
-    ).some((row) => {
-      const failedTool = (row.data as { toolUseId?: unknown } | null)?.toolUseId
-      return failedTool === undefined || failedTool === call.toolUseId
-    })
     for (const scope of needsAsk ? scopes : []) {
       const bindingHash = approvalBindingHash({
         sessionKey: s.key,
@@ -691,9 +677,7 @@ export async function approveAndExecute(
       if (
         humanOnly &&
         recorded &&
-        (recorded.via === 'guardian' ||
-          recorded.verdict === 'allowed-session' ||
-          recorded.verdict === 'allowed-permanent')
+        (recorded.verdict === 'allowed-session' || recorded.verdict === 'allowed-permanent')
       )
         return {
           result: await refuse(
@@ -824,51 +808,7 @@ export async function approveAndExecute(
         recheckGrant()
         continue
       }
-      const priorGuardian = (
-        await scanAll((q) => s.d.log.scan(q), {
-          fromSeq: call.argsSeq,
-          toSeq: s.lastSeq,
-          type: 'approval/guardian-decided',
-          lane: s.lane,
-        })
-      ).find((row) => {
-        const data = row.data as {
-          toolUseId?: unknown
-          scope?: unknown
-          bindingHash?: unknown
-          policyHash?: unknown
-        } | null
-        return (
-          row.origin === 'system' &&
-          row.trust === 'trusted' &&
-          row.actor.id === s.d.actor.id &&
-          row.actor.org === s.d.actor.org &&
-          data?.toolUseId === call.toolUseId &&
-          data.scope === scope &&
-          data.bindingHash === bindingHash &&
-          data.policyHash === call.policyHash
-        )
-      })
-      const priorGuardianData = priorGuardian?.data as
-        | { requestId: string; decision: 'allow-once' | 'allow-session' | 'escalate' | 'reject' }
-        | undefined
-      // A guardian fact with a changed binding cannot authorize this call or be replayed.
-      if (
-        priorGuardianData &&
-        (priorGuardianData.decision === 'allow-once' ||
-          priorGuardianData.decision === 'allow-session' ||
-          priorGuardianData.decision === 'reject')
-      )
-        return {
-          result: await refuse(
-            s,
-            call.toolUseId,
-            'APPROVAL_STATE_INVALID',
-            'guardian decision binding is invalid',
-            decisionId,
-          ),
-        }
-      let requestId = priorGuardianData?.requestId ?? s.d.ids.requestId()
+      let requestId = s.d.ids.requestId()
       const options = [
         'allowed-once' as const,
         ...(!humanOnly ? (['allowed-session'] as const) : []),
@@ -929,128 +869,6 @@ export async function approveAndExecute(
         policyBinding,
         options: [...options],
         ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
-      }
-      if (
-        !humanOnly &&
-        approvalMode === 'smart' &&
-        !permission.review &&
-        !guardianFailed &&
-        !priorGuardianData
-      ) {
-        const guardianModel = resolveModel(s, 'primary').model
-        const projected = await s.d.runtime.ledgerProjected({
-          tokensEstimate: GUARDIAN_RESERVATION_TOKENS,
-          model: guardianModel,
-        })
-        const cap = s.turnBudgetCap()
-        const budgetApproved =
-          Number.isFinite(projected.credits) && (cap === null || projected.credits <= cap)
-        const guardian = s.effects.start({
-          kind: 'approval-guardian',
-          tool: { toolUseId: call.toolUseId, name: call.name },
-          replay: 'never',
-          argsSeq: call.argsSeq,
-        })
-        await s.transition([guardian.intent], s.op() as OpStateObj)
-        let guarded = budgetApproved
-          ? await s.d.runtime.approvalGuard(approvalRequest, o.signal ?? s.ac.signal)
-          : {
-              decision: 'escalate' as const,
-              ruleVersion: 'budget-v1',
-              reasons: ['guardian reservation exceeds the active budget'],
-            }
-        const costEvents: EventInput[] = []
-        if (budgetApproved && guarded.ruleVersion !== 'missing') {
-          const spend = {
-            purpose: 'approval-guardian' as const,
-            effectId: guardian.effectId,
-            tokens: {
-              input: GUARDIAN_RESERVATION_TOKENS,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-            credits: projected.credits,
-            creditSource: projected.creditSource,
-            model: guardianModel,
-          }
-          const recorded = await s.d.runtime.ledgerRecord({
-            ...spend,
-            sessionKey: s.key,
-            lane: s.lane,
-            turn: op.meta.turn,
-            step: op.step,
-          })
-          costEvents.push(s.ev('cost/ledger', spend))
-          if (!recorded) {
-            if (s.turn) s.turn.ledgerFailed = true
-            guarded = {
-              decision: 'escalate',
-              ruleVersion: 'failed',
-              reasons: ['guardian cost ledger unavailable'],
-            }
-          }
-        }
-        const guardianVerdict =
-          guarded.decision === 'allow-session'
-            ? ('allowed-session' as const)
-            : guarded.decision === 'allow-once'
-              ? ('allowed-once' as const)
-              : guarded.decision === 'reject'
-                ? ('rejected' as const)
-                : undefined
-        await s.transition(
-          [
-            s.ev('approval/guardian-decided', {
-              requestId,
-              effectId: guardian.effectId,
-              toolUseId: call.toolUseId,
-              scope,
-              bindingHash,
-              policyHash: call.policyHash,
-              definitionFingerprint: call.definitionFingerprint,
-              policyVersion: finalAsked.policyVersion ?? '',
-              policyBinding: finalAsked.policyBinding ?? '',
-              decision: guarded.decision,
-              ruleVersion: guarded.ruleVersion,
-              reasons: guarded.reasons,
-              ...(guarded.model ? { model: guarded.model } : {}),
-              budget: {
-                tokensReserved: GUARDIAN_RESERVATION_TOKENS,
-                credits: Number.isFinite(projected.credits) ? projected.credits : Number.MAX_VALUE,
-                creditSource: projected.creditSource,
-                cap,
-                approved: budgetApproved,
-              },
-            }),
-            guardian.settle(
-              guarded.ruleVersion === 'failed' || guarded.ruleVersion === 'missing' || !budgetApproved
-                ? 'error'
-                : 'ok',
-            ),
-            ...costEvents,
-          ],
-          (cur) =>
-            updateCall(cur, call.toolUseId, {
-              // Keep the call recoverable until either refusal writes its result or execution
-              // crosses its own effect intent. A crash after the decision reconsumes the ledger.
-              status: 'planned',
-            }),
-        )
-        if (guardianVerdict === 'allowed-once' || guardianVerdict === 'allowed-session') {
-          if (guardianVerdict === 'allowed-session') s.sessionAllows.add(grantKey)
-          continue
-        }
-        if (guardianVerdict === 'rejected')
-          return {
-            result: await refuse(
-              s,
-              call.toolUseId,
-              'APPROVAL_REJECTED',
-              'smart guardian rejected the call',
-              decisionId,
-            ),
-          }
       }
       // Command rules are policy authority. They cannot manufacture a human answer.
       const existing = [...s.state.registers.decisionStates.values()].some(

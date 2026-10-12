@@ -122,7 +122,7 @@ export async function countCalibration(
   const projected =
     cap === null
       ? undefined
-      : await s.d.runtime.ledgerProjected({ tokensEstimate: resolved.tokens, model: wire.model })
+      : await s.d.runtime.billingProjected({ tokensEstimate: resolved.tokens, model: wire.model })
   if (cap !== null && projected && projected.credits > cap)
     return {
       event,

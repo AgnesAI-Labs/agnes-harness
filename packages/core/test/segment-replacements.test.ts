@@ -184,7 +184,7 @@ describe('typed core segment replacements', () => {
       registry,
       operations,
       segments: segments(operations),
-      seams: fakeSeams({ approval: { ask: async () => 'rejected', resume: async () => null } }),
+      seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
     })
     await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'start' }] })
     await opened.session.acceptInput()

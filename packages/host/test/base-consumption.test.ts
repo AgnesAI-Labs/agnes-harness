@@ -100,9 +100,8 @@ describe('@agnes/base consumption contract against the real host adapters', () =
     expect(declared).toEqual([
       'approval',
       'artifacts',
+      'billing',
       'checkpoint',
-      'harness',
-      'ledger',
       'principals',
       'repair',
       'sandbox',

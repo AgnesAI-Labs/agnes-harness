@@ -243,7 +243,6 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
           receipts.set('golden-ticket', { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket: 'golden-ticket', expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const h = await open({

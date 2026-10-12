@@ -53,7 +53,7 @@ MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射�
 | 写操作无幂等保证 | `replay: never`，`requiresApproval: always` |
 | 显式非破坏性且幂等的写操作 | `replay: idempotent`；仍受其他部署策略约束 |
 
-缺失的写操作注解保守处理。幂等性不会预批准破坏性动作。默认策略在正常 manual/smart 模式消费这些元数据；显式 full-access 或 approval-off 配置保留既有语义。设备 bundle 的策略在这些设置下也会对每次写操作询问。桥不会从提示推断安全限额，也不保证远端真实幂等。
+缺失的写操作注解保守处理。幂等性不会预批准破坏性动作。默认策略在正常 manual 模式消费这些元数据；显式 full-access 或 approval-off 配置保留既有语义。设备 bundle 的策略在这些设置下也会对每次写操作询问。桥不会从提示推断安全限额，也不保证远端真实幂等。
 
 可安装的 [device-inspection bundle](../../examples/fde/device-inspection/README.zh-CN.md) 包含公开端口 loop、工具、确认策略、Skill 与本地 stdio MCP 模拟器。它默认 `dry_run: true`，只接受受限降温目标与状态版本前置条件，拒绝冲突幂等键，动作后读取回执与状态。dry-run 回执只证明预演，不证明温度变化。回执仅存于模拟器进程中。结果未知或副作用中断时停止并要求检查，不自动重放。
 

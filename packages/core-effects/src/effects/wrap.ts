@@ -9,14 +9,13 @@ import { platformView } from './platform-facts.js'
 import type {
   ApprovalAnswer,
   ApprovalGrantQuery,
-  ApprovalGuardianDecision,
   ApprovalRequest,
   ApprovalSeam,
+  BillingRow,
   CheckpointSeam,
   Decision,
   Enforcement,
   JobSpec,
-  LedgerRow,
   Pending,
   PlatformSeam,
   RepairSeam,
@@ -236,39 +235,6 @@ export class SeamRuntime {
     }
   }
 
-  async approvalGuard(req: ApprovalRequest, signal: AbortSignal): Promise<ApprovalGuardianDecision> {
-    try {
-      const value = await withTimeout(
-        this.withApproval<ApprovalGuardianDecision | undefined>((approval) => {
-          const guard = approval.guard
-          return guard ? guard.call(approval, req) : Promise.resolve(undefined)
-        }),
-        this.preset.approval.timeoutMs,
-        'approval.guard',
-        signal,
-        this.o.timers,
-      )
-      if (value === undefined)
-        return { decision: 'escalate', ruleVersion: 'missing', reasons: ['guardian unavailable'] }
-      if (
-        !value ||
-        !['allow-once', 'allow-session', 'escalate', 'reject'].includes(value.decision) ||
-        typeof value.ruleVersion !== 'string' ||
-        value.ruleVersion.length === 0 ||
-        value.ruleVersion.length > 64 ||
-        !Array.isArray(value.reasons) ||
-        value.reasons.length > 32 ||
-        !value.reasons.every((reason) => typeof reason === 'string' && reason.length <= 512) ||
-        (value.model !== undefined && (typeof value.model !== 'string' || value.model.length > 128))
-      )
-        throw new TypeError('invalid guardian decision')
-      return value
-    } catch (err) {
-      this.fail('approval', 'guard', err)
-      return { decision: 'escalate', ruleVersion: 'failed', reasons: ['guardian unavailable'] }
-    }
-  }
-
   async approvalGrants(query: ApprovalGrantQuery, signal: AbortSignal) {
     try {
       const grants = await withTimeout(
@@ -286,16 +252,6 @@ export class SeamRuntime {
       this.fail('approval', 'listGrants', err)
       return []
     }
-  }
-
-  approvalResume(ticket: string, verdict: Verdict, signal?: AbortSignal) {
-    return withTimeout(
-      this.withApproval((approval) => approval.resume(ticket, verdict)),
-      this.preset.approval.timeoutMs,
-      'approval.resume',
-      signal,
-      this.o.timers,
-    )
   }
 
   async approvalPutGrant(
@@ -339,24 +295,24 @@ export class SeamRuntime {
     }
   }
 
-  async ledgerRecord(row: LedgerRow): Promise<boolean> {
+  async billingRecord(row: BillingRow): Promise<boolean> {
     try {
-      await this.#seams.ledger.record(row)
+      await this.#seams.billing.record(row)
       return true
     } catch (err) {
-      this.fail('ledger', 'record', err)
+      this.fail('billing', 'record', err)
       return false
     }
   }
 
-  async ledgerProjected(next: {
+  async billingProjected(next: {
     tokensEstimate: number
     model: string
   }): Promise<{ credits: number; creditSource: 'gateway' | 'estimated' }> {
     try {
-      return await this.#seams.ledger.projected(next)
+      return await this.#seams.billing.projected(next)
     } catch (err) {
-      this.fail('ledger', 'projected', err)
+      this.fail('billing', 'projected', err)
       // Spending nothing is not the safe reading of "we cannot tell what this costs": a projection
       // over every cap is, so the preflight treats an unreachable ledger as over budget.
       return { credits: Number.POSITIVE_INFINITY, creditSource: 'estimated' }

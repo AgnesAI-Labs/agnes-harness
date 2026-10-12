@@ -78,7 +78,7 @@ export type HarnessEntryTombstone = { kind: HarnessEntry['kind']; id: string; to
 export type EffectIntent = {
   effectId: string
   parentEffectId?: string
-  kind: 'inference' | 'tool' | 'compaction' | 'job' | 'approval-guardian' | 'media'
+  kind: 'inference' | 'tool' | 'compaction' | 'job' | 'media'
   tool?: { toolUseId: string; name: string }
   replay: 'safe' | 'never' | 'idempotent'
   argsSeq?: Seq

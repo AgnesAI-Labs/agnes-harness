@@ -2,6 +2,25 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 2.1.0
+
+### Removed
+
+- `ToolPolicyInput.approvalMode` no longer includes `'smart'`. The mode never had a
+  working reviewer behind it (it behaved as `manual`); a profile that still writes
+  `approvals.mode: smart` is now a configuration error that points to `auto-review`.
+  Protocol `ApprovalMode`, `ApprovalProfile` and `ProfileFragment` follow, and the
+  `approval/guardian-decided` ledger event with its `ApprovalGuardianDecision` type is gone.
+- The approval seam's `guard` and `resume` methods and the guardian effect kind. The seam
+  keeps `ask`, the command table and the grant methods.
+
+### Changed
+
+- The cost seam is renamed `billing` (`BillingSeam`, `BillingRow`, `seams.billing`, runtime
+  methods `billingRecord` / `billingProjected`). `seams.ledger` is not accepted.
+- `harness` is no longer a seam: profiles do not select it and the kernel does not require it.
+  The refine extension keeps its own queue-backed intake.
+
 ## 2.0.0
 
 ### Removed

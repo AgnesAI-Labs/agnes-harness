@@ -186,8 +186,8 @@ describe('run loop', () => {
   it('budget quote: a rejected quote ends with budget; the deny policy ends without asking', async () => {
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 1 } }
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
-      approval: { ask: async () => 'rejected', resume: async () => null },
+      billing: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
+      approval: { ask: async () => 'rejected' },
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
@@ -213,14 +213,16 @@ describe('run loop', () => {
 
   it('a quote under the cap does not ask, and an allowed quote lets the turn proceed', async () => {
     const under = fakeSeams({
-      ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
     })
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 5 } }
     const a = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: under })
     await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await a.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
     expect(await a.log.scan({ type: 'decision/state', limit: 5 })).toHaveLength(0)
-    const over = fakeSeams({ ledger: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) } })
+    const over = fakeSeams({
+      billing: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
+    })
     const b = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: over })
     await b.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await b.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
@@ -235,7 +237,7 @@ describe('run loop', () => {
       budget: { ...presetDefaults().budget, perRequestCap: 5, onExceed: 'deny' as const },
     }
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
     })
     const storage = new MemoryStorage()
     const first = await openSession({
@@ -299,7 +301,7 @@ describe('run loop', () => {
       const provider = fakeProvider([textTurn('answer')])
       const priced: string[] = []
       const seams = fakeSeams({
-        ledger: {
+        billing: {
           projected: async ({ model: id }) => {
             priced.push(id)
             return { credits: id === (model ?? 'default') ? credits : 100, creditSource: 'estimated' }
@@ -326,7 +328,7 @@ describe('run loop', () => {
     Object.assign(provider, { models: () => [modelRecord('default', 'cheap')] })
     const priced: string[] = []
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ model: id }) => {
           priced.push(id)
           return { credits: id === 'cheap' ? 1 : 100, creditSource: 'estimated' }
@@ -347,7 +349,7 @@ describe('run loop', () => {
       budget: { ...presetDefaults().budget, perRequestCap: 1_000_000, onExceed: 'deny' as const },
     }
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async () => {
           throw new Error('gateway down')
         },
@@ -385,7 +387,6 @@ describe('run loop', () => {
       repair: { decide: async () => 'park' },
       approval: {
         ask: async () => ({ ticket: 'T', expiresAt: '2026-09-08T00:00:00Z' }),
-        resume: async () => null,
       },
     })
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams: parkSeams })
@@ -403,7 +404,7 @@ describe('run loop', () => {
           scope === 'turn' ? { verdict: 'fail', reasons: ['x'] } : { verdict: 'pass', reasons: [] },
       },
       repair: { decide: async () => 'park' },
-      approval: { ask: async () => 'unavailable', resume: async () => null },
+      approval: { ask: async () => 'unavailable' },
     })
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
@@ -646,7 +647,7 @@ describe('turn-end reasons (fix round 1)', () => {
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 1 } }
     const ac = new AbortController()
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
       approval: {
         // The interrupt reaches the seam, which fails closed to a refusal — the same answer a real
         // rejection gives, which is why the reason has to come from somewhere else.
@@ -654,7 +655,6 @@ describe('turn-end reasons (fix round 1)', () => {
           ac.abort()
           return 'rejected'
         },
-        resume: async () => null,
       },
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams })

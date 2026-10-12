@@ -42,9 +42,9 @@ describe('v3 approval protocol', () => {
     expect(fromAcpOptionKind('allow_always')).toBe('allowed-session')
   })
 
-  it('allows fragments to select manual/smart but never to escalate themselves to off', () => {
+  it('allows fragments to select manual but never to escalate themselves to off', () => {
     expect(validateProfileFragment({ approvals: { mode: 'manual' } }).ok).toBe(true)
-    expect(validateProfileFragment({ approvals: { mode: 'smart' } }).ok).toBe(true)
+    expect(validateProfileFragment({ approvals: { mode: 'smart' } }).ok).toBe(false)
     expect(validateProfileFragment({ approvals: { mode: 'off' } }).ok).toBe(false)
   })
 })

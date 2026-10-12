@@ -62,7 +62,7 @@ async function atTools(o: {
   /** Text turns queued after the tool turns, for tests that drive the session past the tool phase. */
   tail?: number
   seams?: ReturnType<typeof fakeSeams>
-  approvalMode?: 'manual' | 'smart' | 'off' | 'auto-review'
+  approvalMode?: 'manual' | 'off' | 'auto-review'
   toolPolicies?: ToolPolicyRegistryPort
   provider?: Provider
   paths?: ToolMeta['paths']
@@ -104,7 +104,7 @@ async function atTools(o: {
 }
 
 describe('v3 approval modes and grants', () => {
-  it.each(['manual', 'smart', 'off', 'auto-review'] as const)(
+  it.each(['manual', 'off', 'auto-review'] as const)(
     'requires verified once answers for human-only revision review in %s mode',
     async (approvalMode) => {
       const policies = new ToolPolicyRegistry()
@@ -135,9 +135,6 @@ describe('v3 approval modes and grants', () => {
           },
           seams: fakeSeams({
             approval: {
-              guard: async () => {
-                throw new Error('human review cannot use guardian')
-              },
               listGrants: async () => {
                 throw new Error('human review cannot use durable grants')
               },
@@ -450,156 +447,6 @@ describe('v3 approval modes and grants', () => {
     })
   })
 
-  it('smart mode records a guardian effect and session-scoped decisions without asking a human', async () => {
-    let guards = 0
-    let asks = 0
-    const seams = fakeSeams({
-      approval: {
-        guard: async () => {
-          guards++
-          return { decision: 'allow-session', ruleVersion: 'guardian-v1', reasons: ['low risk'] }
-        },
-        ask: async () => {
-          asks++
-          return { verdict: 'rejected' as const, answeredBy: actor }
-        },
-      },
-    })
-    const opened = await atTools({
-      scopes: ['cua:click:background'],
-      approvalMode: 'smart',
-      seams,
-    })
-    await opened.session.runToolsPhase()
-    await opened.log.close()
-    const reopened = await openSession({
-      provider: fakeProvider([toolTurn('scoped_write', { value: 'different argv' })]),
-      registry: registryWith(
-        scopedTool(['cua:click:background'], async () => ({
-          content: [{ type: 'text' as const, text: 'ok' }],
-        })),
-      ),
-      seams,
-      storage: opened.storage,
-      key: 'k',
-      writerRunId: 'smart-reopen',
-      approvalMode: 'smart',
-      resolvedProfileHash: profileHash,
-    })
-    await reopened.session.runInference()
-    await reopened.session.runToolsPhase()
-    expect({ guards, asks }).toEqual({ guards: 1, asks: 0 })
-    expect(await reopened.log.scan({ type: 'approval/guardian-decided', limit: 10 })).toHaveLength(1)
-    expect(
-      (await reopened.log.scan({ type: 'effect/intent', limit: 20 })).filter(
-        (row) => (row.data as { kind?: unknown }).kind === 'approval-guardian',
-      ),
-    ).toHaveLength(1)
-    expect(
-      (await reopened.log.scan({ type: 'approval/guardian-decided', limit: 10 }))[0]?.data,
-    ).toMatchObject({
-      effectId: expect.any(String),
-      toolUseId: expect.any(String),
-      scope: 'cua:click:background',
-      bindingHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      policyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-      budget: { tokensReserved: 1024, credits: 1, approved: true },
-    })
-    expect(
-      (await reopened.log.scan({ type: 'cost/ledger', limit: 10 })).find(
-        (row) => (row.data as { purpose?: unknown }).purpose === 'approval-guardian',
-      )?.data,
-    ).toMatchObject({
-      purpose: 'approval-guardian',
-      tokens: { input: 1024 },
-      credits: 1,
-    })
-  })
-
-  it.each([
-    { guard: 'allow-once' as const, executions: 1 },
-    { guard: 'reject' as const, executions: 0 },
-  ])(
-    'a settled guardian $guard decision is not a parked decision and opens no continuation turn',
-    async ({ guard, executions: expected }) => {
-      let executions = 0
-      const opened = await atTools({
-        scopes: ['cua:click:background'],
-        approvalMode: 'smart',
-        tail: 2,
-        execute: async () => {
-          executions++
-          return { content: [{ type: 'text', text: 'ok' }] }
-        },
-        seams: fakeSeams({
-          approval: { guard: async () => ({ decision: guard, ruleVersion: 'guardian-v1', reasons: [] }) },
-        }),
-      })
-      for (let i = 0; i < 40; i++) if ((await opened.session.step()).phase === 'idle') break
-      for (let i = 0; i < 3; i++) expect((await opened.session.step()).phase).toBe('idle')
-      expect(executions).toBe(expected)
-      expect(
-        (await opened.log.scan({ type: 'turn/start', limit: 10 })).map(
-          (row) => (row.data as { trigger: string }).trigger,
-        ),
-      ).toEqual(['prompt'])
-    },
-  )
-
-  it('fails smart approval closed when its bounded cost cannot be projected or recorded', async () => {
-    for (const mode of ['projection', 'record'] as const) {
-      let guards = 0
-      let asks = 0
-      let executions = 0
-      const opened = await atTools({
-        scopes: ['cua:click:background'],
-        approvalMode: 'smart',
-        execute: async () => {
-          executions++
-          return { content: [{ type: 'text', text: 'ok' }] }
-        },
-        seams: fakeSeams({
-          approval: {
-            guard: async () => {
-              guards++
-              return { decision: 'allow-once', ruleVersion: 'guardian-v1', reasons: ['low risk'] }
-            },
-            ask: async () => {
-              asks++
-              return { verdict: 'allowed-once' as const, answeredBy: actor }
-            },
-          },
-          ledger: {
-            projected: async () =>
-              mode === 'projection'
-                ? { credits: Number.POSITIVE_INFINITY, creditSource: 'estimated' }
-                : { credits: 1, creditSource: 'estimated' },
-            record: async () => {
-              if (mode === 'record') throw new Error('ledger unavailable')
-            },
-          },
-        }),
-      })
-      await opened.session.runToolsPhase()
-      expect({ guards, asks, executions }).toEqual({
-        guards: mode === 'projection' ? 0 : 1,
-        asks: 1,
-        executions: 1,
-      })
-      const guardian = (await opened.log.scan({ type: 'approval/guardian-decided', limit: 10 }))[0]
-      expect(guardian?.data).toMatchObject({
-        decision: 'escalate',
-        ruleVersion: mode === 'projection' ? 'budget-v1' : 'failed',
-        budget: { approved: mode !== 'projection' },
-      })
-      expect(
-        (await opened.log.scan({ type: 'cost/ledger', limit: 10 })).filter(
-          (row) => (row.data as { purpose?: unknown }).purpose === 'approval-guardian',
-        ),
-      ).toHaveLength(mode === 'projection' ? 0 : 1)
-    }
-  })
-
   it('recovers a permanent approval at both ledger-first crash boundaries without re-asking', async () => {
     const originalGrants: ApprovalGrant[] = []
     const original = await atTools({
@@ -684,134 +531,6 @@ describe('v3 approval modes and grants', () => {
       ).toMatchObject({ recovered: alreadyStored })
     }
   })
-
-  it.each([
-    { name: 'allow', guard: 'allow-once' as const, boundary: 'effect/intent', execute: true },
-    { name: 'reject', guard: 'reject' as const, boundary: 'tool/result', execute: false },
-  ])('reconsumes a settled guardian $name decision after a crash without rerunning it', async (scenario) => {
-    const original = await atTools({
-      scopes: ['cua:click:background'],
-      approvalMode: 'smart',
-      seams: fakeSeams({
-        approval: {
-          guard: async () => ({ decision: scenario.guard, ruleVersion: 'guardian-v1', reasons: [] }),
-        },
-      }),
-    })
-    await original.session.runToolsPhase()
-    const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
-    expect(events.filter((row) => row.type === 'approval/guardian-decided')).toHaveLength(1)
-    expect(events.find((row) => row.type === 'approval/guardian-decided')?.data).toMatchObject({
-      decision: scenario.guard,
-      definitionFingerprint: expect.any(String),
-      policyBinding: expect.any(String),
-    })
-    const boundary = events.find(
-      (row) =>
-        row.type === scenario.boundary &&
-        (scenario.boundary !== 'effect/intent' || (row.data as { kind?: unknown }).kind === 'tool'),
-    )
-    if (!boundary) throw new Error(`missing ${scenario.boundary} crash boundary`)
-    const crashed = events.filter((row) => row.seq < boundary.seq)
-    let guards = 0
-    let asks = 0
-    let executions = 0
-    const reopened = await openSession({
-      provider: fakeProvider([]),
-      registry: registryWith(
-        scopedTool(['cua:click:background'], async () => {
-          executions++
-          return { content: [{ type: 'text', text: 'ok' }] }
-        }),
-      ),
-      storage: MemoryStorage.fromEvents('k', crashed, { opCells: original.opCellsBefore(boundary.seq) }),
-      key: 'k',
-      writerRunId: `guardian-${scenario.name}-reopen`,
-      approvalMode: 'smart',
-      resolvedProfileHash: profileHash,
-      seams: fakeSeams({
-        approval: {
-          guard: async () => {
-            guards++
-            return { decision: 'allow-once', ruleVersion: 'must-not-run', reasons: [] }
-          },
-          ask: async () => {
-            asks++
-            return { verdict: 'allowed-once' as const, answeredBy: actor }
-          },
-        },
-      }),
-    })
-    await reopened.session.resume()
-    await reopened.session.runToolsPhase()
-    expect({ guards, asks, executions }).toEqual({
-      guards: 0,
-      asks: 0,
-      executions: scenario.execute ? 1 : 0,
-    })
-    if (!scenario.execute)
-      expect(
-        (await reopened.log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data,
-      ).toMatchObject({
-        code: 'APPROVAL_REJECTED',
-      })
-  })
-
-  it.each(['escalate', 'failed'] as const)(
-    'recovers a settled guardian %s through the human path without rerunning it',
-    async (mode) => {
-      const original = await atTools({
-        scopes: ['cua:click:background'],
-        approvalMode: 'smart',
-        seams: fakeSeams({
-          approval: {
-            guard: async () => {
-              if (mode === 'failed') throw new Error('guardian unavailable')
-              return { decision: 'escalate', ruleVersion: 'guardian-v1', reasons: [] }
-            },
-            ask: async () => ({ verdict: 'allowed-once' as const, answeredBy: actor }),
-          },
-        }),
-      })
-      await original.session.runToolsPhase()
-      const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
-      const asked = events.find((row) => row.type === 'decision/state')
-      if (!asked) throw new Error('missing human approval boundary')
-      const crashed = events.filter((row) => row.seq < asked.seq)
-      let guards = 0
-      let asks = 0
-      let executions = 0
-      const reopened = await openSession({
-        provider: fakeProvider([]),
-        registry: registryWith(
-          scopedTool(['cua:click:background'], async () => {
-            executions++
-            return { content: [{ type: 'text', text: 'ok' }] }
-          }),
-        ),
-        storage: MemoryStorage.fromEvents('k', crashed, { opCells: original.opCellsBefore(asked.seq) }),
-        key: 'k',
-        writerRunId: `guardian-${mode}-reopen`,
-        approvalMode: 'smart',
-        resolvedProfileHash: profileHash,
-        seams: fakeSeams({
-          approval: {
-            guard: async () => {
-              guards++
-              return { decision: 'allow-once', ruleVersion: 'must-not-run', reasons: [] }
-            },
-            ask: async () => {
-              asks++
-              return { verdict: 'allowed-once' as const, answeredBy: actor }
-            },
-          },
-        }),
-      })
-      await reopened.session.resume()
-      await reopened.session.runToolsPhase()
-      expect({ guards, asks, executions }).toEqual({ guards: 0, asks: 1, executions: 1 })
-    },
-  )
 
   it('persists scripted reviewer decisions before effects, keeps denials hard, and restores the same decision', async () => {
     for (const decision of ['allow', 'deny', 'escalate'] as const) {
@@ -936,7 +655,7 @@ describe('v3 approval modes and grants', () => {
     })
   })
 
-  it.each(['manual', 'smart', 'off', 'auto-review'] as const)(
+  it.each(['manual', 'off', 'auto-review'] as const)(
     'preflights declared arguments generically before policy in %s mode and leaves undeclared tools alone',
     async (approvalMode) => {
       const fsOps = {

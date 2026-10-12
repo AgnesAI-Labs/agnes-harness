@@ -16,14 +16,13 @@ const packageId = '@agnes-examples/dsh-input-controls'
 const seams = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ]
 
 let root: string

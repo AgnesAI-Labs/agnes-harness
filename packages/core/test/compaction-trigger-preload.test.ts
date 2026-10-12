@@ -99,7 +99,6 @@ describe('the current prompt once compaction has masked the trigger', () => {
           receipts.set(ticket, { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket, expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const registry = new ToolRegistry()

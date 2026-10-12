@@ -216,18 +216,6 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
         ;(step && step.endSeq === undefined ? step : state.root).children.push(span)
         return
       }
-      if (kind === 'approval-guardian') {
-        const span = register(
-          state,
-          makeSpan(`span:approval-guardian:${effectId}`, 'approval', 'approval guardian', event, {
-            effectId,
-            purpose: 'approval-guardian',
-          }),
-        )
-        state.effectToSpan.set(effectId, span.id)
-        ensureStep(state, event).children.push(span)
-        return
-      }
       return
     }
     case 'request/sent': {

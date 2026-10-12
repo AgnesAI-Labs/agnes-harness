@@ -34,7 +34,6 @@ async function initial(
         }
         return { ticket: 'ticket', expiresAt: receipt.expiresAt }
       },
-      resume: async () => receipt,
     },
   })
   const h = await openSession({

@@ -2,13 +2,12 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import { approvalPolicy } from '../extensions/approval-policy/src/seam.js'
 import { artifactsLocal } from '../extensions/artifacts-local/src/seam.js'
-import { budgetLedger } from '../extensions/budget/src/seam.js'
+import { budgetBilling } from '../extensions/budget/src/seam.js'
 import { fsCheckpoint } from '../extensions/fs-checkpoint/src/seam.js'
 import { repairPolicy, verifierT0 } from '../extensions/loop-hygiene/src/seam.js'
 import { principalsLocal } from '../extensions/principals-local/src/seam.js'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { refineHarness } from '../extensions/refine/src/seam.js'
 import { sandboxSeam } from '../extensions/sandbox/src/seam.js'
 import { packageStorage } from './package-metadata.js'
 import type { SeamInitContext } from './seam-init.js'
@@ -170,9 +169,8 @@ export {
 export {
   approvalPlugin,
   artifactsPlugin,
+  billingPlugin,
   checkpointPlugin,
-  harnessPlugin,
-  ledgerPlugin,
   principalsPlugin,
   repairPlugin,
   verifierPlugin,
@@ -247,10 +245,9 @@ export const seams = {
   principals: principalsLocal,
   artifacts: artifactsLocal,
   checkpoint: fsCheckpoint,
-  ledger: budgetLedger,
+  billing: budgetBilling,
   verifier: verifierT0,
   repair: repairPolicy,
-  harness: refineHarness,
   sandbox: sandboxSeam,
 } as const
 

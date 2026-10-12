@@ -292,95 +292,6 @@ describe('resume', () => {
     ).toHaveLength(1)
   })
 
-  it('settles an interrupted guardian and falls back to human approval without rerunning it', async () => {
-    const storage = new MemoryStorage()
-    const registry = new ToolRegistry()
-    let executions = 0
-    registry.add(
-      shellTool(async () => {
-        executions++
-        return { content: [{ type: 'text', text: 'executed after human approval' }] }
-      }),
-      { source: 's', trust: 'builtin' },
-    )
-    let guardianEntered!: () => void
-    let releaseGuardian!: () => void
-    const entered = new Promise<void>((resolve) => {
-      guardianEntered = resolve
-    })
-    const blocked = new Promise<never>((_resolve, reject) => {
-      releaseGuardian = () => reject(new Error('old process killed'))
-    })
-    const first = await openSession({
-      provider: fakeProvider([toolTurn('shell', { command: 'x' })]),
-      registry,
-      storage,
-      approvalMode: 'smart',
-      seams: fakeSeams({
-        approval: {
-          guard: async () => {
-            guardianEntered()
-            return blocked
-          },
-        },
-      }),
-    })
-    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    await first.session.acceptInput()
-    await first.session.runInference()
-    const abandoned = first.session.runToolsPhase().catch(() => undefined)
-    await entered
-    expect(first.session.pendingEffects()).toEqual([
-      expect.objectContaining({
-        kind: 'approval-guardian',
-        tool: expect.objectContaining({ name: 'shell' }),
-      }),
-    ])
-    await first.log.close()
-    releaseGuardian()
-    await abandoned
-
-    let resumedGuardianCalls = 0
-    let humanAsks = 0
-    const reopened = await openSession({
-      provider: fakeProvider([]),
-      registry,
-      storage,
-      key: 'k',
-      writerRunId: 'guardian-reopen',
-      approvalMode: 'smart',
-      seams: fakeSeams({
-        approval: {
-          guard: async () => {
-            resumedGuardianCalls++
-            return { decision: 'allow-once', ruleVersion: 'must-not-run', reasons: [] }
-          },
-          ask: async (request) => {
-            humanAsks++
-            return { ticket: 'guardian-fallback', expiresAt: request.deadline }
-          },
-        },
-      }),
-    })
-    const report = await reopened.session.resume()
-    expect(report.actions).toEqual([{ effectId: expect.any(String), action: 'error' }])
-    expect(
-      (await reopened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
-    ).toMatchObject({
-      outcome: 'error',
-    })
-    expect(
-      await reopened.log.scan({ type: 'x/core/approval-guardian-failed', order: 'desc', limit: 1 }),
-    ).toHaveLength(1)
-    expect(await reopened.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
-    expect({ resumedGuardianCalls, humanAsks, executions }).toEqual({
-      resumedGuardianCalls: 0,
-      humanAsks: 1,
-      executions: 0,
-    })
-    expect((await reopened.session.decisions.list())[0]?.result).toBeNull()
-  })
-
   it('settles a durable responded result without dispatching the tool again', async () => {
     const originalRegistry = new ToolRegistry()
     originalRegistry.add(readTool(), { source: 's', trust: 'builtin' })
@@ -557,7 +468,7 @@ describe('resume', () => {
   // unanswered on the ledger, with the reason, and the turn still parks.
   it('records an unknown outcome nobody could be asked about as unavailable, never as rejected', async () => {
     const { session, log } = await crashInToolCall('shell', {
-      seams: fakeSeams({ approval: { ask: async () => 'unavailable', resume: async () => null } }),
+      seams: fakeSeams({ approval: { ask: async () => 'unavailable' } }),
     })
     expect((await session.resume()).actions[0]?.action).toBe('unknown')
     expect((await session.decisions.list()).at(-1)).toMatchObject({ result: null })
@@ -571,18 +482,9 @@ describe('resume', () => {
     'requires a human callback to resolve unknown as %s without replay',
     async (verdict) => {
       let executions = 0
-      let receipt: { requestId: string; bindingHash: string; expiresAt: string } | undefined
       const seams = fakeSeams({
         approval: {
-          ask: async (request) => {
-            receipt = {
-              requestId: request.requestId,
-              bindingHash: request.bindingHash,
-              expiresAt: request.deadline,
-            }
-            return { ticket: 'unknown-ticket', expiresAt: request.deadline }
-          },
-          resume: async () => receipt ?? null,
+          ask: async (request) => ({ ticket: 'unknown-ticket', expiresAt: request.deadline }),
         },
       })
       const { session, log } = await crashInToolCall('shell', {

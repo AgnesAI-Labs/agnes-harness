@@ -340,7 +340,7 @@ async function summarize(
 ): Promise<SummaryResult> {
   const { wire } = await summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
   const inputTokens = summaryInputTokens(wire)
-  const projected = await s.d.runtime.ledgerProjected({
+  const projected = await s.d.runtime.billingProjected({
     tokensEstimate: inputTokens + plan.maxTokens,
     model: target.model,
   })
@@ -737,7 +737,7 @@ function engineModel(
           ...(callSignal.aborted ? { interrupted: true } : {}),
         }
         const op = s.op() as OpStateObj
-        const recorded = await s.d.runtime.ledgerRecord({
+        const recorded = await s.d.runtime.billingRecord({
           ...spend,
           sessionKey: s.key,
           lane: s.lane,
@@ -1112,7 +1112,7 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
     ...(billing ? { billing } : {}),
     ...(signal.aborted ? { interrupted: true } : {}),
   }
-  const record = await s.d.runtime.ledgerRecord({
+  const record = await s.d.runtime.billingRecord({
     ...spend,
     sessionKey: s.key,
     lane: s.lane,

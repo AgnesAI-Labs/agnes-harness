@@ -59,7 +59,7 @@ The MCP bridge retains `readOnlyHint`, `destructiveHint` and `idempotentHint` an
 | Write with no idempotency assurance | `replay: never`, `requiresApproval: always` |
 | Explicit non-destructive, idempotent write | `replay: idempotent`; other deployment policy still applies |
 
-Missing write annotations remain conservative. Idempotency never pre-approves a destructive action. The default policy consumes this metadata in normal manual/smart approval modes; explicit full-access or approval-off configuration retains its existing semantics. The device bundle supplies a policy that asks before every write even with those settings. The bridge does not infer safety limits or enforce remote idempotency from a hint.
+Missing write annotations remain conservative. Idempotency never pre-approves a destructive action. The default policy consumes this metadata in normal manual approval mode; explicit full-access or approval-off configuration retains its existing semantics. The device bundle supplies a policy that asks before every write even with those settings. The bridge does not infer safety limits or enforce remote idempotency from a hint.
 
 The installable [device-inspection bundle](../../examples/fde/device-inspection/README.md) packages a public-port loop, tools, confirmation policy, Skill and a local stdio MCP simulator. It defaults to `dry_run: true`, accepts bounded cooling targets and version preconditions, rejects conflicting idempotency keys, and reads receipts plus state after action. A dry-run receipt proves a preview, not a changed temperature. Receipts live only in the simulator process. Unknown or interrupted effects stop for inspection rather than being replayed automatically.
 

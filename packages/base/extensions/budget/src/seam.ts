@@ -1,4 +1,4 @@
-import type { LedgerSeam } from '@agnes/core'
+import type { BillingSeam } from '@agnes/core'
 import { packageStorage } from '../../../src/package-metadata.js'
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { openLedger } from './ledger-table.js'
@@ -22,7 +22,7 @@ type Hist = { credits: number; tokens: number; creditSource: string }
  * a seam that is absent), so surfacing the table's own error message is the correct behavior, not
  * a gap to paper over.
  */
-export const budgetLedger: SeamFactory<LedgerSeam> = async (ctx) => {
+export const budgetBilling: SeamFactory<BillingSeam> = async (ctx) => {
   const storage = packageStorage(ctx.adapters.storage, 'usage_ledger', {
     select: 'SELECT * FROM usage_ledger ORDER BY id',
     key: (r) => String(r.effect_id),

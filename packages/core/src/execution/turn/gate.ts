@@ -172,7 +172,7 @@ async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason:
   }
   const { model } = resolveModel(s, 'primary')
   const tokensEstimate = contextTokens(s)
-  const projected = await s.d.runtime.ledgerProjected({ tokensEstimate, model })
+  const projected = await s.d.runtime.billingProjected({ tokensEstimate, model })
   const prev = s.latest('budget.state') as BudgetState | undefined
   const budget: BudgetState = {
     slot: 'primary',

@@ -50,13 +50,12 @@ const lockPkgs = {
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 function modules(): Record<string, PackageModule> {

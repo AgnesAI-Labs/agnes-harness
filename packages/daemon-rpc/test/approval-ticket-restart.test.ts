@@ -178,7 +178,6 @@ it('re-offers a real Host tool approval after its client disconnects without rec
 it('answers a real verifier pending through the same native command without changing its domain storage', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-domain-review-'))
   let checks = 0
-  let binding: { requestId: string; bindingHash: string; expiresAt: string } | null = null
   const { host } = await createTestHost({
     dataDir: root,
     seams: {
@@ -191,14 +190,8 @@ it('answers a real verifier pending through the same native command without chan
       repair: { decide: async () => 'park' },
       approval: {
         ask: async (request) => {
-          binding = {
-            requestId: request.requestId,
-            bindingHash: request.bindingHash,
-            expiresAt: request.deadline,
-          }
           return { ticket: 'domain-review', expiresAt: request.deadline }
         },
-        resume: async () => binding,
       },
       principals: { resolve: async () => REQUESTER },
     },

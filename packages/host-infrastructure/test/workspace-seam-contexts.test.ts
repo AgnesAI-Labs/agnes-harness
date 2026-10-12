@@ -10,7 +10,6 @@ const runtime = {
 
 const approval = (): ApprovalSeam => ({
   ask: async () => 'rejected',
-  resume: async () => null,
 })
 
 const checkpoint = (): CheckpointSeam => ({

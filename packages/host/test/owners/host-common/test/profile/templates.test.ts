@@ -14,14 +14,13 @@ describe('templates', () => {
     expect(TEMPLATE_NAMES).toEqual(['local-dev', 'enterprise'])
     for (const n of TEMPLATE_NAMES) expect(loadTemplate(n).name).toBe(n)
   })
-  it('local-dev names all ten seams, lists the provider package, and defaults to workspace-write', () => {
+  it('local-dev names all nine seams, lists the provider package, and defaults to workspace-write', () => {
     const t = loadTemplate('local-dev')
     expect(Object.keys(t.seams ?? {}).sort()).toEqual([
       'approval',
       'artifacts',
+      'billing',
       'checkpoint',
-      'harness',
-      'ledger',
       'platform',
       'principals',
       'repair',

@@ -22,7 +22,7 @@ export async function estimateLoopRequest(
   const projected =
     inputTokens === null
       ? null
-      : await s.d.runtime.ledgerProjected({ tokensEstimate: inputTokens, model: request.model })
+      : await s.d.runtime.billingProjected({ tokensEstimate: inputTokens, model: request.model })
   return {
     inputTokens,
     source: textOnly ? 'estimate' : 'unknown',

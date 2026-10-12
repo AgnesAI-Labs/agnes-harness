@@ -22,7 +22,7 @@ export interface ToolPolicyInput {
   policy: ResolvedToolCallPolicy
   tainted: boolean
   fullAccess: boolean
-  approvalMode: 'manual' | 'smart' | 'off' | 'auto-review'
+  approvalMode: 'manual' | 'off' | 'auto-review'
   category?: 'read' | 'write' | 'external'
   config?: JsonValue
   /** Trusted, retained user instructions. Tool arguments and outputs never grant authority. */

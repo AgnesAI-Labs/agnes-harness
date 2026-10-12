@@ -211,47 +211,6 @@ describe('projectUI trace fold', () => {
     expect(tool?.status).toBe('failed')
   })
 
-  it('projects approval guardian cost on its approval span and turn call', async () => {
-    const events = [
-      event('turn/start', { turn: 1, trigger: 'prompt' }),
-      event('step/start', { turn: 1, step: 1 }),
-      event('effect/intent', {
-        effectId: 'guardian-1',
-        kind: 'approval-guardian',
-        replay: 'never',
-        tool: { toolUseId: 'tool-1', name: 'computer_use' },
-      }),
-      event('effect/settled', { effectId: 'guardian-1', outcome: 'ok', durationMs: 12 }),
-      event('cost/ledger', {
-        purpose: 'approval-guardian',
-        effectId: 'guardian-1',
-        tokens: { input: 1024, output: 0, cacheRead: 0, cacheWrite: 0 },
-        credits: 0.5,
-        creditSource: 'gateway',
-        model: 'guardian-model',
-      }),
-      event('step/end', { turn: 1, step: 1 }),
-      event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
-    ]
-    const timeline = await projectUI(events, { sessionKey: 'trace-guardian' })
-    const approval = byKind(timelineTrace(timeline), 'approval')[0]
-    expect(approval).toMatchObject({
-      effectId: 'guardian-1',
-      purpose: 'approval-guardian',
-      model: 'guardian-model',
-      callSeq: events[4]?.seq,
-      status: 'completed',
-    })
-    expect(timeline.turns[0]?.usage.calls).toEqual([
-      expect.objectContaining({
-        id: 'guardian-1',
-        purpose: 'approval-guardian',
-        credits: 0.5,
-        model: 'guardian-model',
-      }),
-    ])
-  })
-
   it('places compaction and title generation outside model step numbering', async () => {
     const events = [
       event('turn/start', { turn: 1, trigger: 'prompt' }),

@@ -94,14 +94,18 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
   const allowed = presets?.allowed as unknown[]
   if (!allowed.includes(presets?.default)) bad('presets.default must be in presets.allowed')
   const approvals = m.approvals as { mode?: unknown } | undefined
+  if (approvals?.mode === 'smart')
+    bad(
+      'approvals.mode "smart" was removed; use "auto-review" (a model reviews tool calls and may approve them) or "manual"',
+    )
   if (
     approvals !== undefined &&
     (typeof approvals !== 'object' ||
       approvals === null ||
-      !['manual', 'smart', 'off', 'auto-review'].includes(String(approvals.mode)) ||
+      !['manual', 'off', 'auto-review'].includes(String(approvals.mode)) ||
       Object.keys(approvals).some((key) => key !== 'mode'))
   )
-    bad('approvals must contain only mode manual, smart, off, or auto-review')
+    bad('approvals must contain only mode manual, off, or auto-review')
   const computerUse = m.computerUse as
     | {
         enabled?: unknown

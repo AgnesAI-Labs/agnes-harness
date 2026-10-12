@@ -460,7 +460,7 @@ export async function runAuxiliaryVisionAssembly(
   const inputTokens = await countInputTokens(input.session, input.media, plan.request, input.signal)
   if (inputTokens === undefined || input.signal.aborted)
     return fallback(input, input.signal.aborted ? 'cancelled' : 'count_unavailable')
-  const projection = await input.session.d.runtime.ledgerProjected({
+  const projection = await input.session.d.runtime.billingProjected({
     tokensEstimate: inputTokens,
     model: plan.request.model,
   })

@@ -101,13 +101,12 @@ const log = { debug() {}, info() {}, warn() {}, error() {} }
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 // A backend built from the fields it needs, not spread from a real one: spreading copies methods
@@ -273,7 +272,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   if (approval) seamsImpl.approval = { ...seamsImpl.approval, ask: (req) => approval(req) }
   const prompter = o.prompter ?? (async () => 'unavailable' as Verdict)
   if (o.onSeamClose)
-    seamsImpl.harness = { ...seamsImpl.harness, close: o.onSeamClose } as SeamImplementations['harness']
+    seamsImpl.repair = { ...seamsImpl.repair, close: o.onSeamClose } as SeamImplementations['repair']
   const base: PackageModule = {
     id: '@agnes/base',
     ...(typeof AGNES_BASE_EXTENSION_MANIFESTS === 'undefined'

@@ -38,14 +38,13 @@ it.each(points)('recovers after an actual child exits at %s without running fina
     const seams = [
       'approval',
       'checkpoint',
-      'ledger',
+      'billing',
       'sandbox',
       'verifier',
       'repair',
       'artifacts',
       'principals',
       'platform',
-      'harness',
     ]
     writeLock(profile, {
       ...emptyLock('local-dev', '0.1.0'),

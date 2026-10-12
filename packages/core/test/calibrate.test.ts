@@ -73,7 +73,7 @@ describe('count calibration', () => {
 
   it('a counted request over the cap is not sent: deny ends the turn with budget, quote asks', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
     })
@@ -109,7 +109,7 @@ describe('count calibration', () => {
       const provider = withCount(tokens)
       const seen: Array<{ tokensEstimate: number; model: string }> = []
       const seams = fakeSeams({
-        ledger: {
+        billing: {
           projected: async (input) => {
             seen.push(input)
             return { credits: seen.length === 1 ? 1 : credits, creditSource: 'estimated' }
@@ -135,7 +135,7 @@ describe('count calibration', () => {
     let projections = 0
     const provider = withCount(2)
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async () => {
           if (++projections > 1) throw new Error('pricing unavailable')
           return { credits: 1, creditSource: 'estimated' }
@@ -172,7 +172,7 @@ describe('count calibration', () => {
 
   it('uses an explicit image fallback bound for count preflight and enforces the cap', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
     })
@@ -223,7 +223,7 @@ describe('count calibration', () => {
   // is what would catch a copy-paste of the wrong risk mapping from gate.ts or resume.ts.
   it('fires approval_request from quoteBudget with risk "budget", and an override reaches the ledger', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
     })
@@ -257,7 +257,7 @@ describe('count calibration', () => {
 
   it('records why a budget quote was refused, and ends the turn on budget', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
       approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected', answeredBy: actor }) },

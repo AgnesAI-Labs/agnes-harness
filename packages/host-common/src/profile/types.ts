@@ -154,7 +154,7 @@ export type ProfileFragment = {
   packages?: PackageRef[]
   policy?: { capabilityCeiling?: Capability[] }
   /** Repository/workspace layers may only keep or tighten the resolved approval mode. */
-  approvals?: { mode: 'manual' | 'smart' }
+  approvals?: { mode: 'manual' }
   /** Repository/workspace layers may only disable or tighten the resolved Computer Use policy. */
   computerUse?: ComputerUseProfile
   extensionIsolation?: ExtensionIsolationRequest

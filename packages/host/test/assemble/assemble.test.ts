@@ -55,13 +55,12 @@ const log = { debug() {}, info() {}, warn() {}, error() {} }
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 async function publishRows(
@@ -1667,9 +1666,8 @@ describe('assemble', () => {
     expect(Object.keys(a.seams).sort()).toEqual([
       'approval',
       'artifacts',
+      'billing',
       'checkpoint',
-      'harness',
-      'ledger',
       'platform',
       'principals',
       'repair',
@@ -1796,7 +1794,7 @@ describe('assemble', () => {
       assemble(p, deps({ '@agnes/base': noApproval, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
     ).rejects.toThrow(/E_SEAM_EXPORT_MISSING/)
     const bad = baseModule()
-    ;(bad.seams as NonNullable<PackageModule['seams']>).ledger = async () => {
+    ;(bad.seams as NonNullable<PackageModule['seams']>).billing = async () => {
       throw new Error('db down')
     }
     const d = deps({ '@agnes/base': bad, '@agnes/code': codeModule, '@agnes/ai': aiModule })
@@ -1852,10 +1850,10 @@ describe('assemble', () => {
     const real = fakeSeams()
     const m = baseModule()
     const seams = m.seams as NonNullable<PackageModule['seams']>
-    seams.harness = async () => ({
-      ...real.harness,
+    seams.verifier = async () => ({
+      ...real.verifier,
       close: () => {
-        closed.push('harness')
+        closed.push('verifier')
         throw new Error('teardown refused')
       },
     })
@@ -1870,7 +1868,7 @@ describe('assemble', () => {
       { crashAt: 'provider' },
     )
     await expect(assemble(p, d)).rejects.toThrow('crash:provider')
-    expect(closed.sort()).toEqual(['harness', 'repair'])
+    expect(closed.sort()).toEqual(['repair', 'verifier'])
     // Cordis owns plugin cleanup and reports disposer failures through its logger while continuing
     // to tear down sibling rows. The Host rollback therefore completes instead of retaining the
     // legacy per-seam rollback label.
@@ -1893,7 +1891,7 @@ describe('assemble', () => {
   it('a seam that hands back something that is not an object is refused, not fitted', async () => {
     const p = await profileFor()
     const m = baseModule()
-    ;(m.seams as NonNullable<PackageModule['seams']>).harness = async () => 'not a seam'
+    ;(m.seams as NonNullable<PackageModule['seams']>).verifier = async () => 'not a seam'
     await expect(
       assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
     ).rejects.toThrow(/E_SEAM_INIT.*non-object/)
@@ -1904,8 +1902,8 @@ describe('assemble', () => {
     const m = baseModule()
     const seams = m.seams as NonNullable<PackageModule['seams']>
     const real = fakeSeams()
-    seams.harness = async () => ({
-      ...real.harness,
+    seams.verifier = async () => ({
+      ...real.verifier,
       close: () => {
         closed++
       },

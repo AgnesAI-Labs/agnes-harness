@@ -404,7 +404,7 @@ it.each([sqlitePersistenceProvider, jsonlProvider])(
                 const boot = () =>
                   createTestHost({
                     dataDir: resumeDir,
-                    seamFactories: { ledger: defaultSeams.ledger, harness: defaultSeams.harness },
+                    seamFactories: { billing: defaultSeams.billing },
                     disableSessionTitle: true,
                     script: [
                       [

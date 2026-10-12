@@ -1281,7 +1281,7 @@ describe('Inference segment', () => {
 
   it('ledger failure marks the turn and the next inference ends the turn with error', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         record: async () => {
           throw new Error('down')
         },
@@ -1407,7 +1407,7 @@ describe('Inference segment (fix round 1)', () => {
     const s = await openSession({
       provider: fakeProvider(failing),
       seams: fakeSeams({
-        ledger: {
+        billing: {
           record: async (row) => {
             rows.push(row)
             throw new Error('ledger down')
@@ -1423,7 +1423,7 @@ describe('Inference segment (fix round 1)', () => {
     expect(rows[0]?.interrupted).toBe(true)
     expect(s.session.turn?.ledgerFailed).toBe(true)
     expect((await s.log.scan({ type: 'x/core/seam-failed', limit: 5 }))[0]?.data).toMatchObject({
-      seam: 'ledger',
+      seam: 'billing',
       op: 'record',
     })
   })
@@ -1500,7 +1500,6 @@ describe('allowed-session grants (F17)', () => {
           asks++
           return { verdict: 'allowed-session' as const, answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const registry = new ToolRegistry()

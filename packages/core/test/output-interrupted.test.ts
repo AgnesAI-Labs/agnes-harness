@@ -132,13 +132,13 @@ describe('a close after the stream has ended keeps the text', () => {
     const recording = latch()
     const reached = latch()
     const runtime = (
-      first.session as unknown as { d: { runtime: { ledgerRecord: (x: never) => Promise<boolean> } } }
+      first.session as unknown as { d: { runtime: { billingRecord: (x: never) => Promise<boolean> } } }
     ).d.runtime
-    const ledgerRecord = runtime.ledgerRecord.bind(runtime)
-    runtime.ledgerRecord = async (entry: never) => {
+    const billingRecord = runtime.billingRecord.bind(runtime)
+    runtime.billingRecord = async (entry: never) => {
       reached.open()
       await recording.shut
-      return ledgerRecord(entry)
+      return billingRecord(entry)
     }
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     await first.session.step()

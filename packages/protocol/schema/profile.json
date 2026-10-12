@@ -253,7 +253,7 @@
       "pattern": "^[a-z][A-Za-z0-9.-]{0,63}$"
     },
     "ApprovalMode": {
-      "enum": ["manual", "smart", "off", "auto-review"]
+      "enum": ["manual", "off", "auto-review"]
     },
     "ApprovalProfile": {
       "type": "object",
@@ -269,14 +269,13 @@
       "enum": [
         "approval",
         "checkpoint",
-        "ledger",
+        "billing",
         "sandbox",
         "verifier",
         "repair",
         "artifacts",
         "principals",
-        "platform",
-        "harness"
+        "platform"
       ]
     },
     "PackageRef": {
@@ -779,7 +778,7 @@
             "checkpoint": {
               "type": "string"
             },
-            "ledger": {
+            "billing": {
               "type": "string"
             },
             "sandbox": {
@@ -798,9 +797,6 @@
               "type": "string"
             },
             "platform": {
-              "type": "string"
-            },
-            "harness": {
               "type": "string"
             }
           }
@@ -944,7 +940,7 @@
           "required": ["mode"],
           "properties": {
             "mode": {
-              "enum": ["manual", "smart"]
+              "enum": ["manual"]
             }
           }
         },
@@ -1262,14 +1258,13 @@
           "required": [
             "approval",
             "checkpoint",
-            "ledger",
+            "billing",
             "sandbox",
             "verifier",
             "repair",
             "artifacts",
             "principals",
-            "platform",
-            "harness"
+            "platform"
           ],
           "properties": {
             "approval": {
@@ -1278,7 +1273,7 @@
             "checkpoint": {
               "type": "string"
             },
-            "ledger": {
+            "billing": {
               "type": "string"
             },
             "sandbox": {
@@ -1297,9 +1292,6 @@
               "type": "string"
             },
             "platform": {
-              "type": "string"
-            },
-            "harness": {
               "type": "string"
             }
           }

@@ -842,14 +842,13 @@ it('opens a new composition from the published code after retiring a boot snapsh
         [
           'approval',
           'checkpoint',
-          'ledger',
+          'billing',
           'sandbox',
           'verifier',
           'repair',
           'artifacts',
           'principals',
           'platform',
-          'harness',
         ].map((name) => [name, '@agnes/base']),
       ),
       packages: {

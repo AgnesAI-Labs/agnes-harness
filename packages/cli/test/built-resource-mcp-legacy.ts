@@ -95,14 +95,13 @@ export async function setupMcpLegacySentinel(input: { home: string; workspace: s
       : {
           approval: '@agnes/base',
           checkpoint: '@agnes/base',
-          ledger: '@agnes/base',
+          billing: '@agnes/base',
           sandbox: '@agnes/base',
           verifier: '@agnes/base',
           repair: '@agnes/base',
           artifacts: '@agnes/base',
           principals: '@agnes/base',
           platform: '@agnes/host',
-          harness: '@agnes/base',
         },
     policySnapshot: lock.policySnapshot.capabilityCeiling.length
       ? lock.policySnapshot

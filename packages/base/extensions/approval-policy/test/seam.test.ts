@@ -270,6 +270,5 @@ describe('approval-policy sync path', () => {
     const init = fakeSeamInit({ preset: { approval: { on_unavailable: 'park' } } })
     const seam = await approvalPolicy(init)
     await expect(seam.ask(req())).resolves.toEqual({ verdict: 'unavailable', reason: 'no-approver' })
-    await expect(seam.resume('t', 'allowed-once')).rejects.toThrow(/DECISION_CONTINUATION_BLOCKED/)
   })
 })

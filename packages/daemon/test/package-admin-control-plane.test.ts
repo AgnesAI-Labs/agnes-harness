@@ -58,14 +58,13 @@ const authority = {
 const seams = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ]
 
 let root: string

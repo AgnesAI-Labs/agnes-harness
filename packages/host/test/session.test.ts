@@ -472,10 +472,10 @@ describe('createSession', () => {
       host.createSession({ cwd: dataDir, seams: { ledger: {} } as unknown as Record<string, never> }),
     )
     expect(e.code).toBe('E_SEAM_IMMUTABLE')
-    expect(e.detail.seam).toBe('ledger')
+    expect(e.detail.seam).toBe('billing')
     const s = await host.createSession({
       cwd: dataDir,
-      seams: { approval: { ask: async () => 'rejected', resume: async () => null } },
+      seams: { approval: { ask: async () => 'rejected' } },
     })
     expect(s.key).toBeDefined()
     await host.close()

@@ -33,14 +33,13 @@ let root: string, profile: string, sourceDir: string
 const seams = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ]
 function manager(extra: Partial<ManagerOptions> = {}) {
   return createPackageManager({
@@ -291,13 +290,13 @@ it('blocks dependency/Profile and deployment refs, passing only controlled opera
   delete dependent.treeIntegrity
   dependent.dependencies = { [id]: '1.0.0' }
   lock.packages['acme/dependent'] = dependent
-  lock.seams.ledger = id
+  lock.seams.billing = id
   writeLock(profile, lock)
   await expect(m.remove(profile, id)).rejects.toMatchObject({
     detail: {
       blockers: [
         { code: 'dependency', references: ['acme/dependent'] },
-        { code: 'profile', references: ['seam:ledger'] },
+        { code: 'profile', references: ['seam:billing'] },
         { code: 'deployment', references: ['web'] },
       ],
     },

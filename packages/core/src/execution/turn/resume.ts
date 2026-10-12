@@ -269,27 +269,6 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       actions.push({ effectId: root.effectId, action: 'error' })
       continue
     }
-    if (root.kind === 'approval-guardian') {
-      // A guardian is advisory and must never be re-run after a crash: doing so could turn the
-      // same persisted call from "escalate" into "allow" under a changed model/rule. Close the
-      // internal effect, leave the tool itself undispatched, and mark this call so smart mode falls
-      // through to the ordinary human approval path on continuation.
-      const events: EventInput[] = [s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' })]
-      events.push(
-        s.ev(
-          'x/core/approval-guardian-failed',
-          {
-            effectId: root.effectId,
-            ...(root.tool ? { toolUseId: root.tool.toolUseId, name: root.tool.name } : {}),
-            reason: 'interrupted',
-          },
-          { ignorable: true, sourceEventSeqs: [root.argsSeq ?? root.intentSeq] },
-        ),
-      )
-      await s.transition(events, cur)
-      actions.push({ effectId: root.effectId, action: 'error' })
-      continue
-    }
     if (root.kind === 'media') {
       // Auxiliary media may already have crossed the provider boundary. Its durable contract is
       // never-replay, so recovery records the unknown outcome without inventing a zero-cost row or

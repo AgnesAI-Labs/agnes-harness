@@ -1,7 +1,7 @@
 import type { SessionKey } from '@agnes/core-common/types'
 import { CoreError } from '@agnes/core-common/types'
 import type { HookInvocationSnapshot } from '@agnes/extension-api'
-import type { ApprovalRequest, ApprovalSeam, CheckpointSeam, SandboxSeam, Verdict } from '../effects/seams.js'
+import type { ApprovalRequest, ApprovalSeam, CheckpointSeam, SandboxSeam } from '../effects/seams.js'
 import type { FsOps } from '../effects/tool-context.js'
 
 /** A canonical workspace root is identity data. Possessing it grants no filesystem authority. */
@@ -230,7 +230,6 @@ function immutableJson<T>(value: T, ancestors = new WeakSet<object>()): T {
 }
 
 function invocationView(source: WorkspaceInvocationSource, scope: InvocationScope): WorkspaceInvocationView {
-  const guard = source.approval.guard
   const listGrants = source.approval.listGrants
   const putGrant = source.approval.putGrant
   const revokeGrant = source.approval.revokeGrant
@@ -276,14 +275,6 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
       : {}),
     ask: (request: ApprovalRequest, opts?: { signal: AbortSignal }) =>
       scope.track(() => source.approval.ask(request, opts), { cancelOnAbort: true }),
-    resume: (ticket: string, verdict: Verdict) =>
-      scope.track(() => source.approval.resume(ticket, verdict), { cancelOnAbort: true }),
-    ...(guard
-      ? {
-          guard: (request: Parameters<typeof guard>[0]) =>
-            scope.track(() => guard.call(source.approval, request), { cancelOnAbort: true }),
-        }
-      : {}),
     ...(listGrants
       ? {
           listGrants: (query: Parameters<typeof listGrants>[0]) =>

@@ -29,10 +29,12 @@ type LayerInput = {
   manifest: Partial<RuntimeProfileManifest> & { name?: string }
 }
 
-const APPROVAL_MODE_RANK = { off: 0, smart: 1, 'auto-review': 1, manual: 2 } as const satisfies Record<
+const APPROVAL_MODE_RANK = { off: 0, 'auto-review': 1, manual: 2 } as const satisfies Record<
   ApprovalMode,
   number
 >
+const SMART_MODE_REMOVED =
+  'approvals.mode "smart" was removed; use "auto-review" (a model reviews tool calls and may approve them) or "manual"'
 const MAX_TIMER_MS = 2_147_483_647
 
 function resolveReconcilePolicy(value: unknown, layer: Layer): ReconcilePolicy {
@@ -81,7 +83,12 @@ function approvalProfile(value: unknown, layer: Layer): ApprovalProfile {
     Object.hasOwn(value, 'mode')
   ) {
     const mode = (value as { mode?: unknown }).mode
-    if (mode === 'manual' || mode === 'smart' || mode === 'off' || mode === 'auto-review') return { mode }
+    if (mode === 'manual' || mode === 'off' || mode === 'auto-review') return { mode }
+    if (mode === 'smart')
+      throw new HostError('E_PROFILE_FRAGMENT_KEY', SMART_MODE_REMOVED, {
+        source: { layer },
+        detail: { field: 'approvals.mode' },
+      })
   }
   throw new HostError('E_PROFILE_FRAGMENT_KEY', 'invalid approvals.mode', {
     source: { layer },

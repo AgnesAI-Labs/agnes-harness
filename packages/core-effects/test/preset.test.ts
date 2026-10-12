@@ -204,20 +204,19 @@ describe('seam names', () => {
     const fitted: SeamImplementations = {
       approval: null as never,
       checkpoint: null as never,
-      ledger: null as never,
+      billing: null as never,
       sandbox: null as never,
       verifier: null as never,
       repair: null as never,
       artifacts: null as never,
       principals: null as never,
       platform: null as never,
-      harness: null as never,
     }
     expect(Object.keys(fitted).sort()).toEqual([...SEAM_NAMES].sort())
     expect(new Set(SEAM_NAMES).size).toBe(SEAM_NAMES.length)
   })
 
-  it('leaves the ledger out of the test seam set and nothing else', () => {
+  it('leaves billing out of the test seam set and nothing else', () => {
     const test: TestSeams = {
       approval: null as never,
       checkpoint: null as never,
@@ -227,8 +226,7 @@ describe('seam names', () => {
       artifacts: null as never,
       principals: null as never,
       platform: null as never,
-      harness: null as never,
     }
-    expect(Object.keys(test).sort()).toEqual(SEAM_NAMES.filter((n) => n !== 'ledger').sort())
+    expect(Object.keys(test).sort()).toEqual(SEAM_NAMES.filter((n) => n !== 'billing').sort())
   })
 })

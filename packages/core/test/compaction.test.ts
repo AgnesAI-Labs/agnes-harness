@@ -1885,7 +1885,7 @@ describe('routing a summary that is unavailable', () => {
     async (reason) => {
       const h = await toolHistory([])
       h.session.preset.treeBudgetCredits = 1
-      h.seams.ledger.projected = async () => ({ credits: 1000, creditSource: 'estimated' })
+      h.seams.billing.projected = async () => ({ credits: 1000, creditSource: 'estimated' })
       // A refused tree reservation ends the turn with `budget` from inside the summary call, and the
       // compaction then fails writing its own settlement (E_ENVELOPE). That predates this routing
       // and is left as it is; what matters here is that no elided replace is written instead.

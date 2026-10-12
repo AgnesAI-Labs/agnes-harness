@@ -23,9 +23,8 @@ export type BuiltOrdinaryRows = Readonly<{
 const DYNAMIC_SEAM_ROWS = new Set([
   'seam:approval',
   'seam:artifacts',
+  'seam:billing',
   'seam:checkpoint',
-  'seam:harness',
-  'seam:ledger',
   'seam:principals',
   'seam:repair',
   'seam:verifier',

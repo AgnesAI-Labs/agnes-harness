@@ -39,7 +39,6 @@ async function setup(scripts: Script[] = [toolTurn('shell', { command: 'echo ok'
         receipts.set(ticket, { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
         return { ticket, expiresAt }
       },
-      resume: async (ticket) => receipts.get(ticket) ?? null,
     },
   })
   const provider = fakeProvider(scripts)

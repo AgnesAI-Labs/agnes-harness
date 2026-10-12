@@ -81,7 +81,7 @@ describe('tree budget on the live inference path', () => {
     const provider = fakeProvider([expensiveTool, textTurn('after')])
     Object.assign(provider, { models: () => [model()] })
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 8, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 8, creditSource: 'estimated' }) },
     })
     const k = kernel({
       storage,

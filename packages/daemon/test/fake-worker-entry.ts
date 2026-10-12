@@ -221,7 +221,6 @@ void runWorker(
                 approval: {
                   ask: (req: Parameters<typeof workerPrompter.ask>[0], opts?: { signal: AbortSignal }) =>
                     workerPrompter.ask(req, { signal: opts?.signal ?? new AbortController().signal }),
-                  resume: async () => null,
                 },
               }
             : {}),

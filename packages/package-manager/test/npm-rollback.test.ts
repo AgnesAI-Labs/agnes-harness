@@ -17,14 +17,13 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
     const seams = [
       'approval',
       'checkpoint',
-      'ledger',
+      'billing',
       'sandbox',
       'verifier',
       'repair',
       'artifacts',
       'principals',
       'platform',
-      'harness',
     ]
     writeLock(profile, {
       ...emptyLock('local-dev', '0.1.0'),

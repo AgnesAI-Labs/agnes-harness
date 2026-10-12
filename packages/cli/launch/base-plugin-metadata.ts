@@ -82,7 +82,7 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       },
     },
   },
-  'seam:ledger': {
+  'seam:billing': {
     displayName: 'Usage accounting',
     summary: "Records model usage and cost estimates to help track a task's spending.",
     description: "Records model usage and cost estimates to help track a task's spending.",
@@ -122,21 +122,6 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
         displayName: '执行进度检查',
         summary: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
         description: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
-      },
-    },
-  },
-  'seam:harness': {
-    displayName: 'Reviewed improvements',
-    summary:
-      'Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.',
-    description:
-      'Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.',
-    category: 'memory-context',
-    locales: {
-      'zh-CN': {
-        displayName: '改进提案',
-        summary: '让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。',
-        description: '让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。',
       },
     },
   },

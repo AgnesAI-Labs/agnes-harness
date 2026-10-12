@@ -18,13 +18,12 @@ const lock: LockState = {
       provides: [
         'approval',
         'checkpoint',
-        'ledger',
+        'billing',
         'sandbox',
         'verifier',
         'repair',
         'artifacts',
         'principals',
-        'harness',
       ],
     },
     '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
@@ -90,7 +89,7 @@ describe('resolveProfile (single layer)', () => {
     expect(p.chain).toEqual(['builtin:local-dev', 'user:mine'])
     expect(p.dataDir).toBe('/tmp/agnes')
     expect(p.seams.approval).toBe('@agnes/code')
-    expect(p.seams.ledger).toBe('@agnes/base')
+    expect(p.seams.billing).toBe('@agnes/base')
     expect(p.transports).toEqual([{ kind: 'unix' }])
     expect(p.presets).toEqual({ default: 'code', allowed: ['code'] })
   })

@@ -47,14 +47,13 @@ const points: PackageCommitPoint[] = [
 const seams = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ]
 const load = () => readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
 const audit = () =>

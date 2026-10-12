@@ -58,14 +58,13 @@ it('serves real local examples through daemon catalog and source inspection', as
       [
         'approval',
         'checkpoint',
-        'ledger',
+        'billing',
         'sandbox',
         'verifier',
         'repair',
         'artifacts',
         'principals',
         'platform',
-        'harness',
       ].map((name) => [name, '@agnes/base']),
     ),
     policySnapshot: {

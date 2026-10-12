@@ -559,15 +559,6 @@ export function createApprovalGrantControlPlane(
       ...(seam.policy
         ? { policy: (request: Parameters<ApprovalSeam['ask']>[0]) => seam.policy!(request) }
         : {}),
-      resume: (ticket, verdict) => seam.resume(ticket, verdict),
-      guard: (request) =>
-        seam.guard
-          ? seam.guard(request)
-          : Promise.resolve({
-              decision: 'escalate' as const,
-              ruleVersion: 'missing',
-              reasons: ['guardian unavailable'],
-            }),
       // Permanent grants are not cached today: every authorization reads durable storage. This listener
       // remains the explicit active-session/cache invalidation port so a future cache cannot make
       // revocation eventually consistent by accident.

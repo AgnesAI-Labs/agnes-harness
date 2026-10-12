@@ -430,7 +430,7 @@ describe('independent-review V1–V7', () => {
       {
         provider,
         seams: fakeSeams({
-          ledger: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
+          billing: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
         }),
         preset: {
           ...presetDefaults(),
@@ -595,7 +595,7 @@ describe('independent-review V1–V7', () => {
       {
         provider,
         seams: fakeSeams({
-          ledger: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
+          billing: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
         }),
         preset: {
           ...presetDefaults(),
@@ -859,7 +859,7 @@ describe('independent-review V1–V7', () => {
         provider,
         preset: selected,
         seams: fakeSeams({
-          ledger: {
+          billing: {
             projected: async ({ tokensEstimate }) => ({
               credits: tokensEstimate,
               creditSource: 'estimated',

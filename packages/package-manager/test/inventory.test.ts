@@ -59,14 +59,13 @@ function currentFixture() {
     [
       'approval',
       'checkpoint',
-      'ledger',
+      'billing',
       'sandbox',
       'verifier',
       'repair',
       'artifacts',
       'principals',
       'platform',
-      'harness',
     ].map((name) => [name, '@agnes/base']),
   )
   const entry = {
@@ -199,14 +198,13 @@ it.each([
     [
       'approval',
       'checkpoint',
-      'ledger',
+      'billing',
       'sandbox',
       'verifier',
       'repair',
       'artifacts',
       'principals',
       'platform',
-      'harness',
     ].map((name) => [name, '@agnes/base']),
   )
   lock.policySnapshot = { capabilityCeiling: [], workspacePackages: 'require-project-trust' }

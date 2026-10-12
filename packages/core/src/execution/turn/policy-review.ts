@@ -106,7 +106,7 @@ export async function decideToolPolicy(
             sessionKey: s.key,
             derivedHash: derived.header.derived_hash,
           })
-          const projected = await s.d.runtime.ledgerProjected({
+          const projected = await s.d.runtime.billingProjected({
             tokensEstimate: estimateTokens(canonicalJson(wire)) + 512,
             model: target.model,
           })
@@ -165,7 +165,7 @@ export async function decideToolPolicy(
               creditSource,
               model: target.model,
             }
-            costRecorded = await s.d.runtime.ledgerRecord({
+            costRecorded = await s.d.runtime.billingRecord({
               ...spend,
               sessionKey: s.key,
               lane: s.lane,

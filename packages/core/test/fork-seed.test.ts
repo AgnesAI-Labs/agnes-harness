@@ -162,7 +162,6 @@ describe('the parent keeps a fork point', () => {
           receipts.set('t1', { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket: 't1', expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const h = await openSession({

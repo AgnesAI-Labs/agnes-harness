@@ -19,8 +19,6 @@ export function fakeSeams(
   approval = {
     forWorkspace: async () => approval,
     ask: async () => ({ verdict: 'allowed-once', answeredBy: actor }),
-    resume: async () => null,
-    guard: async () => ({ decision: 'escalate', ruleVersion: 'fake-v1', reasons: ['human-test'] }),
     listGrants: async () => [],
     putGrant: async () => undefined,
     revokeGrant: async () => null,
@@ -36,7 +34,7 @@ export function fakeSeams(
   const base: SeamImplementations = {
     approval,
     checkpoint,
-    ledger: {
+    billing: {
       record: async () => undefined,
       projected: async () => ({ credits: 1, creditSource: 'estimated' }),
     },
@@ -60,7 +58,6 @@ export function fakeSeams(
       terminal: () => ({ color: false }),
       capability: () => ({ level: 'full', scope: [] }),
     },
-    harness: { propose: async () => 'queued' },
   }
   const out = { ...base } as Record<string, unknown>
   for (const [k, v] of Object.entries(over))

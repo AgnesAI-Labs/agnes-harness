@@ -45,12 +45,6 @@ export type ApprovalRequest = {
   context?: string
   approval?: import('@agnes/extension-api').ApprovalConstraints
 }
-export type ApprovalGuardianDecision = {
-  decision: 'allow-once' | 'allow-session' | 'escalate' | 'reject'
-  ruleVersion: string
-  reasons: string[]
-  model?: string
-}
 export type ApprovalGrantQuery = {
   profileHash: string
   actorId: string
@@ -68,12 +62,6 @@ export interface ApprovalSeam {
   /** Intrinsic command rules run before a durable human question, never impersonate its responder. */
   policy?(req: ApprovalRequest): Promise<'allow' | 'ask' | 'deny'>
   ask(req: ApprovalRequest, opts?: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer | Pending>
-  resume(
-    ticket: string,
-    verdict: Verdict,
-  ): Promise<{ requestId: string; bindingHash: string; expiresAt: string } | null>
-  /** Optional during migration: smart mode escalates and permanent grants fail closed when absent. */
-  guard?(req: ApprovalRequest): Promise<ApprovalGuardianDecision>
   listGrants?(query: ApprovalGrantQuery): Promise<ApprovalGrant[]>
   putGrant?(grant: ApprovalGrant): Promise<void>
   revokeGrant?(grantId: string, revokedAt: string): Promise<ApprovalGrant | null>
@@ -101,9 +89,9 @@ export interface CheckpointSeam {
   list(): Promise<Array<{ id: string; stepId: string }>>
 }
 
-export type LedgerRow = CostLedger & { sessionKey: string; lane: string; turn: number; step: number }
-export interface LedgerSeam {
-  record(row: LedgerRow): Promise<void>
+export type BillingRow = CostLedger & { sessionKey: string; lane: string; turn: number; step: number }
+export interface BillingSeam {
+  record(row: BillingRow): Promise<void>
   projected(next: {
     tokensEstimate: number
     model: string
@@ -286,14 +274,13 @@ export interface HarnessSeam {
 export type SeamImplementations = {
   approval: ApprovalSeam
   checkpoint: CheckpointSeam
-  ledger: LedgerSeam
+  billing: BillingSeam
   sandbox: SandboxSeam
   verifier: VerifierSeam
   repair: RepairSeam
   artifacts: ArtifactsSeam
   principals: PrincipalsSeam
   platform: PlatformSeam
-  harness: HarnessSeam
 }
 /**
  * The seam names as data, for the assembly that reports which are fitted and the fail-closed check
@@ -303,15 +290,14 @@ export type SeamImplementations = {
 export const SEAM_NAMES = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ] as const satisfies readonly (keyof SeamImplementations)[]
 export type SeamName = (typeof SEAM_NAMES)[number]
-// A test harness fits everything but the ledger, which would otherwise bill a test run.
-export type TestSeams = Omit<SeamImplementations, 'ledger'>
+// A test harness fits everything but billing, which would otherwise bill a test run.
+export type TestSeams = Omit<SeamImplementations, 'billing'>

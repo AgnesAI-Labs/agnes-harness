@@ -304,7 +304,7 @@ it('stops before inference when projected credits exhaust the selected preset bu
       },
     },
     seams: {
-      ledger: {
+      billing: {
         projected: async ({ model }) => {
           projected.push(model)
           return { credits: 5, creditSource: 'estimated' }

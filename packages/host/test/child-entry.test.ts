@@ -379,7 +379,7 @@ describe('host sqlite + core children factory entry (legacy factory path)', () =
           budgetProvider,
           { ...presetDefaults(), treeBudgetCredits: 1, generationLimit: 2, maxFanOut: 4 },
           fakeSeams({
-            ledger: { projected: async () => ({ credits: 0.000001, creditSource: 'estimated' }) },
+            billing: { projected: async () => ({ credits: 0.000001, creditSource: 'estimated' }) },
           }),
         )
         Object.assign(budgetProvider, {

@@ -31,7 +31,6 @@ async function setup(initialVerdict: 'fail' | 'needs_revision' = 'fail') {
         }
         return { ticket: 'review', expiresAt: receipt.expiresAt }
       },
-      resume: async () => receipt,
     },
   })
   const provider = fakeProvider([textTurn('first draft'), textTurn('reviewed answer')])
@@ -235,7 +234,6 @@ describe('verifier pause continuation', () => {
           seenRequest = req
           return { ticket: 'review', expiresAt: new Date(clock() + 1000).toISOString() }
         },
-        resume: async () => null,
       },
     })
     const provider = fakeProvider([textTurn('first draft')])

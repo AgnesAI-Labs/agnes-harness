@@ -324,12 +324,9 @@ describe('SessionWorkspaceRuntimeTable', () => {
       services: {
         approval: {
           async ask() {
-            return 'rejected' as const
-          },
-          async resume() {
             starts.push('approval')
             await descendantsHeld
-            return null
+            return 'rejected' as const
           },
         },
         checkpoint: {
@@ -361,14 +358,14 @@ describe('SessionWorkspaceRuntimeTable', () => {
         () => leakedFs.read('late'),
         () => leakedSandbox.confine(['late']),
         () => view.hookSnapshot(),
-        () => leakedApproval.resume('ticket', 'rejected'),
+        () => leakedApproval.ask({} as never),
         () => leakedCheckpoint.list(),
       )
       descendants.push(
         leakedFs.read('file'),
         leakedSandbox.confine(['tool']),
         view.hookSnapshot(),
-        leakedApproval.resume('ticket', 'rejected'),
+        leakedApproval.ask({} as never),
         leakedCheckpoint.list(),
       )
     })

@@ -19,14 +19,13 @@ it('real inspect validates versioned recovery fixtures without installing or exe
         [
           'approval',
           'checkpoint',
-          'ledger',
+          'billing',
           'sandbox',
           'verifier',
           'repair',
           'artifacts',
           'principals',
           'platform',
-          'harness',
         ].map((name) => [name, '@agnes/base']),
       ),
       policySnapshot: {

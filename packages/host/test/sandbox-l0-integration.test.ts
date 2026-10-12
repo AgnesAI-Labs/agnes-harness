@@ -82,13 +82,12 @@ const ROUTE: RouteDecl = { route: 'gw', api: 'openai', baseUrl: 'https://gw.exam
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 const dirs: string[] = []

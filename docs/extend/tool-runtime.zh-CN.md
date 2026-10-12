@@ -20,7 +20,7 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 工具权限请求由 Core 持有，保存在 `decision/state` 中。deferred invocation 的 `approvalId` 引用原 decision handle ID，会话重开后仍恢复原调用，不另建票据。没有 handler 只结束投递，请求继续等待。在隔离 author testkit 中，返回带合成 `answeredBy` 身份的 verdict，才能验证经过认证的答复。
 
-策略可在 `ask` 决策中附带 `approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision }`。`subjectRevision` 是待审领域状态的 SHA-256。Core 只提供单次批准/拒绝，跳过 smart reviewer 和 session/permanent grants，将决策绑定到该 revision 与精确调用。执行端得到只读事实 `ToolContext.approval`（`requestId`、`subjectRevision`、`answeredBy`）；领域 continuation 必须先原子比较当前 revision，才能应用变更。这些事实字段不会给 extension-api 增加决策方法。
+策略可在 `ask` 决策中附带 `approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision }`。`subjectRevision` 是待审领域状态的 SHA-256。Core 只提供单次批准/拒绝，跳过 session/permanent grants，将决策绑定到该 revision 与精确调用。执行端得到只读事实 `ToolContext.approval`（`requestId`、`subjectRevision`、`answeredBy`）；领域 continuation 必须先原子比较当前 revision，才能应用变更。这些事实字段不会给 extension-api 增加决策方法。
 
 参见[只读策略示例](../../examples/policies/read-only/)和[循环事件](loop-events.zh-CN.md)。
 

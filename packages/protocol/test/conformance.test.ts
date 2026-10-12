@@ -37,14 +37,14 @@ const COUNTS = {
   slots: 8,
   model: 8,
   preset: 149,
-  task20: 211,
+  task20: 210,
   task21: 178,
   migrate: 1,
   sequences: 4,
   workerRuntimeTarget: 8,
 } as const
 // Includes generation status, capability/source authoring and permission-profile fixtures.
-const ALL_FIXTURE_COUNT = 1545
+const ALL_FIXTURE_COUNT = 1544
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {

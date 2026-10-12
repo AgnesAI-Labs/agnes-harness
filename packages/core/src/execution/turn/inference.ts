@@ -736,7 +736,7 @@ export async function admitInferenceRequest(
   // its complete prepared wire so a tiny inbox prompt cannot authorize a large private request.
   const cap = s.turnBudgetCap()
   if (projectPreparedWire && cap !== null) {
-    const projected = await s.d.runtime.ledgerProjected({ tokensEstimate: estimate, model: target.model })
+    const projected = await s.d.runtime.billingProjected({ tokensEstimate: estimate, model: target.model })
     if (projected.credits > cap) {
       if (s.preset.budget.onExceed === 'deny') {
         await s.endTurn('budget')
@@ -782,7 +782,7 @@ export async function admitInferenceRequest(
       await s.endTurn('budget')
       return { phase: 'terminal', reason: 'budget' }
     }
-    const projected = await s.d.runtime.ledgerProjected({
+    const projected = await s.d.runtime.billingProjected({
       tokensEstimate: inputTokens,
       model: target.model,
     })
@@ -1341,7 +1341,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
      * refusal above never fires for an unrecordable interrupted spend.
      */
     const record = async (interrupted: boolean): Promise<void> => {
-      const ok = await s.d.runtime.ledgerRecord({
+      const ok = await s.d.runtime.billingRecord({
         ...spend,
         ...(interrupted ? { interrupted: true } : {}),
         sessionKey: s.key,
@@ -1351,7 +1351,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       })
       if (!ok) {
         t.ledgerFailed = true
-        await s.diag('seam-failed', { seam: 'ledger', op: 'record' })
+        await s.diag('seam-failed', { seam: 'billing', op: 'record' })
       }
       await settleTreeSpend(s, spend.credits, (s.lastSeq + 1) as Seq)
     }

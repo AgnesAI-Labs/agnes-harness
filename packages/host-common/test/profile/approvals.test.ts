@@ -34,18 +34,15 @@ describe('resolved approval mode', () => {
     expect(implicit.hash).toBe(explicit.hash)
   })
 
-  it.each(['smart', 'off', 'auto-review'] as const)(
-    'accepts %s only from the trusted profile layer',
-    async (mode) => {
-      const manual = await resolveProfile({ builtin: 'local-dev', lock }, env)
-      const resolved = await resolveProfile(
-        { builtin: 'local-dev', lock, user: { name: 'local-dev', approvals: { mode } } },
-        env,
-      )
-      expect(resolved.approvals.mode).toBe(mode)
-      expect(resolved.hash).not.toBe(manual.hash)
-    },
-  )
+  it.each(['off', 'auto-review'] as const)('accepts %s only from the trusted profile layer', async (mode) => {
+    const manual = await resolveProfile({ builtin: 'local-dev', lock }, env)
+    const resolved = await resolveProfile(
+      { builtin: 'local-dev', lock, user: { name: 'local-dev', approvals: { mode } } },
+      env,
+    )
+    expect(resolved.approvals.mode).toBe(mode)
+    expect(resolved.hash).not.toBe(manual.hash)
+  })
 
   it.each(['off', 'auto-review'] as const)(
     'rejects workspace %s instead of treating a verified repository as an admin layer',
@@ -82,28 +79,26 @@ describe('resolved approval mode', () => {
     })
   })
 
-  it('lets a workspace tighten off to smart/manual but never manual to smart', async () => {
-    for (const mode of ['smart', 'manual'] as const) {
-      const resolved = await resolveProfile(
-        {
-          builtin: 'local-dev',
-          lock: { ...lock, workspace },
-          user: { name: 'trusted', approvals: { mode: 'off' } },
-          workspaceOverlay: { approvals: { mode } },
-        },
-        env,
-      )
-      expect(resolved.approvals.mode).toBe(mode)
-    }
+  it('lets a workspace tighten off to manual', async () => {
+    const resolved = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock: { ...lock, workspace },
+        user: { name: 'trusted', approvals: { mode: 'off' } },
+        workspaceOverlay: { approvals: { mode: 'manual' } },
+      },
+      env,
+    )
+    expect(resolved.approvals.mode).toBe('manual')
+  })
 
+  it('rejects the removed smart mode and points at auto-review', async () => {
     const error = await refused({
       builtin: 'local-dev',
-      lock: { ...lock, workspace },
-      workspaceOverlay: { approvals: { mode: 'smart' } },
+      lock,
+      user: { name: 'local-dev', approvals: { mode: 'smart' as never } },
     })
-    expect(error).toMatchObject({
-      code: 'E_PROFILE_FRAGMENT_KEY',
-      detail: { field: 'approvals.mode', from: 'manual', to: 'smart' },
-    })
+    expect(error).toMatchObject({ code: 'E_PROFILE_FRAGMENT_KEY' })
+    expect(String((error as Error).message)).toContain('auto-review')
   })
 })

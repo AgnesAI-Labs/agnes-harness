@@ -69,13 +69,12 @@ const fakeSkillRuntimeInput = (hexChar: string): SkillRuntimeInput => {
 const SEAM_NAMES = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 /**

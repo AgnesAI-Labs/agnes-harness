@@ -4,11 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   approvalPlugin,
   artifactsPlugin,
+  billingPlugin,
   checkpointPlugin,
   defineSeamPlugin,
   HOST_SEAM_INIT,
-  harnessPlugin,
-  ledgerPlugin,
   principalsPlugin,
   repairPlugin,
   verifierPlugin,
@@ -37,9 +36,6 @@ function testApproval(label: string, close: () => void): TestApproval {
     label,
     async ask() {
       return 'rejected'
-    },
-    async resume() {
-      return null
     },
     close,
   }
@@ -71,16 +67,15 @@ function normalizeConfig<T>(
 }
 
 describe('ordinary Cordis seam exports', () => {
-  it('declares all eight dynamic seams as normal plugins', () => {
+  it('declares all seven dynamic seams as normal plugins', () => {
     const plugins = {
       approval: approvalPlugin,
       principals: principalsPlugin,
       artifacts: artifactsPlugin,
       checkpoint: checkpointPlugin,
-      ledger: ledgerPlugin,
+      billing: billingPlugin,
       verifier: verifierPlugin,
       repair: repairPlugin,
-      harness: harnessPlugin,
     }
     expect(Object.entries(plugins).map(([name, plugin]) => [plugin.provide, plugin.inject, name])).toEqual(
       Object.keys(plugins).map((name) => [`seam:${name}`, ['host:seam-init'], name]),

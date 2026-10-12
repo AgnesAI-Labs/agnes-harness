@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { stampFor } from '@agnes/ai/testkit'
 import { seams } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
-import { contextTokens, type LedgerSeam } from '@agnes/core'
+import { type BillingSeam, contextTokens } from '@agnes/core'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import {
   type InferenceEvent,
@@ -66,7 +66,7 @@ async function fixture(
     treeBudgetCredits?: number
     park?: boolean
     blockTitleBudget?: boolean
-    ledger?: LedgerSeam
+    ledger?: BillingSeam
   } = {},
 ) {
   const root = options.root ?? realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-')))
@@ -91,7 +91,7 @@ async function fixture(
     ...(options.blockTitleBudget
       ? {
           seams: {
-            ledger: {
+            billing: {
               projected: async () => ({
                 credits: ownedSession?.op() ? 0 : Number.POSITIVE_INFINITY,
                 creditSource: 'estimated' as const,
@@ -117,7 +117,7 @@ async function fixture(
         },
       },
     },
-    ...(options.ledger ? { seams: { ledger: options.ledger } } : {}),
+    ...(options.ledger ? { seams: { billing: options.ledger } } : {}),
     ...(options.treeBudgetCredits === undefined ? {} : { treeBudgetCredits: options.treeBudgetCredits }),
     provider: {
       models: () => [model('m1'), model('m2')],
@@ -243,7 +243,7 @@ it('records equal-sequence title costs from separate sessions in the real ledger
   const storage = createSqliteStorage({ file: join(root, 'audit.db'), tablesDir: join(root, 'audit-tables') })
   const init = fakeSeamInit()
   init.adapters.storage = storage.tables('title-audit')
-  const ledger = await seams.ledger(init)
+  const ledger = await seams.billing(init)
   const recorded = vi.spyOn(ledger, 'record')
   let host: Host | undefined
   try {
@@ -291,10 +291,10 @@ it.each(['valid title', '```invalid title'])(
     })
     const init = fakeSeamInit()
     init.adapters.storage = storage.tables('title-recovery')
-    const real = await seams.ledger(init)
+    const real = await seams.billing(init)
     let fail = true
     let failures = 0
-    const ledger: LedgerSeam = {
+    const ledger: BillingSeam = {
       projected: real.projected,
       async record(row) {
         if (row.purpose === 'title' && fail) {
@@ -364,7 +364,7 @@ it('closes a hanging title adapter, records unknown usage, and ignores late outp
 it('opens and closes promptly while title ledger recovery is hung', async () => {
   let hang = false
   let entered = false
-  const ledger: LedgerSeam = {
+  const ledger: BillingSeam = {
     projected: async () => ({ credits: 0, creditSource: 'estimated' }),
     async record(row) {
       if (row.purpose === 'title' && hang) {
@@ -397,7 +397,7 @@ it('does not start a late ledger write after recovery scan times out', async () 
     if (query.type === 'cost/ledger') await wait
     return originalScan(query)
   })
-  const record = vi.spyOn(f.session.d.runtime, 'ledgerRecord')
+  const record = vi.spyOn(f.session.d.runtime, 'billingRecord')
   const onError = vi.fn()
   const recovery = await startSessionTitle(f.session, { schedule: (work) => work(), onError, timeoutMs: 5 })
   try {
@@ -437,7 +437,7 @@ it('ignores forged and mismatched cost rows across pages when recovering title u
   })
   // Use enough sequence space to require the second page without appending forged data to disk.
   const lastSeq = vi.spyOn(f.session, 'lastSeq', 'get').mockReturnValue(cost.seq + 200)
-  const record = vi.spyOn(f.session.d.runtime, 'ledgerRecord').mockResolvedValue(true)
+  const record = vi.spyOn(f.session.d.runtime, 'billingRecord').mockResolvedValue(true)
   const recovery = await startSessionTitle(f.session, { schedule: (work) => work(), onError: () => {} })
   try {
     await vi.waitFor(() => expect(record).toHaveBeenCalledOnce())

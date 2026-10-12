@@ -258,7 +258,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
             }),
           ])
           await settleTreeSpend(s, usage.credits, costSeq!)
-          if (!(await s.d.runtime.ledgerRecord(spend))) {
+          if (!(await s.d.runtime.billingRecord(spend))) {
             if (s.turn) s.turn.ledgerFailed = true
             throw new Error('Loop model usage could not be recorded')
           }

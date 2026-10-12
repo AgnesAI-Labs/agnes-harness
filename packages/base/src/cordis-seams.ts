@@ -2,11 +2,10 @@ import type { SeamImplementations, SeamName } from '@agnes/core'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { approvalPolicy } from '../extensions/approval-policy/src/seam.js'
 import { artifactsLocal } from '../extensions/artifacts-local/src/seam.js'
-import { budgetLedger } from '../extensions/budget/src/seam.js'
+import { budgetBilling } from '../extensions/budget/src/seam.js'
 import { fsCheckpoint } from '../extensions/fs-checkpoint/src/seam.js'
 import { repairPolicy, verifierT0 } from '../extensions/loop-hygiene/src/seam.js'
 import { principalsLocal } from '../extensions/principals-local/src/seam.js'
-import { refineHarness } from '../extensions/refine/src/seam.js'
 import type { SeamFactory, SeamInitContext } from './seam-init.js'
 
 export const HOST_SEAM_INIT = 'host:seam-init' as const
@@ -107,7 +106,6 @@ export const approvalPlugin = defineSeamPlugin('approval', approvalPolicy)
 export const principalsPlugin = defineSeamPlugin('principals', principalsLocal)
 export const artifactsPlugin = defineSeamPlugin('artifacts', artifactsLocal)
 export const checkpointPlugin = defineSeamPlugin('checkpoint', fsCheckpoint)
-export const ledgerPlugin = defineSeamPlugin('ledger', budgetLedger)
+export const billingPlugin = defineSeamPlugin('billing', budgetBilling)
 export const verifierPlugin = defineSeamPlugin('verifier', verifierT0)
 export const repairPlugin = defineSeamPlugin('repair', repairPolicy)
-export const harnessPlugin = defineSeamPlugin('harness', refineHarness)

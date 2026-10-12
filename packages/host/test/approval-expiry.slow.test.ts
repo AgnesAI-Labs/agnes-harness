@@ -43,7 +43,6 @@ describe('Host approval expiry lifecycle', () => {
       seams: {
         approval: {
           ask: async () => ({ verdict: 'unavailable' as const, reason: 'no-handler' as const }),
-          resume: async () => null,
         },
       },
     })

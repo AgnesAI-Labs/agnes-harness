@@ -78,7 +78,7 @@ const modelRecord = (route: string, id: string, slot?: NonNullable<ModelRecord['
 
 describe('Kernel (I1 assembly)', () => {
   it('refuses to create without every seam, and names the one that is missing', () => {
-    for (const name of ['repair', 'ledger', 'principals'] as const) {
+    for (const name of ['repair', 'billing', 'principals'] as const) {
       const seams = fakeSeams()
       delete (seams as Record<string, unknown>)[name]
       const err = (() => {
@@ -572,7 +572,6 @@ describe('Kernel (fix round 1)', () => {
           asked.push({ tool: req.tool?.name, taint: req.taint })
           return { verdict: 'allowed-once' as const, answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const k = base({

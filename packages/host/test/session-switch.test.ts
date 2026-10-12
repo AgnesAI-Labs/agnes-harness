@@ -47,13 +47,12 @@ const modelRecord = (route: string, id: string): ModelRecord => ({
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 const log = { debug() {}, info() {}, warn() {}, error() {} }
 

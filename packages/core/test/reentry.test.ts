@@ -365,15 +365,12 @@ describe('re-entry and slots', () => {
       } as never,
       { source: 's', trust: 'builtin' },
     )
-    let receipt: { requestId: string; bindingHash: string; expiresAt: string } | undefined
     const seams = fakeSeams({
       approval: {
-        ask: async (request) => {
+        ask: async () => {
           const expiresAt = '2999-01-01T00:00:00.000Z'
-          receipt = { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt }
           return { ticket: 'nested-ticket', expiresAt }
         },
-        resume: async (ticket) => (ticket === 'nested-ticket' ? (receipt ?? null) : null),
       },
     })
     const h = await openSession({
@@ -661,7 +658,6 @@ describe('re-entry and slots', () => {
     const seams = fakeSeams({
       approval: {
         ask: async () => ({ ticket: 'depth-2-ticket', expiresAt: '2999-01-01T00:00:00.000Z' }),
-        resume: async () => null,
       },
     })
     const original = await openSession({

@@ -26,14 +26,13 @@ function prepare(root: string, dataDir: string = root) {
     seams: {
       approval: '@agnes/base',
       checkpoint: '@agnes/base',
-      ledger: '@agnes/base',
+      billing: '@agnes/base',
       sandbox: '@agnes/base',
       verifier: '@agnes/base',
       repair: '@agnes/base',
       artifacts: '@agnes/base',
       principals: '@agnes/base',
       platform: '@agnes/base',
-      harness: '@agnes/base',
     },
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })

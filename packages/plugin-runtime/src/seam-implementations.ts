@@ -4,12 +4,11 @@ import { type OrdinaryDispatch, SeamRuntime } from './seam.js'
 export const DYNAMIC_SEAM_NAMES = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 export type DynamicSeamName = (typeof DYNAMIC_SEAM_NAMES)[number]
@@ -24,7 +23,7 @@ export type MutableSeamImplementations<T> = Readonly<{
 }>
 
 /**
- * Compose stable forwarding facades for the eight runtime seams with the two build-time seams.
+ * Compose stable forwarding facades for the seven runtime seams with the two build-time seams.
  * The generic preserves Core's exact seam interfaces without making plugin-runtime depend on Core.
  */
 export function createSeamImplementations<T extends DynamicSeams & StaticSeams>(

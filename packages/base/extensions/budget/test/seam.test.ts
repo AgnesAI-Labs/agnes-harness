@@ -1,9 +1,9 @@
-import type { LedgerRow } from '@agnes/core'
+import type { BillingRow } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
-import { budgetLedger } from '../src/seam.js'
+import { budgetBilling } from '../src/seam.js'
 
-const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({
+const row = (over: Partial<BillingRow> = {}): BillingRow => ({
   sessionKey: 's',
   lane: 'main',
   turn: 1,
@@ -20,7 +20,7 @@ const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({
 describe('budget ledger', () => {
   it('records rows and ignores replays of the same effect', async () => {
     const init = fakeSeamInit()
-    const seam = await budgetLedger(init)
+    const seam = await budgetBilling(init)
     await seam.record(row())
     await seam.record(row())
     expect(init.tables.get('usage_ledger')?.rows).toHaveLength(1)
@@ -28,7 +28,7 @@ describe('budget ledger', () => {
 
   it('projects from gateway rows of the same model, estimated when no history', async () => {
     const init = fakeSeamInit()
-    const seam = await budgetLedger(init)
+    const seam = await budgetBilling(init)
     expect(await seam.projected({ tokensEstimate: 500, model: 'm' })).toEqual({
       credits: 0,
       creditSource: 'estimated',
@@ -43,9 +43,9 @@ describe('budget ledger', () => {
 
   it('throws when the table write fails', async () => {
     const init = fakeSeamInit()
-    const seam = await budgetLedger(init)
+    const seam = await budgetBilling(init)
     const table = init.tables.get('usage_ledger')
-    if (!table) throw new Error('usage_ledger table was not opened by budgetLedger')
+    if (!table) throw new Error('usage_ledger table was not opened by budgetBilling')
     table.run = () => {
       throw new Error('disk full')
     }

@@ -74,7 +74,6 @@ export type PersistedToolApproval = {
   requestId: string
   verdict: ApprovalVerdict
   grantId?: string
-  via: 'human' | 'guardian'
   decisionRef?: DecisionHandle
   decidedAt: string
   answeredBy?: Actor
@@ -83,8 +82,8 @@ export type PersistedToolApproval = {
 
 /**
  * Finds a decision already durably bound to this exact call and scope. This is the common crash
- * recovery path for synchronous, callback, and guardian decisions: once the ledger says what was
- * decided, no caller is asked and no guardian is invoked a second time.
+ * recovery path for synchronous and callback decisions: once the ledger says what was decided,
+ * no caller is asked a second time.
  */
 export async function persistedToolApproval(
   s: SessionImpl,
@@ -141,7 +140,6 @@ export async function persistedToolApproval(
     return {
       requestId: snapshot.handle.id,
       verdict: option as ApprovalVerdict,
-      via: 'human',
       decisionRef: snapshot.handle,
       decidedAt: snapshot.result.at,
       answeredBy: snapshot.result.answeredBy,
@@ -151,41 +149,6 @@ export async function persistedToolApproval(
         : {}),
     }
   }
-  const guardians = await scanAll((query) => s.d.log.scan(query), {
-    type: 'approval/guardian-decided',
-    lane: s.lane,
-    fromSeq: call.seq,
-    toSeq: s.lastSeq,
-  })
-  for (const row of guardians.reverse()) {
-    const value = row.data as import('@agnes/protocol').ApprovalGuardianDecision
-    if (
-      row.origin !== 'system' ||
-      row.trust !== 'trusted' ||
-      row.actor.id !== s.d.actor.id ||
-      row.actor.org !== s.d.actor.org ||
-      value.toolUseId !== input.toolUseId ||
-      value.scope !== input.scope
-    )
-      continue
-    if (
-      value.bindingHash !== expected ||
-      value.policyHash !== input.policyHash ||
-      value.policyVersion !== input.policyVersion ||
-      value.policyBinding !== input.policyBinding
-    )
-      throw new Error('DECISION_SUBJECT_CHANGED')
-    const verdict =
-      value.decision === 'allow-once'
-        ? 'allowed-once'
-        : value.decision === 'allow-session'
-          ? 'allowed-session'
-          : value.decision === 'reject'
-            ? 'rejected'
-            : undefined
-    if (verdict) return { requestId: value.requestId, verdict, via: 'guardian', decidedAt: row.ts }
-  }
-
   return undefined
 }
 
@@ -269,56 +232,6 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
         scope: subject.scope,
         definitionFingerprint: subject.call.definitionFingerprint,
         policyBinding: subject.policyBinding,
-      }),
-    )
-  }
-  const guardians = await scanAll((query) => s.d.log.scan(query), {
-    type: 'approval/guardian-decided',
-    lane: s.lane,
-    toSeq: s.lastSeq,
-  })
-  for (const row of guardians) {
-    const value = row.data as import('@agnes/protocol').ApprovalGuardianDecision
-    if (
-      value.decision !== 'allow-session' ||
-      row.origin !== 'system' ||
-      row.trust !== 'trusted' ||
-      row.actor.id !== s.d.actor.id ||
-      row.actor.org !== s.d.actor.org
-    )
-      continue
-    const call = s.state.toolCalls.get(value.toolUseId)
-    if (!call || call.lane !== s.lane) continue
-    const [original] = await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane })
-    if (original?.type !== 'tool/call') continue
-    const data = original.data as {
-      name: string
-      args: unknown
-      policyHash?: string
-      definitionFingerprint?: string
-    }
-    if (
-      data.policyHash !== value.policyHash ||
-      data.definitionFingerprint !== value.definitionFingerprint ||
-      value.bindingHash !==
-        approvalBindingHash({
-          sessionKey: s.key,
-          stepId: `${call.turn}/${call.step}`,
-          toolUseId: value.toolUseId,
-          args: data.args,
-          policyHash: value.policyHash,
-          scope: value.scope,
-        })
-    )
-      continue
-    s.sessionAllows.add(
-      sessionGrantKey({
-        actor: s.d.actor,
-        sessionKey: s.key,
-        toolId: data.name,
-        scope: value.scope,
-        definitionFingerprint: value.definitionFingerprint,
-        policyBinding: value.policyBinding,
       }),
     )
   }

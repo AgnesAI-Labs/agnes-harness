@@ -397,9 +397,9 @@ export async function createSession(
   }
 
   // 4 key and per-session overrides
-  if (opts.seams && 'ledger' in opts.seams)
-    throw new HostError('E_SEAM_IMMUTABLE', 'the ledger seam cannot be overridden per session', {
-      detail: { seam: 'ledger' },
+  if (opts.seams && 'billing' in opts.seams)
+    throw new HostError('E_SEAM_IMMUTABLE', 'the billing seam cannot be overridden per session', {
+      detail: { seam: 'billing' },
     })
   const key = opts.key ?? sessionKey(profile, actor, cwd)
   if (opts.binding && opts.binding.sessionKey !== key)

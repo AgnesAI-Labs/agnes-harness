@@ -479,7 +479,6 @@ export type {
 export type {
   Actor,
   ApprovalGrant,
-  ApprovalGuardianDecision,
   ArtifactJob,
   ArtifactRef,
   AssistantMessage,

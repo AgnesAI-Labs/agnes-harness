@@ -428,12 +428,12 @@ describe('Host approval grant store', () => {
     const dataDir = temp()
     const testHost = await createTestHost({
       dataDir,
-      profileInputs: { user: { name: 'local-dev', approvals: { mode: 'smart' } } },
+      profileInputs: { user: { name: 'local-dev', approvals: { mode: 'auto-review' } } },
       disableSessionTitle: true,
     })
     try {
       expect((testHost.host.kernel as unknown as { o: { approvalMode?: string } }).o.approvalMode).toBe(
-        'smart',
+        'auto-review',
       )
     } finally {
       await testHost.host.close()

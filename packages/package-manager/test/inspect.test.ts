@@ -41,14 +41,13 @@ const source = parseSource('file:./candidate')
 const seamNames = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
   'platform',
-  'harness',
 ]
 function manager(options: Partial<ManagerOptions> = {}) {
   return createPackageManager({ dataDir: root, agnesVersion: '0.1.0', cwd: root, ...options })

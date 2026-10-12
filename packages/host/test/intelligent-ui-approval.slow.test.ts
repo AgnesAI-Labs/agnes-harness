@@ -101,14 +101,13 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
       [
         'approval',
         'checkpoint',
-        'ledger',
+        'billing',
         'sandbox',
         'verifier',
         'repair',
         'artifacts',
         'principals',
         'platform',
-        'harness',
       ].map((name) => [name, '@agnes/base']),
     ),
     packages: {

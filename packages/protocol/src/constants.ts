@@ -30,7 +30,6 @@ export const EVENT_TYPES = [
   'format/deviation',
   'cost/ledger',
   'decision/state',
-  'approval/guardian-decided',
   'feedback/rating',
   'feedback/implicit',
   'participant',

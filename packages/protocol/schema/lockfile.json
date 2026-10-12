@@ -616,14 +616,13 @@
           "required": [
             "approval",
             "checkpoint",
-            "ledger",
+            "billing",
             "sandbox",
             "verifier",
             "repair",
             "artifacts",
             "principals",
-            "platform",
-            "harness"
+            "platform"
           ],
           "properties": {
             "approval": {
@@ -632,7 +631,7 @@
             "checkpoint": {
               "type": "string"
             },
-            "ledger": {
+            "billing": {
               "type": "string"
             },
             "sandbox": {
@@ -651,9 +650,6 @@
               "type": "string"
             },
             "platform": {
-              "type": "string"
-            },
-            "harness": {
               "type": "string"
             }
           }

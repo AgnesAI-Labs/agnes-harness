@@ -66,14 +66,13 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
           [
             'approval',
             'checkpoint',
-            'ledger',
+            'billing',
             'sandbox',
             'verifier',
             'repair',
             'artifacts',
             'principals',
             'platform',
-            'harness',
           ].map((name) => [name, '@agnes/base']),
         )
         const runtimeSources: RuntimePluginSnapshot[] = []

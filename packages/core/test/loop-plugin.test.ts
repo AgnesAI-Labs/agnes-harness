@@ -614,7 +614,7 @@ it.each([
       const preset = presetDefaults()
       preset.budget = { ...preset.budget, maxSteps, perRequestCap: cap, onExceed: disposition }
       const seams = fakeSeams({
-        ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
+        billing: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
         approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) },
       })
       const k = kernel(new MemoryStorage(), loops, { preset, seams })
@@ -847,7 +847,7 @@ it.each(['deny', 'quote'] as const)(
     const preset = presetDefaults()
     preset.budget = { ...preset.budget, perRequestCap: 100, onExceed }
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
       approval: { ask: async () => 'rejected' },

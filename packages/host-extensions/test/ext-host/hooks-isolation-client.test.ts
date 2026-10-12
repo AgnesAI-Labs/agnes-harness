@@ -399,7 +399,7 @@ describe('isolated hooks-runner spike', () => {
         enforcement: () => ({ level: 'full', scope: ['process'] }),
         exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
       },
-      approval: { ask: async () => 'rejected', resume: async () => null },
+      approval: { ask: async () => 'rejected' },
       checkpoint: {
         snapshot: async () => ({ id: 'checkpoint' }),
         rewind: async () => undefined,
