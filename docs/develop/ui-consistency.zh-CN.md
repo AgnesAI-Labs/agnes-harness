@@ -92,6 +92,8 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 `Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
 `dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
 纯图标动作必带 label 和共享 tooltip。动作菜单用 `role="menu"`，值选择器用 `role="listbox"`。
+`Toast` 支持 `tone="success|info|error"`（默认 `success`）；导航提示用 `info`，失败操作用 `error`。
+`duration` 仍以毫秒为单位。
 
 设置页顺序为页头 → 提示 → 工具栏 → 内容 → 有改动才出现的保存条。
 `SettingsPage variant="form|list"` 最大宽度为 720/960px；工具栏支持 `search`、

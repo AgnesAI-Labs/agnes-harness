@@ -548,7 +548,7 @@ function SettingsBuiltinImpl(
       </div>
       <SettingsAccountDialog {...(options.translate ? { t: options.translate } : {})} />
       {createPortal(
-        <Toast open={!!terminalNotice} onDismiss={() => setTerminalNotice(false)}>
+        <Toast tone="info" open={!!terminalNotice} onDismiss={() => setTerminalNotice(false)}>
           {terminalNotice === 'needs-session'
             ? (options.translate?.('settings-shell.terminalNeedsSession') ??
               'Open a session to use the terminal.')

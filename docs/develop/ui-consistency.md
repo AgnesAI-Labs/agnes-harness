@@ -91,6 +91,8 @@ Review each inventory surface in en and zh-CN, light and dark, at desktop and 39
 `dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
 explain unavailable actions. Icon actions require a label and shared tooltip.
 Menus contain actions (`role="menu"`); value pickers use `role="listbox"`.
+`Toast` accepts `tone="success|info|error"` (default `success`). Use `info` for navigation
+notices and `error` for failed operations. Its `duration` remains milliseconds.
 
 Settings pages compose heading → notice → toolbar → content → dirty save bar.
 Use `SettingsPage variant="form|list"` (720/960px maximum), and toolbar `search`,
