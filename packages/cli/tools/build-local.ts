@@ -242,6 +242,11 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     legalComments: 'none',
     charset: 'utf8',
     logLevel: 'warning',
+    // Bundle the offline diagnostics renderer while preserving the shared React imports.
+    alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [webRoot] }) },
+    banner: {
+      js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+    },
     external: platformExternals,
   })
   // Keep the local launcher's import-map targets and platform singleton graph identical to the

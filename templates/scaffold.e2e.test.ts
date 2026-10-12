@@ -14,7 +14,14 @@ describe('plugin scaffolder', () => {
         const target = await scaffold(kind, '@acme/hello.world', join(temp, kind))
         const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))
         expect(manifest.name).toBe('@acme/hello.world')
-        if (kind === 'loop' || kind === 'model-adapter') {
+        if (kind === 'loop') {
+          expect(manifest.agnes.plugins[0].inject).toEqual(['tools', 'providers', 'skills'])
+          const source = await readFile(join(target, 'src/index.ts'), 'utf8')
+          expect(source).toContain('defineWorkflowLoop({')
+          expect(source).toContain("id: '@acme/hello.world'")
+          expect(source).toContain("source: '@acme/hello.world'")
+          expect(source).toContain('export const main = workflow.main')
+        } else if (kind === 'model-adapter') {
           expect(manifest.agnes.plugins[0].inject).toEqual(['providers'])
           expect(await readFile(join(target, 'src/index.ts'), 'utf8')).toContain(
             `ctx.providers.register('${kind}', '@acme/hello.world',`,

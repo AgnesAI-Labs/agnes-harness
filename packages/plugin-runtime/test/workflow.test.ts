@@ -432,6 +432,13 @@ describe('official workflow state machine', () => {
       let driver = await factory.create(f.ctx)
       await driver.step(signal)
       await driver.step(signal)
+      // Core accepts a fresh input into a model continuation. Yield that admission so a
+      // deferred UI invocation can drain before its wake input is classified as an answer.
+      f.ctx.input.accept = async () => {
+        const next = f.inputs.shift() ?? null
+        if (next) f.continuation('model')
+        return next
+      }
       for (const receipt of [
         input('text', 'Proceed'),
         { ...input('forged'), origin: 'principal' as const },
@@ -441,7 +448,10 @@ describe('official workflow state machine', () => {
           system: { source: 'another', type: 'action-result', summary: 'Proceed', data: {} },
         },
       ]) {
+        f.continuation(null)
         f.inputs.push(receipt)
+        expect((await driver.step(signal)).outcome).toBe('running')
+        expect(state(f.checkpoint()).data).not.toHaveProperty('recorded')
         expect((await driver.step(signal)).outcome).toBe('parked')
       }
       f.continuation('checkpoint')
