@@ -18,6 +18,7 @@ import {
 } from '../../../tools/web-style-source.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
+import { bundledManifests } from './bundled-manifests.mjs'
 import { prepareDocumentReader } from './document-reader.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
 import { copyRipgrep } from './ripgrep.js'
@@ -153,16 +154,8 @@ async function textMap(directory: string, extension: string): Promise<Record<str
   return Object.fromEntries(entries)
 }
 
-async function extensionManifests(packageDirectory: string): Promise<readonly unknown[]> {
-  const packageJson = JSON.parse(await readFile(join(packageDirectory, 'package.json'), 'utf8')) as {
-    agnes?: { extensions?: readonly string[] }
-  }
-  return Promise.all(
-    (packageJson.agnes?.extensions ?? []).map(async (relative) =>
-      JSON.parse(await readFile(join(packageDirectory, relative, 'agnes.extension.json'), 'utf8')),
-    ),
-  )
-}
+const extensionManifests = async (packageDirectory: string): Promise<readonly unknown[]> =>
+  bundledManifests(packageDirectory)
 
 async function runtimeDefines(version: string): Promise<Record<string, string>> {
   const base = join(repoPackages, 'base')

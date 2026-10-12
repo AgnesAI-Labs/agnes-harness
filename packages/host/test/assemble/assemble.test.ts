@@ -6,6 +6,7 @@ import type { Context } from '@agnes/cordis'
 import type { RemoteTransport, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ProviderPluginContext } from '@agnes/extension-api'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { checkpointKind, SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
@@ -1901,14 +1902,16 @@ describe('assemble', () => {
     const extDir = mkdtempSync(join(tmpdir(), 'agnes-ext-widgets-'))
     dirs.push(extDir)
     writeFileSync(
-      join(extDir, 'agnes.extension.json'),
-      JSON.stringify({
-        id,
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.ts',
-        capabilities: { hooks: ['before_step'], slots: ['status.line'] },
-      }),
+      join(extDir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id,
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './index.ts',
+          capabilities: { hooks: ['before_step'], slots: ['status.line'] },
+        }),
+      ),
     )
     writeFileSync(
       join(extDir, 'index.ts'),
@@ -1938,14 +1941,16 @@ describe('assemble', () => {
     const extDir = mkdtempSync(join(tmpdir(), 'agnes-ext-broken-'))
     dirs.push(extDir)
     writeFileSync(
-      join(extDir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'demo/not-broken', // deliberately not `id`: preflight refuses the identity mismatch
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.ts',
-        capabilities: {},
-      }),
+      join(extDir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'demo/not-broken', // deliberately not `id`: preflight refuses the identity mismatch
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './index.ts',
+          capabilities: {},
+        }),
+      ),
     )
     const d = deps({ ...allModules(), [id]: { id, operations: {}, extensionEntry: extDir } })
     d.packageDirs = new Map([

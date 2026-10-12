@@ -2,7 +2,7 @@ import { realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PackageError } from './errors.js'
 
-const MANIFEST_FILE = 'agnes.extension.json'
+const MANIFEST_FILE = 'package.json'
 function fail(file: string, why: string, detail: Record<string, unknown> = {}): never {
   throw new PackageError('E_EXT_LOAD', `${file}: ${why}`, { detail: { file, ...detail } })
 }

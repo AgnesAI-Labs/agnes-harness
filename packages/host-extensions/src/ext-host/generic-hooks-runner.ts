@@ -25,7 +25,7 @@ export async function startGenericHooksRunner(input: {
   if (!directory || !tree || hashDirectory(directory, { exclude: [] }) !== tree)
     throw new HostError('E_EXT_ISOLATION_UNAVAILABLE', 'isolated package snapshot changed')
   const entry = resolveEntry(input.extensionDirectory, input.manifest.entry)
-  const manifestFile = join(input.extensionDirectory, 'agnes.extension.json')
+  const manifestFile = join(input.extensionDirectory, 'package.json')
   const manifestDigest = digest(manifestFile)
   const entryDigest = digest(entry)
   const nonce = randomUUID()

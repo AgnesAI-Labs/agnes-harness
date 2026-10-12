@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams } from '@agnes/core/testkit'
 import type { HookEvent, HookReturnMap } from '@agnes/extension-api'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
 import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
@@ -156,17 +157,19 @@ async function setup(projections = false) {
     JSON.stringify({ type: 'module', agnes: { extensions: ['./ext'] } }),
   )
   writeFileSync(
-    join(extra, 'ext', 'agnes.extension.json'),
-    JSON.stringify({
-      id: 'agnes/enabled-test',
-      version: '1.0.0',
-      apiRange: '^3.0.0',
-      // The current extension-manifest schema requires a `./`-prefixed entry (protocol's
-      // extension-manifest.json `entry` pattern `^\./`); the old bare `'index.mjs'` here predates
-      // that and only ever passed the legacy reader's looser check, not the new one.
-      entry: './index.mjs',
-      capabilities: {},
-    }),
+    join(extra, 'ext', 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: 'agnes/enabled-test',
+        version: '1.0.0',
+        apiRange: '^3.0.0',
+        // The current extension-manifest schema requires a `./`-prefixed entry (protocol's
+        // extension-manifest.json `entry` pattern `^\./`); the old bare `'index.mjs'` here predates
+        // that and only ever passed the legacy reader's looser check, not the new one.
+        entry: './index.mjs',
+        capabilities: {},
+      }),
+    ),
   )
   writeFileSync(
     join(extra, 'ext', 'index.mjs'),

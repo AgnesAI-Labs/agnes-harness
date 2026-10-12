@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import {
+  bundledExtensionManifest,
   checkManifest,
   checkToolDef,
   type ExtensionAPI,
@@ -60,12 +61,12 @@ function capture(failEvent = false, failRegistration = false) {
 }
 describe('minimal author example', () => {
   it('uses a valid manifest and only author API/typebox imports', () => {
-    const manifest = JSON.parse(readFileSync(new URL('agnes.extension.json', dir), 'utf8'))
+    const manifest = bundledExtensionManifest(JSON.parse(readFileSync(new URL('package.json', dir), 'utf8')))
     expect(checkManifest(manifest)).toEqual({ ok: true, value: manifest })
     const source = readFileSync(new URL('index.ts', dir), 'utf8')
     expect([...source.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort()).toEqual([
+      '../../src/index.js',
       '@agnes/extension-api',
-      '@agnes/plugin-runtime',
       '@sinclair/typebox',
     ])
     expect(fixture.cases.map((c) => c.kind)).toEqual(['tool', 'slot', 'negative'])

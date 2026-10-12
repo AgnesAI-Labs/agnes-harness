@@ -34,19 +34,6 @@
       "tool",
       "skills"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/*",
-          "skills/playbook/SKILL.md",
-          "fde-output/contract-review/**"
-        ],
-        "write": [
-          "fde-output/contract-review/**"
-        ]
-      }
-    },
     "plugins": [
       {
         "export": "main",
@@ -68,6 +55,19 @@
               "summary": "并行检查样例合同条款，为专业审核者准备风险草稿。",
               "description": "并行检查样例合同条款，为专业审核者准备风险草稿。"
             }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/*",
+              "skills/playbook/SKILL.md",
+              "fde-output/contract-review/**"
+            ],
+            "write": [
+              "fde-output/contract-review/**"
+            ]
           }
         }
       }

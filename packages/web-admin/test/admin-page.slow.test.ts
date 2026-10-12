@@ -696,7 +696,7 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
         id: 'acme/stale-ui-plugin',
         path: './extensions/main/agnes.extension.json',
         apiRange: '^3.0.0',
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         runtimeSupports: ['in-process'],
         client: { entry: './client/index.js', slots: ['ui:sidebar'] },
       },
@@ -788,7 +788,7 @@ it('does not confirm enable while the browser runtime is still running the old r
         id: 'acme/stale-ui-plugin',
         path: './extensions/main/agnes.extension.json',
         apiRange: '^3.0.0',
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         runtimeSupports: ['in-process'],
         client: { entry: './client/index.js', slots: ['ui:sidebar'] },
       },
@@ -878,7 +878,7 @@ it('allows a checked enable for an inactive client-only package while backend ac
         id: 'examples/dsh-tool-view',
         path: './extensions/main/agnes.extension.json',
         apiRange: '^3.0.0',
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         runtimeSupports: ['in-process'],
         client: {
           entry: './client/index.js',
@@ -974,7 +974,7 @@ it('allows a checked enable for an inactive client-only package while backend ac
   if (clientContribution?.kind !== 'extension') throw new Error('missing client extension fixture')
   currentInstalled = {
     ...installed,
-    contributions: [{ ...clientContribution, capabilities: { ui: ['client'], tools: { prefix: 'test_' } } }],
+    contributions: [{ ...clientContribution, capabilities: { ui: true, tools: { prefix: 'test_' } } }],
   }
   await page.reload()
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()

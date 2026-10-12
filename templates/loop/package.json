@@ -37,7 +37,10 @@
           "tools",
           "providers",
           "skills"
-        ]
+        ],
+        "capabilities": {
+          "model": true
+        }
       }
     ],
     "hostProvidedExternals": {
@@ -46,9 +49,6 @@
     },
     "kinds": [
       "loop"
-    ],
-    "capabilities": {
-      "model": true
-    }
+    ]
   }
 }

@@ -29,7 +29,7 @@ describe('DSH example package metadata', () => {
         version: pkg.version,
         apiRange: '*',
         entry: './index.mjs',
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: descriptor,
       })
 
@@ -69,7 +69,7 @@ describe('DSH example package metadata', () => {
         version: '1.0.0',
         apiRange: '*',
         entry: './index.mjs',
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: json(`${root}/agnes.client.json`),
       })
       expect(checked.ok).toBe(true)

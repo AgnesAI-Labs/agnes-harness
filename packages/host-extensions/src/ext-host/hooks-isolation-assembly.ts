@@ -80,7 +80,7 @@ export async function startHooksIsolationRunner(input: {
 }): Promise<IsolatedHooksRunner> {
   const nonce = randomUUID()
   const packageDigest = hashDirectory(input.packageDirectory)
-  const manifestDigest = digest(join(input.extensionDirectory, 'agnes.extension.json'))
+  const manifestDigest = digest(join(input.extensionDirectory, 'package.json'))
   const runtime = input.preparedRuntime.runtime
   const argv = seatbeltExtensionRunnerArgv(
     [runtime.executable, runtime.runner],

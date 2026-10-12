@@ -35,7 +35,7 @@ function currentFixture() {
       version: '1.0.0',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { capabilities: { ui: true }, plugins: [{ export: 'main', apiRange: '^3.0.0' }] },
+      agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0', capabilities: { ui: true } }] },
     }),
   )
   writeFileSync(join(directory, 'index.mjs'), 'export const main = () => {}\n')

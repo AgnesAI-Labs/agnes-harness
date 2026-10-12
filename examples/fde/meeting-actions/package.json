@@ -35,20 +35,6 @@
       "skills",
       "ui"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/**",
-          "skills/playbook/SKILL.md",
-          "fde-output/meeting-actions/**"
-        ],
-        "write": [
-          "fde-output/meeting-actions/**"
-        ]
-      },
-      "ui": true
-    },
     "plugins": [
       {
         "export": "main",
@@ -71,6 +57,20 @@
               "description": "把样例会议逐字稿转成行动项，起草任务并在模拟创建前请求批准。"
             }
           }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/meeting-actions/**"
+            ],
+            "write": [
+              "fde-output/meeting-actions/**"
+            ]
+          },
+          "ui": true
         }
       }
     ],

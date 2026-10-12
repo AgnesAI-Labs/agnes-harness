@@ -62,7 +62,7 @@ function installed(input: {
         id: 'acme/panel',
         path: './agnes.extension.json',
         apiRange: '*',
-        capabilities: input.backend ? { ui: ['client'], tools: { prefix: 'panel_' } } : { ui: ['client'] },
+        capabilities: input.backend ? { ui: true, tools: { prefix: 'panel_' } } : { ui: true },
         client: {
           ...(input.intelligentComponents ? { intelligentComponents: input.intelligentComponents } : {}),
           entry: input.entry ?? 'dist/index.js',

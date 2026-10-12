@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { readTool } from '../extensions/tools-core/src/tools/read.js'
 import { expectManifestMatchesCode, expectToolMetaComplete, usedCapabilities } from './assertions.js'
@@ -16,14 +17,16 @@ function extension(capabilities: unknown, files: Record<string, string>): string
   const dir = mkdtempSync(join(tmpdir(), 'agnes-ext-'))
   dirs.push(dir)
   writeFileSync(
-    join(dir, 'agnes.extension.json'),
-    JSON.stringify({
-      id: 'agnes/x',
-      version: '0.1.0',
-      apiRange: '^3.0.0',
-      entry: './src/index.ts',
-      capabilities,
-    }),
+    join(dir, 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: 'agnes/x',
+        version: '0.1.0',
+        apiRange: '^3.0.0',
+        entry: './src/index.ts',
+        capabilities: capabilities as never,
+      }),
+    ),
   )
   for (const [name, text] of Object.entries(files)) {
     const file = join(dir, 'src', name)

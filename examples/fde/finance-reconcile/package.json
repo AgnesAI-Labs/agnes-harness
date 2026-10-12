@@ -36,22 +36,6 @@
       "skills",
       "ui"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/**",
-          "skills/playbook/SKILL.md",
-          "fde-output/finance-reconcile/**"
-        ],
-        "write": [
-          "fde-output/finance-reconcile/**"
-        ]
-      },
-      "uiData": [
-        "finance.differences.read"
-      ]
-    },
     "plugins": [
       {
         "export": "main",
@@ -74,6 +58,22 @@
               "description": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。"
             }
           }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/finance-reconcile/**"
+            ],
+            "write": [
+              "fde-output/finance-reconcile/**"
+            ]
+          },
+          "uiData": [
+            "finance.differences.read"
+          ]
         }
       }
     ],

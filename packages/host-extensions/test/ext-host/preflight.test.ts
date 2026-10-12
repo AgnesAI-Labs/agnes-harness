@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { API_VERSION, type ExtensionManifest } from '@agnes/extension-api'
+import { API_VERSION, bundledPackageJson, type ExtensionManifest } from '@agnes/extension-api'
 import { manifestCapabilities } from '@agnes/host-common/packages/capabilities'
 import { afterEach, expect, it } from 'vitest'
 import { preflightExtension } from '../../src/ext-host/preflight.js'
@@ -31,21 +31,20 @@ const manifest = (): ExtensionManifest => ({
     hooks: ['before_step'],
     slots: ['status.line'],
     resources: ['skill'],
-    network: { hosts: ['example.test'] },
+    network: ['example.test'],
     events: true,
     'tools.invoke': true,
     artifacts: true,
     subagent: true,
   },
   lease: { budget: 3 },
-  provides: ['artifacts'],
 })
 function setup(value: unknown = manifest()) {
   const root = mkdtempSync(join(tmpdir(), 'agnes-full-preflight-'))
   roots.push(root)
   const dir = join(root, 'extension')
   mkdirSync(dir)
-  writeFileSync(join(dir, 'agnes.extension.json'), JSON.stringify(value))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(bundledPackageJson(value as never)))
   writeFileSync(join(dir, 'index.ts'), 'export default () => {}')
   return { root, dir, id: 'fixture/full', ceiling: all }
 }
@@ -81,7 +80,7 @@ it('does not treat empty lists or false flags as authority, and rejects unknown 
     subagent: false,
   }
   expect(manifestCapabilities(empty)).toEqual([])
-  empty.capabilities.network = { hosts: [] }
+  empty.capabilities.network = []
   expect(preflightExtension({ ...setup(empty), ceiling: [] }).manifest).toEqual(empty)
   expect(() =>
     manifestCapabilities({ ...empty, capabilities: { unlisted: true } } as unknown as ExtensionManifest),
@@ -102,7 +101,7 @@ it('refuses identity mismatch, incompatible API and invalid full capability shap
   expect(() => preflightExtension({ ...setup(), id: 'fixture/other' })).toThrow(/E_EXT_LOAD/)
   expect(() => preflightExtension(setup({ ...manifest(), apiRange: '^999.0.0' }))).toThrow(/E_API_RANGE/)
   expect(() =>
-    preflightExtension(setup({ ...manifest(), capabilities: { network: ['example.test'] } })),
+    preflightExtension(setup({ ...manifest(), capabilities: { network: { hosts: ['example.test'] } } })),
   ).toThrow(/E_EXT_LOAD/)
 })
 
@@ -112,11 +111,11 @@ it('refuses actual symlink escape and malformed JSON without reflecting its sour
   writeFileSync(outside, 'export default () => {}')
   symlinkSync(outside, join(input.dir, 'linked.ts'))
   writeFileSync(
-    join(input.dir, 'agnes.extension.json'),
-    JSON.stringify({ ...manifest(), entry: './linked.ts' }),
+    join(input.dir, 'package.json'),
+    JSON.stringify(bundledPackageJson({ ...manifest(), entry: './linked.ts' })),
   )
   expect(() => preflightExtension(input)).toThrow(/E_EXT_LOAD/)
-  writeFileSync(join(input.dir, 'agnes.extension.json'), '{"private":"SYNTHETIC-PRIVATE"')
+  writeFileSync(join(input.dir, 'package.json'), '{"private":"SYNTHETIC-PRIVATE"')
   try {
     preflightExtension(input)
     throw new Error('expected refusal')

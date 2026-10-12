@@ -112,7 +112,7 @@ export function serviceContext(deps: {
           alive()
           const target = new URL(url),
             caps = entry.manifest.capabilities.network
-          const hosts = caps && !Array.isArray(caps) ? caps.hosts : []
+          const hosts = caps ?? []
           const host = target.hostname.toLowerCase(),
             port = target.port || (target.protocol === 'https:' ? '443' : '80')
           const matches = (list: readonly string[]) =>

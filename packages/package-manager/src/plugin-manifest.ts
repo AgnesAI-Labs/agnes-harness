@@ -5,7 +5,12 @@ import {
   ProviderError,
   satisfiesApiRange,
 } from '@agnes/extension-api'
-import { type PluginMetadata, validatePluginMetadata } from '@agnes/protocol'
+import {
+  type PluginCapabilities,
+  type PluginMetadata,
+  validatePackageAdminData,
+  validatePluginMetadata,
+} from '@agnes/protocol'
 
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 
@@ -39,8 +44,20 @@ export interface AgnesPluginManifestEntry extends PluginConfigContract {
   readonly inject?: readonly string[]
   /** Surface-callable services registered by this row; checked again at dispatch. */
   readonly services?: readonly string[]
+  /** What the plugin registers and which authority it needs; one shape for every package. */
+  readonly capabilities?: PluginCapabilities
+  /** Bundled packages only: contributions, lease budget, live resources and supported runtimes. */
+  readonly bundled?: BundledEntryFields
 }
 
+export type BundledEntryFields = Readonly<{
+  contributes?: unknown
+  lease?: unknown
+  liveResources?: unknown
+  runtimeSupports?: readonly AgnesPluginRuntime[]
+}>
+
+const BUNDLED_FIELDS = ['contributes', 'lease', 'liveResources', 'runtimeSupports'] as const
 const ENTRY_FIELDS = new Set([
   'metadata',
   'export',
@@ -54,6 +71,7 @@ const ENTRY_FIELDS = new Set([
   'provide',
   'inject',
   'services',
+  'capabilities',
 ])
 const MAX_SERVICE_NAMES = 64
 const MAX_SERVICE_NAME_LENGTH = 128
@@ -123,6 +141,7 @@ function validRowId(value: string): boolean {
 export function parseAgnesPluginEntries(
   packageId: string,
   input: unknown,
+  options: { readonly bundled?: boolean } = {},
 ): readonly Readonly<AgnesPluginManifestEntry>[] {
   if (input === undefined) return Object.freeze([])
   if (!Array.isArray(input)) fail('list', 'must be an array')
@@ -133,7 +152,10 @@ export function parseAgnesPluginEntries(
     if (!value || typeof value !== 'object' || Array.isArray(value))
       fail(`entry ${index}`, 'must be an object')
     const raw = value as Record<string, unknown>
-    const unknown = Object.keys(raw).find((key) => !ENTRY_FIELDS.has(key))
+    const unknown = Object.keys(raw).find(
+      (key) =>
+        !ENTRY_FIELDS.has(key) && !(options.bundled && (BUNDLED_FIELDS as readonly string[]).includes(key)),
+    )
     if (unknown) fail(`entry ${index} unknown field`, unknown)
     if (typeof raw.export !== 'string' || !raw.export.trim() || raw.export.length > 128)
       fail(`entry ${index} export`, 'must be a non-empty string')
@@ -190,8 +212,34 @@ export function parseAgnesPluginEntries(
     }
     if (raw.metadata !== undefined && !validatePluginMetadata(raw.metadata).ok)
       fail(`entry ${index} metadata`, 'must satisfy the public PluginMetadata contract')
+    let capabilities: PluginCapabilities | undefined
+    if (raw.capabilities !== undefined) {
+      const checked = validatePackageAdminData('PluginCapabilities', raw.capabilities)
+      if (!checked.ok) fail(`entry ${index} capabilities`, 'must satisfy the plugin capabilities schema')
+      capabilities = freezeJson(raw.capabilities) as PluginCapabilities
+    }
+    const runtimeSupports = raw.runtimeSupports
+    if (
+      runtimeSupports !== undefined &&
+      (!Array.isArray(runtimeSupports) ||
+        runtimeSupports.length === 0 ||
+        runtimeSupports.some((value) => value !== 'in-process' && value !== 'isolated'))
+    )
+      fail(`entry ${index} runtimeSupports`, 'must list in-process and/or isolated')
+    const bundled: BundledEntryFields | undefined = options.bundled
+      ? Object.freeze({
+          ...(raw.contributes === undefined ? {} : { contributes: freezeJson(raw.contributes) }),
+          ...(raw.lease === undefined ? {} : { lease: freezeJson(raw.lease) }),
+          ...(raw.liveResources === undefined ? {} : { liveResources: freezeJson(raw.liveResources) }),
+          ...(runtimeSupports === undefined
+            ? {}
+            : { runtimeSupports: Object.freeze([...runtimeSupports]) as readonly AgnesPluginRuntime[] }),
+        })
+      : undefined
     return Object.freeze({
       ...(raw.metadata === undefined ? {} : { metadata: freezeJson(raw.metadata) as PluginMetadata }),
+      ...(capabilities === undefined ? {} : { capabilities }),
+      ...(bundled === undefined || Object.keys(bundled).length === 0 ? {} : { bundled }),
       export: raw.export,
       apiRange: raw.apiRange,
       id,

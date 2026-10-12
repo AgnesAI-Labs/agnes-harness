@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { HookHandler } from '@agnes/extension-api'
-import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkToolDef, type ToolDef } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -8,8 +8,8 @@ import blockedComputerUseExtension, { createComputerUseExtension } from '../src/
 
 describe('computer-use extension boundary', () => {
   it('declares and registers only the consolidated computer_use wrapper', () => {
-    const manifest = JSON.parse(
-      readFileSync(new URL('../agnes.extension.json', import.meta.url), 'utf8'),
+    const manifest = bundledExtensionManifest(
+      JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
     ) as { capabilities: { tools: { names: string[] } } }
     expect(manifest.capabilities.tools.names).toEqual(['computer_use'])
 

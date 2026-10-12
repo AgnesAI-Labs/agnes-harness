@@ -85,9 +85,9 @@ function capabilityLines(capabilities: Capabilities, t: LocaleTranslator): strin
     lines.push(`${t('capability.resources')}: ${capabilities.resources.join(t('list.separator'))}`)
   if (capabilities.network !== undefined) {
     lines.push(
-      Array.isArray(capabilities.network)
+      capabilities.network.length === 0
         ? t('capability.network-denied')
-        : t('capability.network-hosts', { hosts: capabilities.network.hosts.join(t('list.separator')) }),
+        : t('capability.network-hosts', { hosts: capabilities.network.join(t('list.separator')) }),
     )
   }
   if (capabilities.artifacts !== undefined)

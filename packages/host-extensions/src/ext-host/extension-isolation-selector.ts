@@ -1,6 +1,6 @@
 import type { ExtensionFactory } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
-import { readManifestIn } from '@agnes/host-common/packages/manager'
+import { readBundledManifest } from '@agnes/host-common/packages/manager'
 import type { InstalledPackage } from '@agnes/package-manager'
 import { validateExtensionIsolationPolicy } from '@agnes/protocol'
 import type { PackageModule, SeamInitContext } from '../assemble/packages.js'
@@ -68,7 +68,7 @@ export function createExtensionFactorySelector(input: {
     const mode = modeFor(extensionId)
     const author =
       input.modules.get(packageId)?.embeddedExtensions?.find((manifest) => manifest.id === extensionId) ??
-      readManifestIn(extensionDirectory)
+      readBundledManifest(extensionDirectory)
     if (!author || author.id !== extensionId)
       throw new HostError('E_EXT_ISOLATION_UNAVAILABLE', 'extension manifest unavailable')
     const supports = author.runtime?.supports ?? ['in-process']

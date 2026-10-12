@@ -9,7 +9,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
@@ -17,6 +16,7 @@ import { ecosystem as baseEcosystem, SHELL_SENTINEL, sandboxWorkspaceProbe } fro
 import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import {
+  bundledExtensionManifest,
   type ExtensionAPI,
   type ExtensionManifest,
   type HookContext,
@@ -183,10 +183,12 @@ async function assembleWithSandbox(opts: {
         ? {
             ecosystem: { 'agnes/hooks-runner': baseEcosystem['agnes/hooks-runner'] },
             embeddedExtensions: [
-              JSON.parse(
-                readFileSync(
-                  new URL('../../base/extensions/hooks-runner/agnes.extension.json', import.meta.url),
-                  'utf8',
+              bundledExtensionManifest(
+                JSON.parse(
+                  readFileSync(
+                    new URL('../../base/extensions/hooks-runner/package.json', import.meta.url),
+                    'utf8',
+                  ),
                 ),
               ) as ExtensionManifest,
             ],

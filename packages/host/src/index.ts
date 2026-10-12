@@ -59,7 +59,7 @@ export {
   type ManagerOptions,
   type PackageManager,
   type PackageStatus,
-  readManifestIn,
+  readBundledManifest,
 } from '@agnes/host-common/packages/manager'
 export {
   type ExecFn,

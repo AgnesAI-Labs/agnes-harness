@@ -36,7 +36,8 @@
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
           "providers"
-        ]
+        ],
+        "capabilities": {}
       }
     ],
     "hostProvidedExternals": {
@@ -46,7 +47,6 @@
     },
     "kinds": [
       "model-adapter"
-    ],
-    "capabilities": {}
+    ]
   }
 }

@@ -1,6 +1,6 @@
 import type { Disposer } from '@agnes/extension-api'
-import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
+import { type Context, defineAgnesPlugin, defineTool } from '../../src/index.js'
 
 export default defineAgnesPlugin({
   inject: ['tools', 'hooks', 'slots', 'resources', 'eventLog', 'self'],

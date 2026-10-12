@@ -344,7 +344,7 @@ it('reviews capability increases against the installed hash, rejects altered rev
     if (f.path !== 'package.json') return f
     const pkg = JSON.parse(f.content)
     pkg.version = '2.0.0'
-    pkg.agnes.capabilities = { network: ['example.invalid'] }
+    pkg.agnes.plugins[0].capabilities = { network: ['example.invalid'] }
     return { ...f, content: JSON.stringify(pkg) }
   })
   const draft = await s.candidates.create(s.profile, nextFiles, 'owner', 'upgrade', origin)

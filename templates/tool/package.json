@@ -36,7 +36,8 @@
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
           "tools"
-        ]
+        ],
+        "capabilities": {}
       }
     ],
     "hostProvidedExternals": {
@@ -46,7 +47,6 @@
     },
     "kinds": [
       "tool"
-    ],
-    "capabilities": {}
+    ]
   }
 }

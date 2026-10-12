@@ -37,23 +37,6 @@
       "skills",
       "mcp"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/*",
-          "skills/playbook/SKILL.md",
-          "fde-output/device-inspection/**"
-        ],
-        "write": [
-          "fde-output/device-inspection/**"
-        ]
-      },
-      "device": true,
-      "exec": [
-        "node"
-      ]
-    },
     "plugins": [
       {
         "export": "main",
@@ -76,6 +59,23 @@
               "description": "检查模拟设备状态并准备受限调整供人工批准，默认仅预览。"
             }
           }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/*",
+              "skills/playbook/SKILL.md",
+              "fde-output/device-inspection/**"
+            ],
+            "write": [
+              "fde-output/device-inspection/**"
+            ]
+          },
+          "device": true,
+          "exec": [
+            "node"
+          ]
         }
       }
     ],

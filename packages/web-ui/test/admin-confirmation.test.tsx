@@ -42,7 +42,7 @@ const preview = {
       capabilities: {
         tools: { prefix: 'review_', names: ['inspect'] },
         'tools.invoke': true,
-        network: { hosts: ['api.example.test'] },
+        network: ['api.example.test'],
       },
     },
   ],

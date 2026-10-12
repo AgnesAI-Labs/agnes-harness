@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import { emptyLock, type Lockfile, readLock, writeLock } from '../src/lockfile.js'
@@ -90,35 +91,13 @@ describe('PackageManager lifecycle', () => {
     expect((error as { detail?: unknown }).detail).toMatchObject({ reason: 'integrity' })
   })
 
-  it('admits a Cordis plugin row without a legacy extension capability ceiling and refuses raw workspace add', async () => {
+  it('admits a Cordis plugin row without a capability ceiling and refuses raw workspace add', async () => {
     const denied = createPackageManager({
       dataDir,
       agnesVersion: '0.1.0',
       cwd: fixtures,
       ceiling: [],
     })
-    // Legacy extension manifests still declare a capability ceiling; Cordis rows do not.
-    const legacy = join(dataDir, 'legacy-extension')
-    mkdirSync(legacy)
-    writeFileSync(
-      join(legacy, 'package.json'),
-      JSON.stringify({ name: 'acme/legacy', version: '1.0.0', license: 'MIT' }),
-    )
-    writeFileSync(
-      join(legacy, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'acme/legacy',
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.js',
-        capabilities: { tools: { prefix: 'legacy_', names: ['legacy_echo'] } },
-      }),
-    )
-    writeFileSync(join(legacy, 'index.js'), 'export default () => () => {}\n')
-    await expect(denied.add(profileDir, `file:${legacy}`, { trust: 'verify' })).rejects.toThrow(
-      /E_PACKAGE_BLOCKED/,
-    )
-    expect(existsSync(packageDir(dataDir, 'local-dev', 'acme/legacy'))).toBe(false)
     await denied.add(profileDir, 'file:./pkg-a', { trust: 'verify' })
     expect(existsSync(packageDir(dataDir, 'local-dev', 'acme/pkg-a'))).toBe(true)
     await expect(denied.add(profileDir, 'workspace:extensions/pkg-a')).rejects.toThrow(/E_PACKAGE_TRUST/)
@@ -264,22 +243,18 @@ describe('PackageManager project trust', () => {
     const extensionDir = join(deployDir, 'extensions', 'sales-analysis')
     writeFileSync(
       join(extensionDir, 'package.json'),
-      JSON.stringify({
-        name: 'xinwei/sales-analysis',
-        version: '1.0.0',
-        license: 'Apache-2.0',
-        dependencies: {},
-      }),
-    )
-    writeFileSync(
-      join(extensionDir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'xinwei/sales-analysis',
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './index.ts',
-        capabilities: { tools: { prefix: 'xw_', names: ['xw_analyze'] } },
-      }),
+      JSON.stringify(
+        bundledPackageJson(
+          {
+            id: 'xinwei/sales-analysis',
+            version: '1.0.0',
+            apiRange: '^3.0.0',
+            entry: './index.ts',
+            capabilities: { tools: { prefix: 'xw_', names: ['xw_analyze'] } },
+          },
+          { name: 'xinwei/sales-analysis', license: 'Apache-2.0', dependencies: {} },
+        ),
+      ),
     )
     writeFileSync(join(extensionDir, 'index.ts'), 'export default () => () => {}\n')
   })

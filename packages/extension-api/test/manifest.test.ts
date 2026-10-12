@@ -18,7 +18,7 @@ const manifest = {
     hooks: ['tool_call'],
     events: true,
     resources: ['skill'],
-    network: { hosts: ['erp.internal:443'] },
+    network: ['erp.internal:443'],
     artifacts: true,
     subagent: true,
     'tools.invoke': true,
@@ -64,8 +64,8 @@ describe('author manifest validation', () => {
       { hooks: 1 },
       { hooks: ['nope'] },
       { events: [] },
-      { network: ['erp.internal'] },
-      { network: { hosts: ['http://erp'] } },
+      { network: { hosts: ['erp.internal'] } },
+      { network: ['http://erp'] },
       { resources: ['shell'] },
       { extra: true },
     ] as const) {
@@ -166,7 +166,7 @@ describe('author manifest skin validation', () => {
   const skin = { id: 'midnight', name: '午夜', css: './skins/midnight/skin.css' }
   const withSkins = (skins: unknown, ui?: unknown) => ({
     ...manifest,
-    capabilities: { ...manifest.capabilities, ...(ui === undefined ? { ui: ['skin'] } : { ui }) },
+    capabilities: { ...manifest.capabilities, ...(ui === undefined ? { ui: true } : { ui }) },
     contributes: { skins },
   })
   it('accepts a skin that declares both the capability and the contribution', () => {
@@ -183,12 +183,10 @@ describe('author manifest skin validation', () => {
     ).toBe(true)
     // A manifest without any skin keeps the pre-skin behaviour untouched.
     expect(checkManifest(manifest).ok).toBe(true)
-    expect(checkManifest({ ...manifest, capabilities: { ...manifest.capabilities, ui: [] } }).ok).toBe(true)
+    expect(checkManifest({ ...manifest, capabilities: { ...manifest.capabilities, ui: [] } }).ok).toBe(false)
   })
-  it('rejects a contribution or capability that appears without its counterpart', () => {
-    expect(checkManifest(withSkins([skin], [])).ok).toBe(false)
-    expect(checkManifest(withSkins([])).ok).toBe(false)
-    expect(checkManifest(withSkins(undefined, ['skin'])).ok).toBe(false)
+  it('rejects a skin contribution without the ui capability', () => {
+    expect(checkManifest(withSkins([skin], false)).ok).toBe(false)
   })
   it('rejects duplicate skin ids inside one package', () => {
     expect(checkManifest(withSkins([skin, skin])).ok).toBe(false)
@@ -283,7 +281,7 @@ describe('reviewed Intelligent UI renderer manifest', () => {
   }
   const candidate = {
     ...manifest,
-    capabilities: { ui: ['client'] },
+    capabilities: { ui: true },
     contributes: { client: { entry: './diff.mjs', intelligentComponents: [declaration] } },
   }
   it('admits bounded local schemas and refuses foreign namespaces, unsafe schemas and missing accessibility', () => {

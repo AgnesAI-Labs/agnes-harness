@@ -28,10 +28,10 @@ Old generations remain while any durable session references them. Close/hibernat
 
 ## Declaring live resource consumption
 
-An extension row opts into live Skills through its public `agnes.extension.json` manifest:
+A bundled extension opts into live Skills through its plugin entry in `package.json`:
 
 ```json
-{ "liveResources": ["skills"] }
+{ "agnes": { "plugins": [{ "id": "ext:agnes/skills", "liveResources": ["skills"] }] } }
 ```
 
 The optional array currently accepts `skills`; duplicate and unknown kinds are rejected. Omission or an empty array means the row is not refreshed for resource changes. The declaration supplies the composition-filtered, workspace-scoped Skill input to the extension factory context; it does not grant extra capabilities or bypass resource trust and read authorization.

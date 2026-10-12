@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bundledExtensionManifest } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { expectManifestMatchesCode, usedCapabilities } from '../testkit/assertions.js'
 
@@ -44,7 +45,7 @@ describe('bundled extensions declare what they use', () => {
 
   it.each(names)('%s: the manifest names itself and points at a file that exists', (name) => {
     const dir = join(extensionsDir, name)
-    const m = JSON.parse(readFileSync(join(dir, 'agnes.extension.json'), 'utf8')) as {
+    const m = bundledExtensionManifest(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))) as {
       id: string
       entry: string
     }
@@ -62,7 +63,9 @@ describe('bundled extensions declare what they use', () => {
   it.each(names)('%s: a piece the host never loads registers nothing', (name) => {
     if (loaded.has(name)) return
     const caps = (
-      JSON.parse(readFileSync(join(extensionsDir, name, 'agnes.extension.json'), 'utf8')) as {
+      bundledExtensionManifest(
+        JSON.parse(readFileSync(join(extensionsDir, name, 'package.json'), 'utf8')),
+      ) as {
         capabilities?: {
           tools?: { names?: string[] }
           hooks?: string[]

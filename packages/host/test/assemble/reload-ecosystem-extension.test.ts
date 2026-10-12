@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ExtensionManifest } from '@agnes/extension-api'
+import { bundledExtensionManifest } from '@agnes/extension-api'
 import type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -354,8 +355,10 @@ describe('Host.reloadEcosystemExtension', () => {
   // exactly the way loadBundledExtensions' embeddedExtensions loop at assemble time does.
   it('reloads a builtin extension that is only reachable via embeddedExtensions (packaged-build shape)', async () => {
     const dataDir = scratch()
-    const skillsManifest = JSON.parse(
-      readFileSync(new URL('../../../base/extensions/skills/agnes.extension.json', import.meta.url), 'utf8'),
+    const skillsManifest = bundledExtensionManifest(
+      JSON.parse(
+        readFileSync(new URL('../../../base/extensions/skills/package.json', import.meta.url), 'utf8'),
+      ),
     ) as ExtensionManifest
     // seamsOnCode's own `packages` overlay (for @agnes/code) must be spread before adding the
     // @agnes/base overlay below - a later `packages:` key in the same object literal replaces the

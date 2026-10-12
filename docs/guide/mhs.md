@@ -48,7 +48,7 @@ Adapter designs, supported devices, and examples will be announced after validat
 
 ## Integration seam (preview)
 
-A package can declare `agnes.capabilities.device: true` alongside its other capabilities. This adds the `device` review/policy atom to installation preview, capability hashes and allow/deny checks. It is an optional additive field: existing manifests retain their hash and behavior. It does not grant controller access, isolate plugin code or certify a device adapter.
+A package can declare `capabilities.device: true` on a plugin entry alongside its other capabilities. This adds the `device` review/policy atom to installation preview, capability hashes and allow/deny checks. It is an optional additive field: existing manifests retain their hash and behavior. It does not grant controller access, isolate plugin code or certify a device adapter.
 
 The MCP bridge retains `readOnlyHint`, `destructiveHint` and `idempotentHint` and maps them to the existing tool policy metadata:
 

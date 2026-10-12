@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkToolDef, type ToolDef } from '@agnes/extension-api'
 
 /**
  * Two assertions about a bundled extension, both of the same shape: something the extension says
@@ -104,7 +104,9 @@ type ManifestCapabilities = {
  * than a manifest allows is the safe direction - a name nobody registers is a name nobody calls.
  */
 export function expectManifestMatchesCode(extDir: string): void {
-  const manifest = JSON.parse(readFileSync(join(extDir, 'agnes.extension.json'), 'utf8')) as {
+  const manifest = bundledExtensionManifest(
+    JSON.parse(readFileSync(join(extDir, 'package.json'), 'utf8')),
+  ) as {
     capabilities?: ManifestCapabilities
   }
   const caps = manifest.capabilities ?? {}

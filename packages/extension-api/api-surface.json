@@ -40,6 +40,8 @@
     "TOOL_PARAMETERS_MAX_BYTES",
     "TOOL_PARAMETERS_MAX_DEPTH",
     "TOOL_POLICY_VERSION_PATTERN",
+    "bundledExtensionManifest",
+    "bundledPackageJson",
     "checkApiRange",
     "checkManifest",
     "checkResolvedToolCallPolicy",

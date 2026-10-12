@@ -1,0 +1,24 @@
+{
+  "name": "@fixture/escape",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "../ok/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:fixture/escape",
+        "export": "default",
+        "apiRange": "^3.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "fx_"
+          }
+        }
+      }
+    ]
+  }
+}

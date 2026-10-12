@@ -23,7 +23,7 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 
 包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
 
-工具模板声明 `agnes.kinds: ["tool"]` 与 `agnes.capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。能力字段的完整格式和示例见[声明能力](../guide/packages.zh-CN.md#能力声明)；空对象适合此纯回声工具，增加文件、网络或进程访问前应按实际范围声明。
+工具模板声明 `agnes.kinds: ["tool"]` 与 插件条目上的 `capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。能力字段的完整格式和示例见[声明能力](../guide/packages.zh-CN.md#能力声明)；空对象适合此纯回声工具，增加文件、网络或进程访问前应按实际范围声明。
 
 ## 2. 启动并打开新会话
 

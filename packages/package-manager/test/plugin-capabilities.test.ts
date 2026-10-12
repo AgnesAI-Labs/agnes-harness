@@ -33,8 +33,13 @@ function fixture() {
       exports: './index.mjs',
       agnes: {
         hostProvidedExternals: { '@agnes/plugin-runtime': '0.0.0' },
-        plugins: [{ apiRange: '^3.0.0', export: 'main' }],
-        capabilities: { network: ['api.example.com'], exec: ['node'] },
+        plugins: [
+          {
+            apiRange: '^3.0.0',
+            export: 'main',
+            capabilities: { network: ['api.example.com'], exec: ['node'] },
+          },
+        ],
       },
     }),
   )

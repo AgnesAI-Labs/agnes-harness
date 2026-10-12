@@ -27,8 +27,23 @@ API additions require a minor version; removals or semantic changes require a ma
   replaces both `on` and `registerHook` (all 16 events), `ctx.eventLog.append` replaces
   `extension().events`, and `ctx.self` replaces `extension().ctx`.
 
+- Two manifest files and two `capabilities` shapes. A bundled extension is described by its
+  package's `package.json` like any other plugin: one `agnes.plugins` entry carries `id`
+  (`ext:<id>`), `apiRange`, `capabilities`, `metadata` and, for bundled packages only,
+  `contributes`, `lease`, `liveResources` and `runtimeSupports`. `agnes.extension.json` and the
+  package-level `agnes.capabilities` are gone; `bundledExtensionManifest` derives the runtime
+  `ExtensionManifest` from an entry and `bundledPackageJson` is its inverse.
+- `ExtensionManifest.provides` (seam names; seams are provider kinds now).
+
 ### Changed
 
+- One `PluginCapabilities` shape for every plugin. Registration keys (`tools`, `hooks`, `slots`,
+  `events`, `resources`, `services`, `projections`, `tools.invoke`, `network.publicRead`,
+  `artifacts`, `subagent`) and authority keys (`network`, `exec`, `secrets`, `credentials`,
+  `filesystem`, `model`, `device`, `childAgents`, `ui`, `uiData`) live in one object.
+  `network` is a list of host patterns (the `{ hosts }` object form is removed) and `ui` is a
+  flag (the `['skin', 'client']` list is removed; `contributes.skins` and `contributes.client`
+  require `ui: true`).
 - `ctx.providers.register(kind, source, provider)` no longer infers its provider type from
   `provider`; the kind token alone decides it.
 

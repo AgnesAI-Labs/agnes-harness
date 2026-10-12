@@ -34,19 +34,6 @@
       "tool",
       "skills"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/**",
-          "skills/playbook/SKILL.md",
-          "fde-output/knowledge-qa/**"
-        ],
-        "write": [
-          "fde-output/knowledge-qa/**"
-        ]
-      }
-    },
     "plugins": [
       {
         "export": "main",
@@ -68,6 +55,19 @@
               "summary": "检索本地样例文档，并起草带来源引用的回答。",
               "description": "检索本地样例文档，并起草带来源引用的回答。"
             }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/knowledge-qa/**"
+            ],
+            "write": [
+              "fde-output/knowledge-qa/**"
+            ]
           }
         }
       }

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { API_VERSION } from '@agnes/extension-api'
+import { API_VERSION, bundledPackageJson } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -40,14 +40,16 @@ const fail = (fn: () => unknown): HostError => {
 }
 
 const manifest = (over: Record<string, unknown> = {}): string =>
-  JSON.stringify({
-    id: 'fixture/x',
-    version: '1.0.0',
-    apiRange: '^3.0.0',
-    entry: './index.ts',
-    capabilities: {},
-    ...over,
-  })
+  JSON.stringify(
+    bundledPackageJson({
+      id: 'fixture/x',
+      version: '1.0.0',
+      apiRange: '^3.0.0',
+      entry: './index.ts',
+      capabilities: {},
+      ...over,
+    } as never),
+  )
 
 describe('readExtensionManifest', () => {
   it('reads the four fields and the tool authority', () => {
@@ -62,15 +64,15 @@ describe('readExtensionManifest', () => {
   })
 
   it('distinguishes no tools block, a prefix-only bound, and a closed list', () => {
-    const none = scratch({ 'agnes.extension.json': manifest(), 'index.ts': '' })
+    const none = scratch({ 'package.json': manifest(), 'index.ts': '' })
     expect(readExtensionManifest(none).tools).toEqual({ prefix: '', names: [] })
     const prefixOnly = scratch({
-      'agnes.extension.json': manifest({ capabilities: { tools: { prefix: 'p_' } } }),
+      'package.json': manifest({ capabilities: { tools: { prefix: 'p_' } } }),
       'index.ts': '',
     })
     expect(readExtensionManifest(prefixOnly).tools).toEqual({ prefix: 'p_', names: null })
     const closed = scratch({
-      'agnes.extension.json': manifest({ capabilities: { tools: { prefix: '', names: ['a'] } } }),
+      'package.json': manifest({ capabilities: { tools: { prefix: '', names: ['a'] } } }),
       'index.ts': '',
     })
     expect(readExtensionManifest(closed).tools).toEqual({ prefix: '', names: ['a'] })
@@ -78,7 +80,7 @@ describe('readExtensionManifest', () => {
 
   it('refuses a declared name that does not carry the declared prefix', () => {
     const dir = scratch({
-      'agnes.extension.json': manifest({ capabilities: { tools: { prefix: 'p_', names: ['q_one'] } } }),
+      'package.json': manifest({ capabilities: { tools: { prefix: 'p_', names: ['q_one'] } } }),
       'index.ts': '',
     })
     const e = fail(() => readExtensionManifest(dir))
@@ -87,7 +89,7 @@ describe('readExtensionManifest', () => {
   })
 
   it('refuses a manifest whose apiRange does not admit the running API', () => {
-    const dir = scratch({ 'agnes.extension.json': manifest({ apiRange: '^9.0' }), 'index.ts': '' })
+    const dir = scratch({ 'package.json': manifest({ apiRange: '^9.0' }), 'index.ts': '' })
     expect(fail(() => readExtensionManifest(dir)).code).toBe('E_API_RANGE')
   })
 
@@ -95,10 +97,10 @@ describe('readExtensionManifest', () => {
     expect(fail(() => readExtensionManifest(scratch({ 'other.json': '{}' }))).detail?.reason).toBe(
       'unreadable',
     )
-    expect(fail(() => readExtensionManifest(scratch({ 'agnes.extension.json': '{' }))).detail?.reason).toBe(
+    expect(fail(() => readExtensionManifest(scratch({ 'package.json': '{' }))).detail?.reason).toBe(
       'not-json',
     )
-    const noId = scratch({ 'agnes.extension.json': manifest({ id: '' }), 'index.ts': '' })
+    const noId = scratch({ 'package.json': manifest({ id: '' }), 'index.ts': '' })
     expect(fail(() => readExtensionManifest(noId)).detail?.field).toBe('id')
   })
 })
@@ -125,10 +127,10 @@ describe('checkApiRange', () => {
     // The narrow tilde entry tracks the running API_VERSION rather than a hardcoded version, so it
     // stays a real positive case (not an accidental exclusion) across future version bumps.
     for (const apiRange of [`~${API_VERSION}`, '>=3.0.0 <4.0.0', '3.*', '*']) {
-      const dir = scratch({ 'agnes.extension.json': manifest({ apiRange }), 'index.ts': '' })
+      const dir = scratch({ 'package.json': manifest({ apiRange }), 'index.ts': '' })
       expect(readExtensionManifest(dir).apiRange).toBe(apiRange)
     }
-    const rejected = scratch({ 'agnes.extension.json': manifest({ apiRange: '>=*' }), 'index.ts': '' })
+    const rejected = scratch({ 'package.json': manifest({ apiRange: '>=*' }), 'index.ts': '' })
     expect(fail(() => readExtensionManifest(rejected)).code).toBe('E_API_RANGE')
   })
 })
@@ -145,7 +147,7 @@ describe('resolveEntry', () => {
   })
   it('refuses a symlink inside the directory that points outside it', () => {
     const outside = scratch({ 'secret.ts': 'export default 1' })
-    const dir = scratch({ 'agnes.extension.json': manifest() })
+    const dir = scratch({ 'package.json': manifest() })
     symlinkSync(join(outside, 'secret.ts'), join(dir, 'index.ts'))
     expect(fail(() => resolveEntry(dir, './index.ts')).detail?.reason).toBe('entry-escape')
   })
@@ -187,7 +189,7 @@ describe('readBundledExtensionDirs', () => {
 
 it('does not echo malformed JSON source through direct manifest errors', () => {
   const marker = 'synthetic-note'
-  const dir = scratch({ 'agnes.extension.json': marker })
+  const dir = scratch({ 'package.json': marker })
   const error = fail(() => readExtensionManifest(dir))
   expect(error.message).toContain('is not valid JSON')
   expect(JSON.stringify({ message: error.message, detail: error.detail })).not.toContain(marker)

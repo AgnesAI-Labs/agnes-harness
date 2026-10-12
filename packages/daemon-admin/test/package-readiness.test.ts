@@ -16,7 +16,7 @@ describe('package readiness classes', () => {
     )
     expect(
       classifyPackageContributions([
-        { kind: 'extension', client: { entry: './ui.js' }, capabilities: { ui: ['client'], services: [{}] } },
+        { kind: 'extension', client: { entry: './ui.js' }, capabilities: { ui: true, services: [{}] } },
       ]),
     ).toBe('extension-only')
     expect(classifyPackageContributions([{ kind: 'extension' }])).toBe('extension-only')

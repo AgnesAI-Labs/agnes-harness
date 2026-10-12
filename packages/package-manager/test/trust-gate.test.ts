@@ -87,7 +87,7 @@ describe('package trust gates', () => {
     // missing it, so this pins the capability by name instead of relying on the templates staying
     // right. `ui` grants styling only, not exec, network or tool invocation.
     const skins = manifest({
-      capabilities: { ui: ['skin'] },
+      capabilities: { ui: true },
       contributes: { skins: [{ id: 'midnight', name: '午夜', css: './skins/midnight/skin.css' }] },
     })
     const attempt = (ceiling: string[]): unknown => {

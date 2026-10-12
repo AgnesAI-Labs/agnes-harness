@@ -42,7 +42,7 @@ AGH 负责组织任务、授权交互和结果记录；适配层将设备能力�
 
 ## 接缝（预览）
 
-包可在其他能力之外声明 `agnes.capabilities.device: true`，为安装预览、能力 hash 与 allow/deny 检查添加 `device` 审核/策略原子。这是可选的增量字段，既有清单的 hash 与行为保持不变。它不授予控制器权限、不隔离插件代码，也不认证设备适配器。
+包可在其他能力之外声明 插件条目上的 `capabilities.device: true`，为安装预览、能力 hash 与 allow/deny 检查添加 `device` 审核/策略原子。这是可选的增量字段，既有清单的 hash 与行为保持不变。它不授予控制器权限、不隔离插件代码，也不认证设备适配器。
 
 MCP 桥保留 `readOnlyHint`、`destructiveHint` 与 `idempotentHint`，映射到已有工具策略元数据：
 

@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs'
-import { checkManifest, type ExtensionAPI, type HookContext, type HookHandler } from '@agnes/extension-api'
+import {
+  bundledExtensionManifest,
+  checkManifest,
+  type ExtensionAPI,
+  type HookContext,
+  type HookHandler,
+} from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -40,7 +46,11 @@ const input = (state: GoalState, text: string, automatic = false) =>
 describe('ledger goal state', () => {
   it('replays all human lifecycle controls and refuses invalid changes', () => {
     expect(
-      checkManifest(JSON.parse(readFileSync(new URL('../agnes.extension.json', import.meta.url), 'utf8'))).ok,
+      checkManifest(
+        bundledExtensionManifest(
+          JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
+        ),
+      ).ok,
     ).toBe(true)
     let state = input(goalProjection.init(), '/goal create --max-rounds 3 --budget 5 Ship a release')
     expect(state.goal).toMatchObject({

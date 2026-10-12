@@ -4,7 +4,7 @@ English | [简体中文](plugin-metadata.zh-CN.md)
 
 [Plugin author kit](README.md) · [Content inventory](plugin-presentation/CONTENT.md) · [Page design](plugin-presentation/DESIGN.md)
 
-Explain the user outcome in the public `PluginMetadata` contract exported by `@agnes/extension-api`. Use it as `agnes.extension.json.metadata`, `package.json.agnes.metadata`, or `package.json.agnes.plugins[].metadata`. A package overview describes the package; a row's complete metadata object describes that row and takes precedence over the overview when a row is displayed. Metadata is optional, including for third-party packages.
+Explain the user outcome in the public `PluginMetadata` contract exported by `@agnes/extension-api`. Use it as `package.json.agnes.metadata` or `package.json.agnes.plugins[].metadata`. A package overview describes the package; a row's complete metadata object describes that row and takes precedence over the overview when a row is displayed. Metadata is optional, including for third-party packages.
 
 ```json
 {

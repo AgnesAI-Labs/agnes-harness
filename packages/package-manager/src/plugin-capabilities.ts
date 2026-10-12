@@ -16,7 +16,7 @@ export function parsePluginCapabilities(value: unknown): PluginCapabilities | un
   )
     throw new PackageError(
       'E_EXT_LOAD',
-      'Plugin capability schema is invalid; fix agnes.capabilities. See docs/guide/packages.md#capabilities',
+      'Plugin capability schema is invalid; fix agnes.plugins[].capabilities. See docs/guide/packages.md#capabilities',
     )
   return checked.value as PluginCapabilities
 }
@@ -110,7 +110,37 @@ export function capabilityPolicyBlockers(
     : []
 }
 
+const AUTHORITY_LISTS = ['network', 'exec', 'secrets', 'credentials', 'uiData'] as const
+const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui'] as const
+
+/**
+ * The package-level view of its plugins' capabilities: the authority a package needs is the union of
+ * what each plugin declares. Registration keys (tools, hooks, slots, ...) belong to one plugin and
+ * are not merged.
+ */
+export function mergePluginCapabilities(
+  declared: readonly (PluginCapabilities | undefined)[],
+): PluginCapabilities | undefined {
+  const present = declared.filter((value): value is PluginCapabilities => value !== undefined)
+  if (present.length === 0) return undefined
+  const merged: Record<string, unknown> = {}
+  for (const key of AUTHORITY_LISTS) {
+    const values = [...new Set(present.flatMap((capabilities) => capabilities[key] ?? []))]
+    if (present.some((capabilities) => capabilities[key] !== undefined)) merged[key] = values
+  }
+  for (const key of AUTHORITY_FLAGS)
+    if (present.some((capabilities) => capabilities[key] !== undefined))
+      merged[key] = present.some((capabilities) => capabilities[key] === true)
+  for (const access of ['read', 'write'] as const) {
+    const scopes = [...new Set(present.flatMap((capabilities) => capabilities.filesystem?.[access] ?? []))]
+    if (present.some((capabilities) => capabilities.filesystem?.[access] !== undefined))
+      merged.filesystem = { ...(merged.filesystem as object | undefined), [access]: scopes }
+  }
+  return merged as PluginCapabilities
+}
+
 export function readPluginCapabilities(directory: string): PluginCapabilities | undefined {
   const manifest = readStaticJson(join(directory, 'package.json'))
-  return parsePluginCapabilities((manifest.agnes as Record<string, unknown> | undefined)?.capabilities)
+  const plugins = (manifest.agnes as { plugins?: { capabilities?: unknown }[] } | undefined)?.plugins
+  return mergePluginCapabilities((plugins ?? []).map((entry) => parsePluginCapabilities(entry.capabilities)))
 }

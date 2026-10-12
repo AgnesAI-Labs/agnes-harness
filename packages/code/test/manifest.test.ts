@@ -1,15 +1,22 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
-import { checkApiRange, checkManifest, checkToolDef, extEventType } from '@agnes/extension-api'
+import {
+  bundledExtensionManifest,
+  checkApiRange,
+  checkManifest,
+  checkToolDef,
+  extEventType,
+} from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { CODE_MODE_EVENTS, CODE_MODE_EXT_ID, codeModeExtension as plugin } from '../src/index.js'
 
-const manifestPath = fileURLToPath(
-  new URL('../src/extensions/code-mode/agnes.extension.json', import.meta.url),
-)
-const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+const manifestPath = fileURLToPath(new URL('../src/extensions/code-mode/package.json', import.meta.url))
+const manifest = bundledExtensionManifest(JSON.parse(readFileSync(manifestPath, 'utf8'))) as Record<
+  string,
+  unknown
+>
 
 describe('code-mode manifest', () => {
   it('passes the shared manifest check', () => {

@@ -38,7 +38,7 @@ describe('plugin scaffolder', () => {
             loop: ['loop'],
           }[kind],
         )
-        expect(manifest.agnes.capabilities).toEqual(
+        expect(manifest.agnes.plugins[0].capabilities).toEqual(
           kind === 'tool-with-panel' ? { ui: true } : kind === 'loop' ? { model: true } : {},
         )
         expect(Object.values(manifest.dependencies)).not.toContain('workspace:*')

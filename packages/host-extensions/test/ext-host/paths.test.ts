@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { bundledPackageJson } from '@agnes/extension-api'
 import { afterEach, expect, it } from 'vitest'
 import { createLoader } from '../../src/ext-host/loader.js'
 import { readBundledExtensionDirs, resolveEntry } from '../../src/ext-host/manifest.js'
@@ -126,14 +127,16 @@ it('loads a real in-root linked module while rejecting an escaping module before
     const dir = join(root, id)
     mkdirSync(dir)
     writeFileSync(
-      join(dir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: `fixture/${id}`,
-        version: '1.0.0',
-        apiRange: '^3.0.0',
-        entry: './alias.mjs',
-        capabilities: {},
-      }),
+      join(dir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: `fixture/${id}`,
+          version: '1.0.0',
+          apiRange: '^3.0.0',
+          entry: './alias.mjs',
+          capabilities: {},
+        }),
+      ),
     )
     if (id === 'ok') writeFileSync(join(dir, 'index.mjs'), 'export default () => {}')
     symlinkSync(join(id === 'ok' ? dir : outside, 'index.mjs'), join(dir, 'alias.mjs'))

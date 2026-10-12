@@ -114,16 +114,28 @@ describe('Task20 document validators', () => {
 })
 
 describe('Task20 accepts actual bundled extension manifests', () => {
-  it('rejects nonempty legacy network arrays without guessing their authority', () => {
+  it('takes the network capability as one list of host patterns', () => {
     const base = { id: 'fixture/ext', version: '0.1.0', apiRange: '^3.0.0', entry: './index.ts' }
     expect(P.validateExtensionManifest({ ...base, capabilities: { network: ['example.invalid'] } }).ok).toBe(
+      true,
+    )
+    expect(P.validateExtensionManifest({ ...base, capabilities: { network: { hosts: ['x'] } } }).ok).toBe(
       false,
     )
   })
   it.each(['tools-core', 'approval-policy', 'artifacts-local', 'principals-local'])('%s', (name) => {
-    const raw = JSON.parse(
-      readFileSync(new URL(`../../base/extensions/${name}/agnes.extension.json`, import.meta.url), 'utf8'),
+    const pkg = JSON.parse(
+      readFileSync(new URL(`../../base/extensions/${name}/package.json`, import.meta.url), 'utf8'),
     )
+    const [entry] = pkg.agnes.plugins
+    const raw = {
+      id: entry.id.slice('ext:'.length),
+      version: pkg.version,
+      apiRange: entry.apiRange,
+      entry: pkg.exports,
+      capabilities: entry.capabilities,
+      ...(entry.metadata ? { metadata: entry.metadata } : {}),
+    }
     expect(P.validateExtensionManifest(raw)).toEqual({ ok: true, value: raw })
   })
 })

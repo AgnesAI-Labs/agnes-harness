@@ -37,22 +37,6 @@
       "skills",
       "mcp"
     ],
-    "capabilities": {
-      "model": true,
-      "filesystem": {
-        "read": [
-          "fixtures/*",
-          "skills/playbook/SKILL.md",
-          "fde-output/crm-assistant/**"
-        ],
-        "write": [
-          "fde-output/crm-assistant/**"
-        ]
-      },
-      "exec": [
-        "node"
-      ]
-    },
     "plugins": [
       {
         "export": "main",
@@ -75,6 +59,22 @@
               "description": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。"
             }
           }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/*",
+              "skills/playbook/SKILL.md",
+              "fde-output/crm-assistant/**"
+            ],
+            "write": [
+              "fde-output/crm-assistant/**"
+            ]
+          },
+          "exec": [
+            "node"
+          ]
         }
       }
     ],

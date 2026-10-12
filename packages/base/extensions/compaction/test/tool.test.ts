@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { checkToolDef, type ExtensionAPI } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkToolDef, type ExtensionAPI } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import factory from '../src/index.js'
 import { compactTool } from '../src/tool.js'
 
-const manifest = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../agnes.extension.json', import.meta.url)), 'utf8'),
+const manifest = bundledExtensionManifest(
+  JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')),
 ) as {
   entry: string
   capabilities: { tools?: { prefix: string; names: string[] }; hooks: string[]; events: boolean }

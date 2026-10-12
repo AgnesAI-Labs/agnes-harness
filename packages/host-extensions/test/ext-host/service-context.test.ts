@@ -21,7 +21,7 @@ function fixture(
     version: '1.0.0',
     apiRange: '^3.0.0',
     entry: './index.js',
-    capabilities: { services: [cap], network: { hosts: ['allowed.test:443', 'only-manifest.test'] } },
+    capabilities: { services: [cap], network: ['allowed.test:443', 'only-manifest.test'] },
   }
   const registry = new ServiceRegistry(),
     ac = new AbortController()
