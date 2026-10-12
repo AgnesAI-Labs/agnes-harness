@@ -170,6 +170,11 @@ export function GenerationsPanel({
           <p>
             {t('bound')}: {generation.boundSessions} · {t('openSessions')}: {generation.openSessions}
           </p>
+          {generation.sessions && generation.sessions.length > 0 && (
+            <p>
+              {t('generationSessions')}: {generation.sessions.map((item) => item.key).join(', ')}
+            </p>
+          )}
           <ul>
             {generation.packages.map((pkg) => (
               <li key={pkg.id}>

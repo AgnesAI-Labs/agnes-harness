@@ -55,6 +55,7 @@ export const shellCatalog: LocaleCatalog = {
     generation: 'Code generations',
     bound: 'Bound sessions',
     openSessions: 'Open sessions',
+    generationSessions: 'Sessions',
     currentGeneration: 'Current generation',
     migrate: 'Migrate session to current plugins',
     migrationHelp:
@@ -183,6 +184,7 @@ export const shellCatalog: LocaleCatalog = {
     generation: '已发布的插件版本',
     bound: '绑定会话数',
     openSessions: '打开的会话数',
+    generationSessions: '绑定的会话',
     currentGeneration: '当前代际',
     migrate: '将会话迁移到当前插件',
     migrationHelp:
