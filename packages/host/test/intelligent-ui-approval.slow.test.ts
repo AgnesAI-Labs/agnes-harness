@@ -103,13 +103,11 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
         'approval',
         'checkpoint',
         'billing',
-        'sandbox',
         'verifier',
         'repair',
         'artifacts',
         'principals',
-        'platform',
-      ].map((name) => [name, '@agnes/base']),
+      ].map((name) => [name, { provider: 'local' }]),
     ),
     packages: {
       'fixture/review': {

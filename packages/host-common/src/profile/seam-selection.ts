@@ -4,12 +4,13 @@ import { REMOVED_SEAM_KEYS } from './types.js'
 
 export { PINNED_SEAM_KINDS, SEAM_KINDS, type SeamKind }
 
-/** The two seams still fitted at assembly time; they stay package ids until they leave `seams`. */
-export const STATIC_SEAM_NAMES = ['sandbox', 'platform'] as const
-
+/** Keys that named a seam under `seams` once, with the sentence that says what to write instead. */
 const REMOVED_KEYS: Readonly<Record<string, string>> = Object.freeze({
   ledger: 'seams.ledger was renamed; use seams.billing',
   harness: 'seams.harness was removed; harness is no longer a seam',
+  ...Object.fromEntries(
+    Object.entries(REMOVED_SEAM_KEYS).map(([key, fix]) => [key, `seams.${key} was removed; ${fix}`]),
+  ),
 })
 
 const PROVIDER_ID = /^[a-z][a-z0-9-]{0,63}$/

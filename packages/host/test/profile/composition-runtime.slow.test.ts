@@ -847,13 +847,11 @@ it('opens a new composition from the published code after retiring a boot snapsh
           'approval',
           'checkpoint',
           'billing',
-          'sandbox',
           'verifier',
           'repair',
           'artifacts',
           'principals',
-          'platform',
-        ].map((name) => [name, '@agnes/base']),
+        ].map((name) => [name, { provider: 'local' }]),
       ),
       packages: {
         [id]: {

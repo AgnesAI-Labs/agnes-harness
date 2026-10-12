@@ -51,17 +51,10 @@ async function setup() {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'billing',
-        'sandbox',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-        'platform',
-      ].map((s) => [s, '@agnes/base']),
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((s) => [
+        s,
+        { provider: 'local' },
+      ]),
     ),
     policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
   })
