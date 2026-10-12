@@ -14,7 +14,7 @@ export function Tabs({ className, ...props }: TabsProps) {
         if (
           !event.defaultPrevented &&
           event.target instanceof Element &&
-          event.target.closest('[role="tab"]')
+          event.target.closest('.ant-tabs-tab-btn[role="tab"]')
         )
           event.preventDefault()
       }}
