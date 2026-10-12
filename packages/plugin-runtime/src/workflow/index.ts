@@ -1,4 +1,5 @@
 import type { LoopFactory } from '@agnes/extension-api'
+import { loopKind, toolPolicyKind } from '@agnes/extension-api'
 import { defineLoop } from '../author/loop.js'
 import { type Context, defineAgnesPlugin } from '../author.js'
 import { workflowCheckpoint } from './checkpoint.js'
@@ -76,11 +77,11 @@ export function defineWorkflowLoop(options: WorkflowOptions) {
       config: { workflow?: WorkflowData } = {},
     ) {
       for (const definition of options.tools ?? []) ctx.tools.register(definition)
-      ctx.providers.register('loop', options.source, createFactory(config.workflow))
-      ctx.providers.register('tool-policy', options.source, {
+      ctx.providers.register(loopKind, options.source, createFactory(config.workflow))
+      ctx.providers.register(toolPolicyKind, options.source, {
         ...policy,
         async decide(input, signal, ports) {
-          const base = await ctx.providers.resolve('tool-policy', 'default').decide(input, signal, ports)
+          const base = await ctx.providers.resolve(toolPolicyKind, 'default').decide(input, signal, ports)
           return base.effect === 'deny' ? base : policy.decide(input, signal, ports)
         },
       })

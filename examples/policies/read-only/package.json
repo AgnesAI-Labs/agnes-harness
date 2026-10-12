@@ -45,6 +45,9 @@
           "description": "允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。"
         }
       }
+    },
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "2.0.0"
     }
   }
 }

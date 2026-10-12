@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 
 const SOURCE = '@agnes-example/dag-loop'
 const ID = 'example.dag'
@@ -241,6 +241,6 @@ export function createDagLoop(config = {}) {
 export const plugin = {
   inject: ['providers'],
   apply(ctx, config) {
-    ctx.providers.register('loop', SOURCE, createDagLoop(config))
+    ctx.providers.register(loopKind, SOURCE, createDagLoop(config))
   },
 }

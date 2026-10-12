@@ -1,4 +1,4 @@
-import { defineServiceKind, type ProviderIdentity, type ServicePorts } from '@agnes/extension-api'
+import { defineKind, type ProviderIdentity, type ServicePorts } from '@agnes/extension-api'
 import type { EventEnvelope } from '@agnes/protocol'
 
 export interface ObservabilitySession {
@@ -40,10 +40,8 @@ export interface ObservabilityProvider extends ProviderIdentity {
  * Process-scoped exporter. The shared queue stays inside this package's home refcount.
  * The descriptor grants no ledger, input, or projection ports.
  */
-export const observabilityKind = defineServiceKind<ObservabilityProvider, ServicePorts>({
+export const observabilityKind = defineKind<ObservabilityProvider, ServicePorts>({
   kind: 'observability',
-  cardinality: 'single',
-  instanceScope: 'process',
+  bind: { cardinality: 'single', instanceScope: 'process', ports: [] },
   scope: 'process',
-  ports: [],
 })

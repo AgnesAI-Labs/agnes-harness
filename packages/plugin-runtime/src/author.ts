@@ -13,12 +13,24 @@ export function defineAgnesPlugin<P extends Plugin>(plugin: P): P {
 }
 
 export {
+  childAgentKind,
+  compactionKind,
   type DecisionHandle,
   type DecisionPort,
   type DecisionSpec,
-  defineServiceKind,
+  defineKind,
+  loopKind,
+  memoryKind,
+  modelAdapterKind,
+  persistenceKind,
+  referenceResolverKind,
   type ServiceInstance,
   type ServicePorts,
+  sandboxKind,
+  systemPromptKind,
+  toolPolicyKind,
+  toolRuntimeKind,
+  webhookTriggerKind,
 } from '@agnes/extension-api'
 export { defineLoop } from './author/loop.js'
 export { defineModelAdapter } from './author/model-adapter.js'

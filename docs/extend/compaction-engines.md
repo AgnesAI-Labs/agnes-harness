@@ -17,7 +17,7 @@ import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 export const main = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
-    ctx.providers.register('compaction', '@example/compaction', engine)
+    ctx.providers.register(compactionKind, '@example/compaction', engine)
   },
 })
 ```

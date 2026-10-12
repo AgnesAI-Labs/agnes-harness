@@ -1,6 +1,8 @@
 import type { Context } from '@agnes/cordis'
 import {
   type AgentInputPort,
+  type BindableKind,
+  type BindableKindToken,
   type DecisionPort,
   EVENT_NAME_PATTERN,
   EXTENSION_ID_PATTERN,
@@ -11,8 +13,6 @@ import {
   ProviderError,
   type ServiceBinding,
   type ServiceInstance,
-  type ServiceKind,
-  type ServiceKindToken,
   type ServicePortName,
   type ServicePorts,
   type ServiceProvider,
@@ -80,7 +80,7 @@ export interface ServicePortFactories {
 }
 
 interface InstalledService {
-  readonly kind: ServiceKindToken
+  readonly kind: BindableKindToken
   readonly descriptor: Required<Pick<ServiceDescriptor, 'ports' | 'dedupeKeys' | 'audience' | 'delivery'>> &
     ServiceDescriptor
 }
@@ -130,7 +130,7 @@ export class ServiceBindings {
 
   install<S extends ServiceInstance, P extends ServicePorts>(
     ctx: Context,
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     descriptor: ServiceDescriptor,
     origins?: RowOriginLookup,
   ): void {
@@ -198,7 +198,7 @@ export class ServiceBindings {
   }
 
   async bind<S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     call: ServiceCall,
     factories: ServicePortFactories,
   ): Promise<S> {
@@ -272,7 +272,7 @@ export class ServiceBindings {
   }
 
   private choose<S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     call: ServiceCall,
     descriptor: InstalledService['descriptor'],
   ): ServiceProvider<S, P> {
@@ -306,7 +306,7 @@ export class ServiceBindings {
 }
 
 export function serviceBindingScope(
-  kind: Pick<ServiceKind, 'kind' | 'instanceScope'>,
+  kind: Pick<BindableKind, 'kind' | 'instanceScope'>,
   call: ServiceCall,
 ): string {
   let identity = 'request'
@@ -329,7 +329,7 @@ function owns(
   return claim?.owner === call.owner && claim.packageId === call.packageId
 }
 
-function assertCall(kind: ServiceKindToken, call: ServiceCall): void {
+function assertCall(kind: BindableKindToken, call: ServiceCall): void {
   if (!EXTENSION_ID_PATTERN.test(call.owner) || !clean(call.packageId)) throw closed(kind.kind, 'bind')
   if (kind.instanceScope === 'session') {
     const session = call.session
@@ -368,7 +368,7 @@ function snapshot(call: ServiceCall): ServiceBinding {
 }
 
 function freezeDescriptor(
-  kind: ServiceKindToken,
+  kind: BindableKindToken,
   descriptor: ServiceDescriptor,
 ): InstalledService['descriptor'] {
   const allowed = new Set(kind.ports)
@@ -438,7 +438,7 @@ function namespaceKey(kind: string, owner: string, key: string, mode: ServiceDed
 }
 
 function buildPorts(
-  kind: ServiceKindToken,
+  kind: BindableKindToken,
   call: ServiceCall,
   binding: ServiceBinding,
   descriptor: InstalledService['descriptor'],

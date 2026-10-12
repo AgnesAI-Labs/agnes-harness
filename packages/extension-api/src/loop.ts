@@ -15,7 +15,7 @@ import type {
 import type { SessionRef } from './common.js'
 import type { DecisionHandle, DecisionPort } from './decisions.js'
 import type { LoopEventPort } from './loop-events.js'
-import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
+import type { BindableKind, ServiceInstance, ServicePorts } from './service-provider.js'
 import type { ToolResult } from './tool.js'
 
 /** A session pins this identity; reopening never substitutes a different loop. */
@@ -184,7 +184,7 @@ export interface LoopToolCall {
 /** Generic service reader. Host installs the deferred queue under its kind token. */
 export interface LoopServiceReader {
   get<S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
   ): Promise<S | undefined> | S | undefined
 }
 

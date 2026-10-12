@@ -5,7 +5,7 @@ import type {
   ServicePorts,
   ToolResult,
 } from '@agnes/extension-api'
-import { defineServiceKind } from '@agnes/extension-api'
+import { defineKind } from '@agnes/extension-api'
 
 /** Protocol actor, read from the loop input so this package does not import protocol. */
 export type DeferredActor = LoopInput['actor']
@@ -69,19 +69,15 @@ export interface DeferredInvocationProducer extends DeferredProducerInstance {
 export interface DeferredQueueInstance extends DeferredToolInvocationQueue, ServiceInstance {}
 
 /** One queue per session and lane. The loop reads it; a plugin does not register an implementation. */
-export const deferredQueueKind = defineServiceKind<DeferredQueueInstance, ServicePorts>({
+export const deferredQueueKind = defineKind<DeferredQueueInstance, ServicePorts>({
   kind: 'deferred-invocations',
-  cardinality: 'single',
-  instanceScope: 'session',
+  bind: { cardinality: 'single', instanceScope: 'session', ports: [] },
   scope: 'session',
-  ports: [],
 })
 
 /** One registration per owner. Each admitted call opens its own instance. */
-export const deferredProducerKind = defineServiceKind<DeferredProducerInstance, ServicePorts>({
+export const deferredProducerKind = defineKind<DeferredProducerInstance, ServicePorts>({
   kind: 'deferred-producer',
-  cardinality: 'multi',
-  instanceScope: 'session',
+  bind: { cardinality: 'multi', instanceScope: 'session', ports: [] },
   scope: 'generation',
-  ports: [],
 })

@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { toolPolicyPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
+import { toolPolicyKind } from '@agnes/extension-api'
 import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import { expect, it } from 'vitest'
-import { policy } from '../../../../examples/policies/read-only/index.mjs'
+import { policy } from '../../../../examples/policies/read-only/policy.mjs'
 import { createTestHost } from '../../testkit/index.js'
 
 it('assembles the bundled default policy row before opening a real Host session', async () => {
@@ -84,7 +85,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
   const builtin = root.plugin(toolPolicyPlugin)
   const reviewPorts = { reserve: () => true, model: async () => ({ text: '{}', model: 'script', cost: 0 }) }
   const custom = root.plugin((ctx) => {
-    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', {
+    ctx.providers.register(toolPolicyKind, '@agnes-example/read-only-policy', {
       ...policy,
       id: 'custom-read-only',
       settings: async (context, signal) => {
@@ -114,7 +115,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
       sourcePackage: '@agnes/core',
     }),
   )
-  const selected = root.providers.resolve('tool-policy', 'custom-read-only')
+  const selected = root.providers.resolve(toolPolicyKind, 'custom-read-only')
   expect(
     await selected.settings!(
       { policy: 'custom-read-only', profile: 'custom', dataDir: '/synthetic', approvalMode: 'manual' },
@@ -132,7 +133,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
     true,
   )
   await custom.dispose()
-  expect(() => root.providers.resolve('tool-policy', 'custom-read-only')).toThrow('not registered')
+  expect(() => root.providers.resolve(toolPolicyKind, 'custom-read-only')).toThrow('not registered')
   await expect(selected.decide({} as never, new AbortController().signal)).rejects.toThrow()
   await expect(
     selected.settings!(
@@ -141,7 +142,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
     ),
   ).rejects.toThrow()
   await builtin.dispose()
-  expect(() => root.providers.resolve('tool-policy', 'default')).toThrow('not registered')
+  expect(() => root.providers.resolve(toolPolicyKind, 'default')).toThrow('not registered')
   await root.fiber.dispose()
 })
 

@@ -1,6 +1,6 @@
 import type { CurrentSessionRuntime } from '@agnes/core'
 import { noopHooks } from '@agnes/core'
-import { memoryKind, type SystemPromptProvider, systemPromptKind } from '@agnes/extension-api'
+import { memoryKind, type SystemPromptProvider, sandboxKind, systemPromptKind } from '@agnes/extension-api'
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError } from '@agnes/host-common/errors'
 import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
@@ -214,7 +214,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           installChildAgents(root, origins, ctx.providerSelections['child-agent'])
           const sandboxProviders = installSandboxProviders(root, origins)
           root.providers.register(
-            'sandbox',
+            sandboxKind,
             '@agnes/host',
             createLocalSandboxProvider(proc.adapters.exec, proc.adapters.platform.os),
           )

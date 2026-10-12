@@ -1,4 +1,4 @@
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 
 const SOURCE = '@agnes-example/decision-loop'
 const ID = 'example.decision'
@@ -91,6 +91,6 @@ export function createDecisionLoop() {
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register('loop', SOURCE, createDecisionLoop())
+    ctx.providers.register(loopKind, SOURCE, createDecisionLoop())
   },
 }

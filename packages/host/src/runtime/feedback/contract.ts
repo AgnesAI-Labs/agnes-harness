@@ -1,5 +1,5 @@
 import {
-  defineServiceKind,
+  defineKind,
   type ServiceInstance,
   type ServicePortName,
   type ServicePorts,
@@ -65,12 +65,10 @@ export interface FeedbackInstance extends ServiceInstance {
  * feedback does not deliver to the agent, and candidate evidence is not a projection.
  * Workspace scope makes a code change restart-required. Instances are per request.
  */
-export const feedbackKind = defineServiceKind<FeedbackInstance, ServicePorts>({
+export const feedbackKind = defineKind<FeedbackInstance, ServicePorts>({
   kind: 'feedback',
-  cardinality: 'single',
-  instanceScope: 'request',
+  bind: { cardinality: 'single', instanceScope: 'request', ports: ['ledger', 'input', 'projections'] },
   scope: 'workspace',
-  ports: ['ledger', 'input', 'projections'],
   versioned: true,
 })
 

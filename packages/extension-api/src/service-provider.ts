@@ -2,12 +2,7 @@ import type { EventEnvelope, JsonValue, SystemInput } from '@agnes/protocol'
 import type { Seq, SessionRef } from './common.js'
 import type { DecisionPort } from './decisions.js'
 import type { ProjectionReader } from './projections.js'
-import {
-  defineProviderKind,
-  type ProviderIdentity,
-  type ProviderKind,
-  type ProviderLifecycleScope,
-} from './provider-kind.js'
+import type { ProviderIdentity, ProviderKind } from './provider-kind.js'
 
 /** Host-admitted identity. Selectors and authority flags on the original session are not copied. */
 export interface ServiceBinding {
@@ -73,80 +68,40 @@ export type ServiceInstanceScope = 'request' | 'session' | 'workspace' | 'proces
 const serviceInstance: unique symbol = Symbol('service instance')
 const servicePortGrant: unique symbol = Symbol('service port grant')
 
+/** The binding half every bindable kind carries. */
+export interface BindOptions {
+  readonly cardinality: 'single' | 'multi'
+  readonly instanceScope: ServiceInstanceScope
+  readonly ports?: readonly ServicePortName[]
+}
+
 /**
- * Fields every service token has. Specific kinds are invariant, so maps and
- * binders store this instead of `ServiceKind<ServiceInstance, ServicePorts>`.
+ * Fields every bindable kind has. Specific kinds are invariant, so maps and binders store this
+ * instead of `BindableKind<ServiceInstance, ServicePorts>`.
  */
-export interface ServiceKindToken {
+export interface BindableKindToken {
   readonly kind: string
   readonly cardinality: 'single' | 'multi'
   readonly instanceScope: ServiceInstanceScope
-  readonly scope: ProviderLifecycleScope
+  readonly scope: ProviderKind<ServiceProvider>['scope']
   readonly ports: readonly ServicePortName[]
 }
 
 /** `ports` is the maximum grant. A host descriptor may only shrink it. */
-export interface ServiceKind<
+export interface BindableKind<
   S extends ServiceInstance = ServiceInstance,
   P extends ServicePorts = ServicePorts,
 > extends ProviderKind<ServiceProvider<S, P>>,
-    ServiceKindToken {
-  readonly cardinality: 'single' | 'multi'
-  readonly instanceScope: ServiceInstanceScope
-  readonly ports: readonly ServicePortName[]
+    BindableKindToken {
+  readonly operations: { readonly register: boolean; readonly bind: true }
   /** Type-only. Carries the instance so register and bindOwn infer S. Not installed at runtime. */
   readonly [serviceInstance]?: S
   /** Type-only. Carries the port grant so register and bindOwn infer P. Not installed at runtime. */
   readonly [servicePortGrant]?: P
 }
 
-export interface ServiceKindOptions<S extends ServiceInstance, P extends ServicePorts> {
-  readonly kind: string
-  readonly cardinality: 'single' | 'multi'
-  readonly instanceScope: ServiceInstanceScope
-  readonly ports?: readonly ServicePortName[]
-  readonly scope?: ProviderLifecycleScope
-  readonly versioned?: boolean
-  readonly validate?: (provider: ServiceProvider<S, P>) => void
-  readonly capabilities?: (provider: ServiceProvider<S, P>) => readonly string[]
-}
-
-const PORTS: readonly ServicePortName[] = ['ledger', 'input', 'projections', 'decisions']
-const INSTANCE_SCOPES: readonly ServiceInstanceScope[] = ['request', 'session', 'workspace', 'process']
-
-export function defineServiceKind<S extends ServiceInstance, P extends ServicePorts>(
-  options: ServiceKindOptions<S, P>,
-): ServiceKind<S, P> {
-  const ports = Object.freeze([...(options.ports ?? [])])
-  if (
-    (options.cardinality !== 'single' && options.cardinality !== 'multi') ||
-    !INSTANCE_SCOPES.includes(options.instanceScope) ||
-    new Set(ports).size !== ports.length ||
-    ports.some((port) => !PORTS.includes(port))
-  )
-    throw new TypeError('Invalid service kind')
-  const kind = defineProviderKind<ServiceProvider<S, P>>({
-    kind: options.kind,
-    ...(options.scope === undefined ? {} : { scope: options.scope }),
-    ...(options.versioned === undefined ? {} : { versioned: options.versioned }),
-    ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
-    validate(provider) {
-      if (typeof provider?.open !== 'function') throw new Error('service provider requires open')
-      options.validate?.(provider)
-    },
-  })
-  // Object spread drops the provider-kind symbol. assign keeps that token on the service kind.
-  return Object.freeze(
-    Object.assign({}, kind, {
-      cardinality: options.cardinality,
-      instanceScope: options.instanceScope,
-      ports,
-    }) as ServiceKind<S, P>,
-  )
-}
-
 export interface ServiceBindingPort {
-  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S>
+  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S>
 }
 
 /**
@@ -155,7 +110,7 @@ export interface ServiceBindingPort {
  */
 export interface ServiceAuthorPort extends ServiceBindingPort {
   register<S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     provider: NoInfer<ServiceProvider<S, P>>,
   ): () => Promise<void>
 }

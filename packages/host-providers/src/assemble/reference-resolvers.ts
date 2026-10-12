@@ -1,22 +1,15 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
-  defineProviderKind,
   type ReferenceContext,
   type ReferenceResolver,
   type ReferenceResolverPort,
+  referenceResolverKind,
 } from '@agnes/extension-api'
 import { installProviderRegistry, type ProviderRegistry } from '@agnes/host-common/assemble/provider-registry'
 import { type ContentBlock, type ReferenceSelection, validateReferenceSelections } from '@agnes/protocol'
 import { boundReferenceText, fenceReference, referenceLimits } from './reference-text.js'
 
-const kind = defineProviderKind<ReferenceResolver>({
-  kind: 'reference-resolver',
-  scope: 'generation',
-  validate(provider) {
-    if (typeof provider.search !== 'function' || typeof provider.resolve !== 'function')
-      throw new TypeError('Reference resolver requires search and resolve')
-  },
-})
+const kind = referenceResolverKind
 
 declare module '@agnes/cordis' {
   interface Context {

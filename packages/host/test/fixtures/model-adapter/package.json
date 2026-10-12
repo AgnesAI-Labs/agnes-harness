@@ -16,6 +16,9 @@
           "providers"
         ]
       }
-    ]
+    ],
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "2.0.0"
+    }
   }
 }

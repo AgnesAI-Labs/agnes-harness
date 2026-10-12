@@ -1,67 +1,13 @@
-import type { ChildAgentProvider } from './child-agent.js'
-import type { CompactionEngine } from './compaction-engine.js'
-import type { LoopFactory } from './loop.js'
-import type { MemoryProvider } from './memory.js'
-import type { ModelAdapter } from './model-adapter.js'
-import type { PersistenceProvider } from './persistence.js'
-import type { ReferenceResolver } from './reference-resolver.js'
-import type { SandboxProvider } from './sandbox-provider.js'
 import type {
-  ApprovalProvider,
-  ArtifactsProvider,
-  BillingProvider,
-  CheckpointProvider,
-  PrincipalsProvider,
-  RepairProvider,
-  VerifierProvider,
-} from './seams.js'
-import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
-import type { ToolPolicy } from './tool-policy.js'
-import type { ToolRuntimeProvider } from './tool-runtime.js'
-import type { WebhookTriggerProvider } from './webhook-trigger.js'
+  BindableKind,
+  BindOptions,
+  ServiceInstance,
+  ServicePortName,
+  ServicePorts,
+  ServiceProvider,
+} from './service-provider.js'
 
-/** Built-in names bind registration and resolution to the same contract. */
-export interface KindMap {
-  'webhook-trigger': WebhookTriggerProvider
-  'reference-resolver': ReferenceResolver
-  memory: MemoryProvider
-  loop: LoopFactory
-  'model-adapter': ModelAdapter
-  compaction: CompactionEngine
-  persistence: PersistenceProvider
-  sandbox: SandboxProvider
-  'tool-runtime': ToolRuntimeProvider
-  'tool-policy': ToolPolicy
-  'child-agent': ChildAgentProvider
-  approval: ApprovalProvider
-  principals: PrincipalsProvider
-  billing: BillingProvider
-  checkpoint: CheckpointProvider
-  artifacts: ArtifactsProvider
-  verifier: VerifierProvider
-  repair: RepairProvider
-}
 export type ProviderLifecycleScope = 'session' | 'generation' | 'workspace' | 'process'
-export const PROVIDER_LIFECYCLE_SCOPES = Object.freeze({
-  'webhook-trigger': 'process',
-  'reference-resolver': 'generation',
-  memory: 'session',
-  loop: 'session',
-  'model-adapter': 'generation',
-  compaction: 'generation',
-  persistence: 'process',
-  sandbox: 'process',
-  'tool-runtime': 'session',
-  'tool-policy': 'generation',
-  'child-agent': 'session',
-  approval: 'generation',
-  principals: 'generation',
-  billing: 'generation',
-  checkpoint: 'generation',
-  artifacts: 'generation',
-  verifier: 'generation',
-  repair: 'generation',
-} as const satisfies Record<keyof KindMap, ProviderLifecycleScope>)
 
 /** A generation recreates session/generation owners; longer-lived owners require restart. */
 export function providerRestartRequired(scope: ProviderLifecycleScope): boolean {
@@ -88,6 +34,13 @@ export interface ProviderSelection {
  */
 export type ProviderAuthority = 'open' | 'host'
 
+/** What an author may do with a kind: provide an implementation, bind the owner's instance, or both. */
+export interface KindOperations {
+  readonly register: boolean
+  readonly bind: boolean
+}
+
+/** The one token family. Every `ctx.providers` call takes the exact token its owner installed. */
 export interface ProviderKind<T extends ProviderIdentity> {
   readonly kind: string
   readonly restartRequired: boolean
@@ -98,53 +51,96 @@ export interface ProviderKind<T extends ProviderIdentity> {
   readonly authority: ProviderAuthority
   /** The selection is recorded per session and replaced only by an explicit repin. */
   readonly pinned: boolean
-  /** Invariant token: use the exact token installed by the kind service. */
+  readonly operations: KindOperations
+  /** Invariant token: use the exact token installed by the kind owner. */
   readonly [providerType]: (value: T) => T
   readonly versioned?: boolean
   readonly validate: (provider: T) => void
   readonly capabilities?: (provider: T) => readonly string[]
 }
 
-export function defineProviderKind<T extends ProviderIdentity>(
-  definition: Omit<
-    ProviderKind<T>,
-    'restartRequired' | 'scope' | 'required' | 'authority' | 'pinned' | typeof providerType
-  > & {
-    scope?: ProviderLifecycleScope /** @deprecated Derived from scope. */
-    restartRequired?: boolean
-    required?: boolean
-    authority?: ProviderAuthority
-    pinned?: boolean
+export interface KindOptions<T extends ProviderIdentity> {
+  readonly kind: string
+  readonly scope?: ProviderLifecycleScope
+  readonly authority?: ProviderAuthority
+  readonly required?: boolean
+  readonly pinned?: boolean
+  readonly versioned?: boolean
+  /** Default true. A bind-only kind is installed by the Host and never accepts author providers. */
+  readonly register?: boolean
+  readonly validate: (provider: T) => void
+  readonly capabilities?: (provider: T) => readonly string[]
+}
+
+const PORTS: readonly ServicePortName[] = ['ledger', 'input', 'projections', 'decisions']
+const INSTANCE_SCOPES = ['request', 'session', 'workspace', 'process']
+
+/**
+ * A kind that also supports `bindOwn`: its providers are `ServiceProvider`s and `bind` is the
+ * maximum grant. A host descriptor may only shrink the declared ports.
+ */
+export function defineKind<S extends ServiceInstance, P extends ServicePorts>(
+  options: Omit<KindOptions<ServiceProvider<S, P>>, 'validate'> & {
+    readonly bind: BindOptions
+    readonly validate?: (provider: ServiceProvider<S, P>) => void
   },
-): ProviderKind<T> {
+): BindableKind<S, P>
+export function defineKind<T extends ProviderIdentity>(options: KindOptions<T>): ProviderKind<T>
+export function defineKind(
+  options: Omit<KindOptions<never>, 'validate'> & {
+    readonly validate?: (provider: never) => void
+    readonly bind?: BindOptions
+  },
+): unknown {
   if (
-    !/^[a-z][a-z0-9-]*$/.test(definition.kind) ||
-    typeof definition.validate !== 'function' ||
-    (definition.restartRequired !== undefined && typeof definition.restartRequired !== 'boolean') ||
-    (definition.versioned !== undefined && typeof definition.versioned !== 'boolean') ||
-    (definition.required !== undefined && typeof definition.required !== 'boolean') ||
-    (definition.pinned !== undefined && typeof definition.pinned !== 'boolean') ||
-    (definition.authority !== undefined && definition.authority !== 'host' && definition.authority !== 'open')
+    !/^[a-z][a-z0-9-]*$/.test(options.kind) ||
+    (options.validate !== undefined && typeof options.validate !== 'function') ||
+    (options.bind === undefined && typeof options.validate !== 'function') ||
+    (options.versioned !== undefined && typeof options.versioned !== 'boolean') ||
+    (options.register !== undefined && typeof options.register !== 'boolean') ||
+    (options.required !== undefined && typeof options.required !== 'boolean') ||
+    (options.pinned !== undefined && typeof options.pinned !== 'boolean')
   )
     throw new Error('Provider kind requires a name and a validator')
-  const scope =
-    definition.scope ?? PROVIDER_LIFECYCLE_SCOPES[definition.kind as keyof KindMap] ?? 'generation'
+  const scope = options.scope ?? 'generation'
   if (!['session', 'generation', 'workspace', 'process'].includes(scope))
     throw new TypeError('Invalid provider lifecycle scope')
-  if (
-    definition.authority !== undefined &&
-    definition.authority !== 'open' &&
-    definition.authority !== 'host'
-  )
+  if (options.authority !== undefined && options.authority !== 'open' && options.authority !== 'host')
     throw new TypeError('Invalid provider authority')
-  return Object.freeze({
-    ...definition,
-    authority: definition.authority ?? 'open',
+  const { register, bind, validate, authority, required, pinned, ...rest } = options
+  const operations = Object.freeze({ register: register ?? true, bind: bind !== undefined })
+  const check = validate as ((provider: ProviderIdentity) => void) | undefined
+  const token = {
+    ...rest,
+    authority: authority ?? 'open',
+    required: required ?? false,
+    pinned: pinned ?? false,
     scope,
     required: definition.required ?? false,
     pinned: definition.pinned ?? false,
     restartRequired: providerRestartRequired(scope),
-    [providerType]: (value: T) => value,
+    operations,
+    [providerType]: (value: ProviderIdentity) => value,
+  }
+  if (!bind) return Object.freeze({ ...token, validate: check! })
+  const ports = Object.freeze([...(bind.ports ?? [])])
+  if (
+    (bind.cardinality !== 'single' && bind.cardinality !== 'multi') ||
+    !INSTANCE_SCOPES.includes(bind.instanceScope) ||
+    new Set(ports).size !== ports.length ||
+    ports.some((port) => !PORTS.includes(port))
+  )
+    throw new TypeError('Invalid bindable kind')
+  return Object.freeze({
+    ...token,
+    cardinality: bind.cardinality,
+    instanceScope: bind.instanceScope,
+    ports,
+    validate(provider: ProviderIdentity) {
+      if (typeof (provider as Partial<ServiceProvider>)?.open !== 'function')
+        throw new Error('service provider requires open')
+      check?.(provider)
+    },
   })
 }
 
@@ -168,20 +164,14 @@ export interface ProvidersCatalogPort {
 
 /** Typed author registration shared by provider kinds; operation lifecycles stay with their owners. */
 export interface ProviderRegistrationPort extends ProvidersCatalogPort {
-  register<K extends keyof KindMap>(
-    kind: K,
-    sourcePackage: string,
-    provider: KindMap[NoInfer<K>],
-  ): () => Promise<void>
   register<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     sourcePackage: string,
     provider: T,
   ): () => Promise<void>
-  resolve<K extends keyof KindMap>(kind: K, selection: string | ProviderSelection): KindMap[K]
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
   /** Binds the admitted callback. A host without a binder fails closed. */
-  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S>
+  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S>
 }
 
 export interface ProviderPluginContext {

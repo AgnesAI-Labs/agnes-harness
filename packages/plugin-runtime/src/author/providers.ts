@@ -1,94 +1,64 @@
 import {
   type ChildAgentProvider,
   type CompactionEngine,
-  type KindMap,
+  childAgentKind,
+  compactionKind,
   type PersistenceProvider,
   ProviderError,
+  type ProviderIdentity,
+  type ProviderKind,
   parseSemver,
+  persistenceKind,
   type SandboxProvider,
+  sandboxKind,
   type ToolPolicy,
   type ToolRuntimeProvider,
-  definePersistenceProvider as validatePersistenceProvider,
+  toolPolicyKind,
+  toolRuntimeKind,
 } from '@agnes/extension-api'
 
-/** Validate author declarations early; Host admission still validates the untrusted declaration. */
-export function defineProvider<K extends keyof KindMap, P extends KindMap[NoInfer<K>]>(
-  kind: K,
+/** Validate author declarations early; Host admission validates the untrusted declaration again. */
+export function defineProvider<T extends ProviderIdentity, P extends T>(
+  kind: ProviderKind<T>,
   provider: P,
 ): P {
-  const methods: Record<keyof KindMap, readonly string[]> = {
-    'webhook-trigger': ['verify'],
-    'reference-resolver': ['search', 'resolve'],
-    memory: ['open'],
-    loop: ['create', 'resume'],
-    'model-adapter': ['create'],
-    compaction: ['create'],
-    persistence: ['open'],
-    sandbox: ['create'],
-    'tool-runtime': ['create'],
-    'tool-policy': ['decide'],
-    'child-agent': ['start'],
-    approval: ['create'],
-    principals: ['create'],
-    billing: ['create'],
-    checkpoint: ['create'],
-    artifacts: ['create'],
-    verifier: ['create'],
-    repair: ['create'],
-  }
-  const value = provider as unknown as Record<string, unknown>
-  if (
-    !value ||
-    typeof value.id !== 'string' ||
-    !value.id.trim() ||
-    typeof value.version !== 'string' ||
-    !parseSemver(value.version) ||
-    methods[kind].some((method) => typeof value[method] !== 'function') ||
-    (kind === 'model-adapter' && (typeof value.wireApi !== 'string' || !value.wireApi.trim()))
-  )
-    throw new ProviderError(
-      'E_PROVIDER_INVALID',
-      `Invalid ${kind} declaration; provide id, semver version and its operations`,
-      { kind, operation: 'define', provider: typeof value?.id === 'string' ? value.id : undefined },
-    )
-  const capabilities = value.capabilities as Record<string, unknown> | undefined
-  const flags =
-    kind === 'model-adapter'
-      ? ['imageInput', 'tools', 'streaming']
-      : kind === 'child-agent'
-        ? ['continuable', 'interrupt', 'modelSelection', 'inheritsParentContext', 'worktree']
-        : kind === 'sandbox'
-          ? ['available', 'network']
-          : []
-  if (
-    (flags.length && (!capabilities || flags.some((flag) => typeof capabilities[flag] !== 'boolean'))) ||
-    (kind === 'sandbox' &&
-      (!Array.isArray(capabilities?.platform) || !Array.isArray(capabilities?.fsWrite))) ||
-    (kind === 'loop' && (!Array.isArray(value.capabilities) || !value.codec))
-  )
-    throw new ProviderError('E_PROVIDER_INVALID', `Invalid ${kind} capabilities`, {
-      kind,
-      provider: provider.id,
+  const id = (provider as { id?: unknown } | undefined)?.id
+  const fail = (message: string, cause?: unknown) =>
+    new ProviderError('E_PROVIDER_INVALID', message, {
+      kind: kind.kind,
       operation: 'define',
+      provider: typeof id === 'string' ? id : undefined,
+      ...(cause === undefined ? {} : { cause }),
     })
-  if (kind === 'persistence') validatePersistenceProvider(provider as PersistenceProvider)
+  if (
+    typeof id !== 'string' ||
+    !id.trim() ||
+    typeof provider.version !== 'string' ||
+    !parseSemver(provider.version)
+  )
+    throw fail(`Invalid ${kind.kind} declaration; provide id, semver version and its operations`)
+  try {
+    kind.validate(provider)
+  } catch (cause) {
+    throw fail(`Invalid ${kind.kind} declaration; provide id, semver version and its operations`, cause)
+  }
   return provider
 }
 export function defineToolRuntime<P extends ToolRuntimeProvider>(provider: P): P {
-  return defineProvider('tool-runtime', provider)
+  return defineProvider(toolRuntimeKind, provider)
 }
 export function defineToolPolicy<P extends ToolPolicy>(provider: P): P {
-  return defineProvider('tool-policy', provider)
+  return defineProvider(toolPolicyKind, provider)
 }
 export function defineCompactionEngine<P extends CompactionEngine>(provider: P): P {
-  return defineProvider('compaction', provider)
+  return defineProvider(compactionKind, provider)
 }
 export function defineSandboxProvider<P extends SandboxProvider>(provider: P): P {
-  return defineProvider('sandbox', provider)
+  return defineProvider(sandboxKind, provider)
 }
 export function definePersistenceProvider<P extends PersistenceProvider>(provider: P): P {
-  return defineProvider('persistence', provider)
+  return defineProvider(persistenceKind, provider)
 }
 export function defineChildAgentProvider<P extends ChildAgentProvider>(provider: P): P {
-  return defineProvider('child-agent', provider)
+  return defineProvider(childAgentKind, provider)
 }

@@ -1,17 +1,10 @@
-/** Deny writes even when the session has full access. Principal authorization still applies. */
-export const policy = {
-  id: 'read-only',
-  version: '1.0.0',
-  decide(input, signal) {
-    signal.throwIfAborted()
-    return input.policy.isReadOnly && !input.policy.isDestructive
-      ? { effect: 'allow', reason: 'Read-only tool' }
-      : { effect: 'deny', reason: 'The read-only policy refuses side effects' }
-  },
-}
+import { toolPolicyKind } from '@agnes/extension-api'
+import { policy } from './policy.mjs'
+
+export { policy }
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', policy)
+    ctx.providers.register(toolPolicyKind, '@agnes-example/read-only-policy', policy)
   },
 }

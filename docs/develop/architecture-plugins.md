@@ -43,7 +43,7 @@ An author can register an existing kind through one service:
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register('tool-policy', '@example/read-only', {
+    ctx.providers.register(toolPolicyKind, '@example/read-only', {
       id: 'read-only', version: '1.0.0',
       decide(input) {
         return input.policy.isReadOnly && !input.policy.isDestructive
@@ -74,7 +74,7 @@ packages:
 
 Provider selection uses package `config.<kind>: { provider, version? }`. Root `loop`, `compaction`, `provider.adapters` and preset `tools.runtime` / `approval.policy` are removed. Presets select `tool-runtime` and `tool-policy` with `{ provider }`. `model-adapter.provider` accepts an id, a source package or a list of either, preserving multiple wire transports. Multiple package selections for one kind are refused. Root persistence and sandbox blocks already use `{ provider }`.
 
-`child-agent: { provider, version? }` selects the default for `childAgents.start(undefined, task, options)`. An explicit provider id still selects that provider. Omitting configuration keeps `in-process`; a missing configured provider fails instead of falling back. Existing in-process subagent tools retain their explicit in-process path. When fitted, `LoopContext.children` uses the parent-bound `ChildAgentSessionService` facade and configured provider selection. Providers register through `ctx.providers.register('child-agent', sourcePackage, provider)`; the platform owns registration cleanup.
+`child-agent: { provider, version? }` selects the default for `childAgents.start(undefined, task, options)`. An explicit provider id still selects that provider. Omitting configuration keeps `in-process`; a missing configured provider fails instead of falling back. Existing in-process subagent tools retain their explicit in-process path. When fitted, `LoopContext.children` uses the parent-bound `ChildAgentSessionService` facade and configured provider selection. Providers register through `ctx.providers.register(childAgentKind, sourcePackage, provider)`; the platform owns registration cleanup.
 
 A versionless loop selection requires exactly one installed version. An explicit version must match; missing or ambiguous providers fail with an installation or configuration hint. Core still pins the resolved loop id and version in the session, and legacy sessions map to `agnes.default@1.0.0`. Resume does not silently switch to an installed alternative.
 

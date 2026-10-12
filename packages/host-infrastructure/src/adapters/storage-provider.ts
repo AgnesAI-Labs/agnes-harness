@@ -10,13 +10,13 @@ import {
 import {
   DEFAULT_PERSISTENCE_PROVIDER_ID,
   definePersistenceProvider,
-  defineProviderKind,
   type PersistenceCapability,
   type PersistenceLeaseClaim,
   type PersistenceProvider,
   type PersistenceScanQuery,
   type PersistenceSessionStore,
   ProviderError,
+  persistenceKind,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import { retainProcessStore } from './storage-live.js'
@@ -367,23 +367,7 @@ export function createPersistenceProviderRegistry(
   modules: ReadonlyMap<string, { persistenceProvider?: PersistenceProvider }> | undefined,
   providers: readonly PersistenceProvider[] | undefined,
 ): ProviderRegistry<PersistenceProvider> {
-  const registry = new PersistenceProviderRegistry(
-    defineProviderKind<PersistenceProvider>({
-      kind: 'persistence',
-      restartRequired: true,
-      validate: (provider) => {
-        definePersistenceProvider(provider)
-      },
-      capabilities: (provider) => [
-        'ledger',
-        ...(provider.capabilities.metadata ? ['metadata'] : []),
-        ...(provider.capabilities.childControl ? ['child-control'] : []),
-        ...(provider.capabilities.reclaim ? ['reclaim'] : []),
-        ...(provider.capabilities.integrity ? ['integrity'] : []),
-        ...(provider.capabilities.sqlite ? ['sqlite'] : []),
-      ],
-    }),
-  )
+  const registry = new PersistenceProviderRegistry(persistenceKind)
   registry.register('@agnes/host', sqlitePersistenceProvider)
   const add = (provider: PersistenceProvider, source: string): void => {
     const checked = accept(provider, source)

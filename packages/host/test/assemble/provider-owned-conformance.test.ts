@@ -9,6 +9,7 @@ import {
   type LoopDriver,
   type LoopFactory,
   loopCheckpointCodec,
+  loopKind,
   type PersistenceProvider,
   type PersistenceSessionStore,
 } from '@agnes/extension-api'
@@ -297,7 +298,7 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
             async coldResume() {
               await session.close()
               const fresh = await fixture(dataDir, (ctx) => {
-                ctx.providers.register('loop', '@agnes/code', provider)
+                ctx.providers.register(loopKind, '@agnes/code', provider)
               })
               try {
                 const resumed = await fresh.host.createSession({ key: 'counter', cwd: dataDir })

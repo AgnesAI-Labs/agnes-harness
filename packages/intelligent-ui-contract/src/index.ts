@@ -1,7 +1,7 @@
 /** Kind token shared by Host and the official plugin. No ledger, HMAC, or queue implementation. */
 import {
   type AgentInputPort,
-  defineServiceKind,
+  defineKind,
   type OwnerLedgerPort,
   type Seq,
   type ServiceInstance,
@@ -146,12 +146,10 @@ export interface IntelligentUiInstance extends ServiceInstance {
  * One provider per session, pinned to that session's generation.
  * Ledger, input, and projections are the whole grant.
  */
-export const intelligentUiKind = defineServiceKind<IntelligentUiInstance, IntelligentUiServicePorts>({
+export const intelligentUiKind = defineKind<IntelligentUiInstance, IntelligentUiServicePorts>({
   kind: 'intelligent-ui',
-  cardinality: 'single',
-  instanceScope: 'session',
+  bind: { cardinality: 'single', instanceScope: 'session', ports: ['ledger', 'input', 'projections'] },
   scope: 'generation',
-  ports: ['ledger', 'input', 'projections'],
 })
 
 /** Closed set returned to callers. Raw source errors stay off this list. */
@@ -287,12 +285,10 @@ function refreshCapabilities(value: unknown): value is readonly 'refresh'[] {
  * Many sources per generation. Each source is its own provider id.
  * The host binds one id inside the verified source package. Ports stay empty.
  */
-export const uiDataSourceKind = defineServiceKind<UiDataSourceInstance, UiDataSourcePorts>({
+export const uiDataSourceKind = defineKind<UiDataSourceInstance, UiDataSourcePorts>({
   kind: 'ui-data-source',
-  cardinality: 'multi',
-  instanceScope: 'request',
+  bind: { cardinality: 'multi', instanceScope: 'request', ports: [] },
   scope: 'generation',
-  ports: [],
   validate(provider) {
     const source = provider as UiDataSourceProvider
     if (source.id.length > UI_DATA_SOURCE_ID_MAX_LENGTH || !UI_DATA_SOURCE_ID_PATTERN.test(source.id))

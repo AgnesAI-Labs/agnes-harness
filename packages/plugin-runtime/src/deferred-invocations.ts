@@ -1,10 +1,10 @@
 import type {
+  BindableKind,
   LoopContext,
   LoopFactory,
   LoopServiceReader,
   LoopStepOutcome,
   ServiceInstance,
-  ServiceKind,
   ServicePorts,
   ToolResult,
 } from '@agnes/extension-api'
@@ -160,7 +160,7 @@ export function withDeferredToolInvocations(
 ): LoopFactory {
   const context = (ctx: LoopContext): LoopContext => {
     const services: LoopServiceReader = {
-      get<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>) {
+      get<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>) {
         if (!isDeferredQueueToken(kind)) return ctx.services?.get(kind)
         // Only the queue token reaches here, so the caller's S is the queue instance.
         return resolve(ctx.sessionKey, ctx.lane) as S | undefined

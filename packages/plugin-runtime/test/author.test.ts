@@ -1,3 +1,4 @@
+import { webhookTriggerKind } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import type { Context } from '../src/index.js'
 import {
@@ -42,8 +43,8 @@ describe('plugin author API', () => {
         'Invalid model-adapter',
       )
     const trigger = { id: 'generic', version: '1.0.0', verify: async () => undefined }
-    expect(defineProvider('webhook-trigger', trigger)).toBe(trigger)
-    expect(() => defineProvider('webhook-trigger', { ...trigger, verify: undefined } as never)).toThrow()
+    expect(defineProvider(webhookTriggerKind, trigger)).toBe(trigger)
+    expect(() => defineProvider(webhookTriggerKind, { ...trigger, verify: undefined } as never)).toThrow()
     const helpers: readonly ((provider: never) => unknown)[] = [
       defineToolPolicy,
       defineToolRuntime,

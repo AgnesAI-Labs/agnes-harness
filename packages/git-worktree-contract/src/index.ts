@@ -1,4 +1,4 @@
-import { defineServiceKind, type ServiceInstance, type ServicePorts } from '@agnes/extension-api'
+import { defineKind, type ServiceInstance, type ServicePorts } from '@agnes/extension-api'
 
 /** Fixed grant. Only the bundled subagent may bind this kind. */
 export const GIT_WORKTREE_OWNER = 'agnes/subagent'
@@ -36,10 +36,8 @@ export interface GitWorktreeInstance extends ServiceInstance {
 }
 
 /** One provider for each canonical workspace. Host is the only registrar. */
-export const gitWorktreeKind = defineServiceKind<GitWorktreeInstance, ServicePorts>({
+export const gitWorktreeKind = defineKind<GitWorktreeInstance, ServicePorts>({
   kind: 'git-worktree',
-  cardinality: 'single',
-  instanceScope: 'workspace',
+  bind: { cardinality: 'single', instanceScope: 'workspace', ports: [] },
   scope: 'workspace',
-  ports: [],
 })

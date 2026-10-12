@@ -1,4 +1,4 @@
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 
 const SOURCE = '@agnes-example/react-loop'
 const ID = 'example.react'
@@ -324,6 +324,6 @@ export function createReactLoop(config = {}) {
 export const plugin = {
   inject: ['providers'],
   apply(ctx, config) {
-    ctx.providers.register('loop', SOURCE, createReactLoop(config))
+    ctx.providers.register(loopKind, SOURCE, createReactLoop(config))
   },
 }

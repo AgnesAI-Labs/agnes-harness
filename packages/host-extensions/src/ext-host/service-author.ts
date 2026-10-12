@@ -1,9 +1,9 @@
 import {
+  type BindableKind,
   ExtensionError,
   type ProjectionReader,
   type ServiceAuthorPort,
   type ServiceInstance,
-  type ServiceKind,
   type ServicePorts,
   type ServiceProvider,
 } from '@agnes/extension-api'
@@ -29,7 +29,7 @@ export function serviceAuthor(input: {
   }
   return Object.freeze({
     register<S extends ServiceInstance, P extends ServicePorts>(
-      kind: ServiceKind<S, P>,
+      kind: BindableKind<S, P>,
       provider: NoInfer<ServiceProvider<S, P>>,
     ) {
       input.registering()
@@ -39,7 +39,7 @@ export function serviceAuthor(input: {
         return services.register(kind, provider, { owner: input.owner, packageId: input.packageId })
       })
     },
-    bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
+    bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S> {
       input.alive()
       return granted(input.ports()).bindOwn(kind, {
         owner: input.owner,

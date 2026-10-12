@@ -12,6 +12,7 @@ import {
   type LoopFactory,
   type LoopStepOutcome,
   loopCheckpointCodec,
+  loopKind,
   loopShouldStop,
   type ToolResult,
 } from '@agnes/extension-api'
@@ -309,7 +310,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
                 entry: normalizePluginExport({
                   inject: ['providers'],
                   apply(ctx: ProviderPluginContext) {
-                    ctx.providers.register('loop', '@agnes/code', toolLoop)
+                    ctx.providers.register(loopKind, '@agnes/code', toolLoop)
                   },
                 }),
               },

@@ -1,5 +1,5 @@
 import type { WebhookRule } from '@agnes/protocol/gen/app-server'
-import { defineProviderKind, type ProviderIdentity } from './provider-kind.js'
+import { defineKind, type ProviderIdentity } from './provider-kind.js'
 
 /** Raw input has no authority. Providers verify before interpreting payload fields. */
 export interface WebhookTriggerProvider extends ProviderIdentity {
@@ -10,7 +10,7 @@ export interface WebhookTriggerProvider extends ProviderIdentity {
     resolveSecret(ref: string): Promise<string>
   }): Promise<{ deliveryId: string; event: string; timestamp: number; payload: unknown } | undefined>
 }
-export const webhookTriggerKind = defineProviderKind<WebhookTriggerProvider>({
+export const webhookTriggerKind = defineKind<WebhookTriggerProvider>({
   kind: 'webhook-trigger',
   scope: 'process',
   validate(provider) {

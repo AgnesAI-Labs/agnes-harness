@@ -43,7 +43,7 @@ Host 启动时，选中的不可变快照集合先完成身份、信任/profile�
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register('tool-policy', '@example/read-only', {
+    ctx.providers.register(toolPolicyKind, '@example/read-only', {
       id: 'read-only', version: '1.0.0',
       decide(input) {
         return input.policy.isReadOnly && !input.policy.isDestructive
@@ -74,7 +74,7 @@ packages:
 
 Provider 选择统一使用包的 `config.<kind>: { provider, version? }`。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。Preset 通过 `tool-runtime` 和 `tool-policy` 的 `{ provider }` 选择。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。同一 kind 的多个包选择会拒绝。根 persistence 和 sandbox 块已使用 `{ provider }`。
 
-`child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register('child-agent', sourcePackage, provider)`，注册清理由平台绑定到插件生命周期。
+`child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register(childAgentKind, sourcePackage, provider)`，注册清理由平台绑定到插件生命周期。
 
 loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；缺失或歧义都会返回安装或配置修复提示。Core 仍在会话中固定实际解析出的 loop id/version；旧会话映射到 `agnes.default@1.0.0`，恢复不会悄悄换成另一个已安装版本。
 

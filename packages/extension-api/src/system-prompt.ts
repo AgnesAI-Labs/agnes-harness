@@ -1,5 +1,5 @@
 import type { SystemPromptConfig, SystemPromptSection } from '@agnes/protocol'
-import { defineProviderKind, type ProviderIdentity } from './provider-kind.js'
+import { defineKind, type ProviderIdentity } from './provider-kind.js'
 
 /** Pure session-pinned composition. Core retains its untrusted-input safety section. */
 export interface SystemPromptProvider extends ProviderIdentity {
@@ -10,7 +10,7 @@ export interface SystemPromptProvider extends ProviderIdentity {
   /** Shipped defaults only; runtime sections are available through the session preview. */
   defaults(): readonly SystemPromptSection[]
 }
-export const systemPromptKind = defineProviderKind<SystemPromptProvider>({
+export const systemPromptKind = defineKind<SystemPromptProvider>({
   kind: 'system-prompt',
   scope: 'generation',
   versioned: true,

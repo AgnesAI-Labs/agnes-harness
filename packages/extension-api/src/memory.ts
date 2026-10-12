@@ -1,5 +1,5 @@
 import type { EventEnvelope } from '@agnes/protocol'
-import { defineProviderKind, type ProviderIdentity } from './provider-kind.js'
+import { defineKind, type ProviderIdentity } from './provider-kind.js'
 import type { FsEntry, FsStat } from './tool.js'
 
 export type MemoryMode = 'off' | 'ask' | 'auto'
@@ -58,7 +58,7 @@ export interface MemoryProvider extends ProviderIdentity {
   open(input: Readonly<{ home: string; workspaceRoot: string; sessionKey: string }>): MemorySession
 }
 
-export const memoryKind = defineProviderKind<MemoryProvider>({
+export const memoryKind = defineKind<MemoryProvider>({
   kind: 'memory',
   scope: 'session',
   versioned: true,

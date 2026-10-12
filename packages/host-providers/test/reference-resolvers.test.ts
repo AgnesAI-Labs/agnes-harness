@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Context } from '@agnes/cordis'
 import type { ReferenceContext } from '@agnes/extension-api'
+import { referenceResolverKind } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installReferenceResolvers } from '../src/assemble/reference-resolvers.js'
 import { boundReferenceText, fenceReference, referenceLimits } from '../src/assemble/reference-text.js'
@@ -27,7 +28,7 @@ it('routes official and community sources through one kind, re-reads at resolve 
   const root = new Context()
   const service = installReferenceResolvers(root)
   for (const source of ['file', 'session'] as const)
-    root.providers.register('reference-resolver', 'fixture', {
+    root.providers.register(referenceResolverKind, 'fixture', {
       id: source,
       version: '1.0.0',
       search: (query, context) => context[source === 'file' ? 'files' : 'sessions'].search(query),
@@ -70,7 +71,7 @@ it('routes official and community sources through one kind, re-reads at resolve 
       'Permission denied',
     )
     await expect(service.resolve([{ source: 'unknown', id: 'x' }], context)).rejects.toThrow('not registered')
-    root.providers.register('reference-resolver', 'community', {
+    root.providers.register(referenceResolverKind, 'community', {
       id: 'kb',
       version: '1.0.0',
       search: context.files.search,

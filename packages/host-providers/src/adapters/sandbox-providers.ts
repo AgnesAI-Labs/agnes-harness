@@ -1,6 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
-  defineProviderKind,
   LOCAL_SANDBOX_PROVIDER_ID,
   ProviderError,
   type SandboxCapabilities,
@@ -9,6 +8,7 @@ import {
   type SandboxProviderCatalogEntry,
   type SandboxProviderConfig,
   type SandboxProviderInstance,
+  sandboxKind,
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -102,27 +102,8 @@ export class SandboxProviderRegistry extends Service {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'sandboxProviders')
-    this.registrations = installProviderRegistry(
-      ctx,
-      defineProviderKind<SandboxProvider>({
-        kind: 'sandbox',
-        restartRequired: true,
-        validate(provider) {
-          if (
-            !PROVIDER_ID.test(provider.id) ||
-            !provider.version ||
-            typeof provider.create !== 'function' ||
-            !validCapabilities(provider.capabilities)
-          )
-            throw new TypeError('invalid sandbox provider registration')
-        },
-        capabilities: (provider) => [
-          ...(provider.capabilities.network ? ['network'] : []),
-          ...provider.capabilities.fsWrite.map((scope) => `fsWrite:${scope.path}`),
-          ...provider.capabilities.platform.map((platform) => `platform:${platform}`),
-        ],
-      }),
-      (owner, source, provider) => this.registerOwned(owner, provider, source),
+    this.registrations = installProviderRegistry(ctx, sandboxKind, (owner, source, provider) =>
+      this.registerOwned(owner, provider, source),
     )
   }
 

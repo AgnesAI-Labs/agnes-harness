@@ -1,10 +1,10 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
-  defineProviderKind,
   type LoopDriver,
   type LoopFactory,
   type LoopRegistryPort,
   type LoopSelection,
+  loopKind,
   ProviderError,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -32,23 +32,8 @@ export class LoopsService extends Service implements LoopRegistryPort {
     private readonly deferred?: DeferredInvocationsService,
   ) {
     super(ctx, 'loops')
-    this.registry = installProviderRegistry(
-      ctx,
-      defineProviderKind<LoopFactory>({
-        kind: 'loop',
-        versioned: true,
-        validate(factory) {
-          if (
-            !Array.isArray(factory.capabilities) ||
-            typeof factory.create !== 'function' ||
-            typeof factory.resume !== 'function' ||
-            !factory.codec
-          )
-            throw new Error('Invalid loop factory')
-        },
-        capabilities: (factory) => factory.capabilities,
-      }),
-      (owner, source, provider) => this.registerOwned(owner, source, provider),
+    this.registry = installProviderRegistry(ctx, loopKind, (owner, source, provider) =>
+      this.registerOwned(owner, source, provider),
     )
   }
   private registerOwned(owner: Context, sourcePackage: string, factory: LoopFactory): () => Promise<void> {

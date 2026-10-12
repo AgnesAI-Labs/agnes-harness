@@ -1,4 +1,5 @@
 import type { ModelAdapterConfig, ModelAdapterInstance } from '@agnes/extension-api'
+import { loopKind, modelAdapterKind } from '@agnes/extension-api'
 import {
   type Context,
   defineAgnesPlugin,
@@ -135,13 +136,13 @@ export const factory = defineLoop({
 export const loopPlugin = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context) {
-    ctx.providers.register('loop', '@community/dag-loop-adapter', factory)
+    ctx.providers.register(loopKind, '@community/dag-loop-adapter', factory)
   },
 })
 export const adapterPlugin = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context) {
-    ctx.providers.register('model-adapter', '@community/dag-loop-adapter', adapter)
+    ctx.providers.register(modelAdapterKind, '@community/dag-loop-adapter', adapter)
   },
 })
 export const toolPlugin = defineAgnesPlugin({

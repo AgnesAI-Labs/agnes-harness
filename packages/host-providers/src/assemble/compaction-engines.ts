@@ -5,7 +5,7 @@ import type {
   CompactionEngineCatalogEntry,
   CompactionEngineInstance,
 } from '@agnes/extension-api'
-import { defineProviderKind, ProviderError } from '@agnes/extension-api'
+import { compactionKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
@@ -37,23 +37,8 @@ export class CompactionEngineRegistry extends Service {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'compactionEngines')
-    this.registry = installProviderRegistry(
-      ctx,
-      defineProviderKind<CompactionEngine>({
-        kind: 'compaction',
-        validate(engine) {
-          if (
-            typeof engine?.id !== 'string' ||
-            !engine.id.trim() ||
-            typeof engine.version !== 'string' ||
-            !engine.version.trim() ||
-            typeof engine.create !== 'function'
-          )
-            throw new Error('invalid compaction engine registration')
-        },
-        capabilities: () => ['budget', 'summarize'],
-      }),
-      (owner, source, provider) => this.registerOwned(owner, provider, source),
+    this.registry = installProviderRegistry(ctx, compactionKind, (owner, source, provider) =>
+      this.registerOwned(owner, provider, source),
     )
   }
 
@@ -191,7 +176,7 @@ export function withBuiltinCompactionEngines(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register('compaction', '@agnes/host-providers', defaultEngine)
+            ctx.providers.register(compactionKind, '@agnes/host-providers', defaultEngine)
           },
         }),
       },

@@ -1,3 +1,4 @@
+import { modelAdapterKind } from '@agnes/extension-api'
 import type { ProviderPluginContext } from '@agnes/plugin-runtime'
 import { localOpenAIAdapter } from './local-openai.js'
 import { replayAdapter, scriptedAdapter } from './replay.js'
@@ -10,8 +11,8 @@ export { type ModelResponseRecord, readModelResponses, recordModelResponses } fr
 export const modelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register('model-adapter', '@agnes/model-adapters', replayAdapter)
-    ctx.providers.register('model-adapter', '@agnes/model-adapters', scriptedAdapter)
-    ctx.providers.register('model-adapter', '@agnes/model-adapters', localOpenAIAdapter)
+    ctx.providers.register(modelAdapterKind, '@agnes/model-adapters', replayAdapter)
+    ctx.providers.register(modelAdapterKind, '@agnes/model-adapters', scriptedAdapter)
+    ctx.providers.register(modelAdapterKind, '@agnes/model-adapters', localOpenAIAdapter)
   },
 }

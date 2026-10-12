@@ -1,5 +1,5 @@
 import type { ModelAdapterConfig, ModelAdapterInstance, ProviderPluginContext } from '@agnes/extension-api'
-import { type Context, defineAgnesPlugin, defineModelAdapter } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineModelAdapter, modelAdapterKind } from '@agnes/plugin-runtime'
 
 // Route.api selects this registration. Use your own wire-protocol identifier.
 export const adapter = defineModelAdapter({
@@ -30,6 +30,6 @@ export const adapter = defineModelAdapter({
 export const main = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
-    ctx.providers.register('model-adapter', '__PACKAGE_NAME__', adapter)
+    ctx.providers.register(modelAdapterKind, '__PACKAGE_NAME__', adapter)
   },
 })

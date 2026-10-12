@@ -12,7 +12,7 @@ import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 export const main = defineAgnesPlugin({
   inject: ['childAgents'],
   apply(ctx: Context & ChildAgentPluginContext, config: { command?: string; args?: string[] }) {
-    ctx.providers.register('child-agent', packageName,
+    ctx.providers.register(childAgentKind, packageName,
       acpChildAgentProvider({
         command: config.command ?? 'agh',
         args: config.args ?? ['acp'],

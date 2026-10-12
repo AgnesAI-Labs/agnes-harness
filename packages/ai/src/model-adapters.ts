@@ -1,4 +1,5 @@
 import type { ModelAdapterConfig, ProviderPluginContext } from '@agnes/extension-api'
+import { modelAdapterKind } from '@agnes/extension-api'
 import { PiAdapter } from './adapters/pi/index.js'
 import { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 
@@ -27,6 +28,6 @@ const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
 export const modelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    for (const adapter of registrations) ctx.providers.register('model-adapter', '@agnes/ai', adapter)
+    for (const adapter of registrations) ctx.providers.register(modelAdapterKind, '@agnes/ai', adapter)
   },
 }

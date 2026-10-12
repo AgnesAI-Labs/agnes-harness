@@ -1,6 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
 import type {
-  KindMap,
+  BindableKind,
   ProviderCatalogEntry,
   ProviderIdentity,
   ProviderKind,
@@ -8,7 +8,6 @@ import type {
   ProviderSelection,
   ProvidersCatalogPort,
   ServiceInstance,
-  ServiceKind,
   ServicePorts,
 } from '@agnes/extension-api'
 import { ProviderError, parseSemver } from '@agnes/extension-api'
@@ -262,7 +261,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     (owner: Context, source: string, provider: ProviderIdentity) => () => Promise<void>
   >()
   private serviceBinder?: <S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
   ) => Promise<S>
   private configuration?: (entry: ProviderCatalogEntry) => readonly string[]
   constructor(ctx: Context) {
@@ -294,30 +293,33 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
       }
     })
   }
-  register<K extends keyof KindMap>(
-    kind: K,
-    sourcePackage: string,
-    provider: KindMap[NoInfer<K>],
-  ): () => Promise<void>
   register<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     sourcePackage: string,
     provider: T,
   ): () => Promise<void>
   register(
-    kind: string | { readonly kind: string },
+    kind: ProviderKind<ProviderIdentity>,
     sourcePackage: string,
     provider: ProviderIdentity,
   ): () => Promise<void> {
     const registry = this.lookup(kind, 'register')
     this.refuseHostKind(registry, 'register', provider.id)
+    if (!kind.operations.register)
+      throw new ProviderError(
+        'E_PROVIDER_INVALID',
+        `provider kind ${kind.kind} does not accept registration`,
+        {
+          kind: kind.kind,
+          operation: 'register',
+        },
+      )
     registry.validate(sourcePackage, provider)
     const register = this.registrars.get(registry.definition.kind)!
     return register(this.ctx, sourcePackage, provider)
   }
-  resolve<K extends keyof KindMap>(kind: K, selection: string | ProviderSelection): KindMap[K]
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
-  resolve(kind: string | { readonly kind: string }, selection: string | ProviderSelection): ProviderIdentity {
+  resolve(kind: ProviderKind<ProviderIdentity>, selection: string | ProviderSelection): ProviderIdentity {
     return this.lookup(kind, 'resolve').resolve(selection)
   }
   /** The author path and configuration cannot touch a kind the Host owns; Host code holds the registry itself. */
@@ -380,11 +382,11 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   }
   /** Replaced when a new tree is published. The extension facade is the granted author path. */
   installServiceBinder(
-    binder: <S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>) => Promise<S>,
+    binder: <S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>) => Promise<S>,
   ): void {
     this.serviceBinder = binder
   }
-  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
+  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S> {
     this.lookup(kind, 'bind')
     const binder = this.serviceBinder
     if (!binder)

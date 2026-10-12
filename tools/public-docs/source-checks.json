@@ -186,7 +186,7 @@
   },
   {
     "path": "packages/extension-api/src/provider-kind.ts",
-    "includes": ["export interface KindMap", "export type ProviderLifecycleScope", "): () => Promise<void>"]
+    "includes": ["export function defineKind", "export type ProviderLifecycleScope", "): () => Promise<void>"]
   },
   {
     "path": "packages/extension-api/src/model-adapter.ts",
@@ -222,7 +222,7 @@
     "path": "packages/extension-api/testkit/provider-conformance.ts",
     "includes": [
       "export async function runProviderConformance",
-      "kind === 'loop' || kind === 'persistence'",
+      "kind.kind === loopKind.kind || kind.kind === persistenceKind.kind",
       "cancel-unsupported"
     ]
   },

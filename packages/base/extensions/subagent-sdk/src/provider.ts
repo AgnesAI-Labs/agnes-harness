@@ -5,6 +5,7 @@ import type {
   ChildAgentStartOptions,
   ProviderPluginContext,
 } from '@agnes/extension-api'
+import { childAgentKind } from '@agnes/extension-api'
 import { acpChildAgentProvider } from '../../subagent-acp/src/provider.js'
 import { DISABLED_CHILD_ENGINES, readSdkEngineDocument } from './document.js'
 import { assertEngineLaunch, type EngineLaunch } from './launch.js'
@@ -129,6 +130,6 @@ export const sdkChildAgentsPlugin = {
     const parsed = readSdkEngineDocument(config)
     if (!parsed?.enabled) return
     assertEngineLaunch(parsed)
-    ctx.providers.register('child-agent', '@agnes/base', sdkChildAgentProvider(parsed))
+    ctx.providers.register(childAgentKind, '@agnes/base', sdkChildAgentProvider(parsed))
   },
 }

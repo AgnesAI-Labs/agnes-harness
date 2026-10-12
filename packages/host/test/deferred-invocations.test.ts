@@ -8,6 +8,7 @@ import { CoreError, MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { LoopContext, LoopFactory, ToolResult } from '@agnes/extension-api'
+import { loopKind } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import {
   createDeferredInvocationQueue,
@@ -1012,7 +1013,7 @@ it.each(['allowed-once', 'rejected'] as const)(
     const plugin = defineAgnesPlugin({
       inject: ['tools', 'providers'],
       apply(ctx) {
-        ctx.providers.register('loop', 'fixture/deferred-review', loop)
+        ctx.providers.register(loopKind, 'fixture/deferred-review', loop)
         ctx.tools.register({
           ...fixtureTool('review_commit'),
           meta: { ...fixtureTool('review_commit').meta, requiresApproval: 'always' },

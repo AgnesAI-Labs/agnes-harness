@@ -6,6 +6,8 @@ import {
   memoryKind,
   type ResourceEntry,
   systemPromptKind,
+  toolPolicyKind,
+  toolRuntimeKind,
 } from '@agnes/extension-api'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
@@ -191,8 +193,8 @@ export async function createKernel(
       catalog: () => pluginTree.root.loops.catalog(),
     },
     toolRuntimes: {
-      register: (source, provider) => pluginTree.root.providers.register('tool-runtime', source, provider),
-      resolve: (id) => pluginTree.root.providers.resolve('tool-runtime', id),
+      register: (source, provider) => pluginTree.root.providers.register(toolRuntimeKind, source, provider),
+      resolve: (id) => pluginTree.root.providers.resolve(toolRuntimeKind, id),
       catalog: () => toolProviderCatalog('tool-runtime'),
     },
     toolPolicies: floorToolPolicies(
@@ -226,7 +228,7 @@ export async function createKernel(
     publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
     approvalMode: ctx.profile.approvals.mode,
     toolPolicySettings: async (basePolicy, signal) =>
-      pluginTree.root.providers.resolve('tool-policy', basePolicy).settings?.(
+      pluginTree.root.providers.resolve(toolPolicyKind, basePolicy).settings?.(
         {
           policy: basePolicy,
           dataDir: ctx.profile.dataDir,

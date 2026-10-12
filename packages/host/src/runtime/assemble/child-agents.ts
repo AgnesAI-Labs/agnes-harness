@@ -19,7 +19,7 @@ import type {
   ChildAgentStartOptions,
   ProviderSelection,
 } from '@agnes/extension-api'
-import { defineProviderKind, ProviderError } from '@agnes/extension-api'
+import { childAgentKind, ProviderError } from '@agnes/extension-api'
 import {
   installProviderRegistry,
   type ProviderRegistry,
@@ -62,30 +62,8 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
     private readonly selection?: ProviderSelection,
   ) {
     super(ctx, 'childAgents')
-    this.registry = installProviderRegistry(
-      ctx,
-      defineProviderKind<ChildAgentProvider>({
-        kind: 'child-agent',
-        validate(provider) {
-          if (
-            typeof provider?.id !== 'string' ||
-            !provider.id.trim() ||
-            typeof provider.version !== 'string' ||
-            !provider.version.trim() ||
-            typeof provider.start !== 'function' ||
-            !provider.capabilities ||
-            CAPABILITIES.some((flag) => typeof provider.capabilities[flag] !== 'boolean') ||
-            (['budget', 'toolFilter'] as const).some(
-              (flag) =>
-                provider.capabilities[flag] !== undefined && typeof provider.capabilities[flag] !== 'boolean',
-            )
-          )
-            throw new TypeError('invalid child agent registration')
-        },
-        capabilities: (provider) =>
-          ([...CAPABILITIES, 'budget', 'toolFilter'] as const).filter((flag) => provider.capabilities[flag]),
-      }),
-      (owner, source, provider) => this.registerOwned(owner, provider, source),
+    this.registry = installProviderRegistry(ctx, childAgentKind, (owner, source, provider) =>
+      this.registerOwned(owner, provider, source),
     )
   }
 
@@ -365,7 +343,7 @@ export function withBuiltinChildAgents(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register('child-agent', '@agnes/base', provider)
+            ctx.providers.register(childAgentKind, '@agnes/base', provider)
           },
         }),
       },

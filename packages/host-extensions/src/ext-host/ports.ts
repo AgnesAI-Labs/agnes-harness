@@ -1,5 +1,7 @@
 import type { ProjectionRegistry, RuntimeSlotFill, ToolSource } from '@agnes/core'
 import type {
+  BindableKind,
+  BindableKindToken,
   Disposer,
   HookEvent,
   HookHandler,
@@ -7,8 +9,6 @@ import type {
   ResourceEntry,
   Seq,
   ServiceInstance,
-  ServiceKind,
-  ServiceKindToken,
   ServicePorts,
   ServiceProvider,
   SlotName,
@@ -38,12 +38,12 @@ export interface KernelPorts {
   /** Host grant for the shared service facade. Absent on hosts that do not install it. */
   serviceProviders?: {
     register<S extends ServiceInstance, P extends ServicePorts>(
-      kind: ServiceKind<S, P>,
+      kind: BindableKind<S, P>,
       provider: ServiceProvider<S, P>,
       identity: { readonly owner: string; readonly packageId: string },
     ): () => Promise<void>
     bindOwn<S extends ServiceInstance, P extends ServicePorts>(
-      kind: ServiceKind<S, P>,
+      kind: BindableKind<S, P>,
       identity: {
         readonly owner: string
         readonly packageId: string
@@ -55,7 +55,7 @@ export interface KernelPorts {
     ): Promise<S>
     /** Present after the kind is installed. Missing means the events check waits until bind. */
     grants?(
-      kind: ServiceKindToken,
+      kind: BindableKindToken,
     ): { readonly events: boolean; readonly projections: readonly string[] } | undefined
   }
   /** Live registration ownership for cleanup verification, not an execution snapshot. */

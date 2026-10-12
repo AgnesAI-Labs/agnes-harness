@@ -1,12 +1,12 @@
 import type { Context } from '@agnes/cordis'
 import {
+  type BindableKind,
+  type BindableKindToken,
   type DecisionPort,
   EXTENSION_ID_PATTERN,
   type ProjectionReader,
   ProviderError,
   type ServiceInstance,
-  type ServiceKind,
-  type ServiceKindToken,
   type ServicePorts,
   type ServiceProvider,
   type SessionRef,
@@ -50,26 +50,26 @@ export interface ExtensionServiceHost {
   readonly ports: NonNullable<KernelPorts['serviceProviders']>
   install<S extends ServiceInstance, P extends ServicePorts>(
     ctx: Context,
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     descriptor: ServiceDescriptor,
     origins?: RowOriginLookup,
   ): void
   /** Registers on the mounting root. The author port cannot register the git worktree kind. */
   registerOn<S extends ServiceInstance, P extends ServicePorts>(
     ctx: Context,
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     provider: ServiceProvider<S, P>,
     identity: { readonly owner: string; readonly packageId: string },
   ): () => Promise<void>
   bindHost<S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     call: ServiceCall,
     factories?: ServicePortFactories,
   ): Promise<S>
   attachBinder(providers: ProvidersService): void
   /** Runs after a provider claims its owner. The returned function runs before the claim is released. */
-  onRegistered(kind: ServiceKindToken, listener: (owner: string, packageId: string) => () => void): void
-  packageFor(kind: ServiceKindToken, owner: string): string | undefined
+  onRegistered(kind: BindableKindToken, listener: (owner: string, packageId: string) => () => void): void
+  packageFor(kind: BindableKindToken, owner: string): string | undefined
 }
 
 /** Service tokens are invariant, so a generic kind and a concrete token do not overlap. */
@@ -111,7 +111,7 @@ export function createExtensionServiceHost(input: {
     }
   }
   const bindAdmitted = <S extends ServiceInstance, P extends ServicePorts>(
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     identity: {
       readonly owner: string
       readonly packageId: string
@@ -194,7 +194,7 @@ export function createExtensionServiceHost(input: {
   }
   const claim = <S extends ServiceInstance, P extends ServicePorts>(
     providers: ProvidersService,
-    kind: ServiceKind<S, P>,
+    kind: BindableKind<S, P>,
     provider: ServiceProvider<S, P>,
     identity: { readonly owner: string; readonly packageId: string },
   ): (() => Promise<void>) => {

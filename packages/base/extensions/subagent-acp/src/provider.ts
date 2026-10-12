@@ -14,6 +14,7 @@ import type {
   ChildAgentStatus,
   ProviderPluginContext,
 } from '@agnes/extension-api'
+import { childAgentKind } from '@agnes/extension-api'
 import { AcpChildProcess, type AcpCommand } from './client.js'
 
 export const ACP_CHILD_PROVIDER_ID = 'acp'
@@ -239,7 +240,7 @@ export function acpChildAgentsPlugin(options: AcpChildAgentOptions) {
   return {
     inject: ['providers'] as const,
     apply(ctx: ProviderPluginContext) {
-      ctx.providers.register('child-agent', '@agnes/base', provider)
+      ctx.providers.register(childAgentKind, '@agnes/base', provider)
     },
   }
 }

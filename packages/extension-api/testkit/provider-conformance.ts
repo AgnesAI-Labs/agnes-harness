@@ -1,5 +1,23 @@
+import type { ChildAgentProvider } from '../src/child-agent.js'
+import type { CompactionEngine } from '../src/compaction-engine.js'
 import { ProviderError, type ProviderErrorCode } from '../src/errors.js'
-import type { KindMap, ProviderRegistrationPort } from '../src/provider-kind.js'
+import {
+  childAgentKind,
+  compactionKind,
+  loopKind,
+  modelAdapterKind,
+  persistenceKind,
+  sandboxKind,
+  toolPolicyKind,
+  toolRuntimeKind,
+} from '../src/kinds.js'
+import type { LoopFactory } from '../src/loop.js'
+import type { ModelAdapter } from '../src/model-adapter.js'
+import type { PersistenceProvider } from '../src/persistence.js'
+import type { ProviderIdentity, ProviderKind, ProviderRegistrationPort } from '../src/provider-kind.js'
+import type { SandboxProvider } from '../src/sandbox-provider.js'
+import type { ToolPolicy } from '../src/tool-policy.js'
+import type { ToolRuntimeProvider } from '../src/tool-runtime.js'
 
 /** Start a real Host operation with controlled inputs; ready means it reached the provider. */
 export interface ProviderConformanceOperation {
@@ -19,13 +37,13 @@ export interface ProviderConformanceProbe {
   /** Reopen persisted state with a fresh session/instance, then check its observable contents. */
   coldResume?(): Promise<void>
 }
-export interface ProviderConformanceOptions<K extends keyof KindMap> {
+export interface ProviderConformanceOptions<T extends ProviderIdentity> {
   /** Use Host.providers from an isolated real Host; never substitute a mock registry. */
   providers: ProviderRegistrationPort
   sourcePackage: string
-  provider: KindMap[K]
+  provider: T
   /** Acquire the selected provider through the real Host service/session path. */
-  open(provider: KindMap[K]): Promise<ProviderConformanceProbe>
+  open(provider: T): Promise<ProviderConformanceProbe>
 }
 
 async function expectCode(operation: () => unknown, code: ProviderErrorCode): Promise<void> {
@@ -54,9 +72,9 @@ async function expectCancelled(operation: Promise<unknown>, probe: ProviderConfo
 }
 
 /** Black-box admission, cancellation, draining unload and cold-resume contract checks. */
-export async function runProviderConformance<K extends keyof KindMap>(
-  kind: K,
-  options: ProviderConformanceOptions<K>,
+export async function runProviderConformance<T extends ProviderIdentity>(
+  kind: ProviderKind<T>,
+  options: ProviderConformanceOptions<T>,
 ): Promise<readonly string[]> {
   const { providers, provider, sourcePackage } = options
   const selection = { provider: provider.id, version: provider.version }
@@ -71,7 +89,7 @@ export async function runProviderConformance<K extends keyof KindMap>(
   try {
     await expectCode(() => providers.register(kind, sourcePackage, provider), 'E_PROVIDER_DUPLICATE')
     const catalog = providers.catalog()
-    const entry = catalog.find((entry) => entry.kind === kind && entry.id === provider.id)
+    const entry = catalog.find((entry) => entry.kind === kind.kind && entry.id === provider.id)
     if (
       !entry ||
       !Object.isFrozen(catalog) ||
@@ -81,7 +99,8 @@ export async function runProviderConformance<K extends keyof KindMap>(
       throw new Error('Provider conformance: catalog must expose immutable registration metadata')
     probe = await options.open(providers.resolve(kind, selection))
     if (probe.cancellation === 'unsupported') {
-      if (kind !== 'persistence') throw new Error(`Provider conformance: ${kind} must support cancellation`)
+      if (kind.kind !== persistenceKind.kind)
+        throw new Error(`Provider conformance: ${kind.kind} must support cancellation`)
       cases.push('cancel-unsupported')
     } else {
       const cancel = new AbortController()
@@ -93,8 +112,9 @@ export async function runProviderConformance<K extends keyof KindMap>(
       await expectCancelled(operation.result, probe)
       cases.push('cancel')
     }
-    if (kind === 'loop' || kind === 'persistence') {
-      if (!probe.coldResume) throw new Error(`Provider conformance: ${kind} requires a cold-resume probe`)
+    if (kind.kind === loopKind.kind || kind.kind === persistenceKind.kind) {
+      if (!probe.coldResume)
+        throw new Error(`Provider conformance: ${kind.kind} requires a cold-resume probe`)
     }
     if (probe.coldResume) {
       await probe.coldResume()
@@ -130,19 +150,19 @@ export async function runProviderConformance<K extends keyof KindMap>(
   }
 }
 
-export const loopConformance = (options: ProviderConformanceOptions<'loop'>) =>
-  runProviderConformance('loop', options)
-export const modelAdapterConformance = (options: ProviderConformanceOptions<'model-adapter'>) =>
-  runProviderConformance('model-adapter', options)
-export const compactionConformance = (options: ProviderConformanceOptions<'compaction'>) =>
-  runProviderConformance('compaction', options)
-export const persistenceConformance = (options: ProviderConformanceOptions<'persistence'>) =>
-  runProviderConformance('persistence', options)
-export const sandboxConformance = (options: ProviderConformanceOptions<'sandbox'>) =>
-  runProviderConformance('sandbox', options)
-export const toolRuntimeConformance = (options: ProviderConformanceOptions<'tool-runtime'>) =>
-  runProviderConformance('tool-runtime', options)
-export const toolPolicyConformance = (options: ProviderConformanceOptions<'tool-policy'>) =>
-  runProviderConformance('tool-policy', options)
-export const childAgentConformance = (options: ProviderConformanceOptions<'child-agent'>) =>
-  runProviderConformance('child-agent', options)
+export const loopConformance = (options: ProviderConformanceOptions<LoopFactory>) =>
+  runProviderConformance(loopKind, options)
+export const modelAdapterConformance = (options: ProviderConformanceOptions<ModelAdapter>) =>
+  runProviderConformance(modelAdapterKind, options)
+export const compactionConformance = (options: ProviderConformanceOptions<CompactionEngine>) =>
+  runProviderConformance(compactionKind, options)
+export const persistenceConformance = (options: ProviderConformanceOptions<PersistenceProvider>) =>
+  runProviderConformance(persistenceKind, options)
+export const sandboxConformance = (options: ProviderConformanceOptions<SandboxProvider>) =>
+  runProviderConformance(sandboxKind, options)
+export const toolRuntimeConformance = (options: ProviderConformanceOptions<ToolRuntimeProvider>) =>
+  runProviderConformance(toolRuntimeKind, options)
+export const toolPolicyConformance = (options: ProviderConformanceOptions<ToolPolicy>) =>
+  runProviderConformance(toolPolicyKind, options)
+export const childAgentConformance = (options: ProviderConformanceOptions<ChildAgentProvider>) =>
+  runProviderConformance(childAgentKind, options)

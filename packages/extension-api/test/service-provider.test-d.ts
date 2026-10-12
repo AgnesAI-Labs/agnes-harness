@@ -1,14 +1,12 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import type { ServiceAuthorPort, ServiceInstance, ServicePorts } from '../src/index.js'
-import { defineServiceKind } from '../src/index.js'
+import { defineKind } from '../src/index.js'
 
-describe('defineServiceKind', () => {
+describe('defineKind with bind', () => {
   it('keeps the register disposer and bindOwn instance on the token', () => {
-    const kind = defineServiceKind<ServiceInstance & { ping(): number }, ServicePorts>({
+    const kind = defineKind<ServiceInstance & { ping(): number }, ServicePorts>({
       kind: 'sample-service',
-      cardinality: 'single',
-      instanceScope: 'session',
-      ports: ['ledger', 'input'],
+      bind: { cardinality: 'single', instanceScope: 'session', ports: ['ledger', 'input'] },
     })
     expectTypeOf(kind.cardinality).toEqualTypeOf<'single' | 'multi'>()
     expectTypeOf(kind.instanceScope).toEqualTypeOf<'request' | 'session' | 'workspace' | 'process'>()

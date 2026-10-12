@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { loopKind } from '@agnes/extension-api'
 import { parse } from 'yaml'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
@@ -301,7 +302,7 @@ import { defaultLoopFactory } from '@agnes/loop-default'
 export const defaultLoopPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register('loop', '@agnes/base', defaultLoopFactory)
+    ctx.providers.register(loopKind, '@agnes/base', defaultLoopFactory)
   },
 }
 

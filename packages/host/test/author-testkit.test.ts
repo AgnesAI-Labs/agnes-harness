@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 import {
   createAuthorTestkit,
   createPluginTestHost,
@@ -214,7 +214,7 @@ describe('public author testkit', () => {
           description: 'Synthetic model instructions',
           body: 'Offline business fixture',
         })
-        ctx.providers.register('loop', '@author/plugin', loop)
+        ctx.providers.register(loopKind, '@author/plugin', loop)
       },
     }
     try {
@@ -302,7 +302,7 @@ describe('public author testkit', () => {
       plugin: {
         inject: ['providers'],
         apply(ctx: Context) {
-          ctx.providers.register('loop', '@author/plugin', loop)
+          ctx.providers.register(loopKind, '@author/plugin', loop)
         },
       },
     })

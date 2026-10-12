@@ -7,7 +7,7 @@ import type {
   ModelAdapterInstance,
   ProviderPluginContext,
 } from '@agnes/extension-api'
-import { defineProviderKind, ProviderError } from '@agnes/extension-api'
+import { modelAdapterKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
@@ -148,30 +148,8 @@ export class ModelAdapterRegistry extends Service {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'modelAdapters')
-    this.registrations = installProviderRegistry(
-      ctx,
-      defineProviderKind<ModelAdapter>({
-        kind: 'model-adapter',
-        validate(adapter) {
-          if (
-            !adapter.id ||
-            typeof adapter.wireApi !== 'string' ||
-            !adapter.wireApi.trim() ||
-            !adapter.version ||
-            typeof adapter.create !== 'function' ||
-            !adapter.capabilities ||
-            ['imageInput', 'tools', 'streaming'].some(
-              (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',
-            )
-          )
-            throw new Error('invalid model adapter registration')
-        },
-        capabilities: (record) =>
-          Object.entries(record.capabilities)
-            .filter(([, enabled]) => enabled)
-            .map(([name]) => name),
-      }),
-      (owner, source, provider) => this.registerOwned(owner, provider, source),
+    this.registrations = installProviderRegistry(ctx, modelAdapterKind, (owner, source, provider) =>
+      this.registerOwned(owner, provider, source),
     )
   }
 
@@ -289,7 +267,7 @@ export const builtinModelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     modelAdaptersPlugin.apply(ctx)
-    ctx.providers.register('model-adapter', '@agnes/ai', scriptedAdapter)
+    ctx.providers.register(modelAdapterKind, '@agnes/ai', scriptedAdapter)
   },
 }
 

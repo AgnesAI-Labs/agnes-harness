@@ -1,4 +1,5 @@
 import type { ModelAdapter, ProviderRegistrationPort } from '@agnes/extension-api'
+import { modelAdapterKind } from '@agnes/extension-api'
 
 export const observations = {
   requests: [] as Array<{ model: string; image: boolean; credential?: string }>,
@@ -43,6 +44,6 @@ const adapter: ModelAdapter = {
 export const plugin = {
   inject: ['providers'],
   apply(ctx: { providers: ProviderRegistrationPort }) {
-    ctx.providers.register('model-adapter', '@community/fake-model-adapter', adapter)
+    ctx.providers.register(modelAdapterKind, '@community/fake-model-adapter', adapter)
   },
 }

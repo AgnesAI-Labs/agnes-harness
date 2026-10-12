@@ -11,7 +11,7 @@ import type {
   ToolPolicySettingsContext,
   ToolRuntimeProvider,
 } from '@agnes/extension-api'
-import { defineProviderKind, ProviderError } from '@agnes/extension-api'
+import { ProviderError, toolPolicyKind, toolRuntimeKind } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
@@ -85,16 +85,10 @@ function installToolRuntimes(ctx: Context, origins?: RowOriginLookup): void {
   }
   const registry: ProviderRegistry<ToolRuntimeProvider> = installProviderRegistry(
     ctx,
-    defineProviderKind<ToolRuntimeProvider>({
-      kind: 'tool-runtime',
-      validate(provider) {
-        if (typeof provider.create !== 'function') throw new Error('Invalid tool runtime provider')
-      },
-      capabilities: () => ['single', 'batch', 'scheduling', 'cancel'],
-    }),
+    toolRuntimeKind,
     register,
   )
-  ctx.providers.register('tool-runtime', '@agnes/core', defaultToolRuntimeProvider)
+  ctx.providers.register(toolRuntimeKind, '@agnes/core', defaultToolRuntimeProvider)
 }
 
 function installToolPolicies(ctx: Context, origins?: RowOriginLookup): void {
@@ -121,17 +115,7 @@ function installToolPolicies(ctx: Context, origins?: RowOriginLookup): void {
       () => lifetime.close(() => policy.cleanup?.()),
     )
   }
-  const registry: ProviderRegistry<ToolPolicy> = installProviderRegistry(
-    ctx,
-    defineProviderKind<ToolPolicy>({
-      kind: 'tool-policy',
-      validate(policy) {
-        if (typeof policy.decide !== 'function') throw new Error('Invalid tool policy')
-      },
-      capabilities: () => ['allow', 'ask', 'deny'],
-    }),
-    register,
-  )
+  const registry: ProviderRegistry<ToolPolicy> = installProviderRegistry(ctx, toolPolicyKind, register)
 }
 
 export class LoopEventsService extends Service implements LoopEventRegistryPort {
@@ -181,7 +165,7 @@ export function withBuiltinToolPolicies(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register('tool-policy', '@agnes/base', defaultToolPolicy)
+            ctx.providers.register(toolPolicyKind, '@agnes/base', defaultToolPolicy)
           },
         }),
       },

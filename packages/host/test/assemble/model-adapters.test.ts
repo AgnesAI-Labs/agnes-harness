@@ -1,12 +1,13 @@
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelAdapter, ModelAdapterInstance } from '@agnes/extension-api'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
+import { modelAdapterKind } from '@agnes/extension-api'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
@@ -49,7 +50,7 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   let release: (() => Promise<void>) | undefined
   const plugin = root.plugin((ctx) => {
     release = ctx.providers.register(
-      'model-adapter',
+      modelAdapterKind,
       '@agnes/host',
       definition({
         create: (config) => ({
@@ -72,14 +73,14 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   })
   expect(modelAdapterCatalog(root)[0]).not.toHaveProperty('api')
   expect(() =>
-    root.providers.register('model-adapter', '@agnes/host', {
+    root.providers.register(modelAdapterKind, '@agnes/host', {
       ...definition(),
       wireApi: undefined,
       api: 'custom-wire',
     } as never),
   ).toThrow('invalid model adapter registration')
   expect(Object.isFrozen(modelAdapterCatalog(root)[0]?.capabilities)).toBe(true)
-  expect(() => root.providers.register('model-adapter', '@agnes/host', definition())).toThrow(
+  expect(() => root.providers.register(modelAdapterKind, '@agnes/host', definition())).toThrow(
     'duplicate model adapter',
   )
   const instance = await root.modelAdapters.create('custom', { routes: [] })
@@ -109,7 +110,7 @@ it('cleans up an instance whose asynchronous factory finishes after unregisterin
   let finish!: (instance: ModelAdapterInstance) => void
   let disposed = false
   const release = root.providers.register(
-    'model-adapter',
+    modelAdapterKind,
     '@agnes/host',
     definition({
       create: () =>
@@ -260,7 +261,12 @@ async function fixture(selected: string, missingCredential = false) {
   const extensionLoader = {
     import: async (file: string) => {
       imported.push(file)
-      const namespace = (await import(pathToFileURL(file).href)) as Record<string, unknown>
+      // The copied snapshot has no node_modules; import the original so the kind token resolves like a Host-provided external.
+      const root = realpathSync(directory)
+      const origin = file.startsWith(root)
+        ? fileURLToPath(new URL(`../fixtures/model-adapter${file.slice(root.length)}`, import.meta.url))
+        : file
+      const namespace = (await import(`${pathToFileURL(origin).href}?run=${basename(dataDir)}`)) as Record<string, unknown>
       if (file.endsWith('/index.ts')) fixtureNamespace = namespace as typeof fixtureNamespace
       return namespace
     },

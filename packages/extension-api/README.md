@@ -4,7 +4,7 @@
 
 A `LoopFactory` identifies a loop by `id` and `version`, declares `capabilities`,
 and creates or resumes a session-owned `LoopDriver`. Inject `providers` and register
-with `ctx.providers.register('loop', sourcePackage, factory)`. The platform owns cleanup.
+with `ctx.providers.register(loopKind, sourcePackage, factory)`. The platform owns cleanup.
 `ctx.providers.catalog()` returns installed identities,
 capabilities and source packages for administration. New sessions select an exact
 identity through `Kernel.session(key, { ...options, loop: { id, version } })`.

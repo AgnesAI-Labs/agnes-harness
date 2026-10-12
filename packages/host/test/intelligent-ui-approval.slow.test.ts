@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { loopKind } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   capabilityHash,
@@ -334,7 +335,7 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
             execute: async () => ({ content: [{ type: 'text', text: 'Approved change recorded' }] }),
           }),
         )
-        ctx.providers.register('loop', '@author/plugin', loop)
+        ctx.providers.register(loopKind, '@author/plugin', loop)
       },
     }),
   })

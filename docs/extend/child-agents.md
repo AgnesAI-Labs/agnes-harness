@@ -35,7 +35,7 @@ import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 export const main = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
-    ctx.providers.register('child-agent', '@example/agents', provider)
+    ctx.providers.register(childAgentKind, '@example/agents', provider)
   },
 })
 ```

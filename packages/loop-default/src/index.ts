@@ -6,6 +6,7 @@ import {
   type LoopDriver,
   type LoopFactory,
   type LoopStepOutcome,
+  loopKind,
   type ProviderPluginContext,
 } from '@agnes/extension-api'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
@@ -97,7 +98,7 @@ export const defaultLoopFactory: LoopFactory = Object.freeze({
 export const defaultLoopPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register('loop', '@agnes/loop-default', defaultLoopFactory)
+    ctx.providers.register(loopKind, '@agnes/loop-default', defaultLoopFactory)
   },
 }
 export { DEFAULT_LOOP }

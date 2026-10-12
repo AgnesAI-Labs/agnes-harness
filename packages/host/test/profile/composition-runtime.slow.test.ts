@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
+import { compactionKind, loopKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import {
@@ -55,7 +56,7 @@ function bundleFixture() {
           body: `ctx.tools.register(tool('fixture_${index}'))
 ${
   index === 0
-    ? `ctx.providers.register('loop', 'acme/a', {
+    ? `ctx.providers.register(loopKind, 'acme/a', {
   id: 'fixture.business', version: '1.0.0', capabilities: [],
   codec: { version: 1, encode: (state) => ({ codecVersion: 1, state }), decode: (checkpoint) => checkpoint.state },
   create: () => ({ step: async () => ({ outcome: 'idle' }), cancel() {}, dispose() {}, checkpoint: () => ({ codecVersion: 1, state: null }) }),
@@ -291,7 +292,7 @@ function presetCompositionFixture() {
             entry: normalizePluginExport({
               inject: ['providers'],
               apply(ctx) {
-                ctx.providers.register('compaction', '@agnes/host', {
+                ctx.providers.register(compactionKind, '@agnes/host', {
                   id: 'fixture',
                   version: '1.0.0',
                   create: () => ({

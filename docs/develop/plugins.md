@@ -92,7 +92,7 @@ A value published by `ctx.provide('name', value)` belongs to the current Context
 
 ## Model adapter packages
 
-An ordinary trusted plugin can inject `providers` and call `ctx.providers.register('model-adapter', packageName, adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
+An ordinary trusted plugin can inject `providers` and call `ctx.providers.register(modelAdapterKind, packageName, adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
 
 Configure `config['model-adapter'].provider` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
 
@@ -106,7 +106,7 @@ A full Host provider implements ledger, metadata, child control, reclaim and int
 
 ## Child agent providers
 
-A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineProviderKind`. Register it through `ctx.providers.register('child-agent', sourcePackage, provider)`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
+A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineProviderKind`. Register it through `ctx.providers.register(childAgentKind, sourcePackage, provider)`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
 
 The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
 
@@ -147,7 +147,7 @@ Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest p
 
 For a fixed business workflow, start with [`defineWorkflowLoop`](../extend/workflow-loops.md) and the [Loop template](../../templates/loop/). It owns staged checkpoints, confirmation and approval continuation. The lower-level factory contract below is for custom scheduling.
 
-An Agent Loop owns scheduling and checkpoint state. Export a `LoopFactory` with `id`, `version`, `capabilities`, a versioned `codec`, `create(ctx)` and `resume(ctx, checkpoint)`. Its driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`. Register it during plugin apply with `ctx.providers.register('loop', 'your-package', factory)` from `@agnes/extension-api`; declare the exported plugin in `agnes.plugins` with `inject: ["providers"]`. Registrations belong to the plugin fiber and disappear on unload. `kernel.loops.catalog()` exposes installed identities, capabilities and verified source packages.
+An Agent Loop owns scheduling and checkpoint state. Export a `LoopFactory` with `id`, `version`, `capabilities`, a versioned `codec`, `create(ctx)` and `resume(ctx, checkpoint)`. Its driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`. Register it during plugin apply with `ctx.providers.register(loopKind, 'your-package', factory)` from `@agnes/extension-api`; declare the exported plugin in `agnes.plugins` with `inject: ["providers"]`. Registrations belong to the plugin fiber and disappear on unload. `kernel.loops.catalog()` exposes installed identities, capabilities and verified source packages.
 
 Every step returns an explicit `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`; `phase` is optional display text. `until: 'turn-end'` stops at the first ended turn. `until: 'idle'` continues after completed turns, stopping when input is exhausted or a turn parks or ends for another reason. The production runner and `driveLoop` testkit use the same rule. End a turn with `ctx.events.finish(reason)` before returning its outcome.
 

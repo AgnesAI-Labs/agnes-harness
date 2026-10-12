@@ -1,6 +1,7 @@
 import type { LoopFactory, ToolPolicy, WebhookTriggerProvider } from '../src/index.js'
-import { defineProviderKind, type ProviderRegistrationPort } from '../src/provider-kind.js'
-import { defineServiceKind, type ServiceInstance, type ServicePorts } from '../src/service-provider.js'
+import { loopKind, toolPolicyKind, webhookTriggerKind } from '../src/index.js'
+import { defineKind, type ProviderRegistrationPort } from '../src/provider-kind.js'
+import type { ServiceInstance, ServicePorts } from '../src/service-provider.js'
 
 function providerTypes(
   port: ProviderRegistrationPort,
@@ -8,30 +9,28 @@ function providerTypes(
   policy: ToolPolicy,
   webhook: WebhookTriggerProvider,
 ) {
-  port.register('webhook-trigger', 'test', webhook)
-  const trigger: WebhookTriggerProvider = port.resolve('webhook-trigger', 'test')
+  port.register(webhookTriggerKind, 'test', webhook)
+  const trigger: WebhookTriggerProvider = port.resolve(webhookTriggerKind, 'test')
   void trigger
   // @ts-expect-error Webhook providers do not expose Loop authority.
-  port.register('webhook-trigger', 'test', loop)
-  port.register('loop', 'test', loop)
-  const result: ToolPolicy = port.resolve('tool-policy', 'test')
+  port.register(webhookTriggerKind, 'test', loop)
+  port.register(loopKind, 'test', loop)
+  const result: ToolPolicy = port.resolve(toolPolicyKind, 'test')
   void result
-  // @ts-expect-error A string kind cannot choose an unrelated provider type.
-  port.register('loop', 'test', policy)
+  // @ts-expect-error A kind token cannot choose an unrelated provider type.
+  port.register(loopKind, 'test', policy)
   // @ts-expect-error Resolution has the type associated with the kind.
-  const incorrect: LoopFactory = port.resolve('tool-policy', 'test')
+  const incorrect: LoopFactory = port.resolve(toolPolicyKind, 'test')
   void incorrect
-  const token = defineProviderKind<ToolPolicy>({ kind: 'custom-policy', validate() {} })
+  const token = defineKind<ToolPolicy>({ kind: 'custom-policy', validate() {} })
   port.register(token, 'test', policy)
   // @ts-expect-error Tokens are invariant in their provider type.
   port.register(token, 'test', loop)
 }
 function serviceBinding(port: ProviderRegistrationPort, loop: LoopFactory) {
-  const kind = defineServiceKind<ServiceInstance & { ready(): boolean }, ServicePorts>({
+  const kind = defineKind<ServiceInstance & { ready(): boolean }, ServicePorts>({
     kind: 'sample-service',
-    cardinality: 'single',
-    instanceScope: 'request',
-    ports: ['ledger'],
+    bind: { cardinality: 'single', instanceScope: 'request', ports: ['ledger'] },
   })
   const dispose: () => Promise<void> = port.register(kind, 'test', {
     id: 'one',

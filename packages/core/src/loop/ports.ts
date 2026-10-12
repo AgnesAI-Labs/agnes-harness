@@ -2,6 +2,7 @@ import { withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError } from '@agnes/core-common/types'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type {
+  BindableKind,
   LoopCheckpoint,
   LoopContext,
   LoopInput,
@@ -9,7 +10,6 @@ import type {
   LoopRequestOptions,
   LoopToolCall,
   ServiceInstance,
-  ServiceKind,
   ServicePorts,
 } from '@agnes/extension-api'
 import {
@@ -398,7 +398,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     sessionKey: s.key,
     lane: s.lane,
     services: {
-      get: <S extends ServiceInstance, P extends ServicePorts>(_kind: ServiceKind<S, P>) =>
+      get: <S extends ServiceInstance, P extends ServicePorts>(_kind: BindableKind<S, P>) =>
         undefined as S | undefined,
     },
     prepareRequest,

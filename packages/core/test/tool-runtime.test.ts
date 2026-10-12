@@ -4,7 +4,7 @@ import { defaultToolRuntimeProvider } from '@agnes/core-effects/effects/tool-run
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ToolRuntimeCall, ToolRuntimeExecution } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { policy } from '../../../examples/policies/read-only/index.mjs'
+import { policy } from '../../../examples/policies/read-only/policy.mjs'
 import { Kernel } from '../src/kernel.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
 import { defaultLoops } from '../testkit/loops.js'

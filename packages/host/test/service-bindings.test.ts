@@ -1,10 +1,10 @@
 import { Context } from '@agnes/cordis'
 import {
+  type BindableKind,
   type DecisionPort,
-  defineServiceKind,
+  defineKind,
   ProviderError,
   type ServiceInstance,
-  type ServiceKind,
   type ServicePorts,
   type ServiceProvider,
   unavailableProjections,
@@ -61,17 +61,19 @@ const otherOwner = 'fixture/beta'
 const packageId = '@fixture/package'
 const sessionRef = Object.freeze({ key: 'sess', lane: 'main', workspaceRoot: '/work' })
 
-function defineKind(options: {
+function sampleKind(options: {
   kind?: string
   cardinality?: 'single' | 'multi'
   instanceScope?: 'request' | 'session' | 'workspace' | 'process'
   ports?: ServiceDescriptor['ports']
 }) {
-  return defineServiceKind<Probe, ServicePorts>({
+  return defineKind<Probe, ServicePorts>({
     kind: options.kind ?? 'sample',
-    cardinality: options.cardinality ?? 'single',
-    instanceScope: options.instanceScope ?? 'request',
-    ...(options.ports === undefined ? {} : { ports: options.ports }),
+    bind: {
+      cardinality: options.cardinality ?? 'single',
+      instanceScope: options.instanceScope ?? 'request',
+      ...(options.ports === undefined ? {} : { ports: options.ports }),
+    },
   })
 }
 
@@ -121,7 +123,7 @@ function call(
 
 async function mount(options: {
   descriptor: ServiceDescriptor
-  kind?: ReturnType<typeof defineKind>
+  kind?: ReturnType<typeof sampleKind>
   entries: {
     id: string
     packageId: string
@@ -130,7 +132,7 @@ async function mount(options: {
   }[]
 }) {
   const root = new Context()
-  const kind = options.kind ?? defineKind({ ports: options.descriptor.ports })
+  const kind = options.kind ?? sampleKind({ ports: options.descriptor.ports })
   const bindings = new ServiceBindings(() => root.providers)
   bindings.install(root, kind, options.descriptor)
   for (const entry of options.entries) {
@@ -181,7 +183,7 @@ function ledgerRow(seq: number, patch: Partial<LedgerEvent> = {}): LedgerEvent {
 describe('service binding gate', () => {
   it('selects the sole candidate and refuses several unselected candidates', async () => {
     const opened: string[] = []
-    const kind = defineKind({})
+    const kind = sampleKind({})
     const mounted = await mount({
       kind,
       descriptor: { ports: [], audience: 'host' },
@@ -211,7 +213,7 @@ describe('service binding gate', () => {
 
   it('accepts one unselected candidate for a host audience without an owner claim', async () => {
     let opens = 0
-    const kind = defineKind({})
+    const kind = sampleKind({})
     const mounted = await mount({
       kind,
       descriptor: { ports: [], audience: 'host' },
@@ -239,7 +241,7 @@ describe('service binding gate', () => {
   it('keeps the first descriptor when a later tree installs the same kind', async () => {
     const root = new Context()
     const later = new Context()
-    const kind = defineKind({})
+    const kind = sampleKind({})
     const bindings = new ServiceBindings(() => root.providers)
     bindings.install(root, kind, { ports: [], audience: 'host' })
     bindings.install(later, kind, { ports: [], audience: 'callback' })
@@ -258,11 +260,11 @@ describe('service binding gate', () => {
 
   it('refuses a different token, a wider grant, and a callback without its owner claim', async () => {
     const root = new Context()
-    const kind = defineKind({})
+    const kind = sampleKind({})
     const bindings = new ServiceBindings(() => root.providers)
     expect(() => bindings.install(root, kind, { ports: ['ledger'] })).toThrow(/exceeds the kind grant/)
     bindings.install(root, kind, { ports: [], audience: 'callback' })
-    const other = defineKind({})
+    const other = sampleKind({})
     expect(() => bindings.install(root, other, { ports: [] })).toThrow(/does not match the installed kind/)
     root.providers.register(
       kind,
@@ -289,8 +291,8 @@ describe('service binding gate', () => {
   })
 
   it('fails closed for a dead admission, a missing scope, and ctx.providers until a binder exists', async () => {
-    const kind = defineKind({ instanceScope: 'session' })
-    const processKind = defineKind({ kind: 'process-sample', instanceScope: 'process' })
+    const kind = sampleKind({ instanceScope: 'session' })
+    const processKind = sampleKind({ kind: 'process-sample', instanceScope: 'process' })
     let opens = 0
     const mounted = await mount({
       kind,
@@ -345,11 +347,11 @@ describe('service binding gate', () => {
       )
       expect(opens).toBe(1)
       expect(() => mounted.root.providers.bindOwn(kind)).toThrow(/service binding is closed/)
-      const unknown = defineKind({ kind: 'missing-service' })
+      const unknown = sampleKind({ kind: 'missing-service' })
       expect(() => mounted.root.providers.bindOwn(unknown)).toThrow(/not registered/)
       let bound = 0
       mounted.root.providers.installServiceBinder(
-        async <S extends ServiceInstance, P extends ServicePorts>(_kind: ServiceKind<S, P>) => {
+        async <S extends ServiceInstance, P extends ServicePorts>(_kind: BindableKind<S, P>) => {
           bound += 1
           return { mark: () => 'bound' } as unknown as S
         },
@@ -366,7 +368,7 @@ describe('service binding gate', () => {
     let generation = 'g1'
     let opens = 0
     let disposed = 0
-    const kind = defineKind({ instanceScope: 'session' })
+    const kind = sampleKind({ instanceScope: 'session' })
     const mounted = await mount({
       kind,
       descriptor: { ports: [], audience: 'host' },
@@ -579,7 +581,7 @@ describe('service binding gate', () => {
       expect(captured && 'ledger' in captured).toBe(false)
       expect(captured && 'lastSeq' in captured).toBe(false)
       expect(built).toBe(0)
-      const granted = defineKind({ ports: ['ledger', 'input'] })
+      const granted = sampleKind({ ports: ['ledger', 'input'] })
       const refused = await mount({
         kind: granted,
         descriptor: { ports: ['ledger', 'input'], audience: 'host', eventNames: ['note'] },
@@ -607,8 +609,8 @@ describe('service binding gate', () => {
         return Promise.resolve(7)
       },
     })
-    const kind = defineKind({ ports: ['input'] })
-    const exactKind = defineKind({ kind: 'exact-sample', ports: ['input'] })
+    const kind = sampleKind({ ports: ['input'] })
+    const exactKind = sampleKind({ kind: 'exact-sample', ports: ['input'] })
     const captured: ServicePorts[] = []
     const open = (ports: ServicePorts) => {
       captured.push(ports)
@@ -1069,7 +1071,7 @@ describe('extension service host', () => {
       sessionGeneration: () => state.generation,
       readAdmission,
     })
-    const kind = defineKind({ instanceScope: 'session', ports: ['ledger', 'input'] })
+    const kind = sampleKind({ instanceScope: 'session', ports: ['ledger', 'input'] })
     host.install(root, kind, {
       ports: ['ledger', 'input'],
       audience: 'callback',
@@ -1215,7 +1217,7 @@ describe('extension service host', () => {
         session: fixture.session,
       }),
     })
-    const kind = defineKind({ instanceScope: 'session', ports: ['decisions'] })
+    const kind = sampleKind({ instanceScope: 'session', ports: ['decisions'] })
     host.install(root, kind, { ports: ['decisions'], audience: 'callback' })
     let captured!: ServicePorts
     host.ports.register(
@@ -1283,7 +1285,7 @@ describe('extension service host', () => {
         session: state.session,
       }),
     })
-    const kind = defineKind({ instanceScope: 'session', ports: ['input'] })
+    const kind = sampleKind({ instanceScope: 'session', ports: ['input'] })
     host.install(root, kind, { ports: ['input'], audience: 'callback', delivery: 'next-turn' })
     let captured: ServicePorts | undefined
     const open = (ports: ServicePorts) => {
@@ -1368,12 +1370,10 @@ describe('extension service host', () => {
       projections: unavailableProjections,
       recheck() {},
     }
-    const forged = defineServiceKind<ServiceInstance, ServicePorts>({
+    const forged = defineKind<ServiceInstance, ServicePorts>({
       kind: 'git-worktree',
-      cardinality: 'single',
-      instanceScope: 'workspace',
+      bind: { cardinality: 'single', instanceScope: 'workspace', ports: [] },
       scope: 'workspace',
-      ports: [],
     })
     const forgedProvider = {
       id: GIT_WORKTREE_PROVIDER_ID,
@@ -1645,7 +1645,7 @@ describe('feedback service binding', () => {
 describe('ui data source bind by id', () => {
   it('refuses providerId on a single kind that would otherwise open', async () => {
     let opens = 0
-    const kind = defineKind({})
+    const kind = sampleKind({})
     const mounted = await mount({
       kind,
       descriptor: { ports: [], audience: 'host' },
@@ -1672,7 +1672,7 @@ describe('ui data source bind by id', () => {
 
   it('opens the named multi provider without select and refuses a missing or foreign id', async () => {
     const opened: string[] = []
-    const kind = defineKind({ cardinality: 'multi' })
+    const kind = sampleKind({ cardinality: 'multi' })
     const mounted = await mount({
       kind,
       descriptor: { ports: [], audience: 'host' },

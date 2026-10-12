@@ -161,3 +161,28 @@ export function sandboxUnavailable(reason: string): Error & { code: 'SANDBOX_UNA
     code: 'SANDBOX_UNAVAILABLE' as const,
   })
 }
+
+export const SANDBOX_PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/
+const SANDBOX_PLATFORMS: readonly string[] = ['darwin', 'linux', 'win32']
+
+/** Structural check of a capability report; a failed probe must not turn into working flags. */
+export function validSandboxCapabilities(capabilities: SandboxCapabilities | undefined): boolean {
+  if (
+    !capabilities ||
+    typeof capabilities.network !== 'boolean' ||
+    typeof capabilities.available !== 'boolean' ||
+    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean')
+  )
+    return false
+  const enforcement = capabilities.enforcement
+  if (
+    enforcement &&
+    (!['none', 'partial', 'full'].includes(enforcement.level) ||
+      !Array.isArray(enforcement.scope) ||
+      enforcement.scope.some((scope) => !['file', 'network', 'process'].includes(scope)))
+  )
+    return false
+  if (!Array.isArray(capabilities.platform) || !Array.isArray(capabilities.fsWrite)) return false
+  if (capabilities.platform.some((platform) => !SANDBOX_PLATFORMS.includes(platform))) return false
+  return capabilities.fsWrite.every((scope) => typeof scope?.path === 'string' && scope.path.length > 0)
+}

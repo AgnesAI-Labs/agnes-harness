@@ -8,7 +8,7 @@ import {
   ToolRegistry,
 } from '@agnes/core'
 import type { ExtensionManifest, HookContext, SlotFill, ToolContext } from '@agnes/extension-api'
-import { defineServiceKind, ExtensionError, unavailableProjections } from '@agnes/extension-api'
+import { defineKind, ExtensionError, unavailableProjections } from '@agnes/extension-api'
 import { projectionFixture, serviceFixture } from '@agnes/extension-api/testkit'
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureTool } from '../../../host/test/fixtures/tool.js'
@@ -546,10 +546,9 @@ it('projects an API-registered slot through the real core registry and projectUI
 
 it('refuses service registration when the host did not grant providers', () => {
   const h = setup()
-  const kind = defineServiceKind({
+  const kind = defineKind({
     kind: 'sample-service',
-    cardinality: 'single',
-    instanceScope: 'request',
+    bind: { cardinality: 'single', instanceScope: 'request' },
   })
   const provider = { id: 'one', version: '1.0.0', open: () => ({}) }
   expect(() => h.api.providers.register(kind, provider)).toThrow(ExtensionError)
@@ -572,10 +571,9 @@ it('forwards the manifest owner and loader package, and rechecks the lease on bi
       return {} as never
     },
   })
-  const kind = defineServiceKind({
+  const kind = defineKind({
     kind: 'sample-service',
-    cardinality: 'single',
-    instanceScope: 'request',
+    bind: { cardinality: 'single', instanceScope: 'request' },
   })
   const dispose = h.api.providers.register(kind, { id: 'one', version: '1.0.0', open: () => ({}) })
   expect(seen).toEqual([

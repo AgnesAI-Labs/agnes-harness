@@ -1,12 +1,15 @@
 import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
 import {
-  defineProviderKind,
+  defineKind,
   type LoopContext,
   type LoopDriver,
   loopCheckpointCodec,
+  loopKind,
   type PersistenceSessionStore,
   ProviderError,
+  persistenceKind,
+  sandboxKind,
 } from '@agnes/extension-api'
 import {
   installProviderRegistry,
@@ -26,7 +29,7 @@ import {
 import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import { expect, it } from 'vitest'
 
-const kind = defineProviderKind<{ id: string; version: string; ready: boolean }>({
+const kind = defineKind<{ id: string; version: string; ready: boolean }>({
   kind: 'test',
   validate(provider) {
     if (!provider.ready) throw new Error('not ready')
@@ -54,7 +57,7 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
   expect(() => registry.register('@test/provider', { id: 'invalid', version: '1', ready: true })).toThrow(
     ProviderError,
   )
-  expect(() => root.providers.resolve(defineProviderKind({ ...kind }), 'one')).toThrow('does not match')
+  expect(() => root.providers.resolve(defineKind({ ...kind }), 'one')).toThrow('does not match')
   root.providers.select('test', { provider: 'one' }, 'profile')
   const [entry] = root.providers.catalog()
   expect(entry).toEqual({
@@ -80,7 +83,7 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
 })
 
 it('requires an explicit version when ambiguous and refuses version mismatches without fallback', async () => {
-  const registry = new ProviderRegistry(defineProviderKind({ ...kind, versioned: true }))
+  const registry = new ProviderRegistry(defineKind({ ...kind, versioned: true }))
   registry.register('@test/provider', { id: 'one', version: '1.0.0', ready: true })
   expect(registry.resolve('one').version).toBe('1.0.0')
   registry.register('@test/provider', { id: 'one', version: '2.0.0', ready: true })
@@ -275,7 +278,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
       let instance: unknown
       if (kind === 'loop') {
         const codec = loopCheckpointCodec(1, (value) => value)
-        unregister = root.providers.register('loop', '@test/provider', {
+        unregister = root.providers.register(loopKind, '@test/provider', {
           id,
           version: '1.0.0',
           capabilities: [],
@@ -297,7 +300,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
         }
       } else if (kind === 'sandbox') {
         const capabilities = { network: false, fsWrite: [], platform: ['linux' as const], available: true }
-        unregister = root.providers.register('sandbox', '@test/provider', {
+        unregister = root.providers.register(sandboxKind, '@test/provider', {
           id,
           version: '1.0.0',
           capabilities,
@@ -311,7 +314,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
         open = () => sandbox.select(id, {}, ac.signal)
         instance = { id, capabilities, exec: async () => ({}), dispose: close }
       } else {
-        unregister = root.providers.register('persistence', '@test/provider', {
+        unregister = root.providers.register(persistenceKind, '@test/provider', {
           id,
           version: '1.0.0',
           state: { effect: 'restart-required' },
@@ -319,7 +322,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
           open: (options) => construct(options.signal) as Promise<PersistenceSessionStore>,
         })
         open = async () =>
-          root.providers.resolve('persistence', id).open({ dataDir: '/unused', signal: ac.signal })
+          root.providers.resolve(persistenceKind, id).open({ dataDir: '/unused', signal: ac.signal })
         instance = { open() {}, commit() {}, renew() {}, release() {}, scan() {}, registers() {}, close }
       }
       const creating = Promise.resolve().then(open)

@@ -8,9 +8,11 @@ import {
   type ChildAgentProvider,
   type ChildAgentService,
   type ChildAgentStartOptions,
+  childAgentKind,
   type LoopContext,
   type LoopFactory,
   loopCheckpointCodec,
+  loopKind,
   type ProviderPluginContext,
 } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host'
@@ -452,8 +454,8 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
       inject: ['providers', 'childAgents'],
       apply(ctx: ProviderPluginContext & ChildAgentPluginContext) {
         registry = ctx.childAgents
-        ctx.providers.register('loop', 'acme/child-loop', loop)
-        ctx.providers.register('child-agent', 'acme/child-loop', provider)
+        ctx.providers.register(loopKind, 'acme/child-loop', loop)
+        ctx.providers.register(childAgentKind, 'acme/child-loop', provider)
         for (const key of ['loop-parent', 'other-parent'])
           ctx.childAgents.setSessionAllowlist(key, { providers: ['public-fixture'], models: ['fast'] })
       },
