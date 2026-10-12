@@ -1,8 +1,6 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
-import { CoreError } from '@agnes/core-common/types'
 import { argvHash } from '@agnes/core-effects/effects/runtime'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import type { ApprovalAsked } from '@agnes/core-ledger/reduce/shapes'
 import type { DecisionHandle } from '@agnes/extension-api'
 import type { Actor, ApprovalGrant, ApprovalVerdict } from '@agnes/protocol'
 import { TOOL_DECISION_OWNER } from '../execution/turn/tool-decision.js'
@@ -153,53 +151,41 @@ export async function persistedToolApproval(
         : {}),
     }
   }
-  for (const [requestId, decision] of [...s.state.decisions].reverse()) {
-    if (decision.lane !== s.lane || !decision.askedSeq) continue
-    if (decision.via === 'callback' && !s.state.resumedRequests.has(requestId)) continue
-    const row = (
-      await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
-    )[0]
+  const guardians = await scanAll((query) => s.d.log.scan(query), {
+    type: 'approval/guardian-decided',
+    lane: s.lane,
+    fromSeq: call.seq,
+    toSeq: s.lastSeq,
+  })
+  for (const row of guardians.reverse()) {
+    const value = row.data as import('@agnes/protocol').ApprovalGuardianDecision
     if (
-      row?.type !== 'approval/asked' ||
       row.origin !== 'system' ||
       row.trust !== 'trusted' ||
       row.actor.id !== s.d.actor.id ||
-      row.actor.org !== s.d.actor.org
+      row.actor.org !== s.d.actor.org ||
+      value.toolUseId !== input.toolUseId ||
+      value.scope !== input.scope
     )
       continue
-    const asked = row.data as ApprovalAsked
     if (
-      asked.requestId !== requestId ||
-      asked.kind !== 'tool' ||
-      asked.toolUseId !== input.toolUseId ||
-      asked.scope !== input.scope ||
-      asked.policyVersion !== input.policyVersion ||
-      asked.bindingHash !== expected
+      value.bindingHash !== expected ||
+      value.policyHash !== input.policyHash ||
+      value.policyVersion !== input.policyVersion ||
+      value.policyBinding !== input.policyBinding
     )
-      continue
-    if (decision.via !== 'guardian') throw new Error('reset-required: obsolete tool approval record')
-    if (input.approval && asked.approval?.subjectRevision !== input.approval.subjectRevision) continue
-    const decidedRow = (await s.d.log.scan({ fromSeq: decision.seq, toSeq: decision.seq, lane: s.lane }))[0]
-    if (decidedRow?.type !== 'approval/decided') continue
-    if (
-      decidedRow.origin !== 'system' ||
-      decidedRow.trust !== 'trusted' ||
-      decidedRow.actor.id !== s.d.actor.id ||
-      decidedRow.actor.org !== s.d.actor.org
-    )
-      continue
-    return {
-      requestId,
-      verdict: decision.verdict,
-      via: 'guardian',
-      decidedAt: decidedRow.ts,
-      ...((decidedRow.data as { answeredBy?: Actor }).answeredBy
-        ? { answeredBy: (decidedRow.data as { answeredBy: Actor }).answeredBy }
-        : {}),
-      ...(asked.approval ? { subjectRevision: asked.approval.subjectRevision } : {}),
-      ...(decision.grantId ? { grantId: decision.grantId } : {}),
-    }
+      throw new Error('DECISION_SUBJECT_CHANGED')
+    const verdict =
+      value.decision === 'allow-once'
+        ? 'allowed-once'
+        : value.decision === 'allow-session'
+          ? 'allowed-session'
+          : value.decision === 'reject'
+            ? 'rejected'
+            : undefined
+    if (verdict) return { requestId: value.requestId, verdict, via: 'guardian', decidedAt: row.ts }
   }
+
   return undefined
 }
 
@@ -230,22 +216,6 @@ export function newPermanentGrant(
 
 /** Restores only grants whose original identity and argument binding can still be proved. */
 export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
-  const old = await scanAll((query) => s.d.log.scan(query), {
-    type: 'approval/asked',
-    lane: s.lane,
-    toSeq: s.lastSeq,
-  })
-  if (
-    old.some((row) => {
-      const asked = row.data as ApprovalAsked
-      return (
-        asked.kind === 'tool' &&
-        !asked.scope?.startsWith('memory:') &&
-        s.state.decisions.get(asked.requestId)?.via !== 'guardian'
-      )
-    })
-  )
-    throw new CoreError('E_RELATION', 'reset-required: obsolete tool approval record')
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (
       value.request.owner !== TOOL_DECISION_OWNER ||
@@ -302,71 +272,53 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
       }),
     )
   }
-  for (const [requestId, decision] of s.state.decisions) {
-    if (decision.verdict !== 'allowed-session' || decision.lane !== s.lane || !decision.askedSeq) continue
-    // Callback decisions become usable only after their continuation was consumed. A guardian
-    // decision is already part of the same trusted transaction as its asked row and is restored on
-    // reopen like a synchronous decision; otherwise a process restart would silently shrink a
-    // session-scoped grant back to one call.
-    if (decision.via === 'callback' && !s.state.resumedRequests.has(requestId)) continue
-    if (decision.via === 'timeout') continue
-    const askedRow = (
-      await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
-    )[0]
+  const guardians = await scanAll((query) => s.d.log.scan(query), {
+    type: 'approval/guardian-decided',
+    lane: s.lane,
+    toSeq: s.lastSeq,
+  })
+  for (const row of guardians) {
+    const value = row.data as import('@agnes/protocol').ApprovalGuardianDecision
     if (
-      askedRow?.type !== 'approval/asked' ||
-      askedRow.origin !== 'system' ||
-      askedRow.trust !== 'trusted' ||
-      askedRow.actor.id !== s.d.actor.id ||
-      askedRow.actor.org !== s.d.actor.org
+      value.decision !== 'allow-session' ||
+      row.origin !== 'system' ||
+      row.trust !== 'trusted' ||
+      row.actor.id !== s.d.actor.id ||
+      row.actor.org !== s.d.actor.org
     )
       continue
-    const decidedRow = (await s.d.log.scan({ fromSeq: decision.seq, toSeq: decision.seq, lane: s.lane }))[0]
-    if (decidedRow?.type !== 'approval/decided') continue
-    if (
-      decision.via !== 'callback' &&
-      (decidedRow.origin !== 'system' ||
-        decidedRow.trust !== 'trusted' ||
-        decidedRow.actor.id !== s.d.actor.id ||
-        decidedRow.actor.org !== s.d.actor.org)
-    )
-      continue
-    const asked = askedRow.data as ApprovalAsked
-    if (asked.requestId !== requestId || asked.kind !== 'tool' || !asked.toolUseId) continue
-    if (decision.via !== 'guardian') throw new Error('reset-required: obsolete tool approval record')
-    const call = s.state.toolCalls.get(asked.toolUseId)
+    const call = s.state.toolCalls.get(value.toolUseId)
     if (!call || call.lane !== s.lane) continue
-    const row = (await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane }))[0]
-    if (row?.type !== 'tool/call') continue
-    const data = row.data as {
-      toolUseId: string
+    const [original] = await s.d.log.scan({ fromSeq: call.seq, toSeq: call.seq, lane: s.lane })
+    if (original?.type !== 'tool/call') continue
+    const data = original.data as {
       name: string
       args: unknown
       policyHash?: string
       definitionFingerprint?: string
     }
-    if (data.toolUseId !== asked.toolUseId || data.name !== call.name) continue
-    if (!asked.scope || !asked.policyVersion) continue
-    if (!data.policyHash) continue
-    if (!data.definitionFingerprint || !asked.policyBinding)
-      throw new Error('reset-required: obsolete session grant binding')
-    const binding = approvalBindingHash({
-      sessionKey: s.key,
-      stepId: `${call.turn}/${call.step}`,
-      toolUseId: asked.toolUseId,
-      args: data.args,
-      policyHash: data.policyHash,
-      scope: asked.scope,
-    })
-    if (asked.bindingHash !== binding) continue
+    if (
+      data.policyHash !== value.policyHash ||
+      data.definitionFingerprint !== value.definitionFingerprint ||
+      value.bindingHash !==
+        approvalBindingHash({
+          sessionKey: s.key,
+          stepId: `${call.turn}/${call.step}`,
+          toolUseId: value.toolUseId,
+          args: data.args,
+          policyHash: value.policyHash,
+          scope: value.scope,
+        })
+    )
+      continue
     s.sessionAllows.add(
       sessionGrantKey({
         actor: s.d.actor,
         sessionKey: s.key,
         toolId: data.name,
-        scope: asked.scope,
-        definitionFingerprint: data.definitionFingerprint,
-        policyBinding: asked.policyBinding,
+        scope: value.scope,
+        definitionFingerprint: value.definitionFingerprint,
+        policyBinding: value.policyBinding,
       }),
     )
   }

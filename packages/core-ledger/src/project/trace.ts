@@ -267,30 +267,35 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
         span.review = data.review as ToolReviewFact
       return
     }
-    case 'approval/asked': {
-      const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
-      if (!requestId) return
-      const toolUseId = typeof data.toolUseId === 'string' ? data.toolUseId : undefined
-      const parent = toolUseId ? state.spans.get(state.toolToSpan.get(toolUseId) ?? '') : undefined
-      const span = register(
-        state,
-        makeSpan(`span:approval:${requestId}`, 'approval', 'approval', event, { status: 'waiting' }),
-      )
-      span.status = 'waiting'
-      state.approvalToSpan.set(requestId, span.id)
-      ;(parent ?? ensureStep(state, event)).children.push(span)
-      return
-    }
-    case 'approval/decided': {
-      const requestId = typeof data.requestId === 'string' ? data.requestId : undefined
-      if (!requestId) return
-      const span = state.spans.get(state.approvalToSpan.get(requestId) ?? '')
-      const verdict = typeof data.verdict === 'string' ? data.verdict : ''
-      const rejected = verdict === 'rejected' || verdict === 'cancelled'
-      if (span) closeSpan(span, event, rejected ? 'failed' : 'completed')
-      const toolUseId = typeof data.toolUseId === 'string' ? data.toolUseId : undefined
-      if (rejected && toolUseId) {
-        const tool = state.spans.get(state.toolToSpan.get(toolUseId) ?? '')
+    case 'decision/state': {
+      const value = event.data as import('@agnes/protocol').DecisionSnapshot
+      const requestId = value.handle.id
+      let span = state.spans.get(state.approvalToSpan.get(requestId) ?? '')
+      if (!span) {
+        const parent = state.spans.get(state.toolToSpan.get(value.request.operationId) ?? '')
+        span = register(
+          state,
+          makeSpan(`span:approval:${requestId}`, 'approval', 'approval', event, { status: 'waiting' }),
+        )
+        state.approvalToSpan.set(requestId, span.id)
+        ;(parent ?? ensureStep(state, event)).children.push(span)
+      }
+      if (span.status === 'waiting' && (value.result || value.invalidation))
+        closeSpan(
+          span,
+          event,
+          value.invalidation ||
+            value.result?.reason !== 'answered' ||
+            value.result.response.option === 'rejected'
+            ? 'failed'
+            : 'completed',
+        )
+      if (
+        value.request.owner === 'core/tool-permission' &&
+        value.result?.reason === 'answered' &&
+        value.result.response.option === 'rejected'
+      ) {
+        const tool = state.spans.get(state.toolToSpan.get(value.request.operationId) ?? '')
         if (tool) closeSpan(tool, event, 'failed')
       }
       return

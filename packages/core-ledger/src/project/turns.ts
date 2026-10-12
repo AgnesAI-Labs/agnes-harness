@@ -267,18 +267,12 @@ export class TurnProjection {
         changed.add(turn.id)
         break
       }
-      case 'approval/asked': {
+      case 'decision/state': {
+        const value = event.data as import('@agnes/protocol').DecisionSnapshot
         const turn = this.current ? this.byId.get(this.current) : undefined
-        if (turn && data?.pending) {
-          turn.status = 'waiting'
-          changed.add(turn.id)
-        }
-        break
-      }
-      case 'approval/decided': {
-        const turn = this.current ? this.byId.get(this.current) : undefined
-        if (turn && turn.status === 'waiting') {
-          turn.status = 'running'
+        if (turn && !value.consumption) {
+          if (!value.result && !value.invalidation) turn.status = 'waiting'
+          else if (turn.status === 'waiting') turn.status = 'running'
           changed.add(turn.id)
         }
         break

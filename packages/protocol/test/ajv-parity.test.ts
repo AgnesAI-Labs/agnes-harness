@@ -353,8 +353,6 @@ const SESSION_DEFS: Record<string, TSchema> = {
   Billing: SessionGen.Billing,
   ResponseMeta: SessionGen.ResponseMeta,
   CostLedger: SessionGen.CostLedger,
-  ApprovalAsked: SessionGen.ApprovalAsked,
-  ApprovalDecided: SessionGen.ApprovalDecided,
   ApprovalGrant: SessionGen.ApprovalGrant,
   ApprovalGuardianDecision: SessionGen.ApprovalGuardianDecision,
   FeedbackRating: SessionGen.FeedbackRating,
@@ -1801,34 +1799,6 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid is the row core/src/step/inference.ts writes; credits is optional because only a gateway supplies one',
   },
-  ApprovalAsked: {
-    valid: { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget', bindingHash: '' },
-    invalid: [
-      { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget' }, // missing required bindingHash
-      { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget', bindingHash: rep(63) }, // pattern: empty or exactly 64 hex
-      { requestId: 'r1', kind: 'spend', summary: 's', risk: 'budget', bindingHash: '' }, // enum
-      {
-        requestId: 'r1',
-        kind: 'tool',
-        summary: 's',
-        risk: 'destructive',
-        bindingHash: rep64,
-        pending: { ticket: 't' },
-      }, // pending needs expiresAt
-    ],
-    note:
-      'bindingHash is the empty string on the budget and unknown-outcome paths - neither ask is bound ' +
-      'to a tool argv - so the pattern admits the empty string as well as 64 hex digits',
-  },
-  ApprovalDecided: {
-    valid: { requestId: 'r1', verdict: 'rejected', via: 'sync' },
-    invalid: [
-      { requestId: 'r1', verdict: 'rejected', via: 'magic' }, // enum
-      { requestId: 'r1', verdict: 'yes', via: 'sync' }, // enum
-      { requestId: 'r1', verdict: 'rejected', via: 'sync', askedSeq: 4 }, // additionalProperties:false - asked and decided are written in one transaction, so asked has no seq yet
-    ],
-    note: 'valid is the row both approval call sites in core write; via is separately re-checked by core because a wrong value is unrecoverable',
-  },
   ApprovalGrant: {
     valid: {
       grantId: 'g1',
@@ -1867,6 +1837,9 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       scope: 'cua:click:background',
       bindingHash: rep64,
       policyHash: rep64,
+      definitionFingerprint: rep64,
+      policyVersion: 'v1',
+      policyBinding: rep64,
       decision: 'escalate',
       ruleVersion: 'guardian-v1',
       reasons: ['human review'],

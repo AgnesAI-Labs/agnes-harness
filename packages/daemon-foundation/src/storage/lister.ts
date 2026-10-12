@@ -148,7 +148,7 @@ export class StorageLister implements SessionLister {
 
 /**
  * Shared shape for the ticket -> session index intended to back `_agnes/v1/approval.decide`: a
- * ticket carried in `approval/asked{ pending: { ticket } }` has no sessionId of its own, so deciding
+ * decision handle is indexed with its owning session, so deciding
  * it needs a way to look the owning session back up. The local handler currently searches its open
  * registry; wiring this port through the storage-backed daemon is what will make unopened sessions
  * addressable too. The shape matches the existing `CommandJournal`/`ClaimStore` ports.

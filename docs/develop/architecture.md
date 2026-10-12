@@ -68,6 +68,8 @@ Core accepts a rejected-before-effect diagnostic from the Host-owned platform ad
 
 ## Seams and extensions
 
+Human decisions have one durable authority: `decision/state`. Tool permission, unknown-outcome reconciliation, memory review, verifier parking, budget quotes and operation reviews bind an immutable subject to a decision handle, then record its answer and consumption. Approval seams deliver the question; clients and deferred invocations read the decision register. Machine guardian policy audits remain separate facts. Extensions review one-shot candidates through `ctx.decisions.review`; detached memory and operation candidates are withdrawn. A human reconciliation answer acknowledges an unknown outcome without replaying the effect. Ledgers using the retired approval event format are unsupported.
+
 A seam supplies a required part of execution, such as approval, ledger, or sandbox behavior. Missing seams must be refused according to the contract rather than silently skipped. Extensions contribute optional features such as tools, observation hooks, or client slots. Both can be assembled through Cordis, but they have different permission surfaces.
 
 Trusted backend Cordis rows may contribute tools, hooks, and constrained services. A browser module is a separate runtime surface bound to a row; see [plugin boundaries](plugins.md). Frontend and backend Contexts do not share memory. Ordinary `ctx.provide()` is not a cross-process proxy. Browsers call row services through declared relays without obtaining Host management objects.

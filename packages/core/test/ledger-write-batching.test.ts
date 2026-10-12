@@ -11,12 +11,7 @@ import type { CommitTx, RegisterRow } from '@agnes/core-ledger/log/storage'
 import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import {
-  expectedFromGolden,
-  readGolden,
-  recordTransitions,
-  TRANSITION_SCENARIOS,
-} from '../testkit/record-transitions.js'
+import { readGolden, recordTransitions, TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, openWorldTool, readTool, shellTool } from './helpers/open-session.js'
 
@@ -172,9 +167,7 @@ describe('commits of one tool call', () => {
     const rows = recorded.flatMap((commit) => commit.events as Array<{ type: string }>)
     expect(rows.filter((row) => row.type === 'x/core/op-mark')).toHaveLength(marks)
     // Every row but the op-marks the merged commits no longer need is still written.
-    const reference = expectedFromGolden(readGolden(name)).flatMap(
-      (commit) => commit.events as Array<{ type: string }>,
-    )
+    const reference = readGolden(name).flatMap((commit) => commit.events as Array<{ type: string }>)
     const count = (list: Array<{ type: string }>) => {
       const by: Record<string, number> = {}
       for (const row of list) if (row.type !== 'x/core/op-mark') by[row.type] = (by[row.type] ?? 0) + 1

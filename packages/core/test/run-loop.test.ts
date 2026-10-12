@@ -192,9 +192,8 @@ describe('run loop', () => {
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    expect((await log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      kind: 'budget',
-      risk: 'budget',
+    expect((await log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+      request: { spec: { purpose: 'budget', subject: { risk: 'budget' } } },
     })
     // The preflight is recorded whether or not the request went out.
     expect((await log.scan({ type: 'budget.state', limit: 5 }))[0]?.data).toMatchObject({
@@ -209,7 +208,7 @@ describe('run loop', () => {
     })
     await deny.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await deny.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    expect(await deny.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(0)
+    expect(await deny.log.scan({ type: 'decision/state', limit: 5 })).toHaveLength(0)
   })
 
   it('a quote under the cap does not ask, and an allowed quote lets the turn proceed', async () => {
@@ -220,12 +219,14 @@ describe('run loop', () => {
     const a = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: under })
     await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await a.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await a.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(0)
+    expect(await a.log.scan({ type: 'decision/state', limit: 5 })).toHaveLength(0)
     const over = fakeSeams({ ledger: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) } })
     const b = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: over })
     await b.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await b.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await b.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(1)
+    expect(
+      (await b.session.decisions.list()).filter((value) => value.request.spec.purpose === 'budget'),
+    ).toHaveLength(1)
   })
 
   it('binds a one-turn budget override durably and does not leak it into the next turn', async () => {
@@ -390,8 +391,8 @@ describe('run loop', () => {
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams: parkSeams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('parked')
-    expect((await p.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      kind: 'unknown-outcome',
+    expect((await p.log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+      request: { spec: { purpose: 'gate' } },
     })
   })
 
@@ -407,10 +408,9 @@ describe('run loop', () => {
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
-    expect((await p.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'unavailable',
-      via: 'sync',
-      reason: 'no-approver',
+    expect((await p.session.decisions.list())[0]?.result).toMatchObject({
+      reason: 'unavailable',
+      code: 'no-approver',
     })
   })
 

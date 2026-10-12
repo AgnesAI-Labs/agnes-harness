@@ -2,24 +2,31 @@ import { newOpState } from '@agnes/core-common/step/op-state'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import { describe, expect, it } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import type { SessionImpl } from '../src/step/session.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { openSession } from './helpers/open-session.js'
 
 const clock = () => 1_757_203_200_000
-async function ready(via: 'callback' | 'timeout' | 'sync' = 'callback', lane = 'main') {
+async function ready(via: 'callback' | 'timeout' = 'callback', lane = 'main') {
   const storage = new MemoryStorage({ clock })
   const h = await openSession({ storage, clock, provider: fakeProvider([textTurn('unused')]) })
+  const asked = pendingDecision('r1', { owner: 'core/gate', lane })
+  const decided =
+    via === 'callback'
+      ? answeredDecision(asked, h.log.lastSeq + 2)
+      : {
+          ...asked,
+          revision: 2,
+          result: { reason: 'expired' as const, at: asked.request.expiresAt!, code: 'deadline' },
+        }
   await h.log.append([
-    h.session.ev(
-      'approval/asked',
-      { requestId: 'r1', kind: 'budget', risk: 'budget', summary: 'quote', bindingHash: '' },
-      { lane },
-    ),
-    h.session.ev('approval/decided', { requestId: 'r1', verdict: 'allowed-once', via }, { lane }),
+    h.session.ev('decision/state', asked, { lane, register: 'decision/state' }),
+    h.session.ev('decision/state', decided, { lane, register: 'decision/state' }),
   ])
   return { ...h, storage }
 }
+
 function start(s: SessionImpl, requestId: string | undefined = 'r1', trigger = 'approval-resume') {
   const turn = s.lastTurnNumber() + 1,
     seq = s.lastSeq + 1
@@ -78,10 +85,10 @@ describe('approval decision consumption state', () => {
       }
     },
   )
-  it.each(['missing', 'sync', 'other-lane', 'wrong-trigger'])(
+  it.each(['missing', 'other-lane', 'wrong-trigger'])(
     'refuses %s without committing or consuming',
     async (mode) => {
-      const h = await ready(mode === 'sync' ? 'sync' : 'callback', mode === 'other-lane' ? 'other' : 'main')
+      const h = await ready('callback', mode === 'other-lane' ? 'other' : 'main')
       const before = h.log.lastSeq
       await expect(
         start(
@@ -89,38 +96,10 @@ describe('approval decision consumption state', () => {
           mode === 'missing' ? 'unknown' : 'r1',
           mode === 'wrong-trigger' ? 'prompt' : 'approval-resume',
         ),
-      ).rejects.toThrow('continuation requires a decision')
+      ).rejects.toThrow('E_RELATION')
       expect(h.log.lastSeq).toBe(before)
       expect(h.session.state.resumedRequests.size).toBe(0)
       expect(h.session.op()).toBeNull()
     },
   )
-  it('keeps historical continuations without a requestId readable without inventing a consumed decision', async () => {
-    const h = await ready()
-    const turn = 1,
-      seq = h.log.lastSeq + 1
-    await h.session.transition(
-      [
-        h.session.ev('turn/start', {
-          turn,
-          trigger: 'approval-resume',
-          continues: { turn: 1, step: 0, toolUseId: '' },
-        }),
-      ],
-      newOpState(
-        {
-          turn,
-          lane: 'main',
-          acceptedAt: new Date(clock()).toISOString(),
-          triggerSeq: seq,
-          presetName: 'standard',
-          profileHash: null,
-          depthLimit: 1,
-        },
-        seq,
-      ),
-    )
-    expect(h.session.state.resumedRequests.size).toBe(0)
-    await h.session.endTurn('completed')
-  })
 })

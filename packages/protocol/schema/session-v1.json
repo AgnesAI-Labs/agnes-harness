@@ -27,8 +27,6 @@
     "format/deviation": "FormatDeviation",
     "cost/ledger": "CostLedger",
     "decision/state": "DecisionSnapshot",
-    "approval/asked": "ApprovalAsked",
-    "approval/decided": "ApprovalDecided",
     "approval/guardian-decided": "ApprovalGuardianDecision",
     "feedback/rating": "FeedbackRating",
     "feedback/implicit": "FeedbackImplicit",
@@ -173,8 +171,6 @@
                 "format/deviation",
                 "cost/ledger",
                 "decision/state",
-                "approval/asked",
-                "approval/decided",
                 "approval/guardian-decided",
                 "feedback/rating",
                 "feedback/implicit",
@@ -2197,141 +2193,6 @@
         }
       }
     },
-    "ApprovalAsked": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["requestId", "kind", "risk", "summary", "bindingHash"],
-      "properties": {
-        "approval": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["reviewerRequirement", "grantConstraints", "subjectRevision"],
-          "properties": {
-            "reviewerRequirement": { "const": "human" },
-            "grantConstraints": { "const": "once" },
-            "subjectRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
-          }
-        },
-        "requestId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "kind": {
-          "enum": ["tool", "budget", "unknown-outcome", "refine"]
-        },
-        "toolUseId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "tool": {
-          "type": "string",
-          "maxLength": 64
-        },
-        "argvHash": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "risk": {
-          "enum": ["destructive", "always", "budget", "unknown"]
-        },
-        "summary": {
-          "type": "string",
-          "maxLength": 4096
-        },
-        "bindingHash": {
-          "type": "string",
-          "pattern": "^([0-9a-f]{64})?$"
-        },
-        "deadline": {
-          "type": "string"
-        },
-        "requester": {
-          "$ref": "#/$defs/Actor"
-        },
-        "pending": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["ticket", "expiresAt"],
-          "properties": {
-            "ticket": {
-              "type": "string",
-              "maxLength": 128
-            },
-            "expiresAt": {
-              "type": "string"
-            }
-          }
-        },
-        "scope": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "policyBinding": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "policyVersion": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "profileHash": {
-          "type": "string",
-          "pattern": "^sha256-[a-f0-9]{64}$"
-        },
-        "options": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
-          }
-        }
-      }
-    },
-    "ApprovalDecided": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["requestId", "verdict", "via"],
-      "properties": {
-        "answerCommand": { "$ref": "#/$defs/DecisionCommandReceipt" },
-        "requestId": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "verdict": {
-          "enum": [
-            "allowed-once",
-            "allowed-session",
-            "allowed-permanent",
-            "rejected",
-            "cancelled",
-            "unavailable"
-          ]
-        },
-        "via": {
-          "enum": ["sync", "callback", "timeout", "guardian"]
-        },
-        "answeredBy": {
-          "$ref": "#/$defs/Actor"
-        },
-        "ticket": {
-          "type": "string",
-          "maxLength": 128
-        },
-        "reason": {
-          "type": "string",
-          "maxLength": 1024
-        },
-        "scope": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "grantId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        }
-      }
-    },
     "ApprovalGrant": {
       "type": "object",
       "additionalProperties": false,
@@ -2378,30 +2239,96 @@
         "decision",
         "ruleVersion",
         "reasons",
-        "budget"
+        "budget",
+        "definitionFingerprint",
+        "policyVersion",
+        "policyBinding"
       ],
       "properties": {
-        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "effectId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "toolUseId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "bindingHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "policyHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "decision": { "enum": ["allow-once", "allow-session", "escalate", "reject"] },
-        "ruleVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "reasons": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 512 } },
-        "model": { "type": "string", "maxLength": 128 },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "toolUseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "bindingHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policyHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "decision": {
+          "enum": ["allow-once", "allow-session", "escalate", "reject"]
+        },
+        "ruleVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reasons": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128
+        },
         "budget": {
           "type": "object",
           "additionalProperties": false,
           "required": ["tokensReserved", "credits", "creditSource", "cap", "approved"],
           "properties": {
-            "tokensReserved": { "type": "integer", "minimum": 0 },
-            "credits": { "type": "number", "minimum": 0 },
-            "creditSource": { "enum": ["gateway", "estimated"] },
-            "cap": { "type": ["number", "null"], "minimum": 0 },
-            "approved": { "type": "boolean" }
+            "tokensReserved": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credits": {
+              "type": "number",
+              "minimum": 0
+            },
+            "creditSource": {
+              "enum": ["gateway", "estimated"]
+            },
+            "cap": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "approved": {
+              "type": "boolean"
+            }
           }
+        },
+        "definitionFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policyVersion": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "policyBinding": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       }
     },

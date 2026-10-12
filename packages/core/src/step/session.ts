@@ -145,13 +145,7 @@ import type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from '../runtime/current.js'
-import {
-  answerDomainRequest,
-  expireApprovals,
-  type HumanAnswerCommand,
-  type HumanAnswerContext,
-  resumeApproval,
-} from './approval-callback.js'
+import type { HumanAnswerCommand, HumanAnswerContext } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
@@ -2154,20 +2148,14 @@ export class SessionImpl {
   }
 
   decideApproval(input: { command: HumanAnswerCommand; context: HumanAnswerContext }) {
-    return this.state.registers.decisionStates.has(input.command.handle.id)
-      ? this.decisions.answer(input.command, input.context)
-      : answerDomainRequest(this, input.command, input.context)
-  }
-
-  resumeApproval(ticket: string, verdict: Verdict, decidedBy: Actor): Promise<{ seq: Seq }> {
-    return resumeApproval(this, ticket, verdict, decidedBy)
+    return this.decisions.answer(input.command, input.context)
   }
 
   async expireApprovals(): Promise<number> {
     const before = this.lastSeq
     await this.decisions.list()
     const expired = this.lastSeq - before
-    return expired + (await expireApprovals(this))
+    return expired
   }
 
   invokeTool(

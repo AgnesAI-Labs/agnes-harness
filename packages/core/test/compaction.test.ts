@@ -1942,7 +1942,9 @@ describe('routing a summary that is unavailable', () => {
     expect(h.provider.requests.filter((req) => req.kind === 'summary')).toHaveLength(1)
     expect(
       o2.rows.filter(
-        (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
+        (row) =>
+          row.type === 'decision/state' &&
+          (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose === 'budget',
       ),
     ).toEqual([])
   })

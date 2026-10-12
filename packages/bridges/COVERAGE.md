@@ -19,7 +19,7 @@ Source table: `data/hooks-map.json` (0.0.0). Status: mapped 12 / 27. Anything ab
 | `PreCompact` | supported | `before_compact` | in: `trigger` → reason (manual→requested, auto→threshold); `custom_instructions` → customInstructions<br>out: — | — | — |
 | `PostCompact` | supported | `compact` | in: —<br>out: — | — | — |
 | `PermissionRequest` | partial | `approval_request` | in: `tool_name` → request.tool; `tool_input` → request.argvHash (sha256 of canonical JSON)<br>out: — | `decision`, `updatedPermissions` | approval_request can refine risk/context but cannot return an approval verdict |
-| `PermissionDenied` | unmapped | — | — | — | already an approval/decided event |
+| `PermissionDenied` | unmapped | — | — | — | already a decision/state event |
 | `Setup` | unmapped | — | — | — | install-time action; package lifecycle is not exposed to extensions |
 | `TeammateIdle` | unmapped | — | — | — | Claude Code team model; harness has a jobs table instead |
 | `TaskCreated` | unmapped | — | — | — | Claude Code task model; harness has a jobs table instead |

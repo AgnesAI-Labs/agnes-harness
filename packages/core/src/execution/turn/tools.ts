@@ -852,9 +852,7 @@ export async function approveAndExecute(
       const priorGuardianData = priorGuardian?.data as
         | { requestId: string; decision: 'allow-once' | 'allow-session' | 'escalate' | 'reject' }
         | undefined
-      // An allow/reject guardian row is committed atomically with its asked/decided rows. Seeing
-      // one without the matching persisted decision means the ledger is not a state we can safely
-      // reconstruct; never re-run the guardian or silently dispatch from it.
+      // A guardian fact with a changed binding cannot authorize this call or be replayed.
       if (
         priorGuardianData &&
         (priorGuardianData.decision === 'allow-once' ||
@@ -866,7 +864,7 @@ export async function approveAndExecute(
             s,
             call.toolUseId,
             'APPROVAL_STATE_INVALID',
-            'guardian decision is missing its bound approval decision',
+            'guardian decision binding is invalid',
             decisionId,
           ),
         }
@@ -1010,6 +1008,9 @@ export async function approveAndExecute(
               scope,
               bindingHash,
               policyHash: call.policyHash,
+              definitionFingerprint: call.definitionFingerprint,
+              policyVersion: finalAsked.policyVersion ?? '',
+              policyBinding: finalAsked.policyBinding ?? '',
               decision: guarded.decision,
               ruleVersion: guarded.ruleVersion,
               reasons: guarded.reasons,
@@ -1028,17 +1029,6 @@ export async function approveAndExecute(
                 : 'ok',
             ),
             ...costEvents,
-            ...(guardianVerdict
-              ? [
-                  s.ev('approval/asked', finalAsked),
-                  s.ev('approval/decided', {
-                    requestId,
-                    verdict: guardianVerdict,
-                    via: 'guardian',
-                    scope,
-                  }),
-                ]
-              : []),
           ],
           (cur) =>
             updateCall(cur, call.toolUseId, {

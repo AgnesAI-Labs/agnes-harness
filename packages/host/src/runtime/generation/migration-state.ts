@@ -73,16 +73,9 @@ export async function assertMigrationSettled(
     const state = foldEvents(rows)
     const add = (kind: string, id: string, seq?: number) =>
       reasons.push({ kind, id, sessionKey: key, ...(seq === undefined ? {} : { seq }) })
-    for (const [id, approval] of state.pendingApprovals) add('pending-approval', id, approval.seq)
     for (const [id, { value, seq }] of state.registers.decisionStates)
       if (!value.consumption && !value.invalidation && (!value.result || value.result.reason === 'answered'))
         add('pending-decision', id, seq)
-    for (const [id, decision] of state.decisions) {
-      if (decision.via === 'sync' || decision.via === 'guardian' || state.resumedRequests.has(id)) continue
-      const asked = rows.find((row) => row.seq === decision.askedSeq)
-      if (['tool', 'unknown-outcome'].includes(object(asked?.data).kind ?? ''))
-        add('parked-continuation', id, decision.seq)
-    }
     for (const [id, effect] of state.pendingEffects)
       add(effect.kind === 'job' ? 'unfinished-background-job' : 'unfinished-effect', id, effect.intentSeq)
     for (const [id, cell] of state.registers.artifactJobs)

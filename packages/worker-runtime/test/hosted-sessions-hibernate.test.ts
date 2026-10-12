@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { Host, HostSession } from '@agnes/host'
 import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import {
   SESSION_SCOPED_WORKER_METHODS,
   sessionIdleCloseMs,
@@ -197,19 +198,22 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('inbox')).toBe(false)
   })
 
-  it('stays open with a pending approval', async () => {
+  it.each(['pending', 'answered'])('stays open with an unconsumed %s decision', async (state) => {
     const t = await setup()
     const session = await t.open('approval')
+    const pending = pendingDecision('pending-request', { sessionId: session.key })
+    pending.request.expiresAt = '2099-01-01T00:00:00.000Z'
     await session.append([
-      session.ev('approval/asked', {
-        requestId: 'pending-request',
-        kind: 'tool',
-        summary: 'pending',
-        risk: 'destructive',
-        bindingHash: '0'.repeat(64),
-        pending: { ticket: 'pending-ticket', expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+      session.ev('decision/state', pending, {
+        register: 'decision/state',
       }),
     ])
+    if (state === 'answered')
+      await session.append([
+        session.ev('decision/state', answeredDecision(pending, session.lastSeq + 1), {
+          register: 'decision/state',
+        }),
+      ])
     await t.idle(10 * T)
     expect(t.hibernated('approval')).toBe(false)
   })

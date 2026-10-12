@@ -27,6 +27,7 @@ import {
 import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
@@ -133,9 +134,11 @@ describe('production supervisor storage', () => {
       },
     }
     deliverWorkerEvent(registry as never, tickets, () => Date.parse('2026-09-11T00:00:00Z'), 'session-one', {
-      type: 'approval/asked',
+      type: 'decision/state',
+      register: 'decision/state',
       data: {
-        pending: { ticket: 'ticket-one', expiresAt: '2026-09-11T00:01:00Z' },
+        ...pendingDecision('ticket-one', { sessionId: 'session-one' }),
+        request: { ...pendingDecision('ticket-one').request, expiresAt: '2026-09-11T00:01:00Z' },
       },
     } as never)
     expect(tickets.get('ticket-one')).toBe('session-one')

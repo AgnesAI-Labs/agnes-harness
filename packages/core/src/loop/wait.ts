@@ -50,8 +50,7 @@ export async function loopWait(
     if (
       events.some(
         (event) =>
-          event.lane === s.lane &&
-          [WAKE, 'inbox', 'approval/decided', 'decision/state', 'artifact/job'].includes(event.type),
+          event.lane === s.lane && [WAKE, 'inbox', 'decision/state', 'artifact/job'].includes(event.type),
       )
     )
       notify()

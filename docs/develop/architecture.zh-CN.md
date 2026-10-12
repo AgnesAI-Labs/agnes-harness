@@ -61,6 +61,8 @@ Core 接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight`
 
 ## 接缝与扩展
 
+人工决策只有一个持久化权威：`decision/state`。工具权限、未知结果核对、记忆审核、验证器挂起、预算报价和 operation 审核都将不可变的审核对象绑定到 decision handle，再记录答复与消费。approval seam 负责送达问题；客户端和 deferred invocation 读取 decision register。机器 guardian 的策略审计仍是独立事实。扩展通过 `ctx.decisions.review` 审核一次性候选；脱离当前执行的记忆和 operation 候选会被撤回。人工核对答复只确认未知结果，不重放副作用。不支持使用已移除审批事件格式的旧 ledger。
+
 Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必须按合同拒绝，不能静默跳过。Extension 是可选贡献，例如工具、观察 hook、客户端槽位。它们虽可通过 Cordis 装配，但权限面并不相同。
 
 受信后端 Cordis 行可贡献工具、hook 和受约束的服务等能力；浏览器模块是绑定该行的另一运行面，详见[插件边界](plugins.zh-CN.md)。前后端的 Context 不共享内存；普通 `ctx.provide()` 不是跨进程代理。浏览器通过已声明的 relay 调用行服务，不直接获取 Host 管理对象。

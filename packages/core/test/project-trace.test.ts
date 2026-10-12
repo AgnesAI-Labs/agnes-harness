@@ -5,6 +5,7 @@ import type { UISpan } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { UITurn as UITurnSchema } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { actor } from './helpers/open-session.js'
 
 const tokens = { input: 10, output: 2, cacheRead: 1, cacheWrite: 0, reasoning: 3 }
@@ -192,21 +193,14 @@ describe('projectUI trace fold', () => {
       event('turn/start', { turn: 1, trigger: 'prompt' }),
       event('step/start', { turn: 1, step: 1 }),
       event('tool/call', { toolUseId: 'tool-1', name: 'shell', args: {}, ordinal: 0 }),
-      event('approval/asked', {
-        requestId: 'approval-1',
-        kind: 'tool',
-        toolUseId: 'tool-1',
-        summary: 'run',
-        risk: 'always',
-        bindingHash: 'a'.repeat(64),
-        pending: { ticket: 't1', expiresAt: '2026-09-17T00:10:00.000Z' },
+      event('decision/state', pendingDecision('approval-1', { operationId: 'tool-1' }), {
+        register: 'decision/state',
       }),
-      event('approval/decided', {
-        requestId: 'approval-1',
-        toolUseId: 'tool-1',
-        verdict: 'rejected',
-        via: 'callback',
-      }),
+      event(
+        'decision/state',
+        answeredDecision(pendingDecision('approval-1', { operationId: 'tool-1' }), 5, 'rejected'),
+        { register: 'decision/state' },
+      ),
       event('step/end', { turn: 1, step: 1 }),
       event('turn/end', { reason: 'completed', lastAssistantSeq: null }),
     ]

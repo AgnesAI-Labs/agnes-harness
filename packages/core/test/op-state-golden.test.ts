@@ -5,9 +5,7 @@ import { opMarkProblems } from '../testkit/op-mark-checks.js'
 import {
   CONCURRENT_SCENARIOS,
   callEventProblems,
-  expectedFromGolden,
   MERGED_STATUSES,
-  mergeLedgerWriteCommits,
   readGolden,
   recordTransitions,
   statusProjectionProblems,
@@ -50,14 +48,12 @@ describe('program-counter transitions match the recorded reference (MemoryStorag
         ]),
       )
       expect(opMarkProblems(recorded)).toEqual([])
-      return
     }
-    const reference = expectedFromGolden(readGolden(name))
+    const reference = readGolden(name)
     if (CONCURRENT_SCENARIOS.has(name)) {
       expect(statusProjectionProblems(recorded, reference, MERGED_STATUSES)).toEqual([])
       expect(callEventProblems(recorded, reference)).toEqual([])
-    } else
-      expect(withMintedIdsInOrder(recorded)).toEqual(withMintedIdsInOrder(mergeLedgerWriteCommits(reference)))
+    } else expect(withMintedIdsInOrder(recorded)).toEqual(withMintedIdsInOrder(reference))
     expect(opMarkProblems(recorded)).toEqual([])
   })
 })

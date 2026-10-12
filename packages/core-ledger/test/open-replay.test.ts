@@ -11,6 +11,7 @@ import type { StorageAdapter } from '../src/log/storage.js'
 import { computeSurface } from '../src/project/surface.js'
 import { projectUI, UIProjectionCell } from '../src/project/ui.js'
 import { openTracked, StateTracker } from '../src/reduce/tracker.js'
+import { answeredDecision, pendingDecision } from '../testkit/decision.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const base = { actor, origin: 'system', trust: 'trusted' } as const
@@ -47,17 +48,14 @@ function turn(n: number, firstSeq: number): EventInput[] {
       args: { path: EMOJI.repeat(1100) },
       ordinal: 0,
     }),
-    row('approval/asked', {
-      requestId: `approval-${n}`,
-      kind: 'tool',
-      summary: 'read',
-      risk: 'always',
-      bindingHash: 'a'.repeat(64),
-      options: ['allowed-once', 'rejected'],
-      toolUseId: `tool-${n}`,
-      pending: { ticket: `ticket-${n}`, expiresAt: '2026-09-13T00:10:00.000Z' },
+    row('decision/state', pendingDecision(`approval-${n}`, { operationId: `tool-${n}` }), {
+      register: 'decision/state',
     }),
-    row('approval/decided', { requestId: `approval-${n}`, verdict: 'allowed-once', via: 'callback' }),
+    row(
+      'decision/state',
+      answeredDecision(pendingDecision(`approval-${n}`, { operationId: `tool-${n}` }), firstSeq + 4),
+      { register: 'decision/state' },
+    ),
     row('tool/result', {
       toolUseId: `tool-${n}`,
       content: [{ type: 'text', text: EMOJI.repeat(3000) }],
@@ -360,7 +358,19 @@ async function busySession(storage: MemoryStorage, lane: string) {
   const other = lane === 'main' ? 'side' : 'main'
   const live = await openTracked({ ...common, storage, key: 'k', writerRunId: 'w', lane, ids: defaultIds() })
   for (let n = 1; n <= 25; n++) await live.log.append(turn(n, live.log.lastSeq + 1))
-  const onLane = (events: EventInput[]) => events.map((event) => ({ ...event, lane }))
+  const onLane = (events: EventInput[]) =>
+    events.map((event) => ({
+      ...event,
+      lane,
+      ...(event.type === 'decision/state'
+        ? {
+            data: {
+              ...(event.data as import('@agnes/protocol').DecisionSnapshot),
+              request: { ...(event.data as import('@agnes/protocol').DecisionSnapshot).request, lane },
+            },
+          }
+        : {}),
+    }))
   await live.log.append(
     onLane([
       row('user/message', { content: [{ type: 'text', text: 'on this lane' }] }),
@@ -407,15 +417,8 @@ async function busySession(storage: MemoryStorage, lane: string) {
   await live.log.append(
     onLane([
       row('tool/call', { toolUseId: 'parked-tool', name: 'read', args: {}, ordinal: 0 }),
-      row('approval/asked', {
-        requestId: 'parked',
-        kind: 'tool',
-        summary: 'read',
-        risk: 'always',
-        bindingHash: 'b'.repeat(64),
-        options: ['allowed-once', 'rejected'],
-        toolUseId: 'parked-tool',
-        pending: { ticket: 'parked-ticket', expiresAt: '2026-09-13T00:10:00.000Z' },
+      row('decision/state', pendingDecision('parked', { operationId: 'parked-tool' }), {
+        register: 'decision/state',
       }),
     ]),
   )
@@ -453,7 +456,7 @@ describe('a cold reopen matches the live writer', () => {
     const live = await busySession(storage, lane)
     const tools = (await live.ui.view()).nodes.filter((node) => node.kind === 'tool')
     expect(tools.find((node) => node.toolUseId === 'parent-tool')?.children?.length).toBe(1)
-    expect(live.tracker.state.pendingApprovals.has('parked')).toBe(true)
+    expect(live.tracker.state.registers.decisionStates.get('parked')?.value.result).toBeNull()
     expect((await live.log.scan({ order: 'desc', limit: 1 }))[0]?.type).toBe('cost/ledger')
     const expected = await snapshot(live)
     await live.log.close()

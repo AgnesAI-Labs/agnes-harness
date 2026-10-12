@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 16,
+    "seq": 17,
     "data": {
       "meta": {
         "turn": 1,
@@ -30,10 +30,11 @@
               "name": "do_batch",
               "argsSeq": 14,
               "replay": "safe",
-              "status": "planned",
+              "status": "dispatched",
               "resolvedPolicy": {
                 "isReadOnly": true,
                 "isDestructive": false,
+                "isPresentational": false,
                 "isConcurrencySafe": true,
                 "isOpenWorld": false,
                 "replay": "safe",
@@ -41,9 +42,12 @@
                 "approvalScopes": [],
                 "policyVersion": "static-v1"
               },
-              "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
+              "policyHash": "98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8",
               "definitionFingerprint": "a5240d83b5a172c1997c4c48e64921a65eaf3922385eceddf8803d227e1309f5",
-              "executionDomain": "workspace"
+              "executionDomain": "workspace",
+              "effectId": "e-00000000000000000000000000000021",
+              "dispatchAttempt": 1,
+              "dispatchPhase": "may_have_sent"
             }
           ]
         }

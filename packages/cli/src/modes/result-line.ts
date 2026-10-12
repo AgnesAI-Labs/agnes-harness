@@ -20,7 +20,6 @@ export function cliResultLine(o: CliResult): string {
 /**
  * The current unanswered decision a parked turn left behind. Read only each handle's latest
  * state so an answered, consumed or invalidated request cannot revive its earlier open state.
- * Budget and uncertain-effect gates still publish their own pending domain tickets.
  */
 export function findParkedTicket(events: EventEnvelope[]): string | undefined {
   const seen = new Set<string>()
@@ -32,11 +31,7 @@ export function findParkedTicket(events: EventEnvelope[]): string | undefined {
       if (typeof id !== 'string' || !id || seen.has(id)) continue
       seen.add(id)
       if (value?.result === null && value.consumption === null && value.invalidation === null) return id
-      continue
     }
-    if (e.type !== 'approval/asked') continue
-    const t = (e.data as { pending?: { ticket?: unknown } } | null)?.pending?.ticket
-    if (typeof t === 'string' && t) return t
   }
   return undefined
 }

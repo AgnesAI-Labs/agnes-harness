@@ -478,8 +478,6 @@ export type {
 } from '../gen/ts/resource-control.js'
 export type {
   Actor,
-  ApprovalAsked,
-  ApprovalDecided,
   ApprovalGrant,
   ApprovalGuardianDecision,
   ArtifactJob,

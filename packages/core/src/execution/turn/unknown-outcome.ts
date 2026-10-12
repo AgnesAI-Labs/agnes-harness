@@ -1,6 +1,6 @@
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
-import { requestDomainDecision } from '../../step/domain-decision.js'
+import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
 /** Shared human reconciliation, before the unknown result and settlement commit together. */
@@ -9,6 +9,21 @@ export async function unknownOutcomeRows(
   toolUseId: string,
   name: string,
 ): Promise<EventInput[]> {
+  const stopped = () => s.ac.signal.aborted || s.decisions.scopeRevoked
+  const stoppedRows = async () => {
+    const value = [...s.state.registers.decisionStates.values()].find(
+      ({ value }) =>
+        value.request.owner === 'core/unknown-outcome' && value.request.operationId === toolUseId,
+    )?.value
+    if (value)
+      await s.decisions.withdraw(
+        value.handle,
+        domainDecisionSource(s, 'unknown-outcome', toolUseId),
+        'stopped',
+      )
+    return [s.ev('x/core/unknown-outcome', { toolUseId, waitEndedBy: 'stopped' }, { ignorable: true })]
+  }
+  if (stopped()) return stoppedRows()
   const op = s.op() as OpStateObj
   const requestId = s.d.ids.requestId()
   const asked = {
@@ -60,7 +75,11 @@ export async function unknownOutcomeRows(
       ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
     },
     s.ac.signal,
-  )
+  ).catch(async (error) => {
+    if (stopped()) return undefined
+    throw error
+  })
+  if (!decision) return stoppedRows()
   return [
     s.ev('x/core/unknown-outcome', { handle: decision.snapshot.handle, toolUseId }, { ignorable: true }),
     ...(decision.park ? [decision.park] : []),

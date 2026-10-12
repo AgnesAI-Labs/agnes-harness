@@ -25,10 +25,8 @@ export { opMarkProblems } from './op-mark-checks.js'
 export {
   CONCURRENT_SCENARIOS,
   callEventProblems,
-  expectedFromGolden,
   type GoldenCommit,
   MERGED_STATUSES,
-  mergeLedgerWriteCommits,
   type RecordedCommit,
   readGolden,
   recordTransitions,
