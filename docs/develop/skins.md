@@ -167,6 +167,7 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-brand-primary
 --agnes-brand-focus-ring
 --agnes-brand-emphasis-soft
+--agnes-focus-ring-soft
 --agnes-text-primary
 --agnes-text-secondary
 --agnes-text-tertiary
