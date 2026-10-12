@@ -1,5 +1,6 @@
 import { type PolicyRule, readCommandRules, withCommandFloorRegistry } from '@agnes/core/command-table'
 import type { ToolPolicy, ToolPolicyCatalogEntry, ToolPolicyRegistryPort } from '@agnes/extension-api'
+import { toolPolicyKind } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 
@@ -23,16 +24,16 @@ export function readCommandTable(preset: PresetDoc) {
  */
 export function floorToolPolicies(
   providers: {
-    register(kind: 'tool-policy', source: string, policy: ToolPolicy): () => Promise<void>
-    resolve(kind: 'tool-policy', id: string): ToolPolicy
+    register(kind: typeof toolPolicyKind, source: string, policy: ToolPolicy): () => Promise<void>
+    resolve(kind: typeof toolPolicyKind, id: string): ToolPolicy
   },
   catalog: () => readonly ToolPolicyCatalogEntry[],
   rules: readonly PolicyRule[],
 ): ToolPolicyRegistryPort {
   return withCommandFloorRegistry(
     {
-      register: (source, policy) => providers.register('tool-policy', source, policy),
-      resolve: (id) => providers.resolve('tool-policy', id),
+      register: (source, policy) => providers.register(toolPolicyKind, source, policy),
+      resolve: (id) => providers.resolve(toolPolicyKind, id),
       catalog,
     },
     rules,
