@@ -14,7 +14,6 @@ const meta = (readOnly) => ({
   isConcurrencySafe: false,
   isOpenWorld: true,
   replay: readOnly ? 'safe' : 'never',
-  costHint: undefined,
   deferLoading: false,
   requiresApproval: readOnly ? 'never' : 'always',
 })
@@ -238,9 +237,8 @@ export function createTools({ adapters = sourceAdapters } = {}) {
   ]
 }
 export const skillHelper = {
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx) {
-    const api = ctx.extension()
-    for (const definition of createTools()) api.registerTool(definition)
+    for (const definition of createTools()) ctx.tools.register(definition)
   },
 }

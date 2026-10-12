@@ -59,16 +59,18 @@ describe('public documentation examples (no provider, no daemon)', () => {
   it('loads the actual backend export, validates its schema and executes its documented result', async () => {
     const pkg = JSON.parse(await readFile(exampleUrl('hot-tool-plugin/package.json'), 'utf8'))
     const [declaration] = parseAgnesPluginEntries(pkg.name, pkg.agnes.plugins)
-    expect(declaration?.inject).toEqual(['extension'])
+    expect(declaration?.inject).toEqual(['tools', 'extension'])
     const mod = await moduleAt('hot-tool-plugin/index.mjs')
     let tool: ToolDef | undefined
     const hooks: string[] = []
     // Registration capture is a fixture, not a claim of Host authorization or OS isolation.
     mod.textStatsTool.apply({
-      extension: () => ({
-        registerTool(def: ToolDef) {
+      tools: {
+        register(def: ToolDef) {
           tool = def
         },
+      },
+      extension: () => ({
         on(event: string) {
           hooks.push(event)
         },

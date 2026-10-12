@@ -138,7 +138,7 @@ export function registerSkillHelperTests(test) {
 
   test('ordinary AGH plugin registers four discoverable tools', () => {
     const registered = []
-    skillHelper.apply({ extension: () => ({ registerTool: (t) => registered.push(t) }) })
+    skillHelper.apply({ tools: { register: (t) => registered.push(t) } })
     assert.equal(registered.length, 4)
     for (const t of registered) {
       assert.equal(t.meta.deferLoading, false)

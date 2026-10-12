@@ -97,3 +97,30 @@ it('fetches reserved official examples outside a checkout without using a worksp
   expect(bundledExampleSource('file:./bundled-examples/loops/dag-loop/../../impostor')).toBeUndefined()
   expect(exec).not.toHaveBeenCalled()
 })
+
+it('generates an executable tool plugin using the current owned registration port', async () => {
+  type Tool = import('@agnes/extension-api').ToolDef
+  const registered = new Map<string, Tool>()
+  const tools = {
+    register: (tool: Tool) => {
+      registered.set(tool.name, tool)
+    },
+  }
+  const { pluginHelper } = await import(
+    new URL('../bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+  )
+  pluginHelper.apply({ tools })
+  const guide = registered.get('plugin_helper_guide')!
+  const result = await guide.execute({ kind: 'tool' }, {} as never)
+  const text = result.content.find((part) => part.type === 'text')
+  if (!text || text.type !== 'text') throw new Error('guide returned no text')
+  const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }
+  expect(data.apiVersion).toBe('2.0.0')
+  const source = data.files.find((file) => file.path === 'index.mjs')!
+  const { main } = await import(`data:text/javascript,${encodeURIComponent(source.content)}`)
+  main.apply({ tools, extension: () => ({ on() {}, ctx: { log: { info() {} } } }) })
+  const generated = registered.get('my_text_stats')!
+  expect(await generated.execute({ text: 'two words' }, {} as never)).toMatchObject({
+    structured: { characters: 9, words: 2 },
+  })
+})

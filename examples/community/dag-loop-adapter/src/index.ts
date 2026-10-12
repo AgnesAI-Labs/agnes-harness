@@ -6,6 +6,7 @@ import {
   defineModelAdapter,
   defineTool,
   type ProviderPluginContext,
+  readOnlyTool,
 } from '@agnes/plugin-runtime'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -90,16 +91,7 @@ export const adapter = defineModelAdapter({
   },
 })
 
-const meta = {
-  isReadOnly: true,
-  isDestructive: false,
-  isConcurrencySafe: true,
-  isOpenWorld: false,
-  replay: 'safe' as const,
-  costHint: undefined,
-  deferLoading: undefined,
-  requiresApproval: 'never' as const,
-}
+const meta = readOnlyTool
 const output = Type.Object({ value: Type.String() }, { additionalProperties: false })
 const toolOutput = Type.Object(
   {

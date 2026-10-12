@@ -20,13 +20,12 @@ const port = (ctx) => {
   return ctx.pluginManage
 }
 export const pluginHelper = {
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx) {
-    const extension = ctx.extension()
     const api = {
-      registerTool(definition) {
+      register(definition) {
         const execute = definition.execute
-        extension.registerTool({
+        ctx.tools.register({
           ...definition,
           async execute(args, context) {
             try {
@@ -50,7 +49,7 @@ export const pluginHelper = {
         })
       },
     }
-    api.registerTool({
+    api.register({
       name: 'plugin_helper_guide',
       description:
         'Before creating an Agnes Harness (AGH) plugin, read this version-matched authoring guide and runnable template. The default target for “write a plugin” in this app is AGH. Skill content alone uses skill-helper; connecting an MCP server uses mcp-helper. This helper authors ordinary tool, Skill or pure CSS skin plugin rows.',
@@ -60,7 +59,7 @@ export const pluginHelper = {
         if (kind === 'skin')
           return result({
             host: 'Agnes Harness',
-            apiVersion: '1.4.0',
+            apiVersion: '2.0.0',
             guidance: skinGuidance,
             files: [
               ...skinFiles(),
@@ -85,7 +84,7 @@ export const pluginHelper = {
                 apiRange: '^2.0.0',
                 id: 'ext:my-agh-plugin/main',
                 export: 'main',
-                inject: [kind === 'tool' ? 'extension' : 'skills'],
+                inject: kind === 'tool' ? ['tools', 'extension'] : ['skills'],
               },
             ],
           },
@@ -96,9 +95,9 @@ export const pluginHelper = {
             : "export const main = { inject: ['skills'], apply(ctx) { ctx.skills.register({ name: 'my-workflow', description: 'Use when the user requests this workflow.', body: 'Describe the concrete workflow here.' }) } }\n"
         return result({
           host: 'Agnes Harness',
-          apiVersion: '1.4.0',
+          apiVersion: '2.0.0',
           guidance:
-            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with all ToolMeta fields shown. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test asks permission to run Node tests, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
+            'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test asks permission to run Node tests, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
           documentation: 'https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md',
           files: [
             { path: 'package.json', content: JSON.stringify(manifest, null, 2) },
@@ -114,7 +113,7 @@ export const pluginHelper = {
         })
       },
     })
-    api.registerTool({
+    api.register({
       name: 'plugin_helper_create',
       description:
         'Save newly authored AGH plugin files only in the Host candidate area outside discovery roots. Read plugin_helper_guide first. Returns draft with candidateId and candidateHash; does not install or execute code. Stop on policy rejection; do not bypass using shell.',
@@ -124,7 +123,7 @@ export const pluginHelper = {
         return result(await port(ctx).request({ action: 'prepare', files }))
       },
     })
-    api.registerTool({
+    api.register({
       name: 'plugin_helper_install',
       description:
         'Run Node tests with explicit permission, submit a passing candidate for human review, or inspect its status. commit never installs/trusts/enables. Only a human can publish the exact reviewed hash in Settings → Plugins. Denial and failure must not be bypassed.',

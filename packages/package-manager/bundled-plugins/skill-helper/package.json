@@ -21,7 +21,7 @@
         "apiRange": "^2.0.0",
         "id": "ext:skill-helper/main",
         "inject": [
-          "extension"
+          "tools"
         ],
         "metadata": {
           "displayName": "Skills helper",

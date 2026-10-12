@@ -1,8 +1,8 @@
 // Synthetic tool stays in flight until the real session cancellation reaches its AbortSignal.
 export const cancelTool = {
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx) {
-    ctx.extension().registerTool({
+    ctx.tools.register({
       name: 'e2e_wait_for_cancel',
       description: 'Wait for explicit cancellation in the offline browser acceptance.',
       parameters: {
@@ -17,7 +17,6 @@ export const cancelTool = {
         isConcurrencySafe: true,
         isOpenWorld: false,
         replay: 'safe',
-        costHint: undefined,
         deferLoading: false,
         requiresApproval: 'never',
       },
