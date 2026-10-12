@@ -334,9 +334,18 @@ describe('migrated settings panes', () => {
       committed,
     )
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型账户')
+    const hosts = [
+      ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
+    ]
+    const refresh = config.querySelector<HTMLButtonElement>('#archived-refresh')
+    const refreshed = vi.fn()
+    refresh?.addEventListener('click', refreshed)
+    mount.open('appearance')
+    const dark = config.querySelector<HTMLInputElement>('input[name="agnes-theme"][value="dark"]')
+    dark?.click()
+    dark?.focus()
     locale.setLocale('en')
-    // 语言变化会替换外壳的 innerHTML，六个面板的宿主元素随之重建。回归时只有 model 面板被重挂到
-    // 旧宿主，其余面板的根指向已丢弃的节点，右侧内容区变空白，要刷新页面才恢复。
+    // Locale reconciliation keeps independent roots, controller bindings and the selected pane alive.
     await vi.waitFor(
       () =>
         expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain(
@@ -349,6 +358,17 @@ describe('migrated settings panes', () => {
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Model accounts')
     expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型账户')
+    for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
+    expect(config.querySelector('#archived-refresh')).toBe(refresh)
+    refresh?.click()
+    expect(refreshed).toHaveBeenCalledOnce()
+    expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
+    expect(dark?.checked).toBe(true)
+    expect(document.activeElement).toBe(dark)
+    locale.setLocale('zh-CN')
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用设置')
+    for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
   })
 
   it('mounts DSH settings outlets at the existing pane controls', async () => {

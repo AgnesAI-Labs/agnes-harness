@@ -82,6 +82,26 @@ describe('independent core web-unit implementations', () => {
       },
       { id: 'first', group: 'agent', titleKey: 'first', groupTitleKey: 'agent', icon: 'agent', order: 10 },
       { id: 'second', group: 'agent', titleKey: 'second', groupTitleKey: 'agent', icon: 'agent', order: 11 },
+      {
+        id: 'skills',
+        group: 'tools',
+        titleKey: 'skills',
+        groupTitleKey: 'tools',
+        icon: 'tools',
+        order: 20,
+        nativePane: 'resources',
+        navigationId: 'skills-tab',
+      },
+      {
+        id: 'mcp',
+        group: 'tools',
+        titleKey: 'mcp',
+        groupTitleKey: 'tools',
+        icon: 'tools',
+        order: 21,
+        nativePane: 'resources',
+        navigationId: 'mcp-tab',
+      },
     ]
     const changed = new Set<() => void>()
     flushSync(() =>
@@ -91,7 +111,7 @@ describe('independent core web-unit implementations', () => {
           options: {
             translate: (key) => key,
             sections: {
-              entries: () => entries,
+              entries: () => [...entries],
               subscribe: (listener) => {
                 changed.add(listener)
                 return () => {
@@ -103,7 +123,7 @@ describe('independent core web-unit implementations', () => {
         }),
       ),
     )
-    for (const pane of ['model', 'plugin'] as const) {
+    for (const pane of ['model', 'plugin', 'resources'] as const) {
       const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
       if (!slot) throw new Error('Missing settings pane slot')
       const paneRoot = createRoot(slot)
@@ -111,9 +131,11 @@ describe('independent core web-unit implementations', () => {
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
     const nav = () => host.querySelectorAll('.settings-nav-group button[data-settings-group]')
-    expect(nav()).toHaveLength(2)
+    expect(nav()).toHaveLength(3)
     expect(host.querySelector<HTMLDetailsElement>('#settings-advanced')?.open).toBe(false)
-    host.querySelector<HTMLDetailsElement>('#settings-advanced')!.open = true
+    const initialAdvanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')
+    if (!initialAdvanced) throw new Error('Missing Advanced settings')
+    initialAdvanced.open = true
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
     host
       .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
@@ -122,6 +144,12 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
     expect(new URL(location.href).searchParams.get('settings')).toBe('second')
     const nativeControl = host.querySelector('#model-settings')
+    const tabControl = host.querySelector('#settings-section-tab-second')
+    const content = host.querySelector('#settings-content-slots')
+    expect(content?.parentElement?.id).toBe('config-form')
+    expect(host.querySelector('#settings-pane-slots')?.parentElement).toBe(content)
+    expect(host.querySelector('#settings-dsh-shell-slots')?.parentElement).toBe(content)
+    expect(host.querySelector('#settings-section-tabs')?.parentElement).toBe(content)
     const outlets = [...host.querySelectorAll('[data-agnes-dsh-slot]')]
     for (const listener of changed) listener()
     expect(host.querySelector('#model-settings')).toBe(nativeControl)
@@ -138,6 +166,24 @@ describe('independent core web-unit implementations', () => {
     field.focus()
     for (const listener of changed) listener()
     expect(document.activeElement).toBe(field)
+    const resourceTab = host.querySelector<HTMLButtonElement>('#mcp-tab')
+    let resourceClicks = 0
+    resourceTab?.addEventListener('click', () => resourceClicks++)
+    resourceTab?.click()
+    expect(host.querySelector('#resource-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    expect(resourceTab?.getAttribute('aria-selected')).toBe('true')
+    host.querySelector<HTMLButtonElement>('#model-settings')?.click()
+    expect(resourceTab?.hidden).toBe(true)
+    host.querySelector<HTMLButtonElement>('#settings-group-tools')?.click()
+    resourceTab?.click()
+    expect(resourceClicks).toBe(2)
+    expect(host.querySelector('#mcp-tab')).toBe(resourceTab)
+    expect(host.querySelector('#resource-list')?.getAttribute('aria-labelledby')).toBe('mcp-tab')
+    host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
+    host
+      .querySelector('#settings-section-tab-first')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(tabControl)
     // A shell reopen can reset the native pane before restoring the same deep link.
     region.current?.open('model')
     expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
@@ -172,7 +218,7 @@ describe('independent core web-unit implementations', () => {
       { id: 'third', group: 'agent', titleKey: 'third', groupTitleKey: 'agent', icon: 'agent', order: 12 },
     ]
     for (const listener of changed) listener()
-    expect(nav()).toHaveLength(2)
+    expect(nav()).toHaveLength(3)
     expect(host.querySelectorAll('#settings-section-tabs [role="tab"]')).toHaveLength(3)
     entries = entries.filter((entry) => entry.id !== 'second')
     for (const listener of changed) listener()
@@ -236,14 +282,16 @@ describe('independent core web-unit implementations', () => {
     }
     flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
     for (const pane of ['model', 'plugin'] as const) {
-      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)!
+      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
+      if (!slot) throw new Error('Missing settings pane slot')
       const paneRoot = createRoot(slot)
       roots.push(paneRoot)
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
-    const advanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')!
-    const search = host.querySelector<HTMLInputElement>('#settings-search')!
-    const form = host.querySelector<HTMLFormElement>('#config-form')!
+    const advanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')
+    const search = host.querySelector<HTMLInputElement>('#settings-search')
+    const form = host.querySelector<HTMLFormElement>('#config-form')
+    if (!advanced || !search || !form) throw new Error('Missing settings navigation controls')
     form.dataset.settingsView = 'detail'
     expect(advanced.open).toBe(false)
     expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Example plugin')
@@ -488,7 +536,7 @@ describe('independent core web-unit implementations', () => {
 
     flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin', translate: enT })))
     expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
-    expect(host.querySelector('#install-source')?.getAttribute('data-i18n')).toBe('shell.install')
+    expect(host.querySelector('#install-source [data-i18n]')?.getAttribute('data-i18n')).toBe('shell.install')
 
     flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources', translate: enT })))
     expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')

@@ -1,0 +1,411 @@
+import { Button, Field, Icon, type IconName, icons, SettingsInput } from '@agnes/web-ui'
+import { Fragment, useSyncExternalStore } from 'react'
+import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
+import { PANE_IDS, settingsDshSlotHostId, settingsPaneSlotHostId } from './settings.js'
+import { advancedSettings, settingsGroup, settingsNavigationGroups } from './settings-navigation.js'
+
+export function SettingsDshHost({ name }: { name: SettingsDshSlotName }) {
+  return <div id={settingsDshSlotHostId(name)} data-agnes-dsh-slot={name} />
+}
+
+type NavigationSnapshot = { entries: readonly SettingsNavigationEntry[]; selected: string }
+/** Render bridge for the existing navigation controller; subscribers never own route state. */
+export function createSettingsNavigationStore(entries: readonly SettingsNavigationEntry[]) {
+  let snapshot: NavigationSnapshot = { entries, selected: 'model' }
+  const listeners = new Set<() => void>()
+  return {
+    snapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    update(next: NavigationSnapshot) {
+      snapshot = next
+      for (const listener of listeners) listener()
+    },
+  }
+}
+export type SettingsNavigationStore = ReturnType<typeof createSettingsNavigationStore>
+const navigationIcons: Record<string, IconName> = {
+  accounts: 'list',
+  agent: 'bot',
+  plugins: 'plug',
+  tools: 'sliders-horizontal',
+  diagnostics: 'activity',
+  automation: 'clock',
+  security: 'shield-check',
+  history: 'history',
+  general: 'settings',
+}
+function NavigationIcon({ name }: { name: string }) {
+  return <Icon name={navigationIcons[name] ?? (Object.hasOwn(icons, name) ? (name as IconName) : 'plug')} />
+}
+
+function SettingsRegistryNavigation({
+  store,
+  translate,
+}: {
+  store: SettingsNavigationStore
+  translate?: ((key: string) => string) | undefined
+}) {
+  const { entries } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const t = translate ?? ((key: string) => key)
+  const groups = settingsNavigationGroups(entries)
+  const renderGroup = (group: readonly SettingsNavigationEntry[]) => {
+    const first = group[0]
+    if (!first) return null
+    const key = settingsGroup(first.group)
+    return (
+      <Fragment key={key}>
+        {key === 'extensions' && (
+          <p className="settings-nav-label" data-i18n="settings-shell.extensions">
+            {t('settings-shell.extensions')}
+          </p>
+        )}
+        {(key === 'extensions' ? group : [first]).map((entry) => (
+          <Button
+            key={entry.id}
+            appearance="ghost"
+            className="settings-nav-item"
+            id={
+              group.length > 1 && entry.nativePane
+                ? `settings-group-${key}`
+                : (entry.navigationId ?? `runtime-settings-${entry.id}`)
+            }
+            data-settings-section={entry.id}
+            data-testid={`settings-nav-${entry.id}`}
+            data-settings-group={key}
+          >
+            <NavigationIcon name={entry.icon} />
+            <span data-i18n={key === 'extensions' ? entry.titleKey : entry.groupTitleKey}>
+              {t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}
+            </span>
+            {key === 'extensions' && <small data-i18n={entry.groupTitleKey}>{t(entry.groupTitleKey)}</small>}
+          </Button>
+        ))}
+      </Fragment>
+    )
+  }
+  return (
+    <>
+      <Field
+        className="settings-navigation-search"
+        htmlFor="settings-search"
+        label={
+          <span className="visually-hidden" data-i18n="settings-shell.findSettings">
+            {t('settings-shell.findSettings')}
+          </span>
+        }
+      >
+        <SettingsInput
+          id="settings-search"
+          type="search"
+          autoComplete="off"
+          data-testid="settings-search"
+          data-i18n-placeholder="settings-shell.findSettings"
+          placeholder={t('settings-shell.findSettings')}
+        />
+      </Field>
+      <nav
+        className="settings-nav-group"
+        data-i18n-aria="settings-shell.railAria"
+        aria-label={t('settings-shell.railAria')}
+      >
+        <div id="settings-everyday">
+          <p className="settings-nav-label" data-i18n="settings-shell.basicLabel">
+            {t('settings-shell.basicLabel')}
+          </p>
+          <SettingsDshHost name="settings.trigger" />
+          <SettingsDshHost name="settings.onboarding" />
+          <SettingsDshHost name="settings.action" />
+          {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
+        </div>
+        <details id="settings-advanced" data-testid="settings-advanced">
+          <summary data-i18n="settings-shell.advanced">{t('settings-shell.advanced')}</summary>
+          {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
+        </details>
+        <div id="settings-navigation-reserve" hidden>
+          {['bundles', 'engines', 'system-prompt', 'memory', 'context', 'providers', 'examples', 'terminal']
+            .filter((id) => !entries.some((entry) => entry.id === id))
+            .map((id) => (
+              <Button
+                key={id}
+                id={`runtime-settings-${id}`}
+                appearance="ghost"
+                data-settings-section={id}
+                data-testid={`settings-nav-${id}`}
+              />
+            ))}
+          {!entries.some((entry) => entry.id === 'computer-use') && (
+            <Button id="computer-use-management" appearance="ghost" data-settings-section="computer-use" />
+          )}
+        </div>
+      </nav>
+      <p
+        id="settings-search-empty"
+        className="agnes-settings-state"
+        role="status"
+        data-i18n="settings-shell.noSettings"
+        hidden
+      >
+        {t('settings-shell.noSettings')}
+      </p>
+    </>
+  )
+}
+
+function SettingsSectionTabs({
+  store,
+  translate,
+}: {
+  store: SettingsNavigationStore
+  translate?: ((key: string) => string) | undefined
+}) {
+  const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const t = translate ?? ((key: string) => key)
+  const selectedEntry = entries.find((entry) => entry.id === selected)
+  const groupKey = settingsGroup(selectedEntry?.group ?? '')
+  const groups = settingsNavigationGroups(entries).filter(
+    (group) => group.length > 1 && settingsGroup(group[0]?.group ?? '') !== 'extensions',
+  )
+  const activeGroup = groups.find((group) => settingsGroup(group[0]?.group ?? '') === groupKey)
+  // Keep native tab buttons at stable positions: resource controllers bind their IDs once.
+  return (
+    <div
+      id="settings-section-tabs"
+      className="agnes-settings-section-tabs"
+      role="tablist"
+      hidden={!activeGroup}
+      data-i18n-aria={selectedEntry?.groupTitleKey}
+      aria-label={selectedEntry ? t(selectedEntry.groupTitleKey) : undefined}
+    >
+      {groups.flat().map((entry) => {
+        const visible = settingsGroup(entry.group) === groupKey
+        return (
+          <Button
+            key={entry.id}
+            appearance="ghost"
+            id={
+              entry.nativePane
+                ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
+                : `settings-section-tab-${entry.id}`
+            }
+            data-settings-section={entry.id}
+            data-testid={`settings-nav-${entry.id}-tab`}
+            role={visible ? 'tab' : undefined}
+            hidden={!visible}
+            aria-controls={PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane]}
+            aria-selected={visible ? entry.id === selected : undefined}
+            tabIndex={entry.id === selected ? 0 : -1}
+          >
+            <span data-i18n={entry.titleKey}>{t(entry.titleKey)}</span>
+          </Button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function SettingsShell({
+  store,
+  translate,
+}: {
+  store?: SettingsNavigationStore | undefined
+  translate?: ((key: string) => string) | undefined
+}) {
+  const t = translate ?? ((key: string) => key)
+  return (
+    <form id="config-form" className="settings-shell" data-settings-view="list">
+      {store ? (
+        <aside
+          data-testid="settings-navigation"
+          className="settings-rail"
+          aria-label={t('settings-shell.railAria')}
+          data-i18n-aria="settings-shell.railAria"
+        >
+          <div className="settings-rail-heading">
+            <div>
+              <p className="settings-rail-title" data-i18n="settings-shell.railTitle">
+                {t('settings-shell.railTitle')}
+              </p>
+            </div>
+            <Button
+              id="config-close"
+              appearance="ghost"
+              aria-label={t('settings-shell.close')}
+              data-i18n-aria="settings-shell.close"
+            >
+              <Icon name="x" />
+            </Button>
+            <SettingsDshHost name="settings.close" />
+          </div>
+          <SettingsRegistryNavigation store={store} translate={translate} />
+        </aside>
+      ) : (
+        <SettingsLegacyRail translate={translate} slots />
+      )}
+      <div id="settings-content-slots">
+        {store && (
+          <>
+            <Button id="settings-back" appearance="ghost" data-testid="settings-back">
+              <span data-i18n="settings-shell.back">{t('settings-shell.back')}</span>
+            </Button>
+            <SettingsSectionTabs store={store} translate={translate} />
+          </>
+        )}
+        <div id="settings-dsh-shell-slots">
+          <SettingsDshHost name="settings.header" />
+          <SettingsDshHost name="settings.section" />
+        </div>
+        <div id="settings-pane-slots">
+          {(Object.keys(PANE_IDS) as SettingsPane[]).map((pane) => (
+            <div key={pane} id={settingsPaneSlotHostId(pane)} data-agnes-settings-pane-slot={pane} />
+          ))}
+        </div>
+      </div>
+    </form>
+  )
+}
+
+export function SettingsLegacyRail({
+  translate,
+  slots = false,
+}: {
+  translate?: ((key: string) => string) | undefined
+  slots?: boolean
+}) {
+  const text = (key: string, fallback: string) => {
+    const value = translate?.(key) ?? key
+    return value === key ? fallback : value
+  }
+  return (
+    <aside
+      data-testid="settings-navigation"
+      className="settings-rail"
+      aria-label={text('settings-shell.railAria', '设置分类')}
+      data-i18n-aria="settings-shell.railAria"
+    >
+      <div className="settings-rail-heading">
+        <div>
+          <p className="eyebrow" data-i18n="settings-shell.workbenchBrand">
+            {text('settings-shell.workbenchBrand', 'Agnes Workbench')}
+          </p>
+          <p className="settings-rail-title" data-i18n="settings-shell.railTitle">
+            {text('settings-shell.railTitle', '设置')}
+          </p>
+        </div>
+        <Button
+          id="config-close"
+          aria-label={text('settings-shell.close', '关闭设置')}
+          data-i18n-aria="settings-shell.close"
+          htmlType="button"
+          appearance="ghost"
+        >
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </Button>
+        {slots && <SettingsDshHost name="settings.close" />}
+      </div>
+      <div className="settings-nav-group">
+        <p className="settings-nav-label" data-i18n="settings-shell.basicLabel">
+          {text('settings-shell.basicLabel', '基础设置')}
+        </p>
+        {slots && (
+          <>
+            <SettingsDshHost name="settings.trigger" />
+            <SettingsDshHost name="settings.onboarding" />
+            <SettingsDshHost name="settings.action" />
+          </>
+        )}
+        <Button
+          id="model-settings"
+          className="settings-nav-item active"
+          aria-current="page"
+          htmlType="button"
+          appearance="ghost"
+        >
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 8h10M7 12h10M7 16h6" />
+            <rect x="3.5" y="4" width="17" height="16" rx="3" />
+          </svg>
+          <span data-i18n="settings-shell.modelNav">{text('settings-shell.modelNav', '模型与账户')}</span>
+        </Button>
+        <Button id="plugin-management" className="settings-nav-item" htmlType="button" appearance="ghost">
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3" />
+          </svg>
+          <span data-i18n="settings-shell.pluginNav">{text('settings-shell.pluginNav', '插件管理')}</span>
+        </Button>
+        <div
+          className="settings-nav-tabs"
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label={text('settings-shell.resourceTabsAria', '资源类型')}
+          data-i18n-aria="settings-shell.resourceTabsAria"
+        >
+          <Button
+            id="skills-tab"
+            className="settings-nav-item"
+            role="tab"
+            aria-selected="true"
+            aria-controls="resource-list"
+            htmlType="button"
+            appearance="ghost"
+          >
+            <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z" />
+            </svg>
+            <span data-i18n="settings-shell.skillsNav">{text('settings-shell.skillsNav', '技能')}</span>
+          </Button>
+          <Button
+            id="mcp-tab"
+            className="settings-nav-item"
+            role="tab"
+            aria-selected="false"
+            aria-controls="resource-list"
+            tabIndex={-1}
+            htmlType="button"
+            appearance="ghost"
+          >
+            <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 3h6v4h4v6h-4v8H9v-8H5V7h4Z" />
+            </svg>
+            <span data-i18n="settings-shell.mcpNav">{text('settings-shell.mcpNav', 'MCP')}</span>
+          </Button>
+        </div>
+        <Button id="archived-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M4 7.5l1.5-3h13l1.5 3" />
+          </svg>
+          <span data-i18n="settings-shell.archivedNav">
+            {text('settings-shell.archivedNav', '已归档会话')}
+          </span>
+        </Button>
+        <Button
+          id="computer-use-management"
+          className="settings-nav-item"
+          htmlType="button"
+          appearance="ghost"
+        >
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="4" width="17" height="13" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+          <span data-i18n="settings-shell.computerUseNav">
+            {text('settings-shell.computerUseNav', 'Computer Use')}
+          </span>
+        </Button>
+        <Button id="appearance-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
+          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 4a8 8 0 0 1 0 16Z" />
+          </svg>
+          <span data-i18n="settings-shell.appearanceNav">{text('settings-shell.appearanceNav', '通用')}</span>
+        </Button>
+      </div>
+    </aside>
+  )
+}

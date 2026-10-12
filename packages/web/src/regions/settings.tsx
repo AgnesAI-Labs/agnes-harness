@@ -5,7 +5,6 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
-import { applyLocaleText } from '@agnes/web-foundation/locale-preference'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import {
@@ -19,7 +18,7 @@ import {
   settingsDshSlotHostId,
   settingsPaneSlotHostId,
 } from '@agnes/web-units'
-import { createElement, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,
@@ -60,15 +59,9 @@ export function mountSettingsPaneRegion(
   }
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createAntdRoot(container)
+  const shellOptions = locale ? { ...options, translate: (key: string) => locale.t(key) } : options
   const renderSettingsShell = (): void => {
-    flushSync(() => {
-      root.render(
-        createElement(SettingsBuiltin, {
-          ref: handle,
-          options: locale ? { ...options, translate: (key: string) => locale.t(key) } : options,
-        }),
-      )
-    })
+    flushSync(() => root.render(<SettingsBuiltin ref={handle} options={shellOptions} />))
   }
   renderSettingsShell()
   const dshRoots = new Map<string, AntdRoot>()
@@ -80,11 +73,9 @@ export function mountSettingsPaneRegion(
     if (pane) dshPaneSlots.set(pane, [...(dshPaneSlots.get(pane) ?? []), name])
     flushSync(() => {
       dshRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true }),
-        ),
+        <SlotsProvider registry={registry}>
+          <SlotOutlet name={name as never} hideWhenEmpty />
+        </SlotsProvider>,
       )
     })
   }
@@ -107,21 +98,20 @@ export function mountSettingsPaneRegion(
         owner: SETTINGS_UNIT_OWNER[pane],
         priority: 0,
       },
-      () =>
-        createElement(SettingsPaneBuiltin, {
-          pane,
-          computerUse: options.computerUse,
-          ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
-        }),
+      () => (
+        <SettingsPaneBuiltin
+          pane={pane}
+          computerUse={options.computerUse}
+          {...(locale ? { translate: (key: string) => locale.t(key) } : {})}
+        />
+      ),
     )
     removeBuiltin.set(pane, remove)
     flushSync(() => {
       paneRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: settingsPaneSlot(pane) }),
-        ),
+        <SlotsProvider registry={registry}>
+          <SlotOutlet name={settingsPaneSlot(pane)} />
+        </SlotsProvider>,
       )
     })
     for (const name of SETTINGS_DSH_SLOT_NAMES) {
@@ -131,29 +121,18 @@ export function mountSettingsPaneRegion(
       mountDshOutlet(name, dshHost, pane)
     }
   }
-  const translateSettingsMarkup = (): void => {
-    if (locale) applyLocaleText(container, (key) => locale.t(key))
-  }
-  translateSettingsMarkup()
-  // 不重渲染外壳。外壳用 dangerouslySetInnerHTML 渲染，字符串随语言变化，重渲染会整段替换
-  // innerHTML，把每个面板与各 DSH 出口的宿主元素一起换掉；面板的 React 根绑在旧宿主上，结果右侧
-  // 内容区变空白，要刷新页面才恢复。其余面板的文本由 applyLocaleText 就地回填。
-  //
-  // 模型面板是例外：它由 React 组件 SettingsModelPane 渲染，没有 data-i18n 节点，回填够不着，
-  // 只能重渲染它的根换语言。React 这次是就地协调、不替换 DOM，所以面板内的 DSH 宿主仍然存活。
+  // JSX reconciliation retains controller-bound elements and nested DSH root hosts on locale changes.
   const stopLocaleUpdates = locale?.subscribe(() => {
-    translateSettingsMarkup()
-    const modelRoot = paneRoots.get('model')
-    if (!modelRoot) return
-    flushSync(() => {
-      modelRoot.render(
-        createElement(
-          SlotsProvider,
-          { registry },
-          createElement(SlotOutlet, { name: settingsPaneSlot('model') }),
+    renderSettingsShell()
+    for (const [pane, paneRoot] of paneRoots) {
+      flushSync(() =>
+        paneRoot.render(
+          <SlotsProvider registry={registry}>
+            <SlotOutlet name={settingsPaneSlot(pane)} />
+          </SlotsProvider>,
         ),
       )
-    })
+    }
   })
   let disposed = false
   return {
