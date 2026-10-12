@@ -122,6 +122,8 @@ export function workflowDriver(
           const boundary = await ctx.turn.checkpoint(signal)
           if (boundary.outcome !== 'running') return boundary
         }
+        const deferred = await drainDeferredToolInvocations(businessCtx, signal)
+        if (deferred) return deferred
         if (ctx.turn.continuation() === 'tools') return await ctx.tools.drain(signal)
         const outcome = await resolveConfirmation(ctx, state, save, signal)
         if (outcome) return outcome

@@ -91,6 +91,7 @@ export async function resolveConfirmation(
     answer = result.snapshot.result.response.option
   } else {
     if (!waiting.input) {
+      const startingTurn = !ctx.turn.continuation() && !state.inputQueue.length
       if (ctx.turn.continuation()) await ctx.turn.endStep()
       const input =
         state.inputQueue.shift() ??
@@ -98,7 +99,10 @@ export async function resolveConfirmation(
       if (!input) return { outcome: 'parked', phase: 'waiting-for-answer', reason: 'parked' }
       waiting.input = input
       await save()
-      if (ctx.turn.continuation() === 'checkpoint') return { outcome: 'running', phase: 'answer-input' }
+      // A newly admitted turn may already be in the model phase. Give the generic
+      // deferred queue its next boundary before treating its wake as an unrelated answer.
+      if (ctx.turn.continuation() === 'checkpoint' || (startingTurn && ctx.turn.continuation()))
+        return { outcome: 'running', phase: 'answer-input' }
     }
     answer = surfaceAnswer(waiting.input, waiting.id)
     delete waiting.input
