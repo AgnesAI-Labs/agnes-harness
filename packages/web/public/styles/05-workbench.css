@@ -1,261 +1,263 @@
-main {
-  height: 100dvh;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--agnes-bg-app-content);
-}
-.topbar {
-  min-height: 3rem;
-  align-items: center;
-  gap: var(--s8);
-  padding: var(--s8) var(--s24);
-  border-bottom: 0.5px solid var(--agnes-line-primary);
-  background: var(--agnes-bg-app-content);
-  backdrop-filter: none;
-}
-.sidebar-toggle {
-  flex: 0 0 auto;
-}
-.task-heading {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-.task-heading h1 {
-  max-width: 36rem;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  padding: 0;
-  color: var(--agnes-text-primary);
-  font-size: var(--font-size-body);
-  font-weight: 500;
-  line-height: 1.25rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.task-heading span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-xs);
-  line-height: 1.125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#status[data-state="running"] {
-  color: var(--agnes-text-emphasis);
-}
-#status:is(
-  [data-state="error"],
-  [data-state="failed"],
-  [data-state="blocked"],
-  [data-state="budget"],
-  [data-state="max_steps"]
-) {
-  color: var(--agnes-status-danger-text);
-}
-.connection-group {
-  flex: 0 0 auto;
-  gap: var(--s4);
-  height: 1.75rem;
-  padding: 0 var(--s8);
-  border: 1px solid transparent;
-  border-radius: 13px;
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  line-height: 1.125rem;
-  white-space: nowrap;
-}
-.connection-group::before {
-  width: 0.4375rem;
-  height: 0.4375rem;
-  flex: 0 0 auto;
-  margin-inline: 0.1875rem;
-  content: "";
-  border-radius: 50%;
-  background: var(--agnes-icon-secondary);
-}
-.connection-group:has(#connection[data-state="connecting"]) {
-  border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
-  color: var(--agnes-status-warning-text);
-  background: var(--agnes-status-warning-bg);
-}
-.connection-group:has(#connection[data-state="reconnecting"]) {
-  border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
-  color: var(--agnes-status-warning-text);
-  background: var(--agnes-status-warning-bg);
-}
-.connection-group:has(#connection[data-state="connected"]) {
-  border-color: color-mix(in srgb, var(--agnes-status-success-text) 20%, transparent);
-  color: var(--agnes-status-success-text);
-  background: var(--agnes-status-success-bg);
-}
-.connection-group:has(#connection[data-state="closed"]) {
-  border-color: color-mix(in srgb, var(--agnes-status-danger-text) 20%, transparent);
-  color: var(--agnes-status-danger-text);
-  background: var(--agnes-status-danger-bg);
-}
-.connection-group:has(#connection[data-state="connected"])::before,
-.connection-group:has(#connection[data-state="reconnecting"])::before,
-.connection-group:has(#connection[data-state="closed"])::before {
-  background: currentcolor;
-}
-/* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
-   恢复路径本来就在 #reconnect-notice 里，顶栏只负责把状态本身说清楚。 */
-body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .connection-group {
-  display: none;
-}
-#notice,
-#reconnect-notice {
-  width: min(50rem, calc(100% - 3rem));
-  min-height: 0;
-  margin: 0 auto;
-  padding-top: var(--s8);
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-sm);
-}
-#notice:empty {
-  display: none;
-}
-#notice[data-kind="error"] {
-  color: var(--agnes-status-danger-text);
-}
-.workbench-split {
-  position: relative;
-  min-height: 0;
-  flex: 1;
-  display: grid;
-  /* The goal action lives in the tab bar; the remaining row belongs to the transcript. */
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
-}
-/* 页签行：tablist 与「报告问题」按钮同级，按钮不进 tablist，以免破坏 tab 语义。 */
-.session-tabs-bar {
-  display: flex;
-  align-items: center;
-  padding: 0 var(--s20);
-  border-bottom: 1px solid var(--agnes-line-primary);
-}
-.session-tabs {
-  display: flex;
-  gap: var(--s16);
-}
-#report-problem {
-  margin-left: auto;
-}
-.session-tabs button {
-  min-height: 2.25rem;
-  padding: 0.35rem 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: var(--agnes-text-secondary);
-  background: transparent;
-  font-size: var(--font-size-sm);
-}
-.session-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--agnes-text-emphasis);
-  color: var(--agnes-text-emphasis);
-}
-.conversation-shell {
-  position: relative;
-  width: 100%;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--agnes-bg-app-content);
-}
-.conversation-region-root {
-  position: absolute;
-  inset: 0;
-  min-height: 0;
-}
-
-#status[data-state="idle"],
-#status[data-state="done"] {
-  display: none;
-}
-.topbar .connection-group {
-  display: none;
-}
-.topbar .topbar-workspace {
-  margin-left: auto;
-  color: var(--agnes-text-secondary);
-  max-width: 15rem;
-  overflow: hidden;
-}
-@media (max-width: 767px) {
-  .topbar-workspace {
-    display: none;
+@layer app {
+  main {
+    height: 100dvh;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--agnes-bg-app-content);
   }
-}
-
-@media (min-width: 1024px) {
-  body:not(.sidebar-collapsed) .sidebar-toggle {
-    display: none;
+  .topbar {
+    min-height: 3rem;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s8) var(--s24);
+    border-bottom: 0.5px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+    backdrop-filter: none;
   }
-}
-
-@media (min-width: 1024px) {
-  body:not(.sidebar-collapsed) .sidebar-close {
-    display: inline-flex;
+  .sidebar-toggle {
+    flex: 0 0 auto;
   }
-}
-
-#task-title {
-  display: block;
-  text-align: left;
-  font: inherit;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.topbar :where([data-slot], [data-slot-entry]) {
-  display: contents;
-}
-#status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s4);
-}
-#status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: var(--radius-full);
-  background: currentColor;
-}
-#status:is([data-state="approval"], [data-state="parked"]) {
-  color: var(--agnes-status-warning-text);
-}
-#status:not(
-  :is(
-    [data-state="running"],
+  .task-heading {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .task-heading h1 {
+    max-width: 36rem;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    padding: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: 500;
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-heading span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #status[data-state="running"] {
+    color: var(--agnes-text-emphasis);
+  }
+  #status:is(
     [data-state="error"],
     [data-state="failed"],
     [data-state="blocked"],
     [data-state="budget"],
-    [data-state="max_steps"],
-    [data-state="approval"],
-    [data-state="parked"]
-  )
-) {
-  display: none;
-}
-#reconnect-notice:not([hidden]) {
-  color: var(--agnes-status-warning-text);
-  background: var(--agnes-status-warning-bg);
-  border-radius: var(--radius-control);
-  padding: var(--s8) var(--s12);
-}
-@media (max-width: 900px) {
-  #sidebar-toggle {
-    min-width: var(--s32);
-    min-height: var(--s32);
+    [data-state="max_steps"]
+  ) {
+    color: var(--agnes-status-danger-text);
+  }
+  .connection-group {
+    flex: 0 0 auto;
+    gap: var(--s4);
+    height: 1.75rem;
+    padding: 0 var(--s8);
+    border: 1px solid transparent;
+    border-radius: 13px;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
+  .connection-group::before {
+    width: 0.4375rem;
+    height: 0.4375rem;
+    flex: 0 0 auto;
+    margin-inline: 0.1875rem;
+    content: "";
+    border-radius: 50%;
+    background: var(--agnes-icon-secondary);
+  }
+  .connection-group:has(#connection[data-state="connecting"]) {
+    border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .connection-group:has(#connection[data-state="reconnecting"]) {
+    border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .connection-group:has(#connection[data-state="connected"]) {
+    border-color: color-mix(in srgb, var(--agnes-status-success-text) 20%, transparent);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .connection-group:has(#connection[data-state="closed"]) {
+    border-color: color-mix(in srgb, var(--agnes-status-danger-text) 20%, transparent);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .connection-group:has(#connection[data-state="connected"])::before,
+  .connection-group:has(#connection[data-state="reconnecting"])::before,
+  .connection-group:has(#connection[data-state="closed"])::before {
+    background: currentcolor;
+  }
+  /* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
+   恢复路径本来就在 #reconnect-notice 里，顶栏只负责把状态本身说清楚。 */
+  body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .connection-group {
+    display: none;
+  }
+  #notice,
+  #reconnect-notice {
+    width: min(50rem, calc(100% - 3rem));
+    min-height: 0;
+    margin: 0 auto;
+    padding-top: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  #notice:empty {
+    display: none;
+  }
+  #notice[data-kind="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .workbench-split {
+    position: relative;
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    /* The goal action lives in the tab bar; the remaining row belongs to the transcript. */
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 页签行：tablist 与「报告问题」按钮同级，按钮不进 tablist，以免破坏 tab 语义。 */
+  .session-tabs-bar {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--s20);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .session-tabs {
+    display: flex;
+    gap: var(--s16);
+  }
+  #report-problem {
+    margin-left: auto;
+  }
+  .session-tabs button {
+    min-height: 2.25rem;
+    padding: 0.35rem 0;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+  }
+  .session-tabs button[aria-selected="true"] {
+    border-bottom-color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-emphasis);
+  }
+  .conversation-shell {
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--agnes-bg-app-content);
+  }
+  .conversation-region-root {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+
+  #status[data-state="idle"],
+  #status[data-state="done"] {
+    display: none;
+  }
+  .topbar .connection-group {
+    display: none;
+  }
+  .topbar .topbar-workspace {
+    margin-left: auto;
+    color: var(--agnes-text-secondary);
+    max-width: 15rem;
+    overflow: hidden;
+  }
+  @media (max-width: 767px) {
+    .topbar-workspace {
+      display: none;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    body:not(.sidebar-collapsed) .sidebar-toggle {
+      display: none;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    body:not(.sidebar-collapsed) .sidebar-close {
+      display: inline-flex;
+    }
+  }
+
+  #task-title {
+    display: block;
+    text-align: left;
+    font: inherit;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar :where([data-slot], [data-slot-entry]) {
+    display: contents;
+  }
+  #status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  #status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    border-radius: var(--radius-full);
+    background: currentColor;
+  }
+  #status:is([data-state="approval"], [data-state="parked"]) {
+    color: var(--agnes-status-warning-text);
+  }
+  #status:not(
+    :is(
+      [data-state="running"],
+      [data-state="error"],
+      [data-state="failed"],
+      [data-state="blocked"],
+      [data-state="budget"],
+      [data-state="max_steps"],
+      [data-state="approval"],
+      [data-state="parked"]
+    )
+  ) {
+    display: none;
+  }
+  #reconnect-notice:not([hidden]) {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    border-radius: var(--radius-control);
+    padding: var(--s8) var(--s12);
+  }
+  @media (max-width: 900px) {
+    #sidebar-toggle {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
   }
 }

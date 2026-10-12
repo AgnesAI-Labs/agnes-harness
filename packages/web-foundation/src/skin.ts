@@ -195,7 +195,7 @@ export function syncSkinSheet(
     return { sheet: undefined, css: '' }
   }
   const sheet = createSheet()
-  sheet.replaceSync(css)
+  sheet.replaceSync(`@layer skin {\n${css}\n}`)
   const kept =
     state.sheet === undefined
       ? [...host.adoptedStyleSheets]

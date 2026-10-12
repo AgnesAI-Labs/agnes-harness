@@ -1,5 +1,7 @@
+@import "./layers.css";
 @import "./components.css";
-/* ═══════════════════════════════════════════════════════════════════════
+@layer tokens {
+  /* ═══════════════════════════════════════════════════════════════════════
    Web UI 组件层 · 主题桥：--agnes-* → --ant-*
    组件消费统一的语义主题变量。
 
@@ -17,1130 +19,1131 @@
    --ant-*-* 的颜色默认值同样映射到语义 token，避免静态组件带入浅色值。
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root,
-:root .agnes-theme {
-  /* Brand / 链接 */
-  --ant-color-primary: var(--agnes-brand-primary);
-  --ant-color-primary-hover: var(--agnes-brand-primary);
-  --ant-color-primary-active: var(--agnes-brand-primary);
-  --ant-color-primary-border: var(--agnes-brand-primary);
-  --ant-color-primary-border-hover: var(--agnes-brand-primary);
-  --ant-color-primary-bg: var(--agnes-brand-emphasis-soft);
-  --ant-color-primary-bg-hover: var(--agnes-brand-emphasis-soft);
-  --ant-color-link: var(--agnes-brand-primary);
-  --ant-color-link-hover: var(--agnes-brand-primary);
-  --ant-color-link-active: var(--agnes-brand-primary);
+  :root,
+  :root .agnes-theme {
+    /* Brand / 链接 */
+    --ant-color-primary: var(--agnes-brand-primary);
+    --ant-color-primary-hover: var(--agnes-brand-primary);
+    --ant-color-primary-active: var(--agnes-brand-primary);
+    --ant-color-primary-border: var(--agnes-brand-primary);
+    --ant-color-primary-border-hover: var(--agnes-brand-primary);
+    --ant-color-primary-bg: var(--agnes-brand-emphasis-soft);
+    --ant-color-primary-bg-hover: var(--agnes-brand-emphasis-soft);
+    --ant-color-link: var(--agnes-brand-primary);
+    --ant-color-link-hover: var(--agnes-brand-primary);
+    --ant-color-link-active: var(--agnes-brand-primary);
 
-  /* 文字 */
-  --ant-color-text: var(--agnes-text-primary);
-  --ant-color-text-secondary: var(--agnes-text-secondary);
-  --ant-color-text-tertiary: var(--agnes-text-tertiary);
-  --ant-color-text-disabled: var(--agnes-text-disabled);
-  --ant-color-text-heading: var(--agnes-text-primary);
-  --ant-color-text-label: var(--agnes-text-secondary);
-  --ant-color-text-description: var(--agnes-text-tertiary);
-  --ant-color-text-placeholder: var(--agnes-text-tertiary);
-  --ant-color-text-light-solid: var(--agnes-text-inverse);
-  --ant-color-icon: var(--agnes-text-tertiary);
-  --ant-color-icon-hover: var(--agnes-text-primary);
+    /* 文字 */
+    --ant-color-text: var(--agnes-text-primary);
+    --ant-color-text-secondary: var(--agnes-text-secondary);
+    --ant-color-text-tertiary: var(--agnes-text-tertiary);
+    --ant-color-text-disabled: var(--agnes-text-disabled);
+    --ant-color-text-heading: var(--agnes-text-primary);
+    --ant-color-text-label: var(--agnes-text-secondary);
+    --ant-color-text-description: var(--agnes-text-tertiary);
+    --ant-color-text-placeholder: var(--agnes-text-tertiary);
+    --ant-color-text-light-solid: var(--agnes-text-inverse);
+    --ant-color-icon: var(--agnes-text-tertiary);
+    --ant-color-icon-hover: var(--agnes-text-primary);
 
-  /* 背景层级 */
-  --ant-color-bg-layout: var(--agnes-bg-page);
-  --ant-color-bg-container: var(--agnes-bg-app-content);
-  --ant-color-bg-elevated: var(--agnes-bg-popover);
-  --ant-color-bg-text-hover: var(--agnes-bg-hover);
-  --ant-color-bg-text-active: var(--agnes-bg-selected);
-  --ant-color-bg-container-disabled: var(--agnes-bg-card);
-  --ant-color-bg-mask: var(--agnes-bg-scrim);
-  --ant-color-fill-content-hover: var(--agnes-bg-hover);
-  --ant-color-fill: var(--agnes-bg-selected);
-  --ant-color-fill-secondary: var(--agnes-bg-hover);
-  --ant-color-fill-tertiary: var(--agnes-bg-card);
-  --ant-color-bg-solid: var(--agnes-text-primary);
-  --ant-color-bg-solid-hover: var(--agnes-text-primary);
-  --ant-color-bg-solid-active: var(--agnes-text-primary);
+    /* 背景层级 */
+    --ant-color-bg-layout: var(--agnes-bg-page);
+    --ant-color-bg-container: var(--agnes-bg-app-content);
+    --ant-color-bg-elevated: var(--agnes-bg-popover);
+    --ant-color-bg-text-hover: var(--agnes-bg-hover);
+    --ant-color-bg-text-active: var(--agnes-bg-selected);
+    --ant-color-bg-container-disabled: var(--agnes-bg-card);
+    --ant-color-bg-mask: var(--agnes-bg-scrim);
+    --ant-color-fill-content-hover: var(--agnes-bg-hover);
+    --ant-color-fill: var(--agnes-bg-selected);
+    --ant-color-fill-secondary: var(--agnes-bg-hover);
+    --ant-color-fill-tertiary: var(--agnes-bg-card);
+    --ant-color-bg-solid: var(--agnes-text-primary);
+    --ant-color-bg-solid-hover: var(--agnes-text-primary);
+    --ant-color-bg-solid-active: var(--agnes-text-primary);
 
-  /* 边框（antd border 比 border-secondary 深；agnes line-primary 重于 secondary） */
-  --ant-color-border: var(--agnes-line-primary);
-  --ant-color-border-secondary: var(--agnes-line-primary);
-  --ant-color-split: var(--agnes-line-primary);
-  --ant-control-outline: var(--agnes-brand-focus-ring);
+    /* 边框（antd border 比 border-secondary 深；agnes line-primary 重于 secondary） */
+    --ant-color-border: var(--agnes-line-primary);
+    --ant-color-border-secondary: var(--agnes-line-primary);
+    --ant-color-split: var(--agnes-line-primary);
+    --ant-control-outline: var(--agnes-brand-focus-ring);
 
-  /* 状态 */
-  --ant-color-error: var(--agnes-status-danger-text);
-  --ant-color-error-hover: var(--agnes-status-danger-text);
-  --ant-color-error-active: var(--agnes-status-danger-text);
-  --ant-color-error-bg: var(--agnes-status-danger-bg);
-  --ant-color-error-bg-filled-hover: var(--agnes-status-danger-bg);
-  --ant-color-error-bg-active: var(--agnes-status-danger-bg);
-  --ant-color-error-text: var(--agnes-status-danger-text);
-  --ant-color-success: var(--agnes-status-success-text);
-  --ant-color-success-bg: var(--agnes-status-success-bg);
-  --ant-color-success-text: var(--agnes-status-success-text);
-  --ant-color-warning: var(--agnes-status-warning-text);
-  --ant-color-warning-bg: var(--agnes-status-warning-bg);
-  --ant-color-warning-text: var(--agnes-status-warning-text);
-  --ant-color-info: var(--agnes-status-info-text);
-  --ant-color-info-bg: var(--agnes-status-info-bg);
+    /* 状态 */
+    --ant-color-error: var(--agnes-status-danger-text);
+    --ant-color-error-hover: var(--agnes-status-danger-text);
+    --ant-color-error-active: var(--agnes-status-danger-text);
+    --ant-color-error-bg: var(--agnes-status-danger-bg);
+    --ant-color-error-bg-filled-hover: var(--agnes-status-danger-bg);
+    --ant-color-error-bg-active: var(--agnes-status-danger-bg);
+    --ant-color-error-text: var(--agnes-status-danger-text);
+    --ant-color-success: var(--agnes-status-success-text);
+    --ant-color-success-bg: var(--agnes-status-success-bg);
+    --ant-color-success-text: var(--agnes-status-success-text);
+    --ant-color-warning: var(--agnes-status-warning-text);
+    --ant-color-warning-bg: var(--agnes-status-warning-bg);
+    --ant-color-warning-text: var(--agnes-status-warning-text);
+    --ant-color-info: var(--agnes-status-info-text);
+    --ant-color-info-bg: var(--agnes-status-info-bg);
 
-  /* 尺度（无深浅维度） */
-  --ant-font-size: var(--font-size-body);
-  --ant-font-size-sm: var(--font-size-sm);
-  --ant-font-size-lg: var(--font-size-lg);
-  --ant-border-radius: var(--radius-md);
-  --ant-border-radius-sm: var(--radius-sm);
-  --ant-border-radius-lg: var(--radius-lg);
-  --ant-control-height: var(--control-height);
-  --ant-control-height-sm: var(--control-height-sm);
-  --ant-control-height-lg: var(--control-height-form);
+    /* 尺度（无深浅维度） */
+    --ant-font-size: var(--font-size-body);
+    --ant-font-size-sm: var(--font-size-sm);
+    --ant-font-size-lg: var(--font-size-lg);
+    --ant-border-radius: var(--radius-md);
+    --ant-border-radius-sm: var(--radius-sm);
+    --ant-border-radius-lg: var(--radius-lg);
+    --ant-control-height: var(--control-height);
+    --ant-control-height-sm: var(--control-height-sm);
+    --ant-control-height-lg: var(--control-height-form);
 
-  /* Component defaults also contain light colors in Ant Design's static CSS. */
-  --ant-button-default-color: var(--agnes-text-primary);
-  --ant-button-default-ghost-color: var(--agnes-text-primary);
-  --ant-button-default-ghost-border-color: var(--agnes-line-primary);
-  --ant-button-default-bg: var(--agnes-bg-app-content);
-  --ant-button-default-border-color: var(--agnes-line-primary);
-  --ant-button-default-hover-bg: var(--agnes-bg-hover);
-  --ant-button-default-hover-color: var(--agnes-text-primary);
-  --ant-button-default-hover-border-color: var(--agnes-brand-primary);
-  --ant-button-default-active-bg: var(--agnes-bg-selected);
-  --ant-button-default-active-color: var(--agnes-text-primary);
-  --ant-button-default-active-border-color: var(--agnes-brand-primary);
-  --ant-button-default-bg-disabled: var(--agnes-bg-card);
-  --ant-button-default-border-color-disabled: var(--agnes-line-primary);
-  --ant-button-border-color-disabled: var(--agnes-line-primary);
-  --ant-button-text-text-color: var(--agnes-text-primary);
-  --ant-button-text-text-hover-color: var(--agnes-text-primary);
-  --ant-button-text-text-active-color: var(--agnes-text-primary);
-  --ant-button-text-hover-bg: var(--agnes-bg-hover);
-  --ant-button-primary-color: var(--agnes-text-inverse);
-  --ant-button-danger-color: var(--agnes-text-inverse);
-  --ant-button-solid-text-color: var(--agnes-text-inverse);
-  /* Buttons are flat: elevation belongs to surfaces. Ant paints these through a two-class
+    /* Component defaults also contain light colors in Ant Design's static CSS. */
+    --ant-button-default-color: var(--agnes-text-primary);
+    --ant-button-default-ghost-color: var(--agnes-text-primary);
+    --ant-button-default-ghost-border-color: var(--agnes-line-primary);
+    --ant-button-default-bg: var(--agnes-bg-app-content);
+    --ant-button-default-border-color: var(--agnes-line-primary);
+    --ant-button-default-hover-bg: var(--agnes-bg-hover);
+    --ant-button-default-hover-color: var(--agnes-text-primary);
+    --ant-button-default-hover-border-color: var(--agnes-brand-primary);
+    --ant-button-default-active-bg: var(--agnes-bg-selected);
+    --ant-button-default-active-color: var(--agnes-text-primary);
+    --ant-button-default-active-border-color: var(--agnes-brand-primary);
+    --ant-button-default-bg-disabled: var(--agnes-bg-card);
+    --ant-button-default-border-color-disabled: var(--agnes-line-primary);
+    --ant-button-border-color-disabled: var(--agnes-line-primary);
+    --ant-button-text-text-color: var(--agnes-text-primary);
+    --ant-button-text-text-hover-color: var(--agnes-text-primary);
+    --ant-button-text-text-active-color: var(--agnes-text-primary);
+    --ant-button-text-hover-bg: var(--agnes-bg-hover);
+    --ant-button-primary-color: var(--agnes-text-inverse);
+    --ant-button-danger-color: var(--agnes-text-inverse);
+    --ant-button-solid-text-color: var(--agnes-text-inverse);
+    /* Buttons are flat: elevation belongs to surfaces. Ant paints these through a two-class
      selector that outranks the shared button rule, so the value is cleared at its source. */
-  --ant-button-default-shadow: none;
-  --ant-button-primary-shadow: none;
-  --ant-button-danger-shadow: none;
-  --ant-modal-content-bg: var(--agnes-bg-popover);
-  --ant-modal-title-color: var(--agnes-text-primary);
-  --ant-select-selector-bg: var(--agnes-input-surface);
-  --ant-select-clear-bg: var(--agnes-input-surface);
-  --ant-select-option-selected-color: var(--agnes-text-primary);
-  --ant-select-option-selected-bg: var(--agnes-bg-selected);
-  --ant-select-option-active-bg: var(--agnes-bg-hover);
-  --ant-select-multiple-item-bg: var(--agnes-bg-hover);
-  --ant-select-multiple-selector-bg-disabled: var(--agnes-bg-card);
-  --ant-select-multiple-item-color-disabled: var(--agnes-text-disabled);
-  --ant-select-hover-border-color: var(--agnes-brand-primary);
-  --ant-select-active-border-color: var(--agnes-brand-primary);
-  --ant-select-active-outline-color: var(--agnes-brand-focus-ring);
-  --ant-tabs-card-bg: var(--agnes-bg-card);
-  --ant-tabs-ink-bar-color: var(--agnes-brand-primary);
-  --ant-tabs-item-color: var(--agnes-text-primary);
-  --ant-tabs-item-selected-color: var(--agnes-text-primary);
-  --ant-tabs-item-hover-color: var(--agnes-text-primary);
-  --ant-tabs-item-active-color: var(--agnes-text-primary);
-}
+    --ant-button-default-shadow: none;
+    --ant-button-primary-shadow: none;
+    --ant-button-danger-shadow: none;
+    --ant-modal-content-bg: var(--agnes-bg-popover);
+    --ant-modal-title-color: var(--agnes-text-primary);
+    --ant-select-selector-bg: var(--agnes-input-surface);
+    --ant-select-clear-bg: var(--agnes-input-surface);
+    --ant-select-option-selected-color: var(--agnes-text-primary);
+    --ant-select-option-selected-bg: var(--agnes-bg-selected);
+    --ant-select-option-active-bg: var(--agnes-bg-hover);
+    --ant-select-multiple-item-bg: var(--agnes-bg-hover);
+    --ant-select-multiple-selector-bg-disabled: var(--agnes-bg-card);
+    --ant-select-multiple-item-color-disabled: var(--agnes-text-disabled);
+    --ant-select-hover-border-color: var(--agnes-brand-primary);
+    --ant-select-active-border-color: var(--agnes-brand-primary);
+    --ant-select-active-outline-color: var(--agnes-brand-focus-ring);
+    --ant-tabs-card-bg: var(--agnes-bg-card);
+    --ant-tabs-ink-bar-color: var(--agnes-brand-primary);
+    --ant-tabs-item-color: var(--agnes-text-primary);
+    --ant-tabs-item-selected-color: var(--agnes-text-primary);
+    --ant-tabs-item-hover-color: var(--agnes-text-primary);
+    --ant-tabs-item-active-color: var(--agnes-text-primary);
+  }
 
-.dark {
-  /* 背景层级与边框在深色下的对位由 .dark 的 --agnes-* 覆盖自然传导；
+  .dark {
+    /* 背景层级与边框在深色下的对位由 .dark 的 --agnes-* 覆盖自然传导；
      这里只显式接走 antd 深色专用变量（浅色区未出现的名字）。 */
-  --ant-color-bg-spotlight: var(--agnes-brand-primary);
-}
+    --ant-color-bg-spotlight: var(--agnes-brand-primary);
+  }
 
-/* Ant uses the primary border as a filled/text active surface; keep the label on its soft surface. */
-.agnes-ui-button.ant-btn-color-primary {
-  --ant-btn-color-light-active: var(--agnes-brand-emphasis-soft);
-}
+  /* Ant uses the primary border as a filled/text active surface; keep the label on its soft surface. */
+  .agnes-ui-button.ant-btn-color-primary {
+    --ant-btn-color-light-active: var(--agnes-brand-emphasis-soft);
+  }
 
-/* Settings share the account pane's surfaces, controls and text hierarchy. */
-.agnes-settings-page {
-  min-width: 0;
-}
-.agnes-settings-stack {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--s16);
-  min-width: 0;
-}
-.agnes-settings-page .config-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s16);
-  margin-bottom: var(--s16);
-}
-.agnes-settings-page .config-heading h2 {
-  margin: 0;
-  font-size: var(--font-size-lg);
-}
-.agnes-settings-page .config-heading p,
-.agnes-settings-card p {
-  color: var(--agnes-text-secondary);
-  line-height: 1.6;
-}
-/* A link inside settings copy must be identifiable without comparing two text colors. */
-.agnes-settings-card p a {
-  color: var(--agnes-text-emphasis);
-  text-decoration-line: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.16em;
-}
-.agnes-settings-actions {
-  display: flex;
-  gap: var(--s8);
-  flex-wrap: wrap;
-  align-items: center;
-}
-.agnes-settings-card {
-  padding: var(--s16);
-  display: grid;
-  gap: var(--s12);
-  box-shadow: none;
-  min-width: 0;
-}
-.agnes-settings-card > h3,
-.agnes-settings-card > p,
-.agnes-settings-card .config-accounts-heading h3,
-.agnes-settings-card .config-accounts-heading p {
-  margin: 0;
-}
-.agnes-settings-card .config-accounts-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--s16);
-}
-.agnes-ui-field {
-  display: grid;
-  gap: var(--s4);
-  min-width: 0;
-  margin: 0;
-}
-.agnes-ui-field-label {
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--agnes-text-primary);
-}
-.agnes-ui-field-hint {
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-}
-.agnes-ui-field-error {
-  color: var(--agnes-status-danger-text);
-  font-size: var(--font-size-sm);
-}
-.agnes-settings-input {
-  width: 100%;
-  min-width: 0;
-  min-height: var(--control-height);
-  padding: var(--s8) var(--s12);
-  border: 1px solid var(--agnes-input-border);
-  border-radius: var(--radius-md);
-  background: var(--agnes-input-surface);
-  color: var(--agnes-input-content-strong);
-  font: inherit;
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
-}
-.agnes-settings-input-surface {
-  background: var(--agnes-input-surface);
-}
-textarea.agnes-settings-input {
-  min-height: 5rem;
-  resize: vertical;
-}
-.agnes-settings-input:hover:not(:disabled) {
-  border-color: var(--agnes-input-border-emphasis);
-}
-.agnes-settings-input:focus-visible {
-  outline: none;
-  border-color: var(--agnes-input-border-focus);
-  box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
-}
-.agnes-settings-input:disabled {
-  border-color: var(--agnes-line-primary);
-  color: var(--agnes-text-disabled);
-  background: var(--agnes-bg-card);
-  cursor: not-allowed;
-}
-.agnes-settings-input[type="radio"],
-.agnes-settings-input[type="checkbox"],
-.agnes-settings-checkbox input {
-  width: 1rem;
-  height: 1rem;
-  min-height: 0;
-  padding: 0;
-  flex: 0 0 auto;
-  margin: 0;
-  accent-color: var(--agnes-text-emphasis);
-}
-.agnes-settings-checkbox,
-.agnes-ui-field:has(> input[type="checkbox"]) {
-  display: flex;
-  gap: var(--s8);
-  align-items: center;
-  font-size: var(--font-size-sm);
-}
-/* A bare fieldset groups controls for assistive tech; it never draws the browser's inset box. */
-.agnes-settings-page fieldset:not([class]) {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.agnes-settings-card fieldset,
-.agnes-settings-card form {
-  display: grid;
-  gap: var(--s12);
-  min-width: 0;
-}
-.agnes-settings-card fieldset.agnes-settings-actions {
-  display: flex;
-  flex-wrap: wrap;
-}
-.agnes-settings-card fieldset {
-  margin: 0;
-  padding: var(--s16);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
-}
-.agnes-settings-card legend {
-  padding-inline: 0.375rem;
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-}
-.agnes-settings-state {
-  padding: 0.875rem var(--s16);
-  border-radius: var(--radius-md);
-  background: var(--agnes-bg-card);
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.agnes-settings-state[data-tone="error"] {
-  color: var(--agnes-status-danger-text);
-  background: var(--agnes-status-danger-bg);
-}
-.agnes-settings-state[data-tone="success"] {
-  color: var(--agnes-status-success-text);
-  background: var(--agnes-status-success-bg);
-}
-.agnes-settings-card dl {
-  display: grid;
-  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
-  gap: var(--s8) var(--s16);
-  margin: 0;
-  font-size: var(--font-size-sm);
-}
-.agnes-settings-card dt {
-  color: var(--agnes-text-tertiary);
-}
-.agnes-settings-card dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.agnes-settings-card code,
-.agnes-settings-card pre {
-  overflow-wrap: anywhere;
-}
-.agnes-settings-card pre {
-  max-height: 24rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  padding: var(--s12);
-  border-radius: var(--radius-md);
-  background: var(--agnes-bg-code);
-}
-.agnes-settings-card .session-terminal {
-  min-height: 16rem;
-  height: 20rem;
-  max-height: 40vh;
-  font-family: var(--font-mono, monospace);
-}
-.agnes-settings-card .agnes-ui-button {
-  justify-self: start;
-  max-width: 100%;
-}
-.agnes-settings-card table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-sm);
-}
-.agnes-settings-card th,
-.agnes-settings-card td {
-  text-align: start;
-  padding: var(--s10);
-  border-bottom: 1px solid var(--agnes-line-primary);
-  overflow-wrap: anywhere;
-  vertical-align: top;
-}
-.agnes-settings-card th {
-  color: var(--agnes-text-secondary);
-  font-weight: 500;
-}
-.agnes-settings-card details {
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
-  padding: var(--s12);
-  min-width: 0;
-}
-.agnes-settings-card summary {
-  cursor: pointer;
-  color: var(--agnes-text-primary);
-  overflow-wrap: anywhere;
-}
-.agnes-settings-card summary:focus-visible {
-  outline: 2px solid var(--agnes-text-emphasis);
-  outline-offset: 2px;
-}
-.agnes-settings-list {
-  display: grid;
-  border-block: 1px solid var(--agnes-line-primary);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.agnes-settings-list > li {
-  display: grid;
-  gap: var(--s8);
-  padding-block: var(--s16);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.agnes-settings-list > li > span {
-  color: var(--agnes-text-secondary);
-}
-.agnes-settings-table {
-  overflow: auto;
-}
-.agnes-settings-table:focus-visible {
-  outline: 2px solid var(--agnes-text-emphasis);
-}
-@media (max-width: 640px) {
-  .agnes-settings-card {
-    padding: var(--s12);
+  /* Settings share the account pane's surfaces, controls and text hierarchy. */
+  .agnes-settings-page {
+    min-width: 0;
+  }
+  .agnes-settings-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    min-width: 0;
   }
   .agnes-settings-page .config-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin-bottom: var(--s16);
+  }
+  .agnes-settings-page .config-heading h2 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+  }
+  .agnes-settings-page .config-heading p,
+  .agnes-settings-card p {
+    color: var(--agnes-text-secondary);
+    line-height: 1.6;
+  }
+  /* A link inside settings copy must be identifiable without comparing two text colors. */
+  .agnes-settings-card p a {
+    color: var(--agnes-text-emphasis);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.16em;
+  }
+  .agnes-settings-actions {
+    display: flex;
+    gap: var(--s8);
     flex-wrap: wrap;
+    align-items: center;
+  }
+  .agnes-settings-card {
+    padding: var(--s16);
+    display: grid;
+    gap: var(--s12);
+    box-shadow: none;
+    min-width: 0;
+  }
+  .agnes-settings-card > h3,
+  .agnes-settings-card > p,
+  .agnes-settings-card .config-accounts-heading h3,
+  .agnes-settings-card .config-accounts-heading p {
+    margin: 0;
+  }
+  .agnes-settings-card .config-accounts-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--s16);
+  }
+  .agnes-ui-field {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    margin: 0;
+  }
+  .agnes-ui-field-label {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--agnes-text-primary);
+  }
+  .agnes-ui-field-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+  .agnes-ui-field-error {
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-input {
+    width: 100%;
+    min-width: 0;
+    min-height: var(--control-height);
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-md);
+    background: var(--agnes-input-surface);
+    color: var(--agnes-input-content-strong);
+    font: inherit;
+    transition:
+      border-color var(--transition-fast),
+      box-shadow var(--transition-fast);
+  }
+  .agnes-settings-input-surface {
+    background: var(--agnes-input-surface);
+  }
+  textarea.agnes-settings-input {
+    min-height: 5rem;
+    resize: vertical;
+  }
+  .agnes-settings-input:hover:not(:disabled) {
+    border-color: var(--agnes-input-border-emphasis);
+  }
+  .agnes-settings-input:focus-visible {
+    outline: none;
+    border-color: var(--agnes-input-border-focus);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  .agnes-settings-input:disabled {
+    border-color: var(--agnes-line-primary);
+    color: var(--agnes-text-disabled);
+    background: var(--agnes-bg-card);
+    cursor: not-allowed;
+  }
+  .agnes-settings-input[type="radio"],
+  .agnes-settings-input[type="checkbox"],
+  .agnes-settings-checkbox input {
+    width: 1rem;
+    height: 1rem;
+    min-height: 0;
+    padding: 0;
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--agnes-text-emphasis);
+  }
+  .agnes-settings-checkbox,
+  .agnes-ui-field:has(> input[type="checkbox"]) {
+    display: flex;
+    gap: var(--s8);
+    align-items: center;
+    font-size: var(--font-size-sm);
+  }
+  /* A bare fieldset groups controls for assistive tech; it never draws the browser's inset box. */
+  .agnes-settings-page fieldset:not([class]) {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-settings-card fieldset,
+  .agnes-settings-card form {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-card fieldset.agnes-settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .agnes-settings-card fieldset {
+    margin: 0;
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .agnes-settings-card legend {
+    padding-inline: 0.375rem;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-state {
+    padding: 0.875rem var(--s16);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-card);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-state[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agnes-settings-state[data-tone="success"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
   }
   .agnes-settings-card dl {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+    gap: var(--s8) var(--s16);
+    margin: 0;
+    font-size: var(--font-size-sm);
   }
-}
-.agnes-settings-section-tabs {
-  display: flex;
-  gap: var(--s16);
-  flex: 0 0 auto;
-  padding: var(--s12) var(--s24) 0;
-  border-bottom: 1px solid var(--agnes-line-primary);
-  overflow-x: auto;
-}
-.agnes-settings-section-tabs[hidden] {
-  display: none;
-}
-.agnes-settings-section-tabs button {
-  width: auto;
-  flex: 0 0 auto;
-  padding: 0.625rem 0.125rem;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--agnes-text-secondary);
-  font: inherit;
-  cursor: pointer;
-}
-/* The :not() pair lifts the selected marker above the ghost button's transparent border. */
-.agnes-settings-section-tabs button[aria-selected="true"]:not(:disabled):not([aria-disabled="true"]) {
-  border-bottom-color: var(--agnes-text-emphasis);
-  color: var(--agnes-text-primary);
-}
-.agnes-settings-section-tabs button:focus-visible {
-  outline: 2px solid var(--agnes-text-emphasis);
-  outline-offset: -2px;
-}
-.agnes-conversation-card {
-  min-width: 0;
-  padding: var(--s16);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-lg);
-  background: var(--agnes-bg-surface);
-  color: var(--agnes-text-primary);
-  overflow-wrap: anywhere;
-}
-.agnes-conversation-card-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s12);
-}
-.agnes-conversation-card-heading h3 {
-  margin: 0;
-  font-size: var(--font-size-body);
-}
-.agnes-conversation-card[data-card-state="disabled"] {
-  color: var(--agnes-text-secondary);
-}
-.agnes-conversation-card table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-sm);
-}
-.agnes-conversation-card th,
-.agnes-conversation-card td {
-  text-align: start;
-  padding: var(--s8);
-  border-bottom: 1px solid var(--agnes-line-primary);
-}
-.agnes-conversation-card .agnes-settings-state {
-  margin-top: var(--s8);
-}
-.agnes-settings-card h3 {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-  line-height: 1.5;
-}
-.agnes-settings-card small {
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-sm);
-}
-
-.agnes-conversation-card[data-card-variant="plain"] {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.plugin-details-button {
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.plugin-details-button:focus-visible {
-  outline: 2px solid var(--agnes-brand-focus-ring);
-  outline-offset: 4px;
-  border-radius: var(--radius-sm);
-}
-.agnes-ui-popover .ant-popover-container,
-.agnes-ui-popover .ant-popover-inner {
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-popover);
-  border: 1px solid var(--agnes-line-primary);
-  box-shadow: var(--shadow-elevation);
-}
-.agnes-ui-popover .ant-popover-arrow {
-  --antd-arrow-background-color: var(--agnes-bg-popover);
-}
-.composer-agent.agnes-ui-button:not(:disabled):hover {
-  color: var(--agnes-text-secondary);
-  background: var(--agnes-bg-hover);
-}
-.agent-picker-panel,
-.agnes-ui-popover .ant-popover-inner-content {
-  color: var(--agnes-text-primary);
-}
-/* A control can become enabled beneath the pointer; its text and surface must change together. */
-.agnes-ui-button,
-button {
-  transition-property: box-shadow, transform;
-}
-
-.agnes-settings-row {
-  padding-block: var(--s16);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.agnes-settings-row + .agnes-settings-row,
-.agnes-settings-list > li + li {
-  border-top: 1px solid var(--agnes-line-primary);
-}
-.agnes-settings-row-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s16);
-  flex-wrap: wrap;
-}
-.agnes-settings-row h4 {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: 600;
-}
-.agnes-settings-row p {
-  margin-block: 0.375rem;
-  color: var(--agnes-text-secondary);
-}
-.agnes-settings-details {
-  min-width: 0;
-}
-.agnes-settings-details > summary {
-  overflow-wrap: anywhere;
-  cursor: pointer;
-  padding-block: var(--s12);
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-}
-.agnes-settings-details > div {
-  padding-block: var(--s8);
-  overflow-wrap: anywhere;
-}
-.agnes-settings-toolbar {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--s12);
-  flex-wrap: wrap;
-}
-.agnes-settings-toolbar > .agnes-ui-field {
-  flex: 1 1 11rem;
-  min-width: 0;
-}
-.agnes-settings-toolbar .agnes-ui-select {
-  width: 100%;
-}
-.agnes-settings-toolbar .agnes-settings-input {
-  width: 100%;
-}
-.agnes-settings-toolbar > .agnes-ui-button {
-  flex: 0 1 auto;
-}
-.agnes-settings-toolbar .agnes-ui-select .ant-select-selector {
-  background: var(--agnes-input-surface);
-  border-color: var(--agnes-line-primary);
-  color: var(--agnes-text-primary);
-}
-.agnes-settings-capabilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  margin-block: var(--s8);
-}
-
-/* Ant Design 6 uses a real input inside Select; native field styles must not paint it disabled. */
-.agnes-ui-select .ant-select-input {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  min-height: 0;
-  box-shadow: none;
-  color: inherit;
-}
-.agnes-ui-select:not(.ant-select-disabled) {
-  background: var(--agnes-input-surface);
-  color: var(--agnes-text-primary);
-}
-
-/* Inventory rows use compact disclosures instead of full-page section spacing. */
-.plugin-row .agnes-settings-details {
-  margin: 0.375rem 0 0;
-}
-.plugin-row .agnes-settings-details > summary {
-  padding-block: var(--s4);
-  line-height: 1.5;
-}
-.agnes-settings-toolbar input.agnes-settings-input[type="search"],
-.agnes-settings-toolbar .agnes-ui-select {
-  height: 2.25rem;
-  min-height: 2.25rem;
-  padding: 0.375rem var(--s12);
-  border-radius: var(--radius-md);
-  background: var(--agnes-input-surface);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-}
-.plugin-compatibility {
-  justify-self: end;
-  white-space: nowrap;
-}
-
-/* Provider row disclosures follow the compact plugin list rhythm. */
-.agnes-settings-row > .agnes-settings-details {
-  margin: 0.375rem 0 0;
-}
-.agnes-settings-row > .agnes-settings-details > summary {
-  padding-block: var(--s4);
-}
-
-/* Catalog controls share the surface and rhythm of the other settings controls. */
-.plugin-row[data-tab="discover"],
-.plugin-row[data-tab="discover"]:hover,
-.plugin-row[data-tab="discover"]:focus-visible {
-  background: transparent;
-}
-.plugin-version-picker {
-  width: 100%;
-  min-height: var(--control-height);
-}
-.agnes-settings-card .agnes-settings-details[data-compact] {
-  border: 0;
-  padding: 0;
-  border-radius: 0;
-}
-.agnes-settings-details[data-compact] > summary {
-  padding-block: var(--s4);
-}
-
-.agnes-first-run .ant-modal-content {
-  padding: var(--s32);
-}
-.agnes-first-run p {
-  color: var(--agnes-text-secondary);
-  line-height: 1.65;
-}
-/* The brand mark opens the guide: the first screen a new user sees is recognisably the product. */
-.agnes-first-run .ant-modal-title {
-  display: flex;
-  align-items: center;
-  gap: var(--s12);
-  font-size: var(--font-size-xl);
-  line-height: var(--line-lg);
-}
-.agnes-first-run .ant-modal-title::before {
-  content: "";
-  flex: none;
-  width: var(--s32);
-  height: var(--s32);
-  background: var(--agnes-brand-primary);
-  -webkit-mask: url("/brand-mark.png") center / contain no-repeat;
-  mask: url("/brand-mark.png") center / contain no-repeat;
-}
-/* Three named steps joined by a rail: done, current and upcoming read differently at a glance. */
-.agnes-setup-progress {
-  display: flex;
-  align-items: center;
-  gap: var(--s8);
-  list-style: none;
-  padding: 0;
-  margin-block: var(--s12) var(--s24);
-}
-.agnes-setup-progress li {
-  display: flex;
-  align-items: center;
-  gap: var(--s8);
-  min-width: 0;
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-sm);
-}
-.agnes-setup-progress li + li {
-  flex: 1 1 0;
-}
-.agnes-setup-progress li + li::before {
-  content: "";
-  flex: 1 1 var(--s16);
-  min-width: var(--s16);
-  height: 1px;
-  background: var(--agnes-line-emphasis);
-  transition: background-color var(--transition);
-}
-.agnes-setup-progress li[aria-current]::before,
-.agnes-setup-progress li[data-complete="true"]::before {
-  background: var(--agnes-brand-primary);
-}
-.agnes-setup-progress-dot {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: var(--s24);
-  height: var(--s24);
-  border: 1px solid currentColor;
-  border-radius: var(--radius-full);
-  background: var(--agnes-bg-popover);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-  transition:
-    background-color var(--transition),
-    border-color var(--transition),
-    color var(--transition);
-}
-.agnes-setup-progress-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The current step always shows its full name; the others give way first. */
-.agnes-setup-progress li[aria-current] {
-  flex: 0 0 auto;
-  color: var(--agnes-text-primary);
-  font-weight: var(--font-weight-semibold);
-}
-.agnes-setup-progress li[aria-current] .agnes-setup-progress-dot {
-  border-color: var(--agnes-button-primary-bg);
-  color: var(--agnes-button-primary-content);
-  background: var(--agnes-button-primary-bg);
-}
-.agnes-setup-progress li[data-complete="true"] .agnes-setup-progress-dot {
-  border-color: var(--agnes-brand-primary);
-  color: var(--agnes-brand-primary);
-  background: var(--agnes-brand-emphasis-soft);
-}
-.agnes-first-run-heading {
-  margin: 0 0 var(--s4);
-  font-size: var(--font-size-lg);
-  line-height: var(--line-lg);
-}
-.agnes-first-run .agnes-first-run-lead {
-  margin: 0 0 var(--s16);
-}
-/* Vertical rhythm for whatever a step shows: buttons, disclosure, fields and states never touch. */
-.agnes-first-run [data-testid="first-run-guide"] > :is(.agh-btn, details, .agnes-settings-state, p) + * {
-  margin-top: var(--s12);
-}
-.agnes-first-run-choices + * {
-  margin-top: var(--s12);
-}
-.agnes-first-run details > .agh-btn {
-  margin-top: var(--s12);
-}
-.agnes-first-run [data-testid="first-run-workspace"] {
-  margin: 0;
-  padding: var(--s8) var(--s12);
-  border-radius: var(--radius-md);
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-subtle);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
-}
-/* The two ways to start are equal choices; the picked one is filled in, not just outlined. */
-.agnes-first-run-choices > .agh-btn {
-  flex: 1 1 12rem;
-  height: auto;
-  min-height: var(--control-height-touch);
-  padding: var(--s12) var(--s16);
-  border-color: var(--agnes-line-emphasis);
-  border-radius: var(--radius-card);
-  white-space: normal;
-}
-.agnes-first-run-choices > .agh-btn:hover:not(:disabled) {
-  border-color: var(--agnes-input-border-focus);
-}
-.agnes-first-run-choices > .agh-btn[aria-pressed="true"]:not(:disabled) {
-  border-color: var(--agnes-input-border-focus);
-  color: var(--agnes-text-primary);
-  background: var(--agnes-brand-emphasis-soft);
-  box-shadow: 0 0 0 1px var(--agnes-input-border-focus);
-}
-.agnes-first-run-fields {
-  --ant-color-text-quaternary: var(--agnes-text-secondary);
-  display: grid;
-  gap: var(--s16);
-  margin-block: var(--s20);
-}
-.agnes-first-run-fields .ant-select {
-  width: 100%;
-}
-.agnes-first-run-actions,
-.agnes-first-run-actions > div {
-  display: flex;
-  align-items: center;
-  gap: var(--s12);
-}
-.agnes-first-run-actions {
-  justify-content: space-between;
-  flex-wrap: wrap;
-  margin-top: var(--s24);
-  padding-top: var(--s16);
-  border-top: 1px solid var(--agnes-line-primary);
-  /* The embedded account form outgrows the dialog; Skip and Continue stay in view while it scrolls. */
-  position: sticky;
-  /* Covers the scrollport's own 4px focus-ring inset so no text shows beneath the row. */
-  bottom: calc(-1 * var(--s4));
-  z-index: 1;
-  padding-bottom: var(--s4);
-  background: var(--agnes-bg-popover);
-}
-@media (max-width: 600px) {
-  /* Step names need the row: upcoming steps keep their number, the current one keeps its name. */
-  .agnes-setup-progress li:not([aria-current]) .agnes-setup-progress-label {
+  .agnes-settings-card dt {
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-settings-card dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-card code,
+  .agnes-settings-card pre {
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-card pre {
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    padding: var(--s12);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-code);
+  }
+  .agnes-settings-card .session-terminal {
+    min-height: 16rem;
+    height: 20rem;
+    max-height: 40vh;
+    font-family: var(--font-mono, monospace);
+  }
+  .agnes-settings-card .agnes-ui-button {
+    justify-self: start;
+    max-width: 100%;
+  }
+  .agnes-settings-card table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-card th,
+  .agnes-settings-card td {
+    text-align: start;
+    padding: var(--s10);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    overflow-wrap: anywhere;
+    vertical-align: top;
+  }
+  .agnes-settings-card th {
+    color: var(--agnes-text-secondary);
+    font-weight: 500;
+  }
+  .agnes-settings-card details {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    padding: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-card summary {
+    cursor: pointer;
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-card summary:focus-visible {
+    outline: 2px solid var(--agnes-text-emphasis);
+    outline-offset: 2px;
+  }
+  .agnes-settings-list {
+    display: grid;
+    border-block: 1px solid var(--agnes-line-primary);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .agnes-settings-list > li {
+    display: grid;
+    gap: var(--s8);
+    padding-block: var(--s16);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-list > li > span {
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-settings-table {
+    overflow: auto;
+  }
+  .agnes-settings-table:focus-visible {
+    outline: 2px solid var(--agnes-text-emphasis);
+  }
+  @media (max-width: 640px) {
+    .agnes-settings-card {
+      padding: var(--s12);
+    }
+    .agnes-settings-page .config-heading {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-card dl {
+      grid-template-columns: 1fr;
+    }
+  }
+  .agnes-settings-section-tabs {
+    display: flex;
+    gap: var(--s16);
+    flex: 0 0 auto;
+    padding: var(--s12) var(--s24) 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    overflow-x: auto;
+  }
+  .agnes-settings-section-tabs[hidden] {
     display: none;
   }
-  .agnes-setup-progress li:not([aria-current]) {
-    flex: 0 1 auto;
+  .agnes-settings-section-tabs button {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 0.625rem 0.125rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--agnes-text-secondary);
+    font: inherit;
+    cursor: pointer;
   }
-  .agnes-first-run-actions .agh-btn {
-    min-height: var(--control-height-touch);
+  /* The :not() pair lifts the selected marker above the ghost button's transparent border. */
+  .agnes-settings-section-tabs button[aria-selected="true"]:not(:disabled):not([aria-disabled="true"]) {
+    border-bottom-color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
   }
-}
-.agnes-doctor-notice {
-  display: flex;
-  align-items: center;
-  gap: var(--s12);
-  padding: var(--s12) var(--s16);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
-  background: var(--agnes-bg-popover);
-}
-.agnes-doctor-notice p {
-  flex: 1;
-  margin: 0;
-}
-@media (max-width: 600px) {
-  .agnes-first-run .ant-modal-content {
-    padding: var(--s20);
+  .agnes-settings-section-tabs button:focus-visible {
+    outline: 2px solid var(--agnes-text-emphasis);
+    outline-offset: -2px;
   }
-  .agnes-doctor-notice {
+  .agnes-conversation-card {
+    min-width: 0;
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .agnes-conversation-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+  }
+  .agnes-conversation-card-heading h3 {
+    margin: 0;
+    font-size: var(--font-size-body);
+  }
+  .agnes-conversation-card[data-card-state="disabled"] {
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-conversation-card table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+  }
+  .agnes-conversation-card th,
+  .agnes-conversation-card td {
+    text-align: start;
+    padding: var(--s8);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-conversation-card .agnes-settings-state {
+    margin-top: var(--s8);
+  }
+  .agnes-settings-card h3 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .agnes-settings-card small {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+
+  .agnes-conversation-card[data-card-variant="plain"] {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .plugin-details-button {
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .plugin-details-button:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 4px;
+    border-radius: var(--radius-sm);
+  }
+  .agnes-ui-popover .ant-popover-container,
+  .agnes-ui-popover .ant-popover-inner {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    border: 1px solid var(--agnes-line-primary);
+    box-shadow: var(--shadow-elevation);
+  }
+  .agnes-ui-popover .ant-popover-arrow {
+    --antd-arrow-background-color: var(--agnes-bg-popover);
+  }
+  .composer-agent.agnes-ui-button:not(:disabled):hover {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-hover);
+  }
+  .agent-picker-panel,
+  .agnes-ui-popover .ant-popover-inner-content {
+    color: var(--agnes-text-primary);
+  }
+  /* A control can become enabled beneath the pointer; its text and surface must change together. */
+  .agnes-ui-button,
+  button {
+    transition-property: box-shadow, transform;
+  }
+
+  .agnes-settings-row {
+    padding-block: var(--s16);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-row + .agnes-settings-row,
+  .agnes-settings-list > li + li {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-settings-row-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
     flex-wrap: wrap;
   }
-}
-
-.agnes-overlay-root {
-  display: contents;
-}
-.agnes-doctor-notice {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  max-width: min(42rem, calc(100vw - 2rem));
-  z-index: 900;
-}
-/* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
-.agnes-first-run-layer .ant-modal-mask {
-  background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
-  backdrop-filter: blur(4px);
-}
-
-/* Resource surfaces keep their controller-owned layout and use shared states/actions. */
-.resource-empty.agnes-settings-state h3 {
-  margin: 0;
-  color: var(--agnes-text-primary);
-  font-size: var(--font-size-md);
-}
-.resource-row .agnes-ui-button.plugin-details-button {
-  display: inline-flex;
-  align-items: center;
-  height: auto;
-  min-height: var(--s32);
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  box-shadow: none;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-}
-.resource-row .agnes-ui-button.plugin-details-button:hover {
-  background: transparent;
-  color: var(--agnes-text-emphasis);
-}
-.resource-operation {
-  flex-wrap: wrap;
-}
-#resource-detail .admin-detail-head,
-#resource-detail .plugin-detail-heading {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-#resource-detail .plugin-detail-heading {
-  align-items: flex-start;
-}
-
-.config-accounts-section.agnes-settings-card {
-  padding: 0;
-}
-.config-account .agnes-ui-button.config-account-select {
-  height: auto;
-  min-height: var(--s32);
-  color: inherit;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  text-align: start;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-/* Fixed template forms and React fields share labels, help and validation. */
-.form-field {
-  display: grid;
-  gap: var(--s4);
-  min-width: 0;
-  margin: 0;
-  color: var(--agnes-text-primary);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-.agnes-ui-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
-.form-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
-  min-height: var(--control-height-form);
-  padding: var(--s10) var(--s12);
-  font-size: var(--font-size-sm);
-  font-weight: 400;
-  line-height: var(--line-sm);
-}
-.field-hint {
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-}
-.agnes-settings-input[aria-invalid="true"] {
-  border-color: var(--agnes-status-danger-text);
-}
-select.agnes-settings-input {
-  appearance: none;
-  padding-inline-end: var(--s32);
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentcolor 50%),
-    linear-gradient(135deg, currentcolor 50%, transparent 50%);
-  background-position:
-    right 1rem center,
-    right 0.72rem center;
-  background-size:
-    0.3rem 0.3rem,
-    0.3rem 0.3rem;
-  background-repeat: no-repeat;
-}
-.agnes-ui-field > select.agnes-settings-input,
-.form-field > select.agnes-settings-input {
-  padding-inline-end: var(--s32);
-}
-.agnes-settings-state p {
-  color: inherit;
-}
-.agnes-settings-state:empty {
-  display: none;
-}
-.agnes-settings-state > .agnes-settings-toolbar {
-  margin-top: var(--s12);
-}
-.agnes-settings-card .agnes-settings-toolbar {
-  justify-self: stretch;
-}
-.agnes-settings-page-heading > div,
-.agnes-settings-row-heading > div,
-.agnes-settings-card .config-accounts-heading > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.agnes-settings-card h3 {
-  font-size: var(--font-size-md);
-  line-height: var(--line-md);
-}
-.agnes-settings-card h4 {
-  margin-block: 0;
-  font-size: var(--font-size-body);
-  line-height: var(--line-sm);
-}
-.agnes-settings-row > span {
-  overflow-wrap: anywhere;
-}
-
-.agnes-ui-field > textarea.agnes-settings-input,
-.form-field > textarea.agnes-settings-input {
-  min-height: 5rem;
-}
-.agnes-settings-toolbar > .agnes-ui-button,
-.agnes-settings-actions > .agnes-ui-button {
-  max-width: 100%;
-  min-width: 0;
-  height: auto;
-  min-height: var(--control-height);
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-/* A page's primary action keeps its label on one line beside the title. */
-@media (min-width: 768px) {
-  .agnes-settings-page-heading > .agnes-settings-actions {
-    flex: 0 0 auto;
+  .agnes-settings-row h4 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: 600;
   }
-  .agnes-settings-page-heading > .agnes-settings-actions > .agnes-ui-button {
+  .agnes-settings-row p {
+    margin-block: 0.375rem;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-settings-details {
+    min-width: 0;
+  }
+  .agnes-settings-details > summary {
+    overflow-wrap: anywhere;
+    cursor: pointer;
+    padding-block: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-details > div {
+    padding-block: var(--s8);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--s12);
+    flex-wrap: wrap;
+  }
+  .agnes-settings-toolbar > .agnes-ui-field {
+    flex: 1 1 11rem;
+    min-width: 0;
+  }
+  .agnes-settings-toolbar .agnes-ui-select {
+    width: 100%;
+  }
+  .agnes-settings-toolbar .agnes-settings-input {
+    width: 100%;
+  }
+  .agnes-settings-toolbar > .agnes-ui-button {
+    flex: 0 1 auto;
+  }
+  .agnes-settings-toolbar .agnes-ui-select .ant-select-selector {
+    background: var(--agnes-input-surface);
+    border-color: var(--agnes-line-primary);
+    color: var(--agnes-text-primary);
+  }
+  .agnes-settings-capabilities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-block: var(--s8);
+  }
+
+  /* Ant Design 6 uses a real input inside Select; native field styles must not paint it disabled. */
+  .agnes-ui-select .ant-select-input {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    min-height: 0;
+    box-shadow: none;
+    color: inherit;
+  }
+  .agnes-ui-select:not(.ant-select-disabled) {
+    background: var(--agnes-input-surface);
+    color: var(--agnes-text-primary);
+  }
+
+  /* Inventory rows use compact disclosures instead of full-page section spacing. */
+  .plugin-row .agnes-settings-details {
+    margin: 0.375rem 0 0;
+  }
+  .plugin-row .agnes-settings-details > summary {
+    padding-block: var(--s4);
+    line-height: 1.5;
+  }
+  .agnes-settings-toolbar input.agnes-settings-input[type="search"],
+  .agnes-settings-toolbar .agnes-ui-select {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0.375rem var(--s12);
+    border-radius: var(--radius-md);
+    background: var(--agnes-input-surface);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+  .plugin-compatibility {
+    justify-self: end;
     white-space: nowrap;
   }
-}
-.settings-content.agnes-settings-page > .agnes-settings-page-heading {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: var(--s20) var(--s24) var(--s12);
-  padding-inline-end: calc(var(--s24) + var(--s32));
-  border-bottom: 1px solid var(--agnes-line-primary);
-}
-.workbench-panel-toolbar.agnes-settings-toolbar {
-  align-items: center;
-  gap: var(--s8);
-  padding: var(--s10);
-}
-.workbench-panel-toolbar.agnes-settings-toolbar > code,
-.workbench-panel-toolbar.agnes-settings-toolbar > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.workbench-header-actions {
-  flex-wrap: wrap;
-  gap: var(--s8);
-}
-@media (max-width: 640px) {
-  .settings-content.agnes-settings-page > .agnes-settings-page-heading {
-    padding-inline-start: var(--s16);
+
+  /* Provider row disclosures follow the compact plugin list rhythm. */
+  .agnes-settings-row > .agnes-settings-details {
+    margin: 0.375rem 0 0;
   }
-}
+  .agnes-settings-row > .agnes-settings-details > summary {
+    padding-block: var(--s4);
+  }
 
-/* Feedback uses the same form rhythm inside both conversation and dock hosts. */
-.agnes-message-feedback {
-  display: grid;
-  gap: var(--s12);
-  min-width: 0;
-}
-.agnes-message-feedback > fieldset {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.agnes-message-feedback > fieldset > .agnes-ui-button {
-  min-width: var(--s32);
-}
-.agnes-intelligent-surface > header h3 {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--font-size-md);
-  line-height: var(--line-md);
-}
-.agnes-intelligent-surface > header > .agnes-ui-button {
-  margin-inline-start: auto;
-}
-.agnes-intelligent-surface [data-testid="ui-confirmation"] {
-  display: grid;
-  gap: var(--s12);
-  padding: var(--s12);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
-  background: var(--agnes-bg-card);
-}
-.agnes-intelligent-surface [data-testid="ui-confirmation"] p {
-  margin: 0;
-}
+  /* Catalog controls share the surface and rhythm of the other settings controls. */
+  .plugin-row[data-tab="discover"],
+  .plugin-row[data-tab="discover"]:hover,
+  .plugin-row[data-tab="discover"]:focus-visible {
+    background: transparent;
+  }
+  .plugin-version-picker {
+    width: 100%;
+    min-height: var(--control-height);
+  }
+  .agnes-settings-card .agnes-settings-details[data-compact] {
+    border: 0;
+    padding: 0;
+    border-radius: 0;
+  }
+  .agnes-settings-details[data-compact] > summary {
+    padding-block: var(--s4);
+  }
 
-/* Author purpose and registration IDs remain readable on narrow settings surfaces. */
-.plugin-row-content,
-[data-testid="plugin-purpose-detail"] {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-[data-testid="plugin-provides"] {
-  flex-wrap: wrap;
-}
+  .agnes-first-run .ant-modal-content {
+    padding: var(--s32);
+  }
+  .agnes-first-run p {
+    color: var(--agnes-text-secondary);
+    line-height: 1.65;
+  }
+  /* The brand mark opens the guide: the first screen a new user sees is recognisably the product. */
+  .agnes-first-run .ant-modal-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    font-size: var(--font-size-xl);
+    line-height: var(--line-lg);
+  }
+  .agnes-first-run .ant-modal-title::before {
+    content: "";
+    flex: none;
+    width: var(--s32);
+    height: var(--s32);
+    background: var(--agnes-brand-primary);
+    -webkit-mask: url("/brand-mark.png") center / contain no-repeat;
+    mask: url("/brand-mark.png") center / contain no-repeat;
+  }
+  /* Three named steps joined by a rail: done, current and upcoming read differently at a glance. */
+  .agnes-setup-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    list-style: none;
+    padding: 0;
+    margin-block: var(--s12) var(--s24);
+  }
+  .agnes-setup-progress li {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+  }
+  .agnes-setup-progress li + li {
+    flex: 1 1 0;
+  }
+  .agnes-setup-progress li + li::before {
+    content: "";
+    flex: 1 1 var(--s16);
+    min-width: var(--s16);
+    height: 1px;
+    background: var(--agnes-line-emphasis);
+    transition: background-color var(--transition);
+  }
+  .agnes-setup-progress li[aria-current]::before,
+  .agnes-setup-progress li[data-complete="true"]::before {
+    background: var(--agnes-brand-primary);
+  }
+  .agnes-setup-progress-dot {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--s24);
+    height: var(--s24);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-popover);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    transition:
+      background-color var(--transition),
+      border-color var(--transition),
+      color var(--transition);
+  }
+  .agnes-setup-progress-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The current step always shows its full name; the others give way first. */
+  .agnes-setup-progress li[aria-current] {
+    flex: 0 0 auto;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-setup-progress li[aria-current] .agnes-setup-progress-dot {
+    border-color: var(--agnes-button-primary-bg);
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+  }
+  .agnes-setup-progress li[data-complete="true"] .agnes-setup-progress-dot {
+    border-color: var(--agnes-brand-primary);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-first-run-heading {
+    margin: 0 0 var(--s4);
+    font-size: var(--font-size-lg);
+    line-height: var(--line-lg);
+  }
+  .agnes-first-run .agnes-first-run-lead {
+    margin: 0 0 var(--s16);
+  }
+  /* Vertical rhythm for whatever a step shows: buttons, disclosure, fields and states never touch. */
+  .agnes-first-run [data-testid="first-run-guide"] > :is(.agh-btn, details, .agnes-settings-state, p) + * {
+    margin-top: var(--s12);
+  }
+  .agnes-first-run-choices + * {
+    margin-top: var(--s12);
+  }
+  .agnes-first-run details > .agh-btn {
+    margin-top: var(--s12);
+  }
+  .agnes-first-run [data-testid="first-run-workspace"] {
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  /* The two ways to start are equal choices; the picked one is filled in, not just outlined. */
+  .agnes-first-run-choices > .agh-btn {
+    flex: 1 1 12rem;
+    height: auto;
+    min-height: var(--control-height-touch);
+    padding: var(--s12) var(--s16);
+    border-color: var(--agnes-line-emphasis);
+    border-radius: var(--radius-card);
+    white-space: normal;
+  }
+  .agnes-first-run-choices > .agh-btn:hover:not(:disabled) {
+    border-color: var(--agnes-input-border-focus);
+  }
+  .agnes-first-run-choices > .agh-btn[aria-pressed="true"]:not(:disabled) {
+    border-color: var(--agnes-input-border-focus);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    box-shadow: 0 0 0 1px var(--agnes-input-border-focus);
+  }
+  .agnes-first-run-fields {
+    --ant-color-text-quaternary: var(--agnes-text-secondary);
+    display: grid;
+    gap: var(--s16);
+    margin-block: var(--s20);
+  }
+  .agnes-first-run-fields .ant-select {
+    width: 100%;
+  }
+  .agnes-first-run-actions,
+  .agnes-first-run-actions > div {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .agnes-first-run-actions {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-top: var(--s24);
+    padding-top: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    /* The embedded account form outgrows the dialog; Skip and Continue stay in view while it scrolls. */
+    position: sticky;
+    /* Covers the scrollport's own 4px focus-ring inset so no text shows beneath the row. */
+    bottom: calc(-1 * var(--s4));
+    z-index: 1;
+    padding-bottom: var(--s4);
+    background: var(--agnes-bg-popover);
+  }
+  @media (max-width: 600px) {
+    /* Step names need the row: upcoming steps keep their number, the current one keeps its name. */
+    .agnes-setup-progress li:not([aria-current]) .agnes-setup-progress-label {
+      display: none;
+    }
+    .agnes-setup-progress li:not([aria-current]) {
+      flex: 0 1 auto;
+    }
+    .agnes-first-run-actions .agh-btn {
+      min-height: var(--control-height-touch);
+    }
+  }
+  .agnes-doctor-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-popover);
+  }
+  .agnes-doctor-notice p {
+    flex: 1;
+    margin: 0;
+  }
+  @media (max-width: 600px) {
+    .agnes-first-run .ant-modal-content {
+      padding: var(--s20);
+    }
+    .agnes-doctor-notice {
+      flex-wrap: wrap;
+    }
+  }
 
-/* Auxiliary model identifiers remain readable at narrow settings and picker widths. */
-.model-slot-current {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.model-slot-current .agnes-ui-badge {
-  max-width: 100%;
-  box-sizing: border-box;
-  overflow-wrap: anywhere;
+  .agnes-overlay-root {
+    display: contents;
+  }
+  .agnes-doctor-notice {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    max-width: min(42rem, calc(100vw - 2rem));
+    z-index: 900;
+  }
+  /* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
+  .agnes-first-run-layer .ant-modal-mask {
+    background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
+    backdrop-filter: blur(4px);
+  }
+
+  /* Resource surfaces keep their controller-owned layout and use shared states/actions. */
+  .resource-empty.agnes-settings-state h3 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+  }
+  .resource-row .agnes-ui-button.plugin-details-button {
+    display: inline-flex;
+    align-items: center;
+    height: auto;
+    min-height: var(--s32);
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+  }
+  .resource-row .agnes-ui-button.plugin-details-button:hover {
+    background: transparent;
+    color: var(--agnes-text-emphasis);
+  }
+  .resource-operation {
+    flex-wrap: wrap;
+  }
+  #resource-detail .admin-detail-head,
+  #resource-detail .plugin-detail-heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  #resource-detail .plugin-detail-heading {
+    align-items: flex-start;
+  }
+
+  .config-accounts-section.agnes-settings-card {
+    padding: 0;
+  }
+  .config-account .agnes-ui-button.config-account-select {
+    height: auto;
+    min-height: var(--s32);
+    color: inherit;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    text-align: start;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Fixed template forms and React fields share labels, help and validation. */
+  .form-field {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+  }
+  .agnes-ui-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+  .form-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
+    min-height: var(--control-height-form);
+    padding: var(--s10) var(--s12);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: var(--line-sm);
+  }
+  .field-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+  .agnes-settings-input[aria-invalid="true"] {
+    border-color: var(--agnes-status-danger-text);
+  }
+  select.agnes-settings-input {
+    appearance: none;
+    padding-inline-end: var(--s32);
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentcolor 50%),
+      linear-gradient(135deg, currentcolor 50%, transparent 50%);
+    background-position:
+      right 1rem center,
+      right 0.72rem center;
+    background-size:
+      0.3rem 0.3rem,
+      0.3rem 0.3rem;
+    background-repeat: no-repeat;
+  }
+  .agnes-ui-field > select.agnes-settings-input,
+  .form-field > select.agnes-settings-input {
+    padding-inline-end: var(--s32);
+  }
+  .agnes-settings-state p {
+    color: inherit;
+  }
+  .agnes-settings-state:empty {
+    display: none;
+  }
+  .agnes-settings-state > .agnes-settings-toolbar {
+    margin-top: var(--s12);
+  }
+  .agnes-settings-card .agnes-settings-toolbar {
+    justify-self: stretch;
+  }
+  .agnes-settings-page-heading > div,
+  .agnes-settings-row-heading > div,
+  .agnes-settings-card .config-accounts-heading > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-card h3 {
+    font-size: var(--font-size-md);
+    line-height: var(--line-md);
+  }
+  .agnes-settings-card h4 {
+    margin-block: 0;
+    font-size: var(--font-size-body);
+    line-height: var(--line-sm);
+  }
+  .agnes-settings-row > span {
+    overflow-wrap: anywhere;
+  }
+
+  .agnes-ui-field > textarea.agnes-settings-input,
+  .form-field > textarea.agnes-settings-input {
+    min-height: 5rem;
+  }
+  .agnes-settings-toolbar > .agnes-ui-button,
+  .agnes-settings-actions > .agnes-ui-button {
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: var(--control-height);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* A page's primary action keeps its label on one line beside the title. */
+  @media (min-width: 768px) {
+    .agnes-settings-page-heading > .agnes-settings-actions {
+      flex: 0 0 auto;
+    }
+    .agnes-settings-page-heading > .agnes-settings-actions > .agnes-ui-button {
+      white-space: nowrap;
+    }
+  }
+  .settings-content.agnes-settings-page > .agnes-settings-page-heading {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: var(--s20) var(--s24) var(--s12);
+    padding-inline-end: calc(var(--s24) + var(--s32));
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-panel-toolbar.agnes-settings-toolbar {
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s10);
+  }
+  .workbench-panel-toolbar.agnes-settings-toolbar > code,
+  .workbench-panel-toolbar.agnes-settings-toolbar > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .workbench-header-actions {
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  @media (max-width: 640px) {
+    .settings-content.agnes-settings-page > .agnes-settings-page-heading {
+      padding-inline-start: var(--s16);
+    }
+  }
+
+  /* Feedback uses the same form rhythm inside both conversation and dock hosts. */
+  .agnes-message-feedback {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-message-feedback > fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-message-feedback > fieldset > .agnes-ui-button {
+    min-width: var(--s32);
+  }
+  .agnes-intelligent-surface > header h3 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--font-size-md);
+    line-height: var(--line-md);
+  }
+  .agnes-intelligent-surface > header > .agnes-ui-button {
+    margin-inline-start: auto;
+  }
+  .agnes-intelligent-surface [data-testid="ui-confirmation"] {
+    display: grid;
+    gap: var(--s12);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-card);
+  }
+  .agnes-intelligent-surface [data-testid="ui-confirmation"] p {
+    margin: 0;
+  }
+
+  /* Author purpose and registration IDs remain readable on narrow settings surfaces. */
+  .plugin-row-content,
+  [data-testid="plugin-purpose-detail"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  [data-testid="plugin-provides"] {
+    flex-wrap: wrap;
+  }
+
+  /* Auxiliary model identifiers remain readable at narrow settings and picker widths. */
+  .model-slot-current {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .model-slot-current .agnes-ui-badge {
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+  }
 }

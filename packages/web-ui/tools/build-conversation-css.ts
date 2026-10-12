@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,4 +15,5 @@ export function buildConversationCss(outputPath: string): void {
     cwd: webUiRoot,
     stdio: 'pipe',
   })
+  writeFileSync(outputPath, `@layer ui {\n${readFileSync(outputPath, 'utf8')}\n}\n`)
 }

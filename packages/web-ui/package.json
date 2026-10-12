@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./assistant-ui": "./src/assistant-ui-vendor.ts",
+    "./layers.css": "./src/layers.css",
     "./components.css": "./src/components.css",
     "./tokens.css": "./src/tokens.css",
     "./intelligent-ui.css": "./src/intelligent-ui/styles.css"

@@ -14,7 +14,7 @@ it('preserves manifest order and exact fragment bytes in the existing style asse
     writeFileSync(join(root, 'styles', '02-overrides.css'), '.button { color: red; }\n')
     writeFileSync(join(root, 'styles', '01-base.css'), '.button { color: blue; }')
     expect(readWebStyleSource(pathToFileURL(manifest))).toBe(
-      '.button { color: red; }\n.button { color: blue; }',
+      '@layer tokens, vendor, ui, app, skin;\n.button { color: red; }\n.button { color: blue; }',
     )
     expect(webStyleInputs(manifest)).toEqual([
       manifest,

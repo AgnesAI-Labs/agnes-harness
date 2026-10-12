@@ -8,7 +8,12 @@ import { fileURLToPath } from 'node:url'
 import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
-import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
+import {
+  inCssLayer,
+  readUiCss,
+  readWebStyleSource,
+  readWebUiStyleSource,
+} from '../../../tools/web-style-source.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { prepareDocumentReader } from './document-reader.js'
@@ -303,27 +308,30 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   const webUi = join(repoPackages, 'web-ui')
   const antdCss = require.resolve('antd/dist/antd.css', { paths: [webUi] })
   await Promise.all([
-    copyFile(antdCss, join(webOut, 'antd.css')),
+    writeFile(join(webOut, 'antd.css'), inCssLayer(await readFile(antdCss, 'utf8'), 'vendor')),
     writeFile(join(webOut, 'tokens.css'), readWebUiStyleSource(join(webUi, 'src', 'tokens.css'))),
   ])
-  const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
+  const conversationCss = readUiCss(join(webUi, 'src', 'conversation', 'messages.css'))
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
   await appendFile(
     join(webOut, 'style.css'),
-    `\n${await readFile(join(webUi, 'src', 'intelligent-ui', 'styles.css'), 'utf8')}`,
+    `\n${readUiCss(join(webUi, 'src', 'intelligent-ui', 'styles.css'))}`,
   )
   const generatedConversationCss = join(webOut, 'conversation-tailwind.css')
   buildConversationCss(generatedConversationCss)
-  await appendFile(join(webOut, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
+  await appendFile(join(webOut, 'style.css'), `\n${readUiCss(generatedConversationCss)}`)
   await rm(generatedConversationCss)
   const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(markdownCss, 'utf8'),
     readFile(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] }), 'utf8'),
     readFile(require.resolve('@ant-design/x-markdown/themes/dark.css', { paths: [webUi] }), 'utf8'),
-    readFile(join(webUi, 'src', 'conversation', 'markdown.css'), 'utf8'),
+    Promise.resolve(readUiCss(join(webUi, 'src', 'conversation', 'markdown.css'))),
   ])
-  await appendFile(join(webOut, 'style.css'), `\n${core}\n${light}\n${dark}\n${overrides}`)
+  await appendFile(
+    join(webOut, 'style.css'),
+    `\n${inCssLayer(core + '\n' + light + '\n' + dark, 'vendor')}\n${overrides}`,
+  )
   await rm(markdownCss)
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
 }

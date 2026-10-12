@@ -1,840 +1,844 @@
-/* Public component contracts and native aliases share one declaration source. */
-:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button) {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s8);
-  height: var(--control-height);
-  min-height: var(--control-height);
-  padding: 0 var(--s12);
-  border: 1px solid var(--agnes-input-border);
-  border-radius: var(--radius-control);
-  color: var(--agnes-text-primary);
-  background: transparent;
-  box-shadow: none;
-  font-family: var(--font-sans);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--line-sm);
-  cursor: pointer;
-  /* Surface and text change together, including when enabled under the pointer. */
-  transition: box-shadow var(--transition-fast);
-}
-:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):hover:not(:disabled):not(
-  [aria-disabled="true"]
-) {
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-hover);
-  border-color: var(--agnes-input-border-emphasis);
-}
-:is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-button-primary-content);
-  background: var(--agnes-button-primary-bg);
-  border-color: var(--agnes-button-primary-bg);
-}
-:is(.agh-btn--primary, .primary-button):hover:not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-button-primary-content);
-  background: var(--agnes-button-primary-bg-hover);
-  border-color: var(--agnes-button-primary-bg-hover);
-}
-:is(.agh-btn--ghost, .agh-btn--link, .icon-button):not(:disabled):not([aria-disabled="true"]) {
-  border-color: transparent;
-  background: transparent;
-  color: var(--agnes-text-secondary);
-}
-:is(.agh-btn--ghost, .icon-button):hover:not(:disabled):not([aria-disabled="true"]) {
-  border-color: transparent;
-  background: var(--agnes-bg-hover);
-  color: var(--agnes-text-primary);
-}
-.agh-btn--link:not(:disabled):not([aria-disabled="true"]) {
-  padding-inline: var(--s4);
-  color: var(--agnes-text-emphasis);
-  text-decoration: underline;
-  text-underline-offset: 0.16em;
-}
-.agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-status-danger-text);
-  border-color: var(--agnes-status-danger-text);
-  background: transparent;
-}
-.agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-status-danger-text);
-  border-color: var(--agnes-status-danger-text);
-  background: var(--agnes-status-danger-bg);
-}
-/* Filled danger is reserved for destructive confirmation footers. */
-.agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
-.agh-btn--danger-filled:hover:not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-text-inverse);
-  background: var(--agnes-status-danger-text);
-  border-color: var(--agnes-status-danger-text);
-}
-:is(.agh-btn--sm, .secondary-button:where(.compact), .icon-button) {
-  height: var(--control-height-sm);
-  min-height: var(--control-height-sm);
-  padding-inline: var(--s8);
-}
-:is(.agh-btn--icon, .icon-button) {
-  width: var(--control-height-sm);
-  min-width: var(--control-height-sm);
-  padding: 0;
-  border-radius: var(--radius-control);
-}
-/* New icon actions retain 28px visuals even inside the legacy 32px responsive floor. */
-.agh-btn.agh-btn--icon {
-  min-width: var(--control-height-sm);
-  min-height: var(--control-height-sm);
-}
-:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
-  outline: 2px solid var(--agnes-input-border-focus);
-  outline-offset: 2px;
-}
-:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
-:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
-  color: var(--agnes-text-tertiary);
-  background: var(--agnes-bg-card);
-  border-color: var(--agnes-line-primary);
-  opacity: 1;
-  cursor: not-allowed;
-}
-.agh-btn[aria-busy="true"] {
-  cursor: progress;
-}
-.agh-btn--loading-no-icon > .ant-btn-icon {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-}
-.agh-btn--loading-no-icon > span:not(.ant-btn-icon) {
-  visibility: hidden;
-}
-@media (max-width: 767px) {
-  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
-    content: "";
-    position: absolute;
-    /* Static geometry must survive reduced-motion's removal of transforms. */
-    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
-  }
-}
-.agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
-  color: var(--agnes-text-primary);
-  background: transparent;
-  border-color: var(--agnes-input-border);
-}
-.agh-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s4);
-  max-width: 100%;
-  padding: var(--s2) var(--s8);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-sm);
-  color: var(--agnes-text-secondary);
-  background: var(--agnes-bg-subtle);
-  font-size: var(--font-size-xs);
-  line-height: var(--line-sm);
-  overflow-wrap: anywhere;
-}
-.agh-tag[data-tone="warn"] {
-  color: var(--agnes-status-warning-text);
-  background: var(--agnes-status-warning-bg);
-  border-color: var(--agnes-status-warning-border);
-}
-.agh-tag[data-tone="bad"] {
-  color: var(--agnes-status-danger-text);
-  background: var(--agnes-status-danger-bg);
-  border-color: var(--agnes-status-danger-border);
-}
-.agh-tag[data-tone="info"] {
-  color: var(--agnes-status-info-text);
-  background: var(--agnes-status-info-bg);
-  border-color: var(--agnes-status-info-border);
-}
-/* Legacy Badge keeps its public tones; business-page status selection is migrated separately. */
-.agh-tag[data-tone="ok"] {
-  color: var(--agnes-status-success-text);
-  background: var(--agnes-status-success-bg);
-  border-color: var(--agnes-status-success-border);
-}
-.agh-meta {
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-}
-.agh-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--s16);
-  padding-inline: var(--s4);
-  border-radius: var(--radius-pill);
-  background: var(--agnes-bg-selected);
-  color: var(--agnes-text-primary);
-  font-size: var(--font-size-xs);
-}
-.agh-tooltip-anchor,
-.agh-menu-anchor {
-  display: inline-flex;
-  max-width: 100%;
-}
-.agh-tooltip-anchor:focus-visible {
-  outline: 2px solid var(--agnes-input-border-focus);
-  outline-offset: 2px;
-}
-.agh-tooltip .ant-tooltip-inner,
-.agh-tooltip .ant-tooltip-container {
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-popover);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-control);
-  box-shadow: var(--elevation-1);
-  font-size: var(--font-size-sm);
-}
-.agh-tooltip .ant-tooltip-arrow {
-  --antd-arrow-background-color: var(--agnes-bg-popover);
-}
-.agh-menu {
-  display: grid;
-  min-width: 180px;
-  gap: var(--s4);
-}
-.agh-menu-item {
-  display: flex;
-  justify-content: flex-start;
-  width: 100%;
-  height: var(--control-height);
-  padding: 0 var(--s12);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--agnes-text-primary);
-  font-weight: var(--font-weight-regular);
-}
-.agh-menu-item[data-danger] {
-  color: var(--agnes-status-danger-text);
-}
-.agh-menu-item:hover:not([aria-disabled="true"]) {
-  background: var(--agnes-bg-hover);
-}
-.agh-menu-item[data-danger]:hover:not([aria-disabled="true"]) {
-  background: var(--agnes-status-danger-bg);
-}
-.agh-menu-item:focus-visible {
-  outline: 2px solid var(--agnes-input-border-focus);
-  outline-offset: -2px;
-}
-.agh-menu-item[aria-disabled="true"] {
-  color: var(--agnes-text-tertiary);
-  cursor: not-allowed;
-}
-.agh-menu-separator {
-  border: 0;
-  height: 1px;
-  margin-block: var(--s4);
-  background: var(--agnes-line-primary);
-}
-.agh-toast {
-  position: fixed;
-  z-index: 1100;
-  bottom: max(var(--s24), env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: calc(100% - var(--s32));
-  padding: var(--s12) var(--s16);
-  border: 1px solid var(--agnes-status-success-border);
-  border-radius: var(--radius-control);
-  background: var(--agnes-status-success-bg);
-  color: var(--agnes-status-success-text);
-  box-shadow: var(--elevation-1);
-  font-size: var(--font-size-body);
-  animation: agh-toast-in var(--transition) both;
-}
-/* Outcome modifiers change colour only; placement and timing are shared by every toast. */
-.agh-toast--info {
-  border-color: var(--agnes-status-info-border);
-  background: var(--agnes-status-info-bg);
-  color: var(--agnes-status-info-text);
-}
-.agh-toast--error {
-  border-color: var(--agnes-status-danger-border);
-  background: var(--agnes-status-danger-bg);
-  color: var(--agnes-status-danger-text);
-}
-@keyframes agh-toast-in {
-  from {
-    opacity: 0;
-    translate: 0 var(--s8);
-  }
-}
-@media (max-width: 767px) {
-  .agh-menu-item {
-    min-height: var(--control-height-touch);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agh-toast {
-    left: var(--s16);
-    right: var(--s16);
-    margin-inline: auto;
-  }
-  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
-    inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
-  }
-}
-.agh-icon[data-size="16"] {
-  width: var(--s16);
-  height: var(--s16);
-}
-.agh-icon[data-size="18"] {
-  width: 18px;
-  height: 18px;
-}
-.agh-icon[data-size="20"] {
-  width: 20px;
-  height: 20px;
-}
-.agh-icon[data-size="48"] {
-  width: var(--s48);
-  height: var(--s48);
-}
-.agh-btn--icon .ant-btn-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-/* Shared settings page order: heading, banner, toolbar, content, dirty save bar. */
-:is(.agnes-settings-card, .config-card) {
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-card);
-  box-shadow: var(--elevation-0);
-}
-.agnes-settings-page[data-layout] {
-  width: 100%;
-  max-width: 720px;
-  min-width: 0;
-  margin-inline: auto;
-}
-.agnes-settings-page[data-layout="list"] {
-  max-width: 960px;
-}
-.agnes-settings-page > .agnes-settings-page-heading {
-  margin-bottom: var(--s24);
-}
-.agnes-settings-page > .agnes-settings-page-heading h2 {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-lg);
-}
-.agnes-settings-page > .agnes-settings-toolbar,
-.agnes-settings-page > .agh-banner {
-  margin-bottom: var(--s16);
-}
-.agh-settings-toolbar-search {
-  flex: 1 1 240px;
-  min-width: 0;
-}
-.agh-settings-toolbar-filters,
-.agh-settings-toolbar-controls {
-  display: flex;
-  gap: var(--s12);
-  align-items: flex-end;
-}
-.agh-settings-save-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--s16);
-  margin-top: var(--s24);
-  padding: var(--s16);
-  border-top: 1px solid var(--agnes-line-primary);
-  background: var(--agnes-bg-popover);
-  color: var(--agnes-text-primary);
-}
-.agh-settings-saved {
-  display: flex;
-  align-items: center;
-  gap: var(--s8);
-  color: var(--agnes-status-success-text);
-}
-.agh-empty-state {
-  display: grid;
-  justify-items: center;
-  gap: var(--s16);
-  width: 100%;
-  max-width: 420px;
-  margin-inline: auto;
-  padding-block: var(--s32);
-  color: var(--agnes-text-primary);
-  text-align: center;
-}
-.agh-empty-state-icon {
-  width: var(--s48);
-  height: var(--s48);
-  color: var(--agnes-text-secondary);
-}
-.agh-empty-state-icon > svg {
-  width: var(--s48);
-  height: var(--s48);
-}
-.agh-empty-state h3 {
-  margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
-}
-.agh-empty-state p {
-  margin: 0;
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-body);
-  line-height: var(--line-md);
-}
-.agh-empty-state-actions {
-  display: flex;
-  justify-content: center;
-  gap: var(--s12);
-  flex-wrap: wrap;
-}
-.agh-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s12);
-  padding: var(--s12) var(--s16);
-  border: 1px solid var(--agnes-status-info-border);
-  border-radius: var(--radius-control);
-  color: var(--agnes-status-info-text);
-  background: var(--agnes-status-info-bg);
-  font-size: var(--font-size-body);
-  line-height: var(--line-md);
-}
-.agh-banner[data-tone="warning"] {
-  color: var(--agnes-status-warning-text);
-  background: var(--agnes-status-warning-bg);
-  border-color: var(--agnes-status-warning-border);
-}
-.agh-banner[data-tone="error"] {
-  color: var(--agnes-status-danger-text);
-  background: var(--agnes-status-danger-bg);
-  border-color: var(--agnes-status-danger-border);
-}
-.agh-banner-copy {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.agh-banner-copy p {
-  margin: 0;
-  color: inherit;
-}
-.agh-banner-action {
-  flex: 0 0 auto;
-}
-.agh-list-row {
-  display: flex;
-  align-items: center;
-  gap: var(--s16);
-  min-height: 56px;
-  padding-block: var(--s4);
-  border-bottom: 1px solid var(--agnes-line-primary);
-  color: var(--agnes-text-primary);
-}
-.agh-list-row-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-height);
-  height: var(--control-height);
-  flex: 0 0 auto;
-  color: var(--agnes-text-secondary);
-}
-.agh-list-row-copy {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.agh-list-row-heading {
-  display: flex;
-  align-items: center;
-  gap: var(--s8);
-  flex-wrap: wrap;
-}
-.agh-list-row h3 {
-  margin: 0;
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-semibold);
-}
-.agh-list-row .agh-list-row-title {
-  justify-content: flex-start;
-  height: auto;
-  min-height: var(--control-height-sm);
-  padding: 0;
-  white-space: normal;
-  text-align: start;
-  color: inherit;
-  font-weight: var(--font-weight-semibold);
-  font-size: inherit;
-  line-height: var(--line-sm);
-}
-.agh-list-row p {
-  margin: 0;
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: var(--line-xs);
-}
-.agh-list-row-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--s12);
-  flex: 0 0 auto;
-}
-.agh-field {
-  width: 100%;
-  max-width: 560px;
-}
-.agh-field-optional {
-  color: var(--agnes-text-secondary);
-  font-weight: var(--font-weight-regular);
-}
-.agh-field .agnes-ui-field-hint {
-  color: var(--agnes-text-secondary);
-}
-.agh-field .agnes-ui-field-error {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s4);
-  line-height: var(--line-sm);
-}
-/* Same three sizes for native modal shells and React confirmations. */
-:where(dialog:not(.agh-drawer)) {
-  width: min(560px, calc(100vw - var(--s32)));
-  border-radius: var(--radius-surface);
-  box-shadow: var(--elevation-2);
-}
-.agh-dialog .ant-modal-container,
-.agh-dialog .ant-modal-content {
-  border-radius: var(--radius-surface);
-  box-shadow: var(--elevation-2);
-  max-height: var(--dialog-max-height);
-  display: flex;
-  flex-direction: column;
-}
-.agh-dialog .ant-modal-body {
-  overflow: auto;
-  min-height: 0;
-  /* Preserve the content inset while keeping 2px focus outlines inside the scrollport. */
-  padding: var(--s4);
-  margin: calc(-1 * var(--s4));
-}
-.agh-dialog .ant-modal-footer,
-.agh-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--s8);
-}
-.agh-dialog-footer {
-  padding: var(--s16) var(--s24);
-  border-top: 1px solid var(--agnes-line-primary);
-}
-:where(dialog) :is(.dialog-kicker, .eyebrow),
-.agh-dialog :is(.dialog-kicker, .eyebrow) {
-  display: none;
-}
-.agh-sheet-handle {
-  display: none;
-}
-.agh-drawer[open] {
-  position: fixed;
-  inset: 0 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  width: min(480px, 100vw);
-  max-width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  margin: 0;
-  padding: 0;
-  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
-  background: var(--agnes-bg-popover);
-  color: var(--agnes-text-primary);
-  box-shadow: var(--elevation-2);
-}
-.agh-drawer-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s16);
-  padding: var(--s24);
-}
-.agh-drawer-heading h2 {
-  margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-}
-.agh-drawer-heading p {
-  margin: var(--s8) 0 0;
-  color: var(--agnes-text-secondary);
-  font-size: var(--font-size-body);
-}
-.agh-drawer-content {
-  flex: 1;
-  min-height: 0;
-  padding: 0 var(--s24) var(--s24);
-  overflow: auto;
-}
-@media (max-width: 767px) {
-  .agh-settings-toolbar-search {
-    flex-basis: 100%;
-  }
-  .agh-settings-toolbar-filters {
-    flex-wrap: wrap;
-  }
-  .agh-list-row {
-    gap: var(--s12);
-  }
-  .agh-list-row-icon {
-    display: none;
-  }
-  .agh-list-row-actions {
+@import "./layers.css";
+
+@layer ui {
+  /* Public component contracts and native aliases share one declaration source. */
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button) {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     gap: var(--s8);
+    height: var(--control-height);
+    min-height: var(--control-height);
+    padding: 0 var(--s12);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+    cursor: pointer;
+    /* Surface and text change together, including when enabled under the pointer. */
+    transition: box-shadow var(--transition-fast);
   }
-  .agh-banner {
-    flex-wrap: wrap;
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+    border-color: var(--agnes-input-border-emphasis);
   }
-  .agh-drawer[open] {
-    width: 100vw;
-    border-radius: 0;
+  :is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+    border-color: var(--agnes-button-primary-bg);
   }
-  .agh-drawer-heading,
-  .agh-drawer-content {
-    padding-inline: var(--s16);
+  :is(.agh-btn--primary, .primary-button):hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg-hover);
+    border-color: var(--agnes-button-primary-bg-hover);
   }
-  .ant-modal-root .agh-dialog {
-    top: auto;
-    bottom: 0;
-    margin: 0;
-    padding-bottom: 0;
-    max-width: 100vw;
+  :is(.agh-btn--ghost, .agh-btn--link, .icon-button):not(:disabled):not([aria-disabled="true"]) {
+    border-color: transparent;
+    background: transparent;
+    color: var(--agnes-text-secondary);
   }
-  .ant-modal-wrap:has(.agh-dialog) {
+  :is(.agh-btn--ghost, .icon-button):hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: transparent;
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  .agh-btn--link:not(:disabled):not([aria-disabled="true"]) {
+    padding-inline: var(--s4);
+    color: var(--agnes-text-emphasis);
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+  }
+  .agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+    background: transparent;
+  }
+  .agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Filled danger is reserved for destructive confirmation footers. */
+  .agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
+  .agh-btn--danger-filled:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+  }
+  :is(.agh-btn--sm, .secondary-button:where(.compact), .icon-button) {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding-inline: var(--s8);
+  }
+  :is(.agh-btn--icon, .icon-button) {
+    width: var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    padding: 0;
+    border-radius: var(--radius-control);
+  }
+  /* New icon actions retain 28px visuals even inside the legacy 32px responsive floor. */
+  .agh-btn.agh-btn--icon {
+    min-width: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
+    outline: 2px solid var(--agnes-input-border-focus);
+    outline-offset: 2px;
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-card);
+    border-color: var(--agnes-line-primary);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+  .agh-btn[aria-busy="true"] {
+    cursor: progress;
+  }
+  .agh-btn--loading-no-icon > .ant-btn-icon {
+    position: absolute;
+    inset: 0;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+  }
+  .agh-btn--loading-no-icon > span:not(.ant-btn-icon) {
+    visibility: hidden;
+  }
+  @media (max-width: 767px) {
+    :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+      content: "";
+      position: absolute;
+      /* Static geometry must survive reduced-motion's removal of transforms. */
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+  .agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-text-primary);
+    background: transparent;
+    border-color: var(--agnes-input-border);
+  }
+  .agh-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    max-width: 100%;
+    padding: var(--s2) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    overflow-wrap: anywhere;
+  }
+  .agh-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    border-color: var(--agnes-status-warning-border);
+  }
+  .agh-tag[data-tone="bad"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    border-color: var(--agnes-status-danger-border);
+  }
+  .agh-tag[data-tone="info"] {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+    border-color: var(--agnes-status-info-border);
+  }
+  /* Legacy Badge keeps its public tones; business-page status selection is migrated separately. */
+  .agh-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+    border-color: var(--agnes-status-success-border);
+  }
+  .agh-meta {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--s16);
+    padding-inline: var(--s4);
+    border-radius: var(--radius-pill);
+    background: var(--agnes-bg-selected);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-xs);
+  }
+  .agh-tooltip-anchor,
+  .agh-menu-anchor {
+    display: inline-flex;
+    max-width: 100%;
+  }
+  .agh-tooltip-anchor:focus-visible {
+    outline: 2px solid var(--agnes-input-border-focus);
+    outline-offset: 2px;
+  }
+  .agh-tooltip .ant-tooltip-inner,
+  .agh-tooltip .ant-tooltip-container {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    box-shadow: var(--elevation-1);
+    font-size: var(--font-size-sm);
+  }
+  .agh-tooltip .ant-tooltip-arrow {
+    --antd-arrow-background-color: var(--agnes-bg-popover);
+  }
+  .agh-menu {
+    display: grid;
+    min-width: 180px;
+    gap: var(--s4);
+  }
+  .agh-menu-item {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    height: var(--control-height);
+    padding: 0 var(--s12);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-regular);
+  }
+  .agh-menu-item[data-danger] {
+    color: var(--agnes-status-danger-text);
+  }
+  .agh-menu-item:hover:not([aria-disabled="true"]) {
+    background: var(--agnes-bg-hover);
+  }
+  .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]) {
+    background: var(--agnes-status-danger-bg);
+  }
+  .agh-menu-item:focus-visible {
+    outline: 2px solid var(--agnes-input-border-focus);
+    outline-offset: -2px;
+  }
+  .agh-menu-item[aria-disabled="true"] {
+    color: var(--agnes-text-tertiary);
+    cursor: not-allowed;
+  }
+  .agh-menu-separator {
+    border: 0;
+    height: 1px;
+    margin-block: var(--s4);
+    background: var(--agnes-line-primary);
+  }
+  .agh-toast {
+    position: fixed;
+    z-index: 1100;
+    bottom: max(var(--s24), env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - var(--s32));
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-status-success-border);
+    border-radius: var(--radius-control);
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    box-shadow: var(--elevation-1);
+    font-size: var(--font-size-body);
+    animation: agh-toast-in var(--transition) both;
+  }
+  /* Outcome modifiers change colour only; placement and timing are shared by every toast. */
+  .agh-toast--info {
+    border-color: var(--agnes-status-info-border);
+    background: var(--agnes-status-info-bg);
+    color: var(--agnes-status-info-text);
+  }
+  .agh-toast--error {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+    color: var(--agnes-status-danger-text);
+  }
+  @keyframes agh-toast-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--s8);
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-menu-item {
+      min-height: var(--control-height-touch);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-toast {
+      left: var(--s16);
+      right: var(--s16);
+      margin-inline: auto;
+    }
+    :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+      inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
+    }
+  }
+  .agh-icon[data-size="16"] {
+    width: var(--s16);
+    height: var(--s16);
+  }
+  .agh-icon[data-size="18"] {
+    width: 18px;
+    height: 18px;
+  }
+  .agh-icon[data-size="20"] {
+    width: 20px;
+    height: 20px;
+  }
+  .agh-icon[data-size="48"] {
+    width: var(--s48);
+    height: var(--s48);
+  }
+  .agh-btn--icon .ant-btn-icon {
+    display: flex;
+    align-items: center;
     justify-content: center;
   }
-  .ant-modal-wrap:has(.agh-dialog)::before {
-    display: none;
+  /* Shared settings page order: heading, banner, toolbar, content, dirty save bar. */
+  :is(.agnes-settings-card, .config-card) {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    box-shadow: var(--elevation-0);
+  }
+  .agnes-settings-page[data-layout] {
+    width: 100%;
+    max-width: 720px;
+    min-width: 0;
+    margin-inline: auto;
+  }
+  .agnes-settings-page[data-layout="list"] {
+    max-width: 960px;
+  }
+  .agnes-settings-page > .agnes-settings-page-heading {
+    margin-bottom: var(--s24);
+  }
+  .agnes-settings-page > .agnes-settings-page-heading h2 {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-lg);
+  }
+  .agnes-settings-page > .agnes-settings-toolbar,
+  .agnes-settings-page > .agh-banner {
+    margin-bottom: var(--s16);
+  }
+  .agh-settings-toolbar-search {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .agh-settings-toolbar-filters,
+  .agh-settings-toolbar-controls {
+    display: flex;
+    gap: var(--s12);
+    align-items: flex-end;
+  }
+  .agh-settings-save-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s16);
+    margin-top: var(--s24);
+    padding: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-popover);
+    color: var(--agnes-text-primary);
+  }
+  .agh-settings-saved {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-status-success-text);
+  }
+  .agh-empty-state {
+    display: grid;
+    justify-items: center;
+    gap: var(--s16);
+    width: 100%;
+    max-width: 420px;
+    margin-inline: auto;
+    padding-block: var(--s32);
+    color: var(--agnes-text-primary);
+    text-align: center;
+  }
+  .agh-empty-state-icon {
+    width: var(--s48);
+    height: var(--s48);
+    color: var(--agnes-text-secondary);
+  }
+  .agh-empty-state-icon > svg {
+    width: var(--s48);
+    height: var(--s48);
+  }
+  .agh-empty-state h3 {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agh-empty-state p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+  }
+  .agh-empty-state-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--s12);
+    flex-wrap: wrap;
+  }
+  .agh-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-status-info-border);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+  }
+  .agh-banner[data-tone="warning"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    border-color: var(--agnes-status-warning-border);
+  }
+  .agh-banner[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    border-color: var(--agnes-status-danger-border);
+  }
+  .agh-banner-copy {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agh-banner-copy p {
+    margin: 0;
+    color: inherit;
+  }
+  .agh-banner-action {
+    flex: 0 0 auto;
+  }
+  .agh-list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s16);
+    min-height: 56px;
+    padding-block: var(--s4);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-primary);
+  }
+  .agh-list-row-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--control-height);
+    height: var(--control-height);
+    flex: 0 0 auto;
+    color: var(--agnes-text-secondary);
+  }
+  .agh-list-row-copy {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agh-list-row-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+  }
+  .agh-list-row h3 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agh-list-row .agh-list-row-title {
+    justify-content: flex-start;
+    height: auto;
+    min-height: var(--control-height-sm);
+    padding: 0;
+    white-space: normal;
+    text-align: start;
+    color: inherit;
+    font-weight: var(--font-weight-semibold);
+    font-size: inherit;
+    line-height: var(--line-sm);
+  }
+  .agh-list-row p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-xs);
+  }
+  .agh-list-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    flex: 0 0 auto;
+  }
+  .agh-field {
+    width: 100%;
+    max-width: 560px;
+  }
+  .agh-field-optional {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-regular);
+  }
+  .agh-field .agnes-ui-field-hint {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-field .agnes-ui-field-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s4);
+    line-height: var(--line-sm);
+  }
+  /* Same three sizes for native modal shells and React confirmations. */
+  :where(dialog:not(.agh-drawer)) {
+    width: min(560px, calc(100vw - var(--s32)));
+    border-radius: var(--radius-surface);
+    box-shadow: var(--elevation-2);
   }
   .agh-dialog .ant-modal-container,
   .agh-dialog .ant-modal-content {
-    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
-    max-height: calc(100dvh - var(--s16));
+    border-radius: var(--radius-surface);
+    box-shadow: var(--elevation-2);
+    max-height: var(--dialog-max-height);
+    display: flex;
+    flex-direction: column;
+  }
+  .agh-dialog .ant-modal-body {
+    overflow: auto;
+    min-height: 0;
+    /* Preserve the content inset while keeping 2px focus outlines inside the scrollport. */
+    padding: var(--s4);
+    margin: calc(-1 * var(--s4));
+  }
+  .agh-dialog .ant-modal-footer,
+  .agh-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agh-dialog-footer {
+    padding: var(--s16) var(--s24);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  :where(dialog) :is(.dialog-kicker, .eyebrow),
+  .agh-dialog :is(.dialog-kicker, .eyebrow) {
+    display: none;
   }
   .agh-sheet-handle {
+    display: none;
+  }
+  .agh-drawer[open] {
+    position: fixed;
+    inset: 0 0 0 auto;
     display: flex;
-    width: 100%;
-    height: var(--control-height-touch);
-    min-height: var(--control-height-touch);
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
-    background: var(--agnes-bg-popover);
-    touch-action: none;
-    flex: 0 0 auto;
-  }
-  .agh-sheet-handle span {
-    width: var(--s32);
-    height: var(--s4);
-    border-radius: var(--radius-pill);
-    background: var(--agnes-text-secondary);
-  }
-}
-.agh-native-sheet-handle {
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-dialog[data-size="sm"] {
-  width: min(420px, calc(100vw - var(--s32)));
-}
-dialog[data-size="md"] {
-  width: min(560px, calc(100vw - var(--s32)));
-}
-dialog[data-size="lg"] {
-  width: min(720px, calc(100vw - var(--s32)));
-}
-@media (max-width: 767px) {
-  /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
-  dialog:not(.agh-drawer):not(.lightbox)[open] {
-    --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
-    inset: auto 0 0;
-    width: 100vw !important;
-    max-width: 100vw !important;
-    max-height: calc(100dvh - var(--s16));
+    flex-direction: column;
+    width: min(480px, 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
     margin: 0;
-    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    padding: 0;
+    border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+    background: var(--agnes-bg-popover);
+    color: var(--agnes-text-primary);
+    box-shadow: var(--elevation-2);
   }
-}
+  .agh-drawer-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding: var(--s24);
+  }
+  .agh-drawer-heading h2 {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agh-drawer-heading p {
+    margin: var(--s8) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-body);
+  }
+  .agh-drawer-content {
+    flex: 1;
+    min-height: 0;
+    padding: 0 var(--s24) var(--s24);
+    overflow: auto;
+  }
+  @media (max-width: 767px) {
+    .agh-settings-toolbar-search {
+      flex-basis: 100%;
+    }
+    .agh-settings-toolbar-filters {
+      flex-wrap: wrap;
+    }
+    .agh-list-row {
+      gap: var(--s12);
+    }
+    .agh-list-row-icon {
+      display: none;
+    }
+    .agh-list-row-actions {
+      gap: var(--s8);
+    }
+    .agh-banner {
+      flex-wrap: wrap;
+    }
+    .agh-drawer[open] {
+      width: 100vw;
+      border-radius: 0;
+    }
+    .agh-drawer-heading,
+    .agh-drawer-content {
+      padding-inline: var(--s16);
+    }
+    .ant-modal-root .agh-dialog {
+      top: auto;
+      bottom: 0;
+      margin: 0;
+      padding-bottom: 0;
+      max-width: 100vw;
+    }
+    .ant-modal-wrap:has(.agh-dialog) {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .ant-modal-wrap:has(.agh-dialog)::before {
+      display: none;
+    }
+    .agh-dialog .ant-modal-container,
+    .agh-dialog .ant-modal-content {
+      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+      max-height: calc(100dvh - var(--s16));
+    }
+    .agh-sheet-handle {
+      display: flex;
+      width: 100%;
+      height: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+      background: var(--agnes-bg-popover);
+      touch-action: none;
+      flex: 0 0 auto;
+    }
+    .agh-sheet-handle span {
+      width: var(--s32);
+      height: var(--s4);
+      border-radius: var(--radius-pill);
+      background: var(--agnes-text-secondary);
+    }
+  }
+  .agh-native-sheet-handle {
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
 
-.agnes-settings-toolbar .agh-btn--sm,
-.agnes-settings-actions .agh-btn--sm {
-  height: var(--control-height-sm);
-  min-height: var(--control-height-sm);
-}
-@media (max-width: 900px) {
-  /* Preserve existing pages' 32px floor through B3–B8; new icon actions use the 28px contract. */
-  body[data-agnes-region="app"]
-  :is(.agnes-ui-button.agh-btn--sm:not(.agh-btn--icon), .secondary-button:where(.compact), .icon-button) {
-    min-height: var(--s32);
-    min-width: var(--s32);
+  dialog[data-size="sm"] {
+    width: min(420px, calc(100vw - var(--s32)));
   }
-  /* Rows and toolbars keep the same narrow-screen target floor as native controls. */
-  .agh-list-row .agh-list-row-title,
-  .agh-list-row-actions .agh-btn.agh-btn--icon,
-  .agnes-settings-toolbar .agh-btn.agh-btn--icon,
-  .agh-tag[tabindex="0"] {
-    min-height: var(--s32);
-    min-width: var(--s32);
+  dialog[data-size="md"] {
+    width: min(560px, calc(100vw - var(--s32)));
   }
-}
-@media (max-width: 767px) {
-  .agh-tag[tabindex="0"] {
-    position: relative;
+  dialog[data-size="lg"] {
+    width: min(720px, calc(100vw - var(--s32)));
   }
-  .agh-tag[tabindex="0"]::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+  @media (max-width: 767px) {
+    /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
+    dialog:not(.agh-drawer):not(.lightbox)[open] {
+      --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
+      inset: auto 0 0;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      max-height: calc(100dvh - var(--s16));
+      margin: 0;
+      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    }
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .skip-link:not(:focus) {
-    visibility: hidden;
-  }
-}
 
-.agh-btn .ant-btn-icon {
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.agh-btn--loading-no-icon > .ant-btn-icon {
-  width: auto;
-  height: auto;
-}
+  .agnes-settings-toolbar .agh-btn--sm,
+  .agnes-settings-actions .agh-btn--sm {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  @media (max-width: 900px) {
+    /* Preserve existing pages' 32px floor through B3–B8; new icon actions use the 28px contract. */
+    body[data-agnes-region="app"]
+      :is(.agnes-ui-button.agh-btn--sm:not(.agh-btn--icon), .secondary-button:where(.compact), .icon-button) {
+      min-height: var(--s32);
+      min-width: var(--s32);
+    }
+    /* Rows and toolbars keep the same narrow-screen target floor as native controls. */
+    .agh-list-row .agh-list-row-title,
+    .agh-list-row-actions .agh-btn.agh-btn--icon,
+    .agnes-settings-toolbar .agh-btn.agh-btn--icon,
+    .agh-tag[tabindex="0"] {
+      min-height: var(--s32);
+      min-width: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-tag[tabindex="0"] {
+      position: relative;
+    }
+    .agh-tag[tabindex="0"]::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skip-link:not(:focus) {
+      visibility: hidden;
+    }
+  }
 
-.agh-list-row[data-highlighted="true"] {
-  background: var(--agnes-bg-hover);
-}
-
-/* Loading remains quiet under reduced motion and never adds duplicate status text. */
-.agh-skeleton {
-  display: grid;
-  width: 100%;
-  gap: var(--s12);
-  margin-bottom: var(--s16);
-}
-.agh-skeleton > span {
-  display: block;
-  height: var(--s16);
-  border-radius: var(--radius-sm);
-  background: var(--agnes-bg-subtle);
-  animation: agh-skeleton-pulse 1.4s ease-in-out infinite alternate;
-}
-.agh-skeleton > span:last-child {
-  width: 60%;
-}
-@keyframes agh-skeleton-pulse {
-  to {
-    opacity: 0.45;
-  }
-}
-@media (max-width: 767px) {
-  /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */
-  :is(
-    .agnes-settings-checkbox,
-    .appearance-option,
-    .agnes-settings-details > summary,
-    .agnes-settings-card summary,
-    .ant-tabs-tab,
-    .agnes-settings-section-tabs button
-  ) {
-    min-height: var(--control-height-touch);
-    min-width: var(--control-height-touch);
-  }
-  .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
-    min-height: var(--control-height-touch);
-  }
-  .agnes-ui-switch {
-    position: relative;
-  }
-  .agnes-ui-switch::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
-  }
-}
-
-@media (max-width: 767px) {
-  /* Native hosts share the same hit-area contract as React controls. Low specificity
-     preserves positioned actions and the existing disclosure/choice presentation. */
-  :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"]) {
-    position: relative;
-  }
-  :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"])::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
-  }
-  body[data-agnes-region="app"]
-    :is(.agnes-settings-checkbox, .appearance-option, .ant-checkbox-wrapper, .ant-radio-wrapper) {
-    min-height: var(--control-height-touch);
-  }
-}
-
-@media (max-width: 767px) {
-  .agnes-ui-select.ant-select,
-  .ant-select-item-option {
-    min-height: var(--control-height-touch);
-  }
-  .agh-touch-target {
-    position: relative;
-  }
-  .agh-touch-target::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
-  }
-}
-
-/* Long localized session labels must shrink inside their shared field. */
-.agh-field > .agnes-ui-select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-@media (min-width: 768px) and (max-width: 900px) {
-  /* Compact tablet actions retain their 28px visual and a 32px pointer target. */
-  .ant-tabs-tab {
-    min-width: var(--s32);
+  .agh-btn .ant-btn-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
     justify-content: center;
   }
-  .agh-btn--sm {
-    position: relative;
+  .agh-btn--loading-no-icon > .ant-btn-icon {
+    width: auto;
+    height: auto;
   }
-  .agh-btn--sm::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - var(--s32)) / 2));
+
+  .agh-list-row[data-highlighted="true"] {
+    background: var(--agnes-bg-hover);
+  }
+
+  /* Loading remains quiet under reduced motion and never adds duplicate status text. */
+  .agh-skeleton {
+    display: grid;
+    width: 100%;
+    gap: var(--s12);
+    margin-bottom: var(--s16);
+  }
+  .agh-skeleton > span {
+    display: block;
+    height: var(--s16);
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+    animation: agh-skeleton-pulse 1.4s ease-in-out infinite alternate;
+  }
+  .agh-skeleton > span:last-child {
+    width: 60%;
+  }
+  @keyframes agh-skeleton-pulse {
+    to {
+      opacity: 0.45;
+    }
+  }
+  @media (max-width: 767px) {
+    /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */
+    :is(
+        .agnes-settings-checkbox,
+        .appearance-option,
+        .agnes-settings-details > summary,
+        .agnes-settings-card summary,
+        .ant-tabs-tab,
+        .agnes-settings-section-tabs button
+      ) {
+      min-height: var(--control-height-touch);
+      min-width: var(--control-height-touch);
+    }
+    .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
+      min-height: var(--control-height-touch);
+    }
+    .agnes-ui-switch {
+      position: relative;
+    }
+    .agnes-ui-switch::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+
+  @media (max-width: 767px) {
+    /* Native hosts share the same hit-area contract as React controls. Low specificity
+     preserves positioned actions and the existing disclosure/choice presentation. */
+    :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"]) {
+      position: relative;
+    }
+    :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"])::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+    body[data-agnes-region="app"]
+      :is(.agnes-settings-checkbox, .appearance-option, .ant-checkbox-wrapper, .ant-radio-wrapper) {
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  @media (max-width: 767px) {
+    .agnes-ui-select.ant-select,
+    .ant-select-item-option {
+      min-height: var(--control-height-touch);
+    }
+    .agh-touch-target {
+      position: relative;
+    }
+    .agh-touch-target::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+
+  /* Long localized session labels must shrink inside their shared field. */
+  .agh-field > .agnes-ui-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  @media (min-width: 768px) and (max-width: 900px) {
+    /* Compact tablet actions retain their 28px visual and a 32px pointer target. */
+    .ant-tabs-tab {
+      min-width: var(--s32);
+      justify-content: center;
+    }
+    .agh-btn--sm {
+      position: relative;
+    }
+    .agh-btn--sm::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
   }
 }

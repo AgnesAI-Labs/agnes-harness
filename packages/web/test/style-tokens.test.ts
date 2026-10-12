@@ -47,7 +47,8 @@ function parseRules(source: string): Rule[] {
     while (i < end) {
       const open = source.indexOf('{', i)
       if (open === -1 || open >= end) break
-      const selector = source.slice(i, open).trim()
+      const prelude = source.slice(i, open)
+      const selector = prelude.slice(prelude.lastIndexOf(';') + 1).trim()
       let depth = 0
       let close = open
       for (; close < end; close += 1) {
@@ -57,7 +58,8 @@ function parseRules(source: string): Rule[] {
           if (depth === 0) break
         }
       }
-      if (selector.startsWith('@')) walk(open + 1, close, selector)
+      if (selector.startsWith('@'))
+        walk(open + 1, close, selector.startsWith('@layer ') ? atContext : selector)
       else found.push({ selector, body: source.slice(open + 1, close), atContext, line: lineAt(source, i) })
       i = close + 1
     }

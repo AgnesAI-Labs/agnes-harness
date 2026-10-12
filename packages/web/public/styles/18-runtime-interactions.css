@@ -1,170 +1,172 @@
-/* Form controls retain physical touch height. Shared buttons expand their hit area in components.css. */
-@media (max-width: 540px) {
-  input:not([type="checkbox"]):not([type="radio"]),
-  select {
-    min-height: var(--control-height-touch) !important;
+@layer app {
+  /* Form controls retain physical touch height. Shared buttons expand their hit area in components.css. */
+  @media (max-width: 540px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select {
+      min-height: var(--control-height-touch) !important;
+    }
   }
-}
 
-#composer-attach {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 2rem;
-  min-height: 2rem;
-  padding: 0;
-  border-radius: 50%;
-}
-#composer-attach[aria-disabled="true"] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  #composer-attach {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 2rem;
+    min-height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+  }
+  #composer-attach[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-/* Runtime settings keep all existing theme and skin tokens. */
-.runtime-settings nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s8);
-  margin-block: var(--s16);
-}
-.runtime-settings h2 {
-  margin-block: var(--s16);
-}
-.runtime-card {
-  border: 1px solid var(--agnes-line-primary);
-  background: var(--agnes-bg-surface);
-  border-radius: var(--radius-card);
-  padding: var(--s16);
-  margin-block: var(--s12);
-  overflow-wrap: anywhere;
-}
-.runtime-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: var(--s12);
-}
-.runtime-settings dd {
-  margin: var(--s4) 0 var(--s12);
-  overflow-wrap: anywhere;
-}
-.runtime-settings details {
-  margin-block: var(--s16);
-}
-.runtime-settings summary {
-  cursor: pointer;
-  padding-block: var(--s8);
-}
-.runtime-settings table {
-  width: 100%;
-  text-align: start;
-  border-collapse: collapse;
-}
-.runtime-settings td,
-.runtime-settings th {
-  padding: var(--s8);
-  border-bottom: 1px solid var(--agnes-line-primary);
-  overflow-wrap: anywhere;
-}
-.runtime-resources {
-  width: 100%;
-  min-height: 36rem;
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-card);
-  margin-block: var(--s16);
-}
+  /* Runtime settings keep all existing theme and skin tokens. */
+  .runtime-settings nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    margin-block: var(--s16);
+  }
+  .runtime-settings h2 {
+    margin-block: var(--s16);
+  }
+  .runtime-card {
+    border: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+    border-radius: var(--radius-card);
+    padding: var(--s16);
+    margin-block: var(--s12);
+    overflow-wrap: anywhere;
+  }
+  .runtime-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: var(--s12);
+  }
+  .runtime-settings dd {
+    margin: var(--s4) 0 var(--s12);
+    overflow-wrap: anywhere;
+  }
+  .runtime-settings details {
+    margin-block: var(--s16);
+  }
+  .runtime-settings summary {
+    cursor: pointer;
+    padding-block: var(--s8);
+  }
+  .runtime-settings table {
+    width: 100%;
+    text-align: start;
+    border-collapse: collapse;
+  }
+  .runtime-settings td,
+  .runtime-settings th {
+    padding: var(--s8);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    overflow-wrap: anywhere;
+  }
+  .runtime-resources {
+    width: 100%;
+    min-height: 36rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    margin-block: var(--s16);
+  }
 
-.runtime-table-scroll {
-  overflow-x: auto;
-  min-width: 0;
-  max-width: 100%;
-}
-.runtime-table-scroll table {
-  min-width: 48rem;
-}
-.runtime-table-scroll th {
-  white-space: nowrap;
-}
+  .runtime-table-scroll {
+    overflow-x: auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .runtime-table-scroll table {
+    min-width: 48rem;
+  }
+  .runtime-table-scroll th {
+    white-space: nowrap;
+  }
 
-/* Native interaction cards share the transcript width and remain readable beside tool history. */
-.conversation-tool-surface {
-  min-width: 0;
-  max-width: 100%;
-}
-.conversation-native-card {
-  margin-block: var(--s12);
-  padding: var(--s16);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-card);
-  background: var(--agnes-bg-surface);
-  overflow-wrap: anywhere;
-}
-.conversation-native-card a {
-  color: var(--agnes-text-emphasis);
-}
-.history-search {
-  display: grid;
-  gap: var(--s8);
-  max-width: 40rem;
-}
-.history-search input {
-  width: 100%;
-}
-.history-search ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.history-search li {
-  display: grid;
-  gap: var(--s4);
-  padding-block: var(--s8);
-  border-block-end: 1px solid var(--agnes-line-primary);
-  overflow-wrap: anywhere;
-}
+  /* Native interaction cards share the transcript width and remain readable beside tool history. */
+  .conversation-tool-surface {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .conversation-native-card {
+    margin-block: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+    overflow-wrap: anywhere;
+  }
+  .conversation-native-card a {
+    color: var(--agnes-text-emphasis);
+  }
+  .history-search {
+    display: grid;
+    gap: var(--s8);
+    max-width: 40rem;
+  }
+  .history-search input {
+    width: 100%;
+  }
+  .history-search ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .history-search li {
+    display: grid;
+    gap: var(--s4);
+    padding-block: var(--s8);
+    border-block-end: 1px solid var(--agnes-line-primary);
+    overflow-wrap: anywhere;
+  }
 
-.session-terminal {
-  min-height: 20rem;
-  max-height: 32rem;
-  overflow: auto;
-  white-space: pre;
-  font-family: var(--font-mono);
-  background: var(--agnes-bg-code);
-  color: var(--agnes-text-primary);
-}
-.session-terminal:focus-visible {
-  outline: 2px solid var(--agnes-input-border-focus);
-}
+  .session-terminal {
+    min-height: 20rem;
+    max-height: 32rem;
+    overflow: auto;
+    white-space: pre;
+    font-family: var(--font-mono);
+    background: var(--agnes-bg-code);
+    color: var(--agnes-text-primary);
+  }
+  .session-terminal:focus-visible {
+    outline: 2px solid var(--agnes-input-border-focus);
+  }
 
-.goal-card {
-  margin: var(--s8) var(--s16);
-  padding: var(--s12);
-  border: 1px solid var(--agnes-input-border);
-  border-radius: var(--radius-md);
-}
-.goal-card label {
-  display: grid;
-  gap: var(--s4);
-  margin-block: var(--s8);
-}
-.goal-card textarea {
-  min-height: 4rem;
-  width: 100%;
-}
-.goal-card button {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  text-align: start;
-}
-.goal-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s8);
-}
+  .goal-card {
+    margin: var(--s8) var(--s16);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-md);
+  }
+  .goal-card label {
+    display: grid;
+    gap: var(--s4);
+    margin-block: var(--s8);
+  }
+  .goal-card textarea {
+    min-height: 4rem;
+    width: 100%;
+  }
+  .goal-card button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+  .goal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
 
-.goal-card > button {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  .goal-card > button {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 }

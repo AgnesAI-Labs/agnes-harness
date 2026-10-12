@@ -4,7 +4,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
-import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
+import {
+  inCssLayer,
+  readUiCss,
+  readWebStyleSource,
+  readWebUiStyleSource,
+} from '../../../tools/web-style-source.mjs'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -131,20 +136,20 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     ['index.html', 'admin.html', 'resources.html', 'brand-mark.png']
       .map((file) => cp(join(root, 'public', file), join(out, file)))
       .concat([
-        cp(antdCss, join(out, 'antd.css')),
+        writeFile(join(out, 'antd.css'), inCssLayer(await readFile(antdCss, 'utf8'), 'vendor')),
         writeFile(join(out, 'tokens.css'), readWebUiStyleSource(tokensCss)),
       ]),
   )
   await writeFile(join(out, 'style.css'), readWebStyleSource(join(root, 'public', 'style.css')))
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build
   // must apply the same composition when copying Web assets into its own static root.
-  await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
+  await appendFile(join(out, 'style.css'), `\n${readUiCss(conversationCss)}`)
   await appendFile(
     join(out, 'style.css'),
-    `\n${await readFile(join(root, '..', 'web-ui', 'src', 'intelligent-ui', 'styles.css'), 'utf8')}`,
+    `\n${readUiCss(join(root, '..', 'web-ui', 'src', 'intelligent-ui', 'styles.css'))}`,
   )
   buildConversationCss(generatedConversationCss)
-  await appendFile(join(out, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
+  await appendFile(join(out, 'style.css'), `\n${readUiCss(generatedConversationCss)}`)
   await rm(generatedConversationCss)
   // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
   // already load /style.css, so merge core + published themes + Agnes overrides there.
@@ -153,11 +158,11 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     readFile(generatedMarkdownCss, 'utf8'),
     readFile(markdownLightCss, 'utf8'),
     readFile(markdownDarkCss, 'utf8'),
-    readFile(markdownOverridesCss, 'utf8'),
+    Promise.resolve(readUiCss(markdownOverridesCss)),
   ])
   await appendFile(
     join(out, 'style.css'),
-    `\n${core.replace(/\/\*# sourceMappingURL=.*?\*\//g, '')}\n${light}\n${dark}\n${overrides}`,
+    `\n${inCssLayer(core.replace(/\/\*# sourceMappingURL=.*?\*\//g, '') + '\n' + light + '\n' + dark, 'vendor')}\n${overrides}`,
   )
   await rm(generatedMarkdownCss)
   await rm(`${generatedMarkdownCss}.map`, { force: true })

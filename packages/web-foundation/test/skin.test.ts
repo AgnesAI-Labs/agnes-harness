@@ -193,7 +193,7 @@ describe('skin stylesheet ownership', () => {
     const created = fakeSheet()
     const next = syncSkinSheet(target, { sheet: undefined, css: undefined }, 'a{}', () => created.sheet)
     expect(target.adoptedStyleSheets).toEqual([created.sheet])
-    expect(created.read()).toBe('a{}')
+    expect(created.read()).toBe('@layer skin {\na{}\n}')
     expect(next).toEqual({ sheet: created.sheet, css: 'a{}' })
   })
 
@@ -205,7 +205,7 @@ describe('skin stylesheet ownership', () => {
     const second = fakeSheet()
     state = syncSkinSheet(target, state, 'b{}', () => second.sheet)
     expect(target.adoptedStyleSheets).toEqual([foreign, second.sheet])
-    expect(second.read()).toBe('b{}')
+    expect(second.read()).toBe('@layer skin {\nb{}\n}')
     expect(state.sheet).toBe(second.sheet)
   })
 

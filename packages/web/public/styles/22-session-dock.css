@@ -1,317 +1,319 @@
-/* Session dock chrome and registered panel surfaces share the conversation theme. */
-.workbench-split {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-.workbench-split.workbench-right-open {
-  grid-template-columns: minmax(0, 1fr) var(--workbench-width, 320px);
-}
-.workbench-split > .session-tabs-bar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-.workbench-split > .conversation-shell,
-.workbench-split > #trace-panel {
-  grid-column: 1;
-  grid-row: 2;
-}
-#workbench-controls {
-  margin-left: var(--s8);
-}
-.workbench-controls {
-  display: flex;
-  gap: var(--s4);
-}
-#workbench-right {
-  grid-column: 2;
-  grid-row: 2 / 4;
-}
-#workbench-bottom {
-  grid-column: 1;
-  grid-row: 3;
-  height: var(--workbench-height, 220px);
-}
-#workbench-right,
-#workbench-bottom {
-  position: relative;
-  min-height: 0;
-  min-width: 0;
-}
-#workbench-right-content,
-#workbench-bottom-content {
-  height: 100%;
-  min-height: 0;
-}
-.workbench-dock-body {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.workbench-dock-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--agnes-line-primary);
-  padding: 0.4rem 0.6rem;
-}
-.workbench-panel-tabs {
-  display: flex;
-  min-width: 0;
-  gap: var(--s4);
-  overflow-x: auto;
-  padding-inline: var(--s8);
-  scroll-padding-inline: var(--s8);
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    black var(--s8),
-    black calc(100% - var(--s8)),
-    transparent
-  );
-}
-.workbench-panel-tabs > .agnes-ui-button {
-  flex: 0 0 auto;
-}
-.workbench-panel-tabs [aria-selected="true"] {
-  color: var(--agnes-text-primary);
-  font-weight: 600;
-  background: var(--agnes-bg-hover);
-}
-.workbench-panel-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-.workbench-resize {
-  border: 0;
-  margin: 0;
-  position: absolute;
-  z-index: 2;
-}
-#workbench-right .workbench-resize {
-  left: -3px;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: col-resize;
-}
-#workbench-bottom .workbench-resize {
-  top: -3px;
-  left: 0;
-  right: 0;
-  height: 6px;
-  cursor: row-resize;
-}
-.workbench-resize:focus-visible {
-  outline: 2px solid var(--agnes-text-emphasis);
-}
-.workbench-files {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-.workbench-panel-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s8);
-  padding: 0.6rem;
-  flex-wrap: wrap;
-}
-.workbench-tree-scroll {
-  flex: 1;
-  min-height: 80px;
-  overflow: auto;
-}
-.workbench-file-tree {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.workbench-file-tree .workbench-file-tree {
-  padding-left: var(--s16);
-}
-.workbench-tree-scroll > .workbench-file-tree {
-  padding: 0.4rem;
-}
-.workbench-file-entry.agnes-ui-button {
-  width: 100%;
-  text-align: left;
-  display: flex;
-  gap: 0.35rem;
-  justify-content: flex-start;
-  padding-inline: 0.3rem;
-}
-.workbench-file-chevron {
-  width: 0.65rem;
-  flex: 0 0 0.65rem;
-}
-.workbench-file-icon {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-}
-.workbench-header-actions {
-  display: flex;
-  margin-left: auto;
-}
-.workbench-files-previewing .workbench-tree-scroll {
-  flex: 0 1 28%;
-}
-.workbench-files-previewing .workbench-file-preview {
-  flex: 1 1 65%;
-}
-.workbench-files-footer {
-  flex: 0 0 auto;
-  padding: var(--s8) var(--s12);
-  border-top: 1px solid var(--agnes-line-primary);
-  font-size: var(--font-size-xs);
-  color: var(--agnes-text-secondary);
-}
-.workbench-files-footer p {
-  margin: 0.4rem 0 0;
-}
-.workbench-file-preview > details {
-  margin: 0 var(--s12) var(--s8);
-  font-size: var(--font-size-xs);
-  color: var(--agnes-text-secondary);
-  overflow-wrap: anywhere;
-}
-@media (min-width: 1280px) {
-  main:has(.workbench-right-open) > #composer-mount,
-  main:has(.workbench-right-open) > #approval {
-    width: calc(100% - var(--workbench-width, 320px));
+@layer app {
+  /* Session dock chrome and registered panel surfaces share the conversation theme. */
+  .workbench-split {
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
-}
-.workbench-file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  white-space: nowrap;
-}
-.workbench-git-mark {
-  margin-left: auto;
-  font-size: var(--font-size-xs);
-  color: var(--agnes-text-secondary);
-}
-.workbench-file-preview {
-  flex: 1;
-  min-height: 100px;
-  border-top: 1px solid var(--agnes-line-primary);
-  overflow: auto;
-}
-.workbench-file-preview pre {
-  margin: 0;
-  padding: var(--s12);
-  overflow: auto;
-  font-size: var(--font-size-sm);
-  line-height: 1.6;
-  tab-size: 2;
-}
-.workbench-code-keyword {
-  color: var(--agnes-text-emphasis);
-  font-weight: 600;
-}
-.workbench-code-string {
-  color: var(--agnes-status-success-text);
-}
-.workbench-code-number {
-  color: var(--agnes-status-warning-text);
-}
-.workbench-code-comment {
-  color: var(--agnes-text-tertiary);
-}
-@media (max-width: 1279px) {
   .workbench-split.workbench-right-open {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) var(--workbench-width, 320px);
+  }
+  .workbench-split > .session-tabs-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .workbench-split > .conversation-shell,
+  .workbench-split > #trace-panel {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  #workbench-controls {
+    margin-left: var(--s8);
+  }
+  .workbench-controls {
+    display: flex;
+    gap: var(--s4);
   }
   #workbench-right {
-    position: absolute;
-    z-index: 15;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(var(--workbench-width, 320px), calc(100vw - 16px));
-  }
-  [data-agnes-region="workbench-right"] {
-    box-shadow: var(--shadow-elevation-prominent);
+    grid-column: 2;
+    grid-row: 2 / 4;
   }
   #workbench-bottom {
-    max-height: 40vh;
+    grid-column: 1;
+    grid-row: 3;
+    height: var(--workbench-height, 220px);
   }
-}
-@media (max-width: 767px) {
   #workbench-right,
   #workbench-bottom {
-    position: fixed;
-    z-index: 30;
-    inset: 0;
-    width: 100%;
-    height: 100dvh;
-    max-height: none;
+    position: relative;
+    min-height: 0;
+    min-width: 0;
+  }
+  #workbench-right-content,
+  #workbench-bottom-content {
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-dock-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-dock-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    padding: 0.4rem 0.6rem;
+  }
+  .workbench-panel-tabs {
+    display: flex;
+    min-width: 0;
+    gap: var(--s4);
+    overflow-x: auto;
+    padding-inline: var(--s8);
+    scroll-padding-inline: var(--s8);
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--s8),
+      black calc(100% - var(--s8)),
+      transparent
+    );
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    flex: 0 0 auto;
+  }
+  .workbench-panel-tabs [aria-selected="true"] {
+    color: var(--agnes-text-primary);
+    font-weight: 600;
+    background: var(--agnes-bg-hover);
+  }
+  .workbench-panel-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
   }
   .workbench-resize {
-    display: none;
+    border: 0;
+    margin: 0;
+    position: absolute;
+    z-index: 2;
   }
-}
+  #workbench-right .workbench-resize {
+    left: -3px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+  }
+  #workbench-bottom .workbench-resize {
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
+  }
+  .workbench-resize:focus-visible {
+    outline: 2px solid var(--agnes-text-emphasis);
+  }
+  .workbench-files {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .workbench-tree-scroll {
+    flex: 1;
+    min-height: 80px;
+    overflow: auto;
+  }
+  .workbench-file-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .workbench-file-tree .workbench-file-tree {
+    padding-left: var(--s16);
+  }
+  .workbench-tree-scroll > .workbench-file-tree {
+    padding: 0.4rem;
+  }
+  .workbench-file-entry.agnes-ui-button {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-start;
+    padding-inline: 0.3rem;
+  }
+  .workbench-file-chevron {
+    width: 0.65rem;
+    flex: 0 0 0.65rem;
+  }
+  .workbench-file-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+  .workbench-header-actions {
+    display: flex;
+    margin-left: auto;
+  }
+  .workbench-files-previewing .workbench-tree-scroll {
+    flex: 0 1 28%;
+  }
+  .workbench-files-previewing .workbench-file-preview {
+    flex: 1 1 65%;
+  }
+  .workbench-files-footer {
+    flex: 0 0 auto;
+    padding: var(--s8) var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-files-footer p {
+    margin: 0.4rem 0 0;
+  }
+  .workbench-file-preview > details {
+    margin: 0 var(--s12) var(--s8);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+    overflow-wrap: anywhere;
+  }
+  @media (min-width: 1280px) {
+    main:has(.workbench-right-open) > #composer-mount,
+    main:has(.workbench-right-open) > #approval {
+      width: calc(100% - var(--workbench-width, 320px));
+    }
+  }
+  .workbench-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .workbench-git-mark {
+    margin-left: auto;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-file-preview {
+    flex: 1;
+    min-height: 100px;
+    border-top: 1px solid var(--agnes-line-primary);
+    overflow: auto;
+  }
+  .workbench-file-preview pre {
+    margin: 0;
+    padding: var(--s12);
+    overflow: auto;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    tab-size: 2;
+  }
+  .workbench-code-keyword {
+    color: var(--agnes-text-emphasis);
+    font-weight: 600;
+  }
+  .workbench-code-string {
+    color: var(--agnes-status-success-text);
+  }
+  .workbench-code-number {
+    color: var(--agnes-status-warning-text);
+  }
+  .workbench-code-comment {
+    color: var(--agnes-text-tertiary);
+  }
+  @media (max-width: 1279px) {
+    .workbench-split.workbench-right-open {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    #workbench-right {
+      position: absolute;
+      z-index: 15;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: min(var(--workbench-width, 320px), calc(100vw - 16px));
+    }
+    [data-agnes-region="workbench-right"] {
+      box-shadow: var(--shadow-elevation-prominent);
+    }
+    #workbench-bottom {
+      max-height: 40vh;
+    }
+  }
+  @media (max-width: 767px) {
+    #workbench-right,
+    #workbench-bottom {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      width: 100%;
+      height: 100dvh;
+      max-height: none;
+    }
+    .workbench-resize {
+      display: none;
+    }
+  }
 
-.workbench-dock-heading {
-  gap: var(--s4);
-  padding: var(--s8);
-}
-.workbench-header-actions {
-  flex-shrink: 0;
-}
-.workbench-panel-tabs {
-  flex: 1;
-}
-.workbench-panel-tabs [aria-selected="true"] {
-  color: var(--agnes-text-emphasis);
-  background: transparent;
-  border-bottom: 2px solid var(--agnes-brand-primary);
-  border-radius: 0;
-}
-@media (max-width: 767px) {
-  .workbench-toggle-label {
-    display: none;
+  .workbench-dock-heading {
+    gap: var(--s4);
+    padding: var(--s8);
   }
-}
-@media (max-width: 900px) {
-  #workbench-right .workbench-dock-heading button,
-  #workbench-bottom .workbench-dock-heading button {
-    min-width: var(--s32);
-    min-height: var(--s32);
+  .workbench-header-actions {
+    flex-shrink: 0;
   }
-}
+  .workbench-panel-tabs {
+    flex: 1;
+  }
+  .workbench-panel-tabs [aria-selected="true"] {
+    color: var(--agnes-text-emphasis);
+    background: transparent;
+    border-bottom: 2px solid var(--agnes-brand-primary);
+    border-radius: 0;
+  }
+  @media (max-width: 767px) {
+    .workbench-toggle-label {
+      display: none;
+    }
+  }
+  @media (max-width: 900px) {
+    #workbench-right .workbench-dock-heading button,
+    #workbench-bottom .workbench-dock-heading button {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
 
-/* Workbench panels: an idle panel explains itself quietly instead of showing a grey slab. */
-.workbench-panel-content .agnes-settings-state[data-tone="empty"] {
-  margin: var(--s12);
-  padding: var(--s24) var(--s16);
-  border: 1px dashed var(--agnes-line-emphasis);
-  color: var(--agnes-text-secondary);
-  background: transparent;
-  text-align: center;
-}
-/* Until a file is picked the tree owns the panel; the preview shrinks to its one-line prompt. */
-.workbench-files:not(.workbench-files-previewing) .workbench-file-preview {
-  flex: 0 0 auto;
-  min-height: 0;
-}
-.workbench-panel-tabs > .agnes-ui-button {
-  transition:
-    color var(--transition-fast),
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-.workbench-header-actions {
-  gap: var(--s2);
-}
-.workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-selected);
+  /* Workbench panels: an idle panel explains itself quietly instead of showing a grey slab. */
+  .workbench-panel-content .agnes-settings-state[data-tone="empty"] {
+    margin: var(--s12);
+    padding: var(--s24) var(--s16);
+    border: 1px dashed var(--agnes-line-emphasis);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    text-align: center;
+  }
+  /* Until a file is picked the tree owns the panel; the preview shrinks to its one-line prompt. */
+  .workbench-files:not(.workbench-files-previewing) .workbench-file-preview {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    transition:
+      color var(--transition-fast),
+      background-color var(--transition-fast),
+      border-color var(--transition-fast);
+  }
+  .workbench-header-actions {
+    gap: var(--s2);
+  }
+  .workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+  }
 }
