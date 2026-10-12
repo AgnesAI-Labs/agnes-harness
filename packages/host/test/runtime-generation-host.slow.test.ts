@@ -743,7 +743,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toMatchObject({
       code: 'E_SESSION_VERSION_OLDER',
       message: expect.stringContaining('E_WORKSPACE_UNTRUSTED'),
-      detail: { cause: 'E_WORKSPACE_UNTRUSTED', issue: 'older' },
+      detail: { cause: 'E_WORKSPACE_UNTRUSTED', issue: 'older', sessionKey: 'session-b' },
     })
     for (const field of ['integrity', 'capabilityHash'] as const) {
       persistTrust(two)

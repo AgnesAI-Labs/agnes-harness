@@ -194,7 +194,7 @@ node agnes.mjs packages pins inspect
 
 每次包激活生成不可变的插件 generation。新会话绑定当前 generation；已有会话在休眠和 worker 重启后仍保留原包、版本、loop 与前端 bundle。禁用或卸载停止新的绑定，已有会话继续排空。关闭或休眠会话保留持久代码 pin 和磁盘快照。旧的内存容器在最后一个打开的会话结束并经过空闲超时后关闭（默认 60 秒，可用 `limits["worker.generation_idle_close_ms"]` 配置，0 表示立即回收）。重开会话会从快照重建原 generation。会话删除后，由 Host 所有者调用 `releaseSessionGeneration(sessionKey)`，不再被会话引用的快照才会回收。
 
-撤信任比禁用更强：generation 或保存的组合导入归档代码之前，会检查当前包的信任决定。已撤信任、已删除或信任绑定失效的包会拒绝冷恢复，返回类型化的 `E_WORKSPACE_UNTRUSTED`，说明包含 `E_GENERATION_UNTRUSTED`；会话 pin 保留，供管理恢复使用。单纯禁用仍保留受信的固定代码。当前授权必须匹配安装版本的完整性与能力哈希；不可变历史归档保留升级前已审核的绑定。没有包锁文件的显式 Host 必须重新读取其源授权，并核验归档版本的准确完整性与能力哈希。
+撤信任比禁用更强：generation 或保存的组合导入归档代码之前，会检查当前包的信任决定。已撤信任、已删除或信任绑定失效的包会拒绝冷恢复，返回 `E_SESSION_VERSION_OLDER`，`detail.cause` 保留 `E_WORKSPACE_UNTRUSTED`，说明包含 `E_GENERATION_UNTRUSTED`；会话 pin 保留，供管理恢复使用。单纯禁用仍保留受信的固定代码。当前授权必须匹配安装版本的完整性与能力哈希；不可变历史归档保留升级前已审核的绑定。没有包锁文件的显式 Host 必须重新读取其源授权，并核验归档版本的准确完整性与能力哈希。
 
 存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。MCP 定义与技能是动态资源：冷恢复使用当前受信且启用的资源，并按固定的会话组合过滤；历史资源归档不代替动态集合。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供持久引用数、打开会话数、容器存活状态及 active/draining/historical/restart-required/failed 插件状态。draining 表示仍有打开的会话使用旧代码；historical 表示仅历史会话引用，界面显示为“遗留占用”。符合条件的历史会话可在运行时设置中使用现有的“将会话迁移到当前插件”动作。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
 
