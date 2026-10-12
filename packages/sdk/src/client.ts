@@ -39,6 +39,7 @@ import {
   type SessionDefaultsSnapshot,
   type SessionListParams,
   type SessionPreferences,
+  type SessionRuntimeDescriptor,
   type SkinListResult,
   type SkinReadResult,
   type SurfacesMountsResult,
@@ -454,6 +455,8 @@ export class Client {
   }
 
   readonly session = {
+    runtime: (id: string): Promise<SessionRuntimeDescriptor> =>
+      this.call('_agnes/v1/session.runtime', { sessionId: id }),
     new: async (o: {
       cwd: string
       preset?: string

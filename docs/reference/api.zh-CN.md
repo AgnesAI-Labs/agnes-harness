@@ -62,6 +62,8 @@ async function listSessions(options: CreateClientOptions) {
 
 具体方法拼写、方向、params/result、管理权限以[method table](../../packages/protocol/src/methods.ts)、[包管理表](../../packages/protocol/src/package-admin.ts)、[资源管理表](../../packages/protocol/src/resource-control.ts)为准。字段不要从本表简写推导。
 
+`_agnes/v1/session.runtime`（SDK `client.session.runtime(id)`）说明会话实际运行在什么上面：代码代次（以及是否有更新的代次）、组合、Loop、每类 provider 的当前选择及其 `pending` 变更、seam 绑定、资源版本（Skills、MCP 服务器、模型路由指纹）、生效的审批模式、工具策略与沙箱，以及需要重启的输入。`pending.effect` 为 `new-sessions` 表示之后新开的会话生效，`restart-required` 表示需要重启 daemon。管理端 `plugins.generations` 的代次列表也会列出每个代次所绑定的会话。
+
 读取完整工具记录时，使用 `_agnes/v1/session.readToolDetail` 按需读取工具调用及其匹配的结果。传入 `sessionId`，并把工具节点的 `seq` 作为 `callSeq`；有 `resultSeq` 时一并传入。可选的 `offset` 和 `maxBytes` 按 UTF-8 字节分页，单次响应最多 262,144 字节。响应包含 base64 编码的 `data`、`totalBytes` 和 `nextOffset`（最后一块为 `null`）。先解码并拼接各块，再解析 `{call, result?}` JSON。daemon 读取事件前会校验会话访问权限。RPC 和 SDK 的 `Session.readToolDetail(callSeq, resultSeq?)` 都将完整序列化记录限制在 64 MiB；分页不能读取更大的记录。超限时 RPC 返回 `INVALID_PARAMS`，原因是 `detail-too-large`。常规 UI 投影仍使用长度受限的预览，工具节点新增可选 `resultSeq`。
 
 写操作通常通过 clientId/commandId、expected revision/integrity 返回持久化 operation receipt，再查询最终状态。不要收到 receipt 就记录效果成功；不要未知结果后换 commandId 重做外部效果。

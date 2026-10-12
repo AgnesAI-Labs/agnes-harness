@@ -12,6 +12,7 @@ import { METHODS } from '../src/methods.js'
 import * as ModelSlots from '../src/model-slots.js'
 import * as Runtime from '../src/runtime-admin.js'
 import * as Schedules from '../src/schedules.js'
+import * as RuntimeDescriptor from '../src/session-runtime.js'
 import * as Tools from '../src/session-tools.js'
 
 type Node = Record<string, unknown>
@@ -27,6 +28,7 @@ export function appServerArtifacts() {
     ['../../src/model-slots.js', ModelSlots],
     ['../../src/runtime-admin.js', Runtime],
     ['../../src/schedules.js', Schedules],
+    ['../../src/session-runtime.js', RuntimeDescriptor],
     ['../../src/session-tools.js', Tools],
     ['./app-server.js', App],
   ] as const

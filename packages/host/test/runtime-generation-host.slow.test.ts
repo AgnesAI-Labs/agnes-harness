@@ -277,6 +277,21 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     expect(a.currentTools().resolve('skill_read')).toBeDefined()
     expect(b.currentTools().resolve('skill_read')).toBeDefined()
     expect(a.pluginGenerationId).toBe(firstId)
+    const oldRuntime = required(host.sessionRuntime)(a.key)
+    expect(oldRuntime.generation).toEqual({
+      id: firstId,
+      current: false,
+      state: 'draining',
+      newer: { id: b.pluginGenerationId, effect: 'new-sessions' },
+    })
+    expect(required(host.sessionRuntime)(b.key).generation).toEqual({
+      id: b.pluginGenerationId,
+      current: true,
+      state: 'active',
+    })
+    expect(host.pluginGenerationStatus?.().generations.find((item) => item.id === firstId)?.sessions).toEqual(
+      [{ key: a.key, open: true }],
+    )
     expect(await a.scan({ type: 'tool/result', limit: 10 })).toEqual([])
     resume()
     expect((await inFlight).reason).toBe('completed')

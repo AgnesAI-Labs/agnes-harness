@@ -49,6 +49,15 @@ API additions require a minor version; removals or semantic changes require a ma
   The refine extension keeps its own queue-backed intake.
 
 
+## Unreleased
+
+### Added (protocol, additive)
+
+- `_agnes/v1/session.runtime` (client tier, SDK `client.session.runtime(id)`): `SessionRuntimeDescriptor`
+  with generation, composition, loop, providers (with `pending`), seam bindings (`pinned`),
+  resource revisions, effective policy and `restartRequired`.
+- `plugins.generations` generation items carry optional `sessions: { key, open }[]`.
+
 ## 2.0.0
 
 ### Removed

@@ -95,6 +95,7 @@ import {
   SchedulesUpsertResult,
   ScheduleView,
 } from '../src/schedules.js'
+import { SessionRuntimeDescriptor, SessionRuntimeParams } from '../src/session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
 
@@ -198,6 +199,7 @@ ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
   }
 })
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+const SESSION_RUNTIME_ID = 'https://agnes.dev/session-runtime'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
 const SCHEDULES_ID = 'https://agnes.dev/schedules'
 ajv.addSchema({
@@ -225,6 +227,7 @@ ajv.addSchema({
   },
 })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
+ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
   if (!ref.startsWith('git:')) return false
@@ -7013,6 +7016,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertResult,
   },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
+  [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
     ActualState: ResourceControlGen.ActualState,
@@ -7521,6 +7525,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: RUNTIME_ADMIN_ID,
     params: 'RuntimeAdminEmpty',
     result: 'RuntimeAdminEmpty',
+  },
+  '_agnes/v1/session.runtime': {
+    fileId: SESSION_RUNTIME_ID,
+    params: 'SessionRuntimeParams',
+    result: 'SessionRuntimeDescriptor',
   },
   '_agnes/v1/session.tools': {
     fileId: SESSION_TOOLS_ID,
@@ -8514,6 +8523,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ path: '/other' }],
     note: 'rescan uses configured roots',
   },
+  '_agnes/v1/session.runtime': {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
+    note: 'runtime descriptor parameters',
+  },
   '_agnes/v1/session.tools': {
     valid: { sessionId: 's' },
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
@@ -9121,6 +9135,44 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/session.runtime': {
+    valid: {
+      sessionKey: 's',
+      generation: {
+        id: 'g1',
+        current: false,
+        state: 'draining',
+        newer: { id: 'g2', effect: 'new-sessions' },
+      },
+      preset: { name: 'default', bundles: [] },
+      loop: { id: 'default', version: '1.0.0' },
+      providers: [
+        {
+          kind: 'sandbox',
+          id: 'local',
+          binding: 'process',
+          pending: { id: 'remote', effect: 'restart-required' },
+        },
+      ],
+      seams: [{ kind: 'approval', provider: 'builtin', pinned: false }],
+      resources: { profileHash: 'h', items: [{ id: 'ext:skills', resources: ['skills'], revision: 'r' }] },
+      policy: {
+        toolPolicy: 'default',
+        toolRuntime: 'default',
+        readOnly: false,
+        sandbox: { provider: 'local', onUnavailable: 'deny' },
+      },
+      restartRequired: ['sandbox'],
+    },
+    invalid: [
+      { sessionKey: 's' },
+      {
+        sessionKey: 's',
+        generation: { current: true, state: 'unknown' },
+      },
+    ],
+    note: 'runtime descriptor result',
+  },
   '_agnes/v1/session.tools': {
     valid: { sessionId: 's', tools: [], resources: [] },
     invalid: [

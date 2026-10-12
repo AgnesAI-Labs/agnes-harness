@@ -72,6 +72,7 @@ import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerFactChain } from './methods/fact-chain.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
+import { registerSessionRuntime } from './methods/session-runtime.js'
 import {
   hostSessionCatalog,
   registerSessionSelection,
@@ -416,6 +417,7 @@ export function createLocalEndpoint(
   const lister = withSessionPreferences(opts.lister ?? new RegistryLister(registry), preferences)
   registerSessionPreferences(ep, lister, preferences)
   registerConfiguration(ep, opts.configuration)
+  registerSessionRuntime(ep, host, requireSessionOwner(cx))
   registerWorkspaces(ep, workspaces)
   registerAcp(ep, cx, feeds, attached)
   registerAgnes(

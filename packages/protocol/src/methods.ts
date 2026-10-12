@@ -39,6 +39,7 @@ import {
   SchedulesUpsertResult,
 } from './schedules.js'
 import { validateExtensionCall } from './services.js'
+import { SessionRuntimeDescriptor, SessionRuntimeParams } from './session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
@@ -124,6 +125,7 @@ export type MethodName =
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
+  | '_agnes/v1/session.runtime'
   | '_agnes/v1/session.tools'
   | '_agnes/v1/session.jobs.read'
   | '_agnes/v1/session.jobs.control'
@@ -302,6 +304,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
+  '_agnes/v1/session.runtime': clientRequest(SessionRuntimeParams, SessionRuntimeDescriptor),
   '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
   '_agnes/v1/session.jobs.read': clientRequest(A.SessionJobsReadParams, A.SessionJobsReadResult),
   '_agnes/v1/session.jobs.control': clientRequest(A.SessionJobsControlParams, A.SessionJobsControlResult),

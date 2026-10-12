@@ -58,6 +58,7 @@
 
 ### 会话内容、工作区与界面
 
+- `_agnes/v1/session.runtime`
 - `_agnes/v1/session.tools`
 - `_agnes/v1/session.readToolDetail`
 - `_agnes/v1/session.jobs.read`

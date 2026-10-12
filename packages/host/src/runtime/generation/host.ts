@@ -31,6 +31,15 @@ import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/liv
 import { sessionKey } from '../sessions/session.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
+import { describeHostSession, generationSessions } from './runtime-descriptor.js'
+import {
+  codeRevision,
+  codeRow,
+  liveResource,
+  liveResourceRow,
+  registryCodeRevision,
+  targetRows,
+} from './target-code.js'
 import { assertGenerationTrust } from './trust.js'
 
 export type PluginGenerationStatus = Readonly<{
@@ -42,6 +51,7 @@ export type PluginGenerationStatus = Readonly<{
     openSessions: number
     live: boolean
     packages: readonly Readonly<{ id: string; version: string }>[]
+    sessions?: readonly Readonly<{ key: string; open: boolean }>[]
     error?: string
   }>[]
   plugins: readonly Readonly<{
@@ -56,39 +66,6 @@ export type PluginGenerationStatus = Readonly<{
 
 type LiveGeneration = { snapshot: PluginGenerationSnapshot; host: Host }
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
-const targetRows = (target: RuntimeTarget) => [
-  ...new Map(
-    [...target.tree.rows, ...Object.values(target.resource.rows).flatMap((row) => (row ? [row] : []))].map(
-      (row) => [row.id, row],
-    ),
-  ).values(),
-]
-
-const liveResource = (id: string) => /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)
-const liveResourceRow = (row: ReturnType<typeof targetRows>[number]) =>
-  liveResource(row.id) && row.plugin.startsWith('builtin:@agnes/base/')
-const codeRow = (row: ReturnType<typeof targetRows>[number]) => {
-  if (!row.liveResources?.length) return row
-  const { liveResourceRevision: _revision, mountIdentity: _mount, ...code } = row
-  // All code/ownership fields stay in the fingerprint; the derived mount identity also includes resources.
-  return { ...code, mountIdentity: row.codeMountIdentity ?? row.mountIdentity }
-}
-const codeRevision = (target: RuntimeTarget) =>
-  buildCompleteRuntimeTarget({
-    rows: targetRows(target)
-      .filter((row) => !liveResourceRow(row))
-      .map(codeRow),
-    resources: { mcp: [], skills: {} },
-  }).artifact.digest
-
-const registryCodeRevision = (target: RuntimeTarget) =>
-  codeRevision(
-    buildCompleteRuntimeTarget({
-      rows: targetRows(target).filter((row) => !row.id.startsWith('web:') && !row.plugin.startsWith('web:')),
-      resources: { mcp: [], skills: {} },
-    }).target,
-  )
-
 /**
  * Generation-local containers keep Cordis row identities, extension leases, loop registries and
  * model adapters independent. Storage remains the configured backend; no ledger is duplicated.
@@ -111,6 +88,7 @@ export async function createRuntimeGenerationHost(
   const basePackages = new Set<string>()
   const failures = new Map<string, string>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
+  const pendingRestart = new Set<string>()
   let initialBinding: ((key: string) => void) | undefined
   const initialSkills = createGenerationSkills(options.skillResources)
   const initial = await factory(profile, {
@@ -527,6 +505,7 @@ export async function createRuntimeGenerationHost(
         openSessions,
         live: live.has(id),
         packages: snapshot.packages,
+        sessions: generationSessions(pins, id, (key) => !!live.get(id)?.host.kernel.get(key)),
       })
       for (const pkg of snapshot.packages) {
         const packageId = pkg.id,
@@ -656,6 +635,11 @@ export async function createRuntimeGenerationHost(
     extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
     previousTarget?: RuntimeTarget,
   ) => {
+    pendingRestart.clear()
+    const refuseRestart = (id: string): never => {
+      pendingRestart.add(id)
+      throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} requires restart`)
+    }
     const head = await ensureCurrent()
     const oldTarget =
       previousTarget ??
@@ -683,7 +667,7 @@ export async function createRuntimeGenerationHost(
           JSON.stringify(oldTarget.tree.rows.find((old) => old.id === row.id)) !==
           JSON.stringify(target.tree.rows.find((next) => next.id === row.id))
         )
-          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${row.id} requires restart`)
+          refuseRestart(row.id)
       }
     const sources = await sourcesFor(target)
     for (const previous of head.snapshot.sources)
@@ -693,7 +677,7 @@ export async function createRuntimeGenerationHost(
           previous.snapshot.integrity !== next?.snapshot.integrity ||
           previous.snapshot.version !== next?.snapshot.version
         )
-          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${previous.snapshot.packageId} requires restart`)
+          refuseRestart(previous.snapshot.packageId)
       }
     const skillInput = skills ? skills.input : latestSkills
     const codeChanged =
@@ -855,6 +839,16 @@ export async function createRuntimeGenerationHost(
       }
     },
     sessionGeneration: (key) => store.session(key)?.generationId,
+    sessionRuntime: (key) => {
+      const host = owner(key)
+      const id = store.session(key)?.generationId ?? bindings.get(host)?.id
+      return describeHostSession(host, current?.host ?? initial, key, {
+        ...(id ? { id, digest: live.get(id)?.snapshot.resourcesDigest } : {}),
+        failed: failures.has(id ?? ''),
+        newerId: current && host !== current.host ? current.snapshot.id : undefined,
+        restartRequired: [...pendingRestart],
+      })
+    },
     collectPluginGenerations: () => enqueue(collect),
     reloadPlugin: (id, directory) =>
       enqueue(async () => {

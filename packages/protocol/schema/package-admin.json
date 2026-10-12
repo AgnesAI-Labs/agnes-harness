@@ -1652,6 +1652,19 @@
                   "required": ["id", "version"]
                 }
               },
+              "sessions": {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                    "open": { "type": "boolean" }
+                  },
+                  "required": ["key", "open"]
+                }
+              },
               "error": {
                 "type": "string",
                 "maxLength": 512

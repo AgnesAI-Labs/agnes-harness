@@ -8,6 +8,8 @@ import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import { defineExtension, type ExtensionManifest } from '@agnes/extension-api'
 import type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
@@ -189,6 +191,38 @@ describe('Host.reloadEcosystemExtension', () => {
       expect(await catalog()).toContain('skill-b')
       expect(host.extensionRows.current().find((row) => row.id === unrelated.id)).toEqual(unrelated)
       expect(host.pluginGenerationStatus?.().currentGenerationId).toBe(generation)
+      const runtime = host.sessionRuntime?.(session.key)
+      expect(runtime).toMatchObject({
+        sessionKey: session.key,
+        generation: { id: generation, current: true, state: 'active' },
+        restartRequired: [],
+      })
+      expect(runtime?.providers.some((item) => item.kind === 'loop')).toBe(true)
+      expect(runtime?.resources.items.find((item) => item.id === 'ext:agnes/skills')).toMatchObject({
+        resources: expect.arrayContaining(['skills']),
+        revision: consumers[0]?.liveResourceRevision,
+      })
+      // A refused backend change stays visible until the next publication evaluates the target again.
+      const live = host.runtimeTargetSnapshot!()
+      const withBackend = buildCompleteRuntimeTarget({
+        rows: [
+          ...live.tree.rows,
+          createPluginRow({
+            id: 'adapter:probe',
+            plugin: 'missing@unavailable/main',
+            snapshotDigest: 'missing',
+            exportName: 'main',
+            entryRevision: 'missing',
+            extrasRevision: 'none',
+            mountRevision: 'v1',
+          }),
+        ],
+        resources: live.resource.resources,
+      }).target
+      await expect(host.applyRuntimeTarget(withBackend)).rejects.toThrow('E_GENERATION_RESTART_REQUIRED')
+      expect(host.sessionRuntime?.(session.key).restartRequired).toEqual(['adapter:probe'])
+      await host.applyRuntimeTarget(live)
+      expect(host.sessionRuntime?.(session.key).restartRequired).toEqual([])
       const before = host.runtimeTargetSnapshot?.()
       await host.refreshSkillRow(fakeSkillRuntimeInput('b'))
       expect(host.runtimeTargetSnapshot?.()).toEqual(before)

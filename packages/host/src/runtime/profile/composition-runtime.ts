@@ -686,6 +686,7 @@ export async function createCompositionHost(
       }
     },
     sessionCapabilities: (key) => owner(key).host.sessionCapabilities!(key),
+    sessionRuntime: (key) => owner(key).host.sessionRuntime!(key),
     setSessionPreset: (key, name) =>
       enqueue(async () => {
         const result = await owner(key).host.setSessionPreset(key, name)

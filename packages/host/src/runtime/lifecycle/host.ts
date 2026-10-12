@@ -96,6 +96,8 @@ export interface Host {
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
+  /** Effective runtime of one open session; produced by the generation and composition owners. */
+  sessionRuntime?(sessionKey: string): import('@agnes/protocol').SessionRuntimeDescriptor
   releaseSessionGeneration?(sessionKey: string): Promise<void>
   /** Privileged coordinator only: the caller must exclude concurrent admission for this idle session. */
   migrateSessionGeneration?(
