@@ -46,7 +46,7 @@ function SessionViews() {
       />
       <IconButton
         id="report-problem"
-        name="circle-alert"
+        name="bug"
         label={tr('index-shell.reportProblem')}
         title={tr('index-shell.reportProblem')}
       />
