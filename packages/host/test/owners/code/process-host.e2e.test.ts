@@ -49,7 +49,10 @@ it.each(['read', 'denied-shell', 'raw-io-denied'] as const)(
       seams: { sandbox: { exec: executor.run } },
       approval: async (req) => {
         approvals.push(req.tool?.name ?? 'budget')
-        return req.tool?.name === 'shell' ? 'rejected' : 'allowed-once'
+        return {
+          verdict: req.tool?.name === 'shell' ? 'rejected' : 'allowed-once',
+          answeredBy: { ...req.actor, id: 'reviewer' },
+        }
       },
     })
     try {
