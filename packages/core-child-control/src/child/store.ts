@@ -6,9 +6,29 @@ export type { ChildControlStore } from '@agnes/extension-api'
 import type { CancelledChildFact, ChildTaskRecord } from './types.js'
 import { CHILD_CONTROL_FORMAT } from './types.js'
 
+const inFlightAttempts = new Map<string, number>()
+
+/**
+ * Marks a creating attempt as owned by a factory of this process until the returned release runs.
+ * Containers built over one storage share the process, so a recovery sweep started by any of them
+ * must not cancel an attempt another container is still attaching.
+ */
+export function trackChildAttempt(attemptId: string): () => void {
+  inFlightAttempts.set(attemptId, (inFlightAttempts.get(attemptId) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const remaining = (inFlightAttempts.get(attemptId) ?? 1) - 1
+    if (remaining > 0) inFlightAttempts.set(attemptId, remaining)
+    else inFlightAttempts.delete(attemptId)
+  }
+}
+
 /** Cancels only stale creating attempts that have neither a durable deferred marker nor a live
  * factory owner. Each cancellation is an exact CAS, so a late recovery scan cannot cancel a newer
- * attach attempt that won after the scan. */
+ * attach attempt that won after the scan. Attempts a factory of this process is still driving are
+ * live owners; an attempt of another process cannot be told apart yet. */
 export async function recoverCreatingChildAttempts(
   store: ChildControlStore,
   input: {
@@ -23,6 +43,7 @@ export async function recoverCreatingChildAttempts(
       row.creationPhase !== 'creating' ||
       row.deferredFact ||
       row.attemptStartedAt > input.staleBefore ||
+      inFlightAttempts.has(row.attemptId) ||
       input.liveAttemptIds?.has(row.attemptId)
     )
       continue

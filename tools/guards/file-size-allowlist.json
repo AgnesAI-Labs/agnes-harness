@@ -3,7 +3,7 @@
   "packages/cli-tui/src/app.ts": 920,
   "packages/cli/src/bin.ts": 969,
   "packages/core-ledger/src/project/ui.ts": 1033,
-  "packages/core/src/child/factory.ts": 1163,
+  "packages/core/src/child/factory.ts": 1172,
   "packages/core/src/execution/turn/compaction.ts": 1051,
   "packages/core/src/execution/turn/inference.ts": 1402,
   "packages/core/src/execution/turn/tools.ts": 1750,

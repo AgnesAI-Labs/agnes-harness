@@ -1,12 +1,7 @@
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import {
-  hasChildControl,
-  type Kernel,
-  recoverCreatingChildAttempts,
-  type WorkspaceInvocationPort,
-} from '@agnes/core'
+import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -765,10 +760,6 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         beforeRollback: async () => {
           workspaceRuntimes.beginClose()
           await workspaceRuntimes.finishCloseAll()
-          if (hasChildControl(a.adapters.storage)) {
-            const now = opts.clock?.() ?? Date.now()
-            await recoverCreatingChildAttempts(a.adapters.storage, { staleBefore: now, now })
-          }
         },
       })
       return closePromise

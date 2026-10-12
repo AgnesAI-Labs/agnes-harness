@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { recoverCreatingChildAttempts, requireChildControl } from '@agnes/core-child-control/child/store'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
@@ -1137,6 +1137,44 @@ describe('independent-review V1–V7', () => {
     expect(record).toMatchObject({ creationPhase: 'cancelled' })
     expect(record && k.get(record.childKey)).toBeUndefined()
     expect(closes).toBe(1)
+    await k.close()
+  })
+
+  it('keeps a creating attempt alive across a sibling container recovery sweep', async () => {
+    const storage = new MemoryStorage()
+    let release: () => void = () => undefined
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reached: () => void = () => undefined
+    const atBarrier = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const childWorkspaceRuntime = {
+      reserve: async () => {
+        reached()
+        await barrier
+        return { runtime: { fs: testFsOps() }, commit: () => true, close: async () => undefined }
+      },
+    }
+    const k = kernel({ storage })
+    const parent = await k.session('parent', { ...sessionOpts, childWorkspaceRuntime })
+    const creating = parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'sibling' })
+    await atBarrier
+    // What assembling or closing another container over the same storage does.
+    const cancelled = await recoverCreatingChildAttempts(storage, {
+      staleBefore: Number.MAX_SAFE_INTEGER,
+      now: Date.now(),
+    })
+    expect(cancelled).toEqual([])
+    release()
+    const child = await creating
+    const [record] = await storage.listByParent(parent.key)
+    expect(record).toMatchObject({ childKey: child.key, creationPhase: 'committed' })
+    // Once settled, the attempt is no longer protected, and a later orphan is still recovered.
+    expect(
+      await recoverCreatingChildAttempts(storage, { staleBefore: Number.MAX_SAFE_INTEGER, now: Date.now() }),
+    ).toEqual([])
     await k.close()
   })
 })

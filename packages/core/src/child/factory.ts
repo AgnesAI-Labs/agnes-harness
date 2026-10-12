@@ -1,7 +1,7 @@
 import { admitBudgetMode, admitGeneration } from '@agnes/core-child-control/child/admission'
 import { childAgentAllowlist, setChildAgentAllowlist } from '@agnes/core-child-control/child/allowlist'
 import { capToMicrocredits } from '@agnes/core-child-control/child/credits'
-import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { requireChildControl, trackChildAttempt } from '@agnes/core-child-control/child/store'
 import {
   type ChildKind,
   type ChildTaskRecord,
@@ -136,58 +136,63 @@ export class KernelChildren implements ChildrenFactory {
     const childCap = opts.budget === undefined ? null : capToMicrocredits(opts.budget)
     const attemptId = `attempt:${this.kernel.ids.ulid()}`
 
-    const created = await store.createDelegatedChild({
-      childKey,
-      parentKey: parent.key,
-      boundarySeq,
-      creationId,
-      attemptId,
-      attemptStartedAt: parent.d.clock(),
-      kind,
-      rootTaskId,
-      runtimeOwnerSessionKey: parent.key,
-      generationDepth: admitted.childDepth,
-      generationLimit: parent.preset.generationLimit,
-      maxFanOut: parent.preset.maxFanOut,
-      inputHash,
-      inputText: opts.input,
-      cwd: opts.cwd,
-      actorId: parent.d.actor.id,
-      isolation: opts.isolation ?? 'shared',
-      workspaceId: `ws:${childKey}`,
-      treeCapMicro: treeCap,
-      childCapMicro: childCap,
-      writerRunId: `${parent.writerRunId}/child/${this.kernel.ids.ulid()}`,
-    })
-    if (created.status === 'refused') {
-      const code =
-        created.reason === 'fan_out' || created.reason === 'generation' ? 'E_CHILD_LIMIT' : 'E_BUDGET'
-      throw new CoreError(code, created.message)
-    }
-    if (created.status === 'conflict')
-      throw new CoreError('E_CHILD_CONFLICT', 'creationId reused with different input', { creationId })
-    const delegation = {
-      kind,
-      creationId,
-      rootTaskId,
-      generationDepth: admitted.childDepth,
-    }
-    const record = (await store.lookupByKey(created.record.childKey)) ?? created.record
-    if (opts.start === false) {
-      let deferred = record
-      if (record.creationPhase === 'creating') {
-        await store.deferCreatingChild({
-          childKey: record.childKey,
-          creationId: record.creationId,
-          attemptId: record.attemptId,
-          expectedRevision: record.creationRevision,
-          deferredAt: parent.d.clock(),
-        })
-        deferred = (await store.lookupByKey(record.childKey)) ?? record
+    const untrackAttempt = trackChildAttempt(attemptId)
+    try {
+      const created = await store.createDelegatedChild({
+        childKey,
+        parentKey: parent.key,
+        boundarySeq,
+        creationId,
+        attemptId,
+        attemptStartedAt: parent.d.clock(),
+        kind,
+        rootTaskId,
+        runtimeOwnerSessionKey: parent.key,
+        generationDepth: admitted.childDepth,
+        generationLimit: parent.preset.generationLimit,
+        maxFanOut: parent.preset.maxFanOut,
+        inputHash,
+        inputText: opts.input,
+        cwd: opts.cwd,
+        actorId: parent.d.actor.id,
+        isolation: opts.isolation ?? 'shared',
+        workspaceId: `ws:${childKey}`,
+        treeCapMicro: treeCap,
+        childCapMicro: childCap,
+        writerRunId: `${parent.writerRunId}/child/${this.kernel.ids.ulid()}`,
+      })
+      if (created.status === 'refused') {
+        const code =
+          created.reason === 'fan_out' || created.reason === 'generation' ? 'E_CHILD_LIMIT' : 'E_BUDGET'
+        throw new CoreError(code, created.message)
       }
-      return this.defer(kind, parent, deferred, opts, modelTarget, delegation)
+      if (created.status === 'conflict')
+        throw new CoreError('E_CHILD_CONFLICT', 'creationId reused with different input', { creationId })
+      const delegation = {
+        kind,
+        creationId,
+        rootTaskId,
+        generationDepth: admitted.childDepth,
+      }
+      const record = (await store.lookupByKey(created.record.childKey)) ?? created.record
+      if (opts.start === false) {
+        let deferred = record
+        if (record.creationPhase === 'creating') {
+          await store.deferCreatingChild({
+            childKey: record.childKey,
+            creationId: record.creationId,
+            attemptId: record.attemptId,
+            expectedRevision: record.creationRevision,
+            deferredAt: parent.d.clock(),
+          })
+          deferred = (await store.lookupByKey(record.childKey)) ?? record
+        }
+        return this.defer(kind, parent, deferred, opts, modelTarget, delegation)
+      }
+      return await this.open(kind, parent, record, opts, modelTarget, delegation)
+    } finally {
+      untrackAttempt()
     }
-    return this.open(kind, parent, record, opts, modelTarget, delegation)
   }
 
   get(childKey: string): ChildHandle | undefined {
@@ -285,7 +290,11 @@ export class KernelChildren implements ChildrenFactory {
     const active = this.opening.get(record.childKey)
     if (active) return active
 
-    const opening = this.openAttempt(kind, parent, record, opts, modelTarget, delegation).finally(() => {
+    const releases: (() => void)[] = []
+    const opening = this.openAttempt(kind, parent, record, opts, modelTarget, delegation, (attemptId) =>
+      releases.push(trackChildAttempt(attemptId)),
+    ).finally(() => {
+      for (const release of releases) release()
       if (this.opening.get(record.childKey) === opening) this.opening.delete(record.childKey)
     })
     this.opening.set(record.childKey, opening)
@@ -297,22 +306,22 @@ export class KernelChildren implements ChildrenFactory {
     parent: SessionImpl,
     initial: ChildTaskRecord,
     opts: CreateOpts,
-    modelTarget?: { route: string; model: string },
-    delegation?: {
-      kind: ChildKind
-      creationId: string
-      rootTaskId: string
-      generationDepth: number
-    },
+    modelTarget: { route: string; model: string } | undefined,
+    delegation:
+      | { kind: ChildKind; creationId: string; rootTaskId: string; generationDepth: number }
+      | undefined,
+    track: (attemptId: string) => void,
   ): Promise<ChildHandle> {
     const store = requireChildControl(parent.d.log.storage)
     let attempt = (await store.lookupByKey(initial.childKey)) ?? initial
     if (attempt.creationPhase === 'deferred') {
+      const nextAttemptId = `attempt:${this.kernel.ids.ulid()}`
+      track(nextAttemptId)
       const begun = await store.beginChildAttempt({
         childKey: attempt.childKey,
         creationId: attempt.creationId,
         previousAttemptId: attempt.attemptId,
-        nextAttemptId: `attempt:${this.kernel.ids.ulid()}`,
+        nextAttemptId,
         expectedRevision: attempt.creationRevision,
         startedAt: parent.d.clock(),
       })
