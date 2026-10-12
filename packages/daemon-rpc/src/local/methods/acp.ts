@@ -358,8 +358,9 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
  * configuration, not a daemon fault, so it is answered as SEMANTIC_REJECTED/PROVIDER_UNCONFIGURED
  * instead of INTERNAL. Initialization failures retain fixed provider causes for diagnosis without
  * returning exception prose. The worker may drop `detail` but keeps a whitelist `reason` identifier.
+ * The authenticated request supplies the session id when that detail was stripped.
  */
-export function throwSessionOpenRpcError(error: unknown): never {
+export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
   if (e?.code === 'SANDBOX_UNAVAILABLE') throw rpcError('SEMANTIC_REJECTED', { code: 'SANDBOX_UNAVAILABLE' })
   // A session that cannot continue on this build says which way it differs and what the person can
@@ -370,7 +371,7 @@ export function throwSessionOpenRpcError(error: unknown): never {
   if (versionIssue) {
     const detail = (e as { detail?: { sessionKey?: unknown; ledgerPath?: unknown; cause?: unknown } }).detail
     const notice = sessionVersionNotice(versionIssue, {
-      sessionId: typeof detail?.sessionKey === 'string' ? detail.sessionKey : '',
+      sessionId: typeof detail?.sessionKey === 'string' ? detail.sessionKey : sessionId,
       ...(typeof detail?.ledgerPath === 'string' ? { ledgerPath: detail.ledgerPath } : {}),
       repinnable: versionIssue === 'older',
     })
@@ -608,7 +609,7 @@ export function registerAcp(
       binding = reserved.envelope
     } catch (error) {
       if (error instanceof SessionAdmissionDenied) denyOwnership('session/new', requestedKey)
-      throwSessionOpenRpcError(error)
+      throwSessionOpenRpcError(error, requestedKey)
     }
     try {
       entry = await cx.registry.open({
@@ -623,7 +624,7 @@ export function registerAcp(
       if (reservedNew && !ownership.activateNew(entry.key, c.conn.principalId))
         denyOwnership('session/new', requestedKey)
     } catch (error) {
-      throwSessionOpenRpcError(error)
+      throwSessionOpenRpcError(error, requestedKey)
     }
     feedFor(entry)
     return { sessionId: entry.key }
@@ -644,7 +645,7 @@ export function registerAcp(
         resume: true,
       } as Parameters<typeof cx.registry.open>[0])
     } catch (error) {
-      throwSessionOpenRpcError(error)
+      throwSessionOpenRpcError(error, p.sessionId)
     }
     if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
     const feed = feedFor(entry)

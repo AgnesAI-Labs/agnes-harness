@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { throwSessionOpenRpcError } from '../src/local/methods/acp.js'
 
-const refusal = (error: unknown) => {
+const refusal = (error: unknown, sessionId?: string) => {
   try {
-    throwSessionOpenRpcError(error)
+    throwSessionOpenRpcError(error, sessionId)
   } catch (thrown) {
     return thrown as { data: Record<string, unknown> }
   }
@@ -16,10 +16,13 @@ describe('session open refusals for a version difference', () => {
     ['E_SESSION_VERSION_OLDER', 'older', ['new-session', 'repin']],
     ['E_SESSION_CORRUPT', 'corrupt', ['new-session']],
   ])('answers %s with its direction, next actions and text in both languages', (code, issue, actions) => {
-    const failure = refusal({
-      code,
-      detail: { sessionKey: 's-1', cause: 'E_SEAM_PIN_MISMATCH', ledgerPath: '/data/sessions.db' },
-    })
+    const failure = refusal(
+      {
+        code,
+        detail: { sessionKey: 's-1', cause: 'E_SEAM_PIN_MISMATCH', ledgerPath: '/data/sessions.db' },
+      },
+      'different-request',
+    )
     expect(failure.data).toMatchObject({
       code,
       issue,
@@ -28,5 +31,13 @@ describe('session open refusals for a version difference', () => {
       localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('你') },
     })
     expect((failure.data.localized as { en: string }).en).toContain('/data/sessions.db')
+    const relayed = refusal({ code }, 's-1')
+    expect(relayed.data).toMatchObject({
+      code,
+      issue,
+      actions,
+      localized: { en: expect.stringContaining('s-1'), 'zh-CN': expect.stringContaining('s-1') },
+    })
+    expect(relayed.data.reason).toBeUndefined()
   })
 })
