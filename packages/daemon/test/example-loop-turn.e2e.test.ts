@@ -84,7 +84,6 @@ async function runExample(kind: 'react' | 'dag') {
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {
         package: '@agnes/ai',
-        adapters: ['@agnes/ai'],
         catalog: { include: [] },
         routes: [
           {

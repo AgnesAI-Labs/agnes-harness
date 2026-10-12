@@ -17,7 +17,7 @@ it.each(['tool', 'tool-with-panel', 'mcp-skills', 'model-adapter', 'loop', 'skil
         )
         const tools: { name: string; execute(args: unknown): Promise<{ content: { text: string }[] }> }[] = []
         pluginHelper.apply({
-          extension: () => ({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) }),
+          tools: { register: (tool: (typeof tools)[number]) => tools.push(tool) },
         })
         const guide = tools.find((tool) => tool.name === 'plugin_helper_guide')
         if (!guide) throw new Error('guide missing')

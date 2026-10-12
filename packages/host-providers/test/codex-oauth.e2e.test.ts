@@ -504,7 +504,7 @@ it('production Host assembly reads OAuth at request time and preserves compresse
   }
   const profile = {
     dataDir: join(home, 'data'),
-    provider: { package: '@agnes/ai', routes: [route] },
+    provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
     limits: {},
     adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
   } as ResolvedProfile
@@ -598,7 +598,7 @@ it.each(['anthropic', 'kimi-coding', 'xai'] as const)(
     const built = await buildProvider(
       {
         dataDir: join(home, 'data'),
-        provider: { package: '@agnes/ai', routes: [route] },
+        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
         limits: {},
         adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
       } as ResolvedProfile,
