@@ -1302,7 +1302,7 @@ describe('runtime-context user/message projection', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text: 'hello' }] },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
-      origin: 'system',
+      origin: 'principal',
       trust: 'trusted',
       lane: 'main',
       v: 1,
@@ -1316,6 +1316,7 @@ describe('runtime-context user/message projection', () => {
       seq: 1,
       content: [{ type: 'text', text: 'hello' }],
       actorLabel: 'operator',
+      origin: 'principal',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
@@ -1329,7 +1330,7 @@ describe('runtime-context user/message projection', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text: 'hello again' }], kind: 'prompt' },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
-      origin: 'system',
+      origin: 'principal',
       trust: 'trusted',
       lane: 'main',
       v: 1,
@@ -1343,6 +1344,7 @@ describe('runtime-context user/message projection', () => {
       seq: 1,
       content: [{ type: 'text', text: 'hello again' }],
       actorLabel: 'operator',
+      origin: 'principal',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
