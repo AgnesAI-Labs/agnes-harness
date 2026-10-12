@@ -19,7 +19,7 @@ export async function deliverDecision(
     )
       throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
   },
-): Promise<{ snapshot: DecisionSnapshot; park?: EventInput }> {
+): Promise<{ snapshot: DecisionSnapshot; park?: EventInput; pending?: boolean }> {
   if (!snapshot.result && !snapshot.invalidation) {
     const local = new AbortController()
     const deliverySignal = AbortSignal.any([signal, local.signal])
@@ -88,6 +88,7 @@ export async function deliverDecision(
       if (!current.result && !current.invalidation)
         return {
           snapshot: current,
+          pending: isPending(answer),
           park: s.ev(
             'x/core/decision-delivery',
             {
