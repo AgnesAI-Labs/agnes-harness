@@ -14,7 +14,7 @@ describe('templates', () => {
     expect(TEMPLATE_NAMES).toEqual(['local-dev', 'enterprise'])
     for (const n of TEMPLATE_NAMES) expect(loadTemplate(n).name).toBe(n)
   })
-  it('local-dev names the seven package seams, lists the provider package, and defaults to workspace-write', () => {
+  it('local-dev names the seven seam kinds, lists the provider package, and defaults to workspace-write', () => {
     const t = loadTemplate('local-dev')
     expect(Object.keys(t.seams ?? {}).sort()).toEqual([
       'approval',
@@ -34,7 +34,7 @@ describe('templates', () => {
   })
   it('enterprise routes principals at the governance package and demands a sandbox', () => {
     const t = loadTemplate('enterprise')
-    expect(t.seams?.principals).toBe('@agnes/enterprise')
+    expect(t.seams?.principals).toEqual({ provider: 'enterprise' })
     expect(t.limits?.['sandbox.required']).toBe(1)
     expect(t.transports).toEqual([{ kind: 'unix' }])
     expect(t.computerUse).toMatchObject({ enabled: false, appAccess: 'allowlist' })
@@ -54,13 +54,13 @@ describe('checkTemplateShape says which rule fired', () => {
     name: 't',
     schemaVersion: 1,
     seams: {
-      approval: '@a',
-      checkpoint: '@a',
-      billing: '@a',
-      verifier: '@a',
-      repair: '@a',
-      artifacts: '@a',
-      principals: '@a',
+      approval: { provider: 'a' },
+      checkpoint: { provider: 'a' },
+      billing: { provider: 'a' },
+      verifier: { provider: 'a' },
+      repair: { provider: 'a' },
+      artifacts: { provider: 'a' },
+      principals: { provider: 'a' },
     },
     provider: { package: '@agnes/ai' },
     presets: { default: 'standard', allowed: ['standard'] },
@@ -86,7 +86,12 @@ describe('checkTemplateShape says which rule fired', () => {
     [
       'a missing seam',
       { ...ok(), seams: { ...ok().seams, verifier: undefined } },
-      /seams\.verifier must name a package/,
+      /seams\.verifier is required/,
+    ],
+    [
+      'the string seam form',
+      { ...ok(), seams: { ...ok().seams, approval: '@a' } },
+      /seams\.approval must be \{ provider/,
     ],
     ['no provider package', { ...ok(), provider: {} }, /provider\.package is required/],
     ['no presets block', { ...ok(), presets: undefined }, /presets\.default and presets\.allowed/],

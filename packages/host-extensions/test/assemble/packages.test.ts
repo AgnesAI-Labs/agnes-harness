@@ -24,10 +24,14 @@ const fail = (fn: () => unknown): { code: string; detail: Record<string, unknown
 }
 
 describe('readNamedExports', () => {
-  it('reads seams/operations/presets/runtimes/ecosystem/compaction policy and records the entry', () => {
+  it('ignores a `seams` export: a seam is a registered provider, not a factory', () => {
+    expect(
+      (readNamedExports('acme/seams', entry, { seams: { approval: async () => ({}) } }) as { seams?: unknown }).seams,
+    ).toBeUndefined()
+  })
+  it('reads operations/presets/runtimes/ecosystem/compaction policy and records the entry', () => {
     const buildCompactionPlan = async () => null
     const m = readNamedExports('acme/seams', entry, {
-      seams: { approval: async () => ({ ask: async () => 'allowed-once', resume: async () => null }) },
       operations: {
         disclose: () => ({
           name: 'disclose',
@@ -43,7 +47,6 @@ describe('readNamedExports', () => {
       buildCompactionPlan,
       default: () => {},
     })
-    expect(Object.keys(m.seams ?? {})).toEqual(['approval'])
     expect(Object.keys(m.operations ?? {})).toEqual(['disclose'])
     expect(m.presets?.standard?.name).toBe('standard')
     expect(typeof m.runtimes?.python).toBe('function')
@@ -54,37 +57,6 @@ describe('readNamedExports', () => {
   it('a module with none of the four exports is a module with no contributions', () => {
     const m = readNamedExports('acme/empty', entry, { default: () => {} })
     expect(m).toEqual({ id: 'acme/empty', extensionEntry: entry })
-  })
-  it('rejects a seams value that is not a factory, naming the seam', () => {
-    const e = fail(() => readNamedExports('acme/bad', entry, { seams: { approval: 'nope' } }))
-    expect(e.code).toBe('E_SEAM_EXPORT_MISSING')
-    expect(e.detail.seam).toBe('approval')
-  })
-  // The old check was `Object.values(v).every(f => typeof f === 'function')`, which is true for []
-  // and for {}, and which never looked at a single key. `{ notASeam: fn }` sailed through and was
-  // cast to Partial<Record<SeamName, SeamFactory>>; the hole then surfaced in Task 25 as an
-  // E_SEAM_EXPORT_MISSING pointing at the seam, not at the package that misspelled it.
-  it('rejects a seams key that is not a seam name, an empty object, and an array', () => {
-    const misspelled = fail(() =>
-      readNamedExports('acme/bad', entry, { seams: { notASeam: async () => ({}) } }),
-    )
-    expect(misspelled.code).toBe('E_SEAM_EXPORT_MISSING')
-    expect(misspelled.detail.key).toBe('notASeam')
-    expect(fail(() => readNamedExports('acme/bad', entry, { seams: {} })).detail.reason).toBe('empty')
-    expect(fail(() => readNamedExports('acme/bad', entry, { seams: [] })).detail.reason).toBe('not-an-object')
-  })
-  it('accepts every real seam name, so the key check is not a hardcoded shortlist', () => {
-    const names = SEAM_NAMES.filter((n) => n !== 'sandbox' && n !== 'platform')
-    const seams = Object.fromEntries(names.map((n) => [n, async () => ({})]))
-    expect(Object.keys(readNamedExports('acme/all', entry, { seams }).seams ?? {}).sort()).toEqual(
-      [...names].sort(),
-    )
-  })
-  it('refuses a seams export that names sandbox or platform: those are not package seams', () => {
-    for (const key of ['sandbox', 'platform'])
-      expect(fail(() => readNamedExports('acme/s', entry, { seams: { [key]: async () => ({}) } })).code).toBe(
-        'E_SEAM_EXPORT_MISSING',
-      )
   })
   it('rejects operations that is an array rather than a factory table (ERRATA B4)', () => {
     expect(fail(() => readNamedExports('acme/bad', entry, { operations: [] })).code).toBe('E_EXT_LOAD')
@@ -150,15 +122,11 @@ describe('createJitiPackageLoader', () => {
       join(d, 'package.json'),
       JSON.stringify({ name: 'acme/pkg', main: './does-not-exist.js', exports: { '.': './index.ts' } }),
     )
-    writeFileSync(
-      join(d, 'index.ts'),
-      'export const seams = { approval: async () => ({ ask: async () => "allowed-once", resume: async () => null }) }',
-    )
+    writeFileSync(join(d, 'index.ts'), 'export const marker = true')
     // Typed as the interface: importPackage is what assemble() calls, not the concrete loader.
     const l: PackageLoader = loader()
     const m = await l.importPackage('acme/pkg', d)
     expect(m.id).toBe('acme/pkg')
-    expect(Object.keys(m.seams ?? {})).toEqual(['approval'])
     expect(realpathSync(m.extensionEntry as string)).toBe(realpathSync(join(d, 'index.ts')))
 
     const example = fileURLToPath(new URL('../../../../examples/third-party-plugin', import.meta.url))
@@ -172,10 +140,9 @@ describe('createJitiPackageLoader', () => {
     const d = dir()
     writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'acme/main-pkg', main: './lib/entry.ts' }))
     mkdirSync(join(d, 'lib'), { recursive: true })
-    writeFileSync(join(d, 'lib', 'entry.ts'), 'export const seams = { approval: async () => ({}) }')
+    writeFileSync(join(d, 'lib', 'entry.ts'), 'export const marker = true')
     const m = await loader().importPackage('acme/main-pkg', d)
     expect(realpathSync(m.extensionEntry as string)).toBe(realpathSync(join(d, 'lib', 'entry.ts')))
-    expect(Object.keys(m.seams ?? {})).toEqual(['approval'])
   })
 
   it('refuses a package directory with no package.json', async () => {

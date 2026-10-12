@@ -4,7 +4,7 @@ import { createPackageReferences, type PackageReferenceFacts } from '../src/pack
 
 const facts: PackageReferenceFacts = {
   dependencies: ['acme/dependent'],
-  profile: ['seam:billing'],
+  profile: ['seam:sandbox'],
   deployments: ['customer:surface.json'],
   runtime: [
     { kind: 'drainable', reference: 'session:active-call' },
@@ -19,7 +19,7 @@ it('uses one frozen fact read and lets activation drain ordinary hot-replacement
   const references = createPackageReferences(read)
   expect(await references('local-dev', 'acme/pkg-a', 'update', ['acme/pkg-a'])).toEqual([
     { code: 'dependency', references: ['acme/dependent'] },
-    { code: 'profile', references: ['seam:billing'] },
+    { code: 'profile', references: ['seam:sandbox'] },
     { code: 'deployment', references: ['customer:surface.json'] },
     { code: 'generation', references: ['candidate:next', 'pin:active'] },
     { code: 'unknown-contribution', references: ['contribution:legacy'] },
@@ -36,7 +36,7 @@ it('requires drainable calls to be gone before remove and preserves real blocker
   const references = createPackageReferences(async () => facts)
   expect(await references('local-dev', 'acme/pkg-a', 'remove')).toEqual([
     { code: 'dependency', references: ['acme/dependent'] },
-    { code: 'profile', references: ['seam:billing'] },
+    { code: 'profile', references: ['seam:sandbox'] },
     { code: 'deployment', references: ['customer:surface.json'] },
     {
       code: 'generation',

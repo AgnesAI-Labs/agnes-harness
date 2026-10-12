@@ -29344,6 +29344,12 @@
               "restartRequired": {
                 "type": "boolean"
               },
+              "required": {
+                "type": "boolean"
+              },
+              "pinned": {
+                "type": "boolean"
+              },
               "active": {
                 "type": "boolean"
               },
@@ -29396,6 +29402,8 @@
               "sourcePackage",
               "capabilities",
               "restartRequired",
+              "required",
+              "pinned",
               "active",
               "selectedFor"
             ]

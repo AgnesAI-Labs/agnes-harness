@@ -30,98 +30,18 @@ export const AGNES_BASE_PLUGIN_METADATA: Readonly<
       },
     },
   },
-  'seam:approval': {
-    displayName: 'Approval rules',
-    summary: 'Decides which tool actions need approval under the selected session policy.',
-    description: 'Decides which tool actions need approval under the selected session policy.',
-    category: 'safety-approval',
-    locales: {
-      'zh-CN': {
-        displayName: '审批规则',
-        summary: '按会话策略判断哪些工具操作需要先获得批准。',
-        description: '按会话策略判断哪些工具操作需要先获得批准。',
-      },
-    },
-  },
-  'seam:principals': {
-    displayName: 'Local machine owner',
-    summary: 'Treats callers as one local machine owner for single-user deployments.',
-    description: 'Treats callers as one local machine owner for single-user deployments.',
-    category: 'safety-approval',
-    locales: {
-      'zh-CN': {
-        displayName: '本机所有者',
-        summary: '在单用户部署中，将调用方统一视为本机所有者。',
-        description: '在单用户部署中，将调用方统一视为本机所有者。',
-      },
-    },
-  },
-  'seam:artifacts': {
-    displayName: 'Local artifacts',
-    summary: 'Stores tool outputs and attachments locally so they can be retrieved later.',
-    description: 'Stores tool outputs and attachments locally so they can be retrieved later.',
-    category: 'developer',
-    locales: {
-      'zh-CN': {
-        displayName: '本地附件存储',
-        summary: '在本地保存工具产物和附件，便于之后查看与取回。',
-        description: '在本地保存工具产物和附件，便于之后查看与取回。',
-      },
-    },
-  },
-  'seam:checkpoint': {
-    displayName: 'File checkpoints',
-    summary: 'Saves file checkpoints so supported workspace changes can be inspected and rewound.',
-    description: 'Saves file checkpoints so supported workspace changes can be inspected and rewound.',
-    category: 'safety-approval',
-    locales: {
-      'zh-CN': {
-        displayName: '文件检查点',
-        summary: '保存文件检查点，便于检查和回退受支持的工作区改动。',
-        description: '保存文件检查点，便于检查和回退受支持的工作区改动。',
-      },
-    },
-  },
-  'seam:billing': {
-    displayName: 'Usage accounting',
-    summary: "Records model usage and cost estimates to help track a task's spending.",
-    description: "Records model usage and cost estimates to help track a task's spending.",
-    category: 'observability',
-    locales: {
-      'zh-CN': {
-        displayName: '用量记录',
-        summary: '记录模型用量与费用估算，帮助掌握任务开销。',
-        description: '记录模型用量与费用估算，帮助掌握任务开销。',
-      },
-    },
-  },
-  'seam:verifier': {
-    displayName: 'Progress checks',
+  'seam-providers:default': {
+    displayName: 'Core runtime services',
     summary:
-      'Detects repeated writes and stalled work, then requests revision or escalation within configured limits.',
+      'Provides the default approval prompts, identity, usage accounting, checkpoints, artifact storage and progress checks.',
     description:
-      'Detects repeated writes and stalled work, then requests revision or escalation within configured limits.',
+      'Provides the default approval prompts, identity, usage accounting, checkpoints, artifact storage and progress checks.',
     category: 'agent-loop',
     locales: {
       'zh-CN': {
-        displayName: '执行进度检查',
-        summary: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
-        description: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
-      },
-    },
-  },
-  'seam:repair': {
-    displayName: 'Progress checks',
-    summary:
-      'Detects repeated writes and stalled work, then requests revision or escalation within configured limits.',
-    description:
-      'Detects repeated writes and stalled work, then requests revision or escalation within configured limits.',
-    category: 'agent-loop',
-    locales: {
-      'zh-CN': {
-        displayName: '执行进度检查',
-        summary: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
-        description: '发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。',
+        displayName: '核心运行服务',
+        summary: '提供默认的审批提示、身份、用量记录、文件检查点、产物存储和进度检查。',
+        description: '提供默认的审批提示、身份、用量记录、文件检查点、产物存储和进度检查。',
       },
     },
   },

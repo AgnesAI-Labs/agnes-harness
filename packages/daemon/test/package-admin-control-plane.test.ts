@@ -55,17 +55,7 @@ const authority = {
   clientId,
   permissions: PACKAGE_ADMIN_ALL_PERMISSIONS,
 }
-const seams = [
-  'approval',
-  'checkpoint',
-  'billing',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 
 let root: string
 let temporaryRoot: string
@@ -79,7 +69,7 @@ function createProfile(name: string, capabilityCeiling: readonly string[] = ['to
   writeLock(directory, {
     ...emptyLock(name, '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((seam) => [seam, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((seam) => [seam, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: [...capabilityCeiling], workspacePackages: 'require-project-trust' },
   })
   return directory

@@ -1,11 +1,12 @@
 {
   "name": "@agnes/extension-api",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./mcp-naming": "./src/mcp-naming.ts",
+    "./seams": "./src/seams.ts",
     "./testkit": "./testkit/index.ts",
     "./testkit/persistence-contract": "./testkit/persistence-contract.ts"
   },

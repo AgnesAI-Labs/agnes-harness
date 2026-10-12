@@ -92,7 +92,9 @@ export class ProviderRegistry<T extends ProviderIdentity> {
         capabilities: Object.freeze([...capabilities]),
         restartRequired: this.definition.restartRequired,
         scope: this.definition.scope,
+        required: this.definition.required,
         authority: this.definition.authority,
+        pinned: this.definition.pinned,
       }),
     }
     const mount = () => {

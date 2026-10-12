@@ -1,4 +1,5 @@
 import { SEAM_NAMES, type SeamName } from '@agnes/core'
+import type { ProviderSelection } from '@agnes/extension-api'
 import type {
   ApprovalProfile,
   CommandHooksPolicy,
@@ -146,7 +147,7 @@ export type RuntimeProfileManifest = {
   schemaVersion?: number
   extends?: string
   packages?: PackageRef[]
-  seams?: Partial<Record<ProfileSeamName, string>>
+  seams?: Partial<Record<ProfileSeamName, ProviderSelection>>
   provider?: ProviderConfig
   adapters?: AdaptersConfig
   transports?: Transport[]
@@ -256,7 +257,7 @@ export type ResolvedProfile = Readonly<{
   loop?: LoopSelection
   chain: string[]
   packages: ResolvedPackage[]
-  seams: Record<ProfileSeamName, string>
+  seams: Record<ProfileSeamName, ProviderSelection>
   provider: { package: string; adapters: string[] } & Pick<ProviderConfig, 'routes' | 'catalog' | 'contract'>
   adapters: {
     storage: string

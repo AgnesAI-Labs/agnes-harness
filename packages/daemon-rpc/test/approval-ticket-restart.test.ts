@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { operations } from '@agnes/code'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { createTestHost } from '@agnes/host/testkit'
+import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import type { Actor, InferenceEvent } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -120,7 +120,7 @@ it('re-offers a real Host tool approval after its client disconnects without rec
     dataDir: root,
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     packages: {
-      '@agnes/base': { seams: { approval: baseSeams.approval }, presets: basePresets },
+      '@agnes/base': { seams: { approval: baseSeamFactories.approval }, presets: basePresets },
       '@agnes/code': { operations },
     },
     prompter: (request, options) => router.ask(request, options),

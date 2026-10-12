@@ -81,17 +81,10 @@ beforeEach(() => {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'billing',
-        'sandbox',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-        'platform',
-      ].map((name) => [name, '@agnes/base']),
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+        name,
+        { provider: 'local' },
+      ]),
     ),
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })

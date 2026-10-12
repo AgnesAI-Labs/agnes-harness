@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import type { ProviderSelection } from '@agnes/extension-api'
 import { readSandboxStartupConfig } from '@agnes/host-common/profile/sandbox-startup'
 import { type ApprovalMode, type ApprovalProfile, validateCommandHooksPolicy } from '@agnes/protocol'
 import { HostError, type Layer } from '../errors.js'
@@ -9,13 +10,13 @@ import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
 import { readModelAdapterSelection, readProviderSelection } from './provider-selection.js'
+import { seamSelectionProblems, selectionOf } from './seam-selection.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
 import {
   type PackageRef,
   PROFILE_SEAM_NAMES,
   type ProfileInputs,
   type ProfileSeamName,
-  REMOVED_SEAM_KEYS,
   type ReconcilePolicy,
   type ResolvedPackage,
   type ResolvedProfile,
@@ -535,19 +536,19 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       ...(st.provides ? { provides: [...st.provides] } : {}),
     })
   }
-  for (const [key, fix] of Object.entries(REMOVED_SEAM_KEYS))
-    if (m.seams && Object.hasOwn(m.seams, key))
-      throw new HostError('E_PROFILE_FRAGMENT_KEY', `seams.${key} was removed; ${fix}`, {
-        detail: { field: `seams.${key}` },
-      })
-  const seams = {} as Record<ProfileSeamName, string>
+  const problems = seamSelectionProblems(m.seams, false)
+  if (problems.length)
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', problems.join('; '), {
+      detail: { field: 'seams', problems },
+    })
+  const seams = {} as Record<ProfileSeamName, ProviderSelection>
   for (const name of PROFILE_SEAM_NAMES) {
-    const pkg = m.seams?.[name]
-    if (!pkg)
-      throw new HostError('E_SEAM_MISSING', `seam ${name} has no implementation package`, {
+    const chosen = m.seams?.[name]
+    if (!chosen)
+      throw new HostError('E_SEAM_MISSING', `seam ${name} has no selected implementation`, {
         detail: { seam: name },
       })
-    seams[name] = pkg
+    seams[name] = selectionOf(chosen)
   }
   if (!m.provider?.package)
     throw new HostError('E_SEAM_MISSING', 'provider.package is required', {

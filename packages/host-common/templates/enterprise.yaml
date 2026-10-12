@@ -7,13 +7,13 @@ packages:
   - { id: "@agnes/connector-db", source: "builtin" }
   - { id: "@agnes/connector-kb", source: "builtin" }
 seams:
-  approval: "@agnes/base"
-  checkpoint: "@agnes/base"
-  billing: "@agnes/base"
-  verifier: "@agnes/base"
-  repair: "@agnes/base"
-  artifacts: "@agnes/base"
-  principals: "@agnes/enterprise"
+  approval: { provider: "local-prompt" }
+  checkpoint: { provider: "fs" }
+  billing: { provider: "budget" }
+  verifier: { provider: "t0" }
+  repair: { provider: "default" }
+  artifacts: { provider: "local" }
+  principals: { provider: "enterprise" }
 provider:
   package: "@agnes/ai"
 adapters:

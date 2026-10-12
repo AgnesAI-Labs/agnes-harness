@@ -2,8 +2,9 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SeamInitContext as BaseSeamInitContext } from '@agnes/base'
-import { seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { SEAM_NAMES } from '@agnes/core'
+import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
 import type { SeamInitContext as HostSeamInitContext } from '@agnes/host-extensions/assemble/packages'
@@ -52,7 +53,7 @@ describe('@agnes/base consumption contract against the real host adapters', () =
         log: { debug() {}, info() {}, warn() {}, error() {} },
         signal: new AbortController().signal,
       }
-      const artifacts = await seams.artifacts(ctx)
+      const artifacts = await BASE_SEAM_PROVIDERS.artifacts.create(ctx, new AbortController().signal)
       const ref = await artifacts.put(new TextEncoder().encode('hello'), { mime: 'text/plain' })
       expect(ref.sha256).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
       // On disk, under dataDir, at the path the seam's own tests assert against the fake.
@@ -87,25 +88,7 @@ describe('@agnes/base consumption contract against the real host adapters', () =
     }
   })
 
-  it('declares only seam names core knows, and the profile can be pointed at them', async () => {
-    // The list grows as the remaining pieces land, so it is checked against core's own set rather
-    // than restated here: a name outside that set is a name no profile can point at, and it would
-    // otherwise be found by whoever assembled a profile against it rather than by this file.
-    // `platform` is excluded because it is the host's own backend, not a package's to supply.
-    const declared = Object.keys(seams).sort()
-    for (const n of declared) expect(SEAM_NAMES, n).toContain(n)
-    expect(declared).not.toContain('platform')
-    // Pinned so a seam that stops being exported is a failure here rather than an assembly that
-    // refuses at startup for a package this test says delivers it.
-    expect(declared).toEqual([
-      'approval',
-      'artifacts',
-      'billing',
-      'checkpoint',
-      'principals',
-      'repair',
-      'sandbox',
-      'verifier',
-    ])
+  it('delivers the seven seam kinds as registered providers', () => {
+    expect(Object.keys(BASE_SEAM_PROVIDERS).sort()).toEqual([...SEAM_KINDS].sort())
   })
 })

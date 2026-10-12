@@ -1,15 +1,16 @@
 import type { Seq } from '@agnes/core-common/types'
-// ArtifactRef is defined once, in reduce/shapes.ts, and is used here without re-exporting it: two
-// star-export sources for one name make the package's root surface ambiguous about which it means.
+import type { HarnessEdit } from '@agnes/core-ledger/reduce/shapes'
 import type {
-  ArtifactJob,
-  ArtifactRef,
-  CostLedger,
-  HarnessEdit,
-  RepairDecision,
-} from '@agnes/core-ledger/reduce/shapes'
-import type { FsEntry, FsStat, ToolMeta } from '@agnes/extension-api'
-import type { Actor, ApprovalGrant, ApprovalMode, ApprovalReason, ApprovalVerdict } from '@agnes/protocol'
+  ApprovalGrantQuery,
+  ApprovalSeam,
+  ArtifactsSeam,
+  BillingSeam,
+  CheckpointSeam,
+  PrincipalsSeam,
+  RepairSeam,
+  VerifierSeam,
+} from '@agnes/extension-api/seams'
+import type { ApprovalGrant, ApprovalMode } from '@agnes/protocol'
 import type { WorkspaceInvocationPort } from '../workspace/runtime.js'
 import type { FsPolicy } from './fs-guard.js'
 
@@ -17,46 +18,15 @@ import type { FsPolicy } from './fs-guard.js'
 // session opens. The kernel calls into them; they never call back in and never self-register, which
 // is what separates a seam from an extension.
 
-export type Verdict = ApprovalVerdict
-export type Pending = { ticket: string; expiresAt: string }
-export type { ApprovalReason } from '@agnes/protocol'
-/** answeredBy is supplied by the trusted connection/source adapter, separately from the requester. */
-export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason; answeredBy?: Actor }
-export type ApprovalRequest = {
-  /** Present only for Core's already-persisted human gate; this is delivery metadata, not authority. */
-  decision?: { handle: import('@agnes/extension-api').DecisionHandle; revision: number }
-  requestId: string
-  kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
-  sessionKey: string
-  stepId: string
-  toolUseId?: string
-  tool?: { name: string; args: unknown; meta: ToolMeta }
-  summary: string
-  risk: 'destructive' | 'always' | 'budget' | 'unknown'
-  actor: Actor
-  taint: boolean
-  bindingHash: string
-  deadline: string
-  scope: string
-  profileHash?: string | null
-  policyVersion?: string
-  policyBinding?: string
-  options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
-  context?: string
-  approval?: import('@agnes/extension-api').ApprovalConstraints
-}
-export type ApprovalGrantQuery = {
-  profileHash: string
-  actorId: string
-  actorOrg: string
-  toolId: string
-  scope: string
-  policyVersion: string
-}
-/** How a question reaches a person and the answer comes back. Who may answer and what is durable is Core's. */
-export interface ApprovalSeam {
-  ask(req: ApprovalRequest, opts?: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer | Pending>
-}
+export type {
+  ApprovalAnswer,
+  ApprovalGrantQuery,
+  ApprovalReason,
+  ApprovalRequest,
+  ApprovalSeam,
+  Pending,
+  Verdict,
+} from '@agnes/extension-api/seams'
 
 /**
  * Permanent approvals the Host stores. They are bound to the approver and the tool definition when
@@ -69,34 +39,13 @@ export interface ApprovalGrantsPort {
 
 export type ResolvedApprovalMode = ApprovalMode
 
-/** The richer fenced filesystem checkpoint needs; it remains inside the Host-owned runtime. */
-export type CheckpointWorkspaceFs = Readonly<{
-  realpath(path: string): Promise<string>
-  read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
-  write(path: string, data: Uint8Array): Promise<void>
-  stat(path: string): Promise<FsStat>
-  list(path: string): Promise<FsEntry[]>
-  mkdir(path: string): Promise<void>
-  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
-}>
-export type CheckpointWorkspaceBinding = Readonly<{ root: string; fs: CheckpointWorkspaceFs }>
-export interface CheckpointSeam {
-  /** Dynamic seams fit storage and filesystem state to the session before invocation. */
-  forWorkspace?(workspace: CheckpointWorkspaceBinding): CheckpointSeam | Promise<CheckpointSeam>
-  snapshot(paths: string[], stepId: string): Promise<{ id: string }>
-  rewind(id: string): Promise<void>
-  list(): Promise<Array<{ id: string; stepId: string }>>
-}
-
-export type BillingRow = CostLedger & { sessionKey: string; lane: string; turn: number; step: number }
-export interface BillingSeam {
-  record(row: BillingRow): Promise<void>
-  projected(next: {
-    tokensEstimate: number
-    model: string
-  }): Promise<{ credits: number; creditSource: 'gateway' | 'estimated' }>
-}
-
+export type {
+  BillingRow,
+  BillingSeam,
+  CheckpointSeam,
+  CheckpointWorkspaceBinding,
+  CheckpointWorkspaceFs,
+} from '@agnes/extension-api/seams'
 export type Enforcement = { level: 'full' | 'partial' | 'none'; scope: ('file' | 'network' | 'process')[] }
 
 /** Opaque process boundary selected and cached by Host for one canonical workspace. */
@@ -190,63 +139,17 @@ export interface SandboxSeam {
   enforcement(): Enforcement
 }
 
-export type VerifierVerdict = { verdict: 'pass' | 'fail' | 'needs_revision'; reasons: string[] }
-export interface VerifierSeam {
-  verify(
-    scope: 'tool' | 'step' | 'turn' | 'task',
-    input: unknown,
-    opts: { tier: 0 | 1 | 2; budget?: number; signal: AbortSignal },
-  ): Promise<VerifierVerdict>
-}
-
-export interface RepairSeam {
-  decide(
-    view: { turn: number; round: number; history: RepairDecision[] },
-    verdict: VerifierVerdict,
-  ): Promise<'repair' | 'park' | 'escalate' | 'complete'>
-}
-
-export type JobSchedule =
-  | { kind: 'once' }
-  | { kind: 'at'; at: number }
-  | { kind: 'every'; everyMs: number; anchorMs?: number }
-  | { kind: 'cron'; expr: string; tz?: string; staggerMs?: number }
-export type JobSpec = {
-  idempotencyKey: string
-  sessionKey: string
-  payload: unknown
-  schedule?: JobSchedule
-  maxAttempts?: number
-  budget?: number
-  protected?: boolean
-}
-export interface ArtifactsSeam {
-  put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef>
-  get(ref: ArtifactRef): Promise<Uint8Array>
-  // The session key is filled in by the kernel, so a caller cannot submit work against a session
-  // that is not its own; the implementation and the jobs table see a complete spec.
-  submitJob(spec: Omit<JobSpec, 'sessionKey'>): Promise<string>
-  poll(jobId: string): Promise<ArtifactJob>
-  cancel(jobId: string): Promise<void>
-}
-
-export type Target = {
-  kind: 'datasource' | 'db' | 'table' | 'field' | 'model' | 'skill' | 'mcp' | 'kb' | 'menu' | 'button'
-  id: string
-  parent?: string
-}
-export type Decision = {
-  decisionId: string
-  effect: 'allow' | 'deny' | 'require_approval'
-  rowFilter?: string
-  fieldMask?: { visible: string[]; masked: string[] }
-  limits?: { maxRows?: number; exportRequiresGrant?: boolean }
-  reason: string
-}
-export interface PrincipalsSeam {
-  resolve(cred: unknown, surface: string): Promise<Actor>
-  authorize(actor: Actor, action: string, target: Target): Promise<Decision>
-}
+export type {
+  ArtifactsSeam,
+  Decision,
+  JobSchedule,
+  JobSpec,
+  PrincipalsSeam,
+  RepairSeam,
+  Target,
+  VerifierSeam,
+  VerifierVerdict,
+} from '@agnes/extension-api/seams'
 
 export interface PlatformSeam {
   shell(): 'posix' | 'powershell'

@@ -1,4 +1,4 @@
-import { presets as basePresets, seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS, presets as basePresets } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { loadAllPresets } from '@agnes/code'
 import { type ApprovalRequest, readPreset } from '@agnes/core'
@@ -6,7 +6,8 @@ import { resolvePreset } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
 
 const docs = { ...basePresets, ...loadAllPresets() }
-const approvalPolicy = seams.approval
+const approvalPolicy = (init: Parameters<typeof BASE_SEAM_PROVIDERS.approval.create>[0]) =>
+  BASE_SEAM_PROVIDERS.approval.create(init, new AbortController().signal)
 const preset = resolvePreset('standard-windows', docs).doc
 const request = (path: string): ApprovalRequest => ({
   requestId: 'r',

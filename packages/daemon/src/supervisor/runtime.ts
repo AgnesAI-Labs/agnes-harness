@@ -2010,7 +2010,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         return registry.require(sessionId).session.resolveActor(credential, surface)
       })
     const resolveNewSessionActor: Host['resolveActor'] =
-      o.profile.seams?.principals === '@agnes/base'
+      o.profile.seams?.principals?.provider === 'local'
         ? async (_credential, surface) => ({
             id: 'local',
             org: 'local',

@@ -71,7 +71,7 @@ export async function loadPackages(ctx: AssemblyContext): Promise<PackageSet> {
     dirs.set(id, dir)
   }
   for (const [name, pkg] of Object.entries(profile.seams))
-    if (name !== 'platform' && !dirs.has(pkg))
+    if (typeof pkg === 'string' && name !== 'platform' && !dirs.has(pkg))
       refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
   const inventory = isolationInventory(profile, deps, dirs)
   const runtimePackages = await loadRuntimeSelection(activeRuntimeSources)

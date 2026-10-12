@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } fr
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { SeamInitContext } from '@agnes/base'
-import { seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolvedProfile, ResolveEnv } from '@agnes/host-common/profile/types'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -41,7 +41,10 @@ async function openCheckpoint(profile: ResolvedProfile, dataDir: string, workspa
     signal: new AbortController().signal,
   }
   try {
-    return { bundle, checkpoint: await seams.checkpoint(context) }
+    return {
+      bundle,
+      checkpoint: await BASE_SEAM_PROVIDERS.checkpoint.create(context, new AbortController().signal),
+    }
   } catch (error) {
     await bundle.close()
     throw error

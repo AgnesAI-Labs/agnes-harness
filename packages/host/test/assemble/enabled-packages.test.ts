@@ -137,19 +137,6 @@ async function setup(projections = false) {
               )
             : []
         const result = readNamedExports(id, dir, mod, declarations)
-        // This test owns package selection, not the remaining base seams awaiting implementation.
-        // Keep the real exported seams and fill only those unrelated assembly dependencies.
-        if (id === '@agnes/base') {
-          const fallback = fakeSeams()
-          result.seams = {
-            ...Object.fromEntries(
-              Object.entries(fallback)
-                .filter(([name]) => name !== 'platform' && name !== 'sandbox')
-                .map(([name, value]) => [name, async () => value]),
-            ),
-            ...result.seams,
-          }
-        }
         return result
       },
     },
@@ -473,10 +460,8 @@ it('a disabled seam provider is refused even when its directory is supplied', as
   const base = x.profile.packages.find((p) => p.id === '@agnes/base')
   if (!base) throw new Error('test profile has no base package')
   base.enabled = false
-  await expect(assemble(x.profile, x.deps)).rejects.toMatchObject({
-    code: 'E_DEP_MISSING',
-    detail: { seam: 'approval', package: '@agnes/base' },
-  })
+  // Its presets and seam providers are not registered, so the assembly refuses before any seam binds.
+  await expect(assemble(x.profile, x.deps)).rejects.toThrow(/E_PRESET_UNSUPPORTED|E_SEAM_MISSING/)
   expect(x.imported).not.toContain('@agnes/base')
 })
 it('consumes resolved required policy despite a weaker legacy constructor option', async () => {

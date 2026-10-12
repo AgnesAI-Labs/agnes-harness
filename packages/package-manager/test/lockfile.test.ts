@@ -18,14 +18,13 @@ import {
 // ten-key object, and an npm/market entry carries license, releasedAt and dependencies.
 const HASH = `sha256-${'0'.repeat(64)}`
 const SEAMS = {
-  approval: '@agnes/base',
-  checkpoint: '@agnes/base',
-  ledger: '@agnes/base',
-  verifier: '@agnes/base',
-  repair: '@agnes/base',
-  artifacts: '@agnes/base',
-  principals: '@agnes/base',
-  harness: '@agnes/base',
+  approval: { provider: 'local-prompt' },
+  checkpoint: { provider: 'fs' },
+  billing: { provider: 'budget' },
+  verifier: { provider: 't0' },
+  repair: { provider: 'default' },
+  artifacts: { provider: 'local' },
+  principals: { provider: 'local' },
 }
 const npmEntry = (id: string): LockEntry => ({
   version: '0.1.0',

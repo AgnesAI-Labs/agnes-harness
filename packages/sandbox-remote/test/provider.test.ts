@@ -1,3 +1,4 @@
+import type { SandboxProvider } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { defineRemoteSandboxProvider } from '../src/provider.js'
 
@@ -14,7 +15,7 @@ describe('remote sandbox provider', () => {
   const provider = defineRemoteSandboxProvider({
     id: 'acme-remote',
     version: '1.2.3',
-    openTransport: async (config, ctx) => {
+    openTransport: async (...[config, ctx]: Parameters<NonNullable<SandboxProvider['openTransport']>>) => {
       opened.push([config, ctx.dataDir])
       return transport
     },

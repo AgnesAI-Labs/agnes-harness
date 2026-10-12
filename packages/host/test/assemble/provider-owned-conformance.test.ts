@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { seams as defaultSeams } from '@agnes/base'
 import type { Context } from '@agnes/cordis'
 import {
   type ChildAgentResult,
@@ -22,7 +21,7 @@ import {
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
 import { sqlitePersistenceProvider } from '../../src/runtime/adapters/index.js'
-import { createTestHost } from '../../testkit/index.js'
+import { baseSeamFactories, createTestHost } from '../../testkit/index.js'
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void
@@ -404,7 +403,7 @@ it.each([sqlitePersistenceProvider, jsonlProvider])(
                 const boot = () =>
                   createTestHost({
                     dataDir: resumeDir,
-                    seamFactories: { billing: defaultSeams.billing },
+                    seamFactories: { billing: baseSeamFactories.billing },
                     disableSessionTitle: true,
                     script: [
                       [

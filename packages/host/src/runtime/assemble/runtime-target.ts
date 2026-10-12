@@ -14,6 +14,7 @@ import { installLoops } from '@agnes/host-providers/assemble/loops'
 import { installModelAdapters } from '@agnes/host-providers/assemble/model-adapters'
 import { providerConfigurationScopes } from '@agnes/host-providers/assemble/provider-selection'
 import { installReferenceResolvers } from '@agnes/host-providers/assemble/reference-resolvers'
+import { installSeamKinds } from '@agnes/host-providers/assemble/seam-kinds'
 import { REQUIRED_SEAM_ROW_IDS } from '@agnes/host-providers/assemble/seam-rows'
 import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import {
@@ -175,9 +176,9 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
       shared.candidateMounting = true
       return {
         bootRows: Object.freeze([...bootRows.staticBootRows, ...bootRows.builtin.hostExtensionRows]),
-        exactExtras: bootRows.builtSeams.exactExtras,
-        thirdPartyExtras: bootRows.builtSeams.thirdPartyExtras,
         requiredRowIds: REQUIRED_SEAM_ROW_IDS,
+        thirdPartyReservedRowIds: REQUIRED_SEAM_ROW_IDS,
+        thirdPartyReservedProvides: REQUIRED_SEAM_ROW_IDS,
         rootServices: (root, origins) => {
           const providers = installProviders(root)
           shared.extensionServices.current?.attachBinder(providers)
@@ -194,6 +195,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           shared.intelligentUi.get().attach(root, origins, deferred)
           installLoops(root, origins, deferred)
           installReferenceResolvers(root)
+          installSeamKinds(root, origins)
           const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
             installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
               promptRegistry.register(source, provider, owner),

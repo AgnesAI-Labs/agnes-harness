@@ -8,10 +8,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stampFor } from '@agnes/ai/testkit'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { presets as codePresets, operations, PRESET_NAMES } from '@agnes/code'
 import { createLocalEndpoint, createPrompterBridge } from '@agnes/daemon/local'
-import { createTestHost } from '@agnes/host/testkit'
+import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
@@ -60,7 +60,7 @@ async function scenario(openPicker: boolean) {
     dataDir: root,
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
     packages: {
-      '@agnes/base': { seams: { approval: baseSeams.approval }, presets: basePresets },
+      '@agnes/base': { seams: { approval: baseSeamFactories.approval }, presets: basePresets },
       '@agnes/code': { operations },
     },
     presets: {

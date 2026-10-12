@@ -172,9 +172,6 @@ export type IsolatedEcosystemPreparation = {
 }
 export type IsolatedEcosystemFactory = (ctx: SeamInitContext) => Promise<IsolatedEcosystemPreparation>
 
-/** `sandbox` is selected as a provider and `platform` is Host-owned; neither is a package-exported factory. */
-export type PackageSeamName = Exclude<SeamName, 'sandbox' | 'platform'>
-
 export type PackageModule = {
   /**
    * A sandbox provider this package supplies. The Host reads it before the tree exists, because a
@@ -193,7 +190,6 @@ export type PackageModule = {
     candidate?: Readonly<PackageSnapshotCandidateRef>
     snapshotDigest?: string
   }>[]
-  seams?: Partial<Record<PackageSeamName, SeamFactory>>
   operations?: OperationTable
   presets?: Record<string, PresetDoc>
   runtimes?: Partial<Record<RuntimeLanguage, RuntimeFactory>>

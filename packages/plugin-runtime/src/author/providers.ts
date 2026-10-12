@@ -28,6 +28,13 @@ export function defineProvider<K extends keyof KindMap, P extends KindMap[NoInfe
     'tool-runtime': ['create'],
     'tool-policy': ['decide'],
     'child-agent': ['start'],
+    approval: ['create'],
+    principals: ['create'],
+    billing: ['create'],
+    checkpoint: ['create'],
+    artifacts: ['create'],
+    verifier: ['create'],
+    repair: ['create'],
   }
   const value = provider as unknown as Record<string, unknown>
   if (

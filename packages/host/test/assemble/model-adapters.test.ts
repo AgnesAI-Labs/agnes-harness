@@ -6,6 +6,7 @@ import { fakeModel } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelAdapter, ModelAdapterInstance } from '@agnes/extension-api'
+import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
@@ -18,7 +19,7 @@ import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manage
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { assemble } from '../../src/runtime/assemble/assemble.js'
-import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
+import { attachTestSeamPlugins, seamFactories } from '../../testkit/cordis-seams.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -241,15 +242,7 @@ async function fixture(selected: string, missingCredential = false) {
     '@agnes/ai': { id: '@agnes/ai' },
     '@agnes/base': {
       id: '@agnes/base',
-      seams: Object.fromEntries(
-        Object.entries(seams).map(([name, value]) => [
-          name,
-          async () =>
-            name === 'sandbox'
-              ? { ...seams.sandbox, fsPolicy: () => testFsPolicy(realpathSync.native(dataDir)) }
-              : value,
-        ]),
-      ),
+      ...seamFactories(Object.fromEntries(SEAM_KINDS.map((name) => [name, async () => seams[name]]))),
       presets: { base: { name: 'base' } },
     },
     '@agnes/code': {

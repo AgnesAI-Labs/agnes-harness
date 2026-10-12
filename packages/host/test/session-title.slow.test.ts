@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stampFor } from '@agnes/ai/testkit'
-import { seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { type BillingSeam, contextTokens } from '@agnes/core'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
@@ -243,7 +243,7 @@ it('records equal-sequence title costs from separate sessions in the real ledger
   const storage = createSqliteStorage({ file: join(root, 'audit.db'), tablesDir: join(root, 'audit-tables') })
   const init = fakeSeamInit()
   init.adapters.storage = storage.tables('title-audit')
-  const ledger = await seams.billing(init)
+  const ledger = await BASE_SEAM_PROVIDERS.billing.create(init, new AbortController().signal)
   const recorded = vi.spyOn(ledger, 'record')
   let host: Host | undefined
   try {
@@ -291,7 +291,7 @@ it.each(['valid title', '```invalid title'])(
     })
     const init = fakeSeamInit()
     init.adapters.storage = storage.tables('title-recovery')
-    const real = await seams.billing(init)
+    const real = await BASE_SEAM_PROVIDERS.billing.create(init, new AbortController().signal)
     let fail = true
     let failures = 0
     const ledger: BillingSeam = {

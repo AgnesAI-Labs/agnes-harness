@@ -377,7 +377,7 @@ const TARGETS: Array<{
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
-      { from: 'schema/profile.json', defs: ['SeamName', 'Capability'] },
+      { from: 'schema/profile.json', defs: ['SeamName', 'SeamSelection', 'Capability'] },
       { from: 'schema/projection.json', defs: ['ProjectionCapability'] },
       { from: 'schema/extension-service.json', defs: ['ServiceCapability'] },
       { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },

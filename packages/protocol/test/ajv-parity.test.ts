@@ -5627,6 +5627,7 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   },
   Capability: helperSample('Capability', ['', 'A', 'a'.repeat(65), 'tools/invoke']),
   SeamName: helperSample('SeamName', ['provider', 'unknown']),
+  SeamSelection: helperSample('SeamSelection', [{}, { provider: 'Bad Id' }, { provider: 'a', extra: 1 }]),
   PackageRef: helperSample('PackageRef', [
     { id: '@agnes/base' },
     { id: 'x', source: 'builtin', tombstone: 'true' },
@@ -5811,6 +5812,7 @@ const LOCK_SAMPLES: Record<string, Sample> = {
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
   SeamName: PROFILE_SAMPLES.SeamName as Sample,
+  SeamSelection: PROFILE_SAMPLES.SeamSelection as Sample,
   Capability: PROFILE_SAMPLES.Capability as Sample,
 }
 const DEPLOY_SAMPLES: Record<string, Sample> = { DeployManifest: configSample('DeployManifest') }
@@ -5844,6 +5846,7 @@ const ProfileDefs: Record<string, TSchema> = {
   ExtensionIsolationRequest: ProfileGen.ExtensionIsolationRequest,
   Capability: ProfileGen.Capability,
   SeamName: ProfileGen.SeamName,
+  SeamSelection: ProfileGen.SeamSelection,
   PackageRef: ProfileGen.PackageRef,
   SecretRef: ProfileGen.SecretRef,
   Transport: ProfileGen.Transport,
@@ -5868,6 +5871,7 @@ const LockfileDefs: Record<string, TSchema> = {
   HookEvent: LockfileGen.HookEvent,
   UiSlotName: LockfileGen.UiSlotName,
   SeamName: LockfileGen.SeamName,
+  SeamSelection: LockfileGen.SeamSelection,
   Capability: LockfileGen.Capability,
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {

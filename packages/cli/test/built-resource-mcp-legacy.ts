@@ -93,13 +93,13 @@ export async function setupMcpLegacySentinel(input: { home: string; workspace: s
     seams: Object.keys(lock.seams).length
       ? lock.seams
       : {
-          approval: '@agnes/base',
-          checkpoint: '@agnes/base',
-          billing: '@agnes/base',
-          verifier: '@agnes/base',
-          repair: '@agnes/base',
-          artifacts: '@agnes/base',
-          principals: '@agnes/base',
+          approval: { provider: 'local-prompt' },
+          checkpoint: { provider: 'fs' },
+          billing: { provider: 'budget' },
+          verifier: { provider: 't0' },
+          repair: { provider: 'default' },
+          artifacts: { provider: 'local' },
+          principals: { provider: 'local' },
         },
     policySnapshot: lock.policySnapshot.capabilityCeiling.length
       ? lock.policySnapshot

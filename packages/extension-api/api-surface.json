@@ -1,5 +1,5 @@
 {
-  "apiVersion": "2.2.0",
+  "apiVersion": "2.3.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",

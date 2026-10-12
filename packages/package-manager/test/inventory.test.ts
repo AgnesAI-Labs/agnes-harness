@@ -56,17 +56,10 @@ function currentFixture() {
   const lock = emptyLock('local-dev', '0.1.0')
   lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
   lock.seams = Object.fromEntries(
-    [
-      'approval',
-      'checkpoint',
-      'billing',
-      'sandbox',
-      'verifier',
-      'repair',
-      'artifacts',
-      'principals',
-      'platform',
-    ].map((name) => [name, '@agnes/base']),
+    ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+      name,
+      { provider: 'local' },
+    ]),
   )
   const entry = {
     version: '1.0.0',
@@ -195,17 +188,10 @@ it.each([
   const lock = emptyLock('local-dev', '0.1.0')
   lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
   lock.seams = Object.fromEntries(
-    [
-      'approval',
-      'checkpoint',
-      'billing',
-      'sandbox',
-      'verifier',
-      'repair',
-      'artifacts',
-      'principals',
-      'platform',
-    ].map((name) => [name, '@agnes/base']),
+    ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+      name,
+      { provider: 'local' },
+    ]),
   )
   lock.policySnapshot = { capabilityCeiling: [], workspacePackages: 'require-project-trust' }
   lock.packages[id] = {

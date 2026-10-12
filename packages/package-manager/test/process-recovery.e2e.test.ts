@@ -35,21 +35,11 @@ it.each(points)('recovers after an actual child exits at %s without running fina
   try {
     mkdirSync(profile, { recursive: true })
     cpSync(join(fixtures, 'pkg-a'), sourceDir, { recursive: true })
-    const seams = [
-      'approval',
-      'checkpoint',
-      'billing',
-      'sandbox',
-      'verifier',
-      'repair',
-      'artifacts',
-      'principals',
-      'platform',
-    ]
+    const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
     writeLock(profile, {
       ...emptyLock('local-dev', '0.1.0'),
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-      seams: Object.fromEntries(seams.map((name) => [name, '@agnes/base'])),
+      seams: Object.fromEntries(seams.map((name) => [name, { provider: 'local' }])),
       policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
     })
     const m = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0' }),

@@ -37,7 +37,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `name`、`schemaVersion`、`extends` | 配置身份/版本/继承；现有模板 schemaVersion 为 1 |
 | `packages` | 包来源、启用与配置；实际安装/信任仍由 PackageManager 管理 |
 | `packages[].config` | Provider 选择：`<kind>: { provider, version? }` |
-| `seams` | 必要接缝实现归属；不是普通插件自由注册的接口 |
+| `seams` | 每个 seam 种类一个 `{ provider, version? }` 选择；见 [Seam](../extend/seams.zh-CN.md) |
 | `provider` | package/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
 | `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 与 Host 用户层校验均支持该字段。 |

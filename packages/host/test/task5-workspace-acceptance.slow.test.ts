@@ -2,12 +2,11 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { seams as baseSeams } from '@agnes/base'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { InferenceEvent, JsonValue } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { HostSession } from '../src/runtime/lifecycle/host.js'
-import { createTestHost } from '../testkit/index.js'
+import { baseSeamFactories, createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []
 
@@ -185,7 +184,7 @@ describe('Task 5 production workspace acceptance', () => {
         },
       },
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
-      packages: { '@agnes/base': { seams: { checkpoint: baseSeams.checkpoint } } },
+      packages: { '@agnes/base': { seams: { checkpoint: baseSeamFactories.checkpoint } } },
       disableSessionTitle: true,
     })
     const open = (key: string) =>

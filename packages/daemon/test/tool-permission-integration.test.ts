@@ -2,9 +2,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { presets as codePresets, operations, PRESET_NAMES } from '@agnes/code'
-import { createTestHost } from '@agnes/host/testkit'
+import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, TransportClosed } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { testWorkspaceCatalog } from '../../daemon-rpc/test/host.js'
@@ -20,7 +20,7 @@ it.each(['allow', 'reject', 'disconnect'])('real write approval over SDK/daemon:
     dataDir: root,
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     packages: {
-      '@agnes/base': { seams: { approval: baseSeams.approval }, presets: basePresets },
+      '@agnes/base': { seams: { approval: baseSeamFactories.approval }, presets: basePresets },
       '@agnes/code': { operations },
     },
     presets: {

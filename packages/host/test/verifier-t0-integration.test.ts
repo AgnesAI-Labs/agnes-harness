@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { seams as baseSeams } from '@agnes/base'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createTestHost, runOnce } from '../testkit/index.js'
+import { baseSeamFactories, createTestHost, runOnce } from '../testkit/index.js'
 
 /**
  * core's four verify call sites against the real `verifierT0` from @agnes/base — not a fake. The
@@ -45,7 +44,7 @@ describe('verifierT0 against real core verify inputs', () => {
     const { host } = await createTestHost({
       dataDir,
       script: [say('clean answer')],
-      packages: { '@agnes/base': { seams: { verifier: baseSeams.verifier } } },
+      packages: { '@agnes/base': { seams: { verifier: baseSeamFactories.verifier } } },
     })
     try {
       const r = await runOnce(host, { prompt: 'hi', cwd: dataDir })
@@ -65,7 +64,7 @@ describe('verifierT0 against real core verify inputs', () => {
       script: [callRead(), callRead(), callRead(), say('gave up')],
       // Let the turn close on the first needs_revision, so the signal row is the assertion.
       seams: { repair: { decide: async () => 'complete' } },
-      packages: { '@agnes/base': { seams: { verifier: baseSeams.verifier } } },
+      packages: { '@agnes/base': { seams: { verifier: baseSeamFactories.verifier } } },
     })
     try {
       const r = await runOnce(host, { prompt: 'hi', cwd: dataDir })

@@ -9,7 +9,7 @@ import { CREDITS_PER_USD_LIMIT, readCreditsPerUsd } from '@agnes/host-providers/
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
-import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
+import { attachTestSeamPlugins, seamFactories } from '../../testkit/cordis-seams.js'
 
 /**
  * What a delivered assembly denominates its ledger in.
@@ -62,7 +62,7 @@ function modules(): Record<string, PackageModule> {
   const result: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
-      seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
+      ...seamFactories(Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]]))),
       operations: {},
       presets: { base: { name: 'base' } },
     },

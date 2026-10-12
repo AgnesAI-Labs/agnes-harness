@@ -146,9 +146,6 @@ export async function loadRuntimePackage(
   return Object.freeze({ source, module })
 }
 
-/** `sandbox` is chosen as a provider and `platform` belongs to the Host: a package cannot export either as a seam factory. */
-const PACKAGE_SEAM_NAMES = SEAM_NAMES.filter((name) => name !== 'sandbox' && name !== 'platform')
-
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -163,7 +160,6 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
  * it wrong rather than at the seam that later came up empty three steps away.
  */
 const FACTORY_EXPORTS = [
-  { name: 'seams', code: 'E_SEAM_EXPORT_MISSING', field: 'seam', keys: PACKAGE_SEAM_NAMES, nonEmpty: true },
   { name: 'operations', code: 'E_EXT_LOAD', field: 'operation', keys: null, nonEmpty: false },
   { name: 'runtimes', code: 'E_EXT_LOAD', field: 'language', keys: RUNTIME_LANGUAGES, nonEmpty: false },
   { name: 'ecosystem', code: 'E_EXT_LOAD', field: 'extension', keys: null, nonEmpty: false },
@@ -175,7 +171,7 @@ const FACTORY_EXPORTS = [
     nonEmpty: false,
   },
 ] as const satisfies ReadonlyArray<{
-  name: 'seams' | 'operations' | 'runtimes' | 'ecosystem' | 'isolatedEcosystem'
+  name: 'operations' | 'runtimes' | 'ecosystem' | 'isolatedEcosystem'
   code: HostErrorCode
   field: string
   keys: readonly string[] | null
@@ -234,8 +230,7 @@ export function readNamedExports(
     const value = mod[spec.name]
     if (value === undefined) continue
     const table = readFactoryTable(id, value, spec)
-    if (spec.name === 'seams') out.seams = table as NonNullable<PackageModule['seams']>
-    else if (spec.name === 'operations') out.operations = table as OperationTable
+    if (spec.name === 'operations') out.operations = table as OperationTable
     else if (spec.name === 'runtimes') out.runtimes = table as NonNullable<PackageModule['runtimes']>
     else if (spec.name === 'ecosystem') out.ecosystem = table as NonNullable<PackageModule['ecosystem']>
     else out.isolatedEcosystem = table as NonNullable<PackageModule['isolatedEcosystem']>

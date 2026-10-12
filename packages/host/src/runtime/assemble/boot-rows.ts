@@ -1,9 +1,10 @@
+import { SEAM_KINDS, type SeamKind } from '@agnes/extension-api/seams'
 import type { HostBuiltinRowClaim } from '@agnes/host-extensions/assemble/seams-cordis'
 import { withBuiltinCompactionEngines } from '@agnes/host-providers/assemble/compaction-engines'
 import { withBuiltinModelAdapters } from '@agnes/host-providers/assemble/model-adapters'
 import { buildOrdinaryRows } from '@agnes/host-providers/assemble/ordinary-rows'
 import { buildPresetRows } from '@agnes/host-providers/assemble/preset-rows'
-import { buildSeamRows } from '@agnes/host-providers/assemble/seam-rows'
+import { buildSeamBindingRows, type SeamBinding } from '@agnes/host-providers/assemble/seam-rows'
 import { withBuiltinToolPolicies } from '@agnes/host-providers/assemble/tool-providers'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
 import { withBuiltinChildAgents } from './child-agents.js'
@@ -13,13 +14,15 @@ import type { PresetCatalog } from './presets.js'
 import type { SeamContexts } from './seam-contexts.js'
 
 /**
- * The rows the Host builds itself, before any plugin target arrives: the ten seams, the presets
+ * The rows the Host builds itself, before any plugin target arrives: the seven seam binding rows, the presets
  * and the ordinary builtin plugins. This is the one place seams become rows; ordering inside a
  * tree is seam rows after registration rows, and `ext:` rows are added to `builtin` later because
  * they need the managed extension host.
  */
 export type BootRows = Readonly<{
-  builtSeams: ReturnType<typeof buildSeamRows>
+  builtSeams: ReturnType<typeof buildSeamBindingRows>
+  /** What each binding row bound at mount; read after the tree is built. */
+  boundSeams(): readonly SeamBinding[]
   builtPresets: ReturnType<typeof buildPresetRows>
   builtOrdinary: ReturnType<typeof buildOrdinaryRows>
   /** Row id to the package that supplies the plugin, for composition visibility. */
@@ -42,12 +45,18 @@ export function buildBootRows(
 ): BootRows {
   const { deps } = ctx
   const { modules, runtimePackages } = pkgs
-  const builtSeams = buildSeamRows({
+  const bound = new Map<SeamKind, SeamBinding>()
+  const builtSeams = buildSeamBindingRows({
     ...(deps.generationBuiltinRows ? { generationBuiltinRows: deps.generationBuiltinRows } : {}),
     profile: ctx.profile,
-    modules,
+    selections: Object.fromEntries(SEAM_KINDS.map((kind) => [kind, ctx.profile.seams[kind]])) as Record<
+      SeamKind,
+      (typeof ctx.profile.seams)[SeamKind]
+    >,
     preset: presets.defaultPreset.doc,
-    contextFor: (owner, name) => seamContexts.contextFor(owner, name).context,
+    timeoutMs: deps.seamTimeoutMs ?? 30_000,
+    initFor: seamContexts.initFor,
+    onBound: (binding) => bound.set(binding.kind, binding),
   })
   const builtPresets = buildPresetRows(presets.presets)
   const ordinaryModules = new Map(modules)
@@ -75,6 +84,7 @@ export function buildBootRows(
   const bootTreeRows = Object.freeze([...builtPresets.rows, ...builtOrdinary.rows, ...builtSeams.rows])
   return {
     builtSeams,
+    boundSeams: () => SEAM_KINDS.flatMap((kind) => bound.get(kind) ?? []),
     builtPresets,
     builtOrdinary,
     compositionOwners,

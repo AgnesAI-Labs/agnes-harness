@@ -36,9 +36,15 @@ import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { ASSEMBLY_STEPS, type AssemblyStep } from '../src/runtime/assemble/assemble.js'
 import { createHost, type Host, type HostOptions, type HostSession } from '../src/runtime/lifecycle/host.js'
 import type { SessionRecovery } from '../src/runtime/sessions/session.js'
-import { attachTestSeamPlugins } from './cordis-seams.js'
+import { attachTestSeamPlugins, type TestSeamFactories, testSeams } from './cordis-seams.js'
 
-export { attachTestSeamPlugins } from './cordis-seams.js'
+export {
+  attachTestSeamPlugins,
+  baseSeamFactories,
+  seamFactories,
+  type TestSeamFactories,
+  testSeams,
+} from './cordis-seams.js'
 export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
 export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'
 export { ASSEMBLY_STEPS, type AssemblyStep }
@@ -153,7 +159,7 @@ export type TestHostOptions = {
   platform?: PlatformBackend
   seams?: Parameters<typeof fakeSeams>[0]
   /** Real factories for seams whose adapter integration the fixture exercises. */
-  seamFactories?: Partial<NonNullable<PackageModule['seams']>>
+  seamFactories?: TestSeamFactories
   /** Replaces the fake sandbox shell, e.g. with the production `createSandboxSeam()`. */
   sandboxSeam?: SandboxSeam
   /**
@@ -209,7 +215,7 @@ export type TestHostOptions = {
   // the assembled system prompt above all - has to hand the real table in, and until this option
   // existed there was no way to. Keyed by package id; an overlay replaces only the fields it names,
   // and the id is not overridable because the loader is keyed by it.
-  packages?: Record<string, Omit<Partial<PackageModule>, 'id'>>
+  packages?: Record<string, Omit<Partial<PackageModule>, 'id' | 'seams'> & { seams?: TestSeamFactories }>
   /** Forwarded to `createHost` — see its own doc comment for why a case would set this. */
   disableSessionTitle?: boolean
 }
@@ -300,7 +306,6 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       degraded: false,
       confine: ({ argv }) => argv,
     }),
-    seams: { ...Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])), ...o.seamFactories },
     operations: BASE_OPERATIONS,
     presets: {
       base:
@@ -315,6 +320,10 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     isolatedEcosystem: BASE_ISOLATED_ECOSYSTEM,
     buildCompactionPlan,
   }
+  Object.assign(testSeams(base), {
+    ...Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])),
+    ...o.seamFactories,
+  })
   const code: PackageModule = {
     id: '@agnes/code',
     ...(typeof AGNES_CODE_EXTENSION_MANIFESTS === 'undefined'
@@ -375,10 +384,13 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     // `seams` merges by seam name rather than replacing the whole map. A case that wants one real
     // seam factory in an otherwise faked assembly would otherwise have to restate the other eight,
     // and a restated fake is one that drifts from the one every other case runs against.
-    const seams = over.seams ? { ...modules[id]?.seams, ...over.seams } : modules[id]?.seams
-    modules[id] = { ...(modules[id] as PackageModule), ...over, ...(seams ? { seams } : {}), id }
+    const { seams: overSeams, ...rest } = over
+    const previous = modules[id] as PackageModule
+    const next: PackageModule = { ...previous, ...rest, id }
+    Object.assign(testSeams(next), testSeams(previous), overSeams)
+    modules[id] = next
   }
-  for (const module of Object.values(modules)) if (module.seams) attachTestSeamPlugins(module)
+  for (const module of Object.values(modules)) attachTestSeamPlugins(module)
   const loader = new MemoryPackageLoader(modules)
   const host = await createHost(profile, {
     dataDir: o.dataDir,

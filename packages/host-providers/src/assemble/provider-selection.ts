@@ -4,6 +4,7 @@ import {
   type ProviderCatalogEntry,
   type ProviderSelection,
 } from '@agnes/extension-api'
+import { SEAM_KINDS, type SeamKind } from '@agnes/extension-api/seams'
 import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import {
@@ -120,6 +121,12 @@ export function providerConfigurationScopes(
   preset: PresetView,
 ): readonly string[] {
   if (entry.kind === 'compaction' && profile.composition?.compaction === null) return []
+  if ((SEAM_KINDS as readonly string[]).includes(entry.kind)) {
+    const chosen = profile.seams[entry.kind as SeamKind]
+    return chosen.provider === entry.id && (chosen.version === undefined || chosen.version === entry.version)
+      ? ['profile']
+      : []
+  }
   const selected = readProviderSelections(profile)[entry.kind as ProviderKindName]
   if (selected && entry.kind === 'model-adapter') {
     const ids = typeof selected.provider === 'string' ? [selected.provider] : selected.provider

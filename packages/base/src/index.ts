@@ -1,11 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
-import { approvalPolicy } from '../extensions/approval-policy/src/seam.js'
-import { artifactsLocal } from '../extensions/artifacts-local/src/seam.js'
-import { budgetBilling } from '../extensions/budget/src/seam.js'
-import { fsCheckpoint } from '../extensions/fs-checkpoint/src/seam.js'
-import { repairPolicy, verifierT0 } from '../extensions/loop-hygiene/src/seam.js'
-import { principalsLocal } from '../extensions/principals-local/src/seam.js'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { packageStorage } from './package-metadata.js'
@@ -100,6 +94,7 @@ export {
   sessionEgressAuthority,
   transitionConsent,
 } from '../extensions/privacy/src/index.js'
+export { createRefineHarness } from '../extensions/refine/src/seam.js'
 export {
   type ProbedSandboxWorkspace,
   type SandboxWorkspaceProbeInput,
@@ -166,15 +161,6 @@ export {
   validateLockedPackageArchive,
 } from './computer-use/locked-package-archive.js'
 export {
-  approvalPlugin,
-  artifactsPlugin,
-  billingPlugin,
-  checkpointPlugin,
-  principalsPlugin,
-  repairPlugin,
-  verifierPlugin,
-} from './cordis-seams.js'
-export {
   createEcosystemExtensions,
   ecosystem,
   type HooksRunnerEcosystemDeps,
@@ -216,7 +202,6 @@ export {
   mcpResourceToolName,
   READ_MCP_RESOURCE,
 } from './mcp/resources.js'
-
 export type {
   HostExec,
   HostExecResult,
@@ -231,22 +216,8 @@ export type {
   SeamProfileView,
   TableHandle,
 } from './seam-init.js'
-
-/**
- * The seam implementations this package delivers, by seam name. The host reads this named export at
- * assembly and fits each one; a name absent here is a name the profile cannot point at this package
- * for, which is a startup refusal rather than a seam that turns out to be missing later. The
- * remaining seven arrive with the pieces that implement them.
- */
-export const seams = {
-  approval: approvalPolicy,
-  principals: principalsLocal,
-  artifacts: artifactsLocal,
-  checkpoint: fsCheckpoint,
-  billing: budgetBilling,
-  verifier: verifierT0,
-  repair: repairPolicy,
-} as const
+export { BASE_SEAM_PROVIDERS, seamProvidersPlugin } from './seam-providers.js'
+export { packageStorage, RefineQueue }
 
 /** Host operation factories consume the same durable queue as the fitted harness and tool. */
 export const operations = {

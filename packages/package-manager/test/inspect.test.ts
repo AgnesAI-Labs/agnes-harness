@@ -38,17 +38,7 @@ const purpose = {
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 let root: string, profile: string, sourceDir: string
 const source = parseSource('file:./candidate')
-const seamNames = [
-  'approval',
-  'checkpoint',
-  'billing',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-]
+const seamNames = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 function manager(options: Partial<ManagerOptions> = {}) {
   return createPackageManager({ dataDir: root, agnesVersion: '0.1.0', cwd: root, ...options })
 }
@@ -84,7 +74,7 @@ beforeEach(() => {
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seamNames.map((k) => [k, '@agnes/base'])),
+    seams: Object.fromEntries(seamNames.map((k) => [k, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })
 })
@@ -194,7 +184,7 @@ it('reads the non-executable contribution kinds and detects grant/dependency dif
   mkdirSync(join(sourceDir, 'dist'))
   writeFileSync(join(sourceDir, 'dist', 'server.mjs'), 'throw Error()')
   const contributions = [
-    { kind: 'seam', id: 'acme/seam', path: './index.ts', apiRange: '^2.0.0', provides: ['ledger'] },
+    { kind: 'seam', id: 'acme/seam', path: './index.ts', apiRange: '^2.0.0', provides: ['billing'] },
     { kind: 'provider', id: 'acme/provider', path: './index.ts', apiRange: '^2.0.0' },
     { kind: 'runtime', id: 'acme/runtime', path: './index.ts', apiRange: '^2.0.0' },
     { kind: 'skill', id: 'acme/skill', path: './index.ts' },

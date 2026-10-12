@@ -1,9 +1,9 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { seams as baseSeams, sandboxWorkspaceProbe } from '@agnes/base'
+import { sandboxWorkspaceProbe } from '@agnes/base'
 import type { Host, HostSession } from '@agnes/host'
-import { attachTestSeamPlugins } from '@agnes/host/testkit'
+import { attachTestSeamPlugins, baseSeamFactories, seamFactories } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { bootLocal, hostRootFrom } from '../src/boot/local.js'
@@ -266,13 +266,13 @@ describe('bootLocal', () => {
           ...(id === '@agnes/base'
             ? {
                 sandboxWorkspaceProbe,
-                seams: {
-                  ...baseSeams,
-                  approval: async (ctx: { log: { warn(m: string): void } }) => {
+                ...seamFactories({
+                  ...baseSeamFactories,
+                  approval: async (ctx) => {
                     ctx.log.warn('a seam said something on its way up')
                     throw new Error('fixture stopped after forwarding the seam warning')
                   },
-                },
+                }),
               }
             : {}),
           ...(id === '@agnes/code' ? { presets: PRESETS } : {}),

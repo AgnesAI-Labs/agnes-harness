@@ -13,12 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import {
-  ecosystem as baseEcosystem,
-  seams as baseSeams,
-  SHELL_SENTINEL,
-  sandboxWorkspaceProbe,
-} from '@agnes/base'
+import { ecosystem as baseEcosystem, SHELL_SENTINEL, sandboxWorkspaceProbe } from '@agnes/base'
 import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import {
@@ -53,7 +48,7 @@ import { type AssembleDeps, type Assembled, assemble } from '../src/runtime/asse
 import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 import { readConfigurationProfileInputs } from '../src/runtime/profile/inputs.js'
 import { createSession } from '../src/runtime/sessions/session.js'
-import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
+import { attachTestSeamPlugins, seamFactories } from '../testkit/cordis-seams.js'
 
 /**
  * Task 14, Steps 2-3: the L0 sandbox policy is enforced by the real host FsOps, and every process
@@ -197,14 +192,16 @@ async function assembleWithSandbox(opts: {
             ],
           }
         : {}),
-      seams: Object.fromEntries(
-        SEAM_KEYS.map((n) => [
-          n,
-          async (context: SeamInitContext) => {
-            init ??= context
-            return fakes[n]
-          },
-        ]),
+      ...seamFactories(
+        Object.fromEntries(
+          SEAM_KEYS.map((n) => [
+            n,
+            async (context: SeamInitContext) => {
+              init ??= context
+              return fakes[n]
+            },
+          ]),
+        ),
       ),
       operations: {},
       presets: {

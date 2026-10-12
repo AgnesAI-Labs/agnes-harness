@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { defaultLoopPlugin, memoryPlugin, seams } from '@agnes/base'
+import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
 import type { ApprovalRequest } from '@agnes/core'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { observabilityPlugin } from '@agnes/observability'
@@ -11,7 +11,7 @@ import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent, JsonValue } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
-import { createTestHost } from '../testkit/index.js'
+import { baseSeamFactories, createTestHost } from '../testkit/index.js'
 
 const homes: string[] = []
 afterEach(async () => {
@@ -91,7 +91,7 @@ it.each([
               entry: normalizePluginExport(observabilityPlugin),
             },
           ],
-          seams: { checkpoint: seams.checkpoint },
+          seams: { checkpoint: baseSeamFactories.checkpoint },
         },
       },
       approval: async (request) => {
@@ -303,7 +303,7 @@ it('pins index and topic revisions across tool requests and a model retry, then 
       },
     },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
-    packages: { '@agnes/base': { plugins, seams: { checkpoint: seams.checkpoint } } },
+    packages: { '@agnes/base': { plugins, seams: { checkpoint: baseSeamFactories.checkpoint } } },
     provider: (profile) => {
       provider = new ScriptedProvider({
         models: profile.provider.routes?.[0]?.models ?? [],

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, fakeModel, ScriptedProvider, stampFor } from '@agnes/ai/testkit'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { operations as codeOperations, presets as codePresets, PRESET_NAMES } from '@agnes/code'
 import type { Operation, Verdict } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
@@ -18,6 +18,7 @@ import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provid
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  baseSeamFactories,
   createTestHost,
   type RunOnceResult,
   reopenSession,
@@ -836,7 +837,7 @@ describe('L1 replay corpus', () => {
           ...(realApproval
             ? {
                 '@agnes/base': {
-                  seams: { approval: baseSeams.approval },
+                  seams: { approval: baseSeamFactories.approval },
                   ...(f.shipped ? { presets: basePresets } : {}),
                 },
               }

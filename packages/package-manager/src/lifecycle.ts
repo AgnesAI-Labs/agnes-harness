@@ -113,9 +113,6 @@ export async function assertNoReferences(
     .sort()
   if (dependents.length) blockers.push({ code: 'dependency', references: dependents })
   const profileRefs = [
-    ...Object.entries(lock.seams)
-      .filter(([, pkg]) => pkg === id)
-      .map(([name]) => `seam:${name}`),
     ...(lock.provider.package === id ? ['provider'] : []),
     ...(lock.provider.adapters.includes(id) ? ['provider.adapter'] : []),
   ]

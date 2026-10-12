@@ -3,8 +3,18 @@ import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import type { HostBuiltinRowClaim } from '@agnes/host-extensions/assemble/seams-cordis'
-import { createPluginRow, isResourceOwnedRowId } from '@agnes/plugin-runtime/host'
-import type { HostThirdPartyRowClaim } from './seam-rows.js'
+import {
+  createPluginRow,
+  isResourceOwnedRowId,
+  type PackageSnapshotCandidateRef,
+  type VerifiedRowEntry,
+} from '@agnes/plugin-runtime/host'
+
+export type HostThirdPartyRowClaim = Readonly<{
+  row: ReturnType<typeof createPluginRow>
+  entry: VerifiedRowEntry
+  snapshot: Readonly<PackageSnapshotCandidateRef>
+}>
 
 export type OrdinaryPluginLayerEntry = Readonly<{ enabled?: boolean; config?: unknown }>
 export type OrdinaryPluginLayer = Readonly<Record<string, OrdinaryPluginLayerEntry>>
@@ -19,16 +29,6 @@ export type BuiltOrdinaryRows = Readonly<{
   builtinClaims: readonly Readonly<HostBuiltinRowClaim>[]
   thirdPartyClaims: readonly Readonly<HostThirdPartyRowClaim>[]
 }>
-
-const DYNAMIC_SEAM_ROWS = new Set([
-  'seam:approval',
-  'seam:artifacts',
-  'seam:billing',
-  'seam:checkpoint',
-  'seam:principals',
-  'seam:repair',
-  'seam:verifier',
-])
 
 /** Expand package defaults and deployment/user/workspace overrides through one normalized builder. */
 export function buildOrdinaryRows(
@@ -47,7 +47,10 @@ export function buildOrdinaryRows(
     if (!resolved) continue
     for (const plugin of module.plugins ?? []) {
       const { declaration, entry } = plugin
-      if (DYNAMIC_SEAM_ROWS.has(declaration.id)) continue
+      if (declaration.id.startsWith('seam:'))
+        throw new HostError('E_EXT_LOAD', `plugin row ${declaration.id} uses the reserved seam: prefix`, {
+          detail: { row: declaration.id, package: packageId, reason: 'reserved-row-id' },
+        })
       if (isResourceOwnedRowId(declaration.id)) {
         throw new HostError('E_EXT_LOAD', `ordinary plugin row ${declaration.id} is resource-owned`, {
           detail: { row: declaration.id, package: packageId, reason: 'resource-owned' },

@@ -60,17 +60,10 @@ function setup(pass = true) {
     ...emptyLock('test', '0.0.0'),
     resolvedProfileHash: 'sha256-' + '0'.repeat(64),
     seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'billing',
-        'sandbox',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-        'platform',
-      ].map((k) => [k, '@agnes/base']),
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((k) => [
+        k,
+        { provider: 'local' },
+      ]),
     ),
   })
   const manager = createPackageManager({

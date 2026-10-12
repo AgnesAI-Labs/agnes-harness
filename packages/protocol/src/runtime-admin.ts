@@ -96,6 +96,8 @@ export const RuntimeAdminSnapshot = Type.Object(
           sourcePackage: text,
           capabilities: strings,
           restartRequired: Type.Boolean(),
+          required: Type.Boolean(),
+          pinned: Type.Boolean(),
           active: Type.Boolean(),
           selectedFor: strings,
           scope: Type.Optional(

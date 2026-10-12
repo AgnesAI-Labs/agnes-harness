@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { AssembleDeps, Assembled } from '../src/runtime/assemble/assemble.js'
 import { assemble } from '../src/runtime/assemble/assemble.js'
 import { validateModelSwitch, validatePresetSwitch } from '../src/runtime/sessions/session-switch.js'
-import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
+import { attachTestSeamPlugins, seamFactories } from '../testkit/cordis-seams.js'
 import { createTestHost, type TestHost, type TestHostOptions } from '../testkit/index.js'
 
 /**
@@ -89,7 +89,7 @@ function mods(
           entry: normalizePluginExport(defaultLoopPlugin),
         },
       ],
-      seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
+      ...seamFactories(Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]]))),
       operations: {},
       presets: { base: { name: 'base' } },
     },

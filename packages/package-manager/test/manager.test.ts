@@ -13,14 +13,13 @@ import { verifyWorkspace } from '../src/workspace.js'
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const HASH = `sha256-${'0'.repeat(64)}`
 const SEAMS = {
-  approval: '@agnes/base',
-  checkpoint: '@agnes/base',
-  ledger: '@agnes/base',
-  verifier: '@agnes/base',
-  repair: '@agnes/base',
-  artifacts: '@agnes/base',
-  principals: '@agnes/base',
-  harness: '@agnes/base',
+  approval: { provider: 'local-prompt' },
+  checkpoint: { provider: 'fs' },
+  billing: { provider: 'budget' },
+  verifier: { provider: 't0' },
+  repair: { provider: 'default' },
+  artifacts: { provider: 'local' },
+  principals: { provider: 'local' },
 }
 
 function writableLock(profile: string, ceiling = ['tools']): Lockfile {

@@ -49,7 +49,7 @@ describe('resolveProfile (single layer)', () => {
     expect(p.name).toBe('local-dev')
     expect(p.chain).toEqual(['builtin:local-dev'])
     expect(p.packages.map((x) => x.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
-    expect(p.seams.approval).toBe('@agnes/base')
+    expect(p.seams.approval).toEqual({ provider: 'local-prompt' })
     expect(p.seams).not.toHaveProperty('platform')
     expect(p.seams).not.toHaveProperty('sandbox')
     expect(p.presets).toEqual({
@@ -80,7 +80,7 @@ describe('resolveProfile (single layer)', () => {
       user: {
         name: 'mine',
         dataDir: '/tmp/agnes',
-        seams: { approval: '@agnes/code' },
+        seams: { approval: { provider: 'other' } },
         transports: [{ kind: 'unix' }],
         presets: { default: 'code', allowed: ['code'] },
       },
@@ -89,8 +89,8 @@ describe('resolveProfile (single layer)', () => {
     expect(p.name).toBe('mine')
     expect(p.chain).toEqual(['builtin:local-dev', 'user:mine'])
     expect(p.dataDir).toBe('/tmp/agnes')
-    expect(p.seams.approval).toBe('@agnes/code')
-    expect(p.seams.billing).toBe('@agnes/base')
+    expect(p.seams.approval).toEqual({ provider: 'other' })
+    expect(p.seams.billing).toEqual({ provider: 'budget' })
     expect(p.transports).toEqual([{ kind: 'unix' }])
     expect(p.presets).toEqual({ default: 'code', allowed: ['code'] })
   })
@@ -115,7 +115,7 @@ describe('resolveProfile (single layer)', () => {
   it('hash moves when any resolved field moves, identity and directories included', async () => {
     const base = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const moves: Array<[string, RuntimeProfileManifest]> = [
-      ['seams', { name: 'local-dev', seams: { approval: '@agnes/code' } }],
+      ['seams', { name: 'local-dev', seams: { approval: { provider: 'other' } } }],
       ['name', { name: 'beta' }],
       ['dataDir', { name: 'local-dev', dataDir: '/var/lib/elsewhere' }],
       ['cacheDir', { name: 'local-dev', cacheDir: '/elsewhere' }],
@@ -194,12 +194,18 @@ describe('resolveProfile (single layer)', () => {
     expect(r.code).toBe('E_DEP_MISSING')
     expect(r.detail).toEqual({ id: '@agnes/ai' })
   })
-  it('rejects a missing seam with E_SEAM_MISSING and names the seam', async () => {
+  it.each([
+    ['the package-id string form', { approval: '@agnes/base' }, /seams\.approval must be \{ provider/],
+    ['the renamed ledger key', { ledger: { provider: 'budget' } }, /use seams\.billing/],
+    ['the removed harness key', { harness: { provider: 'x' } }, /harness is no longer a seam/],
+    ['an unknown key', { invented: { provider: 'x' } }, /not a seam kind/],
+    ['an extra field', { approval: { provider: 'x', extra: 1 } }, /only accepts provider and version/],
+  ])('rejects %s in seams with a message that names the fix', async (_name, seams, message) => {
     const r = await refusal(
-      resolveProfile({ builtin: 'local-dev', lock, user: { name: 'x', seams: { approval: '' } } }, env),
+      resolveProfile({ builtin: 'local-dev', lock, user: { name: 'x', seams: seams as never } }, env),
     )
-    expect(r.code).toBe('E_SEAM_MISSING')
-    expect(r.detail).toEqual({ seam: 'approval' })
+    expect(r.code).toBe('E_PROFILE_FRAGMENT_KEY')
+    expect((r.detail as { problems: string[] }).problems.join('; ')).toMatch(message)
   })
   it('rejects an env without agnesVersion instead of quietly ignoring it', async () => {
     const r = await refusal(resolveProfile({ builtin: 'local-dev', lock }, { ...env, agnesVersion: '' }))
@@ -415,7 +421,7 @@ describe('resolveProfile, the resolved profile is not editable in place', () => 
       ;(p.packages[0] as { trust: string }).trust = 'builtin'
     }).toThrow(TypeError)
     expect(() => {
-      ;(p.seams as Record<string, string>).approval = '@evil/pkg'
+      ;(p.seams as unknown as Record<string, string>).approval = '@evil/pkg'
     }).toThrow(TypeError)
     expect(() => {
       ;(p.limits as Record<string, number>)['jobs.tick_ms'] = 1

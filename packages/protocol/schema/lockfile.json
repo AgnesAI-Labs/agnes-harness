@@ -615,27 +615,13 @@
           "additionalProperties": false,
           "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
-            "approval": {
-              "type": "string"
-            },
-            "checkpoint": {
-              "type": "string"
-            },
-            "billing": {
-              "type": "string"
-            },
-            "verifier": {
-              "type": "string"
-            },
-            "repair": {
-              "type": "string"
-            },
-            "artifacts": {
-              "type": "string"
-            },
-            "principals": {
-              "type": "string"
-            }
+            "approval": { "$ref": "#/$defs/SeamSelection" },
+            "checkpoint": { "$ref": "#/$defs/SeamSelection" },
+            "billing": { "$ref": "#/$defs/SeamSelection" },
+            "verifier": { "$ref": "#/$defs/SeamSelection" },
+            "repair": { "$ref": "#/$defs/SeamSelection" },
+            "artifacts": { "$ref": "#/$defs/SeamSelection" },
+            "principals": { "$ref": "#/$defs/SeamSelection" }
           }
         }
       }
@@ -648,6 +634,9 @@
     },
     "UiSlotName": {
       "$ref": "slots.json#/$defs/UiSlotName"
+    },
+    "SeamSelection": {
+      "$ref": "profile.json#/$defs/SeamSelection"
     },
     "SeamName": {
       "$ref": "profile.json#/$defs/SeamName"

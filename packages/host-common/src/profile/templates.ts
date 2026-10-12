@@ -3,12 +3,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { HostError, type Layer } from '../errors.js'
-import {
-  PROFILE_SEAM_NAMES,
-  REMOVED_SEAM_KEYS,
-  type RouteDecl,
-  type RuntimeProfileManifest,
-} from './types.js'
+import { seamSelectionProblems } from './seam-selection.js'
+import type { RouteDecl, RuntimeProfileManifest } from './types.js'
 
 export const TEMPLATE_NAMES = ['local-dev', 'enterprise'] as const
 export const BUILTIN_PACKAGES = [
@@ -87,11 +83,8 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
     )
       bad('sandbox.provider must be a provider id')
   }
-  const seams = m.seams as Record<string, unknown> | undefined
-  for (const [key, fix] of Object.entries(REMOVED_SEAM_KEYS))
-    if (seams !== undefined && Object.hasOwn(seams, key)) bad(`seams.${key} was removed; ${fix}`)
-  for (const seam of PROFILE_SEAM_NAMES)
-    if (typeof seams?.[seam] !== 'string') bad(`seams.${seam} must name a package`)
+  const seamProblems = seamSelectionProblems(m.seams, true)
+  if (seamProblems.length) bad(seamProblems.join('; '))
   if (typeof (m.provider as { package?: unknown } | undefined)?.package !== 'string')
     bad('provider.package is required')
   const presets = m.presets as { default?: unknown; allowed?: unknown } | undefined

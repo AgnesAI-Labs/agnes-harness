@@ -2,6 +2,26 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 2.3.0
+
+### Added
+
+- `@agnes/extension-api/seams`: the contracts of the seven seam kinds (`ApprovalSeam`,
+  `PrincipalsSeam`, `BillingSeam`, `CheckpointSeam`, `ArtifactsSeam`, `VerifierSeam`,
+  `RepairSeam`), their value types, `SeamProvider<T>` (`create(init, signal)`), `SeamInit`,
+  `SEAM_KINDS` and `PINNED_SEAM_KINDS`.
+- `KindMap` entries `approval`, `principals`, `billing`, `checkpoint`, `artifacts`,
+  `verifier`, `repair`. A seam is registered with `ctx.providers.register(kind, pkg, provider)`
+  and selected with `seams.<kind>: { provider, version? }`.
+- `ProviderKind` and `ProviderCatalogEntry` carry `required` and `pinned` next to `authority`; `defineProviderKind` takes `required` and `pinned` as optional inputs (`authority` is
+  already optional).
+
+### Removed
+
+- The package-exported `seam:<name>` rows, `defineSeamPlugin`, the dynamic entries of the
+  `PackageModule.seams` factory table and the `seams` named export (a seam is a registered
+  provider, not a factory), and the string form of `seams.<name>`.
+
 ## 2.2.0
 
 ### Added

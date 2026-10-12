@@ -1,4 +1,5 @@
 import type { Seq } from '@agnes/core-common/types'
+import type { ArtifactJob, CostLedger, RepairDecision, TokenCounts } from '@agnes/extension-api/seams'
 import type { Actor, Billing, ContentBlock, SystemInput } from '@agnes/protocol'
 
 // The payload shapes of the event types protocol validates by envelope only. They are declared here
@@ -33,13 +34,6 @@ export type BudgetState = {
 }
 
 export type ArtifactRef = { sha256: string; size: number; mime: string }
-export type ArtifactJob = {
-  jobId: string
-  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
-  ref?: ArtifactRef
-  error?: string
-}
-
 export type InboxItem = {
   itemId: string
   target: 'next-turn' | 'next-step'
@@ -90,46 +84,12 @@ export type EffectSettled = {
   durationMs?: number
 }
 
-export type TokenCounts = {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  reasoning?: number
-}
-export type CostLedger = {
-  purpose:
-    | 'inference'
-    | 'compaction'
-    | 'subagent'
-    | 'verifier'
-    | 'media'
-    | 'tool'
-    | 'title'
-    | 'approval-guardian'
-  sourceTurn?: number
-  effectId: string
-  tokens: TokenCounts
-  credits?: number
-  creditSource: 'gateway' | 'estimated'
-  model: string
-  timing?: Record<string, number | string>
-  interrupted?: boolean
-  adjustment?: { of: Seq; delta: number; usdMicrosDelta?: number; reason: string }
-  billing?: Billing
-}
-
 export type VerifierSignal = {
   scope: 'tool' | 'step' | 'turn' | 'task'
   tier: 0 | 1 | 2
   verdict: 'pass' | 'fail' | 'needs_revision'
   reasons: string[]
   toolUseId?: string
-}
-export type RepairDecision = {
-  round: number
-  decision: 'repair' | 'park' | 'escalate' | 'complete'
-  verdictSeq: Seq
 }
 export type FormatDeviation = { rule: string; model: string; sampleHash: string; parserVersion: string }
 
@@ -153,3 +113,5 @@ export type FeedbackImplicit = {
   targetSeq: Seq
   detail?: unknown
 }
+
+export type { ArtifactJob, CostLedger, RepairDecision, TokenCounts }

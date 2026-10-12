@@ -409,6 +409,7 @@ export type {
   ResolvedProfile,
   RuntimeProfileManifest,
   SeamName,
+  SeamSelection,
   SecretRef,
   Transport,
 } from '../gen/ts/profile.js'

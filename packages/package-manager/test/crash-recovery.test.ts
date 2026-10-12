@@ -44,17 +44,7 @@ const points: PackageCommitPoint[] = [
   'previous-saved',
   'finished',
 ]
-const seams = [
-  'approval',
-  'checkpoint',
-  'billing',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 const load = () => readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
 const audit = () =>
   readFileSync(join(profile, '.agnes-package-audit.jsonl'), 'utf8')
@@ -69,7 +59,7 @@ beforeEach(async () => {
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((n) => [n, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((n) => [n, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })
   const manager = createPackageManager({ dataDir: root, cwd: fixtures, agnesVersion: '0.1.0' }),

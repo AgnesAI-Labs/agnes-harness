@@ -16,17 +16,10 @@ function setup() {
   const profileDir = join(root, 'profiles', 'test')
   mkdirSync(profileDir, { recursive: true })
   const seams = Object.fromEntries(
-    [
-      'approval',
-      'checkpoint',
-      'billing',
-      'sandbox',
-      'verifier',
-      'repair',
-      'artifacts',
-      'principals',
-      'platform',
-    ].map((key) => [key, '@agnes/base']),
+    ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((key) => [
+      key,
+      { provider: 'local' },
+    ]),
   )
   writeLock(profileDir, {
     ...emptyLock('test', '0.0.0'),

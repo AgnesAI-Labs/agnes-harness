@@ -5,6 +5,8 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { Context } from '@agnes/cordis'
 import type { RemoteTransport, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { ProviderPluginContext } from '@agnes/extension-api'
+import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
 import {
@@ -18,13 +20,13 @@ import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-
 import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { buildOrdinaryRows, type OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
 import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from '@agnes/package-manager'
-import { buildRuntimeTarget, createPluginRow, DYNAMIC_SEAM_NAMES } from '@agnes/plugin-runtime/host'
+import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import { closeHost } from '../../src/runtime/lifecycle/lifecycle.js'
-import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
+import { attachTestSeamPlugins, testSeams } from '../../testkit/cordis-seams.js'
 
 const MODEL: ModelRecord = {
   id: 'm1',
@@ -96,14 +98,11 @@ function baseModule(over: Partial<PackageModule> = {}): PackageModule {
   const seams = fakeSeams()
   const module: PackageModule = {
     id: '@agnes/base',
-    // The sandbox fake answers for the workspace it is actually fitted into, the way any real
-    // seam must: the assembly binds whatever fsPolicy() returns onto the workspace FsOps, and a
-    // policy naming another root is refused.
-    seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
     operations: {},
     presets: { base: { name: 'base' } },
     ...over,
   }
+  Object.assign(testSeams(module), Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])))
   return attachTestSeamPlugins(module)
 }
 const codeModule: PackageModule = {
@@ -814,7 +813,7 @@ describe('assemble', () => {
     expect(loaded).toBe(false)
   })
 
-  it('assembles the eight required seam rows without exposing a third-party factory when no target selects one', async () => {
+  it('assembles the seven required seam binding rows after every registration row', async () => {
     const a = await assemble(
       await profileFor(),
       deps(allModules(), {
@@ -823,7 +822,7 @@ describe('assemble', () => {
     )
     try {
       expect(a.pluginTree.bootRows.filter(({ id }) => id.startsWith('seam:')).map(({ id }) => id)).toEqual(
-        DYNAMIC_SEAM_NAMES.map((name) => `seam:${name}`),
+        SEAM_KINDS.map((name) => `seam:${name}`),
       )
       expect(a.pluginTree.bootRows.filter(({ id }) => id.startsWith('preset:')).map(({ id }) => id)).toEqual([
         'preset:base',
@@ -845,7 +844,7 @@ describe('assemble', () => {
       effect: 'allow' as const,
       reason: 'test',
     }))
-    const seams = module.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(module)
     seams.approval = async (ctx) => ({
       ...original,
       ask: async () =>
@@ -924,216 +923,6 @@ describe('assemble', () => {
       )
       await expect(publishRows(a, rows)).rejects.toThrow(/builtin claim preset:standard/)
       expect(a.pluginTree.root.get('preset:standard', false)).toMatchObject({ name: 'standard' })
-    } finally {
-      await a.rollback.unwind()
-    }
-  })
-
-  it('fails closed when a profile-selected third-party seam lacks an immutable runtime snapshot', async () => {
-    const vendor = '@acme/approval'
-    const approval = fakeSeams().approval
-    const vendorModule = attachTestSeamPlugins({
-      id: vendor,
-      seams: {
-        approval: async () => ({
-          ...approval,
-          ask: async () => 'rejected' as const,
-        }),
-      },
-    })
-    const verifiedPlugins = Object.freeze(
-      (vendorModule.plugins ?? []).map((plugin) =>
-        Object.freeze({
-          ...plugin,
-          candidate: Object.freeze({
-            packageId: vendor,
-            snapshotId: 'snapshot-vendor-1',
-            exportName: plugin.declaration.export,
-            generation: 7,
-          }),
-          snapshotDigest: 'sha512-vendor',
-        }),
-      ),
-    )
-    Object.defineProperty(vendorModule, 'plugins', {
-      configurable: true,
-      enumerable: true,
-      value: verifiedPlugins,
-    })
-    const profile = await resolveProfile(
-      {
-        builtin: 'local-dev',
-        lock: {
-          packages: {
-            ...lockPkgs,
-            [vendor]: { version: '1.0.0', integrity: 'sha512-vendor', trust: 'trusted', enabled: true },
-          },
-        },
-        user: {
-          name: 'local-dev',
-          presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', routes: [ROUTE] },
-          seams: { approval: vendor },
-          packages: [{ id: vendor, source: 'test' }],
-        },
-      },
-      env,
-    )
-    await expect(
-      assemble(
-        profile,
-        deps(
-          {
-            '@agnes/base': baseModule(),
-            '@agnes/code': codeModule,
-            '@agnes/ai': aiModule,
-            [vendor]: vendorModule,
-          },
-          {
-            pluginSnapshots: {
-              async verify(candidate) {
-                return {
-                  packageId: candidate.packageId,
-                  snapshotId: candidate.snapshotId,
-                  generation: candidate.generation,
-                  digest: 'sha512-vendor',
-                  exports: (vendorModule.plugins ?? []).map(({ declaration }) => declaration.export),
-                  trusted: true,
-                }
-              },
-            },
-          },
-        ),
-      ),
-    ).rejects.toThrow('trusted package has no immutable runtime snapshot')
-  })
-
-  it('keeps a managed package available to Cordis when its immutable snapshot owns a selected seam', async () => {
-    const vendor = '@acme/runtime-approval'
-    const directory = mkdtempSync(join(tmpdir(), 'agnes-runtime-approval-'))
-    dirs.push(directory)
-    writeFileSync(
-      join(directory, 'package.json'),
-      `${JSON.stringify({
-        name: vendor,
-        version: '1.0.0',
-        exports: './index.js',
-        agnes: { plugins: [{ export: 'approvalPlugin', apiRange: '^2.0.0', id: 'seam:approval' }] },
-      })}\n`,
-    )
-    writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
-    const snapshot: RuntimeSnapshot = Object.freeze({
-      snapshotId: `sha256-${'7'.repeat(64)}`,
-      profile: 'local-dev',
-      packageId: vendor,
-      version: '1.0.0',
-      integrity: `sha256-${'8'.repeat(64)}`,
-      treeIntegrity: hashDirectory(directory, { exclude: [] }),
-      capabilityHash: 'capability',
-      directory,
-      contributions: Object.freeze([]),
-    })
-    const directoryV2 = mkdtempSync(join(tmpdir(), 'agnes-runtime-approval-v2-'))
-    dirs.push(directoryV2)
-    writeFileSync(join(directoryV2, 'package.json'), readFileSync(join(directory, 'package.json')))
-    writeFileSync(join(directoryV2, 'index.js'), 'export const marker = "v2"\n')
-    const snapshotV2: RuntimeSnapshot = Object.freeze({
-      ...snapshot,
-      snapshotId: `sha256-${'c'.repeat(64)}`,
-      integrity: `sha256-${'d'.repeat(64)}`,
-      treeIntegrity: hashDirectory(directoryV2, { exclude: [] }),
-      directory: directoryV2,
-    })
-    const observed = vi.fn()
-    const approvalPlugin = Object.assign(
-      (ctx: Context) => {
-        observed(ctx.get('host:seam-init' as never))
-        return ctx.provide('seam:approval', { ask: async () => 'rejected' as const })
-      },
-      { inject: ['host:seam-init'], provide: 'seam:approval' },
-    )
-    const approvalPluginV2 = Object.assign(
-      (ctx: Context) => {
-        observed(ctx.get('host:seam-init' as never))
-        return ctx.provide('seam:approval', { ask: async () => 'allowed-once' as const })
-      },
-      { inject: ['host:seam-init'], provide: 'seam:approval' },
-    )
-    const profile = await resolveProfile(
-      {
-        builtin: 'local-dev',
-        lock: {
-          packages: {
-            ...lockPkgs,
-            [vendor]: {
-              version: '1.0.0',
-              integrity: snapshot.integrity,
-              trust: 'trusted',
-              enabled: true,
-            },
-          },
-        },
-        user: {
-          name: 'local-dev',
-          presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', routes: [ROUTE] },
-          seams: { approval: vendor },
-          packages: [{ id: vendor, source: 'test' }],
-        },
-      },
-      env,
-    )
-    const a = await assemble(
-      profile,
-      deps(allModules(), {
-        runtimePluginSnapshots: [{ snapshot, generation: 4, trusted: true }],
-        runtimePluginCatalogue: [
-          { snapshot, generation: 4, trusted: true },
-          { snapshot: snapshotV2, generation: 4, trusted: true },
-        ],
-        managedExtensionPackageIds: [vendor],
-        extensionLoader: {
-          import: async (file) =>
-            file.includes('agnes-runtime-approval-v2-')
-              ? { approvalPlugin: approvalPluginV2 }
-              : { approvalPlugin },
-        },
-      }),
-    )
-    try {
-      expect(observed).toHaveBeenCalledOnce()
-      expect(await a.seams.approval.ask({} as never)).toBe('rejected')
-      const firstRow = a.pluginTree.currentRows().find((row) => row.id === 'seam:approval')
-      expect(firstRow).toMatchObject({
-        plugin: `${vendor}@${snapshot.snapshotId}/approvalPlugin`,
-      })
-      if (!firstRow) throw new Error('missing assembled seam:approval row')
-      // A complete target may re-point a third-party seam row at another catalogue snapshot; the
-      // Host-private exact extras still gate the mount, so the row keeps its assembled extras.
-      const upgraded = createPluginRow({
-        id: firstRow.id,
-        plugin: `${vendor}@${snapshotV2.snapshotId}/approvalPlugin`,
-        snapshotDigest: snapshotV2.integrity,
-        exportName: 'approvalPlugin',
-        entryRevision: snapshotV2.snapshotId,
-        extrasRevision: firstRow.extrasRevision,
-        mountRevision: firstRow.mountRevision,
-        config: firstRow.config,
-        inject: firstRow.inject,
-        provides: firstRow.provides,
-        runtime: firstRow.runtime,
-      })
-      await publishRows(
-        a,
-        a.pluginTree.currentRows().map((row) => (row.id === 'seam:approval' ? upgraded : row)),
-      )
-      expect(await a.seams.approval.ask({} as never)).toBe('allowed-once')
-      const secondRow = a.pluginTree.currentRows().find((row) => row.id === 'seam:approval')
-      expect(secondRow).toMatchObject({
-        plugin: `${vendor}@${snapshotV2.snapshotId}/approvalPlugin`,
-        entryRevision: snapshotV2.snapshotId,
-      })
-      expect(secondRow?.mountIdentity).not.toBe(firstRow?.mountIdentity)
     } finally {
       await a.rollback.unwind()
     }
@@ -1606,7 +1395,7 @@ describe('assemble', () => {
     expect(order).toEqual([])
   })
 
-  it('assembles a kernel with ten seams, provider, presets and the resolved default preset', async () => {
+  it('assembles a kernel with nine seams, provider, presets and the resolved default preset', async () => {
     const p = await profileFor()
     const a = await assemble(p, deps(allModules()))
     expect(Object.keys(a.seams).sort()).toEqual([
@@ -1695,7 +1484,7 @@ describe('assemble', () => {
     const p = await profileFor()
     const seen: Array<Record<string, unknown>> = []
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     seams.approval = async (ctx) => {
       seen.push(ctx.profile)
       return { ask: async () => 'allowed-once', resume: async () => null }
@@ -1718,7 +1507,7 @@ describe('assemble', () => {
   it('keeps Computer Use artifact retention out of a never-enabled profile', async () => {
     const p = await profileFor({ computerUse: { enabled: false } })
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     const originalArtifacts = seams.artifacts
     if (!originalArtifacts) throw new Error('missing fixture artifacts seam')
     let privateStoreInjected = false
@@ -1732,15 +1521,76 @@ describe('assemble', () => {
     expect(a.computerUseArtifactGc).toBeUndefined()
     await a.rollback.unwind()
   })
-  it('missing seam factory is E_SEAM_EXPORT_MISSING; a rejecting factory is E_SEAM_INIT; both roll back', async () => {
+  it('binds a selected seam provider that another package registers through the same path as base', async () => {
+    const snapshots: string[] = []
+    const alt = {
+      id: 'alt',
+      version: '1.0.0',
+      create: async () => ({
+        snapshot: async (paths: string[]) => {
+          snapshots.push(...paths)
+          return { id: 'alt-1' }
+        },
+        rewind: async () => undefined,
+        list: async () => [],
+      }),
+    }
+    const vendor: PackageModule = {
+      id: '@agnes/code',
+      presets: codeModule.presets as never,
+      operations: {},
+      plugins: [
+        {
+          declaration: {
+            export: 'altCheckpointPlugin',
+            apiRange: '^2.0.0',
+            id: 'seam-providers:alt',
+            inject: ['providers'],
+            runtime: 'in-process',
+            default: true,
+          },
+          entry: normalizePluginExport({
+            inject: ['providers'],
+            apply: (ctx: ProviderPluginContext) => {
+              ctx.providers.register('checkpoint', '@agnes/code', alt as never)
+            },
+          } as never),
+        },
+      ],
+    }
+    const profile = await profileFor({ seams: { checkpoint: { provider: 'alt' } } })
+    const a = await assemble(
+      profile,
+      deps({ '@agnes/base': baseModule(), '@agnes/code': vendor, '@agnes/ai': aiModule }),
+    )
+    try {
+      expect(await a.seams.checkpoint.snapshot(['x.txt'], '1/1')).toEqual({ id: 'alt-1' })
+      expect(snapshots).toEqual(['x.txt'])
+      const rows = a.pluginTree.currentRows().map(({ id }) => id)
+      expect(rows.indexOf('seam:checkpoint')).toBeGreaterThan(rows.indexOf('seam-providers:alt'))
+      const entry = a.pluginTree.root.providers
+        .catalog()
+        .find((e) => e.kind === 'checkpoint' && e.id === 'alt')
+      expect(entry).toMatchObject({
+        sourcePackage: '@agnes/code',
+        required: true,
+        pinned: true,
+        active: true,
+      })
+    } finally {
+      await a.rollback.unwind()
+    }
+  })
+
+  it('an unregistered selected provider is E_SEAM_MISSING; a rejecting factory is E_SEAM_INIT; both roll back', async () => {
     const p = await profileFor()
     const noApproval = baseModule()
-    delete (noApproval.seams as NonNullable<PackageModule['seams']>).approval
+    delete testSeams(noApproval).approval
     await expect(
       assemble(p, deps({ '@agnes/base': noApproval, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
-    ).rejects.toThrow(/E_SEAM_EXPORT_MISSING/)
+    ).rejects.toThrow(/E_SEAM_MISSING.*approval/)
     const bad = baseModule()
-    ;(bad.seams as NonNullable<PackageModule['seams']>).billing = async () => {
+    testSeams(bad).billing = async () => {
       throw new Error('db down')
     }
     const d = deps({ '@agnes/base': bad, '@agnes/code': codeModule, '@agnes/ai': aiModule })
@@ -1750,7 +1600,7 @@ describe('assemble', () => {
   it('reports the first seam in SEAM_NAMES order when two fail, not whichever rejected soonest', async () => {
     const p = await profileFor()
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     // repair comes after checkpoint in SEAM_NAMES, and rejects first in wall-clock time.
     seams.repair = async () => {
       throw new Error('immediate')
@@ -1795,7 +1645,7 @@ describe('assemble', () => {
     const closed: string[] = []
     const real = fakeSeams()
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     seams.verifier = async () => ({
       ...real.verifier,
       close: () => {
@@ -1823,7 +1673,7 @@ describe('assemble', () => {
   it('seam factory timeout is E_SEAM_INIT with reason timeout', async () => {
     const p = await profileFor()
     const slow = baseModule()
-    ;(slow.seams as NonNullable<PackageModule['seams']>).verifier = () => new Promise(() => {})
+    testSeams(slow).verifier = () => new Promise(() => {})
     await expect(
       assemble(
         p,
@@ -1837,7 +1687,7 @@ describe('assemble', () => {
   it('a seam that hands back something that is not an object is refused, not fitted', async () => {
     const p = await profileFor()
     const m = baseModule()
-    ;(m.seams as NonNullable<PackageModule['seams']>).verifier = async () => 'not a seam'
+    testSeams(m).verifier = async () => 'not a seam' as never
     await expect(
       assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
     ).rejects.toThrow(/E_SEAM_INIT.*non-object/)
@@ -1846,7 +1696,7 @@ describe('assemble', () => {
     const p = await profileFor()
     let closed = 0
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     const real = fakeSeams()
     seams.verifier = async () => ({
       ...real.verifier,

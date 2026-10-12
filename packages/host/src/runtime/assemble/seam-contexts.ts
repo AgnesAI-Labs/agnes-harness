@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import type { SeamImplementations, SeamName } from '@agnes/core'
+import type { SeamInit, SeamKind } from '@agnes/extension-api/seams'
 import type { SeamInitContext, SeamProfileView } from '@agnes/host-extensions/assemble/packages'
 import { toSeamAdapters } from '../adapters/index.js'
 import { inspectComputerUseArtifacts } from '../computer-use/index.js'
@@ -13,6 +14,13 @@ export type SeamContexts = Readonly<{
   seamProfile: SeamProfileView
   baseContext(owner: string): SeamInitContext
   contextFor(owner: string, seamName: SeamName): { context: SeamInitContext; cleanup(): void }
+  /** The `create` input for a provider of `sourcePackage`; only builtin packages see the wider view. */
+  initFor(
+    sourcePackage: string,
+    kind: SeamKind,
+    builtin: boolean,
+    preset: Readonly<Record<string, unknown>>,
+  ): SeamInit
   retention: ReturnType<typeof inspectComputerUseArtifacts>
   staticSeams: Pick<SeamImplementations, 'sandbox' | 'platform'>
 }>
@@ -67,5 +75,24 @@ export function openSeamContexts(
     adapters.reportSandboxBackend({ name: 'remote', enforcement: { level: 'none', scope: [] } })
     adapters.declareExecGate({ backend: 'remote', onUnavailable: 'deny' })
   }
-  return { seamProfile, baseContext, contextFor, retention, staticSeams }
+  const initFor = (
+    sourcePackage: string,
+    kind: SeamKind,
+    builtin: boolean,
+    preset: Readonly<Record<string, unknown>>,
+  ): SeamInit => {
+    const base = builtin ? contextFor(sourcePackage, kind).context : baseContext(sourcePackage)
+    const init: SeamInit = {
+      secrets: base.secrets,
+      adapters: base.adapters,
+      profile: Object.freeze({ ...base.profile, preset: { ...preset } }),
+      log: base.log,
+      signal: base.signal,
+      ...(base.seamTimeoutMs === undefined ? {} : { seamTimeoutMs: base.seamTimeoutMs }),
+    }
+    // Builtin packages keep the privileged fields the Host attaches per (package, seam); no other
+    // package is handed them.
+    return builtin ? { ...base, ...init } : init
+  }
+  return { seamProfile, baseContext, contextFor, initFor, retention, staticSeams }
 }

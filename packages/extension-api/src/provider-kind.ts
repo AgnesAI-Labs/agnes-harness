@@ -6,6 +6,15 @@ import type { ModelAdapter } from './model-adapter.js'
 import type { PersistenceProvider } from './persistence.js'
 import type { ReferenceResolver } from './reference-resolver.js'
 import type { SandboxProvider } from './sandbox-provider.js'
+import type {
+  ApprovalProvider,
+  ArtifactsProvider,
+  BillingProvider,
+  CheckpointProvider,
+  PrincipalsProvider,
+  RepairProvider,
+  VerifierProvider,
+} from './seams.js'
 import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
 import type { ToolPolicy } from './tool-policy.js'
 import type { ToolRuntimeProvider } from './tool-runtime.js'
@@ -24,6 +33,13 @@ export interface KindMap {
   'tool-runtime': ToolRuntimeProvider
   'tool-policy': ToolPolicy
   'child-agent': ChildAgentProvider
+  approval: ApprovalProvider
+  principals: PrincipalsProvider
+  billing: BillingProvider
+  checkpoint: CheckpointProvider
+  artifacts: ArtifactsProvider
+  verifier: VerifierProvider
+  repair: RepairProvider
 }
 export type ProviderLifecycleScope = 'session' | 'generation' | 'workspace' | 'process'
 export const PROVIDER_LIFECYCLE_SCOPES = Object.freeze({
@@ -38,6 +54,13 @@ export const PROVIDER_LIFECYCLE_SCOPES = Object.freeze({
   'tool-runtime': 'session',
   'tool-policy': 'generation',
   'child-agent': 'session',
+  approval: 'generation',
+  principals: 'generation',
+  billing: 'generation',
+  checkpoint: 'generation',
+  artifacts: 'generation',
+  verifier: 'generation',
+  repair: 'generation',
 } as const satisfies Record<keyof KindMap, ProviderLifecycleScope>)
 
 /** A generation recreates session/generation owners; longer-lived owners require restart. */
@@ -67,9 +90,14 @@ export type ProviderAuthority = 'open' | 'host'
 
 export interface ProviderKind<T extends ProviderIdentity> {
   readonly kind: string
-  readonly authority: ProviderAuthority
   readonly restartRequired: boolean
   readonly scope: ProviderLifecycleScope
+  /** Assembly fails with `E_SEAM_MISSING` when no selected provider resolves. */
+  readonly required: boolean
+  /** `host`: only the Host registers it; a package registration is refused and it cannot be selected. */
+  readonly authority: ProviderAuthority
+  /** The selection is recorded per session and replaced only by an explicit repin. */
+  readonly pinned: boolean
   /** Invariant token: use the exact token installed by the kind service. */
   readonly [providerType]: (value: T) => T
   readonly versioned?: boolean
@@ -78,17 +106,25 @@ export interface ProviderKind<T extends ProviderIdentity> {
 }
 
 export function defineProviderKind<T extends ProviderIdentity>(
-  definition: Omit<ProviderKind<T>, 'authority' | 'restartRequired' | 'scope' | typeof providerType> & {
-    authority?: ProviderAuthority
+  definition: Omit<
+    ProviderKind<T>,
+    'restartRequired' | 'scope' | 'required' | 'authority' | 'pinned' | typeof providerType
+  > & {
     scope?: ProviderLifecycleScope /** @deprecated Derived from scope. */
     restartRequired?: boolean
+    required?: boolean
+    authority?: ProviderAuthority
+    pinned?: boolean
   },
 ): ProviderKind<T> {
   if (
     !/^[a-z][a-z0-9-]*$/.test(definition.kind) ||
     typeof definition.validate !== 'function' ||
     (definition.restartRequired !== undefined && typeof definition.restartRequired !== 'boolean') ||
-    (definition.versioned !== undefined && typeof definition.versioned !== 'boolean')
+    (definition.versioned !== undefined && typeof definition.versioned !== 'boolean') ||
+    (definition.required !== undefined && typeof definition.required !== 'boolean') ||
+    (definition.pinned !== undefined && typeof definition.pinned !== 'boolean') ||
+    (definition.authority !== undefined && definition.authority !== 'host' && definition.authority !== 'open')
   )
     throw new Error('Provider kind requires a name and a validator')
   const scope =
@@ -105,6 +141,8 @@ export function defineProviderKind<T extends ProviderIdentity>(
     ...definition,
     authority: definition.authority ?? 'open',
     scope,
+    required: definition.required ?? false,
+    pinned: definition.pinned ?? false,
     restartRequired: providerRestartRequired(scope),
     [providerType]: (value: T) => value,
   })
@@ -117,7 +155,9 @@ export interface ProviderCatalogEntry extends ProviderIdentity {
   readonly capabilities: readonly string[]
   readonly restartRequired: boolean
   readonly scope: ProviderLifecycleScope
+  readonly required: boolean
   readonly authority: ProviderAuthority
+  readonly pinned: boolean
   readonly active: boolean
   readonly selectedFor: readonly string[]
 }

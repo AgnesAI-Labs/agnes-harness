@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRefineHarness, packageStorage, RefineQueue } from '@agnes/base'
 import { CoreError } from '@agnes/core'
 import { definePersistenceProvider, type PersistenceSessionStore } from '@agnes/extension-api'
 import {
@@ -344,7 +345,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   const { persistenceProvider } = await import(
     new URL('../../../../examples/persistence/src/index.ts', import.meta.url).href
   )
-  const { seams, mcpCatalogHubFor } = await import('@agnes/base')
+  const { BASE_SEAM_PROVIDERS, mcpCatalogHubFor } = await import('@agnes/base')
   const { fakeSeamInit } = await import('@agnes/base/testkit')
   const { toSeamAdapters } = await import('../../src/runtime/adapters/index.js')
   const dir = tempDir()
@@ -379,7 +380,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
     ).rejects.toBeInstanceOf(CoreError)
     const init = fakeSeamInit({ dataDir: dir, workspaceRoot: dir })
     init.adapters = toSeamAdapters(bundle, { owner: '@agnes/base' })
-    const ledger = await seams.billing(init)
+    const ledger = await BASE_SEAM_PROVIDERS.billing.create(init, new AbortController().signal)
     const cost = {
       sessionKey: 's',
       lane: 'main',
@@ -398,6 +399,25 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
       credits: 5,
       creditSource: 'estimated',
     })
+    const harness = createRefineHarness(
+      new RefineQueue(
+        packageStorage(init.adapters.storage, 'refine_queue', {
+          select: 'SELECT * FROM refine_queue',
+          key: (r) => String(r.proposal_id),
+        }),
+      ),
+      20,
+    )
+    expect(
+      await harness.propose({
+        proposalId: 'proposal',
+        trigger: 'auto',
+        edits: [{ op: 'delete', kind: 'memory', id: 'old' }],
+        baseline: [],
+        rationale: 'test',
+        evidenceSeqs: [],
+      }),
+    ).toBe('queued')
     const hub = mcpCatalogHubFor(init)
     hub.upsert('server', [{ name: 'lookup', description: '查找订单', schema: '{}' }])
     expect(hub.search('查找', 10)).toEqual([{ name: 'lookup', score: 1 }])

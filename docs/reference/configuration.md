@@ -43,7 +43,7 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | `name`, `schemaVersion`, `extends` | Identity, version, inheritance; current templates use schemaVersion 1 |
 | `packages` | Sources, enablement, configuration; PackageManager still owns installation and trust |
 | `packages[].config` | Provider selections: `<kind>: { provider, version? }` |
-| `seams` | Ownership of required seam implementations; not an unrestricted plugin registration API |
+| `seams` | One `{ provider, version? }` selection per seam kind; see [Seams](../extend/seams.md) |
 | `provider` | package/routes/catalog/contract; route name `default` is a reserved sentinel |
 | `adapters` | storage/fs/exec/platform/secrets selection |
 | `persistence` | `{ provider: id }`. Default `sqlite`, and that default is omitted from the resolved profile. User profile only. Changing it is restart-required. The profile schema and Host user-layer validation accept this field. |

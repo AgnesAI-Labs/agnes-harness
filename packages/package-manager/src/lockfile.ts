@@ -1,6 +1,5 @@
 import { closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { SeamName } from '@agnes/protocol'
 import { type PackageLock, type Lockfile as ValidatedLockfile, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync, syncFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
@@ -17,7 +16,7 @@ export type LockEntry = PackageLock
  */
 export type Lockfile = Omit<ValidatedLockfile, 'resolvedProfileHash' | 'seams'> & {
   resolvedProfileHash: string | null
-  seams: Partial<Record<SeamName, string>>
+  seams: Partial<ValidatedLockfile['seams']>
 }
 
 export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-lock.json')

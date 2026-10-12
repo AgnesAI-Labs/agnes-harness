@@ -167,5 +167,7 @@ function mergeHostStaticBootRows(
     const row = byId.get(id)
     if (row) merged.push(row)
   }
-  return Object.freeze(merged)
+  // Seam binding rows resolve providers other rows register, so they mount after every one of them.
+  const bindings = merged.filter((row) => row.id.startsWith('seam:'))
+  return Object.freeze([...merged.filter((row) => !row.id.startsWith('seam:')), ...bindings])
 }

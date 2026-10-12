@@ -30,17 +30,7 @@ const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures'),
   id = 'acme/pkg-a',
   source = parseSource('file:./source')
 let root: string, profile: string, sourceDir: string
-const seams = [
-  'approval',
-  'checkpoint',
-  'billing',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 function manager(extra: Partial<ManagerOptions> = {}) {
   return createPackageManager({
     dataDir: root,
@@ -79,7 +69,7 @@ beforeEach(() => {
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((n) => [n, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((n) => [n, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })
 })
@@ -290,13 +280,13 @@ it('blocks dependency/Profile and deployment refs, passing only controlled opera
   delete dependent.treeIntegrity
   dependent.dependencies = { [id]: '1.0.0' }
   lock.packages['acme/dependent'] = dependent
-  lock.seams.billing = id
+  lock.provider.package = id
   writeLock(profile, lock)
   await expect(m.remove(profile, id)).rejects.toMatchObject({
     detail: {
       blockers: [
         { code: 'dependency', references: ['acme/dependent'] },
-        { code: 'profile', references: ['seam:billing'] },
+        { code: 'profile', references: ['provider'] },
         { code: 'deployment', references: ['web'] },
       ],
     },

@@ -1,227 +1,229 @@
 import { createHash } from 'node:crypto'
+import type { Context } from '@agnes/cordis'
+import type { ProviderSelection } from '@agnes/extension-api'
+import type { SeamInit, SeamKind, SeamProvider } from '@agnes/extension-api/seams'
+import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import type { HostBuiltinRowClaim } from '@agnes/host-extensions/assemble/seams-cordis'
 import {
   createPluginRow,
-  DYNAMIC_SEAM_NAMES,
-  type DynamicSeamName,
-  E_ROW_IMPORT,
+  EMPTY_EXTRAS_REVISION,
   type EntryRow,
-  type ExactExtrasPolicy,
-  type HostPluginImporterFactory,
-  type PackageSnapshotCandidateRef,
-  type PackageSnapshotVerifier,
-  type VerifiedExtrasEnvelope,
-  type VerifiedRowEntry,
-  VerifiedRowError,
+  normalizePluginExport,
 } from '@agnes/plugin-runtime/host'
 
-export const HOST_SEAM_INIT = 'host:seam-init' as const
-export const REQUIRED_SEAM_ROW_IDS = Object.freeze(DYNAMIC_SEAM_NAMES.map((name) => `seam:${name}`))
+export const REQUIRED_SEAM_ROW_IDS = Object.freeze(SEAM_KINDS.map((kind) => `seam:${kind}`))
+
+/** The implementation a seam kind was bound to when its container was built. */
+export type SeamBinding = Readonly<{
+  kind: SeamKind
+  provider: string
+  version: string
+  sourcePackage: string
+  /** Builtin packages: the package integrity; third-party packages: the installed snapshot integrity. */
+  integrity: string
+}>
 
 export type BuiltSeamRows = Readonly<{
   rows: readonly ReturnType<typeof createPluginRow>[]
   builtinClaims: readonly Readonly<HostBuiltinRowClaim>[]
-  thirdPartyClaims: readonly Readonly<HostThirdPartyRowClaim>[]
-  exactExtras: ExactExtrasPolicy
-  thirdPartyExtras: Readonly<Record<string, VerifiedExtrasEnvelope>>
 }>
 
-export type HostThirdPartyRowClaim = Readonly<{
-  row: ReturnType<typeof createPluginRow>
-  entry: VerifiedRowEntry
-  snapshot: Readonly<PackageSnapshotCandidateRef>
+type SeamPresetConfig = Readonly<Record<string, unknown>> & { readonly name: string }
+
+const SEAM_BINDER_SNAPSHOT = 'builtin:host-seams:v1'
+const SEAM_BINDER_REVISION = 'host-seam-binder:v1'
+
+const seamPresetConfig = Object.freeze({
+  '~standard': Object.freeze({
+    version: 1 as const,
+    vendor: 'agnes-host',
+    validate(value: unknown) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return { issues: [{ message: 'expected a plain preset object' }] }
+      if (typeof (value as { name?: unknown }).name !== 'string')
+        return { issues: [{ message: 'expected a string', path: ['name'] }] }
+      return { value: value as SeamPresetConfig }
+    },
+  }),
+})
+
+const INSTANCE_METHODS: Readonly<Record<SeamKind, readonly string[]>> = Object.freeze({
+  approval: ['ask'],
+  principals: ['resolve', 'authorize'],
+  billing: ['record', 'projected'],
+  checkpoint: ['snapshot', 'rewind', 'list'],
+  artifacts: ['put', 'get', 'submitJob', 'poll', 'cancel'],
+  verifier: ['verify'],
+  repair: ['decide'],
+})
+
+function failed(kind: string, reason: string, why: string): HostError {
+  return new HostError('E_SEAM_INIT', `seam ${kind} ${why}`, { detail: { seam: kind, reason } })
+}
+
+/**
+ * Race `create` against a timer without trusting the provider to honour the signal. An instance
+ * that arrives after the timer has fired is closed at once instead of leaking.
+ */
+async function createWithin(
+  kind: SeamKind,
+  provider: SeamProvider<object>,
+  init: SeamInit,
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<object & { close?: () => void | Promise<void> }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const created = Promise.resolve().then(() => provider.create(init, signal))
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(failed(kind, 'timeout', `timed out after ${timeoutMs} ms`)), timeoutMs)
+  })
+  try {
+    const value: unknown = await Promise.race([created, timeout])
+    if (typeof value !== 'object' || value === null)
+      throw failed(kind, 'shape', 'factory returned a non-object')
+    const missing = INSTANCE_METHODS[kind].find(
+      (method) => typeof (value as Record<string, unknown>)[method] !== 'function',
+    )
+    if (missing) {
+      void closeQuietly(value)
+      throw failed(kind, 'shape', `instance lacks ${missing}()`)
+    }
+    return value as object & { close?: () => void | Promise<void> }
+  } catch (error) {
+    void created.then(closeQuietly, () => undefined)
+    if (error instanceof HostError) throw error
+    throw failed(kind, 'reject', `factory failed: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function closeQuietly(value: unknown): Promise<void> {
+  try {
+    await (value as { close?: () => void | Promise<void> } | null)?.close?.()
+  } catch {
+    // A refused instance has nowhere to report a failed close.
+  }
+}
+
+/** Everything one binding row needs; exported so the binding can be exercised without a tree. */
+export type SeamBindingInput = Readonly<{
+  profile: ResolvedProfile
+  timeoutMs: number
+  initFor(sourcePackage: string, kind: SeamKind, builtin: boolean, preset: SeamPresetConfig): SeamInit
+  onBound(binding: SeamBinding): void
 }>
 
-/** Compile the eight profile-selected runtime seams into ordinary Cordis rows. */
-export function buildSeamRows(
-  input: Readonly<{
-    profile: ResolvedProfile
-    generationBuiltinRows?: readonly Readonly<EntryRow>[]
-    modules: ReadonlyMap<string, PackageModule>
-    preset: PresetDoc
-    contextFor(owner: string, seam: DynamicSeamName): SeamInitContext
-  }>,
-): BuiltSeamRows {
-  const expectedExtras = new Map<
-    string,
-    Readonly<{ slot: string; revision: string; values: Readonly<Record<string, unknown>> }>
-  >()
-  const claims: HostBuiltinRowClaim[] = []
-  const thirdPartyClaims: HostThirdPartyRowClaim[] = []
-  // Model configuration is hot-swappable; it must not invalidate private seam claims on cold resume.
-  const deployment = createHash('sha256').update(modelProfileDeployment(input.profile)).digest('hex')
-  const rows = DYNAMIC_SEAM_NAMES.map((name) => {
-    const id = `seam:${name}`
-    const packageId = input.profile.seams[name]
-    const resolvedPackage = input.profile.packages.find(
-      (candidate) => candidate.enabled && candidate.id === packageId,
-    )
-    const module = input.modules.get(packageId)
-    if (!resolvedPackage || !module) {
-      throw new HostError('E_DEP_MISSING', `seam ${name} package is not enabled`, {
-        detail: { seam: name, package: packageId },
-      })
-    }
-    const matching = (module.plugins ?? []).filter(({ declaration }) => declaration.id === id)
-    if (matching.length !== 1) {
-      throw new HostError('E_SEAM_EXPORT_MISSING', `${packageId} must export exactly one ${id} plugin`, {
-        detail: { seam: name, package: packageId, matches: matching.length },
-      })
-    }
-    const selected = matching[0]
-    if (!selected) throw new Error('unreachable seam plugin selection')
-    if (
-      selected.entry.provides.length !== 1 ||
-      selected.entry.provides[0] !== id ||
-      Object.keys(selected.entry.inject).join('\0') !== HOST_SEAM_INIT
-    ) {
-      throw new HostError('E_SEAM_EXPORT_MISSING', `${packageId} ${id} has invalid seam metadata`, {
-        detail: { seam: name, package: packageId },
-      })
-    }
-
-    const pinned = input.generationBuiltinRows?.find(
-      (row) =>
-        resolvedPackage.trust === 'builtin' &&
-        row.id === id &&
-        row.plugin === `builtin:${packageId}/${selected.declaration.export}`,
-    )
-    const revision = pinned?.extrasRevision ?? `host-seam-extras:v1:${deployment}:${name}`
-    const values = Object.freeze({
-      [HOST_SEAM_INIT]: () => input.contextFor(packageId, name),
-    })
-    const extras = Object.freeze({ slot: id, revision, values })
-    expectedExtras.set(id, extras)
-
-    const snapshotId = selected.candidate?.snapshotId ?? resolvedPackage.integrity
-    const snapshotDigest = selected.snapshotDigest ?? resolvedPackage.integrity
-    const plugin =
-      resolvedPackage.trust === 'builtin'
-        ? `builtin:${packageId}/${selected.declaration.export}`
-        : `${packageId}@${snapshotId}/${selected.declaration.export}`
-    const row = createPluginRow({
-      id,
-      plugin,
-      snapshotDigest,
-      exportName: selected.declaration.export,
-      entryRevision: snapshotId,
-      extrasRevision: revision,
-      mountRevision: 'host-seam-row:v1',
-      config: pinned?.config ?? selected.declaration.config ?? input.preset,
-      inject: Object.keys(selected.entry.inject),
-      provides: selected.entry.provides,
-      runtime: selected.declaration.runtime,
-    })
-    if (resolvedPackage.trust === 'builtin') {
-      claims.push(Object.freeze({ row, entry: selected.entry, extras }))
-    } else {
-      if (!selected.candidate || !selected.snapshotDigest) {
-        throw new HostError(
-          'E_EXT_LOAD',
-          `${packageId} ${id} is not backed by an immutable runtime snapshot`,
-          { detail: { seam: name, package: packageId, reason: 'snapshot-unavailable' } },
-        )
-      }
-      thirdPartyClaims.push(
-        Object.freeze({
-          row,
-          entry: selected.entry,
-          snapshot: selected.candidate,
-        }),
+/** The apply of one binding row: resolve the selected provider, create its instance, provide `seam:<kind>`. */
+export function seamBinding(kind: SeamKind, selection: ProviderSelection, input: SeamBindingInput) {
+  const id = `seam:${kind}`
+  return async (ctx: Context, config: SeamPresetConfig) => {
+    const providers = ctx.providers
+    let provider: SeamProvider<object>
+    try {
+      provider = providers.resolve(kind, selection) as unknown as SeamProvider<object>
+    } catch (cause) {
+      throw new HostError(
+        'E_SEAM_MISSING',
+        `seam ${kind}: provider ${selection.provider}${selection.version ? `@${selection.version}` : ''} is not registered; install and enable its package, or change seams.${kind}.provider`,
+        {
+          detail: {
+            seam: kind,
+            provider: selection.provider,
+            reason: cause instanceof Error ? cause.message : 'unknown',
+          },
+        },
       )
     }
-    return row
-  })
-
-  const verifyExtras: ExactExtrasPolicy['verify'] = ({ row, slot, revision, values }) => {
-    const expected = expectedExtras.get(row.id)
-    if (
-      !expected ||
-      slot !== expected.slot ||
-      revision !== expected.revision ||
-      Object.keys(values).length !== 1 ||
-      typeof values[HOST_SEAM_INIT] !== 'function'
-    ) {
-      throw new Error(`E_EXACT_EXTRAS: invalid Host seam extras for ${row.id}`)
+    const entry = providers
+      .catalog()
+      .find((e) => e.kind === kind && e.id === provider.id && e.version === provider.version)
+    const sourcePackage = entry?.sourcePackage ?? '@agnes/host'
+    const resolved = input.profile.packages.find((pkg) => pkg.id === sourcePackage)
+    const builtin = resolved ? resolved.trust === 'builtin' : sourcePackage.startsWith('@agnes/host')
+    const controller = new AbortController()
+    const instance = await createWithin(
+      kind,
+      provider,
+      input.initFor(sourcePackage, kind, builtin, config),
+      controller.signal,
+      input.timeoutMs,
+    )
+    let disposeService: (() => void | Promise<void>) | undefined
+    try {
+      disposeService = ctx.provide(id, Object.freeze(instance))
+    } catch (error) {
+      await closeQuietly(instance)
+      throw error
     }
-    return expected.values
+    input.onBound(
+      Object.freeze({
+        kind,
+        provider: provider.id,
+        version: provider.version,
+        sourcePackage,
+        integrity: resolved?.integrity ?? 'host',
+      }),
+    )
+    return async () => {
+      controller.abort()
+      await disposeService?.()
+      await closeQuietly(instance)
+    }
   }
-  const exactExtras: ExactExtrasPolicy = Object.freeze({ verify: verifyExtras })
-
-  return Object.freeze({
-    rows: Object.freeze(rows),
-    builtinClaims: Object.freeze(claims),
-    thirdPartyClaims: Object.freeze(thirdPartyClaims),
-    exactExtras,
-    thirdPartyExtras: Object.freeze(Object.fromEntries(expectedExtras)),
-  })
 }
 
-/** Mutable Host-owned catalogue used when a worker changes its immutable package snapshot set. */
-export function createMutablePackagePluginGate(
-  initialClaims: readonly Readonly<HostThirdPartyRowClaim>[],
-  initialSnapshots: PackageSnapshotVerifier | undefined,
-  fallback?: HostPluginImporterFactory,
-): Readonly<{
-  importer: HostPluginImporterFactory
-  snapshots: PackageSnapshotVerifier
-  replace(
-    claims: readonly Readonly<HostThirdPartyRowClaim>[],
-    snapshots: PackageSnapshotVerifier | undefined,
-  ): void
-}> {
-  let claims = claimMap(initialClaims)
-  let authority = initialSnapshots
-  const importer: HostPluginImporterFactory = (mounts) => {
-    const external = fallback?.(mounts)
-    return async (row) => {
-      const claim = claims.get(row.id)
-      const internal =
-        claim && claim.row.mountIdentity === row.mountIdentity
-          ? await mounts.verifyAndCreate({ row, entry: claim.entry, snapshot: claim.snapshot })
-          : undefined
-      const imported = external ? await external(row) : undefined
-      if (internal && imported) {
-        throw new VerifiedRowError(E_ROW_IMPORT, `row ${row.id} was claimed by multiple importers`)
-      }
-      return internal ?? imported
-    }
+/**
+ * Compile the seven seam selections into Host-owned binding rows. A binding row resolves the
+ * selected provider from the registry, creates its instance and provides `seam:<kind>`; it must
+ * mount after every registration row, so the Host places these rows last.
+ */
+export function buildSeamBindingRows(
+  input: Readonly<{
+    profile: ResolvedProfile
+    selections: Readonly<Record<SeamKind, ProviderSelection>>
+    generationBuiltinRows?: readonly Readonly<EntryRow>[]
+    preset: PresetDoc
+    timeoutMs: number
+    /** The init view for a provider of `sourcePackage`; builtin packages may receive a wider one. */
+    initFor(sourcePackage: string, kind: SeamKind, builtin: boolean, preset: SeamPresetConfig): SeamInit
+    onBound(binding: SeamBinding): void
+  }>,
+): BuiltSeamRows {
+  const deployment = createHash('sha256').update(modelProfileDeployment(input.profile)).digest('hex')
+  const rows: ReturnType<typeof createPluginRow>[] = []
+  const claims: HostBuiltinRowClaim[] = []
+  for (const kind of SEAM_KINDS) {
+    const id = `seam:${kind}`
+    const selection = input.selections[kind]
+    const apply = seamBinding(kind, selection, input)
+    const plugin = normalizePluginExport({
+      Config: seamPresetConfig,
+      inject: ['providers'],
+      provide: id,
+      apply,
+    } as never)
+    const pinned = input.generationBuiltinRows?.find((row) => row.id === id)
+    const identity = `${SEAM_BINDER_REVISION}:${deployment}:${selection.provider}@${selection.version ?? '*'}`
+    const row = createPluginRow({
+      id,
+      plugin: `builtin:host/seam-binder/${kind}`,
+      snapshotDigest: SEAM_BINDER_SNAPSHOT,
+      exportName: kind,
+      entryRevision: identity,
+      extrasRevision: EMPTY_EXTRAS_REVISION,
+      mountRevision: identity,
+      config: pinned?.config ?? input.preset,
+      inject: ['providers'],
+      provides: [id],
+      runtime: 'in-process',
+    })
+    rows.push(row)
+    claims.push(Object.freeze({ row, entry: plugin }))
   }
-  const snapshots: PackageSnapshotVerifier = Object.freeze({
-    verify(candidate: Readonly<PackageSnapshotCandidateRef>) {
-      if (!authority) {
-        throw new VerifiedRowError(
-          'E_SNAPSHOT_UNAVAILABLE',
-          `no installed snapshot authority for ${candidate.packageId}`,
-        )
-      }
-      return authority.verify(candidate)
-    },
-  })
-  return Object.freeze({
-    importer,
-    snapshots,
-    replace(nextClaims, nextSnapshots) {
-      claims = claimMap(nextClaims)
-      authority = nextSnapshots
-    },
-  })
-}
-
-function claimMap(
-  claims: readonly Readonly<HostThirdPartyRowClaim>[],
-): ReadonlyMap<string, Readonly<HostThirdPartyRowClaim>> {
-  const output = new Map<string, Readonly<HostThirdPartyRowClaim>>()
-  for (const claim of claims) {
-    if (output.has(claim.row.id)) {
-      throw new VerifiedRowError(E_ROW_IMPORT, `row ${claim.row.id} has multiple installed claims`)
-    }
-    output.set(claim.row.id, claim)
-  }
-  return output
+  return Object.freeze({ rows: Object.freeze(rows), builtinClaims: Object.freeze(claims) })
 }

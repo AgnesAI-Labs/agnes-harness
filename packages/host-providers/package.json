@@ -21,6 +21,7 @@
     "./assemble/provider-selection": "./src/assemble/provider-selection.ts",
     "./assemble/provider": "./src/assemble/provider.ts",
     "./assemble/routes": "./src/assemble/routes.ts",
+    "./assemble/seam-kinds": "./src/assemble/seam-kinds.ts",
     "./assemble/seam-rows": "./src/assemble/seam-rows.ts",
     "./assemble/skill-row": "./src/assemble/skill-row.ts",
     "./assemble/tool-providers": "./src/assemble/tool-providers.ts",

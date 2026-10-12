@@ -16,6 +16,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `ctx.providers.register` |
 | Loop | [loop](../../templates/loop/) | Official staged business workflow with confirmation and checkpoint recovery |
 | Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `ctx.providers.register`; see [Compaction engines](compaction-engines.md) |
+| Seam provider | [Seams](seams.md) | Approval, principals, billing, checkpoint, artifacts, verifier and repair through `ctx.providers.register` |
 | Child agent | [ACP child](../../examples/child-agents/acp/) | Continuable children through `childAgents`; see [Child agent providers](child-agents.md) |
 | Persistence | [JSONL](../../examples/persistence/) | Full Host persistence without SQL; see [Persistence providers](persistence.md) |
 

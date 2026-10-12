@@ -16,6 +16,7 @@
 | 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `ctx.providers.register` 注册的结构化适配器 |
 | 循环 | [loop](../../templates/loop/) | 官方分阶段业务工作流、确认与 checkpoint 恢复 |
 | 压缩引擎 | [sliding-window](../../examples/compaction/sliding-window/) | 通过 `ctx.providers.register` 替换上下文；参阅[压缩引擎](compaction-engines.zh-CN.md) |
+| Seam 提供方 | [Seam](seams.zh-CN.md) | 通过 `ctx.providers.register` 提供审批、身份、计费、检查点、产物、验证器和修复策略 |
 | 子代理 | [ACP 子代理](../../examples/child-agents/acp/) | 通过 `childAgents` 使用可继续的子代理；参阅[子代理提供者](child-agents.zh-CN.md) |
 | 持久化 | [JSONL](../../examples/persistence/) | 无 SQL 的完整 Host 持久化；参见[持久化提供器](persistence.zh-CN.md) |
 

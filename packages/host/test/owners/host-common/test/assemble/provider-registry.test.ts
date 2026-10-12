@@ -64,8 +64,10 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
     sourcePackage: '@test/provider',
     capabilities: ['compute'],
     restartRequired: false,
+    required: false,
+    authority: 'open' as const,
+    pinned: false,
     scope: 'generation',
-    authority: 'open',
     active: true,
     selectedFor: ['profile'],
   })
