@@ -73,12 +73,31 @@ describe('rendered sidebar region', () => {
     await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
+    await vi.waitFor(() =>
+      expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false'),
+    )
     sidebar?.querySelector<HTMLButtonElement>('#new')?.click()
     sidebar?.querySelector<HTMLButtonElement>('#workspace-add')?.click()
     sidebar?.querySelector<HTMLButtonElement>('#settings')?.click()
     expect(newSession).toHaveBeenCalledOnce()
     expect(addWorkspace).toHaveBeenCalledOnce()
     expect(openSettings).toHaveBeenCalledOnce()
+    flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
+    await vi.waitFor(() =>
+      expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('true'),
+    )
+    runtime.sidebar?.update({
+      sessions: [session('one', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区')],
+      labels: new Map(),
+      currentId: 'one',
+      sessionPending: true,
+      newDisabled: true,
+    })
+    expect(sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.disabled).toBe(true)
+    expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false')
+    expect(sidebar?.querySelector('.session-row')?.hasAttribute('data-menu-open')).toBe(false)
+    expect(document.querySelector('[role=menu]')).toBeNull()
   })
 
   it('starts a new session in the selected workspace without toggling the group', async () => {

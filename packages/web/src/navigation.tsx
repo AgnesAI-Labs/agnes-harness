@@ -157,7 +157,7 @@ export function SessionNavigation({ options, t }: { options: SidebarNavigationOp
                     </Button>
                     {options.action && (
                       <SessionMenu
-                        epoch={menuEpoch}
+                        key={menuEpoch}
                         id={row.sessionId}
                         title={title}
                         disabled={options.disabled ?? false}

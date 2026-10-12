@@ -229,8 +229,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/app': 4239,
   'packages/web/src/model-picker': 1033,
   'packages/web/src/timeline': 840,
-  'packages/web/src/navigation': 190,
-  'packages/web/src/session-menu': 124,
+  'packages/web/src/navigation': 185,
+  'packages/web/src/session-menu': 99,
   'packages/web/src/shell': 111,
   'packages/web/src/view': 116,
   'packages/web/src/session-binding': 31,
@@ -269,7 +269,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
 
-  'packages/web/src': 14105,
+  'packages/web/src': 14098,
 
   'packages/bridges/src': 1728,
   'packages/channels/src': 5398,

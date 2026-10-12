@@ -37,9 +37,7 @@ export function SessionMenu({
   disabled,
   t,
   action,
-  epoch,
 }: {
-  epoch: string
   id: string
   title: string
   disabled: boolean
@@ -47,12 +45,6 @@ export function SessionMenu({
   action(action: SessionAction, id: string, title: string, trigger: HTMLElement): void
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
-  const previousEpoch = useRef(epoch)
-  useLayoutEffect(() => {
-    if (previousEpoch.current === epoch) return
-    previousEpoch.current = epoch
-    if (trigger.current?.getAttribute('aria-expanded') === 'true') trigger.current.click()
-  }, [epoch])
   // The shared Menu owns opening, keyboard navigation and portal placement. Mirror its
   // public expanded state onto the row so its hover treatment survives pointer movement.
   useLayoutEffect(() => {
@@ -78,6 +70,7 @@ export function SessionMenu({
     observer.observe(button, { attributes: true, attributeFilter: ['aria-expanded'] })
     return () => {
       observer.disconnect()
+      row.removeAttribute('data-menu-open')
       if (activeTrigger === button) activeTrigger = null
     }
   }, [])
