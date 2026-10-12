@@ -34,7 +34,7 @@ import {
   displayableIntelligentSurface,
   sourceBacked,
 } from './source-state.js'
-import { columnLabel, uiInstant, useNow } from './summary.js'
+import { columnLabel, surfaceTitle, uiInstant, useNow } from './summary.js'
 import { uiObject } from './validate.js'
 
 export interface IntelligentCatalogProps {
@@ -273,10 +273,13 @@ function CatalogComponent(
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the wide table scrolls on its own axis.
         tabIndex={0}
         role="region"
-        aria-label={component.title ?? surface.title}
+        aria-label={component.title ?? surfaceTitle(surface, t)}
       >
         <table data-testid={`ui-table-${component.id}`}>
-          <caption>{component.title ?? surface.title}</caption>
+          {/* Without its own title the table would repeat the surface heading right above it. */}
+          <caption data-repeats-heading={component.title ? undefined : true}>
+            {component.title ?? surfaceTitle(surface, t)}
+          </caption>
           <thead>
             <tr>
               {component.selection !== 'none' && <th scope="col">{t('ui.select', { row: '' })}</th>}

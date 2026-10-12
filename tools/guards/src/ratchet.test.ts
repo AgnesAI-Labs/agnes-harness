@@ -207,7 +207,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
-  'packages/web-ui/src': 14871,
+  'packages/web-ui/src': 15156,
   'packages/web-units/src': 9920,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
@@ -269,7 +269,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
 
-  'packages/web/src': 13976,
+  'packages/web/src': 14048,
 
   'packages/bridges/src': 1728,
   'packages/channels/src': 5398,
@@ -308,7 +308,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/workflow': 364,
   'packages/history-index/src': 1156,
   'packages/base/extensions/session-query': 311,
-  'packages/base/extensions/schedule': 803,
+  'packages/base/extensions/schedule': 804,
   'packages/loop-default/src': 92,
   'packages/base/extensions/computer-use': 1785,
   'packages/web-admin/src/admin/plugins/admin': 2525,

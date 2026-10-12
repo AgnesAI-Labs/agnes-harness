@@ -145,7 +145,10 @@ export function mountIntelligentUi(options: {
         !!current?.getSnapshot().surfaces.some((record) => record.surface.placement.workbench),
       title: () => {
         const first = current?.getSnapshot().surfaces.find((record) => record.surface.placement.workbench)
-        return first ? surfaceTitle(first.surface, options.locale.t) : options.locale.t('ui.title')
+        // The locale service's `t` is a method; pass a bound call, not the bare reference.
+        return first
+          ? surfaceTitle(first.surface, (key, vars) => options.locale.t(key, vars))
+          : options.locale.t('ui.title')
       },
       component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
     })

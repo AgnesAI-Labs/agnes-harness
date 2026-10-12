@@ -40,6 +40,18 @@
   .agnes-intelligent-catalog caption {
     padding: var(--s12);
   }
+  .agnes-intelligent-catalog caption[data-repeats-heading] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agnes-intelligent-catalog td .agnes-intelligent-tag {
+    white-space: nowrap;
+  }
   .agnes-intelligent-catalog section {
     min-width: 0;
   }
@@ -570,7 +582,7 @@
   }
   .agnes-intelligent-chip-title {
     flex: 0 1 auto;
-    min-width: 3rem;
+    min-width: 2em;
     max-width: 16rem;
     overflow: hidden;
     white-space: nowrap;
