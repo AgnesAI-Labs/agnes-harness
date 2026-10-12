@@ -12,7 +12,7 @@ body:has(#empty-state:not([hidden])) #prompt {
   margin-top: var(--s20);
 }
 /* Starter prompts read as chips you can pick, not as bold text. */
-.empty-state-suggestions .agh-btn:not(:disabled) {
+#empty-state .empty-state-suggestions .agh-btn:not(:disabled) {
   padding-inline: var(--s12);
   border-color: var(--agnes-line-emphasis);
   border-radius: var(--radius-pill);
@@ -20,7 +20,7 @@ body:has(#empty-state:not([hidden])) #prompt {
   background: var(--agnes-bg-surface);
   font-weight: var(--font-weight-regular);
 }
-.empty-state-suggestions .agh-btn:hover:not(:disabled) {
+#empty-state .empty-state-suggestions .agh-btn:hover:not(:disabled) {
   border-color: var(--agnes-input-border-focus);
   color: var(--agnes-text-emphasis);
   background: var(--agnes-brand-emphasis-soft);
