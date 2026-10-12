@@ -10,7 +10,7 @@ import type { Actor, InferenceEvent } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { createLocalEndpoint } from '../src/local/index.js'
-import { PrompterRouter } from '../src/local/prompter.js'
+import { notifyApprovalConnectionAttached, PrompterRouter } from '../src/local/prompter.js'
 import { testWorkspaceCatalog } from './host.js'
 
 const REQUESTER: Actor = { id: 'requester', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -143,6 +143,7 @@ it('re-offers a real Host tool approval after its client disconnects without rec
       cursor: { fromSeq: 0, generation: 1 },
       filter: { preview: false, acpUpdates: true },
     })
+    notifyApprovalConnectionAttached(second.conn)
     const offered = (await second.notifications[Symbol.asyncIterator]().next()).value as {
       id: string
       params: typeof original.params

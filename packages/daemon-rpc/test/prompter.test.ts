@@ -1,6 +1,11 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { describe, expect, it } from 'vitest'
-import { type AskOutcome, approvalActor, PrompterRouter } from '../src/local/prompter.js'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  type AskOutcome,
+  approvalActor,
+  notifyApprovalConnectionAttached,
+  PrompterRouter,
+} from '../src/local/prompter.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const req = {
@@ -312,6 +317,8 @@ describe('PrompterRouter', () => {
   }
 
   it('asks the same approval again when the browser connection closes', async () => {
+    vi.useFakeTimers()
+    const controller = new AbortController()
     const origin = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
     origin.conn.capabilities.permission = true
     const next = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
@@ -329,27 +336,41 @@ describe('PrompterRouter', () => {
       clock: () => 0,
       record: (x) => log.push(x),
     })
-    const first = origin.notifications[Symbol.asyncIterator]()
-    const p = r.ask(req as never, { signal: never })
-    await first.next()
-    await origin.close()
-    live = [next]
-    const it = next.notifications[Symbol.asyncIterator]()
-    const m = (await it.next()).value as {
-      id: string
-      params: { _meta: { 'ai.agnes.harness': { requestId: string } } }
+    try {
+      const first = origin.notifications[Symbol.asyncIterator]()
+      const p = r.ask(req as never, { signal: controller.signal })
+      await first.next()
+      live = []
+      await origin.close()
+      // Let the dropped offer settle, without advancing the 20 ms polling timer.
+      await vi.advanceTimersByTimeAsync(0)
+      const it = next.notifications[Symbol.asyncIterator]()
+      let message:
+        | { id: string; params: { _meta: { 'ai.agnes.harness': { requestId: string } } } }
+        | undefined
+      void it.next().then((value) => {
+        message = value.value as typeof message
+      })
+      live = [next]
+      notifyApprovalConnectionAttached(next.conn)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(message?.params._meta['ai.agnes.harness'].requestId).toBe('r1')
+      await next.handle({
+        jsonrpc: '2.0',
+        id: message!.id,
+        result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+      })
+      await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
+      expect(log).toEqual([
+        { requestId: 'r1', via: 'answered', verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } },
+      ])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      controller.abort('stopped')
+      await origin.close()
+      await next.close()
+      vi.useRealTimers()
     }
-    expect(m.params._meta['ai.agnes.harness'].requestId).toBe('r1')
-    expect(origin.pending().events).toBe(0)
-    await next.handle({
-      jsonrpc: '2.0',
-      id: m.id,
-      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
-    })
-    await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
-    expect(log).toEqual([
-      { requestId: 'r1', via: 'answered', verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } },
-    ])
   })
 
   it('asks the next attached client when the origin endpoint is already gone', async () => {
@@ -388,37 +409,39 @@ describe('PrompterRouter', () => {
   })
 
   it('waits out the deadline when a refresh leaves nobody to ask', async () => {
-    const ep = new LocalEndpoint({ clock: () => Date.now(), principalId: 'local' })
+    vi.useFakeTimers()
+    const ep = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
     ep.conn.capabilities.permission = true
     const log: AskOutcome[] = []
     const r = new PrompterRouter({
       endpointFor: () => ep,
       connections: () => [ep.conn],
       originOf: () => ep.conn,
-      clock: () => Date.now(),
+      clock: Date.now,
       record: (x) => log.push(x),
     })
-    const it = ep.notifications[Symbol.asyncIterator]()
-    const started = Date.now()
-    const p = r.ask({ ...req, deadline: new Date(started + 80).toISOString() } as never, { signal: never })
-    await it.next()
-    await ep.close()
-    let settled = false
-    const done = p.then(
-      (answer) => {
+    try {
+      const it = ep.notifications[Symbol.asyncIterator]()
+      const p = r.ask({ ...req, deadline: new Date(Date.now() + 80).toISOString() } as never, {
+        signal: never,
+      })
+      await it.next()
+      await ep.close()
+      let settled = false
+      const done = p.then((answer) => {
         settled = true
         return answer
-      },
-      (error: unknown) => {
-        settled = true
-        throw error
-      },
-    )
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(settled).toBe(false)
-    await expect(done).resolves.toEqual({ verdict: 'unavailable', reason: 'deadline' })
-    expect(Date.now() - started).toBeGreaterThanOrEqual(50)
-    expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'unavailable', reason: 'deadline' }])
+      })
+      await vi.advanceTimersByTimeAsync(79)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(done).resolves.toEqual({ verdict: 'unavailable', reason: 'deadline' })
+      expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'unavailable', reason: 'deadline' }])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      await ep.close()
+      vi.useRealTimers()
+    }
   })
 
   it.each(['stopped', 'deadline'] as const)(

@@ -74,7 +74,7 @@ import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { registerFileUpload } from '../file-upload.js'
-import { approvalActor, type SourceApprovalVerifier } from '../prompter.js'
+import { approvalActor, notifyApprovalConnectionAttached, type SourceApprovalVerifier } from '../prompter.js'
 import { resolvePromptReferences } from '../references.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
@@ -1324,6 +1324,7 @@ export function registerAgnes(
       }
       throw error
     }
+    notifyApprovalConnectionAttached(c.conn)
     return {
       generation: gen,
       lastSeq,

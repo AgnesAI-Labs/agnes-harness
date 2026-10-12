@@ -56,8 +56,6 @@ export async function approvalActor(
   return structuredClone(actor)
 }
 
-const RETRY_WAIT_MS = 20
-
 const errorCode = (e: unknown): string | undefined => {
   const code = (e as { data?: { code?: unknown } } | undefined)?.data?.code
   return typeof code === 'string' ? code : undefined
@@ -69,22 +67,19 @@ const causeOf = (e: unknown): 'timeout' | 'transport' =>
 /** A dropped browser socket, not a decision. The same question can still be asked of another client. */
 const disconnected = (e: unknown): boolean => errorCode(e) === 'CLOSED'
 
-const pause = (ms: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve) => {
-    if (signal.aborted || ms <= 0) {
-      resolve()
-      return
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    const onAbort = () => {
-      clearTimeout(timer)
-      resolve()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
+type ConnectionListener = (conn: ConnectionState) => void
+const attachments = new Set<ConnectionListener>()
+const subscribeAttachment = (listener: ConnectionListener): (() => void) => {
+  attachments.add(listener)
+  return () => {
+    attachments.delete(listener)
+  }
+}
+
+/** Transient wake-up only; the router rechecks the live, authorized connection set. */
+export function notifyApprovalConnectionAttached(conn: ConnectionState): void {
+  for (const listener of attachments) listener(conn)
+}
 
 export type PrompterRouterOptions = {
   /** Lifetime of an owning embedded endpoint; shared daemon routers omit it. */
@@ -102,6 +97,32 @@ export type PrompterRouterOptions = {
 
 export class PrompterRouter implements Prompter {
   constructor(private readonly o: PrompterRouterOptions) {}
+
+  private waitForConnection(sessionKey: string, ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal.aborted || ms <= 0) {
+        resolve()
+        return
+      }
+      let unsubscribe = () => {}
+      const finish = () => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', finish)
+        unsubscribe()
+        resolve()
+      }
+      const timer = setTimeout(finish, Math.min(ms, 2_147_483_647))
+      signal.addEventListener('abort', finish, { once: true })
+      unsubscribe = subscribeAttachment((conn) => {
+        if (
+          conn.capabilities.permission &&
+          (conn.attached.has(sessionKey) || this.o.originOf(sessionKey) === conn)
+        )
+          finish()
+      })
+      if (signal.aborted) finish()
+    })
+  }
 
   private done(requestId: string, via: AskOutcome['via'], answer: PrompterAnswer): PrompterAnswer {
     this.o.record?.({
@@ -207,10 +228,7 @@ export class PrompterRouter implements Prompter {
         if (!target) {
           if (!asked && skipped.size === 0)
             return this.done(req.requestId, 'absent', { verdict: 'unavailable', reason: 'no-approver' })
-          await pause(
-            Math.min(RETRY_WAIT_MS, Number.isFinite(remaining) ? Math.max(remaining, 1) : RETRY_WAIT_MS),
-            opts.signal,
-          )
+          await this.waitForConnection(req.sessionKey, remaining, opts.signal)
           continue
         }
         let endpoint: LocalEndpoint
