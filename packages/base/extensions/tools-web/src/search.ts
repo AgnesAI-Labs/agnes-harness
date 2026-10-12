@@ -6,7 +6,7 @@ export function createWebSearchTool(provider?: SearchProvider) {
   return defineTool({
     name: 'web_search',
     description:
-      'Search the public web with one to four queries. Returns titles, URLs and snippets from the deployment search provider. If search is unavailable, ask the user for a URL and use web_fetch.',
+      'Search the public web using the configured search provider (e.g. Tavily). One to four queries; returns titles, URLs and snippets. Provider names are not tool names. If unavailable, ask for a URL and use web_fetch.',
     parameters: Type.Object(
       { queries: Type.Array(Type.String({ minLength: 1, maxLength: 2048 }), { minItems: 1, maxItems: 4 }) },
       { additionalProperties: false },

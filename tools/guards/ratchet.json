@@ -86,7 +86,7 @@
   "packages/system-node/src": 1389,
   "packages/base/extensions/tools-web": 1284,
   "packages/base/extensions/mcp-server": 446,
-  "packages/base/extensions/mcp-search": 182,
+  "packages/base/extensions/mcp-search": 178,
   "packages/base/extensions/plugin-creator": 211,
   "packages/model-adapters/src": 829,
   "packages/base/extensions/subagent-acp": 387,

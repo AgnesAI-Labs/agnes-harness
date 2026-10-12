@@ -5,6 +5,7 @@ import { SqliteToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js
 import { MemFts } from '../../../testkit/mem-fts.js'
 import { MemTable } from '../../../testkit/mem-table.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { createWebSearchTool } from '../../tools-web/src/search.js'
 import { toolDescribeTool, toolSearchTool } from '../src/search-tools.js'
 
 const rows = [
@@ -384,6 +385,40 @@ describe('tool_search / tool_describe', () => {
     expect(await toolSearchTool(index).execute({ query: eager.name }, ctx)).toMatchObject({
       content: [{ text: expect.stringContaining('Already provided in this session') }],
     })
+    const web = createWebSearchTool()
+    const deferred = {
+      ...eager,
+      name: 'search_panel',
+      description: 'A search tool panel',
+      meta: { ...eager.meta, deferLoading: true },
+    }
+    ctx.tools.list = () => [web, deferred]
+    // Indexed duplicates must not consume slots or override the visible catalog's description/rank.
+    index.upsert(
+      [web, deferred].map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        schema: JSON.stringify(tool.parameters),
+      })),
+    )
+    for (const query of ['tavily', 'search tool', 'queries']) {
+      const result = await toolSearchTool(index).execute({ query, limit: 2 }, ctx)
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toMatch(query === 'search tool' ? /^search_panel —/ : /^web_search —/)
+      expect(text.match(/web_search —/g)).toHaveLength(1)
+      expect(text).toContain('Already provided in this session')
+      expect(await toolSearchTool(new MemFts()).execute({ query, limit: 2 }, ctx)).toEqual(result)
+      if (query === 'search tool') expect(text).toContain('search_panel —')
+    }
+    // Matching metadata in a stale indexed duplicate must not revive a hidden description.
+    index.upsert([{ name: web.name, description: 'retired-provider-marker', schema: '{}' }])
+    expect(await toolSearchTool(index).execute({ query: 'retired-provider-marker' }, ctx)).toMatchObject({
+      content: [{ text: 'no matching tools' }],
+    })
+    index.upsert([{ name: 'z_docs', description: 'retired-provider-marker', schema: '{}' }])
+    expect(
+      await toolSearchTool(index).execute({ query: 'retired-provider-marker', limit: 1 }, ctx),
+    ).toMatchObject({ content: [{ text: 'z_docs — retired-provider-marker' }] })
     ctx.tools.list = () => []
     expect(await toolDescribeTool(index).execute({ name: eager.name }, ctx)).toMatchObject({ isError: true })
   })

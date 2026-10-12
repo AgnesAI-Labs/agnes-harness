@@ -7,6 +7,10 @@ describe('web_search', () => {
   it('discloses a valid vendor-neutral tool and refuses clearly without a configured provider', async () => {
     const tool = createWebSearchTool()
     expect(checkToolDef(tool)).toEqual({ ok: true })
+    expect(tool.description).toContain('configured search provider (e.g. Tavily)')
+    const configured = createWebSearchTool({ search: async () => [] })
+    expect(configured.description).toBe(tool.description)
+    expect(configured.parameters).toEqual(tool.parameters)
     const result = await tool.execute({ queries: ['a'] }, fakeToolContext())
     expect(result.isError).toBe(true)
     expect(result.details).toEqual({ code: 'WEB_SEARCH_UNAVAILABLE' })

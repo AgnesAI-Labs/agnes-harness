@@ -86,7 +86,7 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
   defineTool({
     name: 'tool_search',
     description:
-      'Search available deferred tools and ready Skills by name or description. Call skill_read with the exact Skill name. Use tool_describe to load a tool schema before calling it. Eager tools can also be queried by exact name.',
+      'Search all available tools and ready Skills by name, description or parameter keywords. Call skill_read with the exact Skill name. Use tool_describe to load deferred tool schemas; already provided tools can be called directly.',
     parameters: Type.Object(
       {
         query: Type.String({ minLength: 1, maxLength: 256 }),
@@ -105,32 +105,30 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
         const reserveSkillSlot = skillHits.length > 0 && (asksForSkills(args.query) || exactSkill)
         const toolLimit = reserveSkillSlot ? limit - 1 : limit
         const catalog = ctx.tools.list()
-        const eager = catalog.find(
-          (tool) => tool.meta.deferLoading !== true && normalized(tool.name) === normalized(args.query),
-        )
-        const local = catalog
-          .filter((tool) => tool.meta.deferLoading === true)
-          .map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            schema: JSON.stringify(tool.parameters),
-          }))
+        const names = new Set(catalog.map((tool) => tool.name))
+        const local = catalog.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          schema: JSON.stringify(tool.parameters),
+        }))
         const hits = [
           ...scoreToolIndexRows(local, args.query, toolLimit),
-          ...index.search(args.query, toolLimit),
+          // Visible catalog rows are authoritative. Overfetch so indexed duplicates cannot hide
+          // lower-ranked MCP-only results, then use the same canonical ranking for both sources.
+          ...index.search(args.query, toolLimit + names.size).filter((hit) => !names.has(hit.name)),
         ]
           .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
           .filter((hit, i, all) => all.findIndex((row) => row.name === hit.name) === i)
           .slice(0, toolLimit)
-        const toolRows =
-          eager && !hits.some((hit) => hit.name === eager.name)
-            ? [
-                `${eager.name} — ${eager.description}\nAlready provided in this session; call it directly or use tool_describe.`,
-              ]
-            : hits.map(
-                ({ name }) =>
-                  `${name} — ${catalog.find((tool) => tool.name === name)?.description ?? index.get(name)?.description ?? ''}`,
-              )
+        const toolRows = hits.map(({ name }) => {
+          const tool = catalog.find((item) => item.name === name)
+          return (
+            `${name} — ${tool?.description ?? index.get(name)?.description ?? ''}` +
+            (tool && tool.meta.deferLoading !== true
+              ? '\nAlready provided in this session; call it directly or use tool_describe.'
+              : '')
+          )
+        })
         const visibleTools = toolRows.slice(0, toolLimit)
         const visibleSkills = skillHits.slice(0, limit - visibleTools.length)
         if (visibleTools.length === 0 && visibleSkills.length === 0)

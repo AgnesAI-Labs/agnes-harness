@@ -211,7 +211,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-units/src': 9918,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
-  'packages/base/extensions/mcp-search': 182,
+  'packages/base/extensions/mcp-search': 178,
   'packages/base/extensions/principals-local': 19,
   'packages/base/extensions/artifacts-local': 315,
   'packages/base/extensions/approval-policy': 467,
