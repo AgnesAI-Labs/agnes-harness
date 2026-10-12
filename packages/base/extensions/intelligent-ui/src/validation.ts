@@ -14,6 +14,7 @@ import { componentDataValid, validIntelligentSurface } from '@agnes/protocol/int
 import type { TSchema } from '@sinclair/typebox'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 
+import { validateActionParameterNames } from './action-parameters.js'
 import { UI_DATA_CONTRACTS } from './data-contracts.js'
 import { rejectUiInput, type UiInputIssue } from './input-rejection.js'
 
@@ -140,8 +141,16 @@ export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): 
         rejectUiInput([
           { path: `${path}/argsTemplate`, expected: 'JSON argument keys without prototype keys.' },
         ])
+    const inputIds = formInputIds(surface, action.id)
     for (const [key, binding] of Object.entries(action.argsTemplate)) {
       if (!('from' in binding)) continue
+      if (binding.from === 'input' && !inputIds.includes(binding.key))
+        rejectUiInput([
+          {
+            path: `${path}/argsTemplate/${key}/key`,
+            expected: `Unknown input key "${binding.key}" for action "${action.id}". Valid form component ids: ${inputIds.join(', ') || '(none)'}. Use component.id, not dataKey.`,
+          },
+        ])
       const dataKey = sourceDataKey(surface, binding)
       if (dataKey && uiDataBinding(surface.data[dataKey]) && !binding.pointer)
         rejectUiInput(
@@ -154,12 +163,23 @@ export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): 
           'UI_INVALID',
         )
     }
+    validateActionParameterNames(
+      catalog.get(action.tool)!.parameters as TSchema,
+      action.argsTemplate,
+      `${path}/argsTemplate`,
+      action.tool,
+    )
   }
   for (const [index, component] of surface.components.entries()) {
     if ('fallback' in component) continue
     if (component.kind === 'form')
       inputSchema(component.schema, surface.data[component.dataKey]!, `/surface/components/${index}/schema`)
   }
+}
+function formInputIds(surface: Surface, actionId: string): string[] {
+  return surface.components
+    .filter((item) => !('fallback' in item) && item.kind === 'form' && item.actionIds?.includes(actionId))
+    .map((item) => item.id)
 }
 function sourceDataKey(surface: Surface, binding: { from: string; key: string }): string | undefined {
   if (binding.from === 'data') return binding.key
@@ -247,7 +267,10 @@ export function bindArguments(
     if ('literal' in binding) args[key] = binding.literal
     else {
       const source = { data: surface.data, input: inputs, row: rows, selection: selected }[binding.from]
-      if (!Object.hasOwn(source, binding.key)) throw new Error('Missing UI action binding')
+      if (!Object.hasOwn(source, binding.key))
+        throw new Error(
+          `Missing UI action binding ${binding.from}.${binding.key} for action "${action.id}", argument "${key}". ${binding.from === 'input' ? `Valid form component ids: ${formInputIds(surface, action.id).join(', ') || '(none)'}. Use component.id, not dataKey; submit input under that id.` : `Available ${binding.from} keys: ${Object.keys(source).join(', ') || '(none)'}.`}`,
+        )
       args[key] = pointer(source[binding.key]!, binding.pointer)
       const dataKey = sourceDataKey(declared, binding)
       if (dataKey && uiDataBinding(declared.data[dataKey])) {
@@ -258,7 +281,11 @@ export function bindArguments(
   }
   if (!accepts(action.paramsSchema, args)) throw new Error('Invalid UI action arguments')
   const tool = ports.tools().find((item) => item.name === action.tool)
-  if (!tool || !validateAgainst(tool.parameters as TSchema, args).ok)
-    throw new Error('Tool unavailable or arguments invalid')
+  if (!tool) throw new Error(`UI action "${action.id}" tool "${action.tool}" is unavailable`)
+  const checked = validateAgainst(tool.parameters as TSchema, args)
+  if (!checked.ok)
+    throw new Error(
+      `UI action "${action.id}" arguments for tool "${action.tool}" are invalid: ${JSON.stringify(checked.errors)}`,
+    )
   return json(args)
 }

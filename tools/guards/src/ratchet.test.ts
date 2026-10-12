@@ -119,7 +119,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 
 const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/references': 21,
-  'packages/base/extensions/intelligent-ui': 1252,
+  'packages/base/extensions/intelligent-ui': 1322,
   'packages/intelligent-ui-contract/src': 238,
   'packages/git-worktree-contract/src': 34,
   'packages/base/src/intelligent-ui-runtime': 55,

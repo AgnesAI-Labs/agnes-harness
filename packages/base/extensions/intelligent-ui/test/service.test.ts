@@ -27,10 +27,12 @@ import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { questionSurface } from '../../interaction/src/question.js'
 import { toolDescribeTool } from '../../mcp-search/src/search-tools.js'
+import { validateActionParameterNames } from '../src/action-parameters.js'
 import intelligentUi from '../src/index.js'
 import { reachableParameters } from '../src/parameters.js'
 import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
+import { bindArguments } from '../src/validation.js'
 
 const actor: Actor = { id: 'operator', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} }
 const signal = new AbortController().signal
@@ -421,6 +423,44 @@ describe('preset surface contract and ledger lifecycle', () => {
       isError: true,
       structured: { issues: [{ path: '/surface/data/status', expected: expect.stringContaining('string') }] },
     })
+    for (const badKey of ['form', 'differences', 'summary']) {
+      const bad = surface()
+      bad.actions[0]!.argsTemplate.amount = { from: 'input', key: badKey }
+      expect(
+        await tools.find((tool) => tool.name === 'ui_render')!.execute({ surface: bad }, ctx),
+      ).toMatchObject({
+        isError: true,
+        structured: {
+          effect: 'none',
+          issues: [
+            {
+              path: '/surface/actions/0/argsTemplate/amount/key',
+              expected: expect.stringContaining(`"${badKey}"`),
+            },
+          ],
+        },
+      })
+      const result = await tools.find((tool) => tool.name === 'ui_render')!.execute({ surface: bad }, ctx)
+      expect(JSON.stringify(result)).toContain('adjustment')
+    }
+    const wrongArgument = surface()
+    const template = wrongArgument.actions[0]!.argsTemplate
+    template.values = template.amount!
+    delete template.amount
+    expect(
+      await tools.find((tool) => tool.name === 'ui_render')!.execute({ surface: wrongArgument }, ctx),
+    ).toMatchObject({
+      isError: true,
+      structured: {
+        effect: 'none',
+        issues: expect.arrayContaining([
+          {
+            path: '/surface/actions/0/argsTemplate/values',
+            expected: expect.stringContaining('adjust'),
+          },
+        ]),
+      },
+    })
     expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toEqual([])
     // Stateful failures and cancellation still propagate; they do not carry the private rejection marker.
     await expect(
@@ -442,6 +482,24 @@ describe('preset surface contract and ledger lifecycle', () => {
     expect(Object.keys(compact.$defs)).toEqual(['Node'])
     expect(validateAgainst(compact, { value: 'a', child: { value: 'b' } }).ok).toBe(true)
     expect(validateAgainst(compact, { value: 'a', child: { value: 42 } }).ok).toBe(false)
+    // Render validates names, not the not-yet-submitted values; records and alternatives remain valid.
+    expect(() =>
+      validateActionParameterNames(schema, { value: {}, child: {} }, '/args', 'recursive'),
+    ).not.toThrow()
+    expect(() =>
+      validateActionParameterNames(
+        Type.Record(Type.String(), Type.Number()),
+        { dynamic: {} },
+        '/args',
+        'record',
+      ),
+    ).not.toThrow()
+    const union = Type.Union([
+      Type.Object({ left: Type.String() }, { additionalProperties: false }),
+      Type.Object({ right: Type.Number() }, { additionalProperties: false }),
+    ])
+    expect(() => validateActionParameterNames(union, { right: {} }, '/args', 'union')).not.toThrow()
+    expect(() => validateActionParameterNames(union, { unknown: {} }, '/args', 'union')).toThrow()
   })
   it('opens, replaces revision n+1, closes and retains a tombstone across restart', async () => {
     const f = await opened(),
@@ -820,6 +878,79 @@ describe('question collector on the ordinary surface path', () => {
   })
   it('refuses model calls, validates every answer, and recovers a late successful answer without truncation', async () => {
     const f = fixture([], true)
+    const contact = questionSurface('contact_form', [{ id: 'name', question: 'Name' }])
+    contact.components[0]!.id = 'fields'
+    contact.actions[0]!.argsTemplate.answers = { from: 'input', key: 'draft' }
+    expect(() =>
+      bindArguments(
+        contact,
+        {
+          sessionId: 'session',
+          surfaceId: contact.id,
+          revision: 1,
+          actionId: 'submit',
+          commandId: 'old-surface',
+          input: { fields: { name: 'Ada' } },
+          selection: {},
+        },
+        { tools: () => [] },
+        contact,
+      ),
+    ).toThrow(/input.draft.*argument "answers".*fields/)
+    await expect(f.service().render({ surface: contact }, signal)).rejects.toMatchObject({
+      data: {
+        effect: 'none',
+        issues: [
+          {
+            path: '/surface/actions/0/argsTemplate/answers/key',
+            expected: expect.stringContaining('fields'),
+          },
+        ],
+      },
+    })
+    contact.actions[0]!.argsTemplate = {
+      surfaceId: { literal: 'contact_form' },
+      values: { from: 'input', key: 'fields' },
+    }
+    await expect(f.service().render({ surface: contact }, signal)).rejects.toMatchObject({
+      data: {
+        effect: 'none',
+        issues: expect.arrayContaining([
+          { path: '/surface/actions/0/argsTemplate/values', expected: expect.stringContaining('answers') },
+        ]),
+      },
+    })
+    contact.actions[0]!.argsTemplate = {
+      surfaceId: { literal: 'contact_form' },
+      answers: { from: 'input', key: 'fields' },
+    }
+    await f.service().render({ surface: contact }, signal)
+    const contactRequest = {
+      sessionId: 'session',
+      surfaceId: 'contact_form',
+      revision: 1,
+      actionId: 'submit',
+      commandId: 'contact-missing',
+      input: {},
+      selection: {},
+    }
+    expect(await f.service().action(contactRequest, actor, signal)).toMatchObject({
+      status: 'rejected',
+      refusal: { code: 'UI_INVALID', message: expect.stringContaining('input.fields') },
+    })
+    const accepted = await f
+      .service()
+      .action(
+        { ...contactRequest, commandId: 'contact-ok', input: { fields: { name: 'Ada' } } },
+        actor,
+        signal,
+      )
+    expect(accepted.status).toBe('received')
+    expect((await f.queue.next(signal))?.invocation.args).toEqual({
+      surfaceId: 'contact_form',
+      answers: { name: 'Ada' },
+    })
+    await f.outcome('succeeded')
     await f.service().render({ surface: questionSurface('questions', questions) }, signal)
     const answers = { single: 'B', multi: ['A', 'B'], text: 'Long human answer '.repeat(300) }
     await expect(
@@ -862,7 +993,7 @@ describe('question collector on the ordinary surface path', () => {
       answers,
     })
     expect(payload.actor).toEqual(actor)
-    expect(f.deliveries.size).toBe(2) // Invalid refusal and successful answer, once each.
+    expect(f.deliveries.size).toBe(4) // Contact and question refusal/success, once each.
   })
   it('rejects stale answers and preserves an open form when ordinary policy refuses collection', async () => {
     const f = fixture([], true),

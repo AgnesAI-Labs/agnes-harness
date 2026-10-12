@@ -47,6 +47,8 @@
 
 `data` 的键标识已提交的 surface 数据；`input` 的键标识表单组件 id；`row` 的键标识提交行上下文中的表格组件；`selection` 的键标识表格，解析结果是后台按展示顺序解析的行对象数组。当该数据键是 `$source` 时，`data`、`row` 或 `selection` 绑定必须使用非空 pointer，并且只解析为一个标量，例如行 id 或一个字段。空 pointer、对象或数组为 `UI_INVALID`。字面参数，以及模型写入数据上的绑定，保持提交的值。客户端只发送行 id，不发送具有权威性的行对象。后台从接纳的 revision 解析行，检查成员、选择 id 唯一性与选择模式；在不匹配的表格动作上下文中使用 row/selection 绑定会被拒绝。表格动作可以使用 selection；行内动作还可以使用 row。表单草稿按其表单 Schema 校验；展开后的参数必须同时符合 `paramsSchema` 与注册工具的参数 Schema。缺失键、Pointer 或非法 Pointer 转义均为错误。Pointer 只访问自身属性，禁止 `__proto__`、`prototype`、`constructor` 路径段，不执行代码、不做字符串插值。
 
+render/update 在发布前通过可纠正的 `UI_INVALID` 拒绝未知输入键和不匹配的工具参数名。input 键必须是 form 的**组件 ID**，不能是 `dataKey`，且表单必须声明该动作。提交时错误会指出动作、参数、缺失键和可用组件 ID。例如表单 `{id:"fields",kind:"form",dataKey:"draft",schema:{type:"object",properties:{name:{type:"string"}}},actionIds:["submit"]}` 配合 `data:{draft:{}}`，`ui_submit` 动作使用 `argsTemplate:{surfaceId:{literal:"contact"},answers:{from:"input",key:"fields"}}`；`paramsSchema` 也应声明 `surfaceId` 和 `answers`。
+
 ### 大小限制
 
 Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还执行语义/字节限制。字节数以持久化前 UTF-8 编码的 JSON 计算。
@@ -322,7 +324,6 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 浏览器校验服务端已验证的 surface 投影、固定模块身份、原文 fallback 和声明的 props 字节上限。完整 props Schema 编译由后台负责；工作台 CSP 不允许动态编译函数。
 
 找不到已审阅、ready、锁定版本的模块，或加载/渲染失败、加载超过 15 秒时，该组件显示声明的文本回退与本地化提示，其他组件继续工作。TUI 与 channels 从 `ui_render`/`ui_update` 工具文本得到 fallback。[财务示例](../../examples/fde/finance-reconcile/client/agnes.client.json) 使用小型对账差异组件，并保留旁边的预设差异表作为可用回退。
-
 
 预设 question/table 迁移与经认证的文本客户端提交见下方“问答、表格与交付物 surface”。自定义 renderer 使用相同 surface 事实和动作路径，文本客户端展示声明的 fallback。业务答案仍不代表权限授予。
 
