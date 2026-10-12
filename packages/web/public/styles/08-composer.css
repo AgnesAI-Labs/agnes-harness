@@ -114,11 +114,6 @@ body.session-switching #approval {
   backdrop-filter: none;
 }
 /* Focus belongs to the whole card, since the textarea itself draws no ring. */
-#composer:hover {
-  box-shadow:
-    0 0 0 1px var(--agnes-input-border),
-    var(--shadow-elevation-soft);
-}
 #composer:focus-within {
   box-shadow:
     0 0 0 1px var(--agnes-input-border-focus),
