@@ -80,7 +80,7 @@ describe('dbh M-04: onboarding config.test result is not bound to the provider i
     const { client, test, save, pending } = stubClient()
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r') // API key
     await settle()
     term.feed('\r') // Provider A
@@ -102,7 +102,7 @@ describe('dbh M-04: onboarding config.test result is not bound to the provider i
     const { client, test, save, pending } = stubClient()
     void runOnboardingTui(client, UNCONFIGURED, term).catch(() => undefined)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r') // API key
     await settle()
     term.feed('\r') // Provider A
@@ -133,7 +133,7 @@ describe('dbh M-04: onboarding config.test result is not bound to the provider i
     const { client, test, save, pending } = stubClient()
     void runOnboardingTui(client, UNCONFIGURED, term).catch(() => undefined)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r') // API key
     await settle()
     term.feed('\r') // Provider A
@@ -160,7 +160,7 @@ describe('dbh M-04: onboarding config.test result is not bound to the provider i
     const { client, save, pending } = stubClient()
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r') // API key
     await settle()
     term.feed('\r') // Provider A
@@ -238,7 +238,7 @@ describe('dbh M-04 (second source): real SDK client + daemon config methods + Ho
         },
       )
       await settle()
-      term.feed('\x1b[B')
+      term.feed('2')
       term.feed('\r') // API key
       await vi.waitFor(async () =>
         expect((await screenOf(term, 80, 24)).join('\n')).toContain('Select a provider:'),

@@ -18,6 +18,8 @@ For an installed distribution use `agh serve`. Keep the complete distribution an
 
 With no saved model accounts or previous sessions, Web offers three steps: connect a model, choose a work folder, and start a conversation. Enter your API key in the guide and choose **Verify & continue**, or try the local Demo without a key. Account setup reuses the Settings credential and OAuth flows; the default model is selected after verification. Advanced connection and model options are folded away. Tests contact the selected provider and may incur charges. The final step links to business-agent examples in **Plugins → Discover**; opening the catalog grants no permissions. Defaults apply to new sessions. You can skip at any time and configure later in Settings. The skip preference is scoped to this home/profile in this browser.
 
+On a fresh local-dev home, the plain TUI also offers **Try local Demo / skip setup (no API key)**. Choose it to continue through the existing local teaching backend without creating a model account. Escape still cancels setup.
+
 To add another account, open **Settings → Model accounts → Add account**. Choose a provider, enter the key and choose **Verify & save**. The account name and endpoint are filled in for you; expand **Advanced options** to change them. A failed operation keeps the draft. Account row menus contain default selection, enablement and removal; removal requires a second confirmation.
 
 ## One versioned home

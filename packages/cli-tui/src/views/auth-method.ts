@@ -4,11 +4,12 @@ import { fitLine } from '../components/line.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
 
-export type AuthMethodChoice = 'agnes-account' | 'api-key'
+export type AuthMethodChoice = 'agnes-account' | 'api-key' | 'demo'
 
 export type AuthMethodViewOptions = {
   locale?: string
   suggested?: AuthMethodChoice
+  allowDemo?: boolean
   onChoose(choice: AuthMethodChoice): void
   onCancel(): void
 }
@@ -25,13 +26,16 @@ export class AuthMethodView implements Component {
       options: [
         { id: 'agnes-account', label: tt('authMethod.agnesAccount', locale) },
         { id: 'api-key', label: tt('authMethod.apiKey', locale) },
+        ...(options.allowDemo ? [{ id: 'demo', label: tt('authMethod.demo', locale) }] : []),
       ],
       onChoose: (id) => {
-        if (id === 'agnes-account' || id === 'api-key') options.onChoose(id)
+        if (id === 'agnes-account' || id === 'api-key' || id === 'demo') options.onChoose(id)
       },
       onCancel: options.onCancel,
     })
-    if (options.suggested === 'api-key') this.select.handleInput('\x1b[B')
+    if (options.suggested === 'api-key' || (options.suggested === 'demo' && options.allowDemo))
+      this.select.handleInput('\x1b[B')
+    if (options.suggested === 'demo' && options.allowDemo) this.select.handleInput('\x1b[B')
   }
 
   invalidate(): void {

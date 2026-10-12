@@ -25,8 +25,8 @@ export async function runOnboardingTui(
   snapshot: ConfigSnapshot,
   term: Terminal,
   locale = 'en',
-): Promise<ConfigSnapshot | undefined> {
-  return new Promise<ConfigSnapshot | undefined>((resolve, reject) => {
+): Promise<ConfigSnapshot | 'demo' | undefined> {
+  return new Promise<ConfigSnapshot | 'demo' | undefined>((resolve, reject) => {
     let state: OnboardingState = {
       kind: 'auth-method',
       reason: 'Agnes needs a model provider before it can open a session.',
@@ -75,7 +75,7 @@ export async function runOnboardingTui(
       renderer?.requestRender()
     }
 
-    const finish = (result: ConfigSnapshot | undefined): void => {
+    const finish = (result: ConfigSnapshot | 'demo' | undefined): void => {
       clearOAuth()
       apiKey = ''
       renderer?.stop()
@@ -98,7 +98,13 @@ export async function runOnboardingTui(
       return new AuthMethodView({
         locale,
         suggested: 'api-key',
+        allowDemo: snapshot.profile === 'local-dev',
         onChoose: (choice) => {
+          if (choice === 'demo') {
+            // Fresh local-dev boot already supplies the same no-key teaching route as Web.
+            finish('demo')
+            return
+          }
           if (choice === 'agnes-account') {
             // The account path needs the platform's PKCE/token contract, which this build does not
             // carry. Say so and stay on the selector rather than opening a flow that cannot finish.

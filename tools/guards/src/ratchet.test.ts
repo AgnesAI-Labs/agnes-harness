@@ -235,7 +235,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/view': 116,
   'packages/web/src/session-binding': 31,
 
-  'packages/cli/src': 7974,
+  'packages/cli/src': 7980,
   'packages/cli/src/commands/package': 230,
   'packages/cli/src/tui/package-admin': 1,
   'packages/cli/src/tui/package-controller': 1,
@@ -251,7 +251,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/ai/src': 4401,
   'packages/protocol/src': 4721,
   'packages/cli/src/tui': 38,
-  'packages/cli-tui/src': 4950,
+  'packages/cli-tui/src': 4957,
   'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   'packages/extension-api/testkit': 730,
   'packages/sdk/src': 6109,
