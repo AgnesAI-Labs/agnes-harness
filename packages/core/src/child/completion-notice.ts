@@ -99,7 +99,10 @@ export async function childCompletionInput(
     summary: result ? `${lead} Result:\n${shown}${tail}` : lead,
     presentation: { kind: 'child-completed', status, label },
   }
-  return { system, commandId: `${CHILD_COMPLETED}:${record.childKey}:${endSeq}:${status}` }
+  // A terminal notice is keyed by the durable outcome alone: the child's last turn/end may still land
+  // after a cancel, so a ledger-derived sequence would differ between live delivery and recovery.
+  const identity = options.continuable ? `${endSeq}:${status}` : `terminal:${outcome}`
+  return { system, commandId: `${CHILD_COMPLETED}:${record.childKey}:${identity}` }
 }
 
 /**
