@@ -262,7 +262,7 @@
     overflow-wrap: anywhere;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-md);
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     letter-spacing: 0;
     line-height: 1.6;
   }
@@ -701,7 +701,7 @@
     cursor: pointer;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-xs);
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
     list-style-position: inside;
   }
   .confirm-review-content {

@@ -154,7 +154,7 @@
   .markdown h4 {
     margin: var(--s32) 0 var(--s16);
     color: var(--agnes-text-primary);
-    font-weight: 700;
+    font-weight: var(--font-weight-semibold);
   }
   .markdown h1 {
     font-size: 1.3125rem;
