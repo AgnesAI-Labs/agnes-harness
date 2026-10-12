@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ProviderLifecycleScope, ProviderSelection } from '@agnes/extension-api'
-import { PROVIDER_LIFECYCLE_SCOPES } from '@agnes/extension-api'
 import type { SeamKind } from '@agnes/extension-api/seams'
-import { PINNED_SEAM_KINDS, SEAM_KINDS } from '@agnes/extension-api/seams'
+import { PINNED_SEAM_KINDS, SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
 /** Where a conclusion in the plan came from. */
@@ -64,7 +63,7 @@ export function compileRunPlan(
       selection: Object.freeze({ ...selection }),
       required: true,
       pinned: (PINNED_SEAM_KINDS as readonly string[]).includes(kind),
-      scope: PROVIDER_LIFECYCLE_SCOPES[kind],
+      scope: SEAM_KIND_TOKENS[kind].scope,
     })
   })
   const { secrets: _secrets, ...fixedAdapters } = profile.adapters

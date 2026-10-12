@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { approvalKind } from '@agnes/extension-api/seams'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it } from 'vitest'
@@ -36,9 +37,9 @@ const altPackage = {
       entry: normalizePluginExport({
         inject: ['providers'],
         apply: (ctx: {
-          providers: { register(kind: string, source: string, provider: unknown): unknown }
+          providers: { register(kind: unknown, source: string, provider: unknown): unknown }
         }) => {
-          ctx.providers.register('approval', '@agnes/code', alternate)
+          ctx.providers.register(approvalKind, '@agnes/code', alternate)
         },
       } as never),
     },

@@ -99,15 +99,10 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'billing',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-      ].map((name) => [name, { provider: 'local' }]),
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+        name,
+        { provider: 'local' },
+      ]),
     ),
     packages: {
       'fixture/review': {

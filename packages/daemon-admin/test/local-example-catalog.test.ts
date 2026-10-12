@@ -55,15 +55,10 @@ it('serves real local examples through daemon catalog and source inspection', as
     ...emptyLock(profile, '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: Object.fromEntries(
-      [
-        'approval',
-        'checkpoint',
-        'billing',
-        'verifier',
-        'repair',
-        'artifacts',
-        'principals',
-      ].map((name) => [name, { provider: 'local' }]),
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+        name,
+        { provider: 'local' },
+      ]),
     ),
     policySnapshot: {
       capabilityCeiling: ['tools', 'hooks'],

@@ -843,15 +843,10 @@ it('opens a new composition from the published code after retiring a boot snapsh
       ...emptyLock('local-dev', '0.1.0'),
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
       seams: Object.fromEntries(
-        [
-          'approval',
-          'checkpoint',
-          'billing',
-          'verifier',
-          'repair',
-          'artifacts',
-          'principals',
-        ].map((name) => [name, { provider: 'local' }]),
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+          name,
+          { provider: 'local' },
+        ]),
       ),
       packages: {
         [id]: {

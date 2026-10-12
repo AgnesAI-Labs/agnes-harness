@@ -30,15 +30,10 @@ function setup() {
       ...current,
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
       seams: Object.fromEntries(
-        [
-          'approval',
-          'checkpoint',
-          'billing',
-          'verifier',
-          'repair',
-          'artifacts',
-          'principals',
-        ].map((n) => [n, { provider: 'local' }]),
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((n) => [
+          n,
+          { provider: 'local' },
+        ]),
       ),
       policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
     })

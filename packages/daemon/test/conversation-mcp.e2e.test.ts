@@ -119,15 +119,10 @@ it('a conversation approves registration and calls the real stdio server on its 
         ...emptyLock('local-dev', '0.0.0'),
         resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
         seams: Object.fromEntries(
-          [
-            'approval',
-            'checkpoint',
-            'billing',
-            'verifier',
-            'repair',
-            'artifacts',
-            'principals',
-          ].map((n) => [n, { provider: 'local' }]),
+          ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((n) => [
+            n,
+            { provider: 'local' },
+          ]),
         ),
         policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
       })

@@ -97,15 +97,10 @@ it('keeps a pending action on the old generation and delivers its result once', 
       ...emptyLock('local-dev', '0.1.0'),
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
       seams: Object.fromEntries(
-        [
-          'approval',
-          'checkpoint',
-          'billing',
-          'verifier',
-          'repair',
-          'artifacts',
-          'principals',
-        ].map((name) => [name, { provider: 'local' }]),
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+          name,
+          { provider: 'local' },
+        ]),
       ),
       packages: { [packageId]: entry },
     })
