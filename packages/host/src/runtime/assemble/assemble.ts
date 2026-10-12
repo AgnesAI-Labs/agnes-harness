@@ -24,7 +24,6 @@ import { createHostServices } from './host-services.js'
 import { startKernelHooks } from './kernel-hooks.js'
 import { createKernel, type ExtensionLeases } from './kernel-stage.js'
 import { buildOperations } from './operations.js'
-import { bindSeams } from './package-seams.js'
 import { loadPackages, type PackageSet } from './packages.js'
 import { type PresetCatalog, resolvePresetCatalog } from './presets.js'
 import { openProcessServices, type ProcessServices } from './process-services.js'
@@ -32,6 +31,7 @@ import { assembleProvider } from './provider-stage.js'
 import { createRowHosts } from './row-hosts.js'
 import { mountRuntimeTarget } from './runtime-target.js'
 import { openSeamContexts } from './seam-contexts.js'
+import { openSeamSet } from './seam-set.js'
 import { createSkillRefresh } from './skill-refresh.js'
 import { createSkillState } from './skills.js'
 import { createWorkspaceRuntimeFactory } from './workspace-runtime.js'
@@ -78,7 +78,9 @@ async function openFoundation(ctx: AssemblyContext): Promise<Foundation> {
 async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundation) {
   ctx.done('seams')
   const seamContexts = openSeamContexts(ctx, proc, presets)
-  const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts)
+  const seamSet = openSeamSet(ctx, proc, seamContexts)
+  const { seams, approvalGrantControl } = seamSet
+  const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts, seams)
   const skillState = createSkillState(ctx, proc)
   const bootRows = buildBootRows(ctx, pkgs, presets, seamContexts)
   const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
@@ -89,9 +91,11 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     bootRows,
     hosts: rowHosts,
     skillState,
+    seamSet,
   })
-  const { seams, approvalGrantControl } = bindSeams(ctx, proc, seamContexts, runtimeTarget)
-  ctx.live.seams.set(seams)
+  // The first published tree already adopted itself; this keeps the facades correct even when a
+  // publisher delivers its first root without the callback.
+  seamSet.adopt(runtimeTarget.pluginTree.root)
   const computerUse = mountComputerUse({
     profile: ctx.profile,
     dataDir: ctx.dataDir,
@@ -101,7 +105,7 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     rollback: ctx.rollback,
   })
   ctx.say('seams.assembled', { seams: ctx.profile.seams, fsDigest: proc.adapters.fs.fence().digest })
-  const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse)
+  const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse, seams)
   return {
     seamContexts,
     workspaceRuntime,
@@ -109,6 +113,7 @@ async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundati
     bootRows,
     rowHosts,
     runtimeTarget,
+    seamSet,
     seams,
     approvalGrantControl,
     computerUse,
@@ -135,6 +140,7 @@ async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
     skillState: t.skillState,
     computerUse: t.computerUse,
     approvalGrants: t.approvalGrantControl.port,
+    seamSet: t.seamSet,
     discoveredResources,
     extensionLeases,
   })
@@ -170,6 +176,7 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
     runtimeTarget: t.runtimeTarget,
     ecosystem: t.ecosystem,
     extensionLeases: c.extensionLeases,
+    seams: t.seams,
   })
   const bundled = createBundledExtensions(ctx, f.pkgs, host, t.rowHosts)
   const rows = await mountExtensionRows(ctx, {
@@ -216,6 +223,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     proc: f.proc,
     kernel: c.kernelStage.kernel,
     host: e.host,
+    seams: t.seams,
   })
   return {
     memory: c.kernelStage.memory,
@@ -244,6 +252,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     ...(c.hooks.observability ? { observability: c.hooks.observability } : {}),
     ...(deps.referenceLimits ? { referenceLimits: deps.referenceLimits } : {}),
     providers: { catalog: () => pluginTree.root.providers.catalog() },
+    seamBindings: () => t.bootRows.boundSeams(),
     modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
     sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
     sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),

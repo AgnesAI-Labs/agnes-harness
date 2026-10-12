@@ -96,17 +96,40 @@ export interface Host {
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
+  /** The outcome of the most recent publish, including a refusal and whether the previous state held. */
+  lastChange?(): import('../generation/change-result.js').ChangeResult | undefined
+  /** The container serving a generation, with the seam implementations it bound. */
+  containerHandle?(generationId: string): import('../generation/change-result.js').ContainerHandle | undefined
+  /** What a session is bound to: generation, loop and its pinned seam implementations. */
+  sessionBinding?(sessionKey: string): import('../generation/change-result.js').SessionBinding | undefined
+  /**
+   * A bounded page of one session's raw ledger rows, read without opening the session, its
+   * generation or its pinned implementations. A session that cannot continue on this build (a
+   * different version, a missing provider) can still be read; nothing is written or locked.
+   */
+  readSessionRows(
+    sessionKey: string,
+    query: { fromSeq?: number; toSeq?: number; limit: number },
+  ): Promise<import('@agnes/core').Event[]>
   /** Effective runtime of one open session; produced by the generation and composition owners. */
   sessionRuntime?(sessionKey: string): import('@agnes/protocol').SessionRuntimeDescriptor
   releaseSessionGeneration?(sessionKey: string): Promise<void>
   /** Privileged coordinator only: the caller must exclude concurrent admission for this idle session. */
   migrateSessionGeneration?(
     sessionKey: string,
-    context?: { recoveryRequired?: () => boolean },
+    context?: {
+      recoveryRequired?: () => boolean
+      /** Pinned seam kinds the administrator agrees to replace; any other pinned change is refused. */
+      repin?: readonly string[]
+      /** Who asked, for the audit record. */
+      operator?: string
+    },
   ): Promise<{
     previousGenerationId: string
     generationId: string
     changed: boolean
+    /** The pinned kinds that were replaced, when any were. */
+    repinned?: readonly string[]
   }>
   compositionPublicationStatus?(): HostPublicationReport | undefined
   reloadPlugin?(id: string, directory?: string): Promise<{ generationId: string; changed: boolean }>
@@ -138,6 +161,8 @@ export interface Host {
   modelAdapterCatalog: Assembled['modelAdapterCatalog']
   memory: Assembled['memory']
   readonly providers: Assembled['providers']
+  /** The implementation each seam kind was bound to in this container. */
+  seamBindings: Assembled['seamBindings']
   readonly runtimes: Assembled['runtimes']
   /** Read-only product status; mutation/session capabilities remain private to Host assembly. */
   readonly lockedPackageMutations: Pick<Assembled['lockedPackageMutations'], 'status'>
@@ -321,6 +346,13 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       return operation
     },
     kernel: a.kernel,
+    readSessionRows: (sessionKey, { fromSeq, toSeq, limit }) =>
+      a.kernel.o.storage.scan(sessionKey, {
+        ...(fromSeq === undefined ? {} : { fromSeq }),
+        ...(toSeq === undefined ? {} : { toSeq }),
+        limit,
+        order: 'asc',
+      }),
     get provider() {
       return a.provider
     },
@@ -330,6 +362,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     modelAdapterCatalog: () => a.modelAdapterCatalog(),
     memory: (workspaceRoot, sessionKey) => a.memory(workspaceRoot, sessionKey),
     providers: Object.freeze({ catalog: () => a.providers.catalog() }),
+    seamBindings: () => a.seamBindings(),
     runtimes: a.runtimes,
     lockedPackageMutations: Object.freeze({ status: () => a.lockedPackageMutations.status() }),
     computerUse: computerUse

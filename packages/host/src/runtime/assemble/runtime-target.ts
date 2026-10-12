@@ -50,6 +50,7 @@ import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { RowHosts } from './row-hosts.js'
+import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
 import { sandboxBackendPackages } from './workspace-runtime.js'
 
@@ -71,8 +72,6 @@ export type RuntimeTargetHost = Readonly<{
   pluginTree: HostPluginTreeBase
   bindRuntimeSession(sessionKey: string, preset: string): Promise<void>
   unbindRuntimeSession(sessionKey: string): Promise<void>
-  /** Set once the mutable seams exist; the publisher calls it with the root of each published tree. */
-  seamRoot: { replace?: (root: import('@agnes/cordis').Context) => void }
 }>
 
 type Publisher = RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>
@@ -83,6 +82,7 @@ type RuntimeTargetInput = Readonly<{
   bootRows: BootRows
   hosts: RowHosts
   skillState: SkillState
+  seamSet: SeamSet
 }>
 
 /** State the publisher callbacks, the session views and the apply queue all read; one per assembly. */
@@ -93,7 +93,6 @@ type Shared = {
   views: SessionViews
   extensionServices: { current?: ExtensionServiceHost }
   intelligentUi: Late<ReturnType<typeof createIntelligentUiBridge>>
-  seamRoot: RuntimeTargetHost['seamRoot']
 }
 
 type SessionViews = Readonly<{
@@ -227,6 +226,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
         },
         ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
         afterApply: () => {
+          ctx.live.kernel.peek()?.invalidateSeams()
           const backend = proc.sandboxProviderSlot.registry
             ?.catalog()
             .find((entry) => entry.id === ctx.profile.sandbox?.provider)
@@ -234,7 +234,6 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
             ...sandboxBackendPackages(ctx.profile, pkgs.modules),
             ...(backend ? [backend.sourcePackage] : []),
           ])
-          ctx.live.kernel.peek()?.invalidateSeams()
         },
       }
     },
@@ -262,7 +261,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
     },
     onPublished: (target) => {
       const root = shared.publisher.get().current().value.current?.ordinary.pluginTree.root
-      if (root) shared.seamRoot.replace?.(root)
+      if (root) input.seamSet.adopt(root)
       syncHotPolicyFromTarget(hotPolicy, target)
     },
   })
@@ -384,7 +383,6 @@ export async function mountRuntimeTarget(
     views: createSessionViews(ctx, input.skillState, publisherRef),
     extensionServices: {},
     intelligentUi: new Late('intelligent ui'),
-    seamRoot: {},
   }
   const publisher = createPublisher(ctx, input, shared)
   shared.publisher.set(publisher)
@@ -480,6 +478,5 @@ export async function mountRuntimeTarget(
     pluginTree,
     bindRuntimeSession,
     unbindRuntimeSession,
-    seamRoot: shared.seamRoot,
   }
 }

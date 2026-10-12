@@ -46,6 +46,13 @@ it('assembles the bundled default policy row before opening a real Host session'
     const catalog = host.providers.catalog()
     expect(new Set(catalog.map((entry) => entry.kind))).toEqual(
       new Set([
+        'approval',
+        'artifacts',
+        'billing',
+        'checkpoint',
+        'principals',
+        'repair',
+        'verifier',
         'loop',
         'model-adapter',
         'compaction',

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { SeamImplementations } from '@agnes/core'
 import { type Kernel, platformFacts } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { EXT_ROW_EXTENSION_IDS } from '@agnes/host-extensions/assemble/ext-rows'
@@ -51,6 +52,7 @@ export function createExtensionHost(
     runtimeTarget: RuntimeTargetHost
     ecosystem: ReturnType<typeof createEcosystemContexts>
     extensionLeases: ExtensionLeases
+    seams: SeamImplementations
   }>,
 ) {
   const { deps, say, activationBarrier } = ctx
@@ -98,7 +100,7 @@ export function createExtensionHost(
   )
   rowServices.activate(extPorts)
   // One snapshot for factory contexts and the isolated bootstrap; hooks get theirs from the kernel.
-  const extensionPlatform = platformFacts(ctx.live.seams.get().platform)
+  const extensionPlatform = platformFacts(input.seams.platform)
   // The handlers are captured before the first await, so a caller may release the source's
   // registrations right after this returns and the shutdown still reaches every open session.
   const dispatchExtensionShutdown = async (source: string, context: { reason: 'revoke' | 'reload' }) => {

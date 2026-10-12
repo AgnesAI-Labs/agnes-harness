@@ -1,5 +1,5 @@
 import { dirname } from 'node:path'
-import type { Kernel } from '@agnes/core'
+import type { Kernel, SeamImplementations } from '@agnes/core'
 import { serviceContext } from '@agnes/host-extensions/ext-host/service-context'
 import { serviceInvoker } from '@agnes/host-extensions/ext-host/service-invocation'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -11,13 +11,13 @@ import { authorizeServiceProcess } from './service-process-policy.js'
 /** The extension service call surface and the session configuration service the Host exposes. */
 export function createHostServices(
   ctx: AssemblyContext,
-  input: Readonly<{ proc: ProcessServices; kernel: Kernel; host: ExtensionHost }>,
+  input: Readonly<{ proc: ProcessServices; kernel: Kernel; host: ExtensionHost; seams: SeamImplementations }>,
 ) {
   const { deps } = ctx
   const { kernel, proc, host } = input
   const { adapters } = proc
   const { services } = host
-  const seams = ctx.live.seams.get()
+  const { seams } = input
   const servicesInvocation = serviceInvoker({
     authorize: async (entry, params, actor, workspace, signal) => {
       if (

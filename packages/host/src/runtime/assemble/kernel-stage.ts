@@ -28,6 +28,7 @@ import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { ProviderStage } from './provider-stage.js'
 import type { RuntimeTargetHost } from './runtime-target.js'
+import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
 
 /** Hook leases an extension host registers once it exists; the kernel asks them per hook source. */
@@ -108,6 +109,7 @@ export async function createKernel(
     skillState: SkillState
     computerUse: ComputerUseHost
     approvalGrants: ApprovalGrantsPort
+    seamSet: SeamSet
     discoveredResources: WeakMap<SessionImpl, readonly ResourceEntry[]>
     extensionLeases: ExtensionLeases
   }>,
@@ -206,7 +208,7 @@ export async function createKernel(
       on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
       dispatch: (event, payload, context) => pluginTree.root.loopEvents.dispatch(event, payload, context),
     },
-    seams: ctx.live.seams.get(),
+    seams: input.seamSet.seams,
     provider: models.provider,
     withModelSnapshot: (operation) => models.run(operation),
     operations,

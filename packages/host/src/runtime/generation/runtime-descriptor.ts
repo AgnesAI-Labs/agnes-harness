@@ -30,6 +30,8 @@ export type SessionRuntimeInput = Readonly<{
   configured: ContainerView
   /** Seam kinds whose binding is kept per session, so a later change cannot reach it. */
   pinnedSeams?: ReadonlySet<string>
+  /** What the session was bound to for those kinds; the binding shown is this one, not today's selection. */
+  pinnedBindings?: readonly Readonly<{ kind: string; provider: string; version: string }>[]
   profileHash: string
   modelRevision?: string | null
   resourceRows: readonly Readonly<{
@@ -105,11 +107,14 @@ export function describeSessionRuntime(input: SessionRuntimeInput): SessionRunti
   }
   const seams = Object.entries(running.seams)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([kind, provider]) => {
+    .map(([kind, running]) => {
       const next = configured.seams[kind]
+      const bound = input.pinnedBindings?.find((binding) => binding.kind === kind)
+      const provider = bound?.provider ?? running
       return {
         kind,
         provider,
+        ...(bound ? { version: bound.version } : {}),
         pinned: input.pinnedSeams?.has(kind) ?? false,
         ...(next !== undefined && next !== provider
           ? { pending: { id: next, effect: 'new-sessions' as const } }
@@ -176,6 +181,8 @@ export function describeHostSession(
     failed: boolean
     newerId?: string | undefined
     restartRequired: readonly string[]
+    /** The session's recorded pinned bindings, from its durable pin. */
+    pins?: readonly Readonly<{ kind: string; provider: string; version: string }>[] | undefined
   }>,
 ): SessionRuntimeDescriptor {
   const workspace = host.securityStatus?.().workspaces.find((item) => item.sessionId === sessionKey)
@@ -190,6 +197,12 @@ export function describeHostSession(
     capabilities: host.sessionCapabilities!(sessionKey),
     running: { catalog: host.providers.catalog(), seams: selectedProviders(host.profile.seams) },
     configured: { catalog: head.providers.catalog(), seams: selectedProviders(head.profile.seams) },
+    ...(generation.pins?.length
+      ? {
+          pinnedSeams: new Set(generation.pins.map((pin) => pin.kind)),
+          pinnedBindings: generation.pins,
+        }
+      : {}),
     profileHash: host.profile.hash,
     modelRevision: host.providerFingerprint,
     resourceRows: host.extensionRows.current(),

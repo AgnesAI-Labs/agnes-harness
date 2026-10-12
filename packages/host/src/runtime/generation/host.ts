@@ -8,6 +8,7 @@ import { composeExtensionRowTarget } from '@agnes/host-extensions/assemble/ext-r
 import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { readGitWorktreeRegistry } from '@agnes/host-infrastructure/git-worktrees'
+import { compileRunPlan, seamSelectionsOf } from '@agnes/host-providers/assemble/run-plan'
 import { skillRowRevision } from '@agnes/host-providers/assemble/skill-row'
 import { readLiveCompositionSessions } from '@agnes/host-providers/profile/composition-state'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
@@ -29,9 +30,23 @@ import type { Host, HostOptions } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
 import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
 import { sessionKey } from '../sessions/session.js'
+import {
+  type ChangeResult,
+  type ContainerHandle,
+  changeResult,
+  type SessionBinding,
+} from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeHostSession, generationSessions } from './runtime-descriptor.js'
+import {
+  assertPinsMatch,
+  assertRepinConsented,
+  describeDifferences,
+  diffPins,
+  pinnedBindings,
+  translateSessionFailure,
+} from './seam-pins.js'
 import {
   codeRevision,
   codeRow,
@@ -89,6 +104,7 @@ export async function createRuntimeGenerationHost(
   const failures = new Map<string, string>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
   const pendingRestart = new Set<string>()
+  let lastChange: ChangeResult | undefined
   let initialBinding: ((key: string) => void) | undefined
   const initialSkills = createGenerationSkills(options.skillResources)
   const initial = await factory(profile, {
@@ -118,24 +134,11 @@ export async function createRuntimeGenerationHost(
     basePackages.add(id)
   // Mutable model routes and credential stores follow applyModelProfile. Deployment identity
   // still pins backend and plugin registries, including their loop/adapter selections.
-  const compatibilityFor = (profile: ResolvedProfile) => {
-    const { secrets: _secrets, ...fixedAdapters } = profile.adapters
-    return createHash('sha256')
-      .update(
-        JSON.stringify({
-          adapters: fixedAdapters,
-          persistence: profile.persistence,
-          sandboxProvider: profile.sandbox,
-          composition: profile.composition,
-          bundlePresets: profile.bundlePresets,
-          agnesVersion: options.agnesVersion,
-          builtinPackages: profile.packages
-            .filter((pkg) => pkg.trust === 'builtin')
-            .map(({ id, version, integrity }) => ({ id, version, integrity })),
-        }),
-      )
-      .digest('hex')
-  }
+  const compatibilityFor = (profile: ResolvedProfile) =>
+    compileRunPlan({
+      profile,
+      ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
+    }).processFacets.digest
 
   const sourcesFor = async (target: RuntimeTarget): Promise<readonly RuntimePluginSnapshot[]> => {
     const sources =
@@ -152,9 +155,17 @@ export async function createRuntimeGenerationHost(
   }
   const bindGeneration = (key: string, id: string, host: Host): void => {
     const existing = store.session(key)
+    const bound = pinnedBindings(host.seamBindings())
+    if (existing) assertPinsMatch(key, existing.seams, bound)
     if (existing && live.get(existing.generationId)?.host === host) return
-    if (store.pin(key, id).generationId !== id)
+    const pin = store.pin(key, id, bound)
+    if (pin.generationId !== id)
       throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
+    if (!existing)
+      options.audit?.write({
+        kind: 'session.seams.pinned',
+        detail: { sessionKey: key, generationId: id, seams: bound },
+      })
   }
   const snapshotTarget = (
     target: RuntimeTarget,
@@ -181,6 +192,12 @@ export async function createRuntimeGenerationHost(
         ),
         (extensionRows ?? (current?.host ?? initial).extensionRows.current()).map((row) => row.id),
       ),
+      seamSelectionsOf(
+        compileRunPlan({
+          profile,
+          ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
+        }),
+      ),
     )
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
@@ -203,6 +220,17 @@ export async function createRuntimeGenerationHost(
       throw new Error(
         `E_GENERATION_INCOMPATIBLE: generation ${snapshot.id} needs its original loop/adapter deployment`,
       )
+    if (!snapshot.seams)
+      throw new Error(
+        `E_GENERATION_SEAMS_MISSING: generation ${snapshot.id} predates recorded seam selections and cannot be resumed`,
+      )
+    // The container is compiled from what the generation recorded, not from today's profile, so a
+    // selection changed before a restart does not change what an old session resumes on.
+    const plan = compileRunPlan({
+      profile,
+      ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
+      snapshotSeams: snapshot.seams,
+    })
     await assertGenerationTrust(
       snapshot.sources,
       options.profileDir,
@@ -261,8 +289,11 @@ export async function createRuntimeGenerationHost(
     }
     const { skillResources: _skills, ...generationOptions } = options
     const binding = { id: snapshot.id }
+    const seams = Object.fromEntries(
+      plan.seams.map((seam) => [seam.kind, seam.selection]),
+    ) as ResolvedProfile['seams']
     const host = await factory(
-      { ...profile, packages },
+      { ...profile, packages, seams },
       {
         ...generationOptions,
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
@@ -638,6 +669,19 @@ export async function createRuntimeGenerationHost(
     pendingRestart.clear()
     const refuseRestart = (id: string): never => {
       pendingRestart.add(id)
+      lastChange = changeResult({
+        outcome: 'rejected',
+        generationId: current?.snapshot.id ?? '',
+        restartRequired: [id],
+        failures: [
+          {
+            stage: 'admission',
+            code: 'E_GENERATION_RESTART_REQUIRED',
+            message: `${id} requires restart`,
+          },
+        ],
+        recovered: true,
+      })
       throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} requires restart`)
     }
     const head = await ensureCurrent()
@@ -658,8 +702,10 @@ export async function createRuntimeGenerationHost(
       !extensionCodeChanged &&
       encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest &&
       head.snapshot.compatibility === compatibilityFor(profile)
-    )
+    ) {
+      lastChange = changeResult({ outcome: 'unchanged', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
+    }
     // Backend facets are process configuration. A package generation cannot replace them live.
     for (const row of [...oldTarget.tree.rows, ...target.tree.rows])
       if (row.id.startsWith('adapter:')) {
@@ -723,6 +769,7 @@ export async function createRuntimeGenerationHost(
     latestSkills = skillInput
     if (!codeChanged) {
       if (!extensionRows && !skills) await head.host.applyRuntimeTarget(target)
+      lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
     const snapshot = snapshotTarget(target, sources, skillInput, extensionRows)
@@ -738,11 +785,33 @@ export async function createRuntimeGenerationHost(
         live.set(snapshot.id, current)
         const binding = bindings.get(head.host)
         if (binding) binding.id = snapshot.id
+        lastChange = changeResult({
+          outcome: 'in-place',
+          generationId: snapshot.id,
+          before: head.host.seamBindings(),
+          after: head.host.seamBindings(),
+        })
       } else {
+        const before = head.host.seamBindings()
         current = await build(snapshot, false)
+        lastChange = changeResult({
+          outcome: 'forked',
+          generationId: snapshot.id,
+          before,
+          after: current.host.seamBindings(),
+        })
       }
     } catch (error) {
       failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
+      const failure = error instanceof Error ? error.message : String(error)
+      lastChange = changeResult({
+        outcome: 'rejected',
+        generationId: head.snapshot.id,
+        failures: [
+          { stage: 'build', code: failure.match(/E_[A-Z0-9_]+/)?.[0] ?? 'E_GENERATION', message: failure },
+        ],
+        recovered: true,
+      })
       const { resources: _resources, sources: _sources, ...diagnostic } = snapshot
       failedSnapshots.set(snapshot.id, { ...diagnostic, sources: [] })
       rowsByGeneration.delete(snapshot.id)
@@ -839,6 +908,24 @@ export async function createRuntimeGenerationHost(
       }
     },
     sessionGeneration: (key) => store.session(key)?.generationId,
+    lastChange: () => lastChange,
+    containerHandle: (id): ContainerHandle | undefined => {
+      const generation = live.get(id)
+      return generation
+        ? { generationId: id, seams: generation.host.seamBindings(), close: () => generation.host.close() }
+        : undefined
+    },
+    sessionBinding: (key): SessionBinding | undefined => {
+      const pin = store.session(key)
+      return pin
+        ? {
+            sessionKey: key,
+            generationId: pin.generationId,
+            ...(pin.loop ? { loop: pin.loop } : {}),
+            pinnedSeams: pin.seams ?? [],
+          }
+        : undefined
+    },
     sessionRuntime: (key) => {
       const host = owner(key)
       const id = store.session(key)?.generationId ?? bindings.get(host)?.id
@@ -847,6 +934,7 @@ export async function createRuntimeGenerationHost(
         failed: failures.has(id ?? ''),
         newerId: current && host !== current.host ? current.snapshot.id : undefined,
         restartRequired: [...pendingRestart],
+        pins: store.session(key)?.seams,
       })
     },
     collectPluginGenerations: () => enqueue(collect),
@@ -941,13 +1029,34 @@ export async function createRuntimeGenerationHost(
         )
         if (pin.generationId === head.snapshot.id)
           return { previousGenerationId: pin.generationId, generationId: pin.generationId, changed: false }
-        store.migrateSession(key, pin.generationId, head.snapshot.id)
+        // A pinned seam is replaced only when the request names it; otherwise nothing durable changes.
+        const target = pinnedBindings(head.host.seamBindings())
+        const differences = pin.seams ? diffPins(pin.seams, target) : []
+        assertRepinConsented(key, differences, context?.repin ?? [])
+        store.migrateSession(key, pin.generationId, head.snapshot.id, target)
+        if (differences.length)
+          options.audit?.write({
+            kind: 'session.seams.repinned',
+            detail: {
+              sessionKey: key,
+              from: pin.generationId,
+              to: head.snapshot.id,
+              operator: context?.operator ?? 'unknown',
+              changes: describeDifferences(differences),
+              kinds: differences.map((item) => item.kind),
+            },
+          })
         try {
           await collect(new Set([pin.generationId]))
         } catch (error) {
           failures.set(pin.generationId, `E_GENERATION_DISPOSE: ${String(error)}`)
         }
-        return { previousGenerationId: pin.generationId, generationId: head.snapshot.id, changed: true }
+        return {
+          previousGenerationId: pin.generationId,
+          generationId: head.snapshot.id,
+          changed: true,
+          ...(differences.length ? { repinned: differences.map((item) => item.kind) } : {}),
+        }
       }),
     createSession: (input) =>
       enqueue(async () => {
@@ -960,15 +1069,24 @@ export async function createRuntimeGenerationHost(
             await head.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
             input.cwd ?? options.workspaceRoot,
           )
-        const existing = store.session(key)
+        const existing = (() => {
+          try {
+            return store.session(key)
+          } catch (error) {
+            throw translateSessionFailure(error, key)
+          }
+        })()
         const desiredId = input.parent
           ? (store.session(input.parent.key)?.generationId ?? head.snapshot.id)
           : head.snapshot.id
         const pin = existing ?? { sessionKey: key, generationId: desiredId }
-        const generation = await resolve(pin.generationId)
+        const generation = await resolve(pin.generationId).catch((error: unknown) => {
+          throw translateSessionFailure(error, key)
+        })
         idleSince.delete(generation.host)
         try {
           if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+          if (existing) assertPinsMatch(key, existing.seams, pinnedBindings(generation.host.seamBindings()))
           if (
             pin.loop &&
             input.loop &&
@@ -1008,7 +1126,7 @@ export async function createRuntimeGenerationHost(
           if (!closed) void enqueue(collect).catch(() => undefined)
           if (message.includes('E_GENERATION_') || message.startsWith('Loop '))
             failures.set(pin.generationId, message)
-          throw error
+          throw translateSessionFailure(error, key)
         }
       }),
     applyModelProfile: (next) =>

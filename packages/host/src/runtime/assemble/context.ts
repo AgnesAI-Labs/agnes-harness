@@ -45,7 +45,6 @@ export class Late<T> {
 export type LiveBindings = Readonly<{
   kernel: Late<Kernel>
   pluginTree: Late<HostPluginTreeBase>
-  seams: Late<SeamImplementations>
   extensionRows: Late<Assembled['extensionRows']>
   sessionCapabilities: Late<SessionCapabilitiesFn>
 }>
@@ -128,7 +127,6 @@ export function createAssemblyContext(profile: ResolvedProfile, deps: AssembleDe
     live: Object.freeze({
       kernel: new Late<Kernel>('kernel'),
       pluginTree: new Late<HostPluginTreeBase>('plugin tree'),
-      seams: new Late<SeamImplementations>('seams'),
       extensionRows: new Late<Assembled['extensionRows']>('extension rows'),
       sessionCapabilities: new Late<SessionCapabilitiesFn>('session capabilities'),
     }),

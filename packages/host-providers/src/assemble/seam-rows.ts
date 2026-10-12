@@ -217,9 +217,11 @@ export function buildSeamBindingRows(
       plugin: `builtin:host/seam-binder/${kind}`,
       snapshotDigest: SEAM_BINDER_SNAPSHOT,
       exportName: kind,
-      entryRevision: identity,
-      extrasRevision: EMPTY_EXTRAS_REVISION,
-      mountRevision: identity,
+      // A row rebuilt from a stored generation keeps the identity it had, so a cold resume is not
+      // refused because today's model configuration hashes differently.
+      entryRevision: pinned?.entryRevision ?? identity,
+      extrasRevision: pinned?.extrasRevision ?? EMPTY_EXTRAS_REVISION,
+      mountRevision: pinned?.mountRevision ?? identity,
       config: pinned?.config ?? input.preset,
       inject: ['providers'],
       provides: [id],

@@ -5,7 +5,12 @@ import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { describe, expect, it, vi } from 'vitest'
 import { installSeamKinds } from '../../src/assemble/seam-kinds.js'
-import { type SeamBindingInput, seamBinding } from '../../src/assemble/seam-rows.js'
+import {
+  buildSeamBindingRows,
+  REQUIRED_SEAM_ROW_IDS,
+  type SeamBindingInput,
+  seamBinding,
+} from '../../src/assemble/seam-rows.js'
 
 const preset = { name: 'default' }
 const verifier = (over: Partial<VerifierProvider> & { instance?: object | (() => Promise<object>) } = {}) => {
@@ -142,5 +147,70 @@ describe('seam binding', () => {
     ).rejects.toBeInstanceOf(HostError)
     expect(bound).toEqual([])
     await root.fiber.dispose()
+  })
+})
+
+describe('seam binding rows', () => {
+  const selections = {
+    approval: { provider: 'local-prompt' },
+    principals: { provider: 'local' },
+    billing: { provider: 'budget' },
+    checkpoint: { provider: 'fs' },
+    artifacts: { provider: 'local' },
+    verifier: { provider: 't0' },
+    repair: { provider: 'default' },
+  } as const
+  const build = (
+    deploymentMarker: string,
+    generationBuiltinRows?: Parameters<typeof buildSeamBindingRows>[0]['generationBuiltinRows'],
+  ) =>
+    buildSeamBindingRows({
+      profile: {
+        packages: [],
+        adapters: { secrets: {} },
+        seams: selections,
+        marker: deploymentMarker,
+      } as unknown as ResolvedProfile,
+      selections,
+      ...(generationBuiltinRows ? { generationBuiltinRows } : {}),
+      preset: { name: 'default' },
+      timeoutMs: 10,
+      initFor: () => ({}) as SeamInit,
+      onBound: () => undefined,
+    })
+
+  it('makes one Host-owned row per kind, in kind order, each providing its own service', () => {
+    const { rows, builtinClaims } = build('a')
+    expect(rows.map((row) => row.id)).toEqual(REQUIRED_SEAM_ROW_IDS)
+    expect(rows.every((row) => row.provides.length === 1 && row.provides[0] === row.id)).toBe(true)
+    expect(rows.every((row) => row.plugin.startsWith('builtin:host/seam-binder/'))).toBe(true)
+    expect(builtinClaims).toHaveLength(7)
+  })
+
+  it('changes a row’s identity with the selection, so a different provider remounts it', () => {
+    const first = build('a').rows
+    const changed = buildSeamBindingRows({
+      profile: {
+        packages: [],
+        adapters: { secrets: {} },
+        seams: selections,
+        marker: 'a',
+      } as unknown as ResolvedProfile,
+      selections: { ...selections, approval: { provider: 'other', version: '2.0.0' } },
+      preset: { name: 'default' },
+      timeoutMs: 10,
+      initFor: () => ({}) as SeamInit,
+      onBound: () => undefined,
+    }).rows
+    expect(changed[0]?.mountIdentity).not.toBe(first[0]?.mountIdentity)
+    expect(changed[1]?.mountIdentity).toBe(first[1]?.mountIdentity)
+  })
+
+  it('keeps the identity a stored generation gave a row, so a cold resume is not refused as a foreign claim', () => {
+    const stored = build('model-config-at-first-boot').rows
+    const resumed = build('model-config-changed-since', stored).rows
+    expect(resumed.map((row) => row.mountIdentity)).toEqual(stored.map((row) => row.mountIdentity))
+    // Without the stored rows a changed deployment hashes differently, which is what the claim check refuses.
+    expect(build('model-config-changed-since').rows[0]?.mountIdentity).not.toBe(stored[0]?.mountIdentity)
   })
 })

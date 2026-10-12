@@ -60,6 +60,8 @@ export type Assembled = {
   observeSession(key: string): () => void
   observability?: import('@agnes/observability').ObservabilityProvider
   providers: import('@agnes/extension-api').ProvidersCatalogPort
+  /** The implementation each seam kind was bound to when this container was built. */
+  seamBindings(): readonly import('@agnes/host-providers/assemble/seam-rows').SeamBinding[]
   sessionPresetDefault?(): Promise<string | undefined>
   sessionModelSlots?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>

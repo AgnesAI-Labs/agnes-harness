@@ -87,6 +87,37 @@ describe('@agnes/base checkpoint against real host adapters', () => {
     }
   })
 
+  it('keeps a session’s workspace-fitted checkpoint usable when its seam instance is rebuilt in the same container', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-checkpoint-rebuild-'))
+    roots.push(root)
+    const workspaceRoot = join(root, 'workspace')
+    const dataDir = join(root, 'data')
+    await mkdir(workspaceRoot)
+    await writeFile(join(workspaceRoot, 'state.txt'), 'before')
+    const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
+    const opened = await openCheckpoint(profile, dataDir, workspaceRoot)
+    try {
+      const fit = opened.checkpoint.forWorkspace
+      if (!fit) throw new Error('the base checkpoint fits itself to a session workspace')
+      const derived = await fit.call(opened.checkpoint, {
+        root: workspaceRoot,
+        fs: opened.bundle.fs,
+      } as never)
+      // The instance owns no resource that a rebuild would release; the derived object lives on the
+      // process adapters, so replacing the instance behind the stable facade cannot strand it.
+      expect(typeof (opened.checkpoint as { close?: unknown }).close).toBe('undefined')
+      const replacement = await openCheckpoint(profile, dataDir, workspaceRoot).then(async (next) => {
+        await next.bundle.close()
+        return next.checkpoint
+      })
+      const saved = await derived.snapshot(['state.txt'], 'turn-1/step-1')
+      expect(await derived.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(replacement).not.toBe(opened.checkpoint)
+    } finally {
+      await opened.bundle.close()
+    }
+  })
+
   it('restores a file through an in-root directory alias with real host adapters', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-checkpoint-directory-'))
     roots.push(root)

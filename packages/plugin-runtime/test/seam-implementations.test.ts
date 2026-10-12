@@ -67,15 +67,16 @@ describe('Mutable seam composition across a runtime-target tree swap', () => {
 
   it('keeps the new generation alive when the previous tree is retired afterwards', async () => {
     const first = await tree('t1')
-    const mutable = createMutableSeamImplementations<Seams>(first.root, {
+    const mutable = createMutableSeamImplementations<Seams>({
       sandbox: implementation('sandbox'),
       platform: implementation('platform'),
     })
+    mutable.adopt(first.root)
     expect(mutable.seams.principals.read()).toBe('principals:t1')
 
     // Publication moves the pointer synchronously; the old tree is closed asynchronously afterwards.
     const second = await tree('t2')
-    mutable.replaceRoot(second.root)
+    mutable.adopt(second.root)
     expect(mutable.seams.principals.read()).toBe('principals:t2')
 
     for (const dispose of first.disposers) await dispose()
@@ -86,5 +87,23 @@ describe('Mutable seam composition across a runtime-target tree swap', () => {
 
     for (const dispose of second.disposers) await dispose()
     await second.root.fiber.dispose()
+  })
+
+  it('hands out stable facades before any root exists and tells listeners when one is adopted', async () => {
+    const mutable = createMutableSeamImplementations<Seams>({
+      sandbox: implementation('sandbox'),
+      platform: implementation('platform'),
+    })
+    const facade = mutable.seams.principals
+    expect(() => facade.read()).toThrow(/seam is unavailable: principals/)
+    const changes: number[] = []
+    mutable.onChanged(() => changes.push(changes.length))
+    const only = await tree('t1')
+    mutable.adopt(only.root)
+    expect(mutable.seams.principals).toBe(facade)
+    expect(facade.read()).toBe('principals:t1')
+    expect(changes.length).toBeGreaterThanOrEqual(DYNAMIC_SEAM_NAMES.length)
+    for (const dispose of only.disposers) await dispose()
+    await only.root.fiber.dispose()
   })
 })

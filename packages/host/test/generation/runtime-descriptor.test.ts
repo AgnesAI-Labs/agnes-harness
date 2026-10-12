@@ -156,6 +156,24 @@ describe('describeSessionRuntime', () => {
     expect(descriptor.restartRequired).toEqual([])
   })
 
+  it('shows the implementation a pinned seam was bound to, not today’s selection', () => {
+    const descriptor = describeSessionRuntime(
+      input({
+        running: { catalog: oldCatalog, seams: { approval: 'strict', sandbox: 'builtin' } },
+        configured: { catalog: oldCatalog, seams: { approval: 'newest', sandbox: 'builtin' } },
+        pinnedSeams: new Set(['approval']),
+        pinnedBindings: [{ kind: 'approval', provider: 'bound-at-open', version: '1.4.0' }],
+      }),
+    )
+    expect(descriptor.seams.find((item) => item.kind === 'approval')).toEqual({
+      kind: 'approval',
+      provider: 'bound-at-open',
+      version: '1.4.0',
+      pinned: true,
+      pending: { id: 'newest', effect: 'new-sessions' },
+    })
+  })
+
   it('flags a process-scoped selection change and refused inputs as restart-required', () => {
     const next = oldCatalog.map((item) =>
       item.kind === 'sandbox' ? entry('sandbox', 'remote', '1.0.0', 'process') : item,

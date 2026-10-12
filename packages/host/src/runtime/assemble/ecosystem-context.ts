@@ -1,3 +1,4 @@
+import type { SeamImplementations } from '@agnes/core'
 import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
@@ -19,6 +20,7 @@ export function createEcosystemContexts(
   seamContexts: SeamContexts,
   skillState: SkillState,
   computerUse: ComputerUseHost,
+  seams: SeamImplementations,
 ) {
   const { deps, workspaceRoot, workspaceInvocationFor } = ctx
   const { publicationDispatch } = ctx.gates
@@ -40,7 +42,7 @@ export function createEcosystemContexts(
       : undefined
     return {
       ...baseContext(owner),
-      sandbox: ctx.live.seams.get().sandbox,
+      sandbox: seams.sandbox,
       ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
         ? { searchProvider: deps.searchProvider }
         : {}),

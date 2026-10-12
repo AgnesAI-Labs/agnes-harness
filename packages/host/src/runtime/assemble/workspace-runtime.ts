@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
-import type { Enforcement, SandboxExecBackend } from '@agnes/core'
+import type { Enforcement, SandboxExecBackend, SeamImplementations } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { privateStateRoots } from '@agnes/host-common/paths'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -193,6 +193,7 @@ export function createWorkspaceRuntimeFactory(
   proc: ProcessServices,
   presets: PresetCatalog,
   seamContexts: SeamContexts,
+  seams: SeamImplementations,
 ): WorkspaceRuntimeFactory {
   const { deps, dataDir } = ctx
   const { hotPolicy } = ctx.gates
@@ -324,7 +325,7 @@ export function createWorkspaceRuntimeFactory(
         )
         return Object.freeze({ snapshot: () => loader.snapshot() })
       },
-      openServices: (runtime) => openWorkspaceSeamContexts(ctx.live.seams.get(), runtime),
+      openServices: (runtime) => openWorkspaceSeamContexts(seams, runtime),
       closeServices: (services) => (services as WorkspaceSeamContexts).close(),
     })
   }
