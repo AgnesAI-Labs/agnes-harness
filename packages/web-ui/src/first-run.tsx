@@ -87,16 +87,18 @@ export function FirstRunGuide({
               data-complete={index < step}
               title={t(`firstRun.${name}`)}
             >
-              <span aria-hidden="true">{index + 1}</span>
-              <span className="visually-hidden">{t(`firstRun.${name}`)}</span>
+              <span className="agnes-setup-progress-dot" aria-hidden="true">
+                {index < step ? '✓' : index + 1}
+              </span>
+              <span className="agnes-setup-progress-label">{t(`firstRun.${name}`)}</span>
             </li>
           ))}
         </ol>
-        <h3>{t(`firstRun.${key}`)}</h3>
-        <p>{t(`firstRun.${key}Help`)}</p>
+        <h3 className="agnes-first-run-heading">{t(`firstRun.${key}`)}</h3>
+        <p className="agnes-first-run-lead">{t(`firstRun.${key}Help`)}</p>
         {step === 0 && (
           <>
-            <div className="agnes-settings-actions">
+            <div className="agnes-settings-actions agnes-first-run-choices">
               <Button data-testid="first-run-add" aria-pressed={connecting} onClick={onAdd} disabled={busy}>
                 {t('firstRun.add')}
               </Button>

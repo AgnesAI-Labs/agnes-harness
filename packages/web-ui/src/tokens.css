@@ -684,28 +684,140 @@ button {
   color: var(--agnes-text-secondary);
   line-height: 1.65;
 }
+/* The brand mark opens the guide: the first screen a new user sees is recognisably the product. */
+.agnes-first-run .ant-modal-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s12);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-lg);
+}
+.agnes-first-run .ant-modal-title::before {
+  content: "";
+  flex: none;
+  width: var(--s32);
+  height: var(--s32);
+  background: var(--agnes-brand-primary);
+  -webkit-mask: url("/brand-mark.png") center / contain no-repeat;
+  mask: url("/brand-mark.png") center / contain no-repeat;
+}
+/* Three named steps joined by a rail: done, current and upcoming read differently at a glance. */
 .agnes-setup-progress {
   display: flex;
-  gap: var(--s12);
+  align-items: center;
+  gap: var(--s8);
   list-style: none;
   padding: 0;
-  margin-block: var(--s20);
+  margin-block: var(--s12) var(--s24);
 }
 .agnes-setup-progress li {
   display: flex;
-  justify-content: center;
   align-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  background: var(--agnes-bg-popover);
+  gap: var(--s8);
+  min-width: 0;
   color: var(--agnes-text-secondary);
-  border: 1px solid var(--agnes-line-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-sm);
 }
-.agnes-setup-progress li[aria-current],
-.agnes-setup-progress li[data-complete="true"] {
-  color: var(--agnes-brand-primary);
+.agnes-setup-progress li + li {
+  flex: 1 1 0;
+}
+.agnes-setup-progress li + li::before {
+  content: "";
+  flex: 1 1 var(--s16);
+  min-width: var(--s16);
+  height: 1px;
+  background: var(--agnes-line-emphasis);
+  transition: background-color var(--transition);
+}
+.agnes-setup-progress li[aria-current]::before,
+.agnes-setup-progress li[data-complete="true"]::before {
+  background: var(--agnes-brand-primary);
+}
+.agnes-setup-progress-dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--s24);
+  height: var(--s24);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  background: var(--agnes-bg-popover);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--transition),
+    border-color var(--transition),
+    color var(--transition);
+}
+.agnes-setup-progress-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The current step always shows its full name; the others give way first. */
+.agnes-setup-progress li[aria-current] {
+  flex: 0 0 auto;
+  color: var(--agnes-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+.agnes-setup-progress li[aria-current] .agnes-setup-progress-dot {
+  border-color: var(--agnes-button-primary-bg);
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+}
+.agnes-setup-progress li[data-complete="true"] .agnes-setup-progress-dot {
   border-color: var(--agnes-brand-primary);
+  color: var(--agnes-brand-primary);
+  background: var(--agnes-brand-emphasis-soft);
+}
+.agnes-first-run-heading {
+  margin: 0 0 var(--s4);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-lg);
+}
+.agnes-first-run .agnes-first-run-lead {
+  margin: 0 0 var(--s16);
+}
+/* Vertical rhythm for whatever a step shows: buttons, disclosure, fields and states never touch. */
+.agnes-first-run [data-testid="first-run-guide"] > :is(.agh-btn, details, .agnes-settings-state, p) + * {
+  margin-top: var(--s12);
+}
+.agnes-first-run-choices + * {
+  margin-top: var(--s12);
+}
+.agnes-first-run details > .agh-btn {
+  margin-top: var(--s12);
+}
+.agnes-first-run [data-testid="first-run-workspace"] {
+  margin: 0;
+  padding: var(--s8) var(--s12);
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+/* The two ways to start are equal choices; the picked one is filled in, not just outlined. */
+.agnes-first-run-choices > .agh-btn {
+  flex: 1 1 12rem;
+  height: auto;
+  min-height: var(--control-height-touch);
+  padding: var(--s12) var(--s16);
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-card);
+  white-space: normal;
+}
+.agnes-first-run-choices > .agh-btn:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-focus);
+}
+.agnes-first-run-choices > .agh-btn[aria-pressed="true"]:not(:disabled) {
+  border-color: var(--agnes-input-border-focus);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-brand-emphasis-soft);
+  box-shadow: 0 0 0 1px var(--agnes-input-border-focus);
 }
 .agnes-first-run-fields {
   --ant-color-text-quaternary: var(--agnes-text-secondary);
@@ -725,7 +837,21 @@ button {
 .agnes-first-run-actions {
   justify-content: space-between;
   flex-wrap: wrap;
-  margin-top: var(--s32);
+  margin-top: var(--s24);
+  padding-top: var(--s16);
+  border-top: 1px solid var(--agnes-line-primary);
+}
+@media (max-width: 600px) {
+  /* Step names need the row: upcoming steps keep their number, the current one keeps its name. */
+  .agnes-setup-progress li:not([aria-current]) .agnes-setup-progress-label {
+    display: none;
+  }
+  .agnes-setup-progress li:not([aria-current]) {
+    flex: 0 1 auto;
+  }
+  .agnes-first-run-actions .agh-btn {
+    min-height: var(--control-height-touch);
+  }
 }
 .agnes-doctor-notice {
   display: flex;
