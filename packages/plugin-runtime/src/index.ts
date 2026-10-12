@@ -28,3 +28,13 @@ export {
 } from './author.js'
 
 export { drainDeferredToolInvocations, withDeferredToolInvocations } from './deferred-invocations.js'
+export type { WorkflowData, WorkflowOptions, WorkflowStage, WorkflowState } from './workflow/index.js'
+export {
+  defineWorkflowLoop,
+  workflowChecked,
+  workflowModelText,
+  workflowResult,
+  workflowText,
+  workflowTool,
+  workflowValue,
+} from './workflow/index.js'

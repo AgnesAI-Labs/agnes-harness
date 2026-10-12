@@ -45,6 +45,16 @@ spread a preset to declare contract-specific overrides.
 
 ### Added
 
+`@agnes/plugin-runtime` exports `defineWorkflowLoop` and the `WorkflowOptions`,
+`WorkflowStage`, `WorkflowState`, `WorkflowData` author types. The helper defines a
+staged Loop plus public tools/policy/Skills registrations, validates checkpoints,
+handles DecisionPort or official surface confirmation, original tool approval
+continuation, cancellation, generic structured input stages and optional report
+publication. JSON/tool/model convenience exports are `workflowTool`, `workflowResult`,
+`workflowValue`, `workflowText`, `workflowChecked`, `workflowModelText`. No extension-api
+port or protocol schema changes are required. FDE Loops migrate to version 5.0.0 with
+the helper's codec 1; old checkpoints are refused and retained sessions keep pinned code.
+
 `ToolMeta.modelVisible` defaults to true; false hides a tool from model schemas and
 discovery while preserving internal invocation. `requiresImageInput` defaults to false
 and restricts discovery/execution to a model with native image input. Neither grants
