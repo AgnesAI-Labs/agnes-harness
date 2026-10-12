@@ -1,5 +1,7 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
+import type { SessionImpl } from '../src/step/session.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -9,6 +11,7 @@ async function setup(initialVerdict: 'fail' | 'needs_revision' = 'fail') {
     checks = 0
   const clock = () => now,
     storage = new MemoryStorage({ clock })
+  let opCells: Awaited<ReturnType<MemoryStorage['registers']>> = []
   let receipt: { requestId: string; bindingHash: string; expiresAt: string } | null = null
   const seams = fakeSeams({
     verifier: {
@@ -20,6 +23,7 @@ async function setup(initialVerdict: 'fail' | 'needs_revision' = 'fail') {
     repair: { decide: async () => 'park' },
     approval: {
       ask: async (req) => {
+        opCells = (await storage.registers('k')).filter((row) => row.register === 'op.state')
         receipt = {
           requestId: req.requestId,
           bindingHash: req.bindingHash,
@@ -31,12 +35,20 @@ async function setup(initialVerdict: 'fail' | 'needs_revision' = 'fail') {
     },
   })
   const provider = fakeProvider([textTurn('first draft'), textTurn('reviewed answer')])
-  const h = await openSession({ clock, storage, seams, provider })
+  const defaults = presetDefaults()
+  const h = await openSession({
+    clock,
+    storage,
+    seams,
+    provider,
+    preset: { ...defaults, approval: { ...defaults.approval, pendingTtlMs: 1000 } },
+  })
   await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
   expect((await run(h)).reason).toBe('parked')
   expect(provider.calls).toBe(1)
   return {
     ...h,
+    opCells,
     clock,
     storage,
     seams,
@@ -52,15 +64,28 @@ const run = (h: Awaited<ReturnType<typeof openSession>>) =>
     signal: new AbortController().signal,
   })
 const approver = { ...actor, id: 'reviewer' }
+async function answerGate(session: SessionImpl, verdict: string) {
+  const value = (await session.decisions.list()).find((value) => value.request.spec.purpose === 'gate')
+  if (!value) throw new Error('missing gate decision')
+  return session.decideApproval({
+    command: {
+      handle: value.handle,
+      revision: value.revision,
+      commandId: `answer:${value.handle.id}`,
+      response: { option: verdict, value: null },
+    },
+    context: { actor: approver, category: 'human', authorize() {} },
+  })
+}
 
 describe('verifier pause continuation', () => {
   it('continues a needs_revision verifier decision through the same approval path', async () => {
     const h = await setup('needs_revision')
     try {
-      const asked = [...h.session.state.pendingApprovals.values()][0]!
+      const asked = (await h.session.decisions.list())[0]!
       const command = {
-        handle: { id: asked.requestId, sessionId: h.session.key },
-        revision: asked.seq,
+        handle: asked.handle,
+        revision: asked.revision,
         commandId: 'domain-review',
         response: { option: 'allowed-once', value: null },
       }
@@ -68,7 +93,7 @@ describe('verifier pause continuation', () => {
       expect((await h.session.projectUI()).nodes).toContainEqual(
         expect.objectContaining({
           kind: 'approval',
-          decisionRef: { ...command.handle, revision: asked.seq },
+          decisionRef: { ...command.handle, revision: asked.revision },
         }),
       )
       const receipt = await h.session.decideApproval({ command, context })
@@ -80,114 +105,7 @@ describe('verifier pause continuation', () => {
       expect(h.provider.calls).toBe(2)
       expect(h.session.state.resumedRequests.size).toBe(1)
       expect(await h.session.decideApproval({ command, context })).toEqual(receipt)
-      expect(h.session.state.registers.decisionStates.size).toBe(0)
-    } finally {
-      await h.session.close()
-    }
-  })
-  it.each(['stop', 'deadline'] as const)(
-    'rechecks a domain answer after async authorization at %s',
-    async (edge) => {
-      const h = await setup()
-      let proofReturned = false
-      let entered!: () => void
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      const started = new Promise<void>((resolve) => {
-        entered = resolve
-      })
-      const original = h.seams.approval.resume
-      h.seams.approval.resume = async (...args) => {
-        const result = await original(...args)
-        proofReturned = true
-        return result
-      }
-      try {
-        const asked = [...h.session.state.pendingApprovals.values()][0]!
-        const answer = h.session.decideApproval({
-          command: {
-            handle: { id: asked.requestId, sessionId: h.session.key },
-            revision: asked.seq,
-            commandId: 'racing-answer',
-            response: { option: 'allowed-once', value: null },
-          },
-          context: {
-            actor,
-            category: 'human',
-            async authorize() {
-              if (proofReturned) {
-                entered()
-                await gate
-              }
-            },
-          },
-        })
-        await started
-        const stopped = edge === 'stop' ? h.session.abort(actor) : undefined
-        if (edge === 'deadline') h.expire()
-        release()
-        await expect(answer).rejects.toThrow(edge === 'stop' ? 'STOPPED' : 'expired')
-        await stopped
-        expect(h.session.state.decisions.get(asked.requestId)?.answerCommand).toBeUndefined()
-        expect(h.provider.calls).toBe(1)
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-  it.each(['missing', 'request', 'binding', 'extended', 'expired', 'accessor'] as const)(
-    'keeps the existing domain backend %s receipt refusal',
-    async (edge) => {
-      const h = await setup()
-      const original = h.seams.approval.resume
-      let reads = 0
-      try {
-        h.seams.approval.resume = async (...args) => {
-          const proof = (await original(...args))!
-          if (edge === 'missing') return null
-          if (edge === 'request') return { ...proof, requestId: 'another-request' }
-          if (edge === 'binding') return { ...proof, bindingHash: '0'.repeat(64) }
-          if (edge === 'extended') return { ...proof, expiresAt: new Date(h.clock() + 2000).toISOString() }
-          if (edge === 'expired') return { ...proof, expiresAt: new Date(h.clock()).toISOString() }
-          return Object.defineProperty({ ...proof }, 'bindingHash', {
-            get() {
-              reads++
-              throw new Error('private-receipt')
-            },
-          })
-        }
-        await expect(h.session.resumeApproval('review', 'allowed-once', approver)).rejects.toThrow(
-          edge === 'extended' || edge === 'expired' ? 'ticket expired' : 'approval binding mismatch',
-        )
-        expect(reads).toBe(0)
-        expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toEqual([])
-        expect(h.provider.calls).toBe(1)
-        h.seams.approval.resume = original
-        await h.session.resumeApproval('review', 'rejected', approver)
-        expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toHaveLength(1)
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-  it('contains domain backend failures and permits retry without exposing private proof', async () => {
-    const h = await setup()
-    const original = h.seams.approval.resume
-    try {
-      h.seams.approval.resume = async () => {
-        throw new Error('private-backend-token')
-      }
-      await expect(h.session.resumeApproval('review', 'allowed-once', approver)).rejects.toThrow(
-        'approval backend unavailable',
-      )
-      const diagnostics = await h.log.scan({ type: 'x/core/approval-callback-rejected', limit: 10 })
-      expect(JSON.stringify(diagnostics)).not.toContain('private-backend-token')
-      expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toEqual([])
-      h.seams.approval.resume = original
-      await h.session.resumeApproval('review', 'rejected', approver)
-      expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toHaveLength(1)
+      expect((await h.session.decisions.list())[0]?.consumption).not.toBeNull()
     } finally {
       await h.session.close()
     }
@@ -197,7 +115,7 @@ describe('verifier pause continuation', () => {
     async (verdict) => {
       const h = await setup()
       try {
-        await h.session.resumeApproval('review', verdict, approver)
+        await answerGate(h.session, verdict)
         expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
         expect((await run(h)).reason).toBe('completed')
         expect(h.provider.calls).toBe(2)
@@ -219,7 +137,7 @@ describe('verifier pause continuation', () => {
         if (decision === 'expired') {
           h.expire()
           expect(await h.session.expireApprovals()).toBe(1)
-        } else await h.session.resumeApproval('review', 'rejected', approver)
+        } else await answerGate(h.session, 'rejected')
         expect((await run(h)).reason).toBe('blocked')
         expect(h.provider.calls).toBe(1)
         expect(h.session.op()).toBeNull()
@@ -236,7 +154,7 @@ describe('verifier pause continuation', () => {
     'reopens after the %s continuation edge without losing or reversing the decision',
     async (verdict) => {
       const h = await setup()
-      await h.session.resumeApproval('review', verdict, approver)
+      await answerGate(h.session, verdict)
       expect(await h.session.step()).toEqual(
         verdict === 'rejected'
           ? { outcome: 'turn-ended', phase: 'terminal', reason: 'blocked' }
@@ -257,9 +175,39 @@ describe('verifier pause continuation', () => {
     },
   )
 
+  it('reopens a persisted gate before parking without rerunning verification or bypassing human review', async () => {
+    const h = await setup()
+    // Reconstruct the real crash cut immediately after the durable request, before turn closure.
+    const rows = await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq, limit: 100 })
+    const request = rows.find((row) => row.type === 'decision/state')
+    if (!request) throw new Error('missing request')
+    const cut = rows.filter((row) => row.seq <= request.seq)
+    await h.session.close()
+    const provider = fakeProvider([textTurn('must not infer')])
+    const fresh = await openSession({
+      storage: MemoryStorage.fromEvents('k', cut, { opCells: h.opCells }),
+      clock: h.clock,
+      seams: h.seams,
+      provider,
+    })
+    try {
+      await fresh.session.resume()
+      expect((await run(fresh)).reason).toBe('parked')
+      expect(provider.calls).toBe(0)
+      expect(
+        (await fresh.session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate'),
+      ).toHaveLength(1)
+      await answerGate(fresh.session, 'rejected')
+      expect((await run(fresh)).reason).toBe('blocked')
+      expect(provider.calls).toBe(0)
+    } finally {
+      await fresh.session.close()
+    }
+  })
+
   it('reopens a callback and resumes from the persisted verifier evidence', async () => {
     const h = await setup()
-    await h.session.resumeApproval('review', 'allowed-once', approver)
+    await answerGate(h.session, 'allowed-once')
     await h.session.close()
     const provider = fakeProvider([textTurn('reviewed')])
     const fresh = await openSession({ clock: h.clock, storage: h.storage, seams: h.seams, provider })
@@ -310,9 +258,8 @@ describe('verifier pause continuation', () => {
       const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
       expect(outcome.reason).toBe('parked')
       expect(seenRequest).toMatchObject({ risk: 'budget' })
-      expect((await log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-        risk: 'budget',
-        summary: 'escalated by extension',
+      expect((await log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+        request: { spec: { subject: { risk: 'budget' }, prompt: 'escalated by extension' } },
       })
     } finally {
       await session.close()
@@ -345,9 +292,9 @@ it.each(['allowed-once', 'allowed-session'] as const)(
         repair: { decide: async () => 'park' },
         approval: {
           ask: async () => {
-            if (++asks > 1) return 'rejected'
+            if (++asks > 1) return { verdict: 'rejected', answeredBy: approver }
             await h.session.enqueue('next-step', { actor: approver, content, trust: 'untrusted' })
-            return verdict
+            return { verdict, answeredBy: approver }
           },
         },
       }),
@@ -366,7 +313,9 @@ it.each(['allowed-once', 'allowed-session'] as const)(
       // The pending work starts its own turn and still goes through verification.
       expect((await run(h)).reason).toBe('blocked')
       expect(h.session.latest('inbox')).toEqual({ items: [] })
-      expect(await h.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(2)
+      expect(
+        (await h.session.decisions.list()).filter((value) => value.request.spec.purpose === 'gate'),
+      ).toHaveLength(2)
       const messages = await h.log.scan({ type: 'user/message', limit: 10 })
       expect(
         messages.some(

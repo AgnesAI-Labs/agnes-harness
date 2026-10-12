@@ -1,4 +1,5 @@
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
+import type { DecisionSnapshot } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import { deliverDecision } from './decision-delivery.js'
 import type { DecisionSource } from './decisions.js'
@@ -42,4 +43,17 @@ export async function requestDomainDecision(
     source.alive,
   )
   return { ...delivered, source }
+}
+
+/** The caller appends this acknowledgement beside the domain's own phase edge. */
+export function domainDecisionEvents(s: SessionImpl, snapshot: DecisionSnapshot, source: DecisionSource) {
+  if (snapshot.result?.reason !== 'answered' || snapshot.invalidation || snapshot.consumption) return []
+  return [
+    ...s.decisions.consumptionEvents([snapshot.handle], source, null),
+    s.ev(
+      'x/core/decision-checkpoint',
+      { handle: snapshot.handle, operationId: source.operationId },
+      { ignorable: true },
+    ),
+  ]
 }

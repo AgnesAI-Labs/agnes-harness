@@ -1,11 +1,12 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { type CheckpointPhase, type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
-import { decidedFields, isPending } from '@agnes/core-effects/effects/approval-answer'
+import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState, Inbox, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
 import { minimumContextBudget } from '@agnes/protocol'
 import { quoteBudget } from '../../step/calibrate.js'
+import { domainDecisionEvents, requestDomainDecision } from '../../step/domain-decision.js'
 import { claimFrom, inboxEvent } from '../../step/inbox.js'
 import { replacementEffects, runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type {
@@ -260,7 +261,23 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
 /** The gate a turn has to pass to be allowed to finish. */
 async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
-  const hook = await s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' })
+  const persisted = [...s.state.registers.decisionStates.values()]
+    .map((cell) => cell.value)
+    .find(
+      (value) =>
+        value.request.owner === 'core/gate' &&
+        value.request.sourcePackage === '@agnes/core' &&
+        value.request.lane === s.lane &&
+        !value.consumption &&
+        (value.request.spec.subject as { turn?: number; step?: number }).turn === op.meta.turn &&
+        (value.request.spec.subject as { step?: number }).step === op.step,
+    )
+  const subject = persisted?.request.spec.subject as
+    | { verdict: VerifierVerdict['verdict']; reasons: string[]; risk: 'always' | 'budget' | 'unknown' }
+    | undefined
+  const hook = persisted
+    ? { action: 'complete' as const }
+    : await s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' })
   if (hook.action === 'continue') {
     await s.transition(
       [s.ev('user/message', { content: [{ type: 'text', text: hook.note }], kind: 'runtime_context' })],
@@ -284,7 +301,9 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     disclosed: discloseTools(s),
     model: { slot: 'primary', route, model },
   }
-  const verdict = await s.d.runtime.verify('turn', await turnVerifyInput(s, op.meta.triggerSeq), s.ac.signal)
+  const verdict = subject
+    ? { verdict: subject.verdict, reasons: subject.reasons }
+    : await s.d.runtime.verify('turn', await turnVerifyInput(s, op.meta.triggerSeq), s.ac.signal)
   const signal = s.ev('verifier/signal', {
     scope: 'turn',
     tier: s.preset.verifier.defaultTier,
@@ -305,10 +324,9 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       lane: s.lane,
     })
   ).map((e) => e.data as unknown as RepairDecision)
-  const decision = await s.d.runtime.repairDecide(
-    { turn: op.meta.turn, round: history.length + 1, history },
-    verdict,
-  )
+  const decision = persisted
+    ? 'park'
+    : await s.d.runtime.repairDecide({ turn: op.meta.turn, round: history.length + 1, history }, verdict)
   const repairEvents = (verdictSeq: Seq): EventInput[] => [
     signal,
     s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
@@ -323,8 +341,8 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     const asked = {
       requestId,
       kind: 'unknown-outcome' as const,
-      summary: `verifier failed: ${verdict.reasons.join('; ')}`,
-      risk: 'unknown' as const,
+      summary: persisted?.request.spec.prompt ?? `verifier failed: ${verdict.reasons.join('; ')}`,
+      risk: subject?.risk ?? ('unknown' as const),
       bindingHash: '',
       deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
     }
@@ -333,19 +351,20 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
     // names the approval's own kind and `argv` carries nothing. extension-api's ApprovalRequest risk
     // enum has no 'unknown' member (the value this call site's `asked.risk` actually carries); this
     // approval is unconditional regardless of risk heuristics, which 'always' already means.
-    const overridden = s.hooks.approvalRequest
-      ? (
-          await s.hooks.approvalRequest({
-            request: {
-              tool: asked.kind,
-              argv: null,
-              risk: 'always',
-              actor: s.d.actor,
-              summary: asked.summary,
-            },
-          })
-        ).request
-      : undefined
+    const overridden =
+      !persisted && s.hooks.approvalRequest
+        ? (
+            await s.hooks.approvalRequest({
+              request: {
+                tool: asked.kind,
+                argv: null,
+                risk: 'always',
+                actor: s.d.actor,
+                summary: asked.summary,
+              },
+            })
+          ).request
+        : undefined
     const finalAsked = overridden
       ? {
           ...asked,
@@ -353,7 +372,19 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
           ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
         }
       : asked
-    const answer = await s.askApprovalAnswer(
+    const review = await requestDomainDecision(
+      s,
+      'gate',
+      `${op.meta.turn}:${op.step}:${history.length + 1}`,
+      {
+        turn: op.meta.turn,
+        step: op.step,
+        triggerSeq: op.meta.triggerSeq,
+        round: history.length + 1,
+        verdict: verdict.verdict,
+        reasons: verdict.reasons,
+        risk: finalAsked.risk,
+      },
       {
         ...finalAsked,
         sessionKey: s.key,
@@ -365,16 +396,26 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       },
       s.ac.signal,
     )
-    if (isPending(answer)) {
+    if (review.park && review.pending) {
       await s.endTurn('parked', {
-        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', { ...finalAsked, pending: answer })],
+        events: (seq) => [...repairEvents(seq), review.park!],
       })
       return { phase: 'terminal', reason: 'parked' }
     }
-    const decided = s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' })
-    if (!answer.verdict.startsWith('allowed')) {
+    if (review.park)
+      await s.decisions.withdraw(
+        review.snapshot.handle,
+        review.source,
+        (review.park.data as { waitEndedBy: string }).waitEndedBy,
+      )
+    const allowed =
+      review.snapshot.result?.reason === 'answered' &&
+      !review.snapshot.invalidation &&
+      review.snapshot.result.response.option.startsWith('allowed')
+    const decisionEvents = () => domainDecisionEvents(s, review.snapshot, review.source)
+    if (!allowed) {
       await s.endTurn('blocked', {
-        events: (seq) => [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided],
+        events: (seq) => [...repairEvents(seq), ...decisionEvents()],
       })
       return { phase: 'terminal', reason: 'blocked' }
     }
@@ -396,7 +437,7 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
               }),
             ]
           : []
-        return [...repairEvents(seq), s.ev('approval/asked', finalAsked), decided, ...pending]
+        return [...repairEvents(seq), ...decisionEvents(), ...pending]
       },
     })
     return { phase: 'terminal', reason: 'completed' }

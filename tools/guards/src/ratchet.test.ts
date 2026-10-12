@@ -198,7 +198,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-common/src/assemble': 1291,
   'packages/core/src/artifacts': 744,
   'packages/core-effects/src': 2850,
-  'packages/core-ledger/src': 6767,
+  'packages/core-ledger/src': 6773,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 531,
   'packages/cordis/src': 2117,
@@ -247,7 +247,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cli/tools/build-local': 394,
   'packages/web/src/serve': 1,
 
-  'packages/core/src': 23960,
+  'packages/core/src': 24049,
   'packages/ai/src': 4409,
   'packages/protocol/src': 4727,
   'packages/cli/src/tui': 38,

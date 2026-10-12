@@ -208,16 +208,22 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         if (durable) {
           if (
             d?.trigger !== 'approval-resume' ||
-            durable.request.owner !== 'core/tool-permission' ||
+            !['core/tool-permission', 'core/gate'].includes(durable.request.owner) ||
             durable.request.sourcePackage !== '@agnes/core' ||
             durable.request.lane !== lane ||
             durable.consumption ||
-            durable.request.operationId !== (d?.continues as { toolUseId?: string })?.toolUseId
+            (durable.request.owner === 'core/tool-permission' &&
+              durable.request.operationId !== (d?.continues as { toolUseId?: string })?.toolUseId)
           )
             throw new CoreError('E_RELATION', 'continuation does not match the original decision gate', {
               seq: e.seq,
               lane,
             })
+          if (durable.request.owner === 'core/gate') {
+            if (s.resumedRequests.has(requestId as string))
+              throw new CoreError('E_RELATION', 'approval decision already consumed')
+            resumed().add(requestId as string)
+          }
         } else {
           const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
           if (

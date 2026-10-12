@@ -1,7 +1,6 @@
 import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
 import { CoreError } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import type { ApprovalAsked } from '@agnes/core-ledger/reduce/shapes'
 import type { ExecutionDomain, ResolvedToolCallPolicy } from '@agnes/protocol'
 import {
   hasAuthenticToolPolicyHash,
@@ -65,21 +64,21 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         ])
       })
   }
-  // Unmigrated verifier work retains its existing domain continuation.
-  for (const [requestId, decision] of s.state.decisions) {
+  for (const { value } of s.state.registers.decisionStates.values()) {
     if (
-      decision.lane !== s.lane ||
-      !['callback', 'timeout'].includes(decision.via) ||
-      s.state.resumedRequests.has(requestId) ||
-      !decision.askedSeq
+      value.request.owner !== 'core/gate' ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.lane !== s.lane ||
+      value.consumption ||
+      s.state.resumedRequests.has(value.handle.id)
     )
       continue
-    const [row] = await s.d.log.scan({ fromSeq: decision.askedSeq, toSeq: decision.askedSeq, lane: s.lane })
-    const asked = row?.data as ApprovalAsked | undefined
-    if (asked?.kind === 'tool')
-      throw new CoreError('E_RELATION', 'reset-required: obsolete tool approval record')
-    if (asked?.kind === 'unknown-outcome' && !asked.toolUseId)
-      return continueVerifier(s, requestId, decision.askedSeq, decision.verdict.startsWith('allowed'))
+    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
+      return 'waiting'
+    const snapshot = await s.decisions.get(value.handle)
+    if (!snapshot.result && !snapshot.invalidation) return 'waiting'
+    const continuation = await continueVerifier(s, snapshot)
+    if (continuation !== false) return continuation
   }
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (
