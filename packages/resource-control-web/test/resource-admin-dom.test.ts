@@ -38,6 +38,7 @@ let failReload: boolean
 let failPolling: boolean
 let pendingPage: { promise: Promise<Response>; resolve: (response: Response) => void } | undefined
 let resourceMount: {
+  ready: Promise<void>
   dispose(): void
   reload(): Promise<void>
   sync(scope: { tab: 'skills' | 'mcp'; workspaceId?: string }, options?: { refresh?: boolean }): Promise<void>
@@ -206,6 +207,7 @@ beforeEach(async () => {
   )
   const { mountResourceAdmin } = await import('../src/admin.js')
   resourceMount = mountResourceAdmin()
+  await resourceMount.ready
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Skill'))
   byId('mcp-tab').click()
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Fixture MCP'))
@@ -447,6 +449,22 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
   expect(byId('resource-notice').textContent).toContain('enable it')
   expect(byId('resource-notice').textContent).not.toContain('trust')
   expect(byId('resource-notice').dataset.kind).toBe('success')
+})
+
+it('uses a published-skill link to open the filtered skills list', async () => {
+  await resourceMount.sync({ tab: 'mcp' })
+  resourceMount.dispose()
+  window.history.replaceState({}, '', '/?settings=skills&skill=published-skill')
+  try {
+    const { mountResourceAdmin } = await import('../src/admin.js')
+    resourceMount = mountResourceAdmin()
+    await resourceMount.ready
+    await vi.waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('#skill-search')?.value).toBe('published-skill'),
+    )
+  } finally {
+    window.history.replaceState({}, '', '/')
+  }
 })
 
 it('says why a skill source produced no results instead of only that it failed', async () => {

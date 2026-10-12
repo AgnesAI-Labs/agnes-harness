@@ -10,6 +10,7 @@ import {
   Icon,
   ListRow,
   MetaText,
+  SettingsDetails,
   SettingsState,
   SettingsToolbar,
   Tag,
@@ -75,7 +76,8 @@ export function CandidateInbox({
     [error, setError] = useState(''),
     [loaded, setLoaded] = useState(false),
     [busy, setBusy] = useState(false),
-    [originTitle, setOriginTitle] = useState<string>()
+    [originTitle, setOriginTitle] = useState<string>(),
+    [published, setPublished] = useState<AuthoringCandidate>()
   const [facts, setFacts] = useState<Record<string, ListFacts>>({})
   const review = useRef<HTMLElement>(null)
   const refreshFacts = useRef<(() => Promise<boolean>) | undefined>(undefined)
@@ -203,10 +205,16 @@ export function CandidateInbox({
     setBusy(true)
     try {
       const value = await fn()
-      setSelected(value)
-      await refresh()
       setError('')
-      if (value.state === 'published') await onPublished()
+      if (value.state === 'published') {
+        setSelected(undefined)
+        setPublished(value)
+        await onPublished().catch(() => setError(t('candidates.unavailable')))
+        await refresh().catch(() => setError(t('candidates.unavailable')))
+      } else {
+        setSelected(value)
+        await refresh()
+      }
     } catch {
       setError(t('candidates.stale'))
       await refresh().catch(() => undefined)
@@ -244,6 +252,83 @@ export function CandidateInbox({
       a.packageId.localeCompare(b.packageId) ||
       a.state.localeCompare(b.state),
   )
+  const terminal = (value: AuthoringCandidateSummary) =>
+    ['published', 'rejected', 'interrupted'].includes(value.state)
+  const pendingItems = ordered.filter((value) => !terminal(value))
+  const history = ordered.filter(terminal)
+  const renderItem = (value: AuthoringCandidateSummary) => (
+    <li key={value.candidateId} data-candidate-id={value.candidateId}>
+      {scope === 'skill' ? (
+        <ListRow
+          icon={<Icon name="file-text" size={20} />}
+          title={
+            resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.displayName ??
+            facts[value.candidateId]?.skillText?.name ??
+            value.packageId
+          }
+          description={
+            resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.summary ??
+            facts[value.candidateId]?.skillText?.summary
+          }
+          meta={
+            <>
+              <span>{facts[value.candidateId]?.sourceTitle ?? t('candidates.untitledSession')}</span>
+              {!['review', 'failed', 'interrupted'].includes(value.state) && (
+                <MetaText>{t('candidates.state.' + value.state)}</MetaText>
+              )}
+              {facts[value.candidateId] && (
+                <CandidateListFacts
+                  identity={facts[value.candidateId]!.identity}
+                  startedAt={facts[value.candidateId]!.startedAt}
+                  t={t}
+                />
+              )}
+            </>
+          }
+          status={
+            value.state === 'review' || ['failed', 'interrupted'].includes(value.state) ? (
+              <Tag tone={tone(value.state) === 'bad' ? 'bad' : 'warn'}>
+                {t('candidates.state.' + value.state)}
+              </Tag>
+            ) : undefined
+          }
+          actions={
+            <Button
+              data-testid="candidate-open"
+              disabled={!api || busy}
+              onClick={() => {
+                if (api) void navigate(async () => setSelected(await api.candidatesShow(value.candidateId)))
+              }}
+            >
+              {t('candidates.review')}
+            </Button>
+          }
+        />
+      ) : (
+        <Button
+          data-testid="candidate-open"
+          disabled={busy}
+          onClick={() => {
+            if (api) void navigate(async () => setSelected(await api.candidatesShow(value.candidateId)))
+          }}
+        >
+          <span>
+            <strong>{value.packageId}</strong>
+            {facts[value.candidateId] && facts[value.candidateId]!.candidateHash === value.candidateHash ? (
+              <CandidateListFacts
+                identity={facts[value.candidateId]!.identity}
+                startedAt={facts[value.candidateId]!.startedAt}
+                t={t}
+              />
+            ) : (
+              <span className="candidate-list-facts">{t('candidates.metadataUnavailable')}</span>
+            )}
+          </span>
+          <Badge tone={tone(value.state)}>{t('candidates.state.' + value.state)}</Badge>
+        </Button>
+      )}
+    </li>
+  )
   const renderReview = reviewSurface ?? ((content: ReactNode) => content)
   const title = originTitle || t('candidates.untitledSession')
   const permissions = selected ? addedPermissions(selected) : undefined
@@ -255,7 +340,7 @@ export function CandidateInbox({
         : ['failed', 'interrupted'].includes(state)
           ? ('bad' as const)
           : ('off' as const)
-  if (loaded && !visibleItems.length && !selected && !error && scope !== 'skill') return null
+  if (loaded && !visibleItems.length && !selected && !published && !error && scope !== 'skill') return null
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
@@ -280,6 +365,21 @@ export function CandidateInbox({
           {t('candidates.refresh')}
         </Button>
       </SettingsToolbar>
+      {published && (
+        <SettingsState tone="success" role="status" data-testid="candidate-published">
+          <p>{t('candidates.publishSuccess')}</p>
+          <a
+            data-testid="candidate-published-link"
+            href={
+              candidateIdentity(published).type === 'skill'
+                ? `/?${new URLSearchParams({ settings: 'skills', skill: candidateSkillText(published).name ?? published.packageId })}`
+                : '/admin/plugins'
+            }
+          >
+            {t('candidates.viewPublished')}: {candidateSkillText(published).name ?? published.packageId}
+          </a>
+        </SettingsState>
+      )}
       {error && (!selected || !reviewSurface) && (
         <p role="alert" data-testid="candidate-error">
           {error}
@@ -300,87 +400,16 @@ export function CandidateInbox({
             />
           ) : (
             <ul className="candidate-list" data-testid="candidate-list">
-              {ordered.map((value) => (
-                <li key={value.candidateId} data-candidate-id={value.candidateId}>
-                  {scope === 'skill' ? (
-                    <ListRow
-                      icon={<Icon name="file-text" size={20} />}
-                      title={
-                        resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.displayName ??
-                        facts[value.candidateId]?.skillText?.name ??
-                        value.packageId
-                      }
-                      description={
-                        resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.summary ??
-                        facts[value.candidateId]?.skillText?.summary
-                      }
-                      meta={
-                        <>
-                          <span>
-                            {facts[value.candidateId]?.sourceTitle ?? t('candidates.untitledSession')}
-                          </span>
-                          {!['review', 'failed', 'interrupted'].includes(value.state) && (
-                            <MetaText>{t('candidates.state.' + value.state)}</MetaText>
-                          )}
-                          {facts[value.candidateId] && (
-                            <CandidateListFacts
-                              identity={facts[value.candidateId]!.identity}
-                              startedAt={facts[value.candidateId]!.startedAt}
-                              t={t}
-                            />
-                          )}
-                        </>
-                      }
-                      status={
-                        value.state === 'review' || ['failed', 'interrupted'].includes(value.state) ? (
-                          <Tag tone={tone(value.state) === 'bad' ? 'bad' : 'warn'}>
-                            {t('candidates.state.' + value.state)}
-                          </Tag>
-                        ) : undefined
-                      }
-                      actions={
-                        <Button
-                          data-testid="candidate-open"
-                          disabled={!api || busy}
-                          onClick={() => {
-                            if (api)
-                              void navigate(async () =>
-                                setSelected(await api.candidatesShow(value.candidateId)),
-                              )
-                          }}
-                        >
-                          {t('candidates.review')}
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <Button
-                      data-testid="candidate-open"
-                      disabled={busy}
-                      onClick={() => {
-                        if (api)
-                          void navigate(async () => setSelected(await api.candidatesShow(value.candidateId)))
-                      }}
-                    >
-                      <span>
-                        <strong>{value.packageId}</strong>
-                        {facts[value.candidateId] &&
-                        facts[value.candidateId]!.candidateHash === value.candidateHash ? (
-                          <CandidateListFacts
-                            identity={facts[value.candidateId]!.identity}
-                            startedAt={facts[value.candidateId]!.startedAt}
-                            t={t}
-                          />
-                        ) : (
-                          <span className="candidate-list-facts">{t('candidates.metadataUnavailable')}</span>
-                        )}
-                      </span>
-                      <Badge tone={tone(value.state)}>{t('candidates.state.' + value.state)}</Badge>
-                    </Button>
-                  )}
-                </li>
-              ))}
+              {pendingItems.map(renderItem)}
             </ul>
+          )}
+          {!!history.length && (
+            <SettingsDetails
+              title={t('candidates.history', { count: history.length })}
+              data-testid="candidate-history"
+            >
+              <ul className="candidate-list">{history.map(renderItem)}</ul>
+            </SettingsDetails>
           )}
         </>
       ) : (
@@ -501,21 +530,25 @@ export function CandidateInbox({
                   {t('candidates.submit')}
                 </Button>
               )}
-              <Button
-                appearance="primary"
-                data-testid="candidate-approve"
-                disabled={!api || !canReview || busy || selected.state !== 'review'}
-                onClick={() => decide(selected, true)}
-              >
-                {t('candidates.approve')}
-              </Button>
-              <Button
-                data-testid="candidate-reject"
-                disabled={!api || !canReview || busy || selected.state !== 'review'}
-                onClick={() => decide(selected, false)}
-              >
-                {t('candidates.reject')}
-              </Button>
+              {selected.state === 'review' && (
+                <>
+                  <Button
+                    appearance="primary"
+                    data-testid="candidate-approve"
+                    disabled={!api || !canReview || busy || selected.state !== 'review'}
+                    onClick={() => decide(selected, true)}
+                  >
+                    {t('candidates.approve')}
+                  </Button>
+                  <Button
+                    data-testid="candidate-reject"
+                    disabled={!api || !canReview || busy || selected.state !== 'review'}
+                    onClick={() => decide(selected, false)}
+                  >
+                    {t('candidates.reject')}
+                  </Button>
+                </>
+              )}
             </SettingsToolbar>
           </section>,
           () => setSelected(undefined),

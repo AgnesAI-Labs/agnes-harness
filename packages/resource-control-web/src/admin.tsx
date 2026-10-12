@@ -136,6 +136,7 @@ class ResourceAdminPage {
   constructor(workspaceId?: string, tab: Tab = 'skills', locale?: UiLocaleSource) {
     this.#workspaceId = normalizeWorkspaceId(workspaceId)
     this.#tab = tab
+    this.#skillQuery = new URLSearchParams(location.search).get('skill')?.slice(0, 128) ?? ''
     if (locale) this.#locale = locale
     else {
       const documentLocale = createDocumentLocaleSource(resourceAdminCatalogs)

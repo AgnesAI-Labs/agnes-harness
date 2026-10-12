@@ -55,3 +55,5 @@ agh plugins candidates reject <candidate-id> --candidate-hash <sha256> --review-
 Markdown Skill 是包内数据，全文与插件快照一起审阅。Skill 提及的脚本仍需普通工具审批。人工维护的[本地插件](local-plugins.zh-CN.md)与[热重载](hot-reload.zh-CN.md)继续作为明确的开发者信任路径；作者 helper 不向其中写草稿。已授权 shell 仍拥有正常文件系统权限。
 
 候选只含文本（最多 64 文件、每文件 128 KiB、总计 256 KiB），每 profile 最多 128 个持久候选。创建失败会清理未发布的树；不可读或已损坏的记录会从列表隔离；没有有效记录的未完成目录不占持久候选配额。二进制资产和依赖安装走普通作者／包工作流；目前没有候选垃圾回收命令。内置实现位于 `packages/package-manager/bundled-plugins/plugin-helper`；creator 资源生成命令为 `node packages/base/extensions/plugin-creator/gen-assets.mjs`。
+
+Web 优先显示待处理候选，已发布、已拒绝和已中断的审阅放在折叠历史中。发布成功后关闭详情，并显示已安装技能或插件的链接。终态详情保留文件与来源，不再显示批准/拒绝按钮。

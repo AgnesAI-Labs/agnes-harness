@@ -3,6 +3,9 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const candidatesCatalog: LocaleCatalog = {
   en: {
     'candidates.loading': 'Loading proposals…',
+    'candidates.publishSuccess': 'Published successfully.',
+    'candidates.viewPublished': 'View published item',
+    'candidates.history': 'Review history ({count})',
     'candidates.viewDrafting': 'View drafting session',
     'candidates.type.plugin': 'Plugin',
     'candidates.type.skill': 'Skill',
@@ -89,6 +92,9 @@ export const candidatesCatalog: LocaleCatalog = {
     'candidates.state.interrupted': 'Interrupted; check actual state',
   },
   'zh-CN': {
+    'candidates.publishSuccess': '已成功发布。',
+    'candidates.viewPublished': '查看已发布内容',
+    'candidates.history': '审阅历史（{count}）',
     'candidates.loading': '正在读取提议…',
     'candidates.summaryNewSkill': 'Agent 在「{session}」中起草了新技能。',
     'candidates.summaryUpdateSkill': 'Agent 在「{session}」中起草了技能更新。',

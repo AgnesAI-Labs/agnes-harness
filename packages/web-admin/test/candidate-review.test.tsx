@@ -324,3 +324,77 @@ it.each([
     }
   },
 )
+
+it('closes a published review, links to the skill, and keeps terminal history without dead decisions', async () => {
+  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  scope.IS_REACT_ACT_ENVIRONMENT = true
+  const reviewed = {
+    ...candidate,
+    state: 'review' as const,
+    reviewHash: 'review-hash',
+    preview: { ...preview, kinds: ['skills'] as ['skills'] },
+    sourceFiles: [
+      ...candidate.sourceFiles,
+      { path: 'SKILL.md', content: '---\nname: published-skill\ndescription: Synthetic skill\n---\nBody' },
+    ],
+  }
+  const published = { ...reviewed, state: 'published' as const }
+  const rejected = { ...candidate, candidateId: 'history', state: 'rejected' as const }
+  let items = [reviewed, rejected] as AuthoringCandidate[]
+  let run: (() => Promise<void>) | undefined
+  const api = {
+    candidatesList: async () => ({ candidates: items }),
+    candidatesShow: async (id: string) => items.find((value) => value.candidateId === id),
+    candidatesDecide: async () => {
+      items = [published, rejected]
+      return published
+    },
+  } as unknown as PluginAdminApi
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        <CandidateInbox
+          api={api}
+          canReview
+          canTest
+          t={t}
+          confirm={(value) => {
+            run = value.run
+          }}
+          onPublished={async () => undefined}
+          reviewSurface={(content) => <div data-testid="review-dialog">{content}</div>}
+        />,
+      ),
+    )
+    expect(host.querySelector('[data-testid="candidate-list"]')?.querySelectorAll('li')).toHaveLength(1)
+    expect(host.querySelector<HTMLDetailsElement>('[data-testid="candidate-history"]')?.open).toBe(false)
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="candidate-list"] [data-testid="candidate-open"]')
+        ?.click(),
+    )
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.click())
+    await act(async () => run?.())
+    expect(host.querySelector('[data-testid="review-dialog"]')).toBeNull()
+    expect(host.querySelector('[data-testid="candidate-published"]')?.textContent).toContain('发布')
+    expect(host.querySelector<HTMLAnchorElement>('[data-testid="candidate-published-link"]')?.href).toContain(
+      'settings=skills',
+    )
+    const history = host.querySelector<HTMLDetailsElement>('[data-testid="candidate-history"]')
+    expect(history?.open).toBe(false)
+    await act(async () => {
+      if (history) history.open = true
+      host
+        .querySelector<HTMLButtonElement>('[data-candidate-id="history"] [data-testid="candidate-open"]')
+        ?.click()
+    })
+    expect(host.querySelector('[data-testid="candidate-approve"]')).toBeNull()
+    expect(host.querySelector('[data-testid="candidate-reject"]')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
