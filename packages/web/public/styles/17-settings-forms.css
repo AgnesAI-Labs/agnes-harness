@@ -608,6 +608,10 @@
   border-top: 1px solid var(--agnes-line-primary);
   background: var(--agnes-bg-surface);
 }
+/* Actions end at the trailing edge whether or not a status sits on the left. */
+.config-detail-footer > .agnes-settings-actions {
+  margin-inline-start: auto;
+}
 #config-account-guard {
   max-width: 27rem;
   color: var(--agnes-text-tertiary);
