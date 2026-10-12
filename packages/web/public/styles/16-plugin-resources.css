@@ -917,6 +917,11 @@
 #config-form:has(#settings-section-tabs:not([hidden])) [data-testid="plugin-browser"] > .agnes-ui-tabs {
   display: none;
 }
+/* That header sits below the section tabs, clear of the close button, so it keeps the column's
+   edges instead of the inset reserved for headers that share a row with it. */
+#config-form [data-testid="plugin-browser"] > .agnes-settings-page-heading {
+  padding-inline: 0;
+}
 
 /* A selected agent proposal is a review view with its own primary action. */
 #plugin-list:has([data-testid="candidate-review"]) [data-testid="plugin-browser"] {
