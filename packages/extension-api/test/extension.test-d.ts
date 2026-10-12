@@ -19,7 +19,6 @@ describe('ExtensionAPI surface', () => {
       | 'registerResource'
       | 'providers'
       | 'events'
-      | 'latestExtEvent'
       | 'ctx'
     >()
   })
@@ -27,14 +26,6 @@ describe('ExtensionAPI surface', () => {
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerSeam' as never)
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerProvider' as never)
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerOperation' as never)
-  })
-  it('latestExtEvent reads back this extension’s own most recent event (type-only; host wiring is I5)', () => {
-    // Optional: the two existing ExtensionAPI construction sites (host's old stub and the
-    // not-yet-wired Task22 implementation) don't implement it yet, and this task doesn't touch host.
-    expectTypeOf<ExtensionAPI>().toHaveProperty('latestExtEvent')
-    expectTypeOf<NonNullable<ExtensionAPI['latestExtEvent']>>().toEqualTypeOf<
-      (name: string) => JsonValue | undefined
-    >()
   })
   it('ctx exposes only id / version / trust / lease / log / signal / info / platform', () => {
     expectTypeOf<keyof ExtensionContext>().toEqualTypeOf<

@@ -195,7 +195,7 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 - `LoopRequest` 仍是带品牌的 `Readonly<RequestBody>`，route/hash/contract 字段可读，但不能提交伪造 stamps；`events.emit` 接受任意事件名。这些宽泛低层接口保持 experimental。
 - `ChildControlStore` 与 CAS/budget/workspace records 是持久化要求，不是普通 child-agent 作者要求。`persistenceRegisterKey` 与 tombstone 规则有意暴露耐久 register layout，须遵循数据格式兼容规则。
 - `SearchProvider`、`SkillInstallPort`、可选 `CodeRuntime`、`SandboxProcess`、`ServiceContext.sandbox` 超出八 kind catalog。本文已明确列出，统一的功能专属 conformance 尚未建立。
-- `ExtensionAPI.latestExtEvent` 是可选 legacy reader；第三方文件系统 extension loading 虽已退役，导出的 extension manifests/fixtures 对 builtin/embedder 仍有用。不能将 `Disposer` 当作异步 provider cleanup。
+- 第三方文件系统 extension loading 虽已退役，导出的 extension manifests/fixtures 对 builtin/embedder 仍有用。不能将 `Disposer` 当作异步 provider cleanup。
 - 运行时快照不含类型、testkit 子路径或签名/语义变更；仍需类型测试与 conformance，JSON 不变不足以证明完整冻结。
 - 当前 API changelog 记录了早期未发布预览的不升版本破坏性修改。本候选不会追溯使旧 `1.4.0` 源码彼此兼容；发行兼容基线建立前应固定源码 revision。
 

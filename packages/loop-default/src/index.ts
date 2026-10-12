@@ -64,6 +64,8 @@ function create(ctx: LoopContext): LoopDriver {
         case 'failure':
           if (await ctx.input.claim('next-step')) return { outcome: 'running', phase: 'checkpoint' }
           return ctx.turn.finishFailure()
+        default:
+          throw new Error(`Unknown loop continuation: ${String(continuation)}`)
       }
     },
   }

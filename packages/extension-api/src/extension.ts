@@ -33,9 +33,8 @@ export interface ExtensionContext {
   readonly platform: PlatformFacts // assembly-time snapshot; terminal.width is not live (spec §5.2)
 }
 
-// Six controlled registrations, the shared provider facade, events and ctx, plus the optional
-// legacy latestExtEvent reader. Feature contracts such as Intelligent UI live on their own
-// service kind. Required profile components remain deployment-owned.
+// Six controlled registrations, the shared provider facade, events and ctx. Feature contracts such
+// as Intelligent UI live on their own service kind. Required profile components remain deployment-owned.
 // test/extension.test-d.ts pins the surface.
 export interface ExtensionAPI {
   registerService<I extends JsonValue, O extends JsonValue>(def: ServiceDef<I, O>): Disposer
@@ -45,11 +44,6 @@ export interface ExtensionAPI {
   registerSlot<S extends SlotName>(slot: S, fill: NoInfer<SlotFill<S>>): Disposer // slot 须在 capabilities.slots
   registerResource(entry: ResourceEntry): Disposer // kind 须在 capabilities.resources
   readonly events: { append(name: string, data: JsonValue): Promise<Seq> } // 落 x/<extId>/<name>；需 capabilities.events
-  // 读回本扩展自己最近一条 x/<extId>/<name> 事件；type-only——host 侧真正从账本读回属于
-  // host Task22（[I5]），本次不接线，未注册过该 name 时返回 undefined。可选：两个现有
-  // ExtensionAPI 构造点（host `ext-host/api.ts` 的旧 stub、`ext-host/api-proxy.ts` 的
-  // Task22 新实现，均不在本次改动范围）还没有实现它；必需会把它们双双钉成编译错误。
-  latestExtEvent?(name: string): JsonValue | undefined
   /** Capability-checked facade over the host provider registry. Package and owner are host-supplied. */
   readonly providers: ServiceAuthorPort
   readonly ctx: ExtensionContext

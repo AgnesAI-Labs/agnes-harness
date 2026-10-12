@@ -171,6 +171,10 @@ export type LoopEffectStatus =
  * Controlled ledger operations shared by all drivers. Core binds approvals, media and recovery;
  * these do not expose or accept its private program counter. The driver selects the next edge.
  */
+/**
+ * Core may add stages additively. A loop must treat an unknown value as an error (no exhaustive-only
+ * switch that silently falls through) rather than assume this union is closed.
+ */
 export type LoopContinuation = 'checkpoint' | 'model' | 'tools' | 'compaction' | 'deferred' | 'failure'
 
 export interface LoopToolCall {
