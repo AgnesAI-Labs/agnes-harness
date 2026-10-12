@@ -53,6 +53,9 @@ export type CoreErrorCode =
   | 'E_UNSUPPORTED'
   | 'E_CHILD_CONFLICT'
   | 'E_FORMAT'
+  | 'E_FORMAT_NEWER'
+  | 'E_FORMAT_OLDER'
+  | 'E_FORMAT_CORRUPT'
 
 /**
  * Every failure core raises carries a machine-readable `code`; the human message is prefixed with
@@ -79,4 +82,35 @@ export interface IdMinter {
   toolUseId(ordinal: number): string
   requestId(): string
   nonce(): string
+}
+
+/** The one ledger format this runtime reads and writes. */
+export const LEDGER_FORMAT_VERSION = 1
+
+/**
+ * A ledger header this runtime cannot continue, classified by direction: written by a newer build,
+ * by an older one, or not a format version at all. `location` names where the raw ledger lives so
+ * the person is never left with a bare "unsupported" and no file to keep or inspect.
+ */
+export function ledgerFormatError(key: string, version: unknown, location?: string): CoreError {
+  const supported = LEDGER_FORMAT_VERSION
+  const detail = { sessionKey: key, formatVersion: version, supported, ...(location ? { location } : {}) }
+  const at = location ? ` Raw ledger: ${location}.` : ''
+  if (typeof version === 'number' && Number.isInteger(version) && version > supported)
+    return new CoreError(
+      'E_FORMAT_NEWER',
+      `session ${key} was written by a newer AGH (ledger format ${version}; this build supports ${supported}); upgrade AGH.${at} Nothing was changed.`,
+      detail,
+    )
+  if (typeof version === 'number' && Number.isInteger(version) && version >= 0 && version < supported)
+    return new CoreError(
+      'E_FORMAT_OLDER',
+      `session ${key} was created by an older AGH (ledger format ${version}; this build supports ${supported}).${at} Nothing was changed.`,
+      detail,
+    )
+  return new CoreError(
+    'E_FORMAT_CORRUPT',
+    `session ${key} has an unreadable ledger format version (${String(version)}).${at} Nothing was changed.`,
+    detail,
+  )
 }

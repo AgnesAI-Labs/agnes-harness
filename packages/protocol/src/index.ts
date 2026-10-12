@@ -620,6 +620,14 @@ export * from './session-capabilities.js'
 export { parseSessionBundles } from './session-composition.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'
+export type {
+  SessionVersionAction,
+  SessionVersionCode,
+  SessionVersionFacts,
+  SessionVersionIssue,
+  SessionVersionNotice,
+} from './session-version.js'
+export { SESSION_VERSION_CODES, sessionVersionNotice } from './session-version.js'
 export { IncrementalSha256, sha256Hex } from './sha256.js'
 export * from './slots.js'
 export * from './surfaces.js'

@@ -45,17 +45,20 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   const action = p.positional[0] ?? 'list'
   if (action === 'migrate') {
     const sessionId = p.positional[1]
-    if (!sessionId || p.positional.length !== 2) throw new UsageError('sessions migrate expects <key>')
+    if (!sessionId) throw new UsageError('sessions migrate expects <key> [<pinned seam kind> ...]')
+    // Kinds after the key are the pinned seam implementations the administrator agrees to replace.
+    const repin = p.positional.slice(2)
     const result = await client.packages.migrateSession({
       profile: p.profile ?? 'local-dev',
       clientId: await client.clientId(),
       commandId: newPackageCommandId('migrate'),
       sessionId,
+      ...(repin.length ? { repin } : {}),
     })
     io.stdout.write(
       p.json
         ? `${JSON.stringify(result)}\n`
-        : `${escapeControl(sessionId)}: ${result.changed ? 'migrated to' : 'already bound to'} current plugins (${result.generationId})\n`,
+        : `${escapeControl(sessionId)}: ${result.changed ? 'migrated to' : 'already bound to'} current plugins (${result.generationId})${result.repinned?.length ? `; replaced pinned ${result.repinned.join(', ')}` : ''}\n`,
     )
     return ExitCode.OK
   }

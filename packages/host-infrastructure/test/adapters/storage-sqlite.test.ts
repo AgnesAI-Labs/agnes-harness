@@ -588,8 +588,45 @@ describe('storage-sqlite', () => {
     expect(readdirSync(dir).some((name) => name.includes('.tail-'))).toBe(false)
     db.prepare("UPDATE sessions SET format_version = 2 WHERE session_key = 'middle'").run()
     await expect(s.open('middle', { writerRunId: 'future-reader', ttlMs: 1000 })).rejects.toMatchObject({
-      code: 'E_FORMAT',
+      code: 'E_FORMAT_NEWER',
+      detail: { sessionKey: 'middle', formatVersion: 2, supported: 1, location: s.file },
     })
     db.close()
   })
+
+  it.each([
+    [2, 'E_FORMAT_NEWER'],
+    [0, 'E_FORMAT_OLDER'],
+    [-3, 'E_FORMAT_CORRUPT'],
+  ])(
+    'refuses ledger format %s as %s and leaves the raw ledger and its lease untouched',
+    async (version, code) => {
+      const dir = mkdtempSync(join(tmpdir(), 'agnes-format-'))
+      const s = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+      await s.open('one', { writerRunId: 'writer', ttlMs: 1000 })
+      await s.release('one', 'writer')
+      const db = new DatabaseSync(s.file)
+      db.prepare('UPDATE sessions SET format_version = ? WHERE session_key = ?').run(version, 'one')
+      const before = JSON.stringify({
+        session: db.prepare('SELECT * FROM sessions').all(),
+        events: db.prepare('SELECT * FROM events').all(),
+        lease: db.prepare('SELECT * FROM writer_claims').all(),
+      })
+      const failure = await s.open('one', { writerRunId: 'later', ttlMs: 1000 }).then(
+        () => undefined,
+        (error: unknown) => error as { code: string; message: string },
+      )
+      expect(failure?.code).toBe(code)
+      expect(failure?.message).toContain('one')
+      expect(failure?.message).toContain(s.file)
+      expect(
+        JSON.stringify({
+          session: db.prepare('SELECT * FROM sessions').all(),
+          events: db.prepare('SELECT * FROM events').all(),
+          lease: db.prepare('SELECT * FROM writer_claims').all(),
+        }),
+      ).toBe(before)
+      db.close()
+    },
+  )
 })

@@ -78,6 +78,8 @@ describe('protocol src boundary', () => {
         'observeDiagnostics',
         'normalizeRpcError',
         'errorMessageKey',
+        'SESSION_VERSION_CODES',
+        'sessionVersionNotice',
         'httpRpcError',
         'CHILD_ENGINE_ROW_IDS',
         'CHILD_ENGINE_CAPABILITIES',

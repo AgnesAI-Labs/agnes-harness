@@ -12,6 +12,13 @@ export const HOST_ERROR_CODES = [
   'E_PACKAGE_QUARANTINED',
   'E_DEP_MISSING',
   'E_SEAM_MISSING',
+  // A pinned seam implementation changed (mismatch at binding, or a migration that would swap it
+  // without an explicit repin), and the three directions a session can fail to continue on this build.
+  'E_SEAM_PIN_MISMATCH',
+  'E_SEAM_PIN_CHANGE',
+  'E_SESSION_VERSION_NEWER',
+  'E_SESSION_VERSION_OLDER',
+  'E_SESSION_CORRUPT',
   'E_SEAM_INIT',
   'E_CEILING_EXCEEDED',
   'E_SEAM_IMMUTABLE',

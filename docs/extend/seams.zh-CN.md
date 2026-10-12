@@ -64,3 +64,17 @@ seams:
 ```
 
 七个键都必填。选中的实现没有任何已安装的包注册时，装配以 `E_SEAM_MISSING` 失败；工厂抛错或卡死则以 `E_SEAM_INIT` 失败。seam 不会被静默跳过或补默认值。旧的包 id 字符串写法、`seams.ledger`（现为 `seams.billing`）和 `seams.harness`（不再是 seam）都是配置错误，报错会给出改法。工作区配置不能写 `seams`。
+
+## 固定、升级与恢复
+
+`approval`、`principals`、`billing`、`checkpoint`、`artifacts` 按会话固定。会话记录它首次绑定的 provider id、版本、来源包和包完整性摘要（固定记录，带格式版本号），它所在的代次记录构建时用的选择。因此修改 `seams.*` 或升级 provider 包只影响新会话；已有会话即使重启后也按当初绑定的实现恢复。`verifier` 和 `repair` 跟随代次。
+
+无法继续的会话会按三个方向之一被拒绝，各有独立错误码，并给出会话 id 和原始账本所在位置：
+
+| 错误码 | 含义 | 你可以 |
+| --- | --- | --- |
+| `E_SESSION_VERSION_NEWER` | 由更新版本的 AGH 写入 | 升级 AGH |
+| `E_SESSION_VERSION_OLDER` | 由旧版本 AGH 创建，或固定的 provider、版本或快照已不可用（`E_SEAM_PIN_MISMATCH`、`E_GENERATION_INCOMPATIBLE` 等） | 新开一个会话；管理员可把它切换到当前版本 |
+| `E_SESSION_CORRUPT` | 完整性检查失败 | 新开一个会话；保留原始账本 |
+
+拒绝不会改动账本和固定记录。把会话切换到当前版本是明确且会被审计的操作：`agh sessions migrate <key> <kind> ...`（或管理端调用里的 `repin: ["approval"]`）列出要替换的固定种类；不列出时，会替换固定实现的迁移会以 `E_SEAM_PIN_CHANGE` 失败并列出差异。

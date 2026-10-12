@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { HOST_ERROR_CODES, HostError, looksLikeSecret } from '../src/errors.js'
 
 describe('HostError', () => {
-  it('has the thirty codes of the closed set', () => {
+  it('has the thirty-five codes of the closed set', () => {
     expect([...HOST_ERROR_CODES].sort()).toEqual([
       'E_API_RANGE',
       'E_CAPABILITY_UNDECLARED',
@@ -29,13 +29,18 @@ describe('HostError', () => {
       'E_SEAM_IMMUTABLE',
       'E_SEAM_INIT',
       'E_SEAM_MISSING',
+      'E_SEAM_PIN_CHANGE',
+      'E_SEAM_PIN_MISMATCH',
       'E_SECRET_UNRESOLVED',
+      'E_SESSION_CORRUPT',
+      'E_SESSION_VERSION_NEWER',
+      'E_SESSION_VERSION_OLDER',
       'E_STATIC_COMPONENT',
       'E_WORKSPACE_CLOSED',
       'E_WORKSPACE_REQUIRED',
       'E_WORKSPACE_UNTRUSTED',
     ])
-    expect(new Set(HOST_ERROR_CODES).size).toBe(30)
+    expect(new Set(HOST_ERROR_CODES).size).toBe(35)
   })
   it('carries code, source and detail', () => {
     const e = new HostError(

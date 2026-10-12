@@ -4,6 +4,8 @@ import {
   type Event,
   type EventInput,
   type IdMinter,
+  LEDGER_FORMAT_VERSION,
+  ledgerFormatError,
   type PreparedEvent,
   type Seq,
   type SessionKey,
@@ -168,11 +170,7 @@ export class SessionLogImpl {
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
-      if (opened.formatVersion !== 1)
-        throw new CoreError(
-          'E_FORMAT',
-          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
-        )
+      if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
       const replay = o.replay
@@ -213,11 +211,7 @@ export class SessionLogImpl {
   ): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
-      if (opened.formatVersion !== 1)
-        throw new CoreError(
-          'E_FORMAT',
-          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
-        )
+      if (opened.formatVersion !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       if (
         opened.parent?.key !== parent.key ||
         opened.parent.boundarySeq !== parent.boundarySeq ||

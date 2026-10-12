@@ -105,6 +105,7 @@ export type PackageActivationAdapter = Readonly<{
     profile: string,
     sessionId: string,
     principalId: string,
+    options?: { repin?: readonly string[] },
   ): Promise<import('@agnes/protocol').SessionGenerationMigrationResult>
   stopped?(profile: string, packageId: string): Promise<boolean>
   actual(
@@ -677,6 +678,7 @@ class Service implements PackageAdminService {
             params.profile,
             params.sessionId,
             granted.principalId,
+            params.repin ? { repin: params.repin } : undefined,
           )
           if (!validatePackageAdminCall(method, 'result', result).ok)
             throw new Error('E_PACKAGE_STATE: invalid session migration')
@@ -686,7 +688,9 @@ class Service implements PackageAdminService {
             error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
               ? error.message
               : ''
-          const reason = message.match(/E_GENERATION_[A-Z_]+|E_COMPOSITION_BINDING_MISSING/)?.[0]
+          const reason = message.match(
+            /E_GENERATION_[A-Z_]+|E_COMPOSITION_BINDING_MISSING|E_SEAM_PIN_CHANGE/,
+          )?.[0]
           if (
             reason &&
             [
@@ -696,6 +700,7 @@ class Service implements PackageAdminService {
               'E_GENERATION_INCOMPATIBLE',
               'E_GENERATION_LOOP_INCOMPATIBLE',
               'E_COMPOSITION_BINDING_MISSING',
+              'E_SEAM_PIN_CHANGE',
             ].includes(reason)
           )
             throw rpcError('SEMANTIC_REJECTED', { reason })

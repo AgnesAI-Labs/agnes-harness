@@ -53,6 +53,8 @@ macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启
 
 子进程能写入私有启动诊断时，本地 launcher 会在 early-exit 错误中附上真实拒绝原因，例如 `daemon or package mutation lock is held`。启动成功或失败后均清理诊断文件。
 
+在当前版本上无法继续的会话会返回 `E_SESSION_VERSION_NEWER`（升级 AGH）、`E_SESSION_VERSION_OLDER`（新开会话，或由管理员用 `agh sessions migrate <key> <kind> ...` 切换）或 `E_SESSION_CORRUPT`，并给出会话 id 和原始账本位置。此类拒绝不会改动账本和固定记录；见 [Seam](../extend/seams.zh-CN.md)。
+
 `E_SEAM_INIT` 会话初始化失败返回 `INTERNAL_ERROR`，其 `data.code` 为稳定的 `E_SEAM_INIT`；若 Provider 注册或初始化失败，则保留具体的 `E_PROVIDER_*` 原因码。daemon 审计记录该码，不记录异常消息或请求参数。缺少 loop 时，检查其精确 id/version 是否已安装、启用，并被会话 bundle 选中。
 
 如果 worker 在 `hello` 前连续三次因相同的确定性启动错误退出，daemon 停止拉起该 worker。请求返回 `INTERNAL_ERROR`，包含 `data.code: WORKER_BOOT_BLOCKED`、`bootCode`、`failures` 和 `retryable: false`。并发请求共用一次启动。修正配置或发布变更后的插件 target 会重置熔断；重启 daemon 可显式重试。临时退出仍保留有上限的退避重试。

@@ -15,6 +15,10 @@ export function errorMessageKey(code: string): AppServerError['data']['messageKe
   if (code.startsWith('CONFIG_CREDENTIAL_')) return 'appServer.errors.credentialStore'
   if (code === 'E_SANDBOX_WORKSPACE') return 'appServer.errors.unavailable'
   if (code.startsWith('E_PROVIDER_')) return 'appServer.errors.provider'
+  if (code === 'E_SESSION_VERSION_NEWER') return 'appServer.errors.sessionNewer'
+  if (code === 'E_SESSION_VERSION_OLDER' || code.startsWith('E_SEAM_PIN_'))
+    return 'appServer.errors.sessionOlder'
+  if (code === 'E_SESSION_CORRUPT') return 'appServer.errors.sessionCorrupt'
   if (code.startsWith('E_GENERATION_')) return 'appServer.errors.generation'
   if (code.includes('REVISION_CONFLICT') || code === 'GENERATION_STALE') return 'appServer.errors.conflict'
   if (code.includes('TIMEOUT')) return 'appServer.errors.timeout'

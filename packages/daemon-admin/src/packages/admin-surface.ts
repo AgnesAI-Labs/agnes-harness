@@ -989,6 +989,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             'E_GENERATION_INCOMPATIBLE',
             'E_GENERATION_LOOP_INCOMPATIBLE',
             'E_COMPOSITION_BINDING_MISSING',
+            'E_SEAM_PIN_CHANGE',
           ].includes(reason)
         ) {
           error(
@@ -997,7 +998,9 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             reason,
             reason === 'E_GENERATION_SESSION_OPEN'
               ? 'Close the session before migrating its plugins.'
-              : 'The pinned generation cannot migrate to the current plugins; check snapshot and loop compatibility.',
+              : reason === 'E_SEAM_PIN_CHANGE'
+                ? 'Migrating would replace a pinned seam implementation. List the kinds to replace in repin to confirm.'
+                : 'The pinned generation cannot migrate to the current plugins; check snapshot and loop compatibility.',
           )
           return true
         }

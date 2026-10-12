@@ -42,6 +42,8 @@ export const AUDIT_KINDS = [
   'host.closed',
   'host.teardown_finished',
   'session.close_failed',
+  'session.seams.pinned',
+  'session.seams.repinned',
   'session.recovered',
   'preset.deprecated',
 ] as const

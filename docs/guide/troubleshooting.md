@@ -55,6 +55,8 @@ macOS daemon identity uses the kernel boot-session UUID, PID and the process's s
 
 The local launcher includes a child's startup refusal (such as `daemon or package mutation lock is held`) in the early-exit error when the child can publish its private startup diagnostic. The receipt is removed after startup succeeds or fails.
 
+A session that cannot continue on this build answers `E_SESSION_VERSION_NEWER` (upgrade AGH), `E_SESSION_VERSION_OLDER` (start a new session, or an administrator switches it with `agh sessions migrate <key> <kind> ...`) or `E_SESSION_CORRUPT`, with the session id and where its raw ledger lives. The ledger and the pin are never changed by such a refusal; see [Seams](../extend/seams.md).
+
 `E_SEAM_INIT` session initialization failures return `INTERNAL_ERROR` with a stable `data.code`: `E_SEAM_INIT`, or the specific `E_PROVIDER_*` cause when a provider fails to register or initialize. The daemon audit records that code without exception messages or request parameters. For a missing loop, check that its exact id/version is installed, enabled, and selected by the session bundle.
 
 If a worker fails before `hello` three consecutive times with the same deterministic boot code, the daemon stops spawning that worker. Requests return `INTERNAL_ERROR` with `data.code: WORKER_BOOT_BLOCKED`, `bootCode`, `failures` and `retryable: false`. Concurrent requests share one startup attempt. Correct the configuration or publish a changed package target to reset the breaker; restarting the daemon is an explicit retry. Transient exits retain the capped retry backoff.

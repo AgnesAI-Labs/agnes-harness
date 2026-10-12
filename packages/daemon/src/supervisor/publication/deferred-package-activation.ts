@@ -24,10 +24,10 @@ export function deferPackageActivation(
       if (!adapter?.publicationStatus) throw new Error('E_PACKAGE_STATE: publication status unavailable')
       return adapter.publicationStatus(profileName)
     },
-    async migrateSession(profileName, sessionId, principalId) {
+    async migrateSession(profileName, sessionId, principalId, options) {
       const adapter = current()
       if (!adapter?.migrateSession) throw new Error('E_PACKAGE_STATE: session migration unavailable')
-      return adapter.migrateSession(profileName, sessionId, principalId)
+      return adapter.migrateSession(profileName, sessionId, principalId, options)
     },
     async actual(profileName, packageId) {
       return current()?.actual(profileName, packageId) ?? { actual: 'unavailable' }

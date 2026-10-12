@@ -8,7 +8,9 @@ import {
   type Event,
   type IntegrityRow,
   type IntegrityScanQuery,
+  LEDGER_FORMAT_VERSION,
   type LeaseClaim,
+  ledgerFormatError,
   type OpenResult,
   type RegisterRow,
   registerKey,
@@ -471,11 +473,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         const created =
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
         const version = (q.session.get(key) as { format_version: number }).format_version
-        if (version !== 1)
-          throw new CoreError(
-            'E_FORMAT',
-            `Unsupported ledger format version ${version}; this runtime supports version 1`,
-          )
+        if (version !== LEDGER_FORMAT_VERSION) throw ledgerFormatError(key, version, opts.file)
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
         const recovery = recoverSqliteTail<Row>({
           db,

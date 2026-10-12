@@ -854,10 +854,13 @@ export async function handleServiceCommand(
             detail: { reasons: [{ kind: 'recovery-required', id: p.sessionId, sessionKey: p.sessionId }] },
           },
         )
-      return host.migrateSessionGeneration(
-        p.sessionId,
-        resourceRecoveryRequired === undefined ? {} : { recoveryRequired: resourceRecoveryRequired },
-      )
+      return host.migrateSessionGeneration(p.sessionId, {
+        ...(resourceRecoveryRequired === undefined ? {} : { recoveryRequired: resourceRecoveryRequired }),
+        ...(Array.isArray(p.repin) && p.repin.every((kind) => typeof kind === 'string')
+          ? { repin: p.repin as string[] }
+          : {}),
+        ...(typeof p.operator === 'string' ? { operator: p.operator } : {}),
+      })
     case 'pluginGenerations.collect':
       if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
       await host.collectPluginGenerations()

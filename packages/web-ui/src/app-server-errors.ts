@@ -41,6 +41,18 @@ const messages: Record<string, readonly [string, string]> = {
     'The pinned plugin generation is unavailable or incompatible.',
     '固定的插件代际不可用或不兼容。',
   ],
+  sessionNewer: [
+    'This session was written by a newer version of AGH. Upgrade AGH to continue it; you can still read it.',
+    '你的这个会话由更新版本的 AGH 写入。请升级 AGH 后再继续；你仍然可以查看它。',
+  ],
+  sessionOlder: [
+    'This session was created with an older version that is no longer available. You can read it, or start a new session; an administrator can switch it to the current version.',
+    '你的这个会话是用较旧版本创建的，该版本已不可用。你可以查看它，或新开一个会话；管理员也可以把它切换到当前版本。',
+  ],
+  sessionCorrupt: [
+    'This session failed an integrity check and was not opened. Nothing was changed; start a new session.',
+    '你的这个会话没有通过完整性检查，所以没有打开，也没有任何改动。请新开一个会话。',
+  ],
   rejected: [
     'The operation was refused. Check its configuration and current state.',
     '操作被拒绝，请检查配置和当前状态。',

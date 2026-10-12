@@ -64,3 +64,17 @@ seams:
 ```
 
 All seven keys are required. A selection that no installed package registers fails assembly with `E_SEAM_MISSING`; a factory that throws or hangs fails it with `E_SEAM_INIT`. Seams are never silently skipped or defaulted. The older package-id string form, `seams.ledger` (now `seams.billing`) and `seams.harness` (no longer a seam) are configuration errors that name the fix. Workspace configuration cannot write `seams`.
+
+## Pinning, upgrades and resuming
+
+`approval`, `principals`, `billing`, `checkpoint` and `artifacts` are pinned per session. A session records the provider id, version, source package and package integrity it was first bound to (the pin record, which carries a format version), and the generation it runs in records the selections it was built from. Changing `seams.*` or upgrading a provider package therefore reaches new sessions only; an existing session resumes on what it was bound to, even after a restart. `verifier` and `repair` follow the generation.
+
+A session that cannot continue is refused in one of three directions, each with its own code, the session id and where its raw ledger lives:
+
+| Code | Meaning | What you can do |
+| --- | --- | --- |
+| `E_SESSION_VERSION_NEWER` | Written by a newer AGH | Upgrade AGH |
+| `E_SESSION_VERSION_OLDER` | Created with an older AGH, or its pinned provider, version or snapshot is gone (`E_SEAM_PIN_MISMATCH`, `E_GENERATION_INCOMPATIBLE`, ...) | Start a new session; an administrator can switch it to the current version |
+| `E_SESSION_CORRUPT` | An integrity check failed | Start a new session; keep the raw ledger |
+
+A refusal never changes the ledger or the pin. Switching a session to the current version is an explicit, audited action: `agh sessions migrate <key> <kind> ...` (or `repin: ["approval"]` on the admin call) lists the pinned kinds to replace; without it a migration that would swap a pinned implementation fails with `E_SEAM_PIN_CHANGE` and the differences.

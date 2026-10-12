@@ -28,6 +28,9 @@ import {
   parseSessionBundles,
   type RpcError,
   rpcError,
+  SESSION_VERSION_CODES,
+  type SessionVersionIssue,
+  sessionVersionNotice,
   setHarnessMeta,
   type TurnEndReason,
   toAcpStopReason,
@@ -359,6 +362,26 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
 export function throwSessionOpenRpcError(error: unknown): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
   if (e?.code === 'SANDBOX_UNAVAILABLE') throw rpcError('SEMANTIC_REJECTED', { code: 'SANDBOX_UNAVAILABLE' })
+  // A session that cannot continue on this build says which way it differs and what the person can
+  // do next, in both languages; the ledger stays readable and nothing was changed.
+  const versionIssue = (Object.entries(SESSION_VERSION_CODES) as [SessionVersionIssue, string][]).find(
+    ([, code]) => code === e?.code,
+  )?.[0]
+  if (versionIssue) {
+    const detail = (e as { detail?: { sessionKey?: unknown; ledgerPath?: unknown; cause?: unknown } }).detail
+    const notice = sessionVersionNotice(versionIssue, {
+      sessionId: typeof detail?.sessionKey === 'string' ? detail.sessionKey : '',
+      ...(typeof detail?.ledgerPath === 'string' ? { ledgerPath: detail.ledgerPath } : {}),
+      repinnable: versionIssue === 'older',
+    })
+    throw rpcError('SEMANTIC_REJECTED', {
+      code: notice.code,
+      issue: notice.issue,
+      actions: notice.actions,
+      localized: notice.message,
+      ...(typeof detail?.cause === 'string' ? { reason: detail.cause } : {}),
+    })
+  }
   if (e?.code === 'E_SEAM_INIT') {
     const causes = {
       'provider-unknown': 'E_PROVIDER_UNKNOWN',

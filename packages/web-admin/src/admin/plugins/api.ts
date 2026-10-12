@@ -203,10 +203,14 @@ export class PluginAdminApi {
     return this.#post('publication-status', { profile: this.#context.profile })
   }
 
-  async migrateSession(sessionId: string): Promise<SessionGenerationMigrationResult> {
-    return this.#effect<{ sessionId: string }, SessionGenerationMigrationResult>('sessions/migrate', {
-      sessionId,
-    })
+  async migrateSession(
+    sessionId: string,
+    repin?: readonly string[],
+  ): Promise<SessionGenerationMigrationResult> {
+    return this.#effect<{ sessionId: string; repin?: readonly string[] }, SessionGenerationMigrationResult>(
+      'sessions/migrate',
+      { sessionId, ...(repin?.length ? { repin } : {}) },
+    )
   }
 
   async generations(): Promise<PluginGenerationStatus> {
