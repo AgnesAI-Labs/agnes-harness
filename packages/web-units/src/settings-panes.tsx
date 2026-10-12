@@ -29,7 +29,7 @@ export function SettingsStaticPane({
               <p>
                 {text(
                   'settings-shell.modelIntro',
-                  '管理 Provider 连接和默认模型。保存后，新建任务会使用更新后的配置。',
+                  '管理服务商连接和默认模型。保存后，新建任务会使用更新后的配置。',
                 )}
               </p>
             </div>

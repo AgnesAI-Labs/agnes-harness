@@ -265,7 +265,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'accounts.repair': '修复',
     'accounts.actions': '{label} 的操作',
     'accounts.keyHelp': '在哪里获取密钥？',
-    'accounts.keyHelpText': '在提供商的账户控制台创建 API Key，然后粘贴到这里。',
+    'accounts.keyHelpText': '在服务商的账户控制台创建 API Key，然后粘贴到这里。',
     'accounts.chooseProvider': '选择提供商',
     'accounts.custom': '自定义地址（兼容 OpenAI）',
     'accounts.saved': '账户已保存',

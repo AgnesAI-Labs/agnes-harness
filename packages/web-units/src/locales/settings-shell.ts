@@ -245,7 +245,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.appearanceNav': '通用',
     'settings-shell.modelKicker': '连接设置',
     'settings-shell.modelTitle': '模型账户',
-    'settings-shell.modelIntro': '管理 Provider 连接和默认模型。保存后，新建任务会使用更新后的配置。',
+    'settings-shell.modelIntro': '管理服务商连接和默认模型。保存后，新建任务会使用更新后的配置。',
     'settings-shell.accountsAria': '已保存的模型账户',
     'settings-shell.accountsTitle': '我的账户',
     'settings-shell.accountsIntro': '每个账户独立保存地址、密钥和模型。',
