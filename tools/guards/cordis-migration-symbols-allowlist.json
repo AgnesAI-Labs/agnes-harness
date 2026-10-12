@@ -10,9 +10,9 @@
       "packages/plugin-runtime/src/runtime-target.ts": 2
     },
     "c2_runtime_target": {
-      "packages/host/src/runtime/assemble/assemble.ts": 2,
       "packages/host/src/runtime/assemble/assembled.ts": 4,
       "packages/host/src/runtime/assemble/assembly-deps.ts": 1,
+      "packages/host/src/runtime/assemble/runtime-target.ts": 3,
       "packages/host/src/runtime/lifecycle/host.ts": 3,
       "packages/host/src/runtime/profile/composition-runtime.ts": 5,
       "packages/host/src/runtime/generation/host.ts": 8,
