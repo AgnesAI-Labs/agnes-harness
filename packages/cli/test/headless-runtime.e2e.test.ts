@@ -29,8 +29,11 @@ vi.mock('@agnes/host', async (original) => ({
           user: {
             name: profile.name,
             dataDir: profile.dataDir,
-            packages: profile.packages.map(({ id, source }) => ({ id, source })),
-            ...(profile.loop ? { loop: profile.loop } : {}),
+            packages: profile.packages.map(({ id, source, config }) => ({
+              id,
+              source,
+              ...(config ? { config } : {}),
+            })),
             ...(profile.composition ? { composition: profile.composition } : {}),
           },
         },
@@ -48,6 +51,8 @@ vi.mock('@agnes/host', async (original) => ({
           ),
         },
         packageDirs: Object.fromEntries(options.packageDirs ?? []),
+        ...(options.skillContribution ? { skillContribution: options.skillContribution } : {}),
+        ...(options.skillResources ? { skillResources: options.skillResources } : {}),
         ...(options.runtimePluginSnapshots ? { runtimePluginSnapshots: options.runtimePluginSnapshots } : {}),
         ...(options.runtimePluginSources ? { runtimePluginSources: options.runtimePluginSources } : {}),
         ...(options.extensionLoader ? { extensionLoader: options.extensionLoader } : {}),
@@ -89,7 +94,10 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
   )
   await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "original"')
   const bundle = join(root, 'bundle.json')
-  await writeFile(bundle, JSON.stringify({ profile: { loop: { id: 'default', version: '1.0.0' } } }))
+  await writeFile(
+    bundle,
+    JSON.stringify({ profile: { loop: { provider: 'agnes.default', version: '1.0.0' } } }),
+  )
   let boot: Awaited<ReturnType<typeof bootHeadless>> | undefined
   let registry: ReturnType<typeof createClientModuleRegistry> | undefined
   try {

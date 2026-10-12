@@ -53,6 +53,7 @@ import {
   snapshotPolicy,
 } from '@agnes/package-manager'
 import { jcs } from '@agnes/protocol'
+import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { packagedPackages } from '../../launch/packaged-host.js'
 import { resolveLaunchResources } from '../../launch/resources.js'
@@ -174,24 +175,33 @@ export async function assembleLocalHost(
     !deps.createHostImpl && process.getBuiltinModule('node:sea').isSea()
       ? resolveLaunchResources().runtimeNode
       : undefined
-  return deps.createHostImpl
-    ? deps.createHostImpl(profile, prompter)
-    : createHost(profile, {
-        dataDir: profile.dataDir,
-        profileDir: deps.runtimeDirectory ?? profileDir,
-        workspaceRoot: cwd,
-        hostRoot,
-        log: hostLogger(deps.log),
-        prompter,
-        ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
-        agnesVersion: deps.agnesVersion,
-        ...(windowsNodeExecutable !== undefined ? { windowsNodeExecutable } : {}),
-        ...(deps.extensionIsolation ? { extensionIsolation: deps.extensionIsolation } : {}),
-        ...(deps.loader
-          ? { loader: deps.loader }
-          : await defaultPackages(deps, profile, profileDir, hostRoot)),
-        ...(deps.signal ? { signal: deps.signal } : {}),
-      })
+  if (deps.createHostImpl) return deps.createHostImpl(profile, prompter)
+  let host: Host | undefined
+  const skills = createSkillCandidateRegistry({
+    barrier: {
+      quiesce(operationId, publish) {
+        if (!host) throw new HostError('E_HOST_CLOSED', 'local Skill publication requires a ready Host')
+        return host.activationBarrier.quiesce(operationId, publish)
+      },
+    },
+  })
+  host = await createHost(profile, {
+    dataDir: profile.dataDir,
+    profileDir: deps.runtimeDirectory ?? profileDir,
+    workspaceRoot: cwd,
+    hostRoot,
+    log: hostLogger(deps.log),
+    prompter,
+    skillContribution: createSkillCordisService(skills),
+    skillResources: skills.snapshot(),
+    ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
+    agnesVersion: deps.agnesVersion,
+    ...(windowsNodeExecutable !== undefined ? { windowsNodeExecutable } : {}),
+    ...(deps.extensionIsolation ? { extensionIsolation: deps.extensionIsolation } : {}),
+    ...(deps.loader ? { loader: deps.loader } : await defaultPackages(deps, profile, profileDir, hostRoot)),
+    ...(deps.signal ? { signal: deps.signal } : {}),
+  })
+  return host
 }
 
 /**
