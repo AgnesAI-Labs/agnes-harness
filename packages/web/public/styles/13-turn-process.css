@@ -505,7 +505,7 @@
   }
   .composer-permission:hover:not(:disabled) {
     border-color: transparent;
-    color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
   .composer-permission[aria-expanded="true"] .model-chevron {
