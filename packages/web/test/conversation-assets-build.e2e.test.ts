@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { beforeAll, expect, it } from 'vitest'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readUiCss, readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const repository = resolve(import.meta.dirname, '../../..')
 const web = resolve(repository, 'packages/web')
@@ -20,7 +20,7 @@ beforeAll(() => {
 it('ships private conversation styles in the existing three-page style asset', async () => {
   const [base, conversation, built, files] = await Promise.all([
     readWebStyleSource(resolve(web, 'public/style.css')),
-    readFile(resolve(repository, 'packages/web-ui/src/conversation/messages.css'), 'utf8'),
+    readUiCss(resolve(repository, 'packages/web-ui/src/conversation/messages.css')),
     readFile(resolve(web, 'dist/web/style.css'), 'utf8'),
     readdir(resolve(web, 'dist/web')),
   ])

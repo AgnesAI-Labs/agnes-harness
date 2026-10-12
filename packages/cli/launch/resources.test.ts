@@ -32,6 +32,7 @@ async function writeWebFixture(directory: string): Promise<void> {
       'vendor/react-dom.js',
       'vendor/react-dom-client.js',
       'vendor/antd.js',
+      'vendor/recharts.js',
       'vendor/assistant-ui.js',
       'vendor/cordis.js',
       'vendor/web-client.js',
