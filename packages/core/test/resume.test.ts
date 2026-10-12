@@ -535,8 +535,8 @@ describe('resume', () => {
     expect(result?.data).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN', isError: true })
     // It names the call it closes. Relations accepts a synthetic closer only when it does.
     expect(result?.sourceEventSeqs).toHaveLength(1)
-    expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-      kind: 'unknown-outcome',
+    expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome' } },
     })
     expect(session.op()).toBeNull()
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
@@ -560,10 +560,9 @@ describe('resume', () => {
       seams: fakeSeams({ approval: { ask: async () => 'unavailable', resume: async () => null } }),
     })
     expect((await session.resume()).actions[0]?.action).toBe('unknown')
-    expect((await log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
-      verdict: 'unavailable',
-      via: 'sync',
-      reason: 'no-approver',
+    expect((await session.decisions.list()).at(-1)).toMatchObject({ result: null })
+    expect((await log.scan({ type: 'x/core/decision-delivery', limit: 10 })).at(-1)?.data).toMatchObject({
+      waitEndedBy: 'no-approver',
     })
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
   })
@@ -596,18 +595,27 @@ describe('resume', () => {
 
       expect((await session.resume()).actions[0]?.action).toBe('unknown')
       expect(executions).toBe(0)
-      expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-        kind: 'unknown-outcome',
-        pending: { ticket: 'unknown-ticket' },
+      expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+        request: { spec: { purpose: 'unknown-outcome' } },
+        result: null,
       })
-      await session.resumeApproval('unknown-ticket', verdict, { ...actor, id: 'human-approver' })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'completed',
-      )
+      const decision = (await session.decisions.list()).at(-1)!
+      await session.decideApproval({
+        command: {
+          handle: decision.handle,
+          revision: decision.revision,
+          commandId: 'unknown-answer',
+          response: { option: verdict, value: null },
+        },
+        context: { actor: { ...actor, id: 'human-approver' }, category: 'human', authorize() {} },
+      })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out.reason).toBe('completed')
       expect(executions).toBe(0)
-      expect(await log.scan({ type: 'approval/decided', limit: 10 })).toContainEqual(
-        expect.objectContaining({ data: expect.objectContaining({ verdict, via: 'callback' }) }),
-      )
+      expect((await session.decisions.list()).at(-1)?.result).toMatchObject({
+        reason: 'answered',
+        response: { option: verdict },
+      })
     },
   )
 
@@ -634,9 +642,8 @@ describe('resume', () => {
       actor: expect.objectContaining({ id: 'u' }),
       summary: expect.stringContaining('did shell happen?'),
     })
-    expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-      kind: 'unknown-outcome',
-      summary: 'escalated by extension',
+    expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome', prompt: 'escalated by extension' } },
     })
   })
 

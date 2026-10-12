@@ -8,6 +8,7 @@ import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
 } from '../../registry/tool-policy.js'
+import { domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier } from '../../step/verifier-continuation.js'
 import { TOOL_DECISION_OWNER } from './tool-decision.js'
@@ -36,6 +37,34 @@ export async function approvalContinuation(
 /** Opens the single-call continuation. Multi-call batch policy remains explicitly pending. */
 export async function continueParked(s: SessionImpl): Promise<'opened' | 'waiting' | 'blocked' | false> {
   if (s.op()) return false
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== 'core/unknown-outcome' ||
+      value.request.lane !== s.lane ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.consumption
+    )
+      continue
+    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
+      continue
+    const snapshot = await s.decisions.get(value.handle)
+    if (!snapshot.result && !snapshot.invalidation) continue
+    if (snapshot.result?.reason === 'answered' && !snapshot.invalidation)
+      await s.locked(async () => {
+        await s.d.log.append([
+          ...s.decisions.consumptionEvents(
+            [snapshot.handle],
+            domainDecisionSource(s, 'unknown-outcome', snapshot.request.operationId),
+            null,
+          ),
+          s.ev(
+            'x/core/decision-checkpoint',
+            { handle: snapshot.handle, operationId: snapshot.request.operationId },
+            { ignorable: true },
+          ),
+        ])
+      })
+  }
   // Unmigrated verifier work retains its existing domain continuation.
   for (const [requestId, decision] of s.state.decisions) {
     if (

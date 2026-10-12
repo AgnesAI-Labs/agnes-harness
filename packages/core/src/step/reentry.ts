@@ -154,7 +154,9 @@ export async function invokeTool(
       // An uncertain call is already completed; reconciliation must never make it dispatchable.
       if (
         cur?.phase.kind !== 'tools' ||
-        (park?.type === 'approval/asked' && (park.data as { kind?: string }).kind === 'unknown-outcome')
+        (park?.type === 'x/core/unknown-outcome' &&
+          s.state.registers.decisionStates.get((park.data as { handle: { id: string } }).handle.id)?.value
+            .request.spec.purpose === 'unknown-outcome')
       )
         return cur
       return withPhase(cur, {

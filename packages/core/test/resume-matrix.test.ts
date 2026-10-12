@@ -263,8 +263,8 @@ describe('resume matrix (core Task 39)', () => {
       action: 'unknown',
     })
     expect(session.op()).toBeNull()
-    expect((await log.scan({ type: 'approval/asked', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
-      kind: 'unknown-outcome',
+    expect((await log.scan({ type: 'decision/state', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome' } },
     })
     expect((await log.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       reason: 'parked',
