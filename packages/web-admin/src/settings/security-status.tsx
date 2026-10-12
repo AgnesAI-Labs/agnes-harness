@@ -35,6 +35,20 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
         t(`securityScope.${scope}`) === `securityScope.${scope}` ? scope : t(`securityScope.${scope}`),
       )
       .join(' · ')
+  // Retained generations can report several postures for the same session, including identical ones.
+  const occurrences = new Map<string, number>()
+  const workspaces = status.workspaces.map((workspace) => {
+    const identity = JSON.stringify([
+      workspace.sessionId,
+      workspace.path,
+      workspace.preset,
+      workspace.provider,
+      workspace.policyDigest,
+    ])
+    const occurrence = occurrences.get(identity) ?? 0
+    occurrences.set(identity, occurrence + 1)
+    return { workspace, key: `${identity}:${occurrence}` }
+  })
   return (
     <section data-testid="sandbox-security-status">
       {status.platform.l1.level === 'full' ? (
@@ -104,12 +118,8 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
           <p>{t('noWorkspacePosture')}</p>
         ) : (
           <SettingsList>
-            {status.workspaces.map((workspace) => (
-              <SettingsRow
-                key={workspace.sessionId}
-                data-testid="workspace-sandbox-status"
-                title={workspace.path}
-              >
+            {workspaces.map(({ workspace, key }) => (
+              <SettingsRow key={key} data-testid="workspace-sandbox-status" title={workspace.path}>
                 <dl>
                   <dt>{t('workspace')}</dt>
                   <dd>{workspace.path}</dd>

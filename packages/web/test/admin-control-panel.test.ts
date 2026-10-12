@@ -612,6 +612,7 @@ it('inherits the admin preset before the profile default and renders its permiss
 })
 
 it('distinguishes requested permissions from measured workspace enforcement', async () => {
+  const errors = vi.spyOn(console, 'error')
   const text = (key: string) => settingsCatalog.en[key] ?? key
   const missing = await mount(createElement(SecurityStatusPanel, { status: undefined, t: text }))
   expect(missing.textContent).toContain(text('securityUnavailable'))
@@ -648,11 +649,19 @@ it('distinguishes requested permissions from measured workspace enforcement', as
             policyDigest: 'bound-digest',
           },
           {
-            sessionId: 'session-b',
+            // A retained generation can report another posture for the same session.
+            sessionId: 'session-a',
             path: '/synthetic',
             preset: 'full-access',
             provider: 'local',
             state: 'unavailable',
+          },
+          {
+            sessionId: 'session-a',
+            path: '/synthetic',
+            preset: 'full-access',
+            provider: 'local',
+            state: 'ready',
           },
         ],
       },
@@ -663,11 +672,14 @@ it('distinguishes requested permissions from measured workspace enforcement', as
     text('network.unrestricted'),
   )
   const rows = host.querySelectorAll('[data-testid="workspace-sandbox-status"]')
-  expect(rows).toHaveLength(2)
+  expect(rows).toHaveLength(3)
   expect(rows[0]?.textContent).toContain(text('enforcement.partial'))
   expect(rows[0]?.textContent).toContain('bound-digest')
   expect(rows[1]?.textContent).toContain(text('unmeasured'))
   expect(rows[1]?.querySelector('[data-testid=workspace-enforcement]')?.textContent).not.toContain(
     text('enforcement.full'),
   )
+  expect(rows[2]?.textContent).toContain(text('readiness.ready'))
+  expect(errors.mock.calls).toEqual([])
+  errors.mockRestore()
 })
