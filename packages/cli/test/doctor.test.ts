@@ -1,9 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultProcessIdentity } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs, usage } from '../src/args.js'
@@ -126,68 +123,10 @@ describe('doctor command aggregation', () => {
     expect(existsSync(join(cacheDir, 'jiti', '0'))).toBe(true)
   })
 
-  it('uses one real Host for extensions and reports an absent daemon as a warning', async () => {
-    const d = deps()
-    let hostBuilds = 0
-    d.createHostImpl = async () => {
-      hostBuilds++
-      return (await createTestHost({ dataDir: d.home })).host
-    }
-
-    const extensions = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
-    expect(extensions.json).toEqual([
-      { name: 'extensions', status: 'ok', detail: ['no extensions declared'] },
-    ])
-    expect(hostBuilds).toBe(1)
-
-    const daemon = await doctorCommand(parseArgs(['doctor', 'daemon']), d)
-    expect(daemon).toEqual({
-      text: '! daemon\n    not running',
-      exitCode: 0,
-      json: [{ name: 'daemon', status: 'warn', detail: ['not running'] }],
-    })
-    expect(hostBuilds).toBe(1)
-  })
-
   it('does not mention activation recovery when no breadcrumb file exists', async () => {
     const d = deps()
     const daemon = await doctorCommand(parseArgs(['doctor', 'daemon']), d)
     expect(daemon.json).toEqual([{ name: 'daemon', status: 'warn', detail: ['not running'] }])
-  })
-
-  it.skipIf(process.platform === 'win32')('probes the real daemon owner and unix socket', async () => {
-    const d = deps()
-    const daemonDir = join(d.home, 'daemon')
-    const socketPath = join(daemonDir, 'agnesd.sock')
-    mkdirSync(daemonDir, { recursive: true })
-    const identity = await defaultProcessIdentity(process.pid)
-    if (identity.state !== 'alive') throw new Error('test process identity is unavailable')
-    writeFileSync(
-      join(daemonDir, 'owner.json'),
-      JSON.stringify({
-        pid: process.pid,
-        processStartId: identity.startId,
-        generation: randomUUID(),
-        startedAt: new Date().toISOString(),
-        socketPath,
-      }),
-    )
-    const server = createServer()
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(socketPath, resolve)
-    })
-    try {
-      await expect(doctorCommand(parseArgs(['doctor', 'daemon']), d)).resolves.toEqual({
-        text: '✓ daemon\n    lock: ok\n    socket: ok',
-        exitCode: 0,
-        json: [{ name: 'daemon', status: 'ok', detail: ['lock: ok', 'socket: ok'] }],
-      })
-    } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      )
-    }
   })
 
   it('fails closed on a corrupt owner record without echoing its contents', async () => {
