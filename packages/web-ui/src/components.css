@@ -252,6 +252,24 @@
   color: var(--agnes-status-success-text);
   box-shadow: var(--elevation-1);
   font-size: var(--font-size-body);
+  animation: agh-toast-in var(--transition) both;
+}
+/* Outcome modifiers change colour only; placement and timing are shared by every toast. */
+.agh-toast--info {
+  border-color: var(--agnes-status-info-border);
+  background: var(--agnes-status-info-bg);
+  color: var(--agnes-status-info-text);
+}
+.agh-toast--error {
+  border-color: var(--agnes-status-danger-border);
+  background: var(--agnes-status-danger-bg);
+  color: var(--agnes-status-danger-text);
+}
+@keyframes agh-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--s8);
+  }
 }
 @media (max-width: 767px) {
   .agh-menu-item {
@@ -730,9 +748,15 @@ dialog[data-size="lg"] {
   height: var(--s16);
   border-radius: var(--radius-sm);
   background: var(--agnes-bg-subtle);
+  animation: agh-skeleton-pulse 1.4s ease-in-out infinite alternate;
 }
 .agh-skeleton > span:last-child {
   width: 60%;
+}
+@keyframes agh-skeleton-pulse {
+  to {
+    opacity: 0.45;
+  }
 }
 @media (max-width: 767px) {
   /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */

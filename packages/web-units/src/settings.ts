@@ -870,7 +870,7 @@ function SettingsBuiltinImpl(
     createPortal(
       createElement(
         Toast,
-        { open: !!terminalNotice, onDismiss: () => setTerminalNotice(false) },
+        { open: !!terminalNotice, className: 'agh-toast--info', onDismiss: () => setTerminalNotice(false) },
         terminalNotice === 'needs-session'
           ? (options.translate?.('settings-shell.terminalNeedsSession') ??
               'Open a session to use the terminal.')
