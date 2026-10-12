@@ -116,6 +116,11 @@
   --ant-button-primary-color: var(--agnes-text-inverse);
   --ant-button-danger-color: var(--agnes-text-inverse);
   --ant-button-solid-text-color: var(--agnes-text-inverse);
+  /* Buttons are flat: elevation belongs to surfaces. Ant paints these through a two-class
+     selector that outranks the shared button rule, so the value is cleared at its source. */
+  --ant-button-default-shadow: none;
+  --ant-button-primary-shadow: none;
+  --ant-button-danger-shadow: none;
   --ant-modal-content-bg: var(--agnes-bg-popover);
   --ant-modal-title-color: var(--agnes-text-primary);
   --ant-select-selector-bg: var(--agnes-input-surface);
