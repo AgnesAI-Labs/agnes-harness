@@ -368,11 +368,11 @@ describe('a third party replaces a migrated builtin and gives way', () => {
     expect(toolNames(h)).toContain('good_tool')
     for (const id of Object.keys(SUPPLIED)) expect(listed(h, id)?.loaded, id).toBe(true)
     const after = h.host.extensions().map((e) => `${e.id}:${e.loaded}`)
-    // The rejected plugin stays listed as not loaded; everything that worked still lists as before.
-    expect(after.filter((entry) => before.includes(entry))).toEqual(before)
-    expect(after.filter((entry) => !before.includes(entry))).toEqual([
-      expect.stringMatching(/^plugin\/.*:false$/),
-    ])
+    // A rejected candidate never joins the live tree; its failure belongs to generation status.
+    expect(after).toEqual(before)
+    expect(h.host.pluginGenerationStatus?.().generations).toContainEqual(
+      expect.objectContaining({ state: 'failed', boundSessions: 0, live: false }),
+    )
     for (const [id, registrations] of Object.entries(SUPPLIED))
       expect(h.host.kernel.registrations(id), id).toEqual(registrations)
     await h.host.close()
