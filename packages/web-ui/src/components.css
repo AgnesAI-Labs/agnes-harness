@@ -315,7 +315,7 @@
   :is(.agnes-settings-card, .config-card) {
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
-    box-shadow: var(--elevation-0);
+    box-shadow: var(--shadow-hairline);
   }
   .agnes-settings-page[data-layout] {
     width: 100%;
