@@ -103,7 +103,6 @@ export function createSessionActions(options: {
           open={opened}
           width={480}
           focusable={{ focusTriggerAfterClose: false }}
-          forceRender
           footer={null}
           closable={{ disabled: pending }}
           onCancel={close}

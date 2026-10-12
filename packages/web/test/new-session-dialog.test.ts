@@ -100,6 +100,9 @@ it('preserves picker selectors, workspace availability, manual entry and localiz
 
 it('blocks dismissal during native picking and registration, then restores focus on Escape', async () => {
   const { controller, button, dialog, input, trigger, key } = setup()
+  const nativeEscape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  window.dispatchEvent(nativeEscape)
+  expect(nativeEscape.defaultPrevented).toBe(false)
   controller.update({ connected: true, pickerReady: false, path: '/workspace' })
   controller.show()
   controller.update({ pickerBusy: true })

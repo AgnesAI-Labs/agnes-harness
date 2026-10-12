@@ -55,7 +55,6 @@ export function WorkspaceDialog({
       <Dialog
         open={view.open}
         focusable={{ focusTriggerAfterClose: false }}
-        forceRender
         footer={null}
         closable={{ disabled: view.creating || view.pickerBusy }}
         onCancel={() => {

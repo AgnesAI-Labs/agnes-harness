@@ -34,6 +34,7 @@ export function Dialog({ className, size = 'md', ...props }: DialogProps) {
         </>
       )}
       onCancel={(event) => {
+        if (props.open !== true) return
         event.preventDefault()
         props.onCancel?.(event)
       }}

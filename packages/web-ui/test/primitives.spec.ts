@@ -78,6 +78,7 @@ test.beforeAll(async () => {
         <Dialog open={dialog} title="Confirm changes" size="sm" onCancel={() => setDialog(false)} footer={<Button onClick={() => setDialog(false)}>Cancel</Button>}>
           <p>Review your changes.</p><Field label="Name" error="Enter a name"><input /></Field>
         </Dialog>
+        <Dialog open={false} forceRender title="Closed confirmation" onCancel={() => select('Closed dialog canceled')} footer={null} />
         <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description="A short description" onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
       </main>
     }
@@ -179,7 +180,7 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   await expect(dialog).toBeVisible()
   const bounds = await dialog.boundingBox()
   expect(bounds?.width).toBeLessThanOrEqual(390)
-  const handle = page.locator('.agh-sheet-handle')
+  const handle = dialog.locator('.agh-sheet-handle')
   const box = await handle.boundingBox()
   if (!box) throw new Error('Sheet handle is not visible')
   await page.mouse.move(box.x + box.width / 2, box.y + 10)
@@ -207,6 +208,10 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   const footerBounds = await native.getByRole('button', { name: 'Lock', exact: true }).boundingBox()
   if (!nativeBounds || !footerBounds) throw new Error('Native sheet or footer is missing')
   expect(footerBounds.y + footerBounds.height).toBeLessThanOrEqual(nativeBounds.y + nativeBounds.height)
+  await page.keyboard.press('Escape')
+  await expect(native).toBeHidden()
+  await expect(nativeTrigger).toBeFocused()
+  await nativeTrigger.click()
   await native.getByRole('button', { name: 'Lock', exact: true }).click()
   const dragNative = async () => {
     const handleBounds = await nativeHandle.boundingBox()
