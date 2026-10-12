@@ -579,6 +579,7 @@ export { JcsByteLimitError, jcs } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
 export * from './loop-selection.js'
 export * from './meta.js'
+export * from './method-tiers.js'
 export * from './methods.js'
 // migrate.js is re-exported by name:
 //   - `register` / `supported` are extremely generic names and read ambiguously from core / host:

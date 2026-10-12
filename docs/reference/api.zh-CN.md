@@ -4,6 +4,7 @@
 
 [文档导航](../README.zh-CN.md) · [插件边界](../develop/plugins.zh-CN.md)
 [App Server v1](app-server.zh-CN.md) · JSONL、生成的 Schema、认证和错误 envelope。
+[协议分层](protocol-tiers.zh-CN.md) · 哪些方法属于稳定的客户端契约，哪些属于可演进的管理契约。
 
 为自己的应用接入 AGH 时，先选择与你的运行环境对应的入口，再查方法和 Schema。这里只列可追溯的接口合同；开发第一个插件可以先看[教程](../develop/plugins.zh-CN.md)。
 
