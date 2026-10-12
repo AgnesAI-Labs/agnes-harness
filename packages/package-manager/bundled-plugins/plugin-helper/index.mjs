@@ -84,7 +84,7 @@ export const pluginHelper = {
                 apiRange: '^3.0.0',
                 id: 'ext:my-agh-plugin/main',
                 export: 'main',
-                inject: kind === 'tool' ? ['tools', 'hooks', 'self'] : ['skills'],
+                inject: kind === 'tool' ? ['tools'] : ['skills'],
               },
             ],
           },

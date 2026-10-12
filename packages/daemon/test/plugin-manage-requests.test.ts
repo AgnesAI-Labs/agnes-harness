@@ -18,7 +18,7 @@ afterEach(async () => {
   for (const dir of roots.splice(0))
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
-const source = `export const main = { inject: ['hooks', 'eventLog', 'self'], apply(ctx) {} }`
+const source = `export const main = { inject: ['tools'], apply(ctx) {} }`
 const files = [
   {
     path: 'package.json',
@@ -34,7 +34,7 @@ const files = [
             apiRange: '^3.0.0',
             id: 'ext:test-plugin/main',
             export: 'main',
-            inject: ['hooks', 'eventLog', 'self'],
+            inject: ['tools'],
           },
         ],
       },
