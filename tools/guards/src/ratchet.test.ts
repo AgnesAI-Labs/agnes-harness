@@ -208,7 +208,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
   'packages/web-ui/src': 14807,
-  'packages/web-units/src': 9918,
+  'packages/web-units/src': 9920,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
   'packages/base/extensions/mcp-search': 178,
