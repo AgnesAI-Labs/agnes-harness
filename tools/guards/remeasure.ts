@@ -2,8 +2,9 @@
 //   pnpm guards:remeasure            rewrite both files from the current tree
 //   pnpm guards:remeasure --check    write nothing; exit 1 only on a hard failure (a listed file grew,
 //                                    an unlisted file is over the limit, or an entry is stale)
-// --keys and --allow-increase are accepted for older callers: --keys is ignored (the baseline is
-// always refreshed whole) and --allow-increase never raises a file-size ceiling.
+// --keys is accepted for older callers and ignored (the baseline is always refreshed whole).
+// --allow-increase re-baselines the allowlist after a reviewed merge: it may raise a ceiling or list
+// a file; the increase needs a justification in the review, not here.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { countLines } from './src/count-lines.js'
@@ -13,6 +14,7 @@ import { isTestFile, listSourceFiles, repoRoot } from './src/repo.js'
 const MAX_FILE_LINES = 800
 const root = repoRoot()
 const check = process.argv.includes('--check')
+const allowIncrease = process.argv.includes('--allow-increase')
 const read = (rel: string) => JSON.parse(readFileSync(join(root, rel), 'utf8')) as Record<string, number>
 const write = (rel: string, value: unknown) =>
   writeFileSync(join(root, rel), `${JSON.stringify(value, null, 2)}\n`)
@@ -35,11 +37,11 @@ let failed = false
 for (const [file, lines] of measured) {
   if (lines <= MAX_FILE_LINES) continue
   const ceiling = allowlist[file]
-  if (ceiling === undefined || lines > ceiling) {
+  if (!allowIncrease && (ceiling === undefined || lines > ceiling)) {
     console.error(`${file}: ${lines} lines exceeds ${ceiling ?? MAX_FILE_LINES}; split the file`)
     failed = true
   }
-  nextAllow[file] = Math.min(lines, ceiling ?? lines)
+  nextAllow[file] = allowIncrease ? lines : Math.min(lines, ceiling ?? lines)
 }
 for (const file of Object.keys(allowlist))
   if (!(file in nextAllow)) console.log(`${file}: within the limit, entry removed`)

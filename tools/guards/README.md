@@ -11,6 +11,10 @@ work does not conflict on them.
   shrinks: remove an entry when its file drops to 800 or below; never add one. Split the file instead.
   There is no per-function limit; the repository has no cheap function-length tooling.
 
+`pnpm guards:remeasure` refreshes `ratchet.json` and tightens the allowlist (drops entries that fit,
+lowers ceilings); it fails if a file grew or a new file is over the limit. `--check` writes nothing.
+`--allow-increase` re-baselines the allowlist after a reviewed merge; justify increases in the review.
+
 Integrity and linear-growth checks elsewhere in the suite remain hard.
 
 ## Stylesheet layers
