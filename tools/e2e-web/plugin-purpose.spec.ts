@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures.js'
 import { install } from './sdk.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, pluginTab, preferences, section, settings } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'] as const) {
   test(`plugin purpose, category, registered settings and details (${locale})`, async ({ page, runtime }) => {
@@ -49,16 +49,16 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(detail.getByTestId('plugin-appears-detail')).toContainText(
       locale === 'en' ? 'Settings' : '设置页',
     )
-    await page.getByTestId('plugin-permissions-tab').click()
+    await pluginTab(page, 'permissions').click()
     await expect(page.getByTestId('plugin-permissions-detail')).toBeVisible()
-    await page.getByTestId('plugin-versions-tab').click()
+    await pluginTab(page, 'versions').click()
     await expect(page.getByTestId('plugin-versions-detail')).toBeVisible()
-    await page.getByTestId('plugin-config-tab').click()
+    await pluginTab(page, 'config').click()
     await expect(page.getByTestId('plugin-settings-detail')).toBeVisible()
     await expect(page.getByTestId('plugin-config-field/name')).toHaveValue('Support')
     await page.getByTestId('plugin-config-field/name').fill('Unsaved purpose draft')
-    await page.getByTestId('plugin-details-tab').click()
-    await page.getByTestId('plugin-config-tab').click()
+    await pluginTab(page, 'details').click()
+    await pluginTab(page, 'config').click()
     await expect(page.getByTestId('plugin-config-field/name')).toHaveValue('Unsaved purpose draft')
   })
 }

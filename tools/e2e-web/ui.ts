@@ -2,6 +2,11 @@ import type { Page } from '@playwright/test'
 import { expect } from './fixtures.js'
 import type { Runtime } from './runtime.js'
 
+/** Select the interactive tab, whose localized label may span several lines on a phone. */
+export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config' | 'details') {
+  return page.getByRole('tab').filter({ has: page.getByTestId(`plugin-${name}-tab`) })
+}
+
 export async function preferences(page: Page, locale = 'en', theme = 'light') {
   await page.addInitScript(
     ({ locale, theme }) => {

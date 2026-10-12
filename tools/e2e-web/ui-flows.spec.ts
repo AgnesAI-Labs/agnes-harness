@@ -7,7 +7,17 @@ import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import type { Runtime } from './runtime.js'
 import { install, toolResult } from './sdk.js'
-import { chooseWorkspace, closeSettings, fresh, preferences, section, send, settings, turn } from './ui.js'
+import {
+  chooseWorkspace,
+  closeSettings,
+  fresh,
+  pluginTab,
+  preferences,
+  section,
+  send,
+  settings,
+  turn,
+} from './ui.js'
 
 async function open(page: Page, runtime: Runtime) {
   await preferences(page)
@@ -466,7 +476,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await page
       .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"] .plugin-details-button')
       .click()
-    await page.getByTestId('plugin-versions-tab').click()
+    await pluginTab(page, 'versions').click()
     const technical = page.getByTestId('plugin-drain-details')
     await expect(technical).not.toHaveAttribute('open')
     const pinned = (await client.packages.generations({ profile: 'local-dev' })).generations.find(
@@ -496,7 +506,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
       .fill('plugin-helper')
     await page.locator('.plugin-row[data-plugin-id="@agnes/plugin-helper"] .plugin-details-button').click()
-    await page.getByTestId('plugin-versions-tab').click()
+    await pluginTab(page, 'versions').click()
     const helperSummary = page.getByTestId('plugin-drain-summary')
     await expect(helperSummary).toHaveCount(1)
     await page.getByTestId('plugin-drain-details').locator('summary').click()
@@ -1003,7 +1013,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     )
     expect(draining).toBeDefined()
     await page.locator(`.plugin-row[data-plugin-id="${draining!.id}"] .plugin-details-button`).click()
-    await page.getByTestId('plugin-versions-tab').click()
+    await pluginTab(page, 'versions').click()
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
     await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')
     await page.locator('#plugin-detail .plugin-detail-close').click()
@@ -1126,7 +1136,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await section(page, 'plugins')
   // Installed provenance opens the retained published candidate, not the pending replacement.
   await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
-  await page.getByTestId('plugin-permissions-tab').click()
+  await pluginTab(page, 'permissions').click()
   await page
     .getByRole('dialog', { name: 'Plugin details', exact: true })
     .getByTestId('plugin-fact-chain')

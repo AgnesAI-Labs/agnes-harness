@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import type { Runtime } from './runtime.js'
 import { command, install } from './sdk.js'
-import { preferences, section, settings } from './ui.js'
+import { pluginTab, preferences, section, settings } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'] as const) {
   test(`configure an installed business agent with validation, CAS and redacted audit (${locale})`, async ({
@@ -91,7 +91,7 @@ async function openConfiguration(page: Page, runtime: Runtime, locale: 'en' | 'z
   await settings(page, locale)
   await section(page, 'plugins')
   await page.locator(`.plugin-row[data-plugin-id="${pkg.id}"] .plugin-details-button`).click()
-  const tab = page.getByTestId('plugin-config-tab')
+  const tab = pluginTab(page, 'config')
   await expect(tab).toHaveText(locale === 'en' ? 'Settings' : '设置')
   await tab.click()
   const panel = page.getByTestId('plugin-config-panel')
