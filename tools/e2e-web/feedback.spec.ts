@@ -93,7 +93,12 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
       .getByRole('dialog', { name: 'Approve and publish', exact: true })
       .getByRole('button', { name: 'Approve and publish', exact: true })
       .click()
-    await expect(page.getByTestId('candidate-state')).toHaveText('Published', { timeout: 40_000 })
+    await expect(page.getByTestId('candidate-review')).toHaveCount(0, { timeout: 40_000 })
+    await expect(page.getByTestId('candidate-published-link')).toContainText('review-evidence')
+    await expect(page.getByTestId('candidate-published-link')).toHaveAttribute(
+      'href',
+      /settings=skills&skill=review-evidence/,
+    )
     const published = await client.request('_agnes/v1/admin.feedback', { action: 'list', sessionId })
     expect(published.growth[0]).toMatchObject({
       state: 'published',
