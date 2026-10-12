@@ -19,6 +19,7 @@ async function setup() {
   let now = Date.UTC(2026, 0, 1)
   let creates = 0
   const t = await realHosted({
+    limits: { 'worker.generation_idle_close_ms': 0 },
     idleCloseMs: T,
     clock: () => now,
     wrapHost: (host) =>
@@ -105,6 +106,22 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
         resources: { mcp: [], skills: { generation: 'next' } },
       }).target,
     )
+    const jobs = t.host.extensionRows.prepare({
+      extensionId: 'agnes/jobs',
+      entryRevision: 'hibernate-jobs-v2',
+    })
+    await t.host.extensionRows.apply([
+      ...t.host.extensionRows.current().filter((row) => row.id !== jobs.id),
+      jobs,
+    ])
+    await t.host.collectPluginGenerations?.()
+    expect(
+      t.host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+    ).toMatchObject({
+      state: 'historical',
+      openSessions: 0,
+      live: false,
+    })
     await expect(t.hosted.dispatch(t.command('stub', 'latest', { register: 'op.state' }))).resolves.toBeNull()
     expect(t.creates()).toBe(created + 1)
     expect(t.hibernated('stub')).toBe(false)
@@ -114,8 +131,18 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
   it('answers ping with the ledger head, even after another writer appended while it slept', async () => {
     const t = await setup()
     const session = await t.open('moved')
-    const storage = session.d.log.storage
     await t.idle()
+    const jobs = t.host.extensionRows.prepare({ extensionId: 'agnes/jobs', entryRevision: 'head-jobs-v2' })
+    await t.host.extensionRows.apply([
+      ...t.host.extensionRows.current().filter((row) => row.id !== jobs.id),
+      jobs,
+    ])
+    await t.host.collectPluginGenerations?.()
+    expect(
+      t.host.pluginGenerationStatus?.().generations.find((item) => item.id === session.pluginGenerationId)
+        ?.live,
+    ).toBe(false)
+    const storage = t.host.kernel.o.storage
     const before = ((await t.ping('moved')) as { lastSeq: number }).lastSeq
     await storage.open('moved', { writerRunId: 'cli', ttlMs: 60_000 })
     await storage.commit('moved', {

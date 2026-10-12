@@ -168,7 +168,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   const draining = await mount(
     createElement(PluginBadges, { item: { ...item, draining: true, drainingSessions: 3 }, t }),
   )
-  expect(draining.textContent).toContain('Updating')
+  expect(draining.textContent).toContain('In use')
   expect(draining.textContent).not.toContain('(3)')
   expect(draining.querySelectorAll('.agh-tag')).toHaveLength(1)
   const removed = await mount(
@@ -182,6 +182,8 @@ it('shows declared kinds and observable states without guessing draining or rest
             id: 'old',
             state: 'draining',
             boundSessions: 3,
+            openSessions: 3,
+            live: true,
             packages: [
               { id: item.id, version: '0.9.0' },
               { id: '@acme/removed', version: '1.0.0' },
@@ -190,9 +192,21 @@ it('shows declared kinds and observable states without guessing draining or rest
           },
         ],
         plugins: [
-          { id: item.id, state: 'active', boundSessions: 3, drainingSessions: 3 },
-          { id: '@acme/removed', state: 'draining', boundSessions: 3, drainingSessions: 3 },
-          { id: '@agnes/base', state: 'draining', boundSessions: 3, drainingSessions: 3 },
+          { id: item.id, state: 'active', boundSessions: 3, drainingSessions: 3, historicalSessions: 0 },
+          {
+            id: '@acme/removed',
+            state: 'draining',
+            boundSessions: 3,
+            drainingSessions: 3,
+            historicalSessions: 0,
+          },
+          {
+            id: '@agnes/base',
+            state: 'draining',
+            boundSessions: 3,
+            drainingSessions: 3,
+            historicalSessions: 0,
+          },
         ],
       },
       t,
@@ -206,13 +220,48 @@ it('shows declared kinds and observable states without guessing draining or rest
   expect(removed.textContent).toContain('0.9.0')
   expect(removed.textContent).toContain('old')
   expect(removed.textContent).not.toContain('@agnes/base')
+  const historicalStatus = {
+    generations: [
+      {
+        id: 'saved',
+        state: 'historical' as const,
+        boundSessions: 2,
+        openSessions: 0,
+        live: false,
+        packages: [{ id: item.id, version: '0.8.0' }],
+      },
+    ],
+    plugins: [
+      { id: item.id, state: 'active' as const, boundSessions: 2, drainingSessions: 2, historicalSessions: 2 },
+    ],
+  }
+  const history = await mount(
+    createElement(GenerationDrainSummary, { installed: [item], status: historicalStatus, t }),
+  )
+  expect(history.querySelector('[data-testid=plugin-historical-summary]')?.textContent).toContain(
+    '2 saved sessions',
+  )
+  expect(history.textContent).toContain('Migrate session to current plugins')
+  expect(history.textContent).not.toContain('ongoing sessions are unaffected')
+  const historyBadge = await mount(
+    createElement(PluginBadges, { item: { ...item, draining: true }, status: historicalStatus, t }),
+  )
+  expect(historyBadge.textContent).toBe('Leftover usage')
   const builtins = await mount(
     createElement(GenerationDrainSummary, {
       installed: [],
       t,
       status: {
         generations: [],
-        plugins: [{ id: '@agnes/ai', state: 'draining', boundSessions: 1, drainingSessions: 1 }],
+        plugins: [
+          {
+            id: '@agnes/ai',
+            state: 'draining',
+            boundSessions: 1,
+            drainingSessions: 1,
+            historicalSessions: 0,
+          },
+        ],
       },
     }),
   )

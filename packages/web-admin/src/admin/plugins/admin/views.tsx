@@ -294,7 +294,12 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             providesOf={(item) => this.presentationOf(item)}
             formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
             metadataOf={(item) => (
-              <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
+              <PluginBadges
+                item={item}
+                runtime={this.runtimeState(item.id)}
+                status={this.state.generations}
+                t={this.t}
+              />
             )}
             tab={this.tab}
             rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
@@ -462,7 +467,12 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
             onClose={() => this.closeDetail()}
             permissions={
               <section data-testid="plugin-permissions-detail">
-                <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
+                <PluginBadges
+                  item={item}
+                  runtime={this.runtimeState(item.id)}
+                  status={this.state.generations}
+                  t={this.t}
+                />
                 {'desired' in item && (
                   <>
                     <ProvenanceReview value={item.provenance} t={this.t} />

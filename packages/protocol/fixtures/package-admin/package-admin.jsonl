@@ -484,7 +484,7 @@
 {"id":"pt-013-PluginTreeGetParams","target":"config","name":"PluginTreeGetParams","kind":"invalid","payload":{"profile":"test","unknown":true}}
 {"id":"pt-014-PluginTreeListParams","target":"config","name":"PluginTreeListParams","kind":"valid","payload":{"profile":"test"}}
 {"id":"pt-015-PluginTreeListParams","target":"config","name":"PluginTreeListParams","kind":"invalid","payload":{"profile":"test","unknown":true}}
-{"id":"generation-status-valid","target":"config","name":"PluginGenerationStatus","kind":"valid","payload":{"generations":[],"plugins":[]}}
+{"id":"generation-status-valid","target":"config","name":"PluginGenerationStatus","kind":"valid","payload":{"generations":[{"id":"11111111-1111-1111-1111-111111111111","state":"historical","boundSessions":1,"openSessions":0,"live":false,"packages":[{"id":"acme/example","version":"1.0.0"}]}],"plugins":[{"id":"acme/example","state":"historical","boundSessions":1,"drainingSessions":1,"historicalSessions":1}]}}
 {"id":"generation-status-invalid","target":"config","name":"PluginGenerationStatus","kind":"invalid","payload":{"generations":[],"plugins":[],"unknown":true}}
 {"id":"generation-status-params","target":"method","name":"_agnes/v1/plugins.generations","kind":"valid","side":"params","payload":{"profile":"local-dev"}}
 {"id":"generation-status-result","target":"method","name":"_agnes/v1/plugins.generations","kind":"valid","side":"result","payload":{"generations":[],"plugins":[]}}

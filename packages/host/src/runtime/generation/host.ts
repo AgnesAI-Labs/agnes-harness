@@ -37,16 +37,19 @@ export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string
   generations: readonly Readonly<{
     id: string
-    state: 'active' | 'draining' | 'failed'
+    state: 'active' | 'draining' | 'historical' | 'failed'
     boundSessions: number
+    openSessions: number
+    live: boolean
     packages: readonly Readonly<{ id: string; version: string }>[]
     error?: string
   }>[]
   plugins: readonly Readonly<{
     id: string
-    state: 'active' | 'draining' | 'restart-required' | 'failed'
+    state: 'active' | 'draining' | 'historical' | 'restart-required' | 'failed'
     boundSessions: number
     drainingSessions: number
+    historicalSessions: number
     error?: string
   }>[]
 }>
@@ -89,7 +92,7 @@ const registryCodeRevision = (target: RuntimeTarget) =>
 /**
  * Generation-local containers keep Cordis row identities, extension leases, loop registries and
  * model adapters independent. Storage remains the configured backend; no ledger is duplicated.
- * A closed connection is still a durable session reference, including after worker hibernation.
+ * Durable pins retain disk snapshots; only open sessions keep retired containers in memory.
  */
 export async function createRuntimeGenerationHost(
   profile: ResolvedProfile,
@@ -124,6 +127,13 @@ export async function createRuntimeGenerationHost(
   let closed = false
   let queue: Promise<unknown> = Promise.resolve()
   let closing: Promise<void> | undefined
+  const idleSince = new Map<Host, number>()
+  const configuredIdle = profile.limits['worker.generation_idle_close_ms']
+  const idleMs =
+    typeof configuredIdle === 'number' && Number.isSafeInteger(configuredIdle) && configuredIdle >= 0
+      ? configuredIdle
+      : 60_000
+  let collector: ReturnType<typeof setTimeout> | undefined
   for (const id of [
     profile.seams.sandbox,
     profile.seams.platform,
@@ -422,20 +432,52 @@ export async function createRuntimeGenerationHost(
     for (const generation of live.values()) if (generation.host.kernel.get(key)) return generation.host
     return current?.host ?? initial
   }
-  const collect = async (): Promise<void> => {
-    const referenced = new Set(store.sessions().map((pin) => pin.generationId))
-    const retired = new Set<string>()
-    for (const [id, generation] of live) {
-      if (id === current?.snapshot.id || referenced.has(id)) continue
-      if (![...live].some(([otherId, other]) => otherId !== id && other.host === generation.host)) {
-        await generation.host.close()
-        bindings.delete(generation.host)
+  const collect = async (retiredIds: ReadonlySet<string> = new Set()): Promise<void> => {
+    if (collector) clearTimeout(collector)
+    collector = undefined
+    const retired = new Set(retiredIds)
+    const errors: unknown[] = []
+    const now = Date.now()
+    const referenced = new Set(store.sessions().map((pin) => live.get(pin.generationId)?.host))
+    const hosts = new Set([...live.values()].map((generation) => generation.host))
+    for (const host of hosts) {
+      if (host === current?.host || host.kernel.sessions.size > 0) {
+        idleSince.delete(host)
+        continue
       }
-      live.delete(id)
-      rowsByGeneration.delete(id)
-      retired.add(id)
+      const since = idleSince.get(host) ?? now
+      idleSince.set(host, since)
+      if (referenced.has(host) && now - since < idleMs) continue
+      try {
+        await host.close()
+      } catch (error) {
+        errors.push(error)
+        // close() seals admission even when teardown fails; cold resume must build a new container.
+        for (const [id, generation] of live)
+          if (generation.host === host) failures.set(id, `E_GENERATION_DISPOSE: ${String(error)}`)
+      }
+      bindings.delete(host)
+      idleSince.delete(host)
+      for (const [id, generation] of live)
+        if (generation.host === host) {
+          live.delete(id)
+          rowsByGeneration.delete(id)
+          retired.add(id)
+        }
+    }
+    if (!closed && idleSince.size) {
+      const next = Math.min(...[...idleSince.values()].map((since) => since + idleMs))
+      collector = setTimeout(
+        () => {
+          collector = undefined
+          void enqueue(collect).catch(() => undefined)
+        },
+        Math.min(2_147_483_647, Math.max(1, next - Date.now())),
+      )
+      collector.unref()
     }
     store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
+    if (errors.length) throw new AggregateError(errors, 'generation collection failed')
   }
   const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
     if (closed) return Promise.reject(new HostError('E_HOST_CLOSED', 'host is closed'))
@@ -454,7 +496,9 @@ export async function createRuntimeGenerationHost(
   const status = (): PluginGenerationStatus => {
     const errors = new Map(failures)
     const counts = new Map<string, number>()
-    for (const pin of store.sessions()) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
+    const pins = store.sessions()
+    const pinsByKey = new Map(pins.map((pin) => [pin.sessionKey, pin.generationId]))
+    for (const pin of pins) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
     const snapshots = new Map([
       ...failedSnapshots,
       ...[...live].map(([id, generation]) => [id, generation.snapshot] as const),
@@ -472,34 +516,52 @@ export async function createRuntimeGenerationHost(
     const generations: PluginGenerationStatus['generations'][number][] = []
     for (const [id, snapshot] of snapshots) {
       const boundSessions = counts.get(id) ?? 0
+      const openSessions = [...(live.get(id)?.host.kernel.sessions.values() ?? [])].filter(
+        (session) => pinsByKey.get(session.key) === id,
+      ).length
       generations.push({
         id,
-        state: errors.has(id) ? 'failed' : id === current?.snapshot.id ? 'active' : 'draining',
+        state: errors.has(id)
+          ? 'failed'
+          : id === current?.snapshot.id
+            ? 'active'
+            : openSessions > 0
+              ? 'draining'
+              : 'historical',
         ...(errors.has(id) ? { error: errors.get(id) as string } : {}),
         boundSessions,
+        openSessions,
+        live: live.has(id),
         packages: snapshot.packages,
       })
       for (const pkg of snapshot.packages) {
         const packageId = pkg.id,
           previous = plugins.get(packageId)
-        const failed = live
-          .get(id)
-          ?.host.extensions()
-          .find((entry) => entry.package === packageId && entry.error)
+        const failed = errors.has(id)
+          ? undefined
+          : live
+              .get(id)
+              ?.host.extensions()
+              .find((entry) => entry.package === packageId && entry.error)
         const error = failed?.error?.message ?? errors.get(id)
         plugins.set(packageId, {
           id: packageId,
           state:
             error || previous?.state === 'failed'
               ? 'failed'
-              : requiresRestart(live.get(id)?.host ?? initial, packageId)
+              : requiresRestart(current?.host ?? initial, packageId)
                 ? 'restart-required'
                 : active.has(packageId)
                   ? 'active'
-                  : 'draining',
+                  : openSessions > 0 || previous?.state === 'draining'
+                    ? 'draining'
+                    : 'historical',
           boundSessions: (previous?.boundSessions ?? 0) + boundSessions,
           drainingSessions:
             (previous?.drainingSessions ?? 0) + (id === current?.snapshot.id ? 0 : boundSessions),
+          historicalSessions:
+            (previous?.historicalSessions ?? 0) +
+            (id === current?.snapshot.id ? 0 : Math.max(0, boundSessions - openSessions)),
           ...(error ? { error } : {}),
         })
       }
@@ -511,10 +573,19 @@ export async function createRuntimeGenerationHost(
           state: 'restart-required',
           boundSessions: store.sessions().length,
           drainingSessions: 0,
+          historicalSessions: 0,
         })
     for (const [id, error] of errors) {
       if (snapshots.has(id)) continue
-      generations.push({ id, state: 'failed', boundSessions: counts.get(id) ?? 0, packages: [], error })
+      generations.push({
+        id,
+        state: 'failed',
+        boundSessions: counts.get(id) ?? 0,
+        openSessions: 0,
+        live: false,
+        packages: [],
+        error,
+      })
     }
     return Object.freeze({
       ...(current ? { currentGenerationId: current.snapshot.id } : {}),
@@ -844,8 +915,9 @@ export async function createRuntimeGenerationHost(
       enqueue(async () => {
         if (owner(key).kernel.get(key))
           throw new Error('E_GENERATION_SESSION_OPEN: close the deleted session first')
+        const pin = store.session(key)
         store.releaseSession(key)
-        await collect()
+        await collect(new Set(pin ? [pin.generationId] : []))
       }),
     migrateSessionGeneration: (key, context) =>
       enqueue(async () => {
@@ -883,7 +955,7 @@ export async function createRuntimeGenerationHost(
           return { previousGenerationId: pin.generationId, generationId: pin.generationId, changed: false }
         store.migrateSession(key, pin.generationId, head.snapshot.id)
         try {
-          await collect()
+          await collect(new Set([pin.generationId]))
         } catch (error) {
           failures.set(pin.generationId, `E_GENERATION_DISPOSE: ${String(error)}`)
         }
@@ -906,6 +978,7 @@ export async function createRuntimeGenerationHost(
           : head.snapshot.id
         const pin = existing ?? { sessionKey: key, generationId: desiredId }
         const generation = await resolve(pin.generationId)
+        idleSince.delete(generation.host)
         try {
           if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
           if (
@@ -937,12 +1010,14 @@ export async function createRuntimeGenerationHost(
               await close()
             } finally {
               generation.host.kernel.sessions.delete(key)
+              if (!closed) void enqueue(collect).catch(() => undefined)
             }
           }
           failures.delete(pin.generationId)
           return session
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
+          if (!closed) void enqueue(collect).catch(() => undefined)
           if (message.includes('E_GENERATION_') || message.startsWith('Loop '))
             failures.set(pin.generationId, message)
           throw error
@@ -1106,6 +1181,9 @@ export async function createRuntimeGenerationHost(
     close: () => {
       if (closing) return closing
       closed = true
+      if (collector) clearTimeout(collector)
+      collector = undefined
+      idleSince.clear()
       // Claim admitted openings now, before waiting for the outer mutation queue to drain.
       const hosts = new Map<Host, Promise<void>>()
       const claim = (host: Host) => {

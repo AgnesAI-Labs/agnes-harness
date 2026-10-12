@@ -306,7 +306,6 @@ export class HostedSessions {
     // Resume the stream from what was pushed, not from lastSeq: rows committed while the log drains
     // on close were never pushed and are sent after waking.
     const delivered = hosted.following?.deliveredThrough()
-    const ledger = session.d.log.storage
     const lastSeq = session.lastSeq
     this.stubs.set(key, {
       ...(session.pluginGenerationId ? { pluginGenerationId: session.pluginGenerationId } : {}),
@@ -314,13 +313,7 @@ export class HostedSessions {
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
       lastSeq,
-      head: async () => {
-        try {
-          return (await ledger.scan(key, { order: 'desc', limit: 1 }))[0]?.seq ?? lastSeq
-        } catch {
-          return lastSeq
-        }
-      },
+      head: this.headReader(key, lastSeq),
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
     })
     hosted.tail?.abort()
@@ -345,6 +338,19 @@ export class HostedSessions {
     })().finally(() => this.hibernating.delete(key))
     this.hibernating.set(key, done)
     return done
+  }
+
+  private headReader(key: string, lastSeq: number): () => Promise<number> {
+    // A stub must not capture hibernate's scope: its closing task still refers to the full session.
+    return async () => {
+      try {
+        return (
+          (await this.options.host.kernel.o.storage.scan(key, { order: 'desc', limit: 1 }))[0]?.seq ?? lastSeq
+        )
+      } catch {
+        return lastSeq
+      }
+    }
   }
 
   private dormant(key: string): boolean {

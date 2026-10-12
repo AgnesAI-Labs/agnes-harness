@@ -62,6 +62,8 @@ Check the full [profile schema](../../packages/protocol/schema/profile.json), [i
 
 <a id="模型与密钥"></a>
 
+The `limits` key `worker.generation_idle_close_ms` controls how long a retired plugin container with no open sessions stays in memory (default 60,000 ms). It accepts a non-negative integer; 0 collects immediately. This does not expire durable pins or disk snapshots.
+
 ## Models and secrets
 
 The configuration service supports account lists, per-account routes, and a default account. Routes may look like `account-...`. Select the route/model returned by the interface; do not assume all accounts for a provider share one route. Catalogs and contracts determine capabilities, and saving validates the selected model. New defaults do not rewrite existing sessions.

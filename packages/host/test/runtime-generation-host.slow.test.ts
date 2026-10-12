@@ -24,8 +24,9 @@ import {
   restoreSkillGeneration,
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
+import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
 import { createTestHost } from '../testkit/index.js'
 import { fixtureTool } from './fixtures/tool.js'
 
@@ -155,6 +156,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
   const providers: ScriptedProvider[] = []
   const options = {
     dataDir: root,
+    limits: { 'worker.generation_idle_close_ms': 25 },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     skillResources: {
       list: () => [],
@@ -365,8 +367,45 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       state: 'draining',
       boundSessions: 2,
       drainingSessions: 2,
+      historicalSessions: 0,
     })
     expect(await execute(a)).toMatchObject({ content: [{ text: '1.0.0' }] })
+    expect(host.pluginGenerationStatus?.().generations.find((item) => item.id === firstId)).toMatchObject({
+      state: 'draining',
+      openSessions: 1,
+      live: true,
+    })
+    await a.close()
+    // Automatic idle collection releases memory while the durable archive and the other session survive.
+    await vi.waitFor(() =>
+      expect(host?.pluginGenerationStatus?.().generations.find((item) => item.id === firstId)).toMatchObject({
+        state: 'historical',
+        boundSessions: 1,
+        openSessions: 0,
+        live: false,
+      }),
+    )
+    expect(new RuntimeGenerationSnapshotStore(profileDir).read(required(firstId)).packages).toContainEqual({
+      id: 'acme/generation',
+      version: '1.0.0',
+    })
+    expect(host.kernel.get(b.key)).toBeDefined()
+    const collectedResume = await host.createSession({ key: a.key, cwd: root })
+    expect(collectedResume.pluginGenerationId).toBe(firstId)
+    await collectedResume.enqueue('next-turn', {
+      actor: collectedResume.d.actor,
+      content: [{ type: 'text', text: 'run collected old code' }],
+    })
+    expect(
+      (await collectedResume.run({ until: 'turn-end', signal: new AbortController().signal })).reason,
+    ).toBe('completed')
+    const latestResult = (await collectedResume.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]
+    expect(JSON.stringify(latestResult?.data)).toContain('1.0.0')
+    expect(await execute(collectedResume)).toMatchObject({
+      content: [{ text: '1.0.0' }],
+      structured: { limit: 10 },
+    })
+    await collectedResume.close()
     await host.close()
     // Installed packages and the publisher's process cache disappear; only immutable snapshots remain.
     sources.splice(0)
@@ -900,6 +939,53 @@ it('reads live scoped Skills without granting another session its directories', 
       })
     })
   } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('reports disposal failure without reusing the sealed container, and can cold resume its durable pin', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-generation-dispose-'))
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    limits: { 'worker.generation_idle_close_ms': 0 },
+  })
+  try {
+    const session = await host.createSession({ key: 'dispose', cwd: root })
+    const generationId = session.pluginGenerationId
+    const source = hostInspectionSource(host)
+    const close = source.close.bind(source)
+    vi.spyOn(source, 'close').mockImplementationOnce(async () => {
+      await close()
+      throw new Error('fixture disposal failure')
+    })
+    const jobs = host.extensionRows.prepare({ extensionId: 'agnes/jobs', entryRevision: 'dispose-jobs-v2' })
+    await host.extensionRows.apply([
+      ...host.extensionRows.current().filter((row) => row.id !== jobs.id),
+      jobs,
+    ])
+    expect(
+      host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+    ).toMatchObject({ state: 'draining', openSessions: 1, live: true })
+    await session.close()
+    await host.collectPluginGenerations?.()
+    expect(
+      host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+    ).toMatchObject({
+      state: 'failed',
+      boundSessions: 1,
+      openSessions: 0,
+      live: false,
+      error: 'E_GENERATION_DISPOSE',
+    })
+    const resumed = await host.createSession({ key: session.key, cwd: root })
+    expect(resumed.pluginGenerationId).toBe(generationId)
+    expect(
+      host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+    ).toMatchObject({ state: 'draining', openSessions: 1, live: true })
+    await resumed.close()
+  } finally {
+    await host.close()
     rmSync(root, { recursive: true, force: true })
   }
 })

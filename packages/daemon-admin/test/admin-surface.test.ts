@@ -209,7 +209,9 @@ describe('local package admin surface trust boundary', () => {
   it('exposes validated generation counts through the read-only admin route', async () => {
     const status = {
       generations: [],
-      plugins: [{ id: 'example', state: 'draining', boundSessions: 2, drainingSessions: 2 }],
+      plugins: [
+        { id: 'example', state: 'draining', boundSessions: 2, drainingSessions: 2, historicalSessions: 0 },
+      ],
     }
     const s = await server(
       vi.fn(async () => status),

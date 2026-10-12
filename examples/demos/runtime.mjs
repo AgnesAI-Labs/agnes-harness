@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
@@ -19,7 +19,7 @@ export async function waitFor(read, accepts, description, timeout = 30000) {
   }
   throw new Error(`${description} timed out: ${JSON.stringify(value)}`)
 }
-export async function runtime(check) {
+export async function runtime(check, limits = {}) {
   assert.ok(
     existsSync(resolve('packages/cli/dist/local/agnes.mjs')),
     'Run from the repository root after pnpm --filter @agnes/cli build:local',
@@ -60,8 +60,53 @@ export async function runtime(check) {
     })
   let client
   let configured = false
+  let limitsConfigured = false
   const connect = async () => {
     await cli(['daemon', 'start'])
+    if (!limitsConfigured && Object.keys(limits).length) {
+      await cli(['daemon', 'stop'])
+      const profileDir = join(home, 'profiles/local-dev')
+      await mkdir(profileDir, { recursive: true })
+      await writeFile(
+        join(profileDir, 'profile.yaml'),
+        JSON.stringify({
+          name: 'local-dev',
+          limits,
+          provider: {
+            package: '@agnes/ai',
+            adapters: ['@agnes/ai', 'scripted'],
+            routes: [
+              {
+                route: 'demo',
+                api: 'scripted',
+                baseUrl: 'https://demo.invalid',
+                keyless: true,
+                compat: { demo: true },
+                models: [
+                  {
+                    id: 'demo-model',
+                    name: 'Demo',
+                    route: 'demo',
+                    api: 'scripted',
+                    baseUrl: 'https://demo.invalid',
+                    reasoning: false,
+                    input: ['text'],
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 128000,
+                    maxTokens: 8192,
+                    toolCallFormats: ['native'],
+                    thinkingReplay: 'native',
+                    contract_id: null,
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      )
+      limitsConfigured = true
+      await cli(['daemon', 'start'])
+    }
     const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
     client = createClient({
       transport: { kind: 'unix', path: owner.socketPath },

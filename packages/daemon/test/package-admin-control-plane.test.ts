@@ -341,7 +341,15 @@ it('installs an actual local package, returns a durable idempotent receipt, and 
   })
   const generations = {
     generations: [],
-    plugins: [{ id: 'acme/pkg-a', state: 'draining' as const, boundSessions: 2, drainingSessions: 2 }],
+    plugins: [
+      {
+        id: 'acme/pkg-a',
+        state: 'draining' as const,
+        boundSessions: 2,
+        drainingSessions: 2,
+        historicalSessions: 0,
+      },
+    ],
   }
   const publication = {
     operation: 'models' as const,

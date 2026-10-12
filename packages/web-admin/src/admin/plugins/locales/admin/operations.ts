@@ -28,7 +28,7 @@ export const operationsCatalog: LocaleCatalog = {
     'state.enabled': 'Enabled',
     'state.disabled': 'Disabled',
     'state.active': 'Active',
-    'state.draining': 'Updating',
+    'state.draining': 'In use',
     'state.restart-required': 'Restart required',
     'state.failed': 'Failed',
     'error.connection':
@@ -166,7 +166,7 @@ export const operationsCatalog: LocaleCatalog = {
     'state.enabled': '已启用',
     'state.disabled': '已停用',
     'state.active': '运行中',
-    'state.draining': '更新中',
+    'state.draining': '正在使用',
     'state.restart-required': '需要重启',
     'state.failed': '失败',
     'error.connection': '无法连接插件管理后台。已保留当前页面内容。',

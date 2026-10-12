@@ -168,7 +168,7 @@ export function GenerationsPanel({
             <code>{generation.id}</code> <Badge>{t(`generationState.${generation.state}`)}</Badge>
           </p>
           <p>
-            {t('bound')}: {generation.boundSessions}
+            {t('bound')}: {generation.boundSessions} · {t('openSessions')}: {generation.openSessions}
           </p>
           <ul>
             {generation.packages.map((pkg) => (

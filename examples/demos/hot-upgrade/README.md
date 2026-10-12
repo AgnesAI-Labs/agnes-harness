@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Publish a reviewed v2 while v1 waits for business review. New sessions use v2; restart the daemon and resume v1 with one read, classification and simulated send.
+Publish a reviewed v2 while v1 waits for business review. New sessions use v2; restart the daemon and resume v1 with one read, classification and simulated send. Then let its retired container be collected and reopen the session in the same worker: the original generation and v1 send implementation remain pinned.
 
 From the repository root, after installing dependencies and building the local CLI:
 

@@ -1375,7 +1375,15 @@ it.each([
         generations: [],
         plugins:
           'generationRestart' in observation
-            ? [{ id: row.id, state: 'restart-required', boundSessions: 0, drainingSessions: 0 }]
+            ? [
+                {
+                  id: row.id,
+                  state: 'restart-required',
+                  boundSessions: 0,
+                  drainingSessions: 0,
+                  historicalSessions: 0,
+                },
+              ]
             : [],
       }),
     } as never,

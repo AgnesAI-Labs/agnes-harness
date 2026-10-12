@@ -10,36 +10,54 @@ export type PluginKind = (typeof PLUGIN_KINDS)[number]
 export function pluginStates(
   item: Plugin,
   runtime?: PluginRuntimeState,
+  status?: PluginGenerationStatus,
 ): readonly { key: string; tone: TagTone }[] {
   if (!('desired' in item))
     return item.compatibility === 'unsupported' ? [{ key: 'unsupported', tone: 'bad' }] : []
   if (item.actual === 'failed' || runtime?.phase === 'failed') return [{ key: 'failed', tone: 'bad' }]
   if (item.actual === 'restart-required') return [{ key: 'restart-required', tone: 'warn' }]
-  if (item.draining === true) return [{ key: 'draining', tone: 'info' }]
+  if (item.draining === true) {
+    const plugin = status?.plugins.find((plugin) => plugin.id === item.id)
+    return [
+      {
+        key:
+          plugin && plugin.drainingSessions > 0 && plugin.drainingSessions === plugin.historicalSessions
+            ? 'historical'
+            : 'draining',
+        tone: 'info',
+      },
+    ]
+  }
   return []
 }
 export function PluginBadges({
   item,
   runtime,
+  status,
   t,
 }: {
   item: Plugin
   runtime?: PluginRuntimeState | undefined
+  status?: PluginGenerationStatus | undefined
   t: Text
 }) {
   return (
     <>
-      {pluginStates(item, runtime).map(({ key, tone }) =>
-        key === 'draining' ? (
-          <Tooltip key={key} title={t('drain.tooltip')}>
+      {pluginStates(item, runtime, status).map(({ key, tone }) =>
+        key === 'draining' || key === 'historical' ? (
+          <Tooltip key={key} title={t(key === 'historical' ? 'drain.historicalTooltip' : 'drain.tooltip')}>
             {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus exposes the update explanation. */}
             <Tag
               tone={tone}
               tabIndex={0}
               role="note"
-              aria-label={t('state.draining') + '. ' + t('drain.tooltip')}
+              aria-label={
+                t(`state.${key}`) +
+                '. ' +
+                t(key === 'historical' ? 'drain.historicalTooltip' : 'drain.tooltip')
+              }
             >
-              {t('state.draining')}
+              {t(`state.${key}`)}
             </Tag>
           </Tooltip>
         ) : (
@@ -72,24 +90,33 @@ export function GenerationDrainSummary({
   const generations =
     status?.generations.filter(
       (generation) =>
-        generation.state === 'draining' &&
+        (generation.state === 'draining' || generation.state === 'historical') &&
         generation.boundSessions > 0 &&
         generation.packages.some((item) => plugins.some((plugin) => plugin.id === item.id)),
     ) ?? []
   // A session binds one generation; summing per-plugin counts would count it repeatedly.
-  const sessions = generations.reduce((sum, generation) => sum + generation.boundSessions, 0)
+  const sessions = generations.reduce((sum, generation) => sum + generation.openSessions, 0)
+  const historical = generations.reduce(
+    (sum, generation) => sum + Math.max(0, generation.boundSessions - generation.openSessions),
+    0,
+  )
   return (
     <div className="plugin-drain-notice">
       <p data-testid="plugin-drain-summary">
-        {t(sessions ? 'drain.summary' : 'drain.summaryUnknown', {
+        {t(sessions ? 'drain.summary' : historical ? 'state.historical' : 'drain.summaryUnknown', {
           plugins: plugins.length,
           sessions,
           pluginNoun: t(plugins.length === 1 ? 'drain.pluginOne' : 'drain.pluginMany'),
           sessionNoun: t(sessions === 1 ? 'drain.sessionOne' : 'drain.sessionMany'),
         })}
       </p>
+      {historical > 0 && (
+        <p data-testid="plugin-historical-summary">
+          {t('drain.historicalSummary', { sessions: historical })}
+        </p>
+      )}
       <details data-testid="plugin-drain-details">
-        <summary>{t('drain.details')}</summary>
+        <summary>{t(historical && !sessions ? 'drain.historicalDetails' : 'drain.details')}</summary>
         <ul>
           {plugins.map((plugin) => (
             <li key={plugin.id}>
@@ -100,7 +127,13 @@ export function GenerationDrainSummary({
                     .filter((item) => item.id === plugin.id)
                     .map((item) => (
                       <li key={generation.id}>
-                        {t('drain.version', { version: item.version, sessions: generation.boundSessions })}
+                        {t(generation.state === 'historical' ? 'drain.historicalVersion' : 'drain.version', {
+                          version: item.version,
+                          sessions:
+                            generation.state === 'historical'
+                              ? generation.boundSessions
+                              : generation.openSessions,
+                        })}
                         <br />
                         <code>
                           {plugin.id} · {generation.id}

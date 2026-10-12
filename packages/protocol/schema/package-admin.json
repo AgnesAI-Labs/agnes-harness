@@ -1624,12 +1624,14 @@
                 "pattern": "^[a-f0-9-]{36}$"
               },
               "state": {
-                "enum": ["active", "draining", "failed"]
+                "enum": ["active", "draining", "historical", "failed"]
               },
               "boundSessions": {
                 "type": "integer",
                 "minimum": 0
               },
+              "openSessions": { "type": "integer", "minimum": 0 },
+              "live": { "type": "boolean" },
               "packages": {
                 "type": "array",
                 "items": {
@@ -1655,7 +1657,7 @@
                 "maxLength": 512
               }
             },
-            "required": ["id", "state", "boundSessions", "packages"]
+            "required": ["id", "state", "boundSessions", "openSessions", "live", "packages"]
           }
         },
         "plugins": {
@@ -1670,7 +1672,7 @@
                 "maxLength": 256
               },
               "state": {
-                "enum": ["active", "draining", "restart-required", "failed"]
+                "enum": ["active", "draining", "historical", "restart-required", "failed"]
               },
               "boundSessions": {
                 "type": "integer",
@@ -1680,12 +1682,13 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "historicalSessions": { "type": "integer", "minimum": 0 },
               "error": {
                 "type": "string",
                 "maxLength": 512
               }
             },
-            "required": ["id", "state", "boundSessions", "drainingSessions"]
+            "required": ["id", "state", "boundSessions", "drainingSessions", "historicalSessions"]
           }
         }
       },

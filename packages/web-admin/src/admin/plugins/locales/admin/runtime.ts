@@ -2,6 +2,13 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const runtimeCatalog: LocaleCatalog = {
   en: {
+    'state.historical': 'Leftover usage',
+    'drain.historicalTooltip':
+      'Only saved sessions reference this version. Its container can close; the snapshot stays available for resume.',
+    'drain.historicalSummary':
+      'Leftover usage: {sessions} saved sessions retain older code. Use “Migrate session to current plugins” in runtime settings to migrate eligible sessions.',
+    'drain.historicalDetails': 'Historical sessions',
+    'drain.historicalVersion': 'Version {version} · {sessions} historical sessions',
     'drain.pluginOne': 'plugin',
     'drain.pluginMany': 'plugins',
     'drain.sessionOne': 'session',
@@ -48,6 +55,12 @@ export const runtimeCatalog: LocaleCatalog = {
     'tree.loading': 'Updating plugin resources…',
   },
   'zh-CN': {
+    'state.historical': '遗留占用',
+    'drain.historicalTooltip': '只有历史会话引用此版本。运行容器可关闭，快照仍保留供恢复使用。',
+    'drain.historicalSummary':
+      '遗留占用：{sessions} 个历史会话保留旧代码。可在运行时设置中使用“将会话迁移到当前插件”迁移符合条件的会话。',
+    'drain.historicalDetails': '历史会话',
+    'drain.historicalVersion': '版本 {version} · {sessions} 个历史会话',
     'drain.pluginOne': '插件',
     'drain.pluginMany': '插件',
     'drain.sessionOne': '会话',

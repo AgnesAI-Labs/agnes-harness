@@ -8,6 +8,13 @@ Adds an optional typed `InputPresentation` to `AgentInputPort.deliver`. Backend 
 
 ## Unreleased
 
+`PluginGenerationStatus` adds `historical` for generations referenced only by saved sessions,
+required generation `openSessions` / `live` fields, and plugin `historicalSessions` counts.
+`boundSessions` still counts durable pins; `drainingSessions` still counts all non-current pins.
+Consumers must distinguish open sessions from historical references. Historical snapshots retain
+their pinned code while retired in-memory containers close after the configured idle timeout.
+The unpublished protocol package version and extension API version remain unchanged.
+
 Additive contract repairs: `@agnes/protocol` now exports the existing `UiArtifactFileData`
 type from its root, without changing the schema, wire format or runtime exports.
 `--agnes-scrollbar-thumb` joins the generated `THEME_TOKEN_NAMES` / `ThemeTokenName`

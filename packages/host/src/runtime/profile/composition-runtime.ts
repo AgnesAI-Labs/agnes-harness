@@ -19,7 +19,7 @@ import {
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
-import { createRuntimeGenerationHost } from '../generation/host.js'
+import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import {
@@ -586,21 +586,59 @@ export async function createCompositionHost(
               ...status,
               generations: status.generations.map((item) => ({
                 ...item,
-                state: item.state === 'active' ? ('draining' as const) : item.state,
+                state:
+                  item.state === 'active'
+                    ? item.openSessions > 0
+                      ? ('draining' as const)
+                      : ('historical' as const)
+                    : item.state,
               })),
               plugins: status.plugins.map((item) => ({
                 ...item,
-                state: item.state === 'active' ? ('draining' as const) : item.state,
+                state:
+                  item.state === 'active'
+                    ? status.generations.some(
+                        (generation) =>
+                          generation.openSessions > 0 &&
+                          generation.packages.some((pkg) => pkg.id === item.id),
+                      )
+                      ? ('draining' as const)
+                      : ('historical' as const)
+                    : item.state,
                 drainingSessions: item.boundSessions,
+                historicalSessions: status.generations
+                  .filter((generation) => generation.packages.some((pkg) => pkg.id === item.id))
+                  .reduce(
+                    (count, generation) =>
+                      count + Math.max(0, generation.boundSessions - generation.openSessions),
+                    0,
+                  ),
               })),
             }
       })
-      const all = new Map(
-        statuses.flatMap((status) => status.generations.map((item) => [item.id, item] as const)),
-      )
-      // Each W7 facade sees the shared durable pins. Active in any container wins over draining.
+      const all = new Map<string, PluginGenerationStatus['generations'][number]>()
       for (const status of statuses)
-        for (const item of status.generations) if (item.state === 'active') all.set(item.id, item)
+        for (const item of status.generations) {
+          const previous = all.get(item.id)
+          if (!previous) {
+            all.set(item.id, item)
+            continue
+          }
+          const openSessions = Math.max(previous.openSessions, item.openSessions)
+          all.set(item.id, {
+            ...item,
+            state:
+              previous.state === 'active' || item.state === 'active'
+                ? 'active'
+                : previous.state === 'failed' || item.state === 'failed'
+                  ? 'failed'
+                  : openSessions > 0
+                    ? 'draining'
+                    : 'historical',
+            openSessions,
+            live: previous.live || item.live,
+          })
+        }
       return {
         ...statuses[0]!,
         generations: [...all.values()],
@@ -617,10 +655,20 @@ export async function createCompositionHost(
             ...plugin,
             state: relevant.some((generation) => generation.state === 'active')
               ? ('active' as const)
-              : ('draining' as const),
+              : relevant.some((generation) => generation.openSessions > 0)
+                ? ('draining' as const)
+                : ('historical' as const),
             boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
+            historicalSessions: relevant.reduce(
+              (count, generation) =>
+                count +
+                (generation.state === 'active'
+                  ? 0
+                  : Math.max(0, generation.boundSessions - generation.openSessions)),
+              0,
+            ),
             drainingSessions: relevant.reduce(
-              (count, generation) => count + (generation.state === 'draining' ? generation.boundSessions : 0),
+              (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
               0,
             ),
           }

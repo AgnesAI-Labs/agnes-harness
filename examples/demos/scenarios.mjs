@@ -10,7 +10,12 @@ assert.ok(
   process.argv.slice(3).every((arg) => arg === '--check'),
   'Only --check is accepted',
 )
-const rt = await runtime(process.argv.includes('--check'))
+const rt = await runtime(
+  process.argv.includes('--check'),
+  name === 'hot-upgrade'
+    ? { 'worker.session_idle_close_ms': 100, 'worker.generation_idle_close_ms': 100 }
+    : {},
+)
 const bundle = '@agnes-fde/support-triage#support-triage'
 async function begin() {
   const session = await rt.session({ bundles: [bundle] })
@@ -19,7 +24,7 @@ async function begin() {
   assert.equal((await result(session, 'fde_support_classify')).priority, 'urgent')
   return session
 }
-async function finish(session) {
+async function finish(session, previousSends = 0) {
   const page = await session.uiRead()
   const record = page.surfaces.findLast(
     (record) =>
@@ -39,8 +44,8 @@ async function finish(session) {
     selection: {},
   })
   await waitFor(
-    () => result(session, 'fde_support_send').catch(() => null),
-    Boolean,
+    () => results(session, 'fde_support_send').catch(() => []),
+    (outputs) => outputs.length > previousSends,
     'Surface answer workflow',
   )
   return result(session, 'fde_support_send')
@@ -130,6 +135,32 @@ try {
     assert.equal((await results(resumed, 'fde_support_classify')).length, 1)
     say(
       '3. Restarted mid-task: persisted review and prior tool results recovered; v1 finished with exactly one send receipt, one read and one classification.',
+    )
+    const pinned = (await resumed.capabilities()).codePin.generationId
+    await resumed.detach()
+    await waitFor(
+      () => rt.client.packages.generations({ profile: 'local-dev' }),
+      (status) =>
+        status.generations.some(
+          (generation) => generation.id === pinned && generation.state === 'historical' && !generation.live,
+        ),
+      'Historical v1 container collection',
+    )
+    const collected = await rt.client.session.load(old.id, {
+      cwd: rt.workspace,
+      onPermissionRequest: rt.allow,
+    })
+    await collected.attach()
+    const capabilities = await collected.capabilities()
+    assert.equal(capabilities.codePin.generationId, pinned)
+    assert.ok(
+      capabilities.codePin.packages.some((pkg) => pkg.id === manifest.name && pkg.version === '1.1.1'),
+    )
+    await prompt(collected, 'Triage synthetic ticket T-100 again.', 'parked')
+    assert.equal((await finish(collected, 1)).receipt, 'support-v1:T-100')
+    assert.equal((await results(collected, 'fde_support_send')).length, 2)
+    say(
+      '4. Collected v1 in the same worker: cold resume kept its generation and version; another workflow sent a v1 receipt.',
     )
   } else {
     say('1. Ask the Agent to create a text statistics plugin through the installed authoring helper.')
