@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto'
-import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import { jcs } from '@agnes/protocol'
 import descriptor from './client/agnes.client.json' with { type: 'json' }
 
@@ -147,45 +145,32 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
   }
 }
 
-/** SC1 content is untrusted. Verify its binding against the Host queue's original durable receipt. */
-export async function actionOutcome(ctx, state, signal) {
-  const prefix = 'Intelligent UI action result: '
-  const text =
-    state.stageInput?.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n') ?? ''
-  if (!text.startsWith(prefix)) return null
-  let notice
-  try {
-    notice = JSON.parse(text.slice(prefix.length))
-  } catch {
-    return null
-  }
+/** Host authenticates the receipt; match only this workflow's business action. */
+export async function actionOutcome(_ctx, state, _signal) {
+  const input = state.stageInput
   if (
-    notice.sessionId !== ctx.sessionKey ||
+    input?.origin !== 'system' ||
+    input.system?.source !== 'agnes/intelligent-ui' ||
+    input.system.type !== 'action-result'
+  )
+    return null
+  const notice = input.system.data
+  if (
     notice.surfaceId !== state.data.surface.id ||
     notice.revision !== state.data.surface.revision ||
     notice.actionId !== 'approve' ||
-    typeof notice.commandId !== 'string'
+    notice.invocation?.tool !== 'fde_finance_approve' ||
+    !['succeeded', 'failed'].includes(notice.status)
   )
     return null
-  const id =
-    'ui:' +
-    createHash('sha256')
-      .update(jcs({ surfaceId: notice.surfaceId, revision: notice.revision, commandId: notice.commandId }))
-      .digest('hex')
-  const original = await (await ctx.services?.get(deferredQueueKind))?.read(id, signal)
-  if (
-    !original ||
-    original.invocation.sessionKey !== ctx.sessionKey ||
-    original.invocation.lane !== ctx.lane ||
-    original.invocation.source !== 'agnes/intelligent-ui' ||
-    original.invocation.tool !== 'fde_finance_approve' ||
-    !['succeeded', 'failed'].includes(original.state)
-  )
-    return null
-  return original
+  return {
+    state: notice.status,
+    invocation: notice.invocation,
+    result: notice.result,
+    error: notice.error,
+    seq: notice.seq,
+    resultSeq: notice.resultSeq,
+  }
 }
 
 /** Validate against committed workflow evidence, including already processed rows, before dispatch. */

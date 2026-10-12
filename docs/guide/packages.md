@@ -43,7 +43,7 @@ Declare requested access in `package.json`. The same declaration appears for ins
 ```json
 {
   "agnes": {
-    "plugins": [{ "apiRange": "^1.4.0", "export": "main" }],
+    "plugins": [{ "apiRange": "^2.0.0", "export": "main" }],
     "capabilities": {
       "network": ["api.example.com", "*.example.org"],
       "filesystem": { "read": ["workspace/reports/*"], "write": ["workspace/output/*"] },

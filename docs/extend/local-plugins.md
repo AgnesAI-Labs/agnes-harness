@@ -15,7 +15,7 @@ A folder can contain a normal package with `package.json`, `agnes.plugins` and a
   "type": "module",
   "exports": "./src/index.ts",
   "agnes": {
-    "plugins": [{ "apiRange": "^1.4.0", "export": "main", "id": "ext:my-plugin/main", "inject": ["extension"] }]
+    "plugins": [{ "apiRange": "^2.0.0", "export": "main", "id": "ext:my-plugin/main", "inject": ["extension"] }]
   }
 }
 ```

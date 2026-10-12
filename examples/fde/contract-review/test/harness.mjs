@@ -7,7 +7,7 @@ import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/r
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 
-/** Synthetic authenticated action and its original successful queue receipt, for Loop tests. */
+/** Synthetic Host-authenticated structured receipt for Loop tests. */
 export function surfaceAnswerInput(surfaceId, answer) {
   const receipt = {
     surfaceId,
@@ -21,8 +21,17 @@ export function surfaceAnswerInput(surfaceId, answer) {
     origin: 'system',
     trust: 'untrusted',
     commandId: 'ui-result:fixture-answer',
-    content: [{ type: 'text', text: 'Intelligent UI action result: ' + JSON.stringify(receipt) }],
-    fixtureAnswers: { proceed: answer },
+    content: [{ type: 'text', text: 'Form submitted' }],
+    system: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Form submitted',
+      data: {
+        ...receipt,
+        invocation: { tool: 'ui_submit' },
+        submitted: { surfaceId, answers: { proceed: answer } },
+      },
+    },
   }
 }
 
@@ -144,7 +153,6 @@ export async function runWorkflow(
     extraTools = [],
     answer = 'Proceed',
     stopAtQuestion = false,
-    receiptAvailable = true,
     searchUnavailable = false,
     planMode = false,
     approvePlan = true,
@@ -263,31 +271,7 @@ export async function runWorkflow(
               lane: ctx.lane,
               notify: async () => {},
               next: async () => null,
-              read: async (id) =>
-                receiptAvailable &&
-                typeof text === 'object' &&
-                text.fixtureAnswers &&
-                id === 'fixture-invocation'
-                  ? {
-                      state: 'succeeded',
-                      seq: 4,
-                      resultSeq: 3,
-                      invocation: {
-                        id,
-                        source: 'agnes/intelligent-ui',
-                        sessionKey: ctx.sessionKey,
-                        lane: ctx.lane,
-                        actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
-                        tool: 'ui_submit',
-                        args: {
-                          surfaceId: JSON.parse(
-                            text.content[0].text.slice('Intelligent UI action result: '.length),
-                          ).surfaceId,
-                          answers: text.fixtureAnswers,
-                        },
-                      },
-                    }
-                  : null,
+              read: async () => null,
             }
           },
         },
