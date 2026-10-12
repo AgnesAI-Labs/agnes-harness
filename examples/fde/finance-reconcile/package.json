@@ -22,7 +22,7 @@
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
-    "@agnes/extension-api": "1.4.0",
+    "@agnes/extension-api": "2.0.0",
     "@agnes/intelligent-ui-contract": "0.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
@@ -57,12 +57,11 @@
         "export": "main",
         "id": "ext:@agnes-fde/finance-reconcile/main",
         "inject": [
-          "extension",
-          "loops",
+          "tools",
           "providers",
           "skills"
         ],
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "metadata": {
           "displayName": "Ledger reconciliation example",
           "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",

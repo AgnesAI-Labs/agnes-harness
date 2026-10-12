@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
+import { writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { fixtureConnector } from './mcp-client.mjs'
-import { isDemo, makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { isDemo, makeBundle, modelText, tool, value } from './runtime.mjs'
 
 function createTools(connector) {
   return [
@@ -19,7 +20,7 @@ function createTools(connector) {
         { additionalProperties: false },
       ),
       async (args, ctx) => value(await connector.call('note', args, ctx.signal)),
-      { ...writeMeta, replay: 'idempotent' },
+      { ...writeTool, replay: 'idempotent' },
     ),
   ]
 }

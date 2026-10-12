@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "1.4.0",
+    "@agnes/extension-api": "2.0.0",
     "@agnes/protocol": "0.0.0",
     "@sinclair/typebox": "0.34.33"
   },
@@ -36,10 +36,10 @@
     "plugins": [
       {
         "export": "toolPlugin",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "id": "ext:@community/dag-loop-adapter/tools",
         "inject": [
-          "extension"
+          "tools"
         ],
         "metadata": {
           "displayName": "Task graph and model adapter",
@@ -57,10 +57,10 @@
       },
       {
         "export": "adapterPlugin",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "id": "ext:@community/dag-loop-adapter/adapter",
         "inject": [
-          "modelAdapters"
+          "providers"
         ],
         "metadata": {
           "displayName": "Task graph and model adapter",
@@ -78,10 +78,10 @@
       },
       {
         "export": "loopPlugin",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "id": "ext:@community/dag-loop-adapter/loop",
         "inject": [
-          "loops"
+          "providers"
         ],
         "metadata": {
           "displayName": "Task graph and model adapter",

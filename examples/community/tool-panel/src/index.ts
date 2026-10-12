@@ -1,4 +1,4 @@
-import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineTool, readOnlyTool, toolError } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 
 export interface Config {
@@ -17,16 +17,7 @@ export function createEcho(config: Config = {}) {
       { message: Type.String(), characters: Type.Integer({ minimum: 1 }) },
       { additionalProperties: false },
     ),
-    meta: {
-      isReadOnly: true,
-      isDestructive: false,
-      isConcurrencySafe: true,
-      isOpenWorld: false,
-      replay: 'safe',
-      costHint: undefined,
-      deferLoading: undefined,
-      requiresApproval: 'never',
-    },
+    meta: readOnlyTool,
     async execute({ message }, ctx) {
       ctx.signal.throwIfAborted()
       const trimmed = message.trim()
@@ -38,10 +29,8 @@ export function createEcho(config: Config = {}) {
 }
 
 export const main = defineAgnesPlugin({
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx: Context, config: Config = {}) {
-    if (typeof ctx.extension !== 'function') throw new Error('Missing required service: extension')
-    const unregister = ctx.extension().registerTool(createEcho(config))
-    ctx.effect(() => () => unregister())
+    ctx.tools.register(createEcho(config))
   },
 })

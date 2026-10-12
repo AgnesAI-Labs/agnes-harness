@@ -28,14 +28,14 @@ MCP 包不会自动启动、安装或信任外部服务器。修改定义、启�
 从 `@agnes/plugin-runtime` 导入：
 
 - `defineAgnesPlugin(plugin)` 保留 Cordis 函数、构造器或对象插件。
-- `defineTool(def)` 兼容原输入 schema 形式，也支持 `result: TypeBoxSchema`，推导并校验成功结果的 `structured`。
+- `defineTool(def)` 支持输入 schema 形式，也支持 `result: TypeBoxSchema`，推导并校验成功结果的 `structured`。
 - `toolError(message)` 表达预期业务失败；错误可省略 `structured`。
 - `toolCancelled(signal)` 抛出取消原因。取消和意外故障仍通过异常表达。
 - `defineLoop(factory)` 和 `defineModelAdapter(adapter)` 保留符合公开合同的声明。
 
-原 `@agnes/extension-api` 输入 schema 版本的 `defineTool` 保持兼容。不要用相同本地名称导入两个版本。
+`defineTool` 仅从 `@agnes/plugin-runtime` 导入，同时支持仅输入 schema 和可选结果 schema。
 
-工具插件注入 `extension`，回调使用 `Context`。循环和适配器回调分别使用 `LoopPluginContext`、`ModelAdapterPluginContext` 并声明对应注入。这些类型描述所需服务；类型声明不会安装服务。
+工具插件注入 `extension`，回调使用 `Context`。循环和适配器回调分别使用 `ProviderPluginContext`、`ProviderPluginContext` 并声明对应注入。这些类型描述所需服务；类型声明不会安装服务。
 
 注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。
 
@@ -67,3 +67,7 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 [用途元数据](plugin-metadata.zh-CN.md)定义可选的插件用途双语文案。
 
 [UI 作者短指南](../develop/ui-author-guide.zh-CN.md)：共享按钮、工作台显示条件、设置分组、界面摘要与 token 规则。
+
+工具、Skill 和 provider 分别使用 `ctx.tools.register(tool)`、`ctx.skills.register(skill)`、`ctx.providers.register(kind, packageName, provider)`；声明对应注入，平台自动清理注册，作者无需额外 `ctx.effect`。自建连接和订阅仍需生命周期清理。
+
+`ToolMeta` 的 `costHint`、`deferLoading`、`requiresApproval` 可省略：默认无成本估计、立即发现，审批依据 `isDestructive` 推导。`readOnlyTool` / `writeTool` 是 plugin-runtime 的元数据预设，直接写 `meta: readOnlyTool` 或展开后覆盖字段。`modelVisible: false` 保留内部调用并从模型发现/schema 隐藏；`requiresImageInput: true` 仅允许原生图像输入模型发现和执行。

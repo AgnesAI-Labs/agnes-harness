@@ -21,14 +21,14 @@ Host/Core 从权威工作区绑定注入身份，不采用工具参数或服务�
 
 ## 入口与工具
 
-包通过 `agnes.plugins` 指向 `textStatsTool`，manifest 和对象都声明 `inject: ['extension']`。核心实现：
+包通过 `agnes.plugins` 指向 `textStatsTool`，manifest 和对象都声明 `inject: ['tools', 'extension']`。核心实现：
 
 ```js
 export const textStatsTool = {
-  inject: ['extension'],
+  inject: ['tools', 'extension'],
   apply(ctx) {
     const agnes = ctx.extension()
-    agnes.registerTool({
+    ctx.tools.register({
       name: 'demo_text_stats',
       description: 'Count characters and words in text.',
       parameters,

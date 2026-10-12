@@ -8,9 +8,10 @@
     "plugins": [
       {
         "export": "textStatsTool",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "id": "ext:agnes-examples/hot-tool-plugin",
         "inject": [
+          "tools",
           "extension"
         ],
         "metadata": {
@@ -20,9 +21,9 @@
           "category": "tools",
           "locales": {
             "zh-CN": {
-              "displayName": "文本统计工具",
-              "summary": "加入样例文本统计工具，用于演示插件安装与生命周期。",
-              "description": "加入样例文本统计工具，用于演示插件安装与生命周期。"
+              "displayName": "\u6587\u672c\u7edf\u8ba1\u5de5\u5177",
+              "summary": "\u52a0\u5165\u6837\u4f8b\u6587\u672c\u7edf\u8ba1\u5de5\u5177\uff0c\u7528\u4e8e\u6f14\u793a\u63d2\u4ef6\u5b89\u88c5\u4e0e\u751f\u547d\u5468\u671f\u3002",
+              "description": "\u52a0\u5165\u6837\u4f8b\u6587\u672c\u7edf\u8ba1\u5de5\u5177\uff0c\u7528\u4e8e\u6f14\u793a\u63d2\u4ef6\u5b89\u88c5\u4e0e\u751f\u547d\u5468\u671f\u3002"
             }
           }
         }
@@ -35,9 +36,9 @@
       "category": "tools",
       "locales": {
         "zh-CN": {
-          "displayName": "文本统计工具",
-          "summary": "加入样例文本统计工具，用于演示插件安装与生命周期。",
-          "description": "加入样例文本统计工具，用于演示插件安装与生命周期。"
+          "displayName": "\u6587\u672c\u7edf\u8ba1\u5de5\u5177",
+          "summary": "\u52a0\u5165\u6837\u4f8b\u6587\u672c\u7edf\u8ba1\u5de5\u5177\uff0c\u7528\u4e8e\u6f14\u793a\u63d2\u4ef6\u5b89\u88c5\u4e0e\u751f\u547d\u5468\u671f\u3002",
+          "description": "\u52a0\u5165\u6837\u4f8b\u6587\u672c\u7edf\u8ba1\u5de5\u5177\uff0c\u7528\u4e8e\u6f14\u793a\u63d2\u4ef6\u5b89\u88c5\u4e0e\u751f\u547d\u5468\u671f\u3002"
         }
       }
     }

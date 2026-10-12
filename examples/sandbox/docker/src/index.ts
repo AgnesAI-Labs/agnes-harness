@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import {
+  type ProviderRegistrationPort,
   type SandboxCapabilities,
   type SandboxExecRequest,
   type SandboxExecResult,
@@ -8,7 +9,6 @@ import {
   type SandboxPlatform,
   type SandboxProvider,
   type SandboxProviderConfig,
-  type SandboxProviderRegistration,
   sandboxUnavailable,
 } from '@agnes/extension-api'
 
@@ -303,8 +303,8 @@ export const dockerSandboxProvider = createDockerSandboxProvider()
 
 /** Cordis plugin. Injects `sandboxProviders` and registers this provider. */
 export const sandboxProvidersPlugin = {
-  inject: ['sandboxProviders'],
-  apply(ctx: { sandboxProviders: SandboxProviderRegistration }) {
-    ctx.sandboxProviders.register(createDockerSandboxProvider())
+  inject: ['providers'],
+  apply(ctx: { providers: ProviderRegistrationPort }) {
+    ctx.providers.register('sandbox', '@agnes-examples/sandbox-docker', createDockerSandboxProvider())
   },
 }

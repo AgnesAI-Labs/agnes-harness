@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { isDemo, makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { isDemo, makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const tickets = JSON.parse(readFileSync(new URL('./fixtures/tickets.json', import.meta.url)))
 const object = (fields) => Type.Object(fields, { additionalProperties: false })
@@ -37,7 +38,7 @@ export const tools = [
       get(id)
       return { ticketId: id, draft, status: 'simulated-sent', receipt: `support:${id}` }
     },
-    writeMeta,
+    writeTool,
   ),
 ]
 const stages = [

@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
 import { createPluginTestHost, driveLoop } from '@agnes/host/author-testkit'
+import { readOnlyTool, writeTool } from '@agnes/plugin-runtime'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
-import { readMeta, writeMeta } from '../runtime.mjs'
 
 /** Synthetic authenticated action and its original successful queue receipt, for Loop tests. */
 export function surfaceAnswerInput(surfaceId, answer) {
@@ -33,7 +33,7 @@ function officialFixtures({ searchUnavailable = false, planState } = {}) {
     calls = []
   const object = (fields) => Type.Object(fields, { additionalProperties: false })
   const definitions = new Map()
-  const add = (name, parameters, execute, meta = readMeta) =>
+  const add = (name, parameters, execute, meta = readOnlyTool) =>
     definitions.set(name, { name, parameters, execute, meta })
   const output = (data, details) => ({
     content: [{ type: 'text', text: data }],
@@ -46,7 +46,7 @@ function officialFixtures({ searchUnavailable = false, planState } = {}) {
       planState.active = false
       return output('Plan approved. Plan mode is off; write and exec tools are available.')
     },
-    { ...writeMeta, isDestructive: false, requiresApproval: 'never' },
+    { ...writeTool, isDestructive: false, requiresApproval: 'never' },
   )
   add(
     'ask_user_question',
@@ -72,7 +72,7 @@ function officialFixtures({ searchUnavailable = false, planState } = {}) {
       observed.add(path)
       return output('created report', { path })
     },
-    writeMeta,
+    writeTool,
   )
   add(
     'present',
@@ -119,7 +119,7 @@ function officialFixtures({ searchUnavailable = false, planState } = {}) {
     'shell',
     object({ command: Type.String(), background: Type.Boolean(), timeoutMs: Type.Integer() }),
     () => output('background job fixture-job started', { jobId: 'fixture-job', status: 'running' }),
-    writeMeta,
+    writeTool,
   )
   add('job_output', object({ jobId: Type.String(), waitMs: Type.Integer() }), () =>
     output('synthetic-service: degraded\n[completed; exit 0]', {

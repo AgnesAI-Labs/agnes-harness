@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { readOnlyTool, writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { checked, makeBundle, modelText, readMeta, text, tool, value, writeMeta } from './runtime.mjs'
+import { checked, makeBundle, modelText, text, tool, value } from './runtime.mjs'
 
 const runbook = JSON.parse(readFileSync(new URL('./fixtures/runbook.json', import.meta.url)))
 export const tools = [
@@ -23,7 +24,7 @@ export const tools = [
       if (output.code !== 0) throw new Error('Restart command failed; inspect before retry')
       return { receipt: output.stdout, status: 'simulated-restart' }
     },
-    writeMeta,
+    writeTool,
   ),
   tool(
     'fde_ops_verify',
@@ -34,7 +35,7 @@ export const tools = [
         throw new Error('Missing or unknown restart receipt')
       return { verified: true, scope: 'synthetic fixture only' }
     },
-    readMeta,
+    readOnlyTool,
   ),
 ]
 const stages = [

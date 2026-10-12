@@ -1,12 +1,11 @@
-import { type ModelAdapterConfig, type ModelAdapterInstance, registerLoopPlugin } from '@agnes/extension-api'
+import type { ModelAdapterConfig, ModelAdapterInstance } from '@agnes/extension-api'
 import {
   type Context,
   defineAgnesPlugin,
   defineLoop,
   defineModelAdapter,
   defineTool,
-  type LoopPluginContext,
-  type ModelAdapterPluginContext,
+  type ProviderPluginContext,
 } from '@agnes/plugin-runtime'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -143,23 +142,22 @@ export const factory = defineLoop({
   version: '0.1.0',
 })
 export const loopPlugin = defineAgnesPlugin({
-  inject: ['loops'],
-  apply(ctx: LoopPluginContext) {
-    registerLoopPlugin(ctx, '@community/dag-loop-adapter', factory)
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('loop', '@community/dag-loop-adapter', factory)
   },
 })
 export const adapterPlugin = defineAgnesPlugin({
-  inject: ['modelAdapters'],
-  apply(ctx: ModelAdapterPluginContext) {
-    ctx.modelAdapters.register(adapter)
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('model-adapter', '@community/dag-loop-adapter', adapter)
   },
 })
 export const toolPlugin = defineAgnesPlugin({
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx: Context) {
     for (const tool of [echo, join]) {
-      const unregister = ctx.extension().registerTool(tool)
-      ctx.effect(() => unregister)
+      ctx.tools.register(tool)
     }
   },
 })

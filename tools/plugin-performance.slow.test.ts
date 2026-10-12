@@ -90,7 +90,7 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
               exports: './index.mjs',
               agnes: {
                 capabilities: { ui: true },
-                plugins: [{ export: 'main', apiRange: '^1.4.0' }],
+                plugins: [{ export: 'main', apiRange: '^2.0.0' }],
                 clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }],
               },
             }),

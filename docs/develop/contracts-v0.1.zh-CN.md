@@ -31,7 +31,7 @@
 
 | 合同 / 所属源码 | 标签 | 合同边界 |
 | --- | --- | --- |
-| [工具定义与元数据](../../packages/extension-api/src/tool.ts)：`ToolDef`、`ToolMeta`、`ToolResult`、`ResolvedToolCallPolicy`、`defineTool`、校验与策略解析 | stable | 参数/结果 schema、调用安全分类、replay/risk、并发元数据和输出上限；分类不能签发 Host 权限 |
+| [工具定义与元数据](../../packages/extension-api/src/tool.ts)：`ToolDef`、`ToolMeta`、`ToolResult`、`ResolvedToolCallPolicy`、校验与策略解析 | stable | 参数/结果 schema、调用安全分类、replay/risk、并发元数据和输出上限；分类不能签发 Host 权限 |
 | [工具调用上下文](../../packages/extension-api/src/tool.ts)：`ToolContext`、FS/exec/net/artifact/授权/session 端口 | stable | Host 绑定的 actor/工作区、审批、lease、取消与输出限制；缺失能力就是不支持 |
 | 工具上下文可选 `runtime`/`codeRuntime`、流式 `sandbox.openProcess`、子代理后续消息、`net.fetchPublic` | experimental | 各功能独立的可用性与生命周期；声明不等于已装配后端 |
 | [扩展构造](../../packages/extension-api/src/extension.ts)、[普通插件 facade](../../packages/extension-api/src/plugin-extension.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `defineExtension`/`ExtensionAPI` 受控注册；普通 `ctx.extension()` 提供工具、全部支持的 hooks 与账本事件，通过该 facade 注册 slots/services/projections/resources 仍被拒绝 |
@@ -39,7 +39,7 @@
 | [服务](../../packages/extension-api/src/services.ts)、[投影](../../packages/extension-api/src/projections.ts) | stable | Schema 校验调用、Host 身份绑定、owner 读取与显式 unavailable；查询服务不能获得效果权限，效果服务的进程访问须经过已装配授权路径 |
 | [公共类型](../../packages/extension-api/src/common.ts)、[资源](../../packages/extension-api/src/resources.ts)、[工作区 hook 快照](../../packages/extension-api/src/workspace-hooks.ts) | stable | Session/lease/logger/platform/enforcement 事实、资源种类与不可变调用配置；事实不是授权 |
 | [Extension 错误](../../packages/extension-api/src/errors.ts)、[版本](../../packages/extension-api/src/version.ts)、[范围 helper](../../packages/extension-api/src/api-range.ts) | stable | 闭合 `EXTENSION_ERROR_CODES`、`ExtensionError`/guard、版本常量与支持的范围语法；不是 provider 或基础设施失败的统一包装 |
-| [Loop 高低层端口](../../packages/extension-api/src/loop.ts)、[注册 helper](../../packages/extension-api/src/loop-plugin.ts)、[类型化事件](../../packages/extension-api/src/loop-events.ts) | experimental | Factory/driver/codec、输入、视图、请求、效果、工具、children、jobs、等待、checkpoint 与调度 outcome；下文详述 |
+| [Loop 高低层端口](../../packages/extension-api/src/loop.ts)、[provider 注册](../../packages/extension-api/src/provider-kind.ts)、[类型化事件](../../packages/extension-api/src/loop-events.ts) | experimental | Factory/driver/codec、输入、视图、请求、效果、工具、children、jobs、等待、checkpoint 与调度 outcome；下文详述 |
 | [模型 adapter](../../packages/extension-api/src/model-adapter.ts) | experimental | 注册、路由/模型、凭据、stream/count/probe/refresh、异步创建与清理 |
 | [压缩引擎](../../packages/extension-api/src/compaction-engine.ts) | experimental | 可见对话、预算、pair-closed 摘要/替换或 plan、校验与实例清理 |
 | [持久化](../../packages/extension-api/src/persistence.ts)、[child-control 记录/store](../../packages/extension-api/src/child-control.ts) | experimental | 账本事务/lease、元数据、integrity、reclaim、child/budget/workspace 控制与可选 SQLite；不隐式迁移跨 provider 数据 |
@@ -182,9 +182,9 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | 兼容/错误 | `API_VERSION`, `parseSemver`, `satisfiesApiRange`, `checkApiRange`, `EXTENSION_ERROR_CODES`, `ExtensionError`, `isExtensionError`, `PROVIDER_ERROR_CODES`, `ProviderError`, `isProviderError` |
 | 扩展/清单 | `defineExtension`, `checkManifest`, `extEventType`, `EXTENSION_ID_PATTERN`, `EVENT_NAME_PATTERN`, `NETWORK_HOST_PATTERN` |
 | Hooks/UI/JSON | `HOOK_EVENTS`, `HOOK_TABLE`, `SLOT_NAMES`, `SLOT_TABLE`, `THEME_TOKEN_NAMES`, `SLOT_PAYLOAD_MAX_BYTES`, `isJsonPayload` |
-| 工具校验/策略 | `defineTool`, `checkToolDef`, `checkToolMeta`, `checkResolvedToolCallPolicy`, `resolveToolCallPolicy`, `TOOL_META_KEYS`, `RESOLVED_TOOL_CALL_POLICY_KEYS`, `TOOL_NAME_PATTERN`, `TOOL_POLICY_VERSION_PATTERN`, `APPROVAL_SCOPE_PATTERN`, `MAX_APPROVAL_SCOPES`, `TOOL_DESCRIPTION_MAX_LENGTH`, `TOOL_PARAMETERS_MAX_BYTES`, `TOOL_PARAMETERS_MAX_DEPTH`, `DEFAULT_OUTPUT_MAX_BYTES`, `MIN_OUTPUT_MAX_BYTES`, `MAX_OUTPUT_MAX_BYTES` |
+| 工具校验/策略 | `checkToolDef`, `checkToolMeta`, `checkResolvedToolCallPolicy`, `resolveToolCallPolicy`, `TOOL_META_KEYS`, `RESOLVED_TOOL_CALL_POLICY_KEYS`, `TOOL_NAME_PATTERN`, `TOOL_POLICY_VERSION_PATTERN`, `APPROVAL_SCOPE_PATTERN`, `MAX_APPROVAL_SCOPES`, `TOOL_DESCRIPTION_MAX_LENGTH`, `TOOL_PARAMETERS_MAX_BYTES`, `TOOL_PARAMETERS_MAX_DEPTH`, `DEFAULT_OUTPUT_MAX_BYTES`, `MIN_OUTPUT_MAX_BYTES`, `MAX_OUTPUT_MAX_BYTES` |
 | 服务/投影/资源 | `checkServiceDef`, `unavailableProjections`, `RESOURCE_KINDS` |
-| Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `registerLoopPlugin`, `defineProviderKind`, `defineServiceKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
+| Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `defineProviderKind`, `defineServiceKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
 | 公共默认算法 | `createCompactionThreshold`、`defaultToolPolicy`（experimental，不依赖 Core） |
 | 持久化/sandbox | `DEFAULT_PERSISTENCE_PROVIDER_ID`, `PERSISTENCE_EFFECT`, `PERSISTENCE_SCAN_PAGE_MAX`, `definePersistenceProvider`, `persistenceRegisterKey`, `isPersistenceTombstone`, `LOCAL_SANDBOX_PROVIDER_ID`, `sandboxUnavailable` |
 
@@ -231,3 +231,5 @@ macOS 与 Linux 已有持续维护的原生、进程、浏览器检查与独立�
 JSONL 示例提供完整 Host 端口、合同测试与新进程恢复用例，面向采用内存索引的小规模本地部署；网络文件系统、Windows 持久性和生产规模需另验。[MCP/Skills 矩阵](../guide/mcp-skills-support.zh-CN.md)维护资源边界，包括会话 OAuth 与提示模板不支持项。程序化 Python 是实验能力；记忆、请求捕获和遥测各有隐私及保留规则。
 
 按目标修订执行[验证流程](../maintainers/verification.zh-CN.md)并记录实际结果。历史合同关闭运行不证明当前发行验收。公开 registry 可用性、仓外干净安装、真实模型质量与具体部署插件仍是独立[发行门槛](../maintainers/release.zh-CN.md)。本文不会创建标签或发布包。
+
+工具构造函数 `defineTool` 及 `readOnlyTool` / `writeTool` 元数据预设仅从 `@agnes/plugin-runtime` 导出。

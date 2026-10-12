@@ -28,14 +28,14 @@ An MCP bundle does not automatically start, install or trust an external server.
 Import these from `@agnes/plugin-runtime`:
 
 - `defineAgnesPlugin(plugin)` preserves a Cordis function, constructor or object.
-- `defineTool(def)` preserves the legacy input-only shape, or accepts `result: TypeBoxSchema` to infer and validate successful `structured` output.
+- `defineTool(def)` accepts the input-only shape, or accepts `result: TypeBoxSchema` to infer and validate successful `structured` output.
 - `toolError(message)` expresses an expected business failure; errors may omit `structured`.
 - `toolCancelled(signal)` throws the cancellation reason. Cancellation and unexpected faults stay exceptions.
 - `defineLoop(factory)` and `defineModelAdapter(adapter)` preserve declarations satisfying their public contracts.
 
-The original input-only `defineTool` in `@agnes/extension-api` remains compatible. Avoid importing both with the same local name.
+Import `defineTool` only from `@agnes/plugin-runtime`. It accepts input-only tools and optional result schemas.
 
-A tool plugin injects `extension`; use `Context` for its callback. Loop and adapter callbacks use `LoopPluginContext` and `ModelAdapterPluginContext` with corresponding injections. These types describe required services; a type declaration does not install a service.
+A tool plugin injects `extension`; use `Context` for its callback. Loop and adapter callbacks use `ProviderPluginContext` and `ProviderPluginContext` with corresponding injections. These types describe required services; a type declaration does not install a service.
 
 Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior.
 
@@ -83,3 +83,7 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 [Purpose metadata](plugin-metadata.md) defines optional localized plugin purpose text.
 
 [Short UI author guide](../develop/ui-author-guide.md): shared buttons, contextual panels, settings groups, surface summaries and token rules.
+
+Register tools, Skills and providers with `ctx.tools.register(tool)`, `ctx.skills.register(skill)` and `ctx.providers.register(kind, packageName, provider)`. Declare the corresponding injection; the platform owns cleanup without an extra `ctx.effect`. Connections and subscriptions you create still need lifecycle cleanup.
+
+Omit `ToolMeta.costHint`, `deferLoading` and `requiresApproval` for no cost estimate, initial discovery and approval inferred from `isDestructive`. Import the `readOnlyTool` / `writeTool` metadata presets from plugin-runtime: use `meta: readOnlyTool`, or spread a preset and override fields. `modelVisible: false` hides model discovery/schemas while preserving internal calls; `requiresImageInput: true` limits discovery/execution to models with native image input.

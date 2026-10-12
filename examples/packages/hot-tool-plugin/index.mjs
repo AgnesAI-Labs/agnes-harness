@@ -1,5 +1,5 @@
 // A plain Cordis object plugin that gives the model a tool. It has no imports, so the installed
-// snapshot needs no dependency: `ctx.extension()` hands the row its own tool / hook / event API.
+// snapshot needs no dependency: `ctx.extension()` hands the row its own hook / event API; ctx.tools registers tools.
 // Tool parameters are TypeBox schemas: plain JSON Schema objects tagged with the TypeBox kind
 // symbol. Tagging them by hand keeps this file free of imports; with @sinclair/typebox installed,
 // `Type.Object({ text: Type.String({ maxLength: 8192 }) }, { additionalProperties: false })` is the same value.
@@ -18,16 +18,16 @@ const meta = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe',
-  costHint: undefined,
+
   deferLoading: false,
   requiresApproval: 'never',
 }
 
 export const textStatsTool = {
-  inject: ['extension'],
+  inject: ['tools', 'extension'],
   apply(ctx) {
     const agnes = ctx.extension()
-    agnes.registerTool({
+    ctx.tools.register({
       name: 'demo_text_stats',
       description: 'Count characters and words in text.',
       parameters,

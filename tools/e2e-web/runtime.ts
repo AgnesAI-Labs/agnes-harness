@@ -227,7 +227,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
           license: 'MIT',
           agnes: {
             plugins: [
-              { export: 'textStatsTool', id: 'ext:e2e-version', apiRange: '^1.4.0', inject: ['extension'] },
+              { export: 'textStatsTool', id: 'ext:e2e-version', apiRange: '^2.0.0', inject: ['extension'] },
             ],
           },
         }),

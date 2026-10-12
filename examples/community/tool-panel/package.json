@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "1.4.0",
+    "@agnes/extension-api": "2.0.0",
     "@sinclair/typebox": "0.34.33"
   },
   "devDependencies": {
@@ -31,10 +31,10 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "id": "ext:@community/tool-panel/main",
         "inject": [
-          "extension"
+          "tools"
         ],
         "config": {
           "prefix": "Echo: "

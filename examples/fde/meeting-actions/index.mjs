@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const transcript = readFileSync(new URL('./fixtures/transcript.txt', import.meta.url), 'utf8')
 const action = Type.Object({
@@ -67,7 +68,7 @@ export const tools = [
     ({ markdown }) => ({
       receipt: { status: 'simulated-sent', recipient: 'fixture-team', markdown, externalDelivery: false },
     }),
-    writeMeta,
+    writeTool,
   ),
 ]
 const stages = [

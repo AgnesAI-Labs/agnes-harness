@@ -331,12 +331,11 @@ test('a session that does not register the ledger source refuses the review', as
   assert.equal(
     await refusedRender(
       defineAgnesPlugin({
-        inject: ['extension'],
+        inject: ['tools'],
         apply(ctx) {
           // Keep the declared action valid; this fixture deliberately omits only the data source.
           for (const definition of tools) {
-            const off = ctx.extension().registerTool(definition)
-            ctx.effect(() => off)
+            ctx.tools.register(definition)
           }
         },
       }),

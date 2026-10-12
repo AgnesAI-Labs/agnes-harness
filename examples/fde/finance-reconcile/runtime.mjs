@@ -1,33 +1,15 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { loopCheckpointCodec, registerLoopPlugin } from '@agnes/extension-api'
+import { loopCheckpointCodec } from '@agnes/extension-api'
 import {
   defineAgnesPlugin,
   defineLoop,
   defineTool,
   drainDeferredToolInvocations,
   toolError,
-} from '@agnes/plugin-runtime'
+, readOnlyTool, } from '@agnes/plugin-runtime'
 import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
-export const readMeta = {
-  isReadOnly: true,
-  isDestructive: false,
-  isConcurrencySafe: true,
-  isOpenWorld: false,
-  replay: 'safe',
-  costHint: {},
-  deferLoading: false,
-  requiresApproval: 'never',
-}
-export const writeMeta = {
-  ...readMeta,
-  isReadOnly: false,
-  isDestructive: true,
-  isConcurrencySafe: false,
-  replay: 'never',
-  requiresApproval: 'always',
-}
 export const result = (data) => ({
   content: [{ type: 'text', text: JSON.stringify(data) }],
   structured: data,
@@ -46,7 +28,7 @@ export function value(output) {
   checked(output)
   return output.structured ?? JSON.parse(text(output))
 }
-export function tool(name, description, parameters, execute, meta = readMeta) {
+export function tool(name, description, parameters, execute, meta = readOnlyTool) {
   return defineTool({
     name,
     description,
@@ -434,13 +416,12 @@ export function makeBundle({
     })
   }
   const main = defineAgnesPlugin({
-    inject: ['extension', 'loops', 'providers', 'skills'],
+    inject: ['tools', 'providers', 'skills'],
     apply(ctx, config = {}) {
       for (const definition of tools) {
-        const off = ctx.extension().registerTool(definition)
-        ctx.effect(() => off)
+        ctx.tools.register(definition)
       }
-      registerLoopPlugin(ctx, source, createFactory(config.workflow))
+      ctx.providers.register('loop', source, createFactory(config.workflow))
       ctx.providers.register('tool-policy', source, {
         ...policy,
         async decide(input, signal) {
@@ -449,12 +430,11 @@ export function makeBundle({
           return base.effect === 'deny' ? base : policy.decide(input, signal)
         },
       })
-      const off = ctx.skills.register({
+      ctx.skills.register({
         name,
         description: `Business playbook for ${name}`,
         body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
       })
-      ctx.effect(() => off)
       onApply?.(ctx)
     },
   })

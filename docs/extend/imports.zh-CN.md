@@ -14,8 +14,8 @@
 
 | 任务 | 导入包 | 导出符号 | 入口与用法 |
 | --- | --- | --- | --- |
-| 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `extension`，调用 `ctx.extension().registerTool(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
-| 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginExtensionAPI` | 作者合同。结果 schema 推导优先使用 runtime 的 `defineTool`；不要用同一本地名称导入两个版本。 |
+| 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `tools`，调用 `ctx.tools.register(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
+| 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginExtensionAPI` | 作者合同。官方和社区作者共用 `@agnes/plugin-runtime` 唯一导出的 `defineTool`。 |
 | 构造 TypeBox schema | `@sinclair/typebox` | `Type`；类型 `Static`、`TSchema` | 作者面。工具输入 schema 必须带 TypeBox Kind 符号，普通 JSON Schema 不够。 |
 | 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
 | 添加浏览器面板或 UI 资产 | `@agnes/web-client` | 类型 `ClientContext`、`ClientModule`；`workbenchPanels` | 作者面，仅浏览器。导出 `apply(ctx, config)`，通过 `ctx.slots` 或 `workbenchPanels` 注册，在客户端描述文件声明 entry/styles/slots。简单 JS 侧栏无需导入 SDK；见[前端模块](../develop/frontend.zh-CN.md)和[工作台面板](workbench-panels.zh-CN.md)。 |

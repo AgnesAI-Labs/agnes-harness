@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'))
 const evidence = Type.Object({ skill: Type.String(), quote: Type.String() })
@@ -52,7 +53,7 @@ export const tools = [
     ({ candidateIds, nextStep }) => ({
       receipt: { status: 'human-review-confirmed', candidateIds, nextStep, hiringDecision: false },
     }),
-    writeMeta,
+    writeTool,
   ),
 ]
 const stages = [

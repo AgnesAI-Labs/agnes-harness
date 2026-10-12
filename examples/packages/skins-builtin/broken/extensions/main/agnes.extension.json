@@ -1,7 +1,7 @@
 {
   "id": "examples/skins-builtin",
   "version": "1.2.0",
-  "apiRange": "^1.0",
+  "apiRange": "^2.0.0",
   "entry": "./index.mjs",
   "runtime": {
     "supports": ["in-process"]

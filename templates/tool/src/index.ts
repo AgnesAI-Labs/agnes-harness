@@ -1,4 +1,4 @@
-import { type Context, defineAgnesPlugin, defineTool, toolError } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineTool, readOnlyTool, toolError } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 
 export const echo = defineTool({
@@ -6,16 +6,7 @@ export const echo = defineTool({
   description: 'Echo a nonempty message.',
   parameters: Type.Object({ message: Type.String() }, { additionalProperties: false }),
   result: Type.Object({ message: Type.String() }, { additionalProperties: false }),
-  meta: {
-    isReadOnly: true,
-    isDestructive: false,
-    isConcurrencySafe: true,
-    isOpenWorld: false,
-    replay: 'safe',
-    costHint: undefined,
-    deferLoading: undefined,
-    requiresApproval: 'never',
-  },
+  meta: readOnlyTool,
   async execute({ message }, ctx) {
     ctx.signal.throwIfAborted()
     if (!message.trim()) return toolError('A nonempty message is required')
@@ -25,10 +16,8 @@ export const echo = defineTool({
 })
 
 export const main = defineAgnesPlugin({
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx: Context) {
-    const unregister = ctx.extension().registerTool(echo)
-    // Tie clients, subscriptions and connections you add to this lifecycle effect.
-    ctx.effect(() => () => unregister())
+    ctx.tools.register(echo)
   },
 })

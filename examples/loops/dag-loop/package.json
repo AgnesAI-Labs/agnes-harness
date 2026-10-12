@@ -13,10 +13,10 @@
       {
         "id": "ext:example-dag",
         "export": "plugin",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "default": true,
         "inject": [
-          "loops"
+          "providers"
         ],
         "metadata": {
           "displayName": "Task graph Loop",

@@ -33,7 +33,6 @@ export default defineTool({
   meta: {
     isReadOnly: true, isDestructive: false, isConcurrencySafe: true,
     isOpenWorld: false, replay: 'safe', requiresApproval: 'never',
-    costHint: undefined, deferLoading: undefined,
   },
   async execute({ name }, ctx) {
     ctx.signal.throwIfAborted()

@@ -14,8 +14,8 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 
 | Task | Import package | Exported symbols | Surface / use |
 | --- | --- | --- | --- |
-| Define a tool and its plugin | `@agnes/plugin-runtime` | `defineAgnesPlugin`, `defineTool`, `toolError`, `toolCancelled`; types `Context`, `TypedToolDef`, `TypedToolResult` | Author. Inject `extension`, then call `ctx.extension().registerTool(tool)`; [tool starter](../../templates/tool/src/index.ts). |
-| Describe tool inputs, results and invocation ports | `@agnes/extension-api` | Types `ToolDef`, `ToolMeta`, `ToolContext`, `ToolResult`, `PluginExtensionAPI` | Author contracts. Prefer the runtime `defineTool` for result-schema inference; do not import both versions under the same local name. |
+| Define a tool and its plugin | `@agnes/plugin-runtime` | `defineAgnesPlugin`, `defineTool`, `toolError`, `toolCancelled`; types `Context`, `TypedToolDef`, `TypedToolResult` | Author. Inject `tools`, then call `ctx.tools.register(tool)`; [tool starter](../../templates/tool/src/index.ts). |
+| Describe tool inputs, results and invocation ports | `@agnes/extension-api` | Types `ToolDef`, `ToolMeta`, `ToolContext`, `ToolResult`, `PluginExtensionAPI` | Author contracts. The only `defineTool` is exported by `@agnes/plugin-runtime`, for official and community authors. |
 | Build TypeBox schemas | `@sinclair/typebox` | `Type`; types `Static`, `TSchema` | Author. Schemas must carry TypeBox Kind symbols; plain JSON Schema is insufficient for tool inputs. |
 | Validate or compile a schema | `@sinclair/typebox/value`, `@sinclair/typebox/compiler` | `Value`, `TypeCompiler`, respectively | Author, when needed. These are separate subpaths, not exports of Agnes helpers. |
 | Add a browser panel or UI asset | `@agnes/web-client` | Types `ClientContext`, `ClientModule`; `workbenchPanels` | Author, browser only. Export `apply(ctx, config)`, register through `ctx.slots` or `workbenchPanels`, and declare entry/styles/slots in a client descriptor. A simple JS sidebar needs no SDK import; see [frontend modules](../develop/frontend.md) and [workbench panels](workbench-panels.md). |

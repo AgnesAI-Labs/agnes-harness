@@ -1,7 +1,8 @@
 import { uiDataSourceKind } from '@agnes/intelligent-ui-contract'
+import { writeTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { fixtureDifferenceRows, keyed, ledger, readLedgers, reconcile } from './ledgers.mjs'
-import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { makeBundle, modelText, tool, value } from './runtime.mjs'
 import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 
 const row = Type.Object({
@@ -68,7 +69,7 @@ export const tools = [
       })
       return { receipt: { status: 'simulated-approved', posted: false, entries } }
     },
-    writeMeta,
+    writeTool,
   ),
 ]
 // Counts and totals only. Resolved rows stay on the authenticated read path.

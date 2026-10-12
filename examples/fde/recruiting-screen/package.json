@@ -22,7 +22,7 @@
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
-    "@agnes/extension-api": "1.4.0",
+    "@agnes/extension-api": "2.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
     "@agnes/protocol": "0.0.0"
@@ -52,12 +52,11 @@
         "export": "main",
         "id": "ext:@agnes-fde/recruiting-screen/main",
         "inject": [
-          "extension",
-          "loops",
+          "tools",
           "providers",
           "skills"
         ],
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "metadata": {
           "displayName": "Recruiting review example",
           "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
