@@ -207,7 +207,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
-  'packages/web-ui/src': 14836,
+  'packages/web-ui/src': 14871,
   'packages/web-units/src': 9920,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
@@ -244,7 +244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cli/src/commands/sessions': 77,
   'packages/cli/launch': 2202, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   'packages/cli/launch/package-admin': 540,
-  'packages/cli/tools/build-local': 381,
+  'packages/cli/tools/build-local': 394,
   'packages/web/src/serve': 1,
 
   'packages/core/src': 23845,

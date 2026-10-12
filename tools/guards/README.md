@@ -41,3 +41,16 @@ Select all overlapping scopes touched by the branch. Default selection compares
 the current tree to the fetched integration ref, so it is also usable after
 rebasing/resolving source conflicts. Review the numeric diff before committing;
 the command does not replace source review or the guard suite.
+
+## Stylesheet layers
+
+`css-layers.json` names the canonical order source and exact-count allowances for
+raw inputs whose loader supplies a layer: skin CSS (`skin`), client-module CSS
+(`app`) and generated Tailwind CSS (`ui`). Browser-only screenshot normalization
+is an explicit test fixture allowance. Production stylesheets require layer blocks;
+unlayered local imports must reference another checked stylesheet. New override
+fragments in `packages/web/public/styles` fail the guard.
+
+Move an allowance with its source and loader, rather than increasing its count to
+hide an unlayered rule. A new wrapped input needs a reason and a demonstrated
+layering boundary. The guard rejects stale entries and competing root layer orders.
