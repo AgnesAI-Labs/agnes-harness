@@ -70,6 +70,8 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
     zhT,
   )
   expect(nav.querySelectorAll('button.session')).toHaveLength(1)
+  expect(nav.querySelector('.session')?.classList.contains('agnes-ui-button')).toBe(false)
+  expect(nav.querySelector('.workspace-heading')?.classList.contains('agnes-ui-button')).toBe(false)
   expect(nav.querySelector('button button')).toBeNull()
   const trigger = nav.querySelector('.session-menu-trigger') as HTMLButtonElement
   const rowElement = nav.querySelector('.session-row') as HTMLElement

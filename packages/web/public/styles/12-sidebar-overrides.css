@@ -36,6 +36,7 @@
   min-height: 1.75rem;
 }
 .workspace-group {
+  min-width: 0;
   /* 组与组之间比组内行距（2px）大一档：工作区分组靠这条 6px 的缝表达，
      每个组内是同一条 2px 节奏。首组不吃这条缝（上方是「新会话」按钮，已有间距）。 */
   margin-top: 0.375rem;
@@ -44,6 +45,7 @@
   margin-top: 0;
 }
 .workspace-heading-row {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.125rem;
@@ -106,4 +108,9 @@
   border-radius: 0;
   color: var(--agnes-brand-primary);
   background: currentColor;
+}
+
+/* Keep the navigation focus ring inside its scrollport. */
+:is(.workspace-heading, .session):focus-visible {
+  outline-offset: -2px;
 }

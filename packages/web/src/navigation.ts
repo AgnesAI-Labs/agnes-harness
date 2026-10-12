@@ -71,7 +71,7 @@ export function renderWorkspaceOptions(
 ): void {
   container.replaceChildren(
     ...workspaces.map((workspace) => {
-      const choice = createSettingsButton(document)
+      const choice = document.createElement('button')
       choice.type = 'button'
       choice.className = 'agnes-ui-button workspace-option'
       choice.dataset.available = String(workspace.available)
@@ -126,9 +126,9 @@ export function renderSessionNavigation(
     group.className = 'workspace-group'
     const workspace = options.workspaces.find((entry) => entry.path === path)
     const collapsed = collapsedGroups.has(path)
-    const heading = createSettingsButton(document)
+    const heading = document.createElement('button')
     heading.type = 'button'
-    heading.className = 'agnes-ui-button workspace-heading'
+    heading.className = 'workspace-heading'
     heading.setAttribute('aria-expanded', String(!collapsed))
     heading.title = workspace?.path ?? t('nav.noWorkspaceTitle')
     const name = document.createElement('span')
@@ -156,10 +156,9 @@ export function renderSessionNavigation(
     children.className = 'workspace-sessions'
     children.hidden = collapsed
     for (const row of sessions) {
-      const choice = createSettingsButton(document)
+      const choice = document.createElement('button')
       choice.type = 'button'
-      choice.className =
-        row.sessionId === options.currentId ? 'agnes-ui-button session active' : 'agnes-ui-button session'
+      choice.className = row.sessionId === options.currentId ? 'session active' : 'session'
       choice.disabled = options.disabled ?? false
       choice.dataset.session = row.sessionId
       if (row.sessionId === options.currentId) choice.setAttribute('aria-current', 'page')

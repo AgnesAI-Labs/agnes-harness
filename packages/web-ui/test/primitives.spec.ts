@@ -219,3 +219,68 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   await expect(native).toBeHidden()
   await expect(nativeTrigger).toBeFocused()
 })
+
+for (const theme of ['light', 'dark'])
+  for (const width of [1280, 390])
+    test(`sidebar navigation hierarchy and containment ${theme}/${width}`, async ({ page }) => {
+      const result = await build({
+        stdin: {
+          loader: 'ts',
+          resolveDir: resolve(root, 'packages/web'),
+          contents: `import { renderSessionNavigation } from './src/navigation.js'
+            renderSessionNavigation({ nav: document.getElementById('sessions'),
+              sessions: [{ sessionId:'current', title:'A very long session title '.repeat(20), cwd:'/workspace', archived:false }],
+              workspaces: [{path:'/workspace', name:'A very long workspace name '.repeat(20), available:true}],
+              labels: new Map(), currentId:'current', newSession:()=>{}, open:()=>{}, action:()=>{}
+            }, key => key)`,
+        },
+        bundle: true,
+        write: false,
+        format: 'iife',
+      })
+      await page.setViewportSize({ width, height: 900 })
+      await page.setContent(`<html class="${theme === 'dark' ? 'dark' : ''}"><head><style>${css}</style></head>
+        <body data-agnes-region="app" class="sidebar-open"><aside class="sidebar"><nav id="sessions"></nav></aside><main></main></body></html>`)
+      await page.addScriptTag({ content: result.outputFiles[0]!.text })
+      const heading = page.locator('.workspace-heading'),
+        session = page.locator('.session')
+      await expect(session).toHaveAttribute('aria-current', 'page')
+      for (const locator of [heading, session]) {
+        expect(
+          await locator.evaluate((node) => {
+            const style = getComputedStyle(node)
+            return { justify: style.justifyContent, weight: style.fontWeight, border: style.borderColor }
+          }),
+        ).toEqual({ justify: 'flex-start', weight: '400', border: 'rgba(0, 0, 0, 0)' })
+        await locator.focus()
+        expect(await locator.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid')
+      }
+      expect(
+        await session.evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft)),
+      ).toBeGreaterThan(
+        await heading.evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft)),
+      )
+      expect(
+        await page.locator('.session-row').evaluate((node) => getComputedStyle(node).backgroundColor),
+      ).not.toBe('rgba(0, 0, 0, 0)')
+      const sidebar = (await page.locator('.sidebar').boundingBox())!
+      for (const selector of [
+        '.workspace-heading-row',
+        '.session-row',
+        '.workspace-new-session',
+        '.session-menu-trigger',
+      ]) {
+        const box = (await page.locator(selector).boundingBox())!
+        expect(box.x).toBeGreaterThanOrEqual(sidebar.x)
+        expect(box.x + box.width).toBeLessThanOrEqual(sidebar.x + sidebar.width)
+      }
+      for (const selector of ['.workspace-name', '.session-title']) {
+        expect(
+          await page.locator(selector).evaluate((node) => ({
+            ellipsis: getComputedStyle(node).textOverflow,
+            nowrap: getComputedStyle(node).whiteSpace,
+            clipped: node.scrollWidth > node.clientWidth,
+          })),
+        ).toEqual({ ellipsis: 'ellipsis', nowrap: 'nowrap', clipped: true })
+      }
+    })

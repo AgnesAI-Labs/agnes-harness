@@ -120,6 +120,7 @@
 }
 .session-row > :where(.session) {
   flex: 1;
+  width: auto;
   min-width: 0;
 }
 /* 行状态统一在这里上色：悬停、当前会话（`data-active` 由 navigation 打在行上）、
