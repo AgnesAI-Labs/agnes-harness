@@ -74,7 +74,8 @@ test('confirms migration of an isolated fixture session', async ({ page }) => {
   const sessionId = process.env.AGH_MIGRATION_SESSION
   test.skip(!sessionId, 'Set AGH_MIGRATION_SESSION to a closed session in an isolated test home.')
   if (!sessionId) return
-  await page.goto('/admin/plugins')
+  // Keep the fixture closed: automatic selection would reopen the latest session.
+  await page.goto('/admin/plugins?session=missing-migration-fixture')
   await section(page, 'diagnostics')
   await page.getByTestId('plugin-diagnostics').locator('summary').first().click()
   await page.getByTestId('plugin-generations').locator('summary').click()
