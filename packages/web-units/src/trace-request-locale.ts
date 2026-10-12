@@ -19,7 +19,7 @@ export const requestTraceCatalog = {
     wireMissing: 'Final provider body unavailable',
     limit: 'Capture limit reached',
     captureFailed: 'Capture could not be retained',
-    unsupported: 'This adapter or transport has no capture tap',
+    unsupported: 'This adapter or connection does not support capture',
     actual: 'Provider-reported tokens',
     estimated: 'Estimated tokens',
     missingTokens: 'Provider token usage is missing.',
@@ -84,7 +84,7 @@ export const requestTraceCatalog = {
     wireMissing: '最终发送正文不可用',
     limit: '已达到采集上限',
     captureFailed: '采集记录未能保留',
-    unsupported: '此适配器或传输方式没有采集接点',
+    unsupported: '此适配器或连接方式不支持采集',
     actual: 'Provider 报告的 Token',
     estimated: '估算 Token',
     missingTokens: 'Provider 未报告 Token 用量。',
@@ -93,7 +93,7 @@ export const requestTraceCatalog = {
     incomplete: '采集不完整。',
     hashBasis: '内容哈希基于脱敏内容。会话提示词配置与动态记忆、上下文分别标明来源。',
     privacy:
-      '秘密识别采用启发式规则。复制前请检查内容。无引用正文在保留期过后回收；显式清除会立即移除无共享引用的内容。',
+      '敏感信息识别采用启发式规则。复制前请检查内容。无引用正文在保留期过后回收；显式清除会立即移除无共享引用的内容。',
     delete: '清除此采集记录',
     confirmDelete: '删除此调用在本地保留的正文和元数据',
 
