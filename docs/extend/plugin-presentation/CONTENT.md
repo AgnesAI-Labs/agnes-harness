@@ -109,7 +109,7 @@ All paths are relative to `examples/`. Version variants share purpose text; deli
 | `persistence` | `@agnes-examples/persistence-jsonl` | Developer | JSONL persistence example / JSONL 持久化示例 | Stores session records and metadata in local JSONL files as an alternative persistence provider. | 作为替代持久化提供方，将会话记录与元数据保存到本地 JSONL 文件。 |
 | `policies/read-only` | `@agnes-example/read-only-policy` | Safety & Approval | Read-only policy / 只读策略 | Allows read-only tools and refuses write or destructive tools, including in full-access sessions. | 允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。 |
 | `sandbox/docker` | `@agnes-examples/sandbox-docker` | Safety & Approval | Docker command sandbox / Docker 命令沙箱 | Runs commands in a Docker container and refuses execution when Docker is unavailable. | 在 Docker 容器中运行命令，并在 Docker 不可用时拒绝执行。 |
-| `third-party-plugin` | `@example/agnes-echo-plugin` | Developer | Echo service example / 回声服务示例 | Demonstrates a configurable echo service in both in-process and isolated plugin rows. | 演示在进程内与隔离插件行中运行可配置的回声服务。 |
+| `third-party-plugin` | `@example/agnes-echo-plugin` | Developer | Echo service example / 回声服务示例 | Demonstrates a configurable echo service in a trusted in-process plugin row. | 演示在受信任的进程内插件行中运行可配置的回声服务。 |
 
 ## Additional official package / row coverage
 

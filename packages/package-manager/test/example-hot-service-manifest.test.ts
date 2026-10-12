@@ -10,7 +10,12 @@ const manifest = (release: string): Record<string, unknown> =>
   JSON.parse(
     readFileSync(
       fileURLToPath(
-        new URL(`../../../examples/packages/hot-service/${release}/package.json`, import.meta.url),
+        new URL(
+          release === 'echo'
+            ? '../../../examples/third-party-plugin/package.json'
+            : `../../../examples/packages/hot-service/${release}/package.json`,
+          import.meta.url,
+        ),
       ),
       'utf8',
     ),
@@ -41,32 +46,41 @@ describe('hot-service example manifests', () => {
     expect(new Set(['v1', 'v2', 'broken'].map((release) => manifest(release).version)).size).toBe(3)
   })
 
-  it.each(['v1', 'v2', 'broken'])('%s is accepted by the real package plugin loader', async (release) => {
-    const directory = fileURLToPath(
-      new URL(`../../../examples/packages/hot-service/${release}`, import.meta.url),
-    )
-    const pkg = manifest(release)
-    const snapshot: RuntimeSnapshot = Object.freeze({
-      snapshotId: `sha256-${'1'.repeat(64)}`,
-      profile: 'default',
-      packageId: String(pkg.name),
-      version: String(pkg.version),
-      integrity: `sha256-${'2'.repeat(64)}`,
-      treeIntegrity: hashDirectory(directory, { exclude: [] }),
-      capabilityHash: 'capability',
-      directory,
-      contributions: Object.freeze([]),
-    })
-    const loaded = await loadPackagePlugins({
-      snapshot,
-      generation: 1,
-      importModule: async () => import(pathToFileURL(`${directory}/index.mjs`).href),
-    })
-    expect(loaded).toHaveLength(1)
-    // What the row mount is built from: the service the plugin declares, and no dependencies.
-    expect(loaded[0]?.entry.provides).toEqual(['demoTextStats'])
-    expect(loaded[0]?.entry.inject).toEqual({})
-  })
+  it.each(['v1', 'v2', 'broken', 'echo'])(
+    '%s is accepted by the real package plugin loader',
+    async (release) => {
+      const directory = fileURLToPath(
+        new URL(
+          release === 'echo'
+            ? '../../../examples/third-party-plugin'
+            : `../../../examples/packages/hot-service/${release}`,
+          import.meta.url,
+        ),
+      )
+      const pkg = manifest(release)
+      const snapshot: RuntimeSnapshot = Object.freeze({
+        snapshotId: `sha256-${'1'.repeat(64)}`,
+        profile: 'default',
+        packageId: String(pkg.name),
+        version: String(pkg.version),
+        integrity: `sha256-${'2'.repeat(64)}`,
+        treeIntegrity: hashDirectory(directory, { exclude: [] }),
+        capabilityHash: 'capability',
+        directory,
+        contributions: Object.freeze([]),
+      })
+      const loaded = await loadPackagePlugins({
+        snapshot,
+        generation: 1,
+        importModule: async () =>
+          import(pathToFileURL(`${directory}/${release === 'echo' ? 'echo.js' : 'index.mjs'}`).href),
+      })
+      expect(loaded).toHaveLength(1)
+      // What the row mount is built from: the service the plugin declares, and no dependencies.
+      expect(loaded[0]?.entry.provides).toEqual([release === 'echo' ? 'ext:example/echo' : 'demoTextStats'])
+      expect(loaded[0]?.entry.inject).toEqual({})
+    },
+  )
 
   it.each(['v1', 'v2', 'broken'])(
     '%s declares in its manifest exactly the services its export provides',

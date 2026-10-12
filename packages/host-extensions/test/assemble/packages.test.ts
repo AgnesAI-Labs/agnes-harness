@@ -157,7 +157,7 @@ describe('createJitiPackageLoader', () => {
     const example = fileURLToPath(new URL('../../../../examples/third-party-plugin', import.meta.url))
     const shipped = await l.importPackage('@example/agnes-echo-plugin', example)
     expect(realpathSync(shipped.extensionEntry as string)).toBe(realpathSync(join(example, 'echo.js')))
-    expect(shipped.plugins).toHaveLength(2)
+    expect(shipped.plugins).toHaveLength(1)
     for (const row of shipped.plugins!) expect(row.declaration.provide).toEqual(row.entry.provides)
   })
 
