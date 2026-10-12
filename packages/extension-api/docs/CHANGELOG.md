@@ -78,6 +78,16 @@ presentation with `system`; user `UINode` carries origin. No old-field compatibi
 Use extension API dependencies and plugin `apiRange` compatible with `2.0.0` for both
 registration and structured-input migrations.
 
+`LoopContext` is now `GenericLoopPorts & DefaultLoopConvenience`; its members and behaviour are
+unchanged. `GenericLoopPorts` is the controlled-execution surface a replaceable Loop needs: model
+`stream`/`complete` over `prepareRequest`, tool `execute`/`batch`/`resume`, `decisions`, effect
+receipts, inputs (including the structured `system` field), events, checkpoints, `wait.park`/`wake`/
+`delay`, jobs, children and `compaction`. `DefaultLoopConvenience` holds the coarse edges tied to
+Core's ReAct stages: `turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`,
+`model.respond`, `tools.drain` and `wait.poll`. `GenericLoopFactory` is a `LoopFactory` whose
+`create`/`resume` take only `GenericLoopPorts`. `@agnes/plugin-runtime/testkit` `driveLoop` gains
+`decisions`, `effects`, `turnOpen` and `resumeParked` options plus a `scriptedDecisions` port.
+
 ## 1.6.0
 
 Removed from the unpublished protocol `0.1.0` ledger contract: `approval/asked`,

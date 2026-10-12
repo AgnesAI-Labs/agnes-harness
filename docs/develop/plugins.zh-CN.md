@@ -141,7 +141,9 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 为请求和工具调用分配稳定 `invocationId`。`ctx.effects.status(id)` 返回 `not-sent`、`may-have-sent` 或含持久响应的 `responded`。通过 `ctx.checkpoints.write(driver.checkpoint(), { invocationIds })` 关联检查点与副作用。重开可复用持久响应；不确定的调用拒绝自动重放。responded 不代表工具成功，也不保证进程外副作用恰好执行一次。
 
-受控的 `turn.checkpoint`、`model.respond`、`tools.drain`、压缩与延迟等待端口维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器；Core 可能新增 continuation 阶段，因此循环必须把未知的 `LoopContinuation` 值视为错误，不能依赖穷尽式 switch。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。Host 为 `ctx.children` 绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。省略 providerId 使用 child-agent 配置；每次 start 都检查当前允许名单，继承父工作区、固定代码 generation、预算和工具过滤，子选项只能收窄这些约束。会话关闭会取消并等待已启动或正在启动的子代理清理完成。
+`LoopContext` 由两个有文档的面合成。`GenericLoopPorts` 是可替换循环所需的全部端口（模型、工具、决策、副作用回执、输入、事件、检查点、等待/唤醒、作业、子代理、压缩）；把工厂声明为 `GenericLoopFactory` 即证明它不依赖其他端口。`DefaultLoopConvenience`（`turn.continuation`/`checkpoint`/`finishCancelled`/`finishFailure`、`model.respond`、`tools.drain`、`wait.poll`）是绑定 Core ReAct 阶段的粗粒度边，只有默认循环应当依赖。
+
+受控的 `turn.checkpoint`、`model.respond`、`tools.drain` 与延迟等待便捷端口，以及压缩，维护 Core 的账本和恢复不变量。调度器通过 `ctx.turn.continuation()` 选择下一条边，无须接触私有程序计数器；Core 可能新增 continuation 阶段，因此循环必须把未知的 `LoopContinuation` 值视为错误，不能依赖穷尽式 switch。`@agnes/loop-default` 只使用公共上下文，由 Base 发行包的普通插件行注册。`checkpointMode: 'ledger'` 使用 Core 恢复并接受没有驱动检查点的历史会话。有状态驱动默认使用 `'driver'` 模式，恢复前校验 codec 版本。Host 为 `ctx.children` 绑定父会话的 `ChildAgentSessionService`，提供 start/list/message/interrupt/result/events/dispose。省略 providerId 使用 child-agent 配置；每次 start 都检查当前允许名单，继承父工作区、固定代码 generation、预算和工具过滤，子选项只能收窄这些约束。会话关闭会取消并等待已启动或正在启动的子代理清理完成。
 
 有两种调度方式：
 
@@ -156,4 +158,4 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
 
-新会话选择优先级为显式参数、管理端默认值、启用包的 `config.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。
+新会话选择优先级为显式参数、管理端默认值、启用包的 `config.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[计划-执行示例](../../examples/loops/plan-execute-loop/README.md)：非 ReAct 状态机，声明为 `GenericLoopFactory`，通过 `DecisionPort` 请求真人批准，吸收结构化 child-completed `system` 输入，并在拒绝、取消或结果未知时如实结束，其测试是通用端口的一致性参照。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。

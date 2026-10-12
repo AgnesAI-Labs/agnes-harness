@@ -168,12 +168,9 @@ export type LoopEffectStatus =
     }
 
 /**
- * Controlled ledger operations shared by all drivers. Core binds approvals, media and recovery;
- * these do not expose or accept its private program counter. The driver selects the next edge.
- */
-/**
- * Core may add stages additively. A loop must treat an unknown value as an error (no exhaustive-only
- * switch that silently falls through) rather than assume this union is closed.
+ * Default-loop scheduling stage. Core may add stages additively; a loop must treat an unknown value
+ * as an error (no exhaustive-only switch that silently falls through) rather than assume this union
+ * is closed. Part of {@link DefaultLoopConvenience}; a replaceable loop never needs it.
  */
 export type LoopContinuation = 'checkpoint' | 'model' | 'tools' | 'compaction' | 'deferred' | 'failure'
 
@@ -191,7 +188,13 @@ export interface LoopServiceReader {
   ): Promise<S | undefined> | S | undefined
 }
 
-export interface LoopContext {
+/**
+ * The generic controlled-execution surface: model calls, tool execution, durable decisions, effect
+ * receipts, inputs, events, checkpoints and waiting. Core binds approvals, media and recovery to
+ * these ports without exposing its private program counter; the driver selects every next edge.
+ * A loop typed against this interface depends on nothing about the default ReAct stages.
+ */
+export interface GenericLoopPorts {
   readonly decisions: DecisionPort
   /** Host/Core-bound session identity. Use session.workspaceRoot for workspace-owned state, policy and config. */
   readonly session: SessionRef
@@ -206,23 +209,15 @@ export interface LoopContext {
     view(): Promise<LoopTurnView | null>
     /** Close the current execution step before compaction. Does not run a scheduler edge. */
     endStep(): Promise<void>
-    continuation(): LoopContinuation | null
     cancelled(): boolean
-    checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
-    finishCancelled(): Promise<LoopStepOutcome>
-    finishFailure(): Promise<LoopStepOutcome>
   }
   readonly effects: { status(invocationId: string): Promise<LoopEffectStatus> }
   readonly model: {
-    /** Assemble, infer and persist the assistant/tools edge with Core-owned stamps. */
-    respond(signal: AbortSignal): Promise<LoopStepOutcome>
     /** RequestBody accepts text, images and other protocol content blocks. */
     stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent>
     complete(request: LoopRequest, signal: AbortSignal): Promise<readonly InferenceEvent[]>
   }
   readonly tools: {
-    /** Drain model-planned calls, preserving approval, cancellation and deferred-job invariants. */
-    drain(signal: AbortSignal): Promise<LoopStepOutcome>
     /** Execution goes through the session's approval and tool policy path. */
     execute(call: LoopToolCall, signal: AbortSignal): Promise<ToolResult>
     /** Independent calls may overlap; results preserve input order and policy controls concurrency.
@@ -264,9 +259,9 @@ export interface LoopContext {
      * Save the next checkpoint to acknowledge delivery across restart; otherwise it is redelivered.
      */
     wake(): Promise<void>
-    poll(signal: AbortSignal): Promise<LoopStepOutcome>
     delay(ms: number, signal: AbortSignal): Promise<void>
   }
+  /** Core-owned compaction policy; the loop decides when to run it. */
   readonly compaction?: { run(signal: AbortSignal): Promise<LoopStepOutcome> }
   readonly jobs: {
     /** The original tool invocation must own a durable deferred-job marker. */
@@ -278,6 +273,35 @@ export interface LoopContext {
   }
   readonly children?: LoopChildrenPort
 }
+
+/**
+ * Coarse edges tied to Core's ReAct stages, used by `@agnes/loop-default` to reuse Core's
+ * model/tool/gate policy wholesale. A replaceable loop does not need them and should not depend on
+ * them: each runs a scheduler edge on the loop's behalf. Select among them through
+ * `turn.continuation()`, treating an unknown {@link LoopContinuation} as an error.
+ */
+export interface DefaultLoopConvenience {
+  readonly turn: {
+    continuation(): LoopContinuation | null
+    checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
+    finishCancelled(): Promise<LoopStepOutcome>
+    finishFailure(): Promise<LoopStepOutcome>
+  }
+  readonly model: {
+    /** Assemble, infer and persist the assistant/tools edge with Core-owned stamps. */
+    respond(signal: AbortSignal): Promise<LoopStepOutcome>
+  }
+  readonly tools: {
+    /** Drain model-planned calls, preserving approval, cancellation and deferred-job invariants. */
+    drain(signal: AbortSignal): Promise<LoopStepOutcome>
+  }
+  readonly wait: {
+    poll(signal: AbortSignal): Promise<LoopStepOutcome>
+  }
+}
+
+/** Everything Core binds for a session. Prefer {@link GenericLoopPorts} in a replaceable loop. */
+export type LoopContext = GenericLoopPorts & DefaultLoopConvenience
 
 export interface LoopDriver {
   step(signal: AbortSignal): Promise<LoopStepOutcome>
@@ -306,6 +330,16 @@ export interface LoopFactory extends LoopSelection {
   readonly codec: LoopCheckpointCodec
   create(ctx: LoopContext, signal?: AbortSignal): LoopDriver | Promise<LoopDriver>
   resume(ctx: LoopContext, checkpoint: LoopCheckpoint, signal?: AbortSignal): LoopDriver | Promise<LoopDriver>
+}
+
+/** A factory that needs only the generic ports. It is a valid {@link LoopFactory}. */
+export interface GenericLoopFactory extends Omit<LoopFactory, 'create' | 'resume'> {
+  create(ctx: GenericLoopPorts, signal?: AbortSignal): LoopDriver | Promise<LoopDriver>
+  resume(
+    ctx: GenericLoopPorts,
+    checkpoint: LoopCheckpoint,
+    signal?: AbortSignal,
+  ): LoopDriver | Promise<LoopDriver>
 }
 
 export interface LoopCatalogEntry extends LoopSelection {
