@@ -1489,10 +1489,6 @@ describe('web session selection', () => {
     const send = document.getElementById('send') as HTMLButtonElement
     const model = document.getElementById('model') as HTMLButtonElement
     const newSession = document.getElementById('new-session') as HTMLDialogElement
-    const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
-    const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
-    const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
-    const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
 
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))
     expect(document.getElementById('notice')?.textContent).toContain('无法读取工作区列表')
@@ -1530,6 +1526,10 @@ describe('web session selection', () => {
     old.detach.mockRejectedValueOnce(new Error('detach cleanup failed'))
     newButton.click()
     expect(newSession.open).toBe(true)
+    const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
+    const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
+    const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
+    const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
     expect(create).not.toHaveBeenCalled()
     await vi.waitFor(() =>
       expect(document.getElementById('notice')?.textContent).toContain('detach cleanup failed'),
@@ -1633,10 +1633,6 @@ describe('web session selection', () => {
         expect(new URL(location.href).searchParams.has('settings')).toBe(false)
       }
       const newSession = document.getElementById('new-session') as HTMLDialogElement
-      const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
-      const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
-      const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
-      const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
 
       if (terminalLink) document.getElementById('new')?.click()
       else {
@@ -1648,6 +1644,10 @@ describe('web session selection', () => {
         document.querySelector<HTMLButtonElement>('[data-testid="first-run-skip"]')?.click()
       }
       await vi.waitFor(() => expect(newSession.open).toBe(true))
+      const newSessionForm = document.getElementById('new-session-form') as HTMLFormElement
+      const newSessionCwd = document.getElementById('new-session-cwd') as HTMLInputElement
+      const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
+      const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
       expect(create).not.toHaveBeenCalled()
       newSessionCwd.value = '/workspace/not-present'
       newSessionCwd.dispatchEvent(new Event('input', { bubbles: true }))
@@ -2499,7 +2499,9 @@ describe('image composer submissions', () => {
     expect(active.prompt).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('保留文字和图片')
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('aggregate pixel limit')
+    await vi.waitFor(() =>
+      expect(document.getElementById('notice')?.textContent).toContain('aggregate pixel limit'),
+    )
     validation.mockRestore()
     submit('保留文字和图片')
     await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
@@ -2515,7 +2517,7 @@ describe('image composer submissions', () => {
     expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制')
+    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制'))
   })
 })
 
@@ -2948,6 +2950,7 @@ describe('incremental opening', () => {
       expect(connection.dataset.state).toBe('closed')
       // A later message rewrites the notice, not the recovery status.
       emit('gap', { sessionId: 'old', earliestSeq: 1 })
+      await vi.advanceTimersByTimeAsync(0)
       const notice = document.getElementById('notice') as HTMLElement
       expect(notice.textContent).toContain('部分历史事件')
       expect(status.querySelector('button')).toBe(retry)
