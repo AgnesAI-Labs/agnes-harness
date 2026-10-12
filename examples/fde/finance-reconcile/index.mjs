@@ -1,8 +1,14 @@
+import { readFileSync } from 'node:fs'
 import { uiDataSourceKind } from '@agnes/intelligent-ui-contract'
-import { writeTool } from '@agnes/plugin-runtime'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { fixtureDifferenceRows, keyed, ledger, readLedgers, reconcile } from './ledgers.mjs'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 
 const row = Type.Object({
@@ -129,7 +135,7 @@ const stages = [
     name: 'await-adjustment',
     inputStage: true,
     async run(ctx, state, signal) {
-      const outcome = await actionOutcome(ctx, state, signal)
+      const outcome = actionOutcome(state.stageInput, state.data.surface)
       if (!outcome) return { waitingForInput: true }
       if (outcome.state === 'failed') {
         if (outcome.error?.outcomeUnknown)
@@ -137,7 +143,7 @@ const stages = [
         return { waitingForInput: true }
       }
       const { receipt } = value(outcome.result)
-      if (!receipt || receipt.posted !== false || receipt.status !== 'simulated-approved')
+      if (receipt?.posted !== false || receipt.status !== 'simulated-approved')
         throw new Error('Unexpected adjustment receipt')
       const commentary = await modelText(
         ctx,
@@ -164,13 +170,33 @@ const stages = [
   },
 ]
 const sourceParams = { type: 'object', additionalProperties: false, properties: {} }
-export const { main, factory, createFactory, policy } = makeBundle({
+const workflow = defineWorkflowLoop({
+  id: 'fde.finance-reconcile',
+  version: '5.0.0',
+  source: '@agnes-fde/finance-reconcile',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/finance-reconcile',
+  },
+  skills: [
+    {
+      name: 'finance-reconcile',
+      description: 'Business playbook for finance-reconcile',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'finance-reconcile',
   tools,
   stages,
   guardToolCall: guardAdjustment,
   recordToolResult: recordAdjustment,
-  onApply(ctx) {
+})
+export const { factory, createFactory, policy } = workflow
+export const main = {
+  ...workflow.main,
+  apply(ctx, config) {
+    workflow.main.apply(ctx, config)
     ctx.providers.register(uiDataSourceKind, '@agnes-fde/finance-reconcile', {
       id: 'finance/differences',
       version: '1.0.0',
@@ -188,4 +214,4 @@ export const { main, factory, createFactory, policy } = makeBundle({
       },
     })
   },
-})
+}

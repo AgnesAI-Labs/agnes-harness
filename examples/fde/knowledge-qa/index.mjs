@@ -1,6 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowText as text,
+  workflowTool as tool,
+  workflowValue as value,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, text, tool, value } from './runtime.mjs'
 
 const folder = new URL('./fixtures/docs/', import.meta.url)
 const terms = (text) => [...new Set(text.toLowerCase().match(/[a-z]{3,}/g) ?? [])]
@@ -109,7 +115,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.knowledge-qa',
+  version: '5.0.0',
+  source: '@agnes-fde/knowledge-qa',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/knowledge-qa',
+    markdown: (state) => state.data.answer?.markdown,
+  },
+  skills: [
+    {
+      name: 'knowledge-qa',
+      description: 'Business playbook for knowledge-qa',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'knowledge-qa',
   tools,
   stages,

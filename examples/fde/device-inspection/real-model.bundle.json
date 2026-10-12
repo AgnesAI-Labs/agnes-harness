@@ -4,9 +4,6 @@
     "device-inspection": {
       "name": "device-inspection",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.device-inspection"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.device-inspection"
       }
     }
   }

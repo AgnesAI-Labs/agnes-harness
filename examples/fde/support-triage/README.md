@@ -11,7 +11,7 @@ The triage panel shows ticket, classification and send status in the public tool
 ## What ships
 
 - `main`: author-kit plugin registering business tools, `fde.support-triage` loop and policy, and the packaged Skill.
-- `runtime.mjs`: a public-port loop with versioned checkpoints, cancellation and refusal on uncertain recovery. Every independent tarball includes this helper.
+- `defineWorkflowLoop` from `@agnes/plugin-runtime`: official checkpoints, confirmation, cancellation and refusal on uncertain recovery; the package contains only business stages and connectors.
 - `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
 - The bundle kind is declared in `agnes.kinds`; `agnes.bundles.support-triage` selects the loop and supplies its preset.
 

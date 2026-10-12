@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 [Documentation](../README.md) · [Five-minute quickstart](quickstart.md) · [Test your plugin](testing.md) · [Import map](imports.md)
 
-[Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md)
+[Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
 
 Choose the smallest starter that owns your behavior. All five [templates](../../templates/) are independent packages with build/test scripts and imports through public package exports. This SDK is a source preview; the quickstart includes local SDK links until public packages are distributed.
 
@@ -14,7 +14,7 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | The same tool plus a separate browser sidebar slot |
 | MCP and Skills | [mcp-skills](../../templates/mcp-skills/) | MCP definition and a packaged Skill registered through the Skills service |
 | Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `ctx.providers.register` |
-| Loop | [loop](../../templates/loop/) | Independent one-turn driver, checkpoint codec and `loops` registration |
+| Loop | [loop](../../templates/loop/) | Official staged business workflow with confirmation and checkpoint recovery |
 | Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `ctx.providers.register`; see [Compaction engines](compaction-engines.md) |
 | Child agent | [ACP child](../../examples/child-agents/acp/) | Continuable children through `childAgents`; see [Child agent providers](child-agents.md) |
 | Persistence | [JSONL](../../examples/persistence/) | Full Host persistence without SQL; see [Persistence providers](persistence.md) |
@@ -31,11 +31,12 @@ Import these from `@agnes/plugin-runtime`:
 - `defineTool(def)` accepts the input-only shape, or accepts `result: TypeBoxSchema` to infer and validate successful `structured` output.
 - `toolError(message)` expresses an expected business failure; errors may omit `structured`.
 - `toolCancelled(signal)` throws the cancellation reason. Cancellation and unexpected faults stay exceptions.
+- `defineWorkflowLoop(options)` owns staged business workflow recovery; start with the [worked example](workflow-loops.md).
 - `defineLoop(factory)` and `defineModelAdapter(adapter)` preserve declarations satisfying their public contracts.
 
 Import `defineTool` only from `@agnes/plugin-runtime`. It accepts input-only tools and optional result schemas.
 
-A tool plugin injects `extension`; use `Context` for its callback. Loop and adapter callbacks use `ProviderPluginContext` and `ProviderPluginContext` with corresponding injections. These types describe required services; a type declaration does not install a service.
+A tool plugin injects `tools`; use `Context` for its callback. Loop and adapter callbacks use `ProviderPluginContext` and `ProviderPluginContext` with corresponding injections. These types describe required services; a type declaration does not install a service.
 
 Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior.
 

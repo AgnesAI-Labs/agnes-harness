@@ -4,9 +4,6 @@
     "compliance-audit": {
       "name": "compliance-audit",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.compliance-audit"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.compliance-audit"
       }
     }
   }

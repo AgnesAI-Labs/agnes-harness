@@ -18,7 +18,7 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs",
+    "build": "node --check index.mjs",
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
@@ -76,7 +76,7 @@
       "code-review": {
         "profile": {
           "loop": {
-            "version": "4.0.0",
+            "version": "5.0.0",
             "provider": "fde.code-review"
           },
           "skills": [
@@ -87,9 +87,6 @@
           "code-review": {
             "name": "code-review",
             "extends": "standard",
-            "approval": {
-              "policy": "fde.code-review"
-            },
             "model": {
               "route": {
                 "primary": {
@@ -97,6 +94,9 @@
                   "model": "demo-model"
                 }
               }
+            },
+            "tool-policy": {
+              "provider": "fde.code-review"
             }
           }
         }

@@ -4,9 +4,6 @@
     "contract-review": {
       "name": "contract-review",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.contract-review"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.contract-review"
       }
     }
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
+import { workflowValue as value } from '@agnes/plugin-runtime'
 import { test } from 'vitest'
 import { main, tools } from '../index.mjs'
-import { value } from '../runtime.mjs'
 import { runWorkflow } from './harness.mjs'
 
 test('rubric uses minimized explicit evidence, shows unknowns and leaves hiring to a person', async () => {

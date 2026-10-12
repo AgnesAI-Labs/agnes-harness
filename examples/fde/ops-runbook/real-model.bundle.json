@@ -4,9 +4,6 @@
     "ops-runbook": {
       "name": "ops-runbook",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.ops-runbook"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.ops-runbook"
       }
     }
   }

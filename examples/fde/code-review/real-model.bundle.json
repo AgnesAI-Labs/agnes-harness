@@ -4,9 +4,6 @@
     "code-review": {
       "name": "code-review",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.code-review"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.code-review"
       }
     }
   }

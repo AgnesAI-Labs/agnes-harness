@@ -11,7 +11,7 @@ The connector lazily starts the bundled stdio MCP server, forwards cancellation 
 ## What ships
 
 - `main`: author-kit plugin registering business tools, `fde.crm-assistant` loop and policy, and the packaged Skill.
-- `runtime.mjs`: a public-port loop with versioned checkpoints, cancellation and refusal on uncertain recovery. Every independent tarball includes this helper.
+- `defineWorkflowLoop` from `@agnes/plugin-runtime`: official checkpoints, confirmation, cancellation and refusal on uncertain recovery; the package contains only business stages and connectors.
 - `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
 - The bundle kind is declared in `agnes.kinds`; `agnes.bundles.crm-assistant` selects the loop and supplies its preset.
 

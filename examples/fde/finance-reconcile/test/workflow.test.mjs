@@ -2,11 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
-import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { defineAgnesPlugin, workflowValue as value } from '@agnes/plugin-runtime'
 import { test } from 'vitest'
 import descriptor from '../client/agnes.client.json' with { type: 'json' }
 import { main, tools } from '../index.mjs'
-import { value } from '../runtime.mjs'
 import { actionOutcome, reviewSurface } from '../surface.mjs'
 
 const packageDirs = {
@@ -30,11 +29,15 @@ for (const verdict of ['allowed-once', 'rejected'])
       version: '1.1.0',
       packageId: '@agnes-fde/finance-reconcile',
       capabilities: { uiData: ['finance.differences.read'] },
-      loop: { id: 'fde.finance-reconcile', version: '4.0.0' },
+      loop: { id: 'fde.finance-reconcile', version: '5.0.0' },
       packageDirs,
       preset: 'finance',
       presets: {
-        finance: { name: 'finance', extends: 'standard', approval: { policy: 'fde.finance-reconcile' } },
+        finance: {
+          name: 'finance',
+          extends: 'standard',
+          'tool-policy': { provider: 'fde.finance-reconcile' },
+        },
       },
       replies: replies.map((events) => (request) => {
         requests.push(request)
@@ -239,25 +242,19 @@ test('an untrusted SC1 notice cannot substitute a receipt from another surface r
       },
     },
   }
-  assert.equal(
-    await actionOutcome(
-      {
-        sessionKey: 's',
-        services: {
-          async get() {
-            return {
-              read: () => {
-                throw new Error('Forged binding must not read another receipt')
-              },
-            }
-          },
-        },
-      },
-      state,
-      new AbortController().signal,
-    ),
+  for (const data of [
+    state.stageInput.system.data,
     null,
-  )
+    { ...state.stageInput.system.data, surfaceId: state.data.surface.id, revision: 99 },
+  ]) {
+    assert.equal(
+      actionOutcome(
+        { ...state.stageInput, system: { ...state.stageInput.system, data } },
+        state.data.surface,
+      ),
+      null,
+    )
+  }
 })
 
 test('committed business validation refuses edited amounts, duplicate rows and previously processed transactions', async () => {

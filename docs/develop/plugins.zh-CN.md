@@ -129,7 +129,9 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 ## 编写 Agent Loop
 
-Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `ctx.providers.register('loop', '包名', factory)`；`agnes.plugins` 的入口声明 `inject: ["loops"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
+固定业务流程从 [`defineWorkflowLoop`](../extend/workflow-loops.zh-CN.md) 和 [Loop 模板](../../templates/loop/) 开始，由 helper 负责分阶段 checkpoint、确认与审批续接。下面的底层 factory 合同用于自定义调度。
+
+Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `ctx.providers.register('loop', '包名', factory)`；`agnes.plugins` 的入口声明 `inject: ["providers"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
 
 每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。返回结束结果前先调用 `ctx.events.finish(reason)`。
 

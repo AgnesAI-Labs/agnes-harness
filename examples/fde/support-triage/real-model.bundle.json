@@ -4,9 +4,6 @@
     "support-triage": {
       "name": "support-triage",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.support-triage"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.support-triage"
       }
     }
   }

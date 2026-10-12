@@ -18,7 +18,7 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs && node --check ledgers.mjs && node --check surface.mjs",
+    "build": "node --check index.mjs && node --check ledgers.mjs && node --check surface.mjs",
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
@@ -81,7 +81,7 @@
       "finance-reconcile": {
         "profile": {
           "loop": {
-            "version": "4.0.0",
+            "version": "5.0.0",
             "provider": "fde.finance-reconcile"
           },
           "skills": [
@@ -92,9 +92,6 @@
           "finance-reconcile": {
             "name": "finance-reconcile",
             "extends": "standard",
-            "approval": {
-              "policy": "fde.finance-reconcile"
-            },
             "model": {
               "route": {
                 "primary": {
@@ -102,6 +99,9 @@
                   "model": "demo-model"
                 }
               }
+            },
+            "tool-policy": {
+              "provider": "fde.finance-reconcile"
             }
           }
         }

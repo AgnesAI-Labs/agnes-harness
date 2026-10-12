@@ -105,3 +105,5 @@ node "$AGH_SOURCE/agnes.mjs" daemon stop
 # 在 web 终端按 Ctrl-C。
 rm -rf "$AGH_HOME" "$AGH_WORKSPACE"
 ```
+
+分阶段业务 Agent 使用 `--template loop`，从 [`defineWorkflowLoop`](workflow-loops.zh-CN.md) 开始，只写业务阶段，由官方 helper 负责确认、checkpoint 与审批续接。
