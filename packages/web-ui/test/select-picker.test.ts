@@ -5,6 +5,7 @@ import { createSelectPicker, type SelectPicker } from '../src/select-picker.js'
 let picker: SelectPicker
 afterEach(() => {
   picker?.destroy()
+  vi.restoreAllMocks()
   document.body.replaceChildren()
 })
 
@@ -21,6 +22,14 @@ function setup() {
 
 it('preserves empty-value choices and ignores hidden/disabled items', () => {
   const { select, trigger } = setup()
+  let top = 300
+  vi.spyOn(trigger, 'getBoundingClientRect').mockImplementation(() => new DOMRect(200, top, 200, 44))
+  vi.spyOn(window.performance, 'now').mockReturnValue(1000)
+  const scrollAt = (timeStamp: number) => {
+    const event = new Event('scroll')
+    Object.defineProperties(event, { timeStamp: { value: timeStamp }, isTrusted: { value: true } })
+    document.dispatchEvent(event)
+  }
   const changed = vi.fn()
   select.addEventListener('change', changed)
   trigger.click()
@@ -37,10 +46,18 @@ it('preserves empty-value choices and ignores hidden/disabled items', () => {
   expect(panel.scrollTop).toBe(30)
   document.dispatchEvent(new Event('scroll'))
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  // Focus can queue a scroll before opening, then deliver it after the anchor moved.
+  top -= 20
+  scrollAt(999)
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
   document.getElementById('choice-listbox-1')?.click()
   expect(select.value).toBe('a')
   trigger.click()
   document.getElementById('choice-listbox-1')?.click()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  trigger.click()
+  top -= 20
+  scrollAt(1001)
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   trigger.click()
   document.getElementById('choice-listbox-0')?.click()

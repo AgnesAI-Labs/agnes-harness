@@ -48,13 +48,16 @@ test.beforeAll(async () => {
     import { Drawer } from './src/ui/drawer.js'
     import { Dialog } from './src/ui/dialog.js'
     import { Field } from './src/ui/field.js'
+    import { createSelectPicker } from './src/select-picker.js'
     function Fixture() {
       const [drawer, setDrawer] = useState(false), [dialog, setDialog] = useState(false)
       const [selected, select] = useState('')
       const [description, setDescription] = useState(true)
       const [refreshed, refresh] = useState(0)
       const native = useRef(null), [locked, lock] = useState(false)
+      const choice = useRef(null)
       useEffect(() => bindDialogSheets(document), [])
+      useEffect(() => { const picker = createSelectPicker(choice.current, {label:'Synthetic selection'}); return () => picker.destroy() }, [])
       return <main>
         <Button type="primary" id="react-primary">Save</Button>
         <button type="button" className="primary-button" id="native-primary">Save</button>
@@ -82,6 +85,7 @@ test.beforeAll(async () => {
         <Dialog open={false} forceRender title="Closed confirmation" onCancel={() => select('Closed dialog canceled')} footer={null} />
         <Button onClick={() => setDescription(value => !value)}>Toggle row description</Button>
         <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description={description ? 'A short description' : undefined} onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
+        <div id="picker-scroll-frame" style={{height:120, overflow:'auto', overflowAnchor:'none'}}><div style={{height:16}}/><label htmlFor="synthetic-choice">Synthetic selection<select ref={choice} id="synthetic-choice"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label><div style={{height:160}}/></div>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -153,6 +157,22 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   await page.getByRole('menuitem', { name: 'Copy row', exact: true }).click()
   await expect(page.getByRole('status')).toHaveText('Row copied')
   await expect(page.getByRole('dialog', { name: 'Details', exact: true })).toBeHidden()
+  // Deliver a real pre-open scroll after a layout shift, then select through the live popup.
+  await page.evaluate(async () => {
+    const frame = document.getElementById('picker-scroll-frame')!
+    frame.scrollTop = 8
+    document.getElementById('synthetic-choice-trigger')!.click()
+    frame.style.paddingTop = '24px'
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  })
+  await expect(page.locator('#synthetic-choice-trigger')).toHaveAttribute('aria-expanded', 'true')
+  await page.getByRole('option', { name: 'Beta', exact: true }).click()
+  await expect(page.locator('#synthetic-choice')).toHaveValue('beta')
+  await page.locator('#synthetic-choice-trigger').click()
+  await page.locator('#picker-scroll-frame').evaluate((frame) => {
+    frame.scrollTop = 0
+  })
+  await expect(page.locator('#synthetic-choice-trigger')).toHaveAttribute('aria-expanded', 'false')
   await settled(page)
   const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(scan.violations).toEqual([])

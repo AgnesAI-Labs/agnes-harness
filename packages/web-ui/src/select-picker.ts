@@ -43,6 +43,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   let typedAt = 0
   let syncedState = ''
   let anchor: DOMRect | undefined
+  let openedAt = 0
   const available = (item: HTMLOptionElement) =>
     (options.includeEmpty !== false || !!item.value) &&
     !item.hidden &&
@@ -98,8 +99,28 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   function onScroll(event: Event): void {
     if (!panel || event.composedPath().includes(panel)) return
     const next = trigger.getBoundingClientRect()
-    // A queued scroll from focusing the trigger may arrive after the menu opens.
+    // Focus/scroll-into-view can queue a trusted scroll before this popup existed. Re-anchor
+    // when that event arrives late; only a new external scroll should dismiss the new popup.
+    if (event.isTrusted && event.timeStamp < openedAt) {
+      if (next.top !== anchor?.top || next.left !== anchor?.left) placePanel()
+      return
+    }
     if (next.top !== anchor?.top || next.left !== anchor?.left) close()
+  }
+
+  function placePanel(): void {
+    if (!panel) return
+    positionPopover(trigger, panel, {
+      preferredWidth: Math.max(trigger.getBoundingClientRect().width, 300),
+      preferredHeight: 360,
+      gap: 6,
+    })
+    const bottom = trigger.getBoundingClientRect().bottom + 6
+    if (view && view.innerHeight - bottom - 12 >= panel.getBoundingClientRect().height) {
+      panel.style.top = `${bottom}px`
+      panel.dataset.placement = 'below'
+    }
+    anchor = trigger.getBoundingClientRect()
   }
 
   function highlight(index: number): void {
@@ -135,6 +156,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     if (trigger.disabled || panel) return
     choices = Array.from(select.options).filter(available)
     if (!choices.length) return
+    openedAt = view?.performance.now() ?? 0
     typed = ''
     panel = doc.createElement('div')
     panel.id = `${select.id}-listbox`
@@ -184,19 +206,9 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       panel.setAttribute('popover', 'manual')
       panel.showPopover()
     }
-    positionPopover(trigger, panel, {
-      preferredWidth: Math.max(trigger.getBoundingClientRect().width, 300),
-      preferredHeight: 360,
-      gap: 6,
-    })
     // The shared picker defaults upward (composer). In a form, prefer below when it fits.
-    const bottom = trigger.getBoundingClientRect().bottom + 6
-    if (view && view.innerHeight - bottom - 12 >= panel.getBoundingClientRect().height) {
-      panel.style.top = `${bottom}px`
-      panel.dataset.placement = 'below'
-    }
+    placePanel()
     trigger.setAttribute('aria-expanded', 'true')
-    anchor = trigger.getBoundingClientRect()
     trigger.setAttribute('aria-controls', panel.id)
     highlight(
       Math.max(
