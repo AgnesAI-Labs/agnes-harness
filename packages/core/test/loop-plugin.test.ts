@@ -727,6 +727,84 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
   }
 })
 
+it('hands a next-step input claimed after the last checkpoint back once on cold resume', async () => {
+  const claims: Array<Awaited<ReturnType<LoopContext['input']['claim']>>> = []
+  let crash = true
+  const claimLoop: LoopFactory = {
+    ...echo,
+    controls: { steer: true },
+    id: 'test.claim-replay',
+    create(ctx) {
+      return {
+        checkpoint: () => codec.encode('ready'),
+        cancel() {},
+        dispose() {},
+        async step() {
+          await ctx.input.claim('next-turn')
+          await ctx.checkpoints.write(codec.encode('ready'))
+          claims.push(await ctx.input.claim('next-step'))
+          if (crash) throw new Error('process died before the checkpoint')
+          await ctx.checkpoints.write(codec.encode('done'))
+          await ctx.events.finish('completed')
+          return { outcome: 'turn-ended', phase: 'custom', reason: 'completed' }
+        },
+      }
+    },
+    resume(ctx, saved) {
+      codec.decode(saved)
+      return this.create(ctx)
+    },
+  }
+  const loops = defaultLoops()
+  loops.register('@test/claim-replay', claimLoop)
+  const storage = new MemoryStorage()
+  const first = kernel(storage, loops)
+  const steer = {
+    content: [{ type: 'text' as const, text: 'approved' }],
+    actor,
+    trust: 'untrusted' as const,
+    origin: 'system' as const,
+    system: {
+      source: 'agnes/action-result',
+      type: 'result',
+      summary: 'Approved',
+      data: { actionId: 'a1' },
+    },
+  }
+  try {
+    const session = await first.session('claim-replay', { ...options, loop: claimLoop })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'start' }], actor })
+    await session.enqueue('next-step', steer)
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'error',
+    )
+    await session.close()
+  } finally {
+    await first.close()
+  }
+  crash = false
+  for (const reopen of [0, 1]) {
+    const next = kernel(storage, loops)
+    try {
+      const session = await next.session('claim-replay', options)
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: `again ${reopen}` }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      await session.close()
+    } finally {
+      await next.close()
+    }
+  }
+  const received = claims.filter((claim) => claim !== null)
+  expect(received).toMatchObject([
+    { kind: 'steer', system: { data: { actionId: 'a1' } } },
+    { kind: 'steer', system: { data: { actionId: 'a1' } } },
+  ])
+  expect(received[1]?.id).toBe(received[0]?.id)
+  expect(claims.at(-1)).toBeNull()
+})
+
 it.each(['none', 'after-result', 'before-call'] as const)(
   'recovers stable invocation receipts after %s interruption and associates checkpoints',
   async (interruption) => {

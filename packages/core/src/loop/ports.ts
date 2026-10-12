@@ -1,6 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
-import { CoreError } from '@agnes/core-common/types'
-import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
+import { CoreError, type Seq } from '@agnes/core-common/types'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
 import type {
   BindableKind,
   LoopCheckpoint,
@@ -52,6 +53,9 @@ const CHECKPOINT_EVENT = 'x/core/loop-checkpoint'
 export async function createLoopContext(s: SessionImpl, restoreCheckpoint = false): Promise<LoopContext> {
   const decisionSource = s.loopDecisionSource()
   let checkpoint: LoopCheckpoint | null = null
+  // Next-step inputs claimed after the restored checkpoint: the driver never recorded them, so they
+  // are handed back in order before the inbox is read again.
+  const unconfirmed: InboxItem[] = []
   // Fresh children and the default loop use the op register, never the parent ledger.
   // Independent drivers restore only the latest checkpoint of the current session.
   if (restoreCheckpoint) {
@@ -74,6 +78,19 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       if (data.loop.id !== s.loop.id || data.loop.version !== s.loop.version)
         throw new Error('Loop checkpoint identity does not match the pinned session loop')
       checkpoint = data.checkpoint
+    }
+    const delivered = scanPages((query) => s.d.log.scan(query), {
+      type: 'x/core/control',
+      lane: s.lane,
+      fromSeq: ((event?.seq ?? start?.seq ?? 0) + 1) as Seq,
+      toSeq: s.lastSeq,
+    })
+    for await (const rows of delivered) {
+      for (const row of rows) {
+        const data = row.data as { action?: string; outcome?: string; item?: InboxItem }
+        if (data.action === 'steer' && data.outcome === 'delivered' && data.item)
+          unconfirmed.push(structuredClone(data.item))
+      }
     }
   }
   const waiting = await loopWait(s, restoreCheckpoint)
@@ -343,7 +360,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     if (target === 'next-step') {
       {
         const op = requireOp()
-        const item = await s.controls.claim()
+        const item = unconfirmed.shift() ?? (await s.controls.claim())
         if (!item) return null
         return {
           id: item.itemId,
@@ -569,7 +586,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       accept: () => claim('next-turn'),
       claim,
       resumeParked: () => continueParked(s),
-      pending: () => ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0,
+      pending: () =>
+        unconfirmed.length > 0 || ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0,
     },
     events: {
       dispatch: (event, payload, signal) => dispatchLoopEvent(s, event, payload, signal),

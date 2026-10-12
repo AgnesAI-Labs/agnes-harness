@@ -143,7 +143,8 @@ export class SessionControls {
             items: inbox.items.filter((candidate) => candidate.itemId !== item.itemId),
           }),
           ...inputMessageEvents(item, this.s.lane),
-          this.fact('steer', 'delivered', item.actor, { itemId: item.itemId }),
+          // The full item lets a cold resume hand it back until a checkpoint confirms its consumption.
+          this.fact('steer', 'delivered', item.actor, { itemId: item.itemId, item: structuredClone(item) }),
         ],
         {
           expectedRegisterSeq: { register: 'op.state', key: this.s.lane, seq: this.s.opSeq() },
