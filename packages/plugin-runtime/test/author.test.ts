@@ -68,11 +68,18 @@ describe('plugin author API', () => {
       'defineTool',
       'defineToolPolicy',
       'defineToolRuntime',
+      'defineWorkflowLoop',
       'drainDeferredToolInvocations',
       'readOnlyTool',
       'toolCancelled',
       'toolError',
       'withDeferredToolInvocations',
+      'workflowChecked',
+      'workflowModelText',
+      'workflowResult',
+      'workflowText',
+      'workflowTool',
+      'workflowValue',
       'writeTool',
     ])
   })

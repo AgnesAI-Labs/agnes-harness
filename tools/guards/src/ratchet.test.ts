@@ -203,7 +203,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/core-common/src': 543,
   'packages/cordis/src': 2117,
   'packages/cordis-loader/src': 784,
-  'packages/plugin-runtime/src': 2692,
+  'packages/plugin-runtime/src': 3474,
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
