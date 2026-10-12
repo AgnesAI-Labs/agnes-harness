@@ -148,6 +148,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:../core-common
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization

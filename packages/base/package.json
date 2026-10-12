@@ -500,6 +500,7 @@
   },
   "dependencies": {
     "@agnes/core": "workspace:*",
+    "@agnes/core-common": "workspace:*",
     "@agnes/history-index": "workspace:*",
     "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/intelligent-ui-contract": "workspace:*",

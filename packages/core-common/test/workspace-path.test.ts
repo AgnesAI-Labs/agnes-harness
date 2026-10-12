@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeWorkspacePath } from '../src/command-table/workspace-path.js'
+import { normalizeWorkspacePath } from '../src/workspace-path.js'
 
 const root = '/work/proj'
 

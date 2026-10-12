@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { jcs } from '@agnes/core/command-table'
+import { jcs } from '@agnes/core-common/jcs'
 import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput, ToolPolicyPorts } from '@agnes/extension-api'
 import { AutoReviewConfig, type ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import { selectAutoReviewSettings } from './settings.js'

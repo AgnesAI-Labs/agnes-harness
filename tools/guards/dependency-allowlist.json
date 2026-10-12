@@ -70,6 +70,7 @@
     "@agnes/protocol-validation",
     "@agnes/extension-api",
     "@agnes/core",
+    "@agnes/core-common",
     "@agnes/plugin-runtime",
     "@agnes/ai",
     "@agnes/system-node",

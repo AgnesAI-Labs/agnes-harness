@@ -541,8 +541,7 @@ export async function approveAndExecute(
     recheckPermission = async () => {
       toolDecisionSource(s, call).alive()
       const authority = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
-      if (authority.effect === 'deny')
-        throw new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED')
+      if (authority.effect === 'deny') throw new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED')
       const settings = await s.d.toolPolicySettings?.(
         s.preset.approval.policy ?? 'default',
         o.signal ?? s.ac.signal,

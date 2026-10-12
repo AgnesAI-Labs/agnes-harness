@@ -1,5 +1,6 @@
+import { jcs } from '@agnes/core-common/jcs'
 import { describe, expect, it } from 'vitest'
-import { argvHash, jcs, matchPolicy, normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
+import { argvHash, matchPolicy, normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
 import { readCommandRules } from '../src/command-table/rules.js'
 
 const root = '/work/proj'

@@ -7,11 +7,13 @@
     ".": "./src/index.ts",
     "./context-diagnostics": "./src/context-diagnostics.ts",
     "./ids": "./src/ids.ts",
+    "./jcs": "./src/jcs.ts",
     "./loop/registry": "./src/loop/registry.ts",
     "./request/hash": "./src/request/hash.ts",
     "./step/op-state": "./src/step/op-state.ts",
     "./step/preset": "./src/step/preset.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./workspace-path": "./src/workspace-path.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

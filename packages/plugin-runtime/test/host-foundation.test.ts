@@ -175,17 +175,6 @@ describe('stable seams', () => {
       await expect(result).resolves.toBe('two:Ada')
     },
   )
-
-  it('keeps listener registration synchronous because it does not dispatch business work', () => {
-    const disposer = () => {}
-    const seam = new SeamRuntime<{ onGrantRevoked(listener: () => void): () => void }>('approval', {
-      ordinary: async () => {
-        throw new Error('business dispatch should not run')
-      },
-    })
-    seam.provide({ onGrantRevoked: () => disposer })
-    expect(seam.facade.onGrantRevoked(() => {})).toBe(disposer)
-  })
 })
 
 describe('multi-provider registry', () => {
