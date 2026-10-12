@@ -284,7 +284,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     `call present ${JSON.stringify({ files: [{ path: resolve(runtime.workspace, 'report.md') }] })}`,
   )
-  const card = await workbenchSurface(page, 'Deliverables / 交付物')
+  const card = await workbenchSurface(page, 'Deliverables')
   await expect(card).toContainText('report.md')
   expect(await artifactText(page, runtime)).toContain('Synthetic delivery')
   await quality(page, info, 'deliverable-surface')
@@ -601,7 +601,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
     throw new Error('FDE write must have a persisted output path')
   expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
   await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
-  const card = await workbenchSurface(page, 'Deliverables / 交付物')
+  const card = await workbenchSurface(page, 'Deliverables')
   await expect(card).toContainText('report.md')
   expect(await artifactText(page, runtime)).toContain('Source-backed answer')
   const url = page.url()

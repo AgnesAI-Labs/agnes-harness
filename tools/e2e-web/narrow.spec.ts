@@ -242,7 +242,7 @@ for (const locale of ['en', 'zh-CN'])
         await account
           .getByRole('textbox', { name: name('Account name', '账户名称'), exact: true })
           .fill('Local test account')
-        await account.getByRole('combobox', { name: en ? /^Provider:/ : /^Provider：/ }).click()
+        await account.getByRole('combobox', { name: en ? /^Provider:/ : /^服务商：/ }).click()
         await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
         await account
           .getByRole('textbox', { name: name('Base URL', '服务地址'), exact: true })
@@ -305,7 +305,7 @@ for (const locale of ['en', 'zh-CN'])
         const delivery = page
           .getByTestId('intelligent-ui-inline')
           .locator('[data-testid^="ui-surface-"]')
-          .filter({ hasText: 'Deliverables / 交付物' })
+          .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' })
         await expect(delivery).toContainText('Delivery report.md')
         const rightToggle = page.getByTestId('workbench-right-toggle')
         await delivery.getByTestId('ui-expand').click()

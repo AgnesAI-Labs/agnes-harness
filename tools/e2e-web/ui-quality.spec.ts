@@ -237,12 +237,12 @@ for (const locale of ['zh-CN', 'en'])
             page
               .getByTestId('intelligent-ui-inline')
               .locator('[data-testid^="ui-surface-"]')
-              .filter({ hasText: 'Deliverables / 交付物' }),
+              .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' }),
           ).toBeVisible()
           await page
             .getByTestId('intelligent-ui-inline')
             .locator('[data-testid^="ui-surface-"]')
-            .filter({ hasText: 'Deliverables / 交付物' })
+            .filter({ hasText: locale === 'en' ? 'Deliverables' : '交付物' })
             .scrollIntoViewIfNeeded()
           await screen('deliverable-surface')
         }
