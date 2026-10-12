@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
+import { jcs } from '@agnes/core/command-table'
 import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput, ToolPolicyPorts } from '@agnes/extension-api'
 import { AutoReviewConfig, type ToolReviewFact, validateAgainst } from '@agnes/protocol'
-import { jcs } from './normalize.js'
 import { selectAutoReviewSettings } from './settings.js'
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')

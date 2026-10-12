@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./artifacts": "./src/artifacts/index.ts",
+    "./command-table": "./src/command-table/index.ts",
     "./testkit": "./testkit/index.ts"
   },
   "scripts": {

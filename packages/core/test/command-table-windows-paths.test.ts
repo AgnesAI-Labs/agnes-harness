@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { argvHash, normalizeArgv } from '../src/normalize.js'
+import { argvHash, normalizeArgv } from '../src/command-table/normalize.js'
 
 describe('Windows approval path identity', () => {
   const root = 'C:\\work\\repo'

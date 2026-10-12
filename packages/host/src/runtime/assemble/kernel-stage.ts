@@ -1,5 +1,6 @@
 import { dirname } from 'node:path'
 import { DEFAULT_LOOP, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
+import { readCommandRules, withCommandFloorRegistry } from '@agnes/core/command-table'
 import {
   type LeaseView,
   type MemorySession,
@@ -8,6 +9,7 @@ import {
   systemPromptKind,
 } from '@agnes/extension-api'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
+import { HostError } from '@agnes/host-common/errors'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { leaseFor, ROW_BOUND_LEASE_TTL_MS } from '@agnes/host-extensions/ext-host/lease'
@@ -116,6 +118,16 @@ export async function createKernel(
   const { models, view } = providerStage
   const { pluginTree, bindRuntimeSession } = runtimeTarget
   const runtimeTargetPublisher = runtimeTarget.publisher
+  // A table that cannot be read stops assembly with the rule named; it never degrades to deny-all.
+  const commandTable = (() => {
+    try {
+      return readCommandRules(presets.defaultPreset.doc.approval?.command_policy)
+    } catch (e) {
+      throw new HostError('E_PRESET_UNSUPPORTED', (e as Error).message, {
+        detail: { capability: 'approval.command_policy' },
+      })
+    }
+  })()
   // 8 kernel - the repository's single Kernel.create call site
   const observabilityLease = leaseFor(
     {
@@ -192,11 +204,15 @@ export async function createKernel(
       resolve: (id) => pluginTree.root.providers.resolve('tool-runtime', id),
       catalog: () => toolProviderCatalog('tool-runtime'),
     },
-    toolPolicies: {
-      register: (source, policy) => pluginTree.root.providers.register('tool-policy', source, policy),
-      resolve: (id) => pluginTree.root.providers.resolve('tool-policy', id),
-      catalog: () => toolProviderCatalog('tool-policy'),
-    },
+    // The command table is a deployment floor around whichever policy a session selects.
+    toolPolicies: withCommandFloorRegistry(
+      {
+        register: (source, policy) => pluginTree.root.providers.register('tool-policy', source, policy),
+        resolve: (id) => pluginTree.root.providers.resolve('tool-policy', id),
+        catalog: () => toolProviderCatalog('tool-policy'),
+      },
+      commandTable,
+    ),
     loopEvents: {
       on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
       dispatch: (event, payload, context) => pluginTree.root.loopEvents.dispatch(event, payload, context),

