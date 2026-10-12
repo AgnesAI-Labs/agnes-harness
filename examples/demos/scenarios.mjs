@@ -20,7 +20,7 @@ const bundle = '@agnes-fde/support-triage#support-triage'
 async function begin() {
   const session = await rt.session({ bundles: [bundle] })
   await prompt(session, 'Triage synthetic ticket T-100 and draft a reply.', 'parked')
-  assert.deepEqual((await session.capabilities()).loop.value, { id: 'fde.support-triage', version: '4.0.0' })
+  assert.deepEqual((await session.capabilities()).loop.value, { id: 'fde.support-triage', version: '5.0.0' })
   assert.equal((await result(session, 'fde_support_classify')).priority, 'urgent')
   return session
 }
