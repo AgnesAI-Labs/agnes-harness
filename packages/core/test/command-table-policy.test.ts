@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { jcs } from '@agnes/core-common/jcs'
 import { describe, expect, it } from 'vitest'
 import { argvHash, matchPolicy, normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
@@ -58,6 +59,11 @@ describe('argvHash', () => {
   // Two spellings of one file share a hash; two files never do.
   it('keys a path on the absolute path, so two spellings of one file agree', () => {
     const r = argvHash('read', { path: 'src/a.ts' }, root)
+    expect(r.hash).toBe(
+      createHash('sha256')
+        .update(jcs({ tool: 'read', argv: r.shown }))
+        .digest('hex'),
+    )
     expect(r.shown).toBe('/work/proj/src/a.ts')
     expect(r.hash).toBe(argvHash('read', { path: './src/a.ts' }, root).hash)
     expect(r.hash).not.toBe(argvHash('read', { path: 'src/b.ts' }, root).hash)

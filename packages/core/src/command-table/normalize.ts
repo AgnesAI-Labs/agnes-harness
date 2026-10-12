@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto'
-import { win32 } from 'node:path'
 import { jcs } from '@agnes/core-common/jcs'
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import { normalizeWorkspacePath } from '@agnes/core-common/workspace-path'
 
 const PATH_TOOLS = new Set(['read', 'write', 'edit', 'ls', 'grep', 'find'])
@@ -42,15 +41,20 @@ function normalizeWindowsPath(path: string, workspaceRoot: string): string {
   validate(path)
   if (/^[A-Za-z]:(?![\\/])/.test(path) || (/^[\\/]/.test(path) && !/^[\\/]{2}/.test(path)))
     throw new NotCanonical('path depends on a current drive')
-  const render = (value: string): string =>
-    value.replaceAll('\\', '/').replace(/^[a-z]:/, (drive) => drive.toUpperCase())
-  const root = render(win32.normalize(workspaceRoot)).replace(/\/$/, '')
-  const volume = render(win32.parse(workspaceRoot).root).replace(/\/$/, '')
-  if (!volume || root === volume) throw new NotCanonical('workspace must be narrower than a volume')
-  const abs = render(win32.resolve(workspaceRoot, path))
-  // Do not use win32.relative here: it folds component case, including on case-sensitive volumes.
-  if (abs !== root && !abs.startsWith(`${root}/`)) throw new NotCanonical('path is outside the workspace')
-  return abs
+  const unc = /^[\\/]{2}/.test(workspaceRoot)
+  let root: ReturnType<typeof normalizeWorkspacePath>
+  try {
+    root = normalizeWorkspacePath('.', workspaceRoot)
+  } catch {
+    throw new NotCanonical('workspace must be narrower than a volume')
+  }
+  if (unc && root.abs.split('/').filter(Boolean).length <= 2)
+    throw new NotCanonical('workspace must be narrower than a volume')
+  const normalized = normalizeWorkspacePath(path, workspaceRoot)
+  if (!normalized.inside) throw new NotCanonical('path is outside the workspace')
+  // The shared lexical normalizer retains component case and renders one leading separator.
+  // UNC identities keep their second separator to remain distinct from drive-rooted paths.
+  return unc ? `/${normalized.abs}` : normalized.abs
 }
 
 /**
@@ -128,7 +132,7 @@ export function argvHash(
 ): { hash: string; shown: string } {
   const argv = normalizeArgv(tool, args, workspaceRoot)
   return {
-    hash: createHash('sha256').update(jcs({ tool, argv })).digest('hex'),
+    hash: sha256Hex(jcs({ tool, argv })),
     shown: argv.replace(/\0/g, '\\0'),
   }
 }
