@@ -65,7 +65,7 @@ export function MessageFeedback({
           if (!abort.signal.aborted) setError(true)
         })
         .finally(() => {
-          if (!abort.signal.aborted) setBusy(false)
+          if (reset && !abort.signal.aborted) setBusy(false)
         })
     }
     const off = subscribeSessionFeedback(sessionId, () => {

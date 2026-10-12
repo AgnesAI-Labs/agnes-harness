@@ -42,10 +42,18 @@ it('shares one session load across mounted messages and provenance, then invalid
   const root = createRoot(host)
   const requests: { action: string; sessionId: string }[] = []
   let submitted = false
+  let holdSubmit = false
+  let releaseSubmit: (() => void) | undefined
   vi.stubGlobal('fetch', async (_url: unknown, init: RequestInit) => {
     const input = JSON.parse(String(init.body)) as { action: string; sessionId: string }
     requests.push(input)
-    if (input.action === 'put') submitted = true
+    if (input.action === 'put') {
+      if (holdSubmit)
+        await new Promise<void>((resolve) => {
+          releaseSubmit = resolve
+        })
+      submitted = true
+    }
     return new Response(
       JSON.stringify({
         ...empty,
@@ -89,7 +97,16 @@ it('shares one session load across mounted messages and provenance, then invalid
     expect(
       requests.filter((input) => input.action === 'list' && input.sessionId === 'other-session'),
     ).toHaveLength(1)
+    holdSubmit = true
+    const submit = host.querySelector<HTMLButtonElement>('[data-testid="feedback-up"]')!
+    await act(async () => submit.click())
+    expect(submit.disabled).toBe(true)
+    await act(async () => invalidateSessionFeedback('session'))
+    expect(submit.disabled).toBe(true)
+    await act(async () => releaseSubmit?.())
+    expect(submit.disabled).toBe(false)
   } finally {
+    releaseSubmit?.()
     await act(async () => root.unmount())
     host.remove()
   }
