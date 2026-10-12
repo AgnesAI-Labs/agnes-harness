@@ -1,24 +1,19 @@
 import { mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ToolRegistry } from '@agnes/core'
 import {
   type CurrentSessionRuntime,
   DEFAULT_LOOP,
-  type Enforcement,
   type HookPort,
   Kernel,
   noopHooks,
   type Operation,
   platformFacts,
-  type SandboxExecBackend,
   type SeamImplementations,
-  type SeamName,
   type SessionImpl,
 } from '@agnes/core'
 import {
-  API_VERSION,
   type ExtensionManifest,
   type LeaseView,
   type MemorySession,
@@ -31,9 +26,7 @@ import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/r
 import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError } from '@agnes/host-common/errors'
-import { privateStateRoots } from '@agnes/host-common/paths'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
-import type { PresetDoc } from '@agnes/host-common/presets/types'
 import {
   assertCompositionCompatible,
   type CompositionPatch,
@@ -41,17 +34,7 @@ import {
   resolveComposition,
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import {
-  bindApprovalTicket,
-  businessLimit,
-  commandHookInvocationSnapshot,
-  createHotPolicyFacade,
-} from '@agnes/host-common/profile-policy'
-import { PublicationDispatch } from '@agnes/host-common/publication-dispatch'
-import { PublicationGate } from '@agnes/host-common/publication-gate'
-import { HostQuietState } from '@agnes/host-common/quiet-state'
-import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
-import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
+import { bindApprovalTicket, businessLimit } from '@agnes/host-common/profile-policy'
 import {
   buildExtensionRow,
   composeExtensionRowTarget,
@@ -62,20 +45,11 @@ import {
   MIGRATED_EXTENSION_IDS,
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
-import type {
-  OperationDeps,
-  SeamInitContext,
-  SeamProfileView,
-  SkillRuntimeDiscovery,
-} from '@agnes/host-extensions/assemble/packages'
-import type { HostBuiltinRowClaim, HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
+import type { OperationDeps, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { type BuiltinRowHandle, createBuiltinRowHost } from '@agnes/host-extensions/ext-host/builtin-row-host'
 import { createExtensionFactorySelector } from '@agnes/host-extensions/ext-host/extension-isolation-selector'
-import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
-import {
-  createExtensionOrder,
-  mergeExtensionStatus,
-} from '@agnes/host-extensions/ext-host/extension-status-book'
+import { mergeExtensionStatus } from '@agnes/host-extensions/ext-host/extension-status-book'
 import {
   createManagedExtHost,
   type ExtensionSpec,
@@ -84,20 +58,13 @@ import {
 import { leaseFor, ROW_BOUND_LEASE_TTL_MS } from '@agnes/host-extensions/ext-host/lease'
 import { readAuthorManifest, readBundledExtensionDirs } from '@agnes/host-extensions/ext-host/manifest'
 import { preflightEmbeddedExtension, preflightExtension } from '@agnes/host-extensions/ext-host/preflight'
-import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
-import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
 import { serviceContext } from '@agnes/host-extensions/ext-host/service-context'
 import { serviceInvoker } from '@agnes/host-extensions/ext-host/service-invocation'
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import { ExtensionSessions } from '@agnes/host-extensions/ext-host/session-bindings'
-import {
-  bindSkillRuntimeToWorkspace,
-  createSkillPromptPreloader,
-} from '@agnes/host-extensions/resources/skill-preload'
-import { safeSkillReadRoots } from '@agnes/host-extensions/resources/skill-read-roots'
+import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
-import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fetch/index'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import {
@@ -105,49 +72,25 @@ import {
   createSecretsEnv,
   createSecretsFile,
 } from '@agnes/host-infrastructure/adapters/secrets'
-import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
-import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
-import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
-import { prepareSandboxWorkspaceAncestor } from '@agnes/host-infrastructure/sandbox-workspace-ancestor'
-import {
-  createSessionWorkspaceRuntime,
-  type SessionWorkspaceRuntime,
-  type WorkspaceRuntimeFence,
-} from '@agnes/host-infrastructure/session-workspace-runtime'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
-import { WorkspaceHookLoader } from '@agnes/host-infrastructure/workspace-hook-loader'
 import {
-  openWorkspaceSeamContexts,
-  type WorkspaceSeamContexts,
-} from '@agnes/host-infrastructure/workspace-seam-contexts'
-import {
-  bindStartupSandboxProvider,
   installSandboxProviders,
-  LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderCatalog,
-  sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
 import { assembleCompaction } from '@agnes/host-providers/assemble/compaction'
 import {
   compactionEngineCatalog,
   installCompactionEngines,
-  withBuiltinCompactionEngines,
 } from '@agnes/host-providers/assemble/compaction-engines'
 import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
 import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { installLoops } from '@agnes/host-providers/assemble/loops'
-import {
-  installModelAdapters,
-  modelAdapterCatalog,
-  withBuiltinModelAdapters,
-} from '@agnes/host-providers/assemble/model-adapters'
+import { installModelAdapters, modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
 import { modelRuntime } from '@agnes/host-providers/assemble/model-runtime'
-import { buildOrdinaryRows } from '@agnes/host-providers/assemble/ordinary-rows'
-import { buildPresetRows } from '@agnes/host-providers/assemble/preset-rows'
 import {
   buildProvider,
   readCreditsPerUsd,
@@ -165,9 +108,9 @@ import {
   sweepAwsDestination,
   verifyRoutes,
 } from '@agnes/host-providers/assemble/routes'
-import { buildSeamRows, REQUIRED_SEAM_ROW_IDS } from '@agnes/host-providers/assemble/seam-rows'
+import { REQUIRED_SEAM_ROW_IDS } from '@agnes/host-providers/assemble/seam-rows'
 import { skillRowRevision, withSkillRows } from '@agnes/host-providers/assemble/skill-row'
-import { installToolProviders, withBuiltinToolPolicies } from '@agnes/host-providers/assemble/tool-providers'
+import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import {
   type GenerationRegistries,
   generationRegistries,
@@ -180,8 +123,6 @@ import {
   isolateSessionOverlay,
   syncHotPolicyFromTarget,
 } from '@agnes/host-providers/runtime-hot-policy'
-import { RuntimeMutationGate } from '@agnes/host-providers/runtime-mutation-gate'
-import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { sessionOverlayDesired } from '@agnes/host-providers/runtime-session-overlay'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeTargetPublisher } from '@agnes/host-providers/runtime-target-publisher'
@@ -190,7 +131,7 @@ import {
   type HostRuntimeTargetResources,
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
 import { correlatedLogger } from '@agnes/observability'
-import { developmentPluginRows, readPluginCapabilities } from '@agnes/package-manager'
+import { developmentPluginRows } from '@agnes/package-manager'
 import {
   createMutableSeamImplementations,
   type EntryRow,
@@ -198,14 +139,10 @@ import {
   type RuntimeTarget,
 } from '@agnes/plugin-runtime/host'
 import type { RouteTable } from '@agnes/protocol'
-import { createNetFetch, lazyPackageTables, sandboxHostServices, toSeamAdapters } from '../adapters/index.js'
+import { createNetFetch, lazyPackageTables, toSeamAdapters } from '../adapters/index.js'
 import { createApprovalGrantControlPlane, migrateApprovalGrants } from '../approval/grants.js'
-import { inspectComputerUseArtifacts, mountComputerUse } from '../computer-use/index.js'
-import {
-  compositionSkillOwners,
-  compositionSkills,
-  compositionTools,
-} from '../profile/composition-visibility.js'
+import { mountComputerUse } from '../computer-use/index.js'
+import { compositionSkills, compositionTools } from '../profile/composition-visibility.js'
 import {
   capabilityClientCatalog,
   capabilityEnabled,
@@ -220,14 +157,18 @@ import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions
 import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
 import type { Assembled, OrdinaryReconciliationLifecycle } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
+import { buildBootRows } from './boot-rows.js'
+import { childAgentCatalog, installChildAgents } from './child-agents.js'
 import { createAssemblyContext, duplicateContribution, failAssembly } from './context.js'
 import { loadPackages } from './packages.js'
 import { resolvePresetCatalog } from './presets.js'
 import { openProcessServices } from './process-services.js'
-import { initStaticSeams } from './seams.js'
+import { createRowHosts } from './row-hosts.js'
+import { openSeamContexts } from './seam-contexts.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
+import { createSkillState } from './skills.js'
 import { trustedHookCommands } from './trusted-hooks.js'
+import { createWorkspaceRuntimeFactory } from './workspace-runtime.js'
 
 /**
  * A raw module import, distinct from `PackageLoader`: `createManagedExtHost` evaluates an
@@ -296,6 +237,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     } = pkgs
     done('adapters')
 
+    const proc = await openProcessServices(ctx, pkgs)
     const {
       adapters,
       sandboxProviderSlot,
@@ -304,306 +246,20 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       lockedPackageMutations,
       secrets,
       nativePlatform,
-    } = await openProcessServices(ctx, pkgs)
+    } = proc
     done('presets')
 
-    const { presets, defaultPreset, profileConsent } = resolvePresetCatalog(ctx, pkgs)
+    const presetCatalog = resolvePresetCatalog(ctx, pkgs)
+    const { presets, defaultPreset, profileConsent } = presetCatalog
     done('seams')
-    // 5 seams
-    const seamProfile: SeamProfileView = {
-      name: ctx.profile.name,
-      resolvedProfileHash: ctx.profile.hash,
-      dataDir,
-      workspaceRoot,
-      homeDir: deps.homeDir ?? homedir(),
-      limits: ctx.profile.limits,
-      preset: defaultPreset.doc,
-    }
-    const baseContext = (owner: string): SeamInitContext => ({
-      secrets,
-      adapters: toSeamAdapters(adapters, { owner, ...(deps.prompter ? { prompter: deps.prompter } : {}) }),
-      profile: seamProfile,
-      log: deps.log,
-      signal: ac.signal,
-      seamTimeoutMs: deps.seamTimeoutMs ?? 30_000,
-    })
-    const retention = inspectComputerUseArtifacts({
-      profile: ctx.profile,
-      dataDir,
-      platform: adapters.platform,
-      nativePlatform,
-      clock,
-      log: deps.log,
-    })
-    const contextFor = (owner: string, seamName: SeamName): { context: SeamInitContext; cleanup(): void } => {
-      const context = {
-        ...baseContext(owner),
-        ...retention.contextFor(owner, seamName),
-      }
-      // Only the sandbox factory is handed the path-policy canonicalizer and a probe exec, and the
-      // probe dies with the factory. Every other seam gets the plain context - and the
-      // policy-bound exec inside it.
-      if (seamName !== 'sandbox') return { context, cleanup: () => undefined }
-      const { services, revoke } = sandboxHostServices(adapters)
-      return { context: { ...context, sandboxHost: services }, cleanup: revoke }
-    }
-    const staticSeams = await initStaticSeams(ctx.profile, modules, contextFor, {
-      timeoutMs: deps.seamTimeoutMs ?? 30_000,
-      platform: adapters.platform,
-      rollback,
-    })
-    const sandboxPackage = modules.get(ctx.profile.seams.sandbox)
-    const workspaceProbe = sandboxPackage?.sandboxWorkspaceProbe
-    const rawProbe = adapters.createProbeExec()
-    rollback.push('workspace-sandbox-probe', () => rawProbe.revoke())
-    const workspacePlans = new Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>()
-    const readinessManager = new SandboxReadinessManager(async (key) => {
-      const plan = workspacePlans.get(JSON.stringify([key.canonicalRoot, key.staticConfigHash]))
-      if (!plan)
-        throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
-          detail: { reason: 'workspace-policy-missing' },
-        })
-      if (adapters.transport)
-        return Object.freeze({
-          name: 'remote' as const,
-          execBackend: 'remote' as const,
-          enforcement: Object.freeze({ level: 'none' as const, scope: Object.freeze([]) }),
-          confine: async () => {
-            throw new HostError('E_SANDBOX_WORKSPACE', 'remote workspaces cannot confine a local process', {
-              detail: { reason: 'remote-local-confine' },
-            })
-          },
-        })
-      const providerId = sandboxProviderIdFrom(ctx.profile)
-      if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
-        await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, false)
-        const selected = sandboxProviderSlot.selected
-        if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
-        const capabilities = selected.capabilities
-        const enforcement = capabilities.enforcement ?? { level: 'none' as const, scope: [] }
-        const full =
-          enforcement.level === 'full' &&
-          ['file', 'network', 'process'].every((scope) =>
-            enforcement.scope.includes(scope as 'file' | 'network' | 'process'),
-          )
-        if (
-          !capabilities.available ||
-          (!full &&
-            (plan.staticConfig.required ||
-              (plan.staticConfig.level === 'L1' && plan.staticConfig.onUnavailable === 'deny')))
-        )
-          throw new HostError(
-            'E_SANDBOX_WORKSPACE',
-            `sandbox provider ${providerId} cannot enforce the required L1 policy`,
-          )
-        return Object.freeze({
-          execBackend: full && plan.staticConfig.level === 'L1' ? ('l1' as const) : ('none' as const),
-          enforcement,
-          confine: async () => {
-            throw new HostError('E_SANDBOX_WORKSPACE', 'external provider cannot rewrite host argv')
-          },
-        })
-      }
-      if (!workspaceProbe)
-        throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox workspace probe is unavailable', {
-          detail: { reason: 'workspace-probe-missing' },
-        })
-      const raw = await workspaceProbe({
-        level: plan.staticConfig.level,
-        required: plan.staticConfig.required,
-        onUnavailable: plan.staticConfig.onUnavailable,
-        shell: adapters.platform.shell(),
-        options: {
-          ...plan.backendOptions,
-          get readPaths() {
-            return adapters.platform.os === 'linux' && plan.staticConfig.access !== 'full-access'
-              ? sandboxReadPaths(plan.backendOptions.denyPaths)
-              : undefined
-          },
-        },
-        probeExec: rawProbe.run,
-        log: deps.log,
-        signal: key.signal,
-      })
-      if (!raw.execBackend || !raw.enforcement)
-        throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox probe omitted its posture', {
-          detail: { reason: 'workspace-posture-missing' },
-        })
-      return raw
-    })
-    rollback.push('workspace-sandbox-readiness', () => readinessManager.revoke())
-    const hotPolicy = createHotPolicyFacade()
-    const openWorkspaceRuntime = async (
-      binding: WorkspaceBinding,
-      preset: PresetDoc = defaultPreset.doc,
-      invocation?: import('@agnes/core').WorkspaceInvocationPort,
-    ): Promise<SessionWorkspaceRuntime> => {
-      const requiresFileIsolation = pluginTree.root.providers
-        .catalog()
-        .some((entry) => entry.kind === 'memory')
-      const requestedSandbox = normalizeSandboxStaticConfig(preset)
-      const sandboxConfig = requiresFileIsolation
-        ? {
-            ...requestedSandbox,
-            level: 'L1' as const,
-            onUnavailable:
-              requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
-          }
-        : requestedSandbox
-      let fence: SessionWorkspaceFence | undefined
-      let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
-      return createSessionWorkspaceRuntime({
-        binding,
-        ...(invocation ? { invocation } : {}),
-        openWorkspace: adapters.openWorkspace,
-        openFence: async (workspace) => {
-          fence = await adapters.openFence(workspace)
-          return fence
-        },
-        compilePolicy: async (openedFence: WorkspaceRuntimeFence) => {
-          const sessionFence = openedFence as SessionWorkspaceFence
-          if (!adapters.transport && adapters.platform.os === 'linux')
-            await prepareSandboxWorkspaceAncestor(sessionFence.root)
-          const plan = await compileWorkspacePolicy({
-            canonicalRoot: sessionFence.root,
-            dataDir,
-            homeDir: deps.homeDir ?? homedir(),
-            protectedPaths: privateStateRoots({
-              home: dirname(dirname(deps.profileDir)),
-              dataDir,
-              profileDir: deps.profileDir,
-              ...(ctx.profile.adapters?.secrets.path
-                ? { secretsDir: ctx.profile.adapters.secrets.path }
-                : {}),
-            }),
-            semantics: sessionFence.semantics,
-            staticConfig: sandboxConfig,
-            canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
-          })
-          const rootIdentity = plan.semantics.caseSensitive
-            ? plan.policy.workspaceRoot
-            : plan.policy.workspaceRoot.toLocaleLowerCase('en-US')
-          workspacePlans.set(JSON.stringify([rootIdentity, plan.staticConfigHash]), plan)
-          return plan
-        },
-        bindReadiness: ({ workspace, plan }) =>
-          readinessManager.bind(
-            {
-              backendId: ctx.profile.seams.sandbox,
-              canonicalRoot: workspace.root,
-              staticConfigHash: plan.staticConfigHash,
-              caseSensitive: plan.semantics.caseSensitive,
-            },
-            (raw) => {
-              const execBackend = raw.execBackend
-              const enforcement = raw.enforcement
-              if (!execBackend || !enforcement)
-                throw new HostError('E_SANDBOX_WORKSPACE', 'cached sandbox posture is unavailable', {
-                  detail: { reason: 'workspace-posture-missing' },
-                })
-              posture = Object.freeze({
-                execBackend,
-                enforcement: {
-                  level: enforcement.level,
-                  scope: [...enforcement.scope],
-                },
-              })
-              if (raw.name)
-                adapters.reportSandboxBackend({
-                  name: raw.name,
-                  enforcement: posture.enforcement,
-                })
-              fence?.activateGate({
-                backend: raw.execBackend,
-                onUnavailable: raw.execBackend === 'remote' ? 'deny' : plan.staticConfig.onUnavailable,
-                access: plan.staticConfig.access ?? 'workspace-write',
-                requiredFileIsolation: requiresFileIsolation,
-              })
-            },
-          ),
-        fitSandbox: async (runtime) => {
-          if (!fence || !posture)
-            throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox posture was not activated', {
-              detail: { reason: 'workspace-posture-inactive' },
-            })
-          const providerId = await bindStartupSandboxProvider(
-            sandboxProviderSlot,
-            ctx.profile,
-            runtime.root,
-            adapters.transport !== undefined,
-          )
-          const powerShell = adapters.powerShell
-          const shellCommand = powerShell
-            ? (command: string): string[] => powerShellCommand(powerShell, command)
-            : undefined
-          return staticSeams.sandbox.forWorkspace({
-            root: runtime.root,
-            ...(runtime.invocation ? { invocation: runtime.invocation } : {}),
-            policy: runtime.policy,
-            readiness: runtime.sandbox,
-            shell: adapters.platform.shell(),
-            ...(shellCommand ? { shellCommand } : {}),
-            execBackend: posture.execBackend,
-            enforcement: posture.enforcement,
-            requiredFileIsolation: requiresFileIsolation,
-            ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
-            exec: fence.exec,
-            openProcess: fence.openProcess,
-            binding: fence.binding,
-          })
-        },
-        openHooks: async (runtime) => {
-          const loader = new WorkspaceHookLoader(
-            runtime.fs,
-            () => commandHookInvocationSnapshot(hotPolicy).revision,
-          )
-          return Object.freeze({ snapshot: () => loader.snapshot() })
-        },
-        openServices: (runtime) => openWorkspaceSeamContexts(seams, runtime),
-        closeServices: (services) => (services as WorkspaceSeamContexts).close(),
-      })
-    }
-    const quietState = new HostQuietState()
-    const publicationGate = new PublicationGate()
-    const runtimeMutationGate = new RuntimeMutationGate()
-    const publicationDispatch = new PublicationDispatch(publicationGate, hotPolicy)
-    let kernel!: Kernel
+    const seamContexts = await openSeamContexts(ctx, pkgs, proc, presetCatalog)
+    const { seamProfile, baseContext, contextFor, retention, staticSeams } = seamContexts
+    const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presetCatalog, seamContexts)
+    const { openWorkspaceRuntime } = workspaceRuntime
     const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
-    const skillOwners = compositionSkillOwners(
-      deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [],
-    )
-    let availableSkillResources = deps.skillResources
-    let preloadSkills = compositionSkills(deps.skillResources, ctx.profile.composition ?? {}, skillOwners)
-    let activeSkillResources = preloadSkills
-    // Shared workers discover workspace Skills lazily inside a session invocation. Their global
-    // list() can stay empty while the workspace catalogue changes, so an unchanged row must still
-    // read the newly bootstrapped source on the next turn.
-    const liveSkillInput: SkillRuntimeInput = Object.freeze({
-      list: () => activeSkillResources?.list() ?? [],
-      read: (resourceId, session) =>
-        activeSkillResources?.read(resourceId, session) ?? { ok: false, code: 'NOT_FOUND' },
-      readFile: (resourceId, revision, path, session) =>
-        activeSkillResources?.readFile(resourceId, revision, path, session) ?? {
-          ok: false,
-          code: 'NOT_FOUND',
-        },
-      readRoots: () => activeSkillResources?.readRoots?.() ?? [],
-      scopeWorkspace: (root, sessionKey, invoke) =>
-        activeSkillResources?.scopeWorkspace?.(root, sessionKey, invoke) ?? invoke(),
-    })
-    const skillReadContext = {
-      homeDir: deps.homeDir ?? homedir(),
-      agnesHome: dirname(dataDir),
-      dataDir,
-    }
-    skillReadRoots.current = () =>
-      safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], {
-        ...skillReadContext,
-        generationRoot: join(deps.profileDir, '.runtime-generations'),
-      })
-    const runtimePromptPreloader = deps.skillResources
-      ? createSkillPromptPreloader(() => preloadSkills, workspaceInvocationFor, publicationDispatch)
-      : undefined
+    const skillState = createSkillState(ctx, proc)
+    const { owners: skillOwners } = skillState
+    let kernel!: Kernel
     const generationViews = new Map<string, GenerationRegistries>()
     const rawSessionRuntime = (
       sessionKey: string,
@@ -619,7 +275,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         cache: generationViews,
         hooks: session?.hooks ?? noopHooks,
         ...(kernel ? { seed: { tools: kernel.tools, resources: kernel.resources } } : {}),
-        ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
+        ...(skillState.promptPreloader ? { runtimePromptPreloader: skillState.promptPreloader } : {}),
       })
       return runtime
     }
@@ -639,116 +295,26 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ),
       }
     }
-    const builtSeams = buildSeamRows({
-      ...(deps.generationBuiltinRows ? { generationBuiltinRows: deps.generationBuiltinRows } : {}),
-      profile: ctx.profile,
-      modules,
-      preset: defaultPreset.doc,
-      contextFor: (owner, name) => contextFor(owner, name).context,
-    })
-    const builtPresets = buildPresetRows(presets)
-    const ordinaryModules = new Map(modules)
-    for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
-    const compositionModules = withBuiltinChildAgents(
-      withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules))),
-    )
-    const compositionOwners = new Map(
-      [...compositionModules.values()].flatMap((module) =>
-        (module.plugins ?? []).map((plugin) => [plugin.declaration.id, module.id] as const),
-      ),
-    )
-    const builtOrdinary = buildOrdinaryRows(ctx.profile, compositionModules, deps.ordinaryPluginLayers)
-    // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
-    // the managed ext host and the bundled-extension finder exist. `staticClaims` below is already a
-    // thunk, so reassigning here is picked up by the publisher.
-    let activeBuiltinClaims: readonly Readonly<HostBuiltinRowClaim>[] = Object.freeze([
-      ...builtPresets.builtinClaims,
-      ...builtOrdinary.builtinClaims,
-      ...builtSeams.builtinClaims,
-    ])
-    const staticBootRows = Object.freeze(
-      [...builtPresets.rows, ...builtOrdinary.rows, ...builtSeams.rows].filter(
-        (row) =>
-          row.plugin.startsWith('builtin:') || row.id.startsWith('seam:') || row.id.startsWith('preset:'),
-      ),
-    )
-    // The Host owns its builtin ext: rows the way it owns seam and preset rows: a daemon target is
-    // built from installed packages only and never names them, so they are merged back like
-    // staticBootRows. A target that does carry one of these ids wins over this default.
-    let hostExtensionRows: readonly Readonly<EntryRow>[] = Object.freeze([])
+    const bootRows = buildBootRows(ctx, pkgs, presetCatalog, seamContexts)
+    const {
+      builtSeams,
+      builtPresets,
+      builtOrdinary,
+      compositionOwners,
+      staticBootRows,
+      bootTreeRows,
+      builtin,
+    } = bootRows
     let replacePublishedSeamRoot: ((root: import('@agnes/cordis').Context) => void) | undefined
-    const bootCatalogue = deps.runtimePluginCatalogue ?? activeRuntimeSources
-    const pluginCatalogue = new RuntimePluginCatalogue(bootCatalogue)
-    const extensionInfo = {
-      agnesVersion: deps.agnesVersion ?? '0.0.0',
-      apiVersion: API_VERSION,
-      profileName: ctx.profile.name,
-    }
-    const extensionOrder = createExtensionOrder()
-    // Which supplier holds an `ext:` row id: shared by builtin rows and plugin rows that replace them.
-    const extensionOwners = new ExtensionOwners()
-    // Registrations made by third-party plugin rows through ctx.extension(). It exists before the
-    // first tree so that tree can hand rows the service; it stays dormant until the kernel is up.
-    const requestSkillInstall = deps.skillInstall
-    const rowExtensions = createRowExtensionHost({
-      ...(deps.mcpManage ? { mcpManage: deps.mcpManage } : {}),
-      ...(deps.pluginManage ? { pluginManage: deps.pluginManage } : {}),
-      ...(requestSkillInstall
-        ? {
-            skillInstall: async (invocation, signal) => {
-              const session = kernel.get(invocation.sessionKey)
-              if (!session) throw new Error('Skill installation session unavailable')
-              const digest = deps.workspacePolicyDigestFor?.(invocation.sessionKey)
-              const plan = [...workspacePlans.values()].find((plan) => plan.policy.digest === digest)
-              if (!plan) throw new Error('Skill installation workspace policy unavailable')
-              return requestSkillInstall(
-                {
-                  ...invocation,
-                  pathPolicy: { policy: plan.policy, caseSensitive: plan.semantics.caseSensitive },
-                  deniedPaths: plan.policy.rules
-                    .filter((rule) => rule.effect === 'deny')
-                    .map((rule) => rule.path),
-                },
-                signal,
-              )
-            },
-          }
-        : {}),
-      info: extensionInfo,
-      log: deps.log,
-      audit: say,
-      order: extensionOrder,
-      owners: extensionOwners,
-      describePackage: (packageId, snapshotId) => {
-        const description = pluginCatalogue.describe(packageId, snapshotId)
-        const source = pluginCatalogue.get(packageId, snapshotId)
-        const declaredCapabilities = source ? readPluginCapabilities(source.snapshot.directory) : undefined
-        return (
-          description && {
-            ...description,
-            ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
-          }
-        )
-      },
-    })
-    const rowServices = createRowServiceHost((packageId, snapshotId) =>
-      pluginCatalogue.describe(packageId, snapshotId),
-    )
-    // Like a loader importing by name at update time: each target sees what is installed now.
-    const refreshPluginCatalogue = async () => {
-      if (!deps.runtimePluginSources) return
-      const sources = new Map(
-        bootCatalogue.map((source) => [
-          `${source.snapshot.packageId}\0${source.snapshot.snapshotId}`,
-          source,
-        ]),
-      )
-      // The refreshed record wins: it carries the current trust decision for that snapshot.
-      for (const source of await deps.runtimePluginSources()) {
-        sources.set(`${source.snapshot.packageId}\0${source.snapshot.snapshotId}`, source)
-      }
-      pluginCatalogue.replace([...sources.values()])
-    }
+    const {
+      pluginCatalogue,
+      extensionInfo,
+      extensionOrder,
+      extensionOwners,
+      rowExtensions,
+      rowServices,
+      refreshPluginCatalogue,
+    } = createRowHosts(ctx, pkgs, workspaceRuntime)
     const extensionServices: { current?: ExtensionServiceHost } = {}
     let intelligentUi!: ReturnType<typeof createIntelligentUiBridge>
     const runtimeTargetPublisher = new RuntimeTargetPublisher<
@@ -773,12 +339,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         // A package the user trusted after this Host booted is not in the boot profile.
         return source.trusted ? 'trusted' : undefined
       },
-      staticClaims: () => activeBuiltinClaims,
+      staticClaims: () => builtin.claims,
       privateInput: () => {
         // Asked once claims have resolved, right before the candidate tree starts mounting rows.
         candidateMounting = true
         return {
-          bootRows: Object.freeze([...staticBootRows, ...hostExtensionRows]),
+          bootRows: Object.freeze([...staticBootRows, ...builtin.hostExtensionRows]),
           exactExtras: builtSeams.exactExtras,
           thirdPartyExtras: builtSeams.thirdPartyExtras,
           requiredRowIds: REQUIRED_SEAM_ROW_IDS,
@@ -973,7 +539,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return applyDrain
       },
     })
-    const bootTreeRows = Object.freeze([...builtPresets.rows, ...builtOrdinary.rows, ...builtSeams.rows])
     const initialRuntimeTarget = buildCompleteRuntimeTarget({
       rows: [
         ...bootTreeRows,
@@ -1006,6 +571,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
       },
     }
+    ctx.live.pluginTree.set(pluginTree)
     const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
       deps.onGenerationSessionBinding?.(sessionKey)
       const published = runtimeTargetPublisher.current().value.current
@@ -1048,6 +614,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ...packageSeams,
       approval: approvalGrantControl.bind(packageSeams.approval),
     }
+    ctx.live.seams.set(seams)
     const computerUse = mountComputerUse({
       profile: ctx.profile,
       dataDir,
@@ -1064,23 +631,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       adapters.platform.os === 'win32'
         ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
         : undefined
-    // Factored out so a reload can build the same shape of context
-    // against a caller-supplied fresh resource snapshot instead of the boot-time `deps` one, without
-    // duplicating the owner/extensionId gating below. `resources` defaults to `deps` itself, so
-    // ordinary boot-time callers (`ecosystemContext` below) are unaffected byte for byte.
-    // Search discovery follows the currently published live Skills source.
-    const liveSkillDiscovery: SkillRuntimeDiscovery = Object.freeze({
-      list: () => preloadSkills?.list() ?? [],
-      runInWorkspace: <T>(sessionKey: string, invoke: () => Promise<T>): Promise<T> => {
-        const current = preloadSkills
-        if (!current) return invoke()
-        return bindSkillRuntimeToWorkspace(
-          current,
-          workspaceInvocationFor,
-          publicationDispatch,
-        ).runInWorkspace(sessionKey, invoke)
-      },
-    })
     const buildEcosystemContext = (
       owner: string,
       extensionId: string,
@@ -1101,7 +651,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           : {}),
         ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/mcp-search'
-          ? { skillDiscovery: liveSkillDiscovery }
+          ? { skillDiscovery: skillState.discovery }
           : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/privacy' && privacyTrajectory
           ? { privacyTrajectory }
@@ -1452,7 +1002,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ...(deps.requestMedia !== undefined
         ? { imageInputTokenFallback: createProductionImageInputTokenFallback() }
         : {}),
-      ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
+      ...(skillState.promptPreloader ? { runtimePromptPreloader: skillState.promptPreloader } : {}),
       workspacePublication: publicationDispatch,
       // A spawned child's run is its own turn: activation waits for it, and one started while an
       // activation holds the gate queues behind it.
@@ -1496,6 +1046,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // `children` is omitted on purpose: core's default factory refuses with a message saying
       // subagents are assembled later, which is more informative than a host-side stub.
     })
+    ctx.live.kernel.set(kernel)
     rollback.push('kernel', () => kernel.close())
     const compositionForPreset = (name?: string, session?: CompositionPatch): ResolvedComposition =>
       resolveComposition(ctx.profile, {
@@ -1597,7 +1148,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           skills: [
             ...new Map(
               [
-                ...(availableSkillResources?.list() ?? []).map((skill) => ({
+                ...(skillState.available?.list() ?? []).map((skill) => ({
                   id: skill.resourceId,
                   name: skill.name,
                   packageId: skillOwners.get(skill.resourceId),
@@ -1611,6 +1162,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         },
       })
     }
+    ctx.live.sessionCapabilities.set(sessionCapabilities)
     const home = deps.homeDir ?? dirname(dirname(deps.profileDir))
     const observabilityHost = extensionServices.current
     const observabilityFeed = observabilityHost
@@ -1996,9 +1548,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         factory: (token) =>
           (consumesSkills(extensionId)
             ? makeFactorySelector((owner, id) =>
-                buildEcosystemContext(owner, id, skillResources ? { skillResources: liveSkillInput } : {}, [
-                  'skills',
-                ]),
+                buildEcosystemContext(
+                  owner,
+                  id,
+                  skillResources ? { skillResources: skillState.liveInput } : {},
+                  ['skills'],
+                ),
               )
             : selectExtensionFactory)(
             found.packageId,
@@ -2022,7 +1577,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             buildEcosystemContext(
               dynamic.spec.package,
               extensionId,
-              { skillResources: liveSkillInput },
+              { skillResources: skillState.liveInput },
               dynamic.manifest.liveResources,
             ),
           ),
@@ -2093,8 +1648,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       })
       // Without a Host-private claim the publisher refuses the row outright:
       // E_RUNTIME_TARGET_STATIC_CLAIM (runtime-target-static-authority.ts), and Host never boots.
-      activeBuiltinClaims = Object.freeze([
-        ...activeBuiltinClaims.filter((claim) => claim.row.id !== built.row.id),
+      builtin.claims = Object.freeze([
+        ...builtin.claims.filter((claim) => claim.row.id !== built.row.id),
         built.claim,
       ])
       return built.row
@@ -2151,7 +1706,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           message: 'builtin row admission failed',
         })
     }
-    hostExtensionRows = Object.freeze([
+    builtin.hostExtensionRows = Object.freeze([
       ...extRowIds.map((extensionId) => {
         const pinned = deps.generationBuiltinRows?.find((row) => row.id === `ext:${extensionId}`)
         return prepareExtensionRow({
@@ -2172,14 +1727,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
       }),
     ])
-    if (hostExtensionRows.length) await applyExtensionRows(hostExtensionRows)
+    if (builtin.hostExtensionRows.length) await applyExtensionRows(builtin.hostExtensionRows)
     const extensionRows = Object.freeze({
-      current: () => hostExtensionRows,
+      current: () => builtin.hostExtensionRows,
       prepare: prepareExtensionRow,
       apply: async (rows: readonly Readonly<EntryRow>[]) => {
         // Set before applying: the merge must not put back a row this call is removing.
-        const previous = hostExtensionRows
-        hostExtensionRows = Object.freeze([...rows])
+        const previous = builtin.hostExtensionRows
+        builtin.hostExtensionRows = Object.freeze([...rows])
         try {
           const report = await applyExtensionRows(rows)
           // A dynamic extension whose row is gone is forgotten, so a later apply cannot bring it back.
@@ -2189,19 +1744,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           for (const id of [...dynamicExtensionIds]) {
             if (wanted.has(`ext:${id}`)) continue
             dynamicExtensionIds.delete(id)
-            activeBuiltinClaims = Object.freeze(
-              activeBuiltinClaims.filter((claim) => claim.row.id !== `ext:${id}`),
-            )
+            builtin.claims = Object.freeze(builtin.claims.filter((claim) => claim.row.id !== `ext:${id}`))
           }
           return report
         } catch (error) {
-          hostExtensionRows = previous
+          builtin.hostExtensionRows = previous
           const retained = new Set(previous.map((row) => row.id))
           for (const id of dynamicExtensionIds) if (!retained.has(`ext:${id}`)) dynamicExtensionIds.delete(id)
           throw error
         }
       },
     })
+    ctx.live.extensionRows.set(extensionRows)
     let skillRefreshTail: Promise<void> = Promise.resolve()
     let skillRetry = 0
     const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
@@ -2220,10 +1774,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               (row.liveResourceRevision !== revision &&
                 !row.liveResourceRevision?.startsWith(`${revision}:retry`))),
         )
-        const oldInput = activeSkillResources
-        const oldAvailable = availableSkillResources
+        const oldInput = skillState.active
+        const oldAvailable = skillState.available
         const oldPrepared = new Map(preparedExtensionInputs)
-        const oldClaims = activeBuiltinClaims
+        const oldClaims = builtin.claims
         try {
           const replacements = new Map(
             changed.map((row) => {
@@ -2252,18 +1806,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
                 detail: { id: row.id, ...(status?.error ? { error: status.error.code } : {}) },
               })
           }
-          activeSkillResources = fresh
-          preloadSkills = fresh
-          availableSkillResources = supplied
+          skillState.active = fresh
+          skillState.preload = fresh
+          skillState.available = supplied
         } catch (error) {
           try {
-            activeBuiltinClaims = oldClaims
+            builtin.claims = oldClaims
             preparedExtensionInputs.clear()
             for (const [id, input] of oldPrepared) preparedExtensionInputs.set(id, input)
             await extensionRows.apply(previousRows)
-            activeSkillResources = oldInput
-            preloadSkills = oldInput
-            availableSkillResources = oldAvailable
+            skillState.active = oldInput
+            skillState.preload = oldInput
+            skillState.available = oldAvailable
           } catch (restoreError) {
             throw new AggregateError([error, restoreError], 'Live resource refresh recovery required')
           }

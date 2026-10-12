@@ -1,0 +1,273 @@
+import { homedir } from 'node:os'
+import { dirname } from 'node:path'
+import type { Enforcement, SandboxExecBackend } from '@agnes/core'
+import { HostError } from '@agnes/host-common/errors'
+import { privateStateRoots } from '@agnes/host-common/paths'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
+import { commandHookInvocationSnapshot } from '@agnes/host-common/profile-policy'
+import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
+import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
+import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
+import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
+import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
+import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
+import { prepareSandboxWorkspaceAncestor } from '@agnes/host-infrastructure/sandbox-workspace-ancestor'
+import {
+  createSessionWorkspaceRuntime,
+  type SessionWorkspaceRuntime,
+  type WorkspaceRuntimeFence,
+} from '@agnes/host-infrastructure/session-workspace-runtime'
+import { WorkspaceHookLoader } from '@agnes/host-infrastructure/workspace-hook-loader'
+import {
+  openWorkspaceSeamContexts,
+  type WorkspaceSeamContexts,
+} from '@agnes/host-infrastructure/workspace-seam-contexts'
+import {
+  bindStartupSandboxProvider,
+  LOCAL_SANDBOX_PROVIDER_ID,
+  sandboxProviderIdFrom,
+} from '@agnes/host-providers/adapters/sandbox-providers'
+import type { AssemblyContext } from './context.js'
+import type { PackageSet } from './packages.js'
+import type { PresetCatalog } from './presets.js'
+import type { ProcessServices } from './process-services.js'
+import type { SeamContexts } from './seam-contexts.js'
+
+export type WorkspaceRuntimeFactory = Readonly<{
+  /** Compiled policies by workspace root identity; the Skill installer reads the one a session runs under. */
+  workspacePlans: ReadonlyMap<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
+  /** Production per-binding constructor used when HostOptions does not supply a test override. */
+  openWorkspaceRuntime(
+    binding: WorkspaceBinding,
+    preset?: PresetDoc,
+    invocation?: import('@agnes/core').WorkspaceInvocationPort,
+  ): Promise<SessionWorkspaceRuntime>
+}>
+
+/**
+ * Step `seams`, second half: the sandbox readiness manager and the per-workspace runtime
+ * constructor. The tree and the bound seams do not exist yet; the constructor reads them
+ * through `ctx.live` when a session opens a workspace.
+ */
+export function createWorkspaceRuntimeFactory(
+  ctx: AssemblyContext,
+  pkgs: PackageSet,
+  proc: ProcessServices,
+  presets: PresetCatalog,
+  seamContexts: SeamContexts,
+): WorkspaceRuntimeFactory {
+  const { deps, dataDir, rollback } = ctx
+  const { hotPolicy } = ctx.gates
+  const { modules } = pkgs
+  const { adapters, sandboxProviderSlot } = proc
+  const sandboxPackage = modules.get(ctx.profile.seams.sandbox)
+  const workspaceProbe = sandboxPackage?.sandboxWorkspaceProbe
+  const rawProbe = adapters.createProbeExec()
+  rollback.push('workspace-sandbox-probe', () => rawProbe.revoke())
+  const workspacePlans = new Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>()
+  const readinessManager = new SandboxReadinessManager(async (key) => {
+    const plan = workspacePlans.get(JSON.stringify([key.canonicalRoot, key.staticConfigHash]))
+    if (!plan)
+      throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
+        detail: { reason: 'workspace-policy-missing' },
+      })
+    if (adapters.transport)
+      return Object.freeze({
+        name: 'remote' as const,
+        execBackend: 'remote' as const,
+        enforcement: Object.freeze({ level: 'none' as const, scope: Object.freeze([]) }),
+        confine: async () => {
+          throw new HostError('E_SANDBOX_WORKSPACE', 'remote workspaces cannot confine a local process', {
+            detail: { reason: 'remote-local-confine' },
+          })
+        },
+      })
+    const providerId = sandboxProviderIdFrom(ctx.profile)
+    if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
+      await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, false)
+      const selected = sandboxProviderSlot.selected
+      if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
+      const capabilities = selected.capabilities
+      const enforcement = capabilities.enforcement ?? { level: 'none' as const, scope: [] }
+      const full =
+        enforcement.level === 'full' &&
+        ['file', 'network', 'process'].every((scope) =>
+          enforcement.scope.includes(scope as 'file' | 'network' | 'process'),
+        )
+      if (
+        !capabilities.available ||
+        (!full &&
+          (plan.staticConfig.required ||
+            (plan.staticConfig.level === 'L1' && plan.staticConfig.onUnavailable === 'deny')))
+      )
+        throw new HostError(
+          'E_SANDBOX_WORKSPACE',
+          `sandbox provider ${providerId} cannot enforce the required L1 policy`,
+        )
+      return Object.freeze({
+        execBackend: full && plan.staticConfig.level === 'L1' ? ('l1' as const) : ('none' as const),
+        enforcement,
+        confine: async () => {
+          throw new HostError('E_SANDBOX_WORKSPACE', 'external provider cannot rewrite host argv')
+        },
+      })
+    }
+    if (!workspaceProbe)
+      throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox workspace probe is unavailable', {
+        detail: { reason: 'workspace-probe-missing' },
+      })
+    const raw = await workspaceProbe({
+      level: plan.staticConfig.level,
+      required: plan.staticConfig.required,
+      onUnavailable: plan.staticConfig.onUnavailable,
+      shell: adapters.platform.shell(),
+      options: {
+        ...plan.backendOptions,
+        get readPaths() {
+          return adapters.platform.os === 'linux' && plan.staticConfig.access !== 'full-access'
+            ? sandboxReadPaths(plan.backendOptions.denyPaths)
+            : undefined
+        },
+      },
+      probeExec: rawProbe.run,
+      log: deps.log,
+      signal: key.signal,
+    })
+    if (!raw.execBackend || !raw.enforcement)
+      throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox probe omitted its posture', {
+        detail: { reason: 'workspace-posture-missing' },
+      })
+    return raw
+  })
+  rollback.push('workspace-sandbox-readiness', () => readinessManager.revoke())
+  const openWorkspaceRuntime = async (
+    binding: WorkspaceBinding,
+    preset: PresetDoc = presets.defaultPreset.doc,
+    invocation?: import('@agnes/core').WorkspaceInvocationPort,
+  ): Promise<SessionWorkspaceRuntime> => {
+    const requiresFileIsolation = ctx.live.pluginTree
+      .get()
+      .root.providers.catalog()
+      .some((entry) => entry.kind === 'memory')
+    const requestedSandbox = normalizeSandboxStaticConfig(preset)
+    const sandboxConfig = requiresFileIsolation
+      ? {
+          ...requestedSandbox,
+          level: 'L1' as const,
+          onUnavailable:
+            requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
+        }
+      : requestedSandbox
+    let fence: SessionWorkspaceFence | undefined
+    let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
+    return createSessionWorkspaceRuntime({
+      binding,
+      ...(invocation ? { invocation } : {}),
+      openWorkspace: adapters.openWorkspace,
+      openFence: async (workspace) => {
+        fence = await adapters.openFence(workspace)
+        return fence
+      },
+      compilePolicy: async (openedFence: WorkspaceRuntimeFence) => {
+        const sessionFence = openedFence as SessionWorkspaceFence
+        if (!adapters.transport && adapters.platform.os === 'linux')
+          await prepareSandboxWorkspaceAncestor(sessionFence.root)
+        const plan = await compileWorkspacePolicy({
+          canonicalRoot: sessionFence.root,
+          dataDir,
+          homeDir: deps.homeDir ?? homedir(),
+          protectedPaths: privateStateRoots({
+            home: dirname(dirname(deps.profileDir)),
+            dataDir,
+            profileDir: deps.profileDir,
+            ...(ctx.profile.adapters?.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
+          }),
+          semantics: sessionFence.semantics,
+          staticConfig: sandboxConfig,
+          canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
+        })
+        const rootIdentity = plan.semantics.caseSensitive
+          ? plan.policy.workspaceRoot
+          : plan.policy.workspaceRoot.toLocaleLowerCase('en-US')
+        workspacePlans.set(JSON.stringify([rootIdentity, plan.staticConfigHash]), plan)
+        return plan
+      },
+      bindReadiness: ({ workspace, plan }) =>
+        readinessManager.bind(
+          {
+            backendId: ctx.profile.seams.sandbox,
+            canonicalRoot: workspace.root,
+            staticConfigHash: plan.staticConfigHash,
+            caseSensitive: plan.semantics.caseSensitive,
+          },
+          (raw) => {
+            const execBackend = raw.execBackend
+            const enforcement = raw.enforcement
+            if (!execBackend || !enforcement)
+              throw new HostError('E_SANDBOX_WORKSPACE', 'cached sandbox posture is unavailable', {
+                detail: { reason: 'workspace-posture-missing' },
+              })
+            posture = Object.freeze({
+              execBackend,
+              enforcement: {
+                level: enforcement.level,
+                scope: [...enforcement.scope],
+              },
+            })
+            if (raw.name)
+              adapters.reportSandboxBackend({
+                name: raw.name,
+                enforcement: posture.enforcement,
+              })
+            fence?.activateGate({
+              backend: raw.execBackend,
+              onUnavailable: raw.execBackend === 'remote' ? 'deny' : plan.staticConfig.onUnavailable,
+              access: plan.staticConfig.access ?? 'workspace-write',
+              requiredFileIsolation: requiresFileIsolation,
+            })
+          },
+        ),
+      fitSandbox: async (runtime) => {
+        if (!fence || !posture)
+          throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox posture was not activated', {
+            detail: { reason: 'workspace-posture-inactive' },
+          })
+        const providerId = await bindStartupSandboxProvider(
+          sandboxProviderSlot,
+          ctx.profile,
+          runtime.root,
+          adapters.transport !== undefined,
+        )
+        const powerShell = adapters.powerShell
+        const shellCommand = powerShell
+          ? (command: string): string[] => powerShellCommand(powerShell, command)
+          : undefined
+        return seamContexts.staticSeams.sandbox.forWorkspace({
+          root: runtime.root,
+          ...(runtime.invocation ? { invocation: runtime.invocation } : {}),
+          policy: runtime.policy,
+          readiness: runtime.sandbox,
+          shell: adapters.platform.shell(),
+          ...(shellCommand ? { shellCommand } : {}),
+          execBackend: posture.execBackend,
+          enforcement: posture.enforcement,
+          requiredFileIsolation: requiresFileIsolation,
+          ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
+          exec: fence.exec,
+          openProcess: fence.openProcess,
+          binding: fence.binding,
+        })
+      },
+      openHooks: async (runtime) => {
+        const loader = new WorkspaceHookLoader(
+          runtime.fs,
+          () => commandHookInvocationSnapshot(hotPolicy).revision,
+        )
+        return Object.freeze({ snapshot: () => loader.snapshot() })
+      },
+      openServices: (runtime) => openWorkspaceSeamContexts(ctx.live.seams.get(), runtime),
+      closeServices: (services) => (services as WorkspaceSeamContexts).close(),
+    })
+  }
+  return { workspacePlans, openWorkspaceRuntime }
+}
