@@ -78,8 +78,8 @@
       "meeting-actions": {
         "profile": {
           "loop": {
-            "id": "fde.meeting-actions",
-            "version": "4.0.0"
+            "version": "4.0.0",
+            "provider": "fde.meeting-actions"
           },
           "skills": [
             "meeting-actions"

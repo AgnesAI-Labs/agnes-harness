@@ -78,7 +78,10 @@ async function fixture(
   )
   manifest.agnes.plugins[0].config = { plan: [] }
   if (installedAfterBoot) manifest.agnes.plugins[0].default = false
-  if (bundle) manifest.agnes.bundles = { selected: { profile: { loop: loopSelection } } }
+  if (bundle)
+    manifest.agnes.bundles = {
+      selected: { profile: { loop: { provider: loopSelection.id, version: loopSelection.version } } },
+    }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
     snapshot: {
@@ -130,7 +133,7 @@ async function fixture(
       ...(bundle && !installedAfterBoot
         ? {
             bundleCatalog: parsePackageBundles(source.snapshot.packageId, {
-              selected: { profile: { loop: loopSelection } },
+              selected: { profile: { loop: { provider: loopSelection.id, version: loopSelection.version } } },
             }),
           }
         : {}),
@@ -143,10 +146,14 @@ async function fixture(
               {
                 id: source.snapshot.packageId,
                 source: `file:${directory}`,
-                ...(childModule ? { config: { 'child-agent': { provider: 'public-fixture' } } } : {}),
+                config: {
+                  ...(childModule ? { 'child-agent': { provider: 'public-fixture' } } : {}),
+                  ...(profileLoop
+                    ? { loop: { provider: loopSelection.id, version: loopSelection.version } }
+                    : {}),
+                },
               },
             ],
-        ...(profileLoop ? { loop: loopSelection } : {}),
       },
     },
     runtimePluginSnapshots: installedAfterBoot ? [] : [source],
@@ -250,7 +257,18 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
       createTestHost({
         dataDir: join(f.dataDir, 'missing-provider'),
         script: [],
-        profileInputs: { user: { name: 'local-dev', loop: { id: 'missing', version: '1.0.0' } } },
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            packages: [
+              {
+                id: '@agnes/base',
+                source: 'builtin:base',
+                config: { loop: { provider: 'missing', version: '1.0.0' } },
+              },
+            ],
+          },
+        },
       }),
     ).rejects.toMatchObject({ code: 'E_SEAM_INIT', detail: { reason: 'provider-unknown' } })
     f.defaults({ id: '', version: '1' })

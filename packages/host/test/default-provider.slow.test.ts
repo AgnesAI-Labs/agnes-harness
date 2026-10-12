@@ -90,7 +90,6 @@ it('omitted provider uses production assembly, credentials, wire, tools and defa
             name: 'real-provider',
             provider: {
               package: '@agnes/ai',
-              adapters: ['@agnes/ai'],
               routes: [
                 {
                   route: 'wire',

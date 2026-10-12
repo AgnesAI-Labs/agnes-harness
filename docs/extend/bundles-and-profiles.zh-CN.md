@@ -29,13 +29,13 @@ composition:
 
 Host 只读取已启用、已信任且完整性校验通过的已安装包。包引用不会自动下载、信任或启用依赖。本版本不支持发现工作区组合包。
 
-编译顺序是父 bundle、子 bundle、直接 profile composition、兼容的顶层选择、preset、admin、session。每个继承基包只应用一次；循环与未知标识会报错。后选的 bundle 覆盖前面的选择。admin 选择独立保存，带 revision 校验，重启后用于装配。
+编译顺序是父 bundle、子 bundle、直接 profile composition、根 persistence/sandbox 选择、preset、admin、session。每个继承基包只应用一次；循环与未知标识会报错。后选的 bundle 覆盖前面的选择。admin 选择独立保存，带 revision 校验，重启后用于装配。
 
 | 字段 | 含义 |
 | --- | --- |
-| `loop` | 精确的 `{id, version}` |
-| `modelAdapters` | 组合模型路由可使用的 adapter 注册 id；通过包或插件行启用注册 |
-| `compaction` | `{engine}`；`null` 关闭压缩 |
+| `loop` | 精确的 `{provider, version}` |
+| `model-adapter` | `{provider: id}` 或 `{provider: [ids]}` 选择注册 id；通过包或插件行启用注册；空列表保留默认值 |
+| `compaction` | `{provider}`；`null` 关闭压缩 |
 | `persistence`、`sandbox` | `{provider}`，使用对应 Host 目录；默认为 `sqlite` 和 `local` |
 | `packages` | 按 id 合并包引用；仍受 lock、信任和能力上限约束 |
 | `plugins` | 普通插件行 id 对应 `{enabled, config}`；config 整体替换 |

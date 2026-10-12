@@ -76,7 +76,7 @@ async function runFixtureTurn(o: { dataDir: string; modelId: string }): Promise<
     profileInputs: {
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [routeFor(o.modelId)] },
+        provider: { package: '@agnes/ai', routes: [routeFor(o.modelId)] },
       },
     },
   })

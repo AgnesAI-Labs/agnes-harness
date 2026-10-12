@@ -29,7 +29,7 @@ A policy can attach `approval: { reviewerRequirement: 'human', grantConstraints:
 
 The bundled approval-policy plugin registers the default policy. Command rules, human approval and durable tool requests use Core decisions after its command policy. Principal denials remain terminal. A custom policy's `deny` or `ask` remains effective in full-access mode; the policy explicitly chooses how to interpret `input.fullAccess`. Core honors principal approval requirements under the existing host approval mode.
 
-[Read-only policy example](../../examples/policies/read-only/) denies writes and destructive tools, including in full-access sessions. Install and enable its row, then select `approval.policy: read-only`. Both contracts apply to the default loop and custom loops through `LoopContext.tools`.
+[Read-only policy example](../../examples/policies/read-only/) denies writes and destructive tools, including in full-access sessions. Install and enable its row, then select `tool-policy: { provider: read-only }`. Both contracts apply to the default loop and custom loops through `LoopContext.tools`.
 
 Optional `meta.isPresentational: true` declares that the effect only publishes display state to the user and has no external side effect. It cannot be combined with `isDestructive` or `isOpenWorld`. The default tool policy does not escalate a presentational, non-read-only tool solely because the turn is tainted. `requiresApproval: always` and a destructive approval band still ask. Omitting the flag leaves the tool subject to tainted-write approval. The [tool metadata reference](../../packages/extension-api/docs/tools-meta.md) lists the flag with the other metadata keys.
 
@@ -39,7 +39,7 @@ Set `meta.deferLoading: true` to omit a tool's schema from the initial model req
 
 ## Model-assisted policies
 
-The official `@agnes/base` policy registers `auto-review` alongside `default`. Select it with `approval.policy: auto-review`, or enable its Web policy card when the selected base policy is `default`. Trusted profiles can select `approvals.mode: auto-review`. The settings card does not replace custom, read-only or full-access policies.
+The official `@agnes/base` policy registers `auto-review` alongside `default`. Select it with `tool-policy: { provider: auto-review }`, or enable its Web policy card when the selected base policy is `default`. Trusted profiles can select `approvals.mode: auto-review`. The settings card does not replace custom, read-only or full-access policies.
 
 `ToolPolicyInput` includes optional `config: AutoReviewConfig`, category (`read`, `write`, `external`), trusted retained human `instructions`, and the pending call's description, parameters and definition fingerprint. Arguments and tool descriptions are data, not authorization. The optional `ToolPolicyPorts` exposes `reserve(limit): boolean | Promise<boolean>` and `model({ slot: 'fast' | 'verifier', prompt }, signal, onUsage?)`. The model operation returns `{ text, model, cost, costSource? }`, discloses no tools, makes no automatic retries, obeys the active request cap, and accounts for usage. The optional usage callback supplies `{ model, cost, costSource }`, including estimates on interrupted streams. Reservations are session-wide durable attempt counts; an interrupted reservation is not refunded. Propagate cancellation and fall back to `ask` when a port is unavailable.
 

@@ -14,7 +14,7 @@
 
 | 任务 | 导入包 | 导出符号 | 入口与用法 |
 | --- | --- | --- | --- |
-| 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `tools`，调用 `ctx.tools.register(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
+| 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`readOnlyTool`、`writeTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `tools`，调用 `ctx.tools.register(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
 | 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginExtensionAPI` | 作者合同。官方和社区作者共用 `@agnes/plugin-runtime` 唯一导出的 `defineTool`。 |
 | 构造 TypeBox schema | `@sinclair/typebox` | `Type`；类型 `Static`、`TSchema` | 作者面。工具输入 schema 必须带 TypeBox Kind 符号，普通 JSON Schema 不够。 |
 | 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
@@ -45,7 +45,7 @@ Host 提供的公开作者命名空间共有以下六个 service kind token。�
 | 延迟工具队列 | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 | 延迟调用 producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
-当提供了该端口时，`ServiceAuthorPort.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通 `ctx.extension()` 返回的 `PluginExtensionAPI` 与官方扩展共用受控的 `providers.register` / `providers.bindOwn` 门面；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
+当提供了该端口时，`ServiceAuthorPort.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通插件通过 `ctx.providers.register(kind, packageId, provider)` 注册，通过 `ctx.providers.bindOwn(kind)` 绑定；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
 
 `@agnes/extension-api` 还导出 `memoryKind`、`systemPromptKind`、`webhookTriggerKind`。它们是 **provider 注册 token**，不是用于 `bindOwn` 或 Loop service reader 的 `ServiceKind` token。应使用对应 provider 合同与注册路径。
 

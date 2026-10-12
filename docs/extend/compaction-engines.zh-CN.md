@@ -37,7 +37,7 @@ Core 拒绝跨越 pin、拆开工具调用与结果、删除整个对话或替�
 按[插件管理](../guide/packages.zh-CN.md)安装并启用引擎包，再在运行时 profile 中选择已注册的 id：
 
 ```json
-{ "compaction": { "engine": "sliding-window" } }
+{ "packages": [{ "id": "@agnes-example/compaction-sliding-window", "source": "file:./examples/compaction/sliding-window", "config": { "compaction": { "provider": "sliding-window" } } }] }
 ```
 
 省略字段时选择 `default`。显式指定不存在的 id 会使 Host 启动失败，错误为 `compaction engine is not registered: <id>`。选择发生于 Host 组装时；修改后重新组装。已有 preset 控制项，包括 `compaction.enabled`、预留量与 agent 可调用设置，继续生效。

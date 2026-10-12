@@ -13,6 +13,7 @@ import {
   type CompositionPatch,
   type CompositionSource,
   type ResolvedComposition,
+  type ResolvedCompositionSelection,
   resolveComposition,
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -82,9 +83,25 @@ function immutable<T>(value: T): T {
  */
 export function resolveSessionCapabilities(input: SessionCapabilityInput): CapabilityResolution {
   const tree = input.composition ?? (input.profile ? resolveComposition(input.profile, input) : undefined)
-  const declared = tree?.selection ?? input.selection ?? {}
+  const toBound = (choice: CompositionPatch): ResolvedCompositionSelection => {
+    const { loop, compaction, 'model-adapter': adapters, ...rest } = choice
+    return {
+      ...rest,
+      ...(adapters
+        ? {
+            modelAdapters:
+              typeof adapters.provider === 'string' ? [adapters.provider] : [...adapters.provider],
+          }
+        : {}),
+      ...(loop ? { loop: { id: loop.provider, version: loop.version } } : {}),
+      ...(compaction === undefined
+        ? {}
+        : { compaction: compaction === null ? null : { engine: compaction.provider } }),
+    }
+  }
+  const declared = tree?.selection ?? toBound(input.selection ?? {})
   // Legacy Hosts never applied composition tool/resource filters. A durable legacy pin retains that catalog.
-  const selection: CompositionPatch = input.pin?.legacy
+  const selection: ResolvedCompositionSelection = input.pin?.legacy
     ? {
         ...declared,
         packages: input.profile?.packages.map(({ id, source, enabled }) => ({ id, source, enabled })) ?? [],
@@ -218,7 +235,11 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
   const childSource: CompositionSource = { layer: 'session', name: 'child-allowlist' }
   const loop =
     input.pin?.loop ??
-    (tree ? selection.loop : (input.session?.loop ?? input.admin?.composition?.loop ?? selection.loop)) ??
+    (tree
+      ? selection.loop
+      : (toBound(input.session ?? {}).loop ??
+        toBound(input.admin?.composition ?? {}).loop ??
+        selection.loop)) ??
     preset?.loop ??
     DEFAULT_LOOP
   const routes =

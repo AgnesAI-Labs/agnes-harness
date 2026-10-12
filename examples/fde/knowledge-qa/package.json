@@ -76,8 +76,8 @@
       "knowledge-qa": {
         "profile": {
           "loop": {
-            "id": "fde.knowledge-qa",
-            "version": "4.0.0"
+            "version": "4.0.0",
+            "provider": "fde.knowledge-qa"
           },
           "skills": [
             "knowledge-qa"

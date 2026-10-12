@@ -2,5 +2,7 @@
 # Principal authorization and hard secret/integrity denials remain authoritative.
 name: full-access
 extends: standard
-approval: { policy: full-access, command_policy: [] }
+approval: { command_policy: [] }
 sandbox: { level: L0, required: false, on_unavailable: allow }
+
+tool-policy: { provider: full-access }

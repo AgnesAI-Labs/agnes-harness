@@ -76,8 +76,8 @@
       "code-review": {
         "profile": {
           "loop": {
-            "id": "fde.code-review",
-            "version": "4.0.0"
+            "version": "4.0.0",
+            "provider": "fde.code-review"
           },
           "skills": [
             "code-review"

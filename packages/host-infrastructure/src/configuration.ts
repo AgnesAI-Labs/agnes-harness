@@ -1506,7 +1506,6 @@ export function createConfigurationService(
         adapters: { secrets },
         provider: {
           package: '@agnes/ai',
-          adapters: ['@agnes/ai'],
           routes: routeGroups.flat(),
           catalog: { include: [] },
         },

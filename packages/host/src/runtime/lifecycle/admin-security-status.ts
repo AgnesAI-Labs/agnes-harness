@@ -27,13 +27,13 @@ export function adminSecurityStatus(
     presetPolicies: profile.presets.allowed.map((id) => {
       const doc = resolvePreset(id, presets, { limits: profile.limits }).doc
       const sandbox = normalizeSandboxStaticConfig(doc)
-      const approval = doc.approval
+      const approval = doc['tool-policy']
       const approvalPolicy =
         approval &&
         typeof approval === 'object' &&
-        'policy' in approval &&
-        typeof approval.policy === 'string'
-          ? approval.policy
+        'provider' in approval &&
+        typeof approval.provider === 'string'
+          ? approval.provider
           : 'default'
       return {
         id,

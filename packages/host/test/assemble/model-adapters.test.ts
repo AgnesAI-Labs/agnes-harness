@@ -208,10 +208,15 @@ async function fixture(selected: string, missingCredential = false) {
         name: 'local-dev',
         presets: { default: 'standard', allowed: ['standard'] },
         adapters: { secrets: { kind: 'file', path: secretPath } },
-        packages: [{ id: source.snapshot.packageId, source: `file:${directory}` }],
+        packages: [
+          {
+            id: source.snapshot.packageId,
+            source: `file:${directory}`,
+            config: { 'model-adapter': { provider: ['@agnes/ai', selected] } },
+          },
+        ],
         provider: {
           package: '@agnes/ai',
-          adapters: ['@agnes/ai', selected],
           catalog: { include: [] },
           routes: [
             {
@@ -320,7 +325,7 @@ it.each(['@community/fake-model-adapter', 'community-fake'])(
 )
 
 it.each([
-  { selected: 'missing-adapter', missingCredential: false, code: 'E_DEP_MISSING' },
+  { selected: 'missing-adapter', missingCredential: false, code: 'E_SEAM_INIT' },
   { selected: 'community-fake', missingCredential: true, code: 'E_SEAM_INIT' },
 ])(
   'refuses before inference for $selected with missing credential $missingCredential',
@@ -329,7 +334,7 @@ it.each([
       code,
       ...(missingCredential
         ? { message: expect.stringContaining('SECRET_UNRESOLVED') }
-        : { detail: { reason: 'adapter-missing', id: selected } }),
+        : { detail: { reason: 'provider-unknown' } }),
     })
   },
 )

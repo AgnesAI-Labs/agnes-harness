@@ -1,6 +1,6 @@
 # ReAct Agent Loop
 
-This standalone package imports only `@agnes/extension-api`. Install with `agh package add ./examples/loops/react-loop`, trust and enable it, then select `example.react@1.0.0` with `agh -p "your task" --loop example.react@1.0.0`, the SDK or a profile default. Its ordinary `loop:react` plugin row declares `apiRange` and injects `loops`.
+This standalone package imports only `@agnes/extension-api`. Install with `agh package add ./examples/loops/react-loop`, trust and enable it, then select `example.react@1.0.0` with `agh -p "your task" --loop example.react@1.0.0`, the SDK or a profile default. Its ordinary `loop:react` plugin row declares `apiRange` and injects `providers`.
 
 The loop owns its state machine: claim input, inspect the turn, prepare, estimate and stream a model request, collect text/thinking and complete tool calls, publish an assistant message, batch independent tools, then ask the model again. Core owns request stamps/media, admission, authorization, approval bindings, effect receipts and ledger writes. The package never calls `turn.continuation`, `turn.checkpoint`, `model.respond`, `tools.drain`, `turn.finishCancelled`, `turn.finishFailure` or `wait.poll`.
 

@@ -132,7 +132,7 @@ const profileFor = (over: Record<string, unknown> = {}) =>
       user: {
         name: 'local-dev',
         presets: { default: 'standard', allowed: ['standard'] },
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
         ...over,
       },
     },
@@ -567,7 +567,7 @@ describe('assemble', () => {
           user: {
             name: 'local-dev',
             presets: { default: 'standard', allowed: ['standard'] },
-            provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+            provider: { package: '@agnes/ai', routes: [ROUTE] },
             packages: extra,
           },
         },
@@ -673,7 +673,7 @@ describe('assemble', () => {
         user: {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -1006,7 +1006,7 @@ describe('assemble', () => {
         user: {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           seams: { approval: vendor },
           packages: [{ id: vendor, source: 'test' }],
         },
@@ -1110,7 +1110,7 @@ describe('assemble', () => {
         user: {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           seams: { approval: vendor },
           packages: [{ id: vendor, source: 'test' }],
         },
@@ -1187,7 +1187,7 @@ describe('assemble', () => {
         user: {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -1299,7 +1299,7 @@ describe('assemble', () => {
         user: {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -1437,7 +1437,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
           presets: { default: 'runtime-default', allowed: ['runtime-default'] },
         },
@@ -1638,7 +1638,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'p',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           seams: { sandbox: vendor },
           packages: [
             {
@@ -1980,7 +1980,7 @@ describe('assemble', () => {
   })
   it('assembles applyRuntimeTarget when the profile declares no provider.routes', async () => {
     const p = await profileFor({
-      provider: { package: '@agnes/ai', adapters: ['@agnes/ai'] },
+      provider: { package: '@agnes/ai' },
     })
     const d = deps(allModules())
     delete d.providerFactory
@@ -2023,7 +2023,7 @@ describe('assemble', () => {
     // to fill. verifyRoutes is the half that reads what the adapters actually accepted.
     const ghost: RouteDecl = { route: 'gw', api: 'openai', baseUrl: 'https://gw.example/v1', models: [] }
     const p = await profileFor({
-      provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ghost] },
+      provider: { package: '@agnes/ai', routes: [ghost] },
     })
     const pinned: PackageModule = {
       id: '@agnes/code',
@@ -2095,7 +2095,7 @@ describe('assemble', () => {
           name: 'local-dev',
           presets: { default: 'standard', allowed: ['standard'] },
           packages: [{ id, source: 'trusted' }],
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
         },
       },
       env,

@@ -45,14 +45,29 @@ it('retains profile selection in its immutable result and hash and refuses inval
   }
   const baseline = await resolveProfile({ builtin: 'local-dev' }, env)
   const profile = await resolveProfile(
-    { builtin: 'local-dev', user: { name: 'test', compaction: { engine: 'sliding-window' } } },
+    {
+      builtin: 'local-dev',
+      user: {
+        name: 'test',
+        packages: [
+          {
+            id: '@agnes/base',
+            source: 'builtin:base',
+            config: { compaction: { provider: 'sliding-window' } },
+          },
+        ],
+      },
+    },
     env,
   )
   expect(profile.compaction).toEqual({ engine: 'sliding-window' })
   expect(profile.hash).not.toBe(baseline.hash)
   await expect(
-    resolveProfile({ builtin: 'local-dev', user: { name: 'test', compaction: { engine: '' } } }, env),
-  ).rejects.toThrow('compaction.engine')
+    resolveProfile(
+      { builtin: 'local-dev', user: { name: 'test', compaction: { engine: 'sliding-window' } } as never },
+      env,
+    ),
+  ).rejects.toThrow('compaction selection belongs')
 })
 
 it('drains late creates before instance disposal and reports both disposal and cleanup failures', async () => {

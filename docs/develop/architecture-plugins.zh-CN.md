@@ -72,7 +72,7 @@ packages:
       child-agent: { provider: 'in-process' }
 ```
 
-原有顶层 `loop: { id, version }`、`compaction: { engine }`、`persistence: { provider }`、`sandbox: { provider }`、模型 `provider.adapters`，以及 preset 的 `tools.runtime` / `approval.policy` 继续有效。显式顶层选择优先于包配置；同一类型由多个包选择时拒绝启动。统一 provider 配置使用 package config，根 profile 只接受已经列入合同的字段。
+Provider 选择统一使用包的 `config.<kind>: { provider, version? }`。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。Preset 通过 `tool-runtime` 和 `tool-policy` 的 `{ provider }` 选择。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。同一 kind 的多个包选择会拒绝。根 persistence 和 sandbox 块已使用 `{ provider }`。
 
 `child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register('child-agent', sourcePackage, provider)`，注册清理由平台绑定到插件生命周期。
 
@@ -125,7 +125,7 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 ## Provider 合同与迁移
 
-内置 kind 字符串通过公开 `KindMap` 绑定注册与解析的类型；自定义 kind 使用 `defineProviderKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 仍为 `1.4.0`。
+内置 kind 字符串通过公开 `KindMap` 绑定注册与解析的类型；自定义 kind 使用 `defineProviderKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `2.0.0`；旧插件需要迁移删除的作者入口。
 
 服务提供者共用这套注册表。`defineServiceKind()` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ExtensionAPI.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
 
@@ -137,7 +137,7 @@ UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数�
 
 Git worktree 是每个规范工作区一个、作用域为 workspace 的提供者。Host 与内置子 Agent 共用 `@agnes/git-worktree-contract` 的 `gitWorktreeKind`。Host 注册该提供者，插件不能注册。子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。Git 元数据留在 host-infrastructure，子 Agent 得不到 shell 或 argv 端口。
 
-文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，也是 adapter 目录唯一的格式字段；`Route.api` 选择注册 id。
+文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^2.0.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，也是 adapter 目录唯一的格式字段；`Route.api` 选择注册 id。
 
 `ProviderError` 独立于闭合的 extension 调用错误集，稳定 code 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`，携带 kind/provider/operation/retryable/hint/cause。unregister 返回幂等、可等待的 Promise。model、compaction、tool-runtime、policy 的 owner 禁止新准入，取消并等待创建与调用完成，再 dispose 实例、cleanup 注册资源；清理失败聚合返回，不吞错。
 

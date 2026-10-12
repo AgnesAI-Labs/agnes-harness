@@ -9,6 +9,7 @@ import { canonicalJson, sha256hex } from './canonical.js'
 import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
+import { readModelAdapterSelection, readProviderSelection } from './provider-selection.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
 import type {
   PackageRef,
@@ -308,6 +309,19 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
       }
   }
   for (const l of layers) {
+    if (l.manifest.provider && Object.hasOwn(l.manifest.provider, 'adapters'))
+      throw new HostError(
+        'E_PROFILE_FRAGMENT_KEY',
+        'provider.adapters was removed; use package config.model-adapter: { provider }',
+        { source: { layer: l.layer } },
+      )
+    for (const field of ['loop', 'compaction'])
+      if (Object.hasOwn(l.manifest, field))
+        throw new HostError(
+          'E_PROFILE_FRAGMENT_KEY',
+          `${field} selection belongs in an enabled package config as { provider }`,
+          { source: { layer: l.layer } },
+        )
     assertRouteNames((l.manifest.provider as { routes?: RouteDecl[] } | undefined)?.routes, l.layer)
     if (Object.hasOwn(l.manifest, 'commandHooks')) {
       if (l.layer === 'workspace' || !validateCommandHooksPolicy(l.manifest.commandHooks).ok)
@@ -525,21 +539,38 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     throw new HostError('E_SEAM_MISSING', 'provider.package is required', {
       detail: { seam: 'provider' },
     })
-  if (
-    m.compaction !== undefined &&
-    (!m.compaction ||
-      typeof m.compaction !== 'object' ||
-      Array.isArray(m.compaction) ||
-      typeof m.compaction.engine !== 'string' ||
-      !m.compaction.engine.trim() ||
-      Object.keys(m.compaction).some((key) => key !== 'engine'))
-  )
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'compaction.engine must be a nonempty registered engine id')
+  // Provider selections are authored in enabled package config, never through root aliases.
+  const selected = (kind: 'loop' | 'compaction') => {
+    const choices = packages
+      .filter((pkg) => pkg.enabled !== false)
+      .flatMap((pkg) => (pkg.config?.[kind] === undefined ? [] : [pkg.config[kind]]))
+    if (choices.length > 1)
+      throw new HostError('E_PROFILE_FRAGMENT_KEY', `select at most one package config.${kind} provider`)
+    return readProviderSelection(kind, choices[0])
+  }
+  const adapterChoices = packages
+    .filter((pkg) => pkg.enabled !== false)
+    .flatMap((pkg) =>
+      pkg.config?.['model-adapter'] === undefined
+        ? []
+        : [readModelAdapterSelection(pkg.config['model-adapter'])!],
+    )
+  if (adapterChoices.length > 1)
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'select at most one package config.model-adapter provider')
+  const adapterSelection = adapterChoices[0]
+  const loop =
+    selected('loop') ??
+    (m.composition?.loop
+      ? { provider: m.composition.loop.provider, version: m.composition.loop.version }
+      : undefined)
+  const compaction =
+    selected('compaction') ??
+    (m.composition?.compaction ? { provider: m.composition.compaction.provider } : undefined)
   const sandbox = readSandboxStartupConfig(m.sandbox)
   const draftProfile: Omit<ResolvedProfile, 'hash'> = {
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
-    ...(m.loop ? { loop: structuredClone(m.loop) } : {}),
+    ...(loop?.version ? { loop: { id: loop.provider, version: loop.version } } : {}),
     ...(m.bundles ? { bundles: m.bundles } : {}),
     ...(m.composition ? { composition: m.composition } : {}),
     chain: draft.chain,
@@ -547,7 +578,12 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     seams,
     provider: {
       package: m.provider.package,
-      adapters: m.provider.adapters ?? [m.provider.package],
+      adapters:
+        adapterSelection === undefined
+          ? [m.provider.package]
+          : typeof adapterSelection.provider === 'string'
+            ? [adapterSelection.provider]
+            : [...adapterSelection.provider],
       ...(m.provider.routes ? { routes: m.provider.routes } : {}),
       ...(m.provider.catalog ? { catalog: m.provider.catalog } : {}),
       ...(m.provider.contract
@@ -580,7 +616,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     computerUse: resolveComputerUse(m.computerUse, undefined, 'user'),
     ...(m.extensionIsolation ? { extensionIsolation: m.extensionIsolation } : {}),
     ...(m.commandHooks ? { commandHooks: structuredClone(m.commandHooks) } : {}),
-    ...(m.compaction ? { compaction: { engine: m.compaction.engine } } : {}),
+    ...(compaction ? { compaction: { engine: compaction.provider } } : {}),
     ...(m.persistence && m.persistence.provider !== 'sqlite'
       ? { persistence: { provider: m.persistence.provider } }
       : {}),

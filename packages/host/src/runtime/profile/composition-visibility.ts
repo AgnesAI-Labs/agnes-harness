@@ -11,17 +11,30 @@ import {
   type SessionCapabilitySet,
 } from './session-capabilities.js'
 
+type VisibilitySelection = Pick<
+  CompositionPatch,
+  'packages' | 'toolPolicy' | 'tools' | 'mcp' | 'skills' | 'uiModules' | 'shell' | 'surfaces'
+>
+
+function visibilitySelection(selection: VisibilitySelection | undefined): VisibilitySelection {
+  return Object.fromEntries(
+    Object.entries(selection ?? {}).filter(([key]) =>
+      ['packages', 'toolPolicy', 'tools', 'mcp', 'skills', 'uiModules', 'shell', 'surfaces'].includes(key),
+    ),
+  )
+}
+
 /** A read facade; registration and leases stay owned by the generation's original registry. */
 export function compositionTools(
   tools: ToolRegistry,
-  selection: CompositionPatch,
+  selection: VisibilitySelection,
   scope?: ResolvedComposition['toolScope'],
   resolve?: (tools: ToolRegistry) => SessionCapabilitySet,
 ): ToolRegistry {
   const capabilities = () =>
     resolve?.(tools) ??
     resolveSessionCapabilities({
-      selection,
+      selection: visibilitySelection(selection),
       scope,
       installed: { tools: capabilityToolCatalog(tools) },
     })
@@ -99,14 +112,14 @@ export function compositionToolGroups(
 /** Selection accepts stable Skill resource IDs or names; an empty list retains defaults. */
 export function compositionSkills(
   input: SkillRuntimeInput | undefined,
-  selection: CompositionPatch,
+  selection: VisibilitySelection,
   owners: ReadonlyMap<string, string> = new Map(),
 ): SkillRuntimeInput | undefined {
   if (!input) return input
   if (!selection.skills?.length && !selection.packages?.some((pkg) => pkg.enabled === false)) return input
   const capabilities = (skills = input.list()) =>
     resolveSessionCapabilities({
-      selection,
+      selection: visibilitySelection(selection),
       live: {
         skills: skills.map((skill) => ({
           id: skill.resourceId,
@@ -154,19 +167,22 @@ export function compositionSkillOwners(
 }
 
 export function compositionSurfaceAllowed(
-  selection: CompositionPatch | undefined,
+  selection: VisibilitySelection | undefined,
   surface: 'web' | 'acp' | 'http',
 ): boolean {
-  return capabilityEnabled(resolveSessionCapabilities({ selection }).surfaces, surface)
+  return capabilityEnabled(
+    resolveSessionCapabilities({ selection: visibilitySelection(selection) }).surfaces,
+    surface,
+  )
 }
 
 export function compositionModuleAllowed(
-  selection: CompositionPatch | undefined,
+  selection: VisibilitySelection | undefined,
   module: { id: string; aliases?: readonly string[]; slots?: readonly string[] },
 ): boolean {
   return capabilityEnabled(
     resolveSessionCapabilities({
-      selection,
+      selection: visibilitySelection(selection),
       installed: { uiModules: [module] },
     }).uiModules,
     module.id,

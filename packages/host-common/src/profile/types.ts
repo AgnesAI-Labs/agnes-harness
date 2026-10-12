@@ -49,7 +49,6 @@ export type Transport = {
 export type { ReconcilePolicy, RouteDecl }
 export type ProviderConfig = {
   package: string
-  adapters?: string[]
   routes?: RouteDecl[]
   /** Additional built-in runtime routes. Omitted keeps the legacy catalogue; [] uses declared routes only. */
   catalog?: { include: string[] }
@@ -130,7 +129,6 @@ export type RuntimeProfileManifest = {
   composition?: CompositionPatch
   name: string
   schemaVersion?: number
-  loop?: LoopSelection
   extends?: string
   packages?: PackageRef[]
   seams?: Partial<Record<SeamName, string>>
@@ -145,7 +143,6 @@ export type RuntimeProfileManifest = {
   reconcile?: ReconcilePolicy
   approvals?: ApprovalProfile
   computerUse?: ComputerUseProfile
-  compaction?: { engine: string }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
   /** Session store id. Only the user profile may set it. The running process keeps the store it opened. */
@@ -245,8 +242,7 @@ export type ResolvedProfile = Readonly<{
   chain: string[]
   packages: ResolvedPackage[]
   seams: Record<SeamName, string>
-  provider: Required<Pick<ProviderConfig, 'package' | 'adapters'>> &
-    Pick<ProviderConfig, 'routes' | 'catalog' | 'contract'>
+  provider: { package: string; adapters: string[] } & Pick<ProviderConfig, 'routes' | 'catalog' | 'contract'>
   adapters: {
     storage: string
     fs: string

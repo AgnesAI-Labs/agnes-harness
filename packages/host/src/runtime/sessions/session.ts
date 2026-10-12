@@ -429,8 +429,10 @@ export async function createSession(
     defaultLoop: async () => {
       const loop = await a.sessionLoopDefault?.()
       return resolveSessionCapabilities({
-        ...(profile.loop ? { selection: { loop: profile.loop } } : {}),
-        ...(loop ? { admin: { composition: { loop } } } : {}),
+        ...(profile.loop
+          ? { selection: { loop: { provider: profile.loop.id, version: profile.loop.version } } }
+          : {}),
+        ...(loop ? { admin: { composition: { loop: { provider: loop.id, version: loop.version } } } } : {}),
         presetView: view,
       }).loop.value
     },

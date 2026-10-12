@@ -483,9 +483,15 @@ export async function createCompositionHost(
                 preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
                   limits: profile.limits,
                 }).doc,
-                ...(adminLoop ? { admin: { composition: { loop: adminLoop } } } : {}),
+                ...(adminLoop
+                  ? {
+                      admin: {
+                        composition: { loop: { provider: adminLoop.id, version: adminLoop.version } },
+                      },
+                    }
+                  : {}),
                 ...(input.loop
-                  ? { session: { loop: { id: input.loop.id, version: input.loop.version } } }
+                  ? { session: { loop: { provider: input.loop.id, version: input.loop.version } } }
                   : {}),
                 ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
               },

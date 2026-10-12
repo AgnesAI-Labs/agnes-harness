@@ -74,7 +74,6 @@ describe('profile and platform doctor', () => {
         profileInput: async () => ({
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [
               { route: 'acct-test', api: 'openai-completions', baseUrl: 'https://example.invalid/v1' },
             ],

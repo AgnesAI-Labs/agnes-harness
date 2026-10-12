@@ -6,6 +6,11 @@ import {
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
+import {
+  type ModelAdapterSelection,
+  readModelAdapterSelection,
+  readProviderSelection,
+} from '@agnes/host-common/profile/provider-selection'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
 export const PROVIDER_KINDS = [
@@ -20,43 +25,14 @@ export const PROVIDER_KINDS = [
   'memory',
 ] as const
 export type ProviderKindName = (typeof PROVIDER_KINDS)[number]
-export type ProviderSelections = Partial<Record<ProviderKindName, ProviderSelection>>
+export type ProviderSelections = Partial<
+  Record<Exclude<ProviderKindName, 'model-adapter'>, ProviderSelection>
+> & { 'model-adapter'?: ModelAdapterSelection }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
-/** Canonical { provider } and the existing { id, version } / { engine } spellings. */
-export function readProviderSelection(kind: string, value: unknown): ProviderSelection | undefined {
-  if (value === undefined) return undefined
-  const input = record(value)
-  const provider =
-    input?.provider ?? (kind === 'loop' ? input?.id : kind === 'compaction' ? input?.engine : undefined)
-  if (
-    !input ||
-    typeof provider !== 'string' ||
-    !provider.trim() ||
-    (input.version !== undefined && (typeof input.version !== 'string' || !input.version.trim())) ||
-    Object.keys(input).some(
-      (key) =>
-        ![
-          'provider',
-          'version',
-          ...(kind === 'loop' ? ['id'] : kind === 'compaction' ? ['engine'] : []),
-        ].includes(key),
-    ) ||
-    (input.provider !== undefined &&
-      ((input.id !== undefined && input.id !== input.provider) ||
-        (input.engine !== undefined && input.engine !== input.provider)))
-  )
-    throw new HostError(
-      'E_PROFILE_FRAGMENT_KEY',
-      `${kind} requires { provider: id }; loop also accepts { id, version } and compaction accepts { engine }`,
-    )
-  return Object.freeze({
-    provider,
-    ...(input.version === undefined ? {} : { version: input.version as string }),
-  })
-}
+export { readProviderSelection } from '@agnes/host-common/profile/provider-selection'
 
 /** Package config is the existing JSON extension point; the profile parser stays with its owner. */
 export function readProviderSelections(
@@ -64,9 +40,34 @@ export function readProviderSelections(
 ): ProviderSelections {
   const selected: ProviderSelections = {}
   const top = profile as Record<string, unknown>
+  const composition = record(top.composition)
+  const sources = record(top.compositionSources)
+  const authored = (kind: string) => {
+    const source = record(sources?.[kind === 'model-adapter' ? 'modelAdapters' : kind])
+    return source?.layer === 'default' ? undefined : composition?.[kind]
+  }
+  const adapters = profile.packages
+    .filter((pkg) => pkg.enabled !== false)
+    .flatMap((pkg) =>
+      pkg.config?.['model-adapter'] === undefined
+        ? []
+        : [readModelAdapterSelection(pkg.config['model-adapter'])!],
+    )
+  if (adapters.length > 1)
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'select at most one package config.model-adapter provider')
+  const composedAdapters = readModelAdapterSelection(authored('model-adapter'))
+  const adapterChoice =
+    (Array.isArray(composedAdapters?.provider) && composedAdapters.provider.length === 0
+      ? undefined
+      : composedAdapters) ?? adapters[0]
+  if (adapterChoice) selected['model-adapter'] = adapterChoice
   for (const kind of PROVIDER_KINDS) {
+    if (kind === 'model-adapter') continue
     if (kind === 'compaction' && record(top.composition)?.compaction === null) continue
-    const direct = readProviderSelection(kind, top[kind])
+    const direct = readProviderSelection(
+      kind,
+      kind === 'loop' || kind === 'compaction' ? authored(kind) : top[kind],
+    )
     const candidates = profile.packages
       .filter((pkg) => pkg.enabled !== false)
       .flatMap((pkg) =>
@@ -87,7 +88,15 @@ export function applyProviderSelections(
   return {
     ...profile,
     ...(selections['model-adapter']
-      ? { provider: { ...profile.provider, adapters: [selections['model-adapter'].provider] } }
+      ? {
+          provider: {
+            ...profile.provider,
+            adapters:
+              typeof selections['model-adapter'].provider === 'string'
+                ? [selections['model-adapter'].provider]
+                : [...selections['model-adapter'].provider],
+          },
+        }
       : {}),
     ...(selections.compaction ? { compaction: { engine: selections.compaction.provider } } : {}),
     ...(selections.persistence ? { persistence: { provider: selections.persistence.provider } } : {}),
@@ -99,11 +108,9 @@ export function applyProviderPreset(document: PresetDoc, selections: ProviderSel
   return {
     ...document,
     ...(selections['tool-runtime']
-      ? { tools: { ...record(document.tools), runtime: selections['tool-runtime'].provider } }
+      ? { 'tool-runtime': { provider: selections['tool-runtime'].provider } }
       : {}),
-    ...(selections['tool-policy']
-      ? { approval: { ...record(document.approval), policy: selections['tool-policy'].provider } }
-      : {}),
+    ...(selections['tool-policy'] ? { 'tool-policy': { provider: selections['tool-policy'].provider } } : {}),
   }
 }
 
@@ -114,6 +121,13 @@ export function providerConfigurationScopes(
 ): readonly string[] {
   if (entry.kind === 'compaction' && profile.composition?.compaction === null) return []
   const selected = readProviderSelections(profile)[entry.kind as ProviderKindName]
+  if (selected && entry.kind === 'model-adapter') {
+    const ids = typeof selected.provider === 'string' ? [selected.provider] : selected.provider
+    return (ids.includes(entry.id) || ids.includes(entry.sourcePackage)) &&
+      (selected.version === undefined || selected.version === entry.version)
+      ? ['profile']
+      : []
+  }
   if (selected)
     return selected.provider === entry.id &&
       (selected.version === undefined || selected.version === entry.version)
@@ -141,4 +155,36 @@ export function providerConfigurationScopes(
     (fallback.version === undefined || fallback.version === entry.version)
     ? ['default']
     : []
+}
+
+/** Admit every selected registration before operation instances are fitted. */
+export function selectConfiguredProviders(
+  root: import('@agnes/cordis').Context,
+  selections: ProviderSelections,
+): void {
+  for (const kind of PROVIDER_KINDS) {
+    if (kind === 'model-adapter') {
+      const selection = selections[kind]
+      if (!selection) continue
+      const ids = typeof selection.provider === 'string' ? [selection.provider] : selection.provider
+      for (const id of ids) {
+        const matches = root.providers
+          .catalog()
+          .filter((entry) => entry.kind === kind && (entry.id === id || entry.sourcePackage === id))
+        if (!matches.length)
+          root.providers.select(kind, {
+            provider: id,
+            ...(selection.version ? { version: selection.version } : {}),
+          })
+        for (const entry of matches)
+          root.providers.select(kind, {
+            provider: entry.id,
+            ...(selection.version ? { version: selection.version } : {}),
+          })
+      }
+    } else {
+      const selection = selections[kind]
+      if (selection) root.providers.select(kind, selection)
+    }
+  }
 }

@@ -36,8 +36,9 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | --- | --- |
 | `name`、`schemaVersion`、`extends` | 配置身份/版本/继承；现有模板 schemaVersion 为 1 |
 | `packages` | 包来源、启用与配置；实际安装/信任仍由 PackageManager 管理 |
+| `packages[].config` | Provider 选择：`<kind>: { provider, version? }` |
 | `seams` | 必要接缝实现归属；不是普通插件自由注册的接口 |
-| `provider` | package/adapters/routes/catalog/contract；route 名 `default` 是保留 sentinel |
+| `provider` | package/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
 | `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 与 Host 用户层校验均支持该字段。 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
@@ -51,6 +52,9 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
 | `sandbox.provider` | 启动时的沙箱提供者 id，默认 `local`。更改需要重启进程。见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
+
+
+Provider 选择放在启用包的 `config.<kind>: { provider, version? }`；`model-adapter.provider` 可选单个注册/来源包或唯一列表。Preset 使用 `tool-runtime` / `tool-policy: { provider }`。Bundle composition 使用相同的 provider 块，Loop 要求精确版本。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 会拒绝。
 
 完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/host-common/templates/local-dev.yaml)及[enterprise 模板](../../packages/host-common/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 

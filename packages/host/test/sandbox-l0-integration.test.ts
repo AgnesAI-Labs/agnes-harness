@@ -247,7 +247,7 @@ async function assembleWithSandbox(opts: {
       // This suite deliberately exercises L0 through its synthetic standard recipe.
       presets: { default: 'standard', allowed: ['standard'] },
       ...(commandHooks ? { commandHooks } : {}),
-      provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+      provider: { package: '@agnes/ai', routes: [ROUTE] },
     },
   }
   if (opts.hooksDeployment) {
@@ -747,7 +747,7 @@ async function resolveProfileForBind() {
       },
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
       },
     },
     {

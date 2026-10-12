@@ -169,7 +169,6 @@ describe('apis.list / auth.claim', () => {
             name: 'local-dev',
             provider: {
               package: '@agnes/ai',
-              adapters: ['@agnes/ai'],
               routes: [
                 { route: 'gw', api: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1', models: [model] },
               ],

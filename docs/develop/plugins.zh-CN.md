@@ -82,7 +82,7 @@ export const example = {
 
 受信的普通插件可以注入 `providers` 并调用 `ctx.providers.register('model-adapter', packageName, adapter)`；在 `agnes.plugins` 清单中声明相同的依赖。[公共 ModelAdapter 合同](../../packages/extension-api/src/model-adapter.ts) 包装现有 WireAdapter 形状：id、版本、`wireApi` 线路格式、能力（含图片输入），以及返回 wire 实例的 `create({ routes })`。[测试样例包](../../packages/host/test/fixtures/model-adapter/index.ts) 演示了不依赖 Host 或 Core 的注册方式。
 
-在 `provider.adapters` 中填写注册 id 或已启用的来源包名，并将路由的 `api` 设置为注册 id。`compat` 可携带适配器专用配置。现有的 `@agnes/ai` 选择与 pi API 名继续有效，API-key 和托管订阅 OAuth 路径保持兼容。
+在 `config['model-adapter'].provider` 中填写注册 id 或已启用的来源包名，并将路由的 `api` 设置为注册 id。`compat` 可携带适配器专用配置。现有的 `@agnes/ai` 选择与 pi API 名继续有效，API-key 和托管订阅 OAuth 路径保持兼容。
 
 实例输出 wire 事件；现有 AI facade 继续负责 stamp、工具调用恢复与用量计费。有凭据的结构化实例须实现 `bindCredential`，Host 在推理前解析密钥。实例的 `dispose()` 释放实例资源，可选的注册级 `cleanup()` 释放共享资源；插件卸载时均会执行。重复 id 与不可用的选择会被拒绝。
 
@@ -94,7 +94,7 @@ export const example = {
 
 ## 子代理提供者
 
-提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineProviderKind` 定义。通过 `ctx.providers.register('child-agent', sourcePackage, provider)` 或 `childAgents` 外观注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
+提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineProviderKind` 定义。通过 `ctx.providers.register('child-agent', sourcePackage, provider)` 注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
 
 预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
 
@@ -107,7 +107,8 @@ export const example = {
 | 接口 | 可以做什么 | 边界 |
 | --- | --- | --- |
 | 普通 Cordis Context | 插件、服务、事件、effect 生命周期 | 进程内服务，不自动变成跨进程 RPC |
-| `ctx.extension()` / PluginExtensionAPI | 工具、`on` 观察 hook、`registerHook` 的 transform/intercept hook、受约束事件 | 不能通过这个 API 注册 Service/Projection/Slot/Resource；结果仍受运行时权限与顺序约束 |
+| `ctx.tools` | `register(tool)`，由调用插件生命周期清理 | 与官方工具共用验证和权限边界 |
+| `ctx.extension()` / PluginExtensionAPI | `on` 观察 hook、`registerHook` 的 transform/intercept hook、受约束事件 | 不能通过这个 API 注册 Service/Projection/Slot/Resource；结果仍受运行时权限与顺序约束 |
 | `ctx.skills` | 运行时 Skill 贡献与 provider | 不能读取/枚举其他 Skill；与磁盘治理分离 |
 | 行上的 `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | 在已验证行上注册对应贡献，随行 fiber 清理 | 不是无条件全局对象；服务调用仍受身份、会话和客户端 allow-list 约束 |
 | 浏览器 ClientContext | 已声明槽位、前端服务/命令与受限 backend service relay | 没有 Host Context、Node 系统能力或 daemon 管理凭据 |
@@ -153,4 +154,4 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
 
-新会话选择优先级为显式参数、管理端默认值、profile 顶层 `loop: { id, version }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。
+新会话选择优先级为显式参数、管理端默认值、启用包的 `config.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。

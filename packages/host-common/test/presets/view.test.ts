@@ -61,6 +61,13 @@ describe('toPresetView', () => {
   })
   it('a bare doc gets exactly core presetDefaults, name aside', () => {
     expect(toPresetView({ name: 'bare' })).toEqual({ ...presetDefaults(), name: 'bare' })
+    const selected = toPresetView({
+      name: 'custom',
+      'tool-runtime': { provider: 'serial' },
+      'tool-policy': { provider: 'read-only' },
+    })
+    expect(selected.tools.runtime).toBe('serial')
+    expect(selected.approval.policy).toBe('read-only')
   })
 
   // Two documents that used to be accepted and silently ignored. Both are now refusals, because a

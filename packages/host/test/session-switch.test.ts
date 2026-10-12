@@ -120,7 +120,7 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
       user: {
         name: 'local-dev',
         presets: { default: 'standard', allowed: ['standard'] },
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes },
+        provider: { package: '@agnes/ai', routes },
       },
     },
     {
@@ -310,7 +310,7 @@ function twoRouteHostOptions(
     profileInputs: {
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+        provider: { package: '@agnes/ai', routes: TWO_ROUTES },
       },
     },
     provider,
@@ -510,7 +510,7 @@ describe('replaySwitchesOnOpen', () => {
           user: {
             name: 'local-dev',
             presets: { default: 'standard', allowed: ['standard', 'coding'] },
-            provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+            provider: { package: '@agnes/ai', routes: TWO_ROUTES },
           },
         },
       })
@@ -682,7 +682,6 @@ describe('setModel end to end through a real assembly', () => {
           name: 'local-dev',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [
               {
                 route: a.route,
@@ -769,7 +768,6 @@ describe('setModel end to end through a real assembly', () => {
           name: 'local-dev',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [
               {
                 route: a.route,

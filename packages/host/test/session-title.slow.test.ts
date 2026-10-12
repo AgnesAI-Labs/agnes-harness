@@ -106,7 +106,6 @@ async function fixture(
         name: 'local-dev',
         provider: {
           package: '@agnes/ai',
-          adapters: ['@agnes/ai'],
           routes: [
             {
               route: 'gw',

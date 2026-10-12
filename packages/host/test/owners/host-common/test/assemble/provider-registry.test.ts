@@ -168,21 +168,47 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
   await root.fiber.dispose()
 })
 
-it('normalizes canonical selections and aliases, preserves profile precedence and rejects conflicting config', () => {
-  expect(readProviderSelection('loop', { id: 'echo', version: '1.0.0' })).toEqual({
+it('accepts only canonical selections, ignores resolved identities and rejects conflicting config', () => {
+  expect(readProviderSelection('loop', { provider: 'echo', version: '1.0.0' })).toEqual({
     provider: 'echo',
     version: '1.0.0',
   })
-  expect(readProviderSelection('compaction', { engine: 'short' })).toEqual({ provider: 'short' })
+  expect(() => readProviderSelection('compaction', { engine: 'short' })).toThrow('requires')
+  expect(() => readProviderSelection('loop', { id: 'echo', version: '1.0.0' })).toThrow('requires')
   expect(() => readProviderSelection('loop', { provider: 'one', id: 'two' })).toThrow('requires')
   const profile = {
     loop: { id: 'pinned', version: '1.0.0' },
     packages: [
-      { enabled: true, config: { loop: { provider: 'echo' }, 'tool-policy': { provider: 'read-only' } } },
+      {
+        enabled: true,
+        config: { loop: { provider: 'echo' }, 'tool-policy': { provider: 'read-only', version: '1.0.0' } },
+      },
     ],
-  } as never
-  const selections = readProviderSelections(profile)
-  expect(selections.loop).toEqual({ provider: 'pinned', version: '1.0.0' })
+  }
+  const selections = readProviderSelections(profile as never)
+  expect(selections.loop).toEqual({ provider: 'echo' })
+  expect(
+    readProviderSelections({ packages: [], composition: { 'model-adapter': { provider: [] } } } as never)[
+      'model-adapter'
+    ],
+  ).toBeUndefined()
+  expect(
+    readProviderSelections({
+      ...profile,
+      composition: { loop: { provider: 'session', version: '2.0.0' } },
+      compositionSources: { loop: { layer: 'session', name: 'request' } },
+    } as never).loop,
+  ).toEqual({ provider: 'session', version: '2.0.0' })
+  expect(
+    readProviderSelections({
+      packages: [{ enabled: true, config: { 'model-adapter': { provider: ['chat', '@test/wire'] } } }],
+    } as never)['model-adapter'],
+  ).toEqual({ provider: ['chat', '@test/wire'] })
+  expect(() =>
+    readProviderSelections({
+      packages: [{ config: { 'model-adapter': { provider: ['chat', 'chat'] } } }],
+    } as never),
+  ).toThrow('unique ids')
   expect(
     readProviderSelections({
       packages: [{ enabled: true, config: { memory: { provider: 'enterprise', version: '2.0.0' } } }],
@@ -195,7 +221,8 @@ it('normalizes canonical selections and aliases, preserves profile precedence an
     } as never).compaction,
   ).toBeUndefined()
   expect(applyProviderPreset({ name: 'standard', approval: { timeout_ms: 10 } }, selections)).toMatchObject({
-    approval: { policy: 'read-only', timeout_ms: 10 },
+    approval: { timeout_ms: 10 },
+    'tool-policy': { provider: 'read-only' },
   })
   for (const kind of ['sandbox', 'memory'])
     expect(() =>

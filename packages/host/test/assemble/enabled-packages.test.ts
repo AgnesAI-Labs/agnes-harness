@@ -87,7 +87,7 @@ async function setup(projections = false) {
               },
             }
           : {}),
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
+        provider: { package: '@agnes/ai', routes: [route] },
       },
     },
     {

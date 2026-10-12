@@ -155,7 +155,8 @@ export async function buildProvider(
   }
   try {
     const catalog = modelAdapters.catalog()
-    const selectedApis = profile.composition?.modelAdapters
+    const adapterChoice = profile.composition?.['model-adapter']?.provider
+    const selectedApis = typeof adapterChoice === 'string' ? [adapterChoice] : adapterChoice
     const allowsApi = (api: string) => !selectedApis?.length || selectedApis.includes(api)
     for (const id of profile.provider.adapters)
       if (!catalog.some((entry) => entry.id === id || entry.sourcePackage === id))

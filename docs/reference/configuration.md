@@ -42,8 +42,9 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | --- | --- |
 | `name`, `schemaVersion`, `extends` | Identity, version, inheritance; current templates use schemaVersion 1 |
 | `packages` | Sources, enablement, configuration; PackageManager still owns installation and trust |
+| `packages[].config` | Provider selections: `<kind>: { provider, version? }` |
 | `seams` | Ownership of required seam implementations; not an unrestricted plugin registration API |
-| `provider` | package/adapters/routes/catalog/contract; route name `default` is a reserved sentinel |
+| `provider` | package/routes/catalog/contract; route name `default` is a reserved sentinel |
 | `adapters` | storage/fs/exec/platform/secrets selection |
 | `persistence` | `{ provider: id }`. Default `sqlite`, and that default is omitted from the resolved profile. User profile only. Changing it is restart-required. The profile schema and Host user-layer validation accept this field. |
 | `transports` | stdio/unix/ws-tls; remote configuration also needs certificates and authentication |
@@ -58,11 +59,14 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | `limits` | Supported dotted keys for daemon/worker/jobs/shutdown and other limits |
 | `sandbox.provider` | Startup sandbox provider id, default `local`. Changing it requires a process restart. See [Sandbox providers](../guide/sandbox-providers.md) |
 
+Provider choices live in enabled package `config.<kind>: { provider, version? }`; `model-adapter.provider` accepts one registration/source package or a unique list. Presets use `tool-runtime` / `tool-policy: { provider }`. Bundle composition uses the same provider blocks, with an exact loop version. Root `loop`, `compaction`, `provider.adapters` and preset `tools.runtime` / `approval.policy` are rejected.
+
 Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host-common/src/profile/types.ts), [local-dev template](../../packages/host-common/templates/local-dev.yaml), and [enterprise template](../../packages/host-common/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 
 <a id="模型与密钥"></a>
 
 The `limits` key `worker.generation_idle_close_ms` controls how long a retired plugin container with no open sessions stays in memory (default 60,000 ms). It accepts a non-negative integer; 0 collects immediately. This does not expire durable pins or disk snapshots.
+
 
 ## Models and secrets
 

@@ -5,6 +5,7 @@ import {
   assertCompositionCompatible,
   type CompositionCatalog,
   checkCompositionPatch,
+  checkResolvedCompositionSelection,
   compositionDump,
   expandBundles,
   parsePackageBundles,
@@ -45,7 +46,10 @@ const catalog = parsePackageBundles('acme/research', {
   },
   research: {
     extends: ['acme/research#base'],
-    profile: { loop: { id: 'example.dag', version: '1.0.0' }, compaction: { engine: 'sliding-window' } },
+    profile: {
+      loop: { provider: 'example.dag', version: '1.0.0' },
+      compaction: { provider: 'sliding-window' },
+    },
     presets: { research: { name: 'research', extends: 'standard', composition: { tools: ['lookup'] } } },
   },
 })
@@ -218,7 +222,7 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     resolveComposition(
       { ...profile, bundles: [], composition: {}, loop: { id: 'agnes.default', version: '1.0.0' } },
       {
-        session: { loop: { id: 'example.dag', version: '1.0.0' } },
+        session: { loop: { provider: 'example.dag', version: '1.0.0' } },
       },
     ).toolScope?.activePackages,
   ).toEqual(['acme/research'])
@@ -232,7 +236,7 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
       bundleCatalog: {
         ...catalog,
         ...parsePackageBundles('acme/shared-default', {
-          demo: { profile: { loop: defaultLoop } },
+          demo: { profile: { loop: { provider: defaultLoop.id, version: defaultLoop.version } } },
         }),
       },
     }).toolScope?.activePackages,
@@ -283,8 +287,27 @@ it('fails closed for cycles, unknown bundles, registrations and missing capabili
 })
 
 it('rejects executable, malformed and dangerous patches before reading their fields', () => {
+  const pinned = {
+    loop: { id: 'echo', version: '1.0.0' },
+    compaction: { engine: 'default' },
+    modelAdapters: ['chat'],
+  }
+  expect(checkResolvedCompositionSelection(pinned)).toEqual(pinned)
+  expect(checkResolvedCompositionSelection({ compaction: null })).toEqual({ compaction: null })
+  expect(() => checkResolvedCompositionSelection({ modelAdapters: 'chat' })).toThrow()
+  expect(() => checkResolvedCompositionSelection({ loop: { provider: 'echo', version: '1.0.0' } })).toThrow()
   expect(() => checkCompositionPatch({ toolPolicy: { readOnly: 'yes' } })).toThrow('toolPolicy')
   expect(() => checkCompositionPatch({ tools: ['lookup', 'lookup'] })).toThrow('tools')
+  for (const old of [
+    { loop: { id: 'echo', version: '1.0.0' } },
+    { compaction: { engine: 'default' } },
+    { modelAdapters: ['echo'] },
+    { 'model-adapter': { provider: ['echo', 'echo'] } },
+  ])
+    expect(() => checkCompositionPatch(old)).toThrow()
+  expect(checkCompositionPatch({ 'model-adapter': { provider: ['chat', 'messages'] } })).toEqual({
+    'model-adapter': { provider: ['chat', 'messages'] },
+  })
   expect(() => checkCompositionPatch({ plugins: JSON.parse('{"__proto__":{"enabled":true}}') })).toThrow()
   expect(() =>
     checkCompositionPatch({
@@ -336,7 +359,7 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
     }),
   ).toThrow('unknown package acme/unknown')
   const next = resolveComposition(profile, {
-    preset: { name: 'research', composition: { compaction: { engine: 'sliding-window' } } },
+    preset: { name: 'research', composition: { compaction: { provider: 'sliding-window' } } },
   })
   expect(() => assertCompositionCompatible(baseline, next)).toThrow('separate Host generation')
   const compiled = profileForComposition(profile, next)
@@ -348,7 +371,7 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
     validateProfileManifest({
       name: 'local-dev',
       bundles: ['acme/research#research'],
-      composition: next.selection,
+      composition: compiled.composition,
     }).ok,
   ).toBe(true)
   expect(validatePreset({ name: 'research', composition: { toolPolicy: { readOnly: true } } }).ok).toBe(true)
@@ -392,15 +415,15 @@ it('canonicalizes the documented default loop alias before catalog validation an
   }
   const alias = resolveComposition(profile, {
     ...options,
-    session: { loop: { id: 'default', version: '1.0.0' } },
+    session: { loop: { provider: 'default', version: '1.0.0' } },
   })
   const canonical = resolveComposition(profile, {
     ...options,
-    session: { loop: { id: 'agnes.default', version: '1.0.0' } },
+    session: { loop: { provider: 'agnes.default', version: '1.0.0' } },
   })
   expect(alias.selection.loop).toEqual({ id: 'agnes.default', version: '1.0.0' })
   expect(alias.hash).toBe(canonical.hash)
   expect(() =>
-    resolveComposition(profile, { ...options, session: { loop: { id: 'default', version: '2.0.0' } } }),
+    resolveComposition(profile, { ...options, session: { loop: { provider: 'default', version: '2.0.0' } } }),
   ).toThrow('unknown loop')
 })

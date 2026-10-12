@@ -491,14 +491,57 @@ describe('resolveProfile, the fields finalize decides', () => {
       ['@agnes/code', false],
     ])
   })
-  // A YAML manifest cannot spell an explicit undefined, so the cast is how a test reaches the
-  // fallback at all: a provider that names no adapters offers itself, not nothing.
-  it('defaults provider.adapters to the provider package rather than to nothing', async () => {
-    const user = {
-      name: 'x',
-      provider: { package: '@agnes/code', adapters: undefined },
-    } as unknown as RuntimeProfileManifest
+  it('defaults adapter inclusion to the provider package and refuses the removed input field', async () => {
+    const user = { name: 'x', provider: { package: '@agnes/code' } }
     const p = await resolveProfile({ builtin: 'local-dev', lock, user }, env)
     expect(p.provider).toMatchObject({ package: '@agnes/code', adapters: ['@agnes/code'] })
+    const selected = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock,
+        user: {
+          name: 'x',
+          packages: [
+            {
+              id: '@agnes/ai',
+              source: 'builtin',
+              config: {
+                'model-adapter': { provider: ['chat', 'messages'] },
+                loop: { provider: 'custom', version: '2.0.0' },
+                compaction: { provider: 'short' },
+              },
+            },
+          ],
+        },
+      },
+      env,
+    )
+    expect(selected.provider.adapters).toEqual(['chat', 'messages'])
+    expect(selected.loop).toEqual({ id: 'custom', version: '2.0.0' })
+    expect(selected.compaction).toEqual({ engine: 'short' })
+    for (const removed of [{ loop: { id: 'custom', version: '2.0.0' } }, { compaction: { engine: 'short' } }])
+      await expect(
+        resolveProfile(
+          {
+            builtin: 'local-dev',
+            lock,
+            user: { name: 'x', ...removed } as unknown as RuntimeProfileManifest,
+          },
+          env,
+        ),
+      ).rejects.toThrow('enabled package config')
+    await expect(
+      resolveProfile(
+        {
+          builtin: 'local-dev',
+          lock,
+          user: {
+            name: 'x',
+            provider: { package: '@agnes/code', adapters: [] },
+          } as unknown as RuntimeProfileManifest,
+        },
+        env,
+      ),
+    ).rejects.toThrow('provider.adapters was removed')
   })
 })

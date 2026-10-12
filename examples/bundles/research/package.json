@@ -23,11 +23,11 @@
         ],
         "profile": {
           "loop": {
-            "id": "example.dag",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "provider": "example.dag"
           },
           "compaction": {
-            "engine": "sliding-window"
+            "provider": "sliding-window"
           },
           "packages": [
             {

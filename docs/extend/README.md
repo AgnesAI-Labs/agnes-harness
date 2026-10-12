@@ -13,9 +13,9 @@ Choose the smallest starter that owns your behavior. All five [templates](../../
 | Tool | [tool](../../templates/tool/) | TypeBox input/result schemas, execution signal and unload cleanup |
 | Tool with panel | [tool-with-panel](../../templates/tool-with-panel/) | The same tool plus a separate browser sidebar slot |
 | MCP and Skills | [mcp-skills](../../templates/mcp-skills/) | MCP definition and a packaged Skill registered through the Skills service |
-| Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `modelAdapters` |
+| Model adapter | [model-adapter](../../templates/model-adapter/) | Structural adapter registered through `ctx.providers.register` |
 | Loop | [loop](../../templates/loop/) | Independent one-turn driver, checkpoint codec and `loops` registration |
-| Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `compactionEngines`; see [Compaction engines](compaction-engines.md) |
+| Compaction engine | [sliding-window](../../examples/compaction/sliding-window/) | Context replacement through `ctx.providers.register`; see [Compaction engines](compaction-engines.md) |
 | Child agent | [ACP child](../../examples/child-agents/acp/) | Continuable children through `childAgents`; see [Child agent providers](child-agents.md) |
 | Persistence | [JSONL](../../examples/persistence/) | Full Host persistence without SQL; see [Persistence providers](persistence.md) |
 

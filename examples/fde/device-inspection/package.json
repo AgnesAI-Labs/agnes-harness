@@ -83,8 +83,8 @@
       "device-inspection": {
         "profile": {
           "loop": {
-            "id": "fde.device-inspection",
-            "version": "4.0.0"
+            "version": "4.0.0",
+            "provider": "fde.device-inspection"
           },
           "skills": [
             "device-inspection"

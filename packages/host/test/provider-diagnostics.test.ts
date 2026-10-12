@@ -30,9 +30,10 @@ it('keeps managed account routes revoked across hot updates and cold Host rebuil
     await host.applyModelProfile(initial)
     expect(host.provider.models().some((model) => model.route === 'deepseek')).toBe(false)
     await host.close()
+    const { adapters: _adapters, ...provider } = initial.provider
     ;({ host } = await createTestHost({
       dataDir,
-      profileInputs: { user: { name: initial.name, provider: initial.provider } },
+      profileInputs: { user: { name: initial.name, provider } },
     }))
     expect(host.provider.models().some((model) => model.route === 'deepseek')).toBe(false)
     expect(() =>
@@ -143,7 +144,6 @@ it('leaves a profile-owned route in place when it shares a built-in API-key rout
         name: 'profile-owned-deepseek',
         provider: {
           package: '@agnes/ai',
-          adapters: ['@agnes/ai'],
           routes: [
             {
               route: 'deepseek',

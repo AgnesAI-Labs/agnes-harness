@@ -37,7 +37,6 @@ function deps(adapter: FakeAdapter): LocalBootDeps {
               name: 'local-dev',
               provider: {
                 package: '@agnes/ai',
-                adapters: ['@agnes/ai'],
                 routes: [
                   {
                     route: 'agnes-gateway',

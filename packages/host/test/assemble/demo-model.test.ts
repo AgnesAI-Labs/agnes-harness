@@ -5,6 +5,7 @@ import { fakeRequest } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { presetDefaults } from '@agnes/core'
 import { demoProvider } from '@agnes/host-common/profile/demo'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { loadTemplate } from '@agnes/host-common/profile/templates'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import {
@@ -23,11 +24,14 @@ import { fixtureTool } from '../fixtures/tool.js'
 
 it('runs the fresh local-dev demo through registry and provider without credentials, across repeated turns', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'agh-demo-session-'))
-  const profile = {
-    ...loadTemplate('local-dev'),
-    provider: demoProvider(),
-    dataDir,
-  } as ResolvedProfile
+  const profile = await resolveProfile(
+    { builtin: 'local-dev', user: { name: 'local-dev', provider: demoProvider(), dataDir } },
+    {
+      platform: { os: 'linux', arch: 'x64', capabilities: {} },
+      agnesVersion: '0.1.0',
+      now: '2026-10-12',
+    },
+  )
   const routes = materializeRoutes(presetDefaults(), profile)
   expect(routes.primary).toEqual({ route: 'demo', model: 'demo-model' })
   const root = new Context()
@@ -197,15 +201,20 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
     for (const override of [
       { profile: 'enterprise' },
       { lock: { packages: {} } },
-      { configuration: { composition: { loop: { id: 'custom', version: '1' } } } },
-      { configuration: { provider: { package: '@agnes/ai', adapters: ['custom'] } } },
+      { configuration: { composition: { loop: { provider: 'custom', version: '1' } } } },
+      {
+        configuration: {
+          packages: [
+            { id: '@agnes/ai', source: 'builtin:ai', config: { 'model-adapter': { provider: 'custom' } } },
+          ],
+        },
+      },
     ]) {
       const inputs = await readConfigurationProfileInputs({ ...options, demoFallback: true, ...override })
       expect(inputs.user?.provider?.routes).toBeUndefined()
     }
     const configured = {
       package: '@agnes/ai',
-      adapters: ['scripted'],
       routes: [{ route: 'configured', api: 'scripted', baseUrl: 'https://demo.invalid' }],
     }
     expect(

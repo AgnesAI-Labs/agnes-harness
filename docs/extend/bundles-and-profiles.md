@@ -29,8 +29,8 @@ Declare `agnes.kinds: ["bundle"]` and an `agnes.bundles` map in `package.json`. 
       "research": {
         "extends": ["acme/research#base"],
         "profile": {
-          "loop": { "id": "example.dag", "version": "1.0.0" },
-          "compaction": { "engine": "sliding-window" }
+          "loop": { "provider": "example.dag", "version": "1.0.0" },
+          "compaction": { "provider": "sliding-window" }
         },
         "presets": { "research": { "name": "research", "extends": "standard" } }
       }
@@ -52,13 +52,13 @@ composition:
     deny: ["network_search"]
 ```
 
-The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. Existing top-level `loop`, `compaction.engine`, `persistence.provider` and `sandbox.provider` fields retain compatibility and override their corresponding profile composition fields. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
+The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. Root `persistence.provider` and `sandbox.provider` override the corresponding profile composition fields. Select loops and compaction through canonical provider blocks in package config or composition; root `loop` and `compaction` are rejected. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
 
 | Patch field | Meaning |
 | --- | --- |
-| `loop` | Exact `{id, version}` selection |
-| `modelAdapters` | Adapter registration ids available to the composed model routes; activate registrations with package or plugin rows |
-| `compaction` | `{engine}` selection; `null` disables compaction |
+| `loop` | Exact `{provider, version}` selection |
+| `model-adapter` | `{provider: id}` or `{provider: [ids]}` selects registration ids; activate registrations with package or plugin rows; an empty list keeps defaults |
+| `compaction` | `{provider}` selection; `null` disables compaction |
 | `persistence`, `sandbox` | `{provider}` selection; uses the Host provider catalog; defaults are `sqlite` and `local` |
 | `packages` | Package references merged by id; lock/trust and capability ceilings still apply |
 | `plugins` | Ordinary row ids mapped to `{enabled, config}`; row config replaces as a whole |

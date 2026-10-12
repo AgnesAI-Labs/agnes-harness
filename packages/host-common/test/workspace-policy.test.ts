@@ -69,7 +69,7 @@ describe('Host workspace policy compiler', () => {
     const readOnly = await compile(
       '/work',
       {
-        approval: { policy: 'read-only' },
+        'tool-policy': { provider: 'read-only' },
         sandbox: { level: 'L1', required: true },
       },
       protectedPaths,
@@ -77,7 +77,7 @@ describe('Host workspace policy compiler', () => {
     const writable = await compile(
       '/work',
       {
-        approval: { policy: 'default' },
+        'tool-policy': { provider: 'default' },
         sandbox: { level: 'L1', required: true },
       },
       protectedPaths,
@@ -85,7 +85,7 @@ describe('Host workspace policy compiler', () => {
     const full = await compile(
       '/work',
       {
-        approval: { policy: 'full-access' },
+        'tool-policy': { provider: 'full-access' },
         sandbox: { level: 'L0', on_unavailable: 'allow' },
       },
       protectedPaths,

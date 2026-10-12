@@ -250,9 +250,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
             name: 'local-dev',
             composition: {},
             packages: [{ id, source: 'author-fixture' }],
-            ...(primary
-              ? { provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [...routes.values()] } }
-              : {}),
+            ...(primary ? { provider: { package: '@agnes/ai', routes: [...routes.values()] } } : {}),
           },
         },
         ...(primary

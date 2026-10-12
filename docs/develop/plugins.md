@@ -94,7 +94,7 @@ A value published by `ctx.provide('name', value)` belongs to the current Context
 
 An ordinary trusted plugin can inject `providers` and call `ctx.providers.register('model-adapter', packageName, adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
 
-Configure `provider.adapters` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
+Configure `config['model-adapter'].provider` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
 
 The instance streams wire events; the existing AI facade continues to own stamps, tool-call recovery and usage accounting. Credentialed structural instances implement `bindCredential`; Host resolves secrets before inference. `dispose()` releases instance resources, and optional registration `cleanup()` releases shared resources. Both run when the owning plugin unloads. Duplicate ids and unavailable selections are refused.
 
@@ -106,7 +106,7 @@ A full Host provider implements ledger, metadata, child control, reclaim and int
 
 ## Child agent providers
 
-A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineProviderKind`. Register it through `ctx.providers.register('child-agent', sourcePackage, provider)` or the `childAgents` facade. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
+A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineProviderKind`. Register it through `ctx.providers.register('child-agent', sourcePackage, provider)`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
 
 The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
 
@@ -121,7 +121,8 @@ When fitted, `LoopContext.children` is the parent-bound `ChildAgentSessionServic
 | Interface | Capabilities | Boundary |
 | --- | --- | --- |
 | Ordinary Cordis Context | Plugins, services, events, and effect lifecycle | In-process services do not automatically become cross-process RPC |
-| `ctx.extension()` / PluginExtensionAPI | Tools, `on` observation hooks, `registerHook` transform/intercept hooks, and constrained events | Cannot register Service/Projection/Slot/Resource through this API; runtime permissions and ordering still apply |
+| `ctx.tools` | `register(tool)`, owned by the calling plugin lifecycle | Uses the same validation and permission boundary as official tools |
+| `ctx.extension()` / PluginExtensionAPI | `on` observation hooks, `registerHook` transform/intercept hooks, and constrained events | Cannot register Service/Projection/Slot/Resource through this API; runtime permissions and ordering still apply |
 | `ctx.skills` | Runtime Skill contributions and providers | Cannot read/enumerate other Skills; separate from disk governance |
 | Row `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | Corresponding contributions on verified rows, cleaned up with the row fiber | Not unconditional global objects; service calls still require identity, session, and client allow-list checks |
 | Browser ClientContext | Declared slots, frontend services/commands, and constrained backend service relay | No Host Context, Node system capabilities, or daemon management credentials |
@@ -169,6 +170,6 @@ For continuable children, read events through `idle` to delimit a reply; `result
 
 Honor abort signals and make disposal idempotent. Session close stops admission, cancels and drains active driver/tool work, allows final writes, then shuts down hooks, the log and workspace lease. Releasing an inactive ledger continuation preserves it for later resume.
 
-Choose a loop for a new session with profile `loop: { "id": "example.dag", "version": "1.0.0" }`, the admin defaults API, SDK `client.createSession({ cwd, loop })` (also `client.session.new({ cwd, loop })`), or `agh -p "prompt" --loop example.dag@1.0.0`. Explicit selection wins over the persisted admin default, which wins over the resolved profile and `agnes.default@1.0.0`. Session start pins the identity; changes to defaults affect new sessions. Legacy sessions map to the default identity. Missing selected or persisted loops fail before session start; resume never substitutes another loop.
+Choose a loop for a new session with an enabled package's `config.loop: { "provider": "example.dag", "version": "1.0.0" }`, the admin defaults API, SDK `client.createSession({ cwd, loop })` (also `client.session.new({ cwd, loop })`), or `agh -p "prompt" --loop example.dag@1.0.0`. Explicit selection wins over the persisted admin default, which wins over the resolved profile and `agnes.default@1.0.0`. Session start pins the identity; changes to defaults affect new sessions. Legacy sessions map to the default identity. Missing selected or persisted loops fail before session start; resume never substitutes another loop.
 
 See [the standalone DAG example](../../examples/loops/dag-loop/README.md) for model planning, parallel tool waves, joins and guarded checkpoint recovery. It imports no Core or Host scheduling internals.

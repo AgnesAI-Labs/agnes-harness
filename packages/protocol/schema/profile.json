@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/profile.json",
-  "title": "Profile shapes (\u89c4\u683c \u00a718.2)",
+  "title": "Profile shapes (规格 §18.2)",
   "$defs": {
     "CompositionPatch": {
       "type": "object",
@@ -10,31 +10,20 @@
         "loop": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["id", "version"],
+          "required": ["provider", "version"],
           "properties": {
-            "id": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            },
             "version": {
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
               "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            },
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
             }
-          }
-        },
-        "modelAdapters": {
-          "type": "array",
-          "maxItems": 256,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 512,
-            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
           }
         },
         "compaction": {
@@ -43,14 +32,14 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "engine": {
+                "provider": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 512,
                   "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
                 }
               },
-              "required": ["engine"]
+              "required": ["provider"]
             },
             {
               "type": "null"
@@ -184,7 +173,9 @@
           "type": "array",
           "maxItems": 3,
           "uniqueItems": true,
-          "items": { "enum": ["web", "acp", "http"] }
+          "items": {
+            "enum": ["web", "acp", "http"]
+          }
         },
         "shell": {
           "type": "object",
@@ -194,13 +185,48 @@
               "type": "array",
               "maxItems": 256,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
             },
             "slots": {
               "type": "array",
               "maxItems": 256,
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "model-adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider"],
+          "properties": {
+            "provider": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "array",
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                  }
+                }
+              ]
             }
           }
         }
@@ -698,19 +724,6 @@
         "composition": {
           "$ref": "#/$defs/CompositionPatch"
         },
-        "compaction": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "engine": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          },
-          "required": ["engine"]
-        },
         "persistence": {
           "type": "object",
           "additionalProperties": false,
@@ -736,25 +749,6 @@
             }
           },
           "required": ["provider"]
-        },
-        "loop": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["id", "version"],
-          "properties": {
-            "id": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            },
-            "version": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          }
         },
         "name": {
           "type": "string",
@@ -818,12 +812,6 @@
           "properties": {
             "package": {
               "type": "string"
-            },
-            "adapters": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             },
             "routes": {
               "type": "array",
@@ -1126,12 +1114,20 @@
             "bundlePackages": {
               "type": "array",
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
             },
             "activePackages": {
               "type": "array",
               "uniqueItems": true,
-              "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
             }
           }
         },

@@ -14,7 +14,7 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 
 | Task | Import package | Exported symbols | Surface / use |
 | --- | --- | --- | --- |
-| Define a tool and its plugin | `@agnes/plugin-runtime` | `defineAgnesPlugin`, `defineTool`, `toolError`, `toolCancelled`; types `Context`, `TypedToolDef`, `TypedToolResult` | Author. Inject `tools`, then call `ctx.tools.register(tool)`; [tool starter](../../templates/tool/src/index.ts). |
+| Define a tool and its plugin | `@agnes/plugin-runtime` | `defineAgnesPlugin`, `defineTool`, `readOnlyTool`, `writeTool`, `toolError`, `toolCancelled`; types `Context`, `TypedToolDef`, `TypedToolResult` | Author. Inject `tools`, then call `ctx.tools.register(tool)`; [tool starter](../../templates/tool/src/index.ts). |
 | Describe tool inputs, results and invocation ports | `@agnes/extension-api` | Types `ToolDef`, `ToolMeta`, `ToolContext`, `ToolResult`, `PluginExtensionAPI` | Author contracts. The only `defineTool` is exported by `@agnes/plugin-runtime`, for official and community authors. |
 | Build TypeBox schemas | `@sinclair/typebox` | `Type`; types `Static`, `TSchema` | Author. Schemas must carry TypeBox Kind symbols; plain JSON Schema is insufficient for tool inputs. |
 | Validate or compile a schema | `@sinclair/typebox/value`, `@sinclair/typebox/compiler` | `Value`, `TypeCompiler`, respectively | Author, when needed. These are separate subpaths, not exports of Agnes helpers. |
@@ -45,7 +45,7 @@ These are the six service-kind tokens in the Host-provided public author namespa
 | Deferred tool queue | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 | Deferred invocation producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
-`ServiceAuthorPort.bindOwn(kind)` binds the admitted owner's instance when that port is available. A Loop uses its optional `LoopContext.services.get(kind)` reader and must handle an absent service. Ordinary `ctx.extension()` exposes `PluginExtensionAPI` with the same controlled `providers.register` and `providers.bindOwn` facade as official extensions. Host admission, owner and source-package checks apply to both. Some tokens are for Host-owned services; their presence in a public namespace does not make every instance callable by every plugin.
+`ServiceAuthorPort.bindOwn(kind)` binds the admitted owner's instance when that port is available. A Loop uses its optional `LoopContext.services.get(kind)` reader and must handle an absent service. Ordinary plugins register through `ctx.providers.register(kind, packageId, provider)` and bind through `ctx.providers.bindOwn(kind)`. Host admission, owner and source-package checks apply to both. Some tokens are for Host-owned services; their presence in a public namespace does not make every instance callable by every plugin.
 
 `memoryKind`, `systemPromptKind` and `webhookTriggerKind` are also exported from `@agnes/extension-api`. They are **provider registration tokens**, not `ServiceKind` tokens for `bindOwn` or the Loop service reader. Use their corresponding provider contracts and registration paths.
 

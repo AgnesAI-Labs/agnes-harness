@@ -19,9 +19,9 @@ export type CompositionSource = Readonly<{
   name: string
 }>
 export type CompositionPatch = {
-  loop?: LoopSelection
-  modelAdapters?: string[]
-  compaction?: { engine: string } | null
+  loop?: { provider: string; version: string }
+  'model-adapter'?: { provider: string | string[] }
+  compaction?: { provider: string } | null
   persistence?: { provider: string }
   sandbox?: { provider: string }
   packages?: PackageRef[]
@@ -35,6 +35,29 @@ export type CompositionPatch = {
   surfaces?: ('web' | 'acp' | 'http')[]
   shell?: { modules?: string[]; slots?: string[] }
 }
+/** Exact backend identities retained in session pins and capability snapshots. */
+export type ResolvedCompositionSelection = Omit<CompositionPatch, 'loop' | 'compaction' | 'model-adapter'> & {
+  modelAdapters?: string[]
+  loop?: LoopSelection
+  compaction?: { engine: string } | null
+}
+
+function bindProviderSelections(patch: CompositionPatch): ResolvedCompositionSelection {
+  const { loop, compaction, 'model-adapter': adapters, ...rest } = patch
+  return {
+    ...rest,
+    ...(adapters
+      ? {
+          modelAdapters: typeof adapters.provider === 'string' ? [adapters.provider] : [...adapters.provider],
+        }
+      : {}),
+    ...(loop ? { loop: { id: loop.provider, version: loop.version } } : {}),
+    ...(compaction === undefined
+      ? {}
+      : { compaction: compaction === null ? null : { engine: compaction.provider } }),
+  }
+}
+
 export type BundleDocument = {
   extends?: string[]
   profile?: CompositionPatch
@@ -57,7 +80,7 @@ export type ResolvedComposition = Readonly<{
   preset: string
   bundles: readonly string[]
   sessionBundles?: readonly string[]
-  selection: CompositionPatch
+  selection: ResolvedCompositionSelection
   sources: Readonly<Record<string, CompositionSource>>
   rows: readonly CompositionRow[]
   /** Compiled ownership, pinned with the composition; absent on pre-isolation bindings. */
@@ -78,7 +101,7 @@ const list = (value: unknown): value is string[] =>
 const safeKey = (key: string) => !['__proto__', 'constructor', 'prototype'].includes(key)
 const fields = new Set([
   'loop',
-  'modelAdapters',
+  'model-adapter',
   'compaction',
   'persistence',
   'sandbox',
@@ -99,7 +122,16 @@ export function checkCompositionPatch(value: unknown): CompositionPatch {
   if (!inspected.ok) fail('patch must be JSON data')
   value = inspected.value
   if (!map(value) || Object.keys(value).some((key) => !fields.has(key))) fail('invalid patch fields')
-  for (const field of ['modelAdapters', 'tools', 'mcp', 'skills', 'uiModules'])
+  if (value['model-adapter'] !== undefined) {
+    const adapter = value['model-adapter']
+    if (
+      !map(adapter) ||
+      Object.keys(adapter).some((key) => key !== 'provider') ||
+      !(text(adapter.provider) || list(adapter.provider))
+    )
+      fail('invalid model-adapter.provider')
+  }
+  for (const field of ['tools', 'mcp', 'skills', 'uiModules'])
     if (value[field] !== undefined && !list(value[field])) fail(`invalid ${field}`)
   if (
     value.surfaces !== undefined &&
@@ -117,13 +149,13 @@ export function checkCompositionPatch(value: unknown): CompositionPatch {
   if (
     value.loop !== undefined &&
     (!map(value.loop) ||
-      !text(value.loop.id) ||
+      !text(value.loop.provider) ||
       !text(value.loop.version) ||
-      Object.keys(value.loop).some((key) => !['id', 'version'].includes(key)))
+      Object.keys(value.loop).some((key) => !['provider', 'version'].includes(key)))
   )
-    fail('loop requires id and version')
+    fail('loop requires provider and version')
   for (const [field, key] of [
-    ['compaction', 'engine'],
+    ['compaction', 'provider'],
     ['persistence', 'provider'],
     ['sandbox', 'provider'],
   ] as const) {
@@ -236,7 +268,50 @@ export function expandBundles(ids: readonly string[], catalog: BundleCatalog): r
   return result
 }
 
-export function mergeComposition(base: CompositionPatch, patch: CompositionPatch): CompositionPatch {
+/** Validate the backend's pinned identity representation, not author configuration. */
+export function checkResolvedCompositionSelection(value: unknown): ResolvedCompositionSelection {
+  const inspected = inspectJsonData(value, 1_048_576)
+  if (!inspected.ok) fail('resolved selection must be JSON data')
+  value = inspected.value
+  if (!map(value)) fail('resolved selection must be an object')
+  if (
+    Object.hasOwn(value, 'model-adapter') ||
+    (value.modelAdapters !== undefined && !list(value.modelAdapters))
+  )
+    fail('invalid resolved model adapter identity')
+  const loop = value.loop
+  const compaction = value.compaction
+  if (loop !== undefined && (!map(loop) || Object.keys(loop).some((key) => !['id', 'version'].includes(key))))
+    fail('invalid resolved loop identity')
+  if (
+    compaction !== undefined &&
+    compaction !== null &&
+    (!map(compaction) || Object.keys(compaction).some((key) => key !== 'engine'))
+  )
+    fail('invalid resolved compaction identity')
+  return bindProviderSelections(
+    checkCompositionPatch({
+      ...Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'modelAdapters')),
+      ...(value.modelAdapters === undefined ? {} : { 'model-adapter': { provider: value.modelAdapters } }),
+      ...(loop === undefined
+        ? {}
+        : {
+            loop: {
+              provider: (loop as Record<string, unknown>).id,
+              version: (loop as Record<string, unknown>).version,
+            },
+          }),
+      ...(compaction === undefined || compaction === null
+        ? {}
+        : { compaction: { provider: (compaction as Record<string, unknown>).engine } }),
+    }),
+  )
+}
+
+export function mergeComposition<T extends CompositionPatch | ResolvedCompositionSelection>(
+  base: T,
+  patch: T,
+): T {
   const result = { ...base, ...patch }
   if (patch.packages) {
     const packages = new Map((base.packages ?? []).map((pkg) => [pkg.id, pkg]))
@@ -249,12 +324,12 @@ export function mergeComposition(base: CompositionPatch, patch: CompositionPatch
       result.plugins[id] = { ...result.plugins[id], ...row }
   }
   if (patch.toolPolicy) result.toolPolicy = { ...base.toolPolicy, ...patch.toolPolicy }
-  return result
+  return result as T
 }
 
 function applySource(
   sources: Record<string, CompositionSource>,
-  patch: CompositionPatch,
+  patch: CompositionPatch | ResolvedCompositionSelection,
   source: CompositionSource,
 ) {
   for (const [field, value] of Object.entries(patch)) {
@@ -291,7 +366,7 @@ export function prepareProfileComposition(
   const direct = checkCompositionPatch(manifest.composition ?? {})
   patch = mergeComposition(patch, direct)
   applySource(sources, direct, { layer: 'profile', name: manifest.name })
-  for (const key of ['loop', 'compaction', 'persistence', 'sandbox'] as const) {
+  for (const key of ['persistence', 'sandbox'] as const) {
     if (manifest[key] !== undefined && (key !== 'sandbox' || manifest.sandbox?.provider !== undefined)) {
       patch = mergeComposition(patch, { [key]: manifest[key] })
       sources[key] = { layer: 'profile', name: manifest.name }
@@ -309,8 +384,6 @@ export function prepareProfileComposition(
   return {
     manifest: {
       ...manifest,
-      ...(patch.loop ? { loop: patch.loop } : {}),
-      ...(patch.compaction ? { compaction: patch.compaction } : {}),
       ...(patch.persistence ? { persistence: patch.persistence } : {}),
       ...(patch.sandbox ? { sandbox: patch.sandbox } : {}),
       ...(patch.packages ? { packages: patch.packages } : {}),
@@ -342,7 +415,7 @@ export function resolveComposition(
   const preset = options.preset?.name ?? profile.presets.default
   const sessionBundles = options.sessionBundles ?? profile.sessionComposition?.bundles
   if (!profile.presets.allowed.includes(preset)) fail(`preset ${preset} is not allowed`)
-  let selection: CompositionPatch = {
+  let selection: ResolvedCompositionSelection = {
     loop: profile.loop ?? DEFAULT_LOOP,
     compaction:
       profile.compaction ??
@@ -366,15 +439,20 @@ export function resolveComposition(
       layer: pkg.trust === 'builtin' ? 'default' : 'profile',
       name: profile.name,
     }
-  selection = mergeComposition(selection, profile.composition ?? {})
+  selection = mergeComposition(selection, bindProviderSelections(profile.composition ?? {}))
   Object.assign(sources, profile.compositionSources)
-  for (const key of ['loop', 'compaction', 'persistence', 'sandbox'] as const)
+  if (sources['model-adapter']) {
+    sources.modelAdapters = sources['model-adapter']
+    delete sources['model-adapter']
+  }
+  for (const key of ['persistence', 'sandbox'] as const)
     if (profile[key] !== undefined && (!sources[key] || sources[key]?.layer === 'default'))
       sources[key] = { layer: 'profile', name: profile.name }
   const bundles = [...(profile.bundles ?? [])]
   const apply = (patch: CompositionPatch, source: CompositionSource) => {
-    selection = mergeComposition(selection, checkCompositionPatch(patch))
-    applySource(sources, patch, source)
+    const bound = bindProviderSelections(checkCompositionPatch(patch))
+    selection = mergeComposition(selection, bound)
+    applySource(sources, bound, source)
   }
   const bundleLayer = (ids: readonly string[], layer: 'preset' | 'admin' | 'session') => {
     for (const entry of expandBundles(ids, profile.bundleCatalog ?? {})) {
@@ -395,7 +473,15 @@ export function resolveComposition(
     bundleLayer(sessionBundles, 'session')
   }
   if (profile.sessionComposition?.loop)
-    apply({ loop: profile.sessionComposition.loop }, { layer: 'session', name: 'request' })
+    apply(
+      {
+        loop: {
+          provider: profile.sessionComposition.loop.id,
+          version: profile.sessionComposition.loop.version,
+        },
+      },
+      { layer: 'session', name: 'request' },
+    )
   if (options.session) apply(options.session, { layer: 'session', name: 'request' })
   const packages = new Map(
     [...profile.packages, ...(options.packageCatalog ?? [])].map((pkg) => [pkg.id, pkg]),
@@ -423,7 +509,7 @@ export function resolveComposition(
   const loopBundles = entries.filter(
     (entry) =>
       selection.loop?.id !== DEFAULT_LOOP.id &&
-      entry.document.profile?.loop?.id === selection.loop?.id &&
+      entry.document.profile?.loop?.provider === selection.loop?.id &&
       entry.document.profile?.loop?.version === selection.loop?.version,
   )
   const toolScope = profile.compositionToolScope ?? {
@@ -445,7 +531,10 @@ export function resolveComposition(
   return freezeTree({ ...tree, hash: `sha256-${sha256hex(canonicalJson(tree))}` })
 }
 
-export function validateComposition(selection: CompositionPatch, catalog: CompositionCatalog): void {
+export function validateComposition(
+  selection: ResolvedCompositionSelection,
+  catalog: CompositionCatalog,
+): void {
   const loop = catalog.loops.find(
     (item) => item.id === selection.loop?.id && item.version === selection.loop.version,
   )

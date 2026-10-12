@@ -34,7 +34,7 @@
 | [工具定义与元数据](../../packages/extension-api/src/tool.ts)：`ToolDef`、`ToolMeta`、`ToolResult`、`ResolvedToolCallPolicy`、校验与策略解析 | stable | 参数/结果 schema、调用安全分类、replay/risk、并发元数据和输出上限；分类不能签发 Host 权限 |
 | [工具调用上下文](../../packages/extension-api/src/tool.ts)：`ToolContext`、FS/exec/net/artifact/授权/session 端口 | stable | Host 绑定的 actor/工作区、审批、lease、取消与输出限制；缺失能力就是不支持 |
 | 工具上下文可选 `runtime`/`codeRuntime`、流式 `sandbox.openProcess`、子代理后续消息、`net.fetchPublic` | experimental | 各功能独立的可用性与生命周期；声明不等于已装配后端 |
-| [扩展构造](../../packages/extension-api/src/extension.ts)、[普通插件 facade](../../packages/extension-api/src/plugin-extension.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `defineExtension`/`ExtensionAPI` 受控注册；普通 `ctx.extension()` 提供工具、全部支持的 hooks 与账本事件，通过该 facade 注册 slots/services/projections/resources 仍被拒绝 |
+| [扩展构造](../../packages/extension-api/src/extension.ts)、[普通插件 facade](../../packages/extension-api/src/plugin-extension.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `defineExtension`/`ExtensionAPI` 受控注册；普通 `ctx.tools.register` 管理工具注册；`ctx.extension()` 提供全部支持的 hooks 与账本事件，通过该 facade 注册 slots/services/projections/resources 仍被拒绝 |
 | [Hooks](../../packages/extension-api/src/hooks.ts)、[slots](../../packages/extension-api/src/slots.ts)、生成的 hook/slot/theme 表、[JSON payload 校验](../../packages/extension-api/src/json-payload.ts) | stable | 类型化 payload/return、白名单与大小校验；生成表为权威；浏览器组件 slot 是独立版本目录 |
 | [服务](../../packages/extension-api/src/services.ts)、[投影](../../packages/extension-api/src/projections.ts) | stable | Schema 校验调用、Host 身份绑定、owner 读取与显式 unavailable；查询服务不能获得效果权限，效果服务的进程访问须经过已装配授权路径 |
 | [公共类型](../../packages/extension-api/src/common.ts)、[资源](../../packages/extension-api/src/resources.ts)、[工作区 hook 快照](../../packages/extension-api/src/workspace-hooks.ts) | stable | Session/lease/logger/platform/enforcement 事实、资源种类与不可变调用配置；事实不是授权 |
@@ -108,7 +108,7 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 
 v0.1 不指定这些兼容码的删除日期。Provider errors 保持 experimental；本次收尾不重命名配置或授权失败。
 
-Canonical provider config 位于启用包的 `config`：`<kind>: {provider, version?}`。现有根 `loop: {id, version}`、`compaction: {engine}`、`persistence/sandbox: {provider}`、模型 `provider.adapters`、preset `tools.runtime`、`approval.policy` 继续支持。显式顶层选择覆盖包 config；冲突包选择、缺身份/版本、Loop 版本歧义拒绝，不 fallback。Composition patch 有下文单独的类型字段；包 canonical blocks 不等于任意新增 root keys。其他当前 provider kind 即使版本不同也拒绝重复 id。
+启用包的 provider config 统一为 `<kind>: {provider, version?}`。`model-adapter.provider` 接受注册 id、来源包或唯一列表。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。Preset 通过 `tool-runtime` / `tool-policy: {provider}` 选择。根 persistence 和 sandbox 已使用 `{provider}`。冲突包选择、缺少 provider 或 Loop 版本歧义拒绝启动。作者 composition 使用同一 provider 拼写；会话 pin 仍保存精确的后台身份。
 
 | Kind | Scope | 生效边界 |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ Composition 发布是**独立收敛**，不是全局原子事务。Runtime-targe
 
 导出的 `ExtensionManifest` schema 仍有必需 `id/version/apiRange/entry/capabilities`，可选 `contributes/provides/lease/runtime.supports`。能力词汇为 tools prefix/names、`tools.invoke`、hooks、slots、events、UI skin/client、resources、network/publicRead、artifacts、subagent、services、projections。Skin 含 `id/name/css/tokens`；client 含 `id/entry/styles/slots/slotCatalogVersion/services/projections/legacyRowIds/publicConfig`（projections 保留但不授予权限）。它与普通包权限声明不同。见[schema](../../packages/protocol/schema/extension-manifest.json)、[皮肤](skins.zh-CN.md)、[前端模块](frontend.zh-CN.md)。
 
-Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；后选 bundle 后应用。优先级：profile bundles → 直接 profile composition → 兼容顶层 provider 选择 → preset bundles/composition → 已保存 admin bundles → 显式 session patch。Row 层保留 deployment → composition → 显式 user/workspace overrides。Patch 接受 `loop`、`modelAdapters`、`compaction`（null 禁用）、`persistence`、`sandbox`、`packages`、`plugins`、`toolPolicy`、`tools`、`mcp`、`skills`、`uiModules`、`surfaces`、`shell`。数组替换，package refs 按 id 合并，toolPolicy/plugin rows 按字段合并，row config 整体替换。空 tools/MCP/Skills 保留默认，空 surfaces 为 headless，显式空 shell modules/slots 不加载任何模块。Deny 优先，不能启用 untrusted/disabled 包。执行准入前做 catalog 校验；静态 `agh config dump` 不证明 runtime 可用。会话/子会话保留 composition，运行中 preset 切换若改变 generation 所属选择会拒绝。详见[bundles 与 profiles](../extend/bundles-and-profiles.zh-CN.md)、[编译器](../../packages/host-common/src/profile/composition.ts)。
+Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；后选 bundle 后应用。优先级：profile bundles → 直接 profile composition → 根 persistence/sandbox 选择 → preset bundles/composition → 已保存 admin bundles → 显式 session patch。Row 层保留 deployment → composition → 显式 user/workspace overrides。Patch 接受 `loop`、`model-adapter`、`compaction`（null 禁用）、`persistence`、`sandbox`、`packages`、`plugins`、`toolPolicy`、`tools`、`mcp`、`skills`、`uiModules`、`surfaces`、`shell`。数组替换，package refs 按 id 合并，toolPolicy/plugin rows 按字段合并，row config 整体替换。空 tools/MCP/Skills 保留默认，空 surfaces 为 headless，显式空 shell modules/slots 不加载任何模块。Deny 优先，不能启用 untrusted/disabled 包。执行准入前做 catalog 校验；静态 `agh config dump` 不证明 runtime 可用。会话/子会话保留 composition，运行中 preset 切换若改变 generation 所属选择会拒绝。详见[bundles 与 profiles](../extend/bundles-and-profiles.zh-CN.md)、[编译器](../../packages/host-common/src/profile/composition.ts)。
 
 ## 插件使用的管理与 SDK 会话 API
 

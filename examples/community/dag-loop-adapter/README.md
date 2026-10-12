@@ -33,7 +33,7 @@ adapter instances belong to their plugin/instance lifecycles.
    `file:/absolute/path/to/dag-loop-adapter`. Review and enable the package.
    Inspect the actual backend state and any missing-service errors.
 2. Merge the provider fields in `provider.example.json` into that instance's
-   profile: append `community-dag` to `provider.adapters` and append the supplied
+   profile: set the package's `config['model-adapter']: { provider: 'community-dag' }` and append the supplied
    route/model to `provider.routes`. Preserve its `provider.package`, other
    adapters, routes and unrelated settings. A plugin registration does not create
    profile routes. Follow the instance's usual configuration reload/restart flow.

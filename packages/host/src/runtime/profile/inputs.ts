@@ -108,15 +108,19 @@ export async function readConfigurationProfileInputs(
   const lock = options.lock ?? projected?.lock
   const adminBundles = readBundleSelection(profileDir).bundles
   let userLayer = mergeConfiguration(profile, user, options.configuration)
+  const adapterSelected = (layer: Partial<RuntimeProfileManifest> | undefined) =>
+    layer?.packages?.some((pkg) => pkg.enabled !== false && pkg.config?.['model-adapter'] !== undefined)
   if (
     options.demoFallback &&
     profile === 'local-dev' &&
     options.lock === undefined &&
     !existsSync(join(profileDir, 'profile.yaml')) &&
     !local?.provider &&
+    !adapterSelected(local) &&
     !local?.composition &&
     !local?.bundles?.length &&
     !userLayer?.provider &&
+    !adapterSelected(userLayer) &&
     !userLayer?.composition &&
     !userLayer?.bundles?.length
   )

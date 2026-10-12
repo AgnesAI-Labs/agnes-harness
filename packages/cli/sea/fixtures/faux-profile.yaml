@@ -17,7 +17,6 @@ seams:
   harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
-  adapters: ["@agnes/ai"]
   routes:
     - route: faux
       api: openai-completions

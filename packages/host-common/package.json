@@ -46,7 +46,8 @@
     "./workspace-authority": "./src/workspace-authority.ts",
     "./workspace-policy": "./src/workspace-policy.ts",
     "./home-layout": "./src/home-layout.ts",
-    "./home-initialize": "./src/home-initialize.ts"
+    "./home-initialize": "./src/home-initialize.ts",
+    "./profile/provider-selection": "./src/profile/provider-selection.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

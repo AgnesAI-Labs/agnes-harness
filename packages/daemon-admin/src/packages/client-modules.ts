@@ -108,7 +108,9 @@ export type ClientModulesChanged = Readonly<{
 }>
 
 export type ClientModuleRegistryOptions = Readonly<{
-  composition?: (profile: string) => CompositionPatch | undefined
+  composition?: (
+    profile: string,
+  ) => Pick<CompositionPatch, 'packages' | 'uiModules' | 'shell' | 'surfaces'> | undefined
   /** A profile's daemon-owned snapshot directory. It must not be the mutable install tree. */
   snapshotDirectory: (profile: string, profileDirectory: string) => string
   clock?: () => Date
@@ -912,7 +914,10 @@ function rosterRevision(
 }
 
 export function createClientModuleRegistry(options: ClientModuleRegistryOptions): ClientModuleRegistry {
-  const filterRoster = (roster: ClientModuleListResult, selection: CompositionPatch | undefined) => {
+  const filterRoster = (
+    roster: ClientModuleListResult,
+    selection: Pick<CompositionPatch, 'packages' | 'uiModules' | 'shell' | 'surfaces'> | undefined,
+  ) => {
     if (!selection || (!selection.surfaces && !selection.shell && !selection.uiModules?.length)) return roster
     const rows =
       roster.rows?.filter((row) =>

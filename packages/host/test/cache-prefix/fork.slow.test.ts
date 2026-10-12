@@ -134,7 +134,6 @@ describe('delegated child wire prefixes', () => {
               name: 'fork-prefix',
               provider: {
                 package: '@agnes/ai',
-                adapters: ['@agnes/ai'],
                 routes: [
                   { route: 'wire', api, baseUrl, credentialRef: 'secret://test/wire', models: [model] },
                 ],
@@ -299,7 +298,6 @@ describe('delegated child wire prefixes', () => {
             name: 'child-compaction',
             provider: {
               package: '@agnes/ai',
-              adapters: ['@agnes/ai'],
               routes: [
                 {
                   route: 'gw',

@@ -97,7 +97,7 @@ const profileFor = (limits?: Record<string, number>) =>
       user: {
         name: 'local-dev',
         presets: { default: 'standard', allowed: ['standard'] },
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
         ...(limits ? { limits } : {}),
       },
     },

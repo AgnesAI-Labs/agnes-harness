@@ -6,6 +6,15 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ### Removed
 
+- Authored root profile `loop`, `compaction`, model `provider.adapters`, composition
+  `modelAdapters`, and preset `tools.runtime` / `approval.policy`. Select through
+  `<kind>: { provider }` in enabled package config or composition; presets use
+  `tool-runtime` / `tool-policy: { provider }`. Loop composition also requires
+  `version`. `model-adapter.provider` accepts an id, source package or unique list
+  so multiple transports remain available. Resolved profiles and session pins
+  retain backend identities; stored pins are not author config. Missing explicitly
+  selected adapters now use the generic provider-unknown assembly failure.
+
 - Named author registration ports (`loops`, `modelAdapters`, `compactionEngines`,
   `childAgents`, `sandboxProviders`), their registration context types, and
   `registerLoopPlugin`. Use `ctx.providers.register(kind, packageId, provider)`;

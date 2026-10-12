@@ -4,7 +4,6 @@ import type { ProviderConfig } from './types.js'
 export function demoProvider(): ProviderConfig {
   return {
     package: '@agnes/ai',
-    adapters: ['@agnes/ai', 'scripted'],
     routes: [
       {
         route: 'demo',

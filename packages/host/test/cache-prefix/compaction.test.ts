@@ -108,7 +108,6 @@ async function fixture(
           name: 'wire-compaction',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [{ route: 'wire', api, baseUrl, credentialRef: 'secret://test/wire', models: [model] }],
           },
           adapters: { secrets: { kind: 'file', path: credentials } },

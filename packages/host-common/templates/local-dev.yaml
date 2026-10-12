@@ -17,7 +17,6 @@ seams:
   harness: "@agnes/base"
 provider:
   package: "@agnes/ai"
-  adapters: ["@agnes/ai"]
 
 adapters:
   storage: sqlite

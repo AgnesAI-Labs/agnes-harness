@@ -218,9 +218,9 @@ import {
 import {
   applyProviderPreset,
   applyProviderSelections,
-  PROVIDER_KINDS,
   providerConfigurationScopes,
   readProviderSelections,
+  selectConfiguredProviders,
 } from '@agnes/host-providers/assemble/provider-selection'
 import { installReferenceResolvers } from '@agnes/host-providers/assemble/reference-resolvers'
 import {
@@ -1897,8 +1897,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     done('provider')
 
     // Validate explicit kind selections before fitting operation instances.
-    for (const kind of PROVIDER_KINDS)
-      if (providerSelections[kind]) pluginTree.root.providers.select(kind, providerSelections[kind]!)
+    selectConfiguredProviders(pluginTree.root, providerSelections)
     // 6 provider - route table first, environment second, credentials third.
     let routes: RouteTable | undefined
     try {

@@ -408,9 +408,9 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const selection = a.compositionForPreset(
             name,
             o.loop
-              ? { loop: { id: o.loop.id, version: o.loop.version } }
+              ? { loop: { provider: o.loop.id, version: o.loop.version } }
               : adminLoop
-                ? { loop: adminLoop }
+                ? { loop: { provider: adminLoop.id, version: adminLoop.version } }
                 : undefined,
           )
           assertCompositionCompatible(a.compositionForPreset(), selection)

@@ -119,6 +119,27 @@ const pick = <T>(raw: unknown, path: string, fallback: T): T => {
  * spells one differently silently keeps the default rather than half-applying.
  */
 export function readPreset(raw: Record<string, unknown>, name: string): PresetView {
+  const legacy =
+    (raw.tools as { runtime?: unknown } | undefined)?.runtime !== undefined ||
+    (raw.approval as { policy?: unknown } | undefined)?.policy !== undefined ||
+    (raw.loop as { id?: unknown } | undefined)?.id !== undefined
+  if (legacy)
+    throw new TypeError(
+      'Provider selections require <kind>: { provider }; legacy preset selectors are not supported',
+    )
+  for (const kind of ['tool-runtime', 'tool-policy']) {
+    const value = raw[kind]
+    if (value === undefined) continue
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      typeof (value as { provider?: unknown }).provider !== 'string' ||
+      !(value as { provider: string }).provider.trim() ||
+      Object.keys(value).some((key) => key !== 'provider')
+    )
+      throw new TypeError(`${kind} requires { provider: id }`)
+  }
   const d = presetDefaults()
   return {
     name,
@@ -134,15 +155,6 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
             maxOutputChars: pick(raw, 'code_runtime.max_output_chars', 65536),
             maxParallelSubCalls: pick(raw, 'code_runtime.max_parallel_sub_calls', 4),
           },
-        }),
-    // Shipped presets use loop for hygiene knobs; only an explicit id selects a loop provider.
-    ...(get(raw, 'loop.id') === undefined
-      ? {}
-      : {
-          loop: pick<import('@agnes/extension-api').LoopSelection>(raw, 'loop', {
-            id: 'agnes.default',
-            version: '1.0.0',
-          }),
         }),
     disclosure: pick(raw, 'disclosure', d.disclosure),
     model: {
@@ -176,9 +188,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     approval: {
       // Not readable from the document: see presetDefaults.
-      ...(get(raw, 'approval.policy') === undefined
+      ...(get(raw, 'tool-policy.provider') === undefined
         ? {}
-        : { policy: pick<string>(raw, 'approval.policy', 'default') }),
+        : { policy: pick<string>(raw, 'tool-policy.provider', 'default') }),
       onTimeout: 'rejected',
       timeoutMs: pick(raw, 'approval.timeout_ms', d.approval.timeoutMs),
       onUnavailable: pick(raw, 'approval.on_unavailable', d.approval.onUnavailable),
@@ -186,9 +198,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     sandbox: { onUnavailable: pick(raw, 'sandbox.on_unavailable', d.sandbox.onUnavailable) },
     tools: {
-      ...(get(raw, 'tools.runtime') === undefined
+      ...(get(raw, 'tool-runtime.provider') === undefined
         ? {}
-        : { runtime: pick<string>(raw, 'tools.runtime', 'default') }),
+        : { runtime: pick<string>(raw, 'tool-runtime.provider', 'default') }),
       ...(get(raw, 'tools.max_parallel') === undefined
         ? {}
         : { maxParallel: pick<number>(raw, 'tools.max_parallel', 4) }),

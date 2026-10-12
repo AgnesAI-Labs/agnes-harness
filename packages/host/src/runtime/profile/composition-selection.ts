@@ -38,7 +38,12 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
         enabled: pkg.enabled && (!requested || capabilityEnabled(capabilities.packages, pkg.id)),
       }
     }),
-    composition: patch,
+    composition: {
+      ...Object.fromEntries(Object.entries(patch).filter(([key]) => key !== 'modelAdapters')),
+      ...(patch.modelAdapters ? { 'model-adapter': { provider: patch.modelAdapters } } : {}),
+      ...(patch.loop ? { loop: { provider: patch.loop.id, version: patch.loop.version } } : {}),
+      ...(patch.compaction ? { compaction: { provider: patch.compaction.engine } } : {}),
+    } as CompositionPatch,
     compositionToolScope: tree.toolScope ?? { bundlePackages: [], activePackages: [] },
     compositionSources: tree.sources,
     ...(tree.sessionBundles !== undefined || tree.sources.loop?.layer === 'session'
@@ -57,7 +62,7 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
 
 /** Policy is enforced at invocation, including tools scheduled outside the model tool list. */
 export function compositionAllowsTool(
-  selection: CompositionPatch,
+  selection: Pick<CompositionPatch, 'packages' | 'toolPolicy' | 'tools' | 'mcp'>,
   name: string,
   isReadOnly: boolean,
 ): boolean {

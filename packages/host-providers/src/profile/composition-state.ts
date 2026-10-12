@@ -2,7 +2,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { checkCompositionPatch, type ResolvedComposition } from '@agnes/host-common/profile/composition'
+import {
+  checkResolvedCompositionSelection,
+  type ResolvedComposition,
+} from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 
@@ -60,7 +63,7 @@ export class CompositionSessionStore {
       !/^sha256-[a-f0-9]{64}$/.test(value.tree.hash)
     )
       throw new Error('E_COMPOSITION_BINDING_INVALID: session composition cannot be resumed')
-    checkCompositionPatch(value.tree.selection)
+    checkResolvedCompositionSelection(value.tree.selection)
     return value
   }
   pin(binding: CompositionBinding): CompositionBinding {

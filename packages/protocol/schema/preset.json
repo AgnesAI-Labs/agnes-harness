@@ -4,7 +4,9 @@
   "title": "PresetDoc",
   "$ref": "#/$defs/PresetDoc",
   "$defs": {
-    "CompositionPatch": { "$ref": "profile.json#/$defs/CompositionPatch" },
+    "CompositionPatch": {
+      "$ref": "profile.json#/$defs/CompositionPatch"
+    },
     "RouteTable": {
       "$ref": "model.json#/$defs/RouteTable"
     },
@@ -66,13 +68,27 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "primary": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "escalation": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "fast": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "compaction": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "verifier": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "image": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "video": { "$ref": "model.json#/$defs/ThinkingLevel" }
+                "primary": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "escalation": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "fast": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "compaction": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "verifier": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "image": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "video": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                }
               }
             },
             "retry": {
@@ -116,8 +132,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "runtime": { "type": "string", "minLength": 1, "maxLength": 128 },
-            "max_parallel": { "type": "integer", "minimum": 1, "maximum": 64 },
+            "max_parallel": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
             "core": {
               "type": "array",
               "items": {
@@ -316,7 +335,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "policy": { "type": "string", "minLength": 1, "maxLength": 128 },
             "on_unavailable": {
               "enum": ["deny", "park"]
             },
@@ -650,6 +668,30 @@
             "poll_ms": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "tool-policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        "tool-runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         }

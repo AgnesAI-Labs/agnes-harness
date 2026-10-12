@@ -13,9 +13,9 @@
 | 工具 | [tool](../../templates/tool/) | TypeBox 输入和结果 schema、取消信号、卸载清理 |
 | 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 相同工具与独立浏览器侧栏插槽 |
 | MCP 与 Skills | [mcp-skills](../../templates/mcp-skills/) | MCP 定义与通过 Skills 服务注册的包内 Skill |
-| 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `modelAdapters` 注册的结构化适配器 |
+| 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `ctx.providers.register` 注册的结构化适配器 |
 | 循环 | [loop](../../templates/loop/) | 独立单轮驱动、checkpoint codec 与 `loops` 注册 |
-| 压缩引擎 | [sliding-window](../../examples/compaction/sliding-window/) | 通过 `compactionEngines` 替换上下文；参阅[压缩引擎](compaction-engines.zh-CN.md) |
+| 压缩引擎 | [sliding-window](../../examples/compaction/sliding-window/) | 通过 `ctx.providers.register` 替换上下文；参阅[压缩引擎](compaction-engines.zh-CN.md) |
 | 子代理 | [ACP 子代理](../../examples/child-agents/acp/) | 通过 `childAgents` 使用可继续的子代理；参阅[子代理提供者](child-agents.zh-CN.md) |
 | 持久化 | [JSONL](../../examples/persistence/) | 无 SQL 的完整 Host 持久化；参见[持久化提供器](persistence.zh-CN.md) |
 

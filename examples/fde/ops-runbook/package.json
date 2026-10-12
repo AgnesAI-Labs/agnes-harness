@@ -79,8 +79,8 @@
       "ops-runbook": {
         "profile": {
           "loop": {
-            "id": "fde.ops-runbook",
-            "version": "4.0.0"
+            "version": "4.0.0",
+            "provider": "fde.ops-runbook"
           },
           "skills": [
             "ops-runbook"

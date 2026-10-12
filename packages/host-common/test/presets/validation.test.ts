@@ -64,6 +64,9 @@ describe('merged preset production validation', () => {
     expect(r.doc).toEqual({ name: 'custom' })
   })
   it.each([
+    { tools: { runtime: 'default' } },
+    { approval: { policy: 'default' } },
+    { loop: { id: 'agnes.default', version: '1.0.0' } },
     { tools: { unknown: true } },
     { model: { retry: { unknown: true } } },
     { deferred: { unknown: true } },

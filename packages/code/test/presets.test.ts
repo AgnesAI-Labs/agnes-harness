@@ -38,6 +38,8 @@ const KNOWN_PRESET_KEYS = [
   'hooks',
   'locale',
   'code_runtime',
+  'tool-policy',
+  'tool-runtime',
 ]
 
 // The keys `standard` declares, exactly. A variant recipe declares a subset of the same vocabulary
@@ -245,15 +247,15 @@ describe('standard.yaml', () => {
   it('ships permission presets with paired sandbox and approval policies', () => {
     expect(loadPreset('workspace-write')).toMatchObject({
       extends: 'standard',
-      approval: { policy: 'default' },
+      'tool-policy': { provider: 'default' },
       sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
     })
     expect(loadPreset('read-only')).toMatchObject({
-      approval: { policy: 'read-only' },
+      'tool-policy': { provider: 'read-only' },
       sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
     })
     expect(loadPreset('full-access')).toMatchObject({
-      approval: { policy: 'full-access' },
+      'tool-policy': { provider: 'full-access' },
       sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
     })
   })

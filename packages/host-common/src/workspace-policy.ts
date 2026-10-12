@@ -55,11 +55,11 @@ function stringList(value: unknown, field: string): readonly string[] {
 
 /** The single normalized static sandbox plan consumed by policy compilation and readiness identity. */
 export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unknown>>): SandboxStaticConfig {
-  const approval = preset.approval as { policy?: string } | undefined
+  const policy = preset['tool-policy'] as { provider?: string } | undefined
   const access =
-    approval?.policy === 'read-only'
+    policy?.provider === 'read-only'
       ? 'read-only'
-      : approval?.policy === 'full-access'
+      : policy?.provider === 'full-access'
         ? 'full-access'
         : 'workspace-write'
   const raw = preset.sandbox

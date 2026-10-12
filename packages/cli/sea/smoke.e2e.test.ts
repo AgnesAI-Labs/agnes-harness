@@ -96,7 +96,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
               previous: null,
             },
           },
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'] },
+          provider: { package: '@agnes/ai' },
           policySnapshot: {
             capabilityCeiling: [
               'tools',
