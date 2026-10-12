@@ -63,7 +63,7 @@ export function ChildControlRow({
       .then(() => {
         if (action === 'continue') setText('')
       })
-      .catch((error: unknown) => setError(error instanceof Error ? error.message : String(error)))
+      .catch((error: unknown) => setError(t('composer.child.controlFailed', { detail: error instanceof Error ? error.message : String(error) })))
       .finally(() => setPending(false))
   }
   return createElement(
@@ -104,7 +104,11 @@ export function ChildControlRow({
         htmlType: 'button',
         'data-testid': 'child-continue',
         disabled: disabled || pending || !child.controls.continue || !text.trim(),
-        title: child.controls.continue ? t('composer.child.continue') : t('composer.control.unsupported'),
+        title: !child.controls.continue
+          ? t('composer.control.unsupported')
+          : text.trim()
+            ? t('composer.child.continue')
+            : t('composer.child.messageRequired'),
         onClick: () => submit('continue'),
       },
       t('composer.child.continue'),

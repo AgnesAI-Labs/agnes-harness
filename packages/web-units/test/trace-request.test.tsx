@@ -180,7 +180,7 @@ it('shows captured sources and all request panes, highlights changes and explici
     )
     expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).toContain('Not sent')
     expect(host.querySelector('[data-testid="request-trace-content"]')?.textContent).not.toContain(
-      'no capture tap',
+      'does not support capture',
     )
     expect(host.querySelector<HTMLButtonElement>('[data-testid="request-trace-copy"]')?.disabled).toBe(true)
 
