@@ -26,6 +26,7 @@ import {
 } from '@agnes/resource-control-runtime'
 import { expect, it, vi } from 'vitest'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
 import { createTestHost } from '../testkit/index.js'
@@ -578,7 +579,10 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           reason === 'unfinished-deferred-invocation'
             ? { invocation: { id: 'invocation', sessionKey: key }, state: 'queued' }
             : fact.type === 'decision/state'
-              ? { ...fact.data, handle: { ...fact.data.handle, sessionId: key } }
+              ? (() => {
+                  const decision = fact.data as DecisionSnapshot
+                  return { ...decision, handle: { ...decision.handle, sessionId: key } }
+                })()
               : fact.data,
         actor: resumed.d.actor,
         origin: fact.origin ?? 'system',
