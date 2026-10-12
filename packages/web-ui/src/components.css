@@ -551,6 +551,10 @@
   .agh-dialog :is(.dialog-kicker, .eyebrow) {
     display: none;
   }
+  .agh-table-scroll :is(.ant-table-body, .ant-table-content):focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: -2px;
+  }
   .agh-sheet-handle {
     display: none;
   }

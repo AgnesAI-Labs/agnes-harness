@@ -1,5 +1,12 @@
 import { Table as AntTable, type TableProps as AntTableProps, Tooltip as AntTooltip } from 'antd'
-import { createContext, type HTMLAttributes, type ReactNode, useContext } from 'react'
+import {
+  createContext,
+  type HTMLAttributes,
+  type ReactNode,
+  useContext,
+  useLayoutEffect,
+  useRef,
+} from 'react'
 import { fallbackT } from '../locales/index.js'
 
 export type TableProps<T extends object> = AntTableProps<T> & {
@@ -35,6 +42,16 @@ export function Table<T extends object>({
   className,
   ...props
 }: TableProps<T>) {
+  const root = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    for (const scrollport of root.current?.querySelectorAll<HTMLElement>(
+      '.ant-table-body, .ant-table-content',
+    ) ?? []) {
+      scrollport.tabIndex = 0
+      scrollport.setAttribute('role', 'region')
+      scrollport.setAttribute('aria-label', scrollLabel ?? caption ?? fallbackT('ui.table'))
+    }
+  })
   const enhanced = columns?.map((column) => {
     if ('children' in column) return column
     const render = column.render
@@ -59,13 +76,7 @@ export function Table<T extends object>({
   })
   return (
     <TableCaption.Provider value={{ caption, testId, repeats: captionRepeatsHeading }}>
-      <div
-        className="agnes-intelligent-table-scroll agh-table-scroll"
-        role="region"
-        aria-label={scrollLabel ?? caption ?? fallbackT('ui.table')}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: wide tables have a keyboard-scrollable labelled region.
-        tabIndex={0}
-      >
+      <div ref={root} className="agnes-intelligent-table-scroll agh-table-scroll">
         <AntTable<T>
           size="small"
           pagination={false}
