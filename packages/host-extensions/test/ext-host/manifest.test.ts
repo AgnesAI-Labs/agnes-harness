@@ -124,7 +124,7 @@ describe('checkApiRange', () => {
   it('accepts the supported subset through real on-disk manifests and the default API path', () => {
     // The narrow tilde entry tracks the running API_VERSION rather than a hardcoded version, so it
     // stays a real positive case (not an accidental exclusion) across future version bumps.
-    for (const apiRange of [`~${API_VERSION}`, '>=1.0.0 <2.0.0', '1.*', '*']) {
+    for (const apiRange of [`~${API_VERSION}`, '>=2.0.0 <3.0.0', '2.*', '*']) {
       const dir = scratch({ 'agnes.extension.json': manifest({ apiRange }), 'index.ts': '' })
       expect(readExtensionManifest(dir).apiRange).toBe(apiRange)
     }

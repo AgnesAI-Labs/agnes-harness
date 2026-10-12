@@ -317,7 +317,7 @@ it.each(['ts', 'js'])(
         agnes: {
           hostProvidedExternals: {
             '@agnes/plugin-runtime': '0.0.0',
-            '@agnes/extension-api': '^1.4.0',
+            '@agnes/extension-api': '^2.0.0',
             '@sinclair/typebox': '~0.34.0',
           },
         },

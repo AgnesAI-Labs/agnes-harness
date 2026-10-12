@@ -35,7 +35,7 @@ const descriptor = {
   healthPath: '/health',
   requires: { services: [grant] },
 }
-const policy = { harnessVersion: '0.1.0', surfaceApiVersion: '1.0.0', grants: { customer: [grant] } }
+const policy = { harnessVersion: '0.1.0', surfaceApiVersion: '2.0.0', grants: { customer: [grant] } }
 const manifest = {
   id: 'customer',
   version: '1.0.0',
@@ -154,7 +154,7 @@ it.each(['grant', 'policy', 'missing-policy', 'missing-service', 'range', 'api',
       save(join(deploy, 'surfaces/main.json'), { ...instance, grants: [{ ...grant, name: 'other.read' }] })
     if (mode === 'range')
       save(join(deploy, 'surfaces/main.json'), { ...instance, grants: [{ ...grant, range: '1.9.0' }] })
-    if (mode === 'api') p = { ...policy, surfaceApiVersion: '2.0.0' }
+    if (mode === 'api') p = { ...policy, surfaceApiVersion: '3.0.0' }
     if (mode === 'harness') p = { ...policy, harnessVersion: '1.0.0' }
     expect(() => resolveDeployment(inventory, deploy, p)).toThrow()
   },

@@ -149,7 +149,7 @@ describe('rebuildDesiredFromInventory', () => {
     expect(decodeRuntimeTargetArtifact(dag!).tree.rows).toContainEqual(
       expect.objectContaining({
         plugin: expect.stringContaining('@agnes-example/dag-loop@'),
-        inject: ['loops'],
+        inject: ['providers'],
         disabled: false,
       }),
     )
