@@ -114,6 +114,8 @@
   --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-500-a10);
   /* Soft halo around a focused field or card; the solid ring stays for outlines. */
   --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 22%, transparent);
+  /* Thin scrollbar thumb for long scroll regions; the track stays transparent. */
+  --agnes-scrollbar-thumb: var(--agnes-color-neutral-300-a60);
 
   /* Text */
   --agnes-text-primary: var(--agnes-color-neutral-900);
@@ -233,6 +235,7 @@
   --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-400);
   --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-400-a10);
   --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 34%, transparent);
+  --agnes-scrollbar-thumb: var(--agnes-color-neutral-725-a60);
 
   /* Text */
   --agnes-text-primary: var(--agnes-color-neutral-050);

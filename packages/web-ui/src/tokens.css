@@ -253,7 +253,7 @@ textarea.agnes-settings-input {
 .agnes-settings-input:focus-visible {
   outline: none;
   border-color: var(--agnes-input-border-focus);
-  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+  box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
 }
 .agnes-settings-input:disabled {
   border-color: var(--agnes-line-primary);
@@ -278,6 +278,13 @@ textarea.agnes-settings-input {
   gap: var(--s8);
   align-items: center;
   font-size: var(--font-size-sm);
+}
+/* A bare fieldset groups controls for assistive tech; it never draws the browser's inset box. */
+.agnes-settings-page fieldset:not([class]) {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .agnes-settings-card fieldset,
 .agnes-settings-card form {

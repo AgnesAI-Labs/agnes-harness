@@ -12,6 +12,22 @@
   width: 0;
   height: 0;
 }
+/* Long reading and browsing regions show where you are: a thin thumb on a transparent track.
+   Everything else keeps the hidden scrollbar above. */
+:is(
+  #transcript,
+  .settings-content,
+  .workbench-panel-content,
+  .workbench-tree-scroll,
+  .workbench-file-preview,
+  .tool-detail-text,
+  .code-block pre,
+  .table-scroll,
+  #approval pre
+) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--agnes-scrollbar-thumb) transparent;
+}
 :where([hidden]) {
   display: none !important;
 }
@@ -101,7 +117,8 @@ select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--agnes-input-border-focus);
-  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+  /* The border carries the focus colour; the halo is soft so a focused field is not a 4px band. */
+  box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
 }
 button:disabled,
 button.ant-btn:disabled {

@@ -257,7 +257,7 @@ describe('style.css token 门禁', () => {
     })
     expect(declarationsOf(inputFocus as Rule)).toContainEqual({
       property: 'box-shadow',
-      value: '0 0 0 3px var(--agnes-brand-focus-ring)',
+      value: '0 0 0 3px var(--agnes-focus-ring-soft)',
     })
   })
 

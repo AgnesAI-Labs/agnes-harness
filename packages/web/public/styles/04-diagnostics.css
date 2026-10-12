@@ -128,7 +128,7 @@
 .archived-search-field input:focus {
   border-color: var(--agnes-input-border-focus);
   outline: none;
-  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+  box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
 }
 .archived-message {
   min-height: 0;
