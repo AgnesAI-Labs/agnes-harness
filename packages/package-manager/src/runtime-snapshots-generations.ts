@@ -7,6 +7,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
@@ -26,6 +27,19 @@ import {
   writeGenerationResources,
 } from './runtime-snapshots-resources.js'
 import { hashDirectory } from './sources.js'
+
+const OWNER_FILE = 'owner.pid'
+const UNOWNED_GRACE_MS = 10 * 60_000
+
+function writeAtomically(path: string, bytes: string): void {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx', flush: true })
+    renameSync(temporary, path)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+}
 
 export type PluginGenerationSnapshot = Readonly<{
   version?: 1 | 2
@@ -71,6 +85,8 @@ export class RuntimeGenerationSnapshotStore {
       directory = this.directory(id)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     try {
+      // Written first so collection can tell a live creator from a dead one before generation.json exists.
+      writeFileSync(join(directory, OWNER_FILE), String(process.pid), { mode: 0o600, flush: true })
       const copied = sources.map((source, index) => {
         if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
         const destination = join(directory, String(index))
@@ -82,7 +98,7 @@ export class RuntimeGenerationSnapshotStore {
       const resourcesDigest = resources
         ? writeGenerationResources(join(directory, 'resources'), resources)
         : undefined
-      writeFileSync(
+      writeAtomically(
         join(directory, 'generation.json'),
         JSON.stringify({
           version: resources ? 2 : 1,
@@ -94,7 +110,6 @@ export class RuntimeGenerationSnapshotStore {
           compatibility,
           ...(resourcesDigest ? { resourcesDigest } : {}),
         }),
-        { mode: 0o600, flag: 'wx', flush: true },
       )
       this.#created.add(id)
       return this.read(id)
@@ -316,6 +331,35 @@ export class RuntimeGenerationSnapshotStore {
     rmSync(this.pinPath(sessionKey), { force: true })
   }
 
+  /** Unreadable owner metadata counts as live until the directory is old enough that no creator can still be writing it. */
+  private ownerMayBeLive(id: string): boolean {
+    const directory = this.directory(id),
+      young = () => {
+        try {
+          return Date.now() - statSync(directory).mtimeMs < UNOWNED_GRACE_MS
+        } catch {
+          return false
+        }
+      }
+    let ownerPid: unknown
+    try {
+      ownerPid = JSON.parse(readFileSync(join(directory, 'generation.json'), 'utf8')).ownerPid
+    } catch {
+      try {
+        ownerPid = Number(readFileSync(join(directory, OWNER_FILE), 'utf8'))
+      } catch {
+        return young()
+      }
+    }
+    if (typeof ownerPid !== 'number' || !Number.isSafeInteger(ownerPid) || ownerPid <= 0) return young()
+    try {
+      process.kill(ownerPid, 0)
+      return true
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+    }
+  }
+
   collect(keep: ReadonlySet<string>, retired: ReadonlySet<string> = new Set()): readonly string[] {
     if (!existsSync(this.root)) return []
     const referenced = new Set(this.sessions().map((pin) => pin.generationId)),
@@ -323,21 +367,7 @@ export class RuntimeGenerationSnapshotStore {
     for (const id of readdirSync(this.root)) {
       // Another workspace worker may still be accepting sessions on its own snapshot.
       if (!/^[a-f0-9-]{36}$/.test(id) || keep.has(id) || referenced.has(id)) continue
-      if (!this.#created.has(id) && !retired.has(id)) {
-        let ownerPid: unknown
-        try {
-          ownerPid = JSON.parse(readFileSync(join(this.directory(id), 'generation.json'), 'utf8')).ownerPid
-        } catch {
-          continue
-        }
-        if (typeof ownerPid !== 'number' || !Number.isSafeInteger(ownerPid) || ownerPid <= 0) continue
-        try {
-          process.kill(ownerPid, 0)
-          continue
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue
-        }
-      }
+      if (!this.#created.has(id) && !retired.has(id) && this.ownerMayBeLive(id)) continue
       rmSync(this.directory(id), { recursive: true, force: true })
       removed.push(id)
       this.#created.delete(id)
