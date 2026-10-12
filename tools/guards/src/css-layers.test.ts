@@ -69,14 +69,14 @@ it('requires layers for every stylesheet and exact, explained allowances for wra
     } else {
       errors.push(...findings.map((rule) => `${path}: ${rule}`))
       for (const imported of source.matchAll(/@import\s+"([^"]+)"([^;]*);/g)) {
-        const layer = /\blayer\s*\(([\w.-]+)\)/.exec(imported[2])?.[1]
+        const layer = /\blayer\s*\(([\w.-]+)\)/.exec(imported[2] ?? '')?.[1]
         if (layer) {
           expect(policy.order, `${path}: imported layer must belong to the canonical order`).toContain(
             layer.split('.')[0],
           )
           continue
         }
-        const dependency = resolve(dirname(file), imported[1])
+        const dependency = resolve(dirname(file), imported[1] ?? '')
         expect(cssFiles, `${path}: unlayered imports must reference a checked stylesheet`).toContain(
           dependency,
         )

@@ -26,7 +26,7 @@ export function cssLayerFindings(source: string, allowedLayers?: readonly string
       }
       if (depth) throw new Error('Unclosed CSS rule')
       if (/^@layer\s+[\w.-]+$/.test(header)) {
-        const name = header.slice('@layer '.length).split('.')[0]
+        const name = header.replace(/^@layer\s+/, '').split('.')[0] ?? ''
         if (!layered && allowedLayers && !allowedLayers.includes(name)) findings.push(header)
         walk(next.index + 1, close - 1, true)
       } else if (/^@(media|supports|container|scope)\b/.test(header)) walk(next.index + 1, close - 1, layered)
