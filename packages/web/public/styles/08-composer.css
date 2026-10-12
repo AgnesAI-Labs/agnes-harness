@@ -9,7 +9,21 @@ body:has(#empty-state:not([hidden])) #prompt {
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s8);
-  margin-top: var(--s16);
+  margin-top: var(--s20);
+}
+/* Starter prompts read as chips you can pick, not as bold text. */
+.empty-state-suggestions .agh-btn:not(:disabled) {
+  padding-inline: var(--s12);
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-pill);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-surface);
+  font-weight: var(--font-weight-regular);
+}
+.empty-state-suggestions .agh-btn:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-focus);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-brand-emphasis-soft);
 }
 .permission-picker .permission-picker-label,
 .permission-picker .permission-picker-check {
@@ -93,8 +107,29 @@ body.session-switching #approval {
   border: 0;
   border-radius: var(--radius-card);
   background: var(--agnes-bg-page);
-  box-shadow: var(--shadow-elevation-soft);
+  /* A real 1px edge under the soft lift: the 0.5px hairline alone vanished on white. */
+  box-shadow:
+    0 0 0 1px var(--agnes-line-emphasis),
+    var(--shadow-elevation-soft);
   backdrop-filter: none;
+}
+/* Focus belongs to the whole card, since the textarea itself draws no ring. */
+#composer:hover {
+  box-shadow:
+    0 0 0 1px var(--agnes-input-border),
+    var(--shadow-elevation-soft);
+}
+#composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--agnes-input-border-focus),
+    0 0 0 4px var(--agnes-focus-ring-soft),
+    var(--shadow-elevation-soft);
+}
+/* Quiet controls inside the card carry no drop shadow of their own. The id keeps this above
+   the component library's runtime-injected button shadow. */
+#composer .composer-controls .agh-btn,
+#empty-state .empty-state-suggestions .agh-btn {
+  box-shadow: none;
 }
 /* 队列是输入卡上方的一张独立卡片。排队的消息和正在写的草稿是两件事，早先把它塞在输入卡
    内部，两者读起来是一件事。现在它是 form 的前一个兄弟节点：宽度和居中与输入卡对齐，
