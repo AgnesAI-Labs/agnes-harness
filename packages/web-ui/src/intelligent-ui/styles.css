@@ -552,24 +552,27 @@
     border-color: var(--agnes-input-border-focus);
     background: var(--agnes-brand-emphasis-soft);
   }
-  .agnes-intelligent-chip-main {
+  .agnes-intelligent-chip .agnes-intelligent-chip-main {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: var(--s8);
     flex: 1 1 auto;
     min-width: 0;
     min-height: var(--s32);
+    height: auto;
     margin: 0;
     padding: var(--s4) var(--s10) var(--s4) var(--s12);
     border: 0;
     border-radius: var(--radius-md) 0 0 var(--radius-md);
     background: transparent;
+    box-shadow: none;
     color: inherit;
     font: inherit;
     text-align: start;
     cursor: pointer;
   }
-  .agnes-intelligent-chip-main:hover {
+  .agnes-intelligent-chip .agnes-intelligent-chip-main:hover {
     background: var(--agnes-bg-hover);
   }
   .agnes-intelligent-chip :focus-visible {
