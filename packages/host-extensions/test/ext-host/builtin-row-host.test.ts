@@ -22,7 +22,7 @@ const platform = Object.freeze({
   fs: Object.freeze({ caseSensitive: true, pathSep: '/' }),
   terminal: Object.freeze({ color: false }),
 } as const)
-const info = { agnesVersion: '0.0.0', apiVersion: '1.0.0', profileName: 'test' }
+const info = { agnesVersion: '0.0.0', apiVersion: '2.0.0', profileName: 'test' }
 const ROW = 'ext:agnes/tools-search'
 const ID = 'agnes/tools-search'
 

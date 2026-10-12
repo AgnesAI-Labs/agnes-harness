@@ -76,8 +76,10 @@ it('enables Codex through the admin RPC and starts a child with the fake CLI', a
       | undefined
     codexChildAgentsPlugin.apply(
       {
-        childAgents: {
-          register(next: NonNullable<typeof provider>) {
+        providers: {
+          register(kind: string, source: string, next: NonNullable<typeof provider>) {
+            expect(kind).toBe('child-agent')
+            expect(source).toBe('@agnes/base')
             provider = next
             return async () => undefined
           },
