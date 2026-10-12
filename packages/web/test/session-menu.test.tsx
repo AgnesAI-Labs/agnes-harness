@@ -56,15 +56,15 @@ it('labels the trigger for assistive technology and starts collapsed', () => {
   expect(trigger.querySelector('svg')).not.toBeNull()
 })
 
-it('portals one menu with three icon-led items and marks the trigger expanded', async () => {
+it('portals one menu with four icon-led items and marks the trigger expanded', async () => {
   const { host, trigger, open } = renderMenu()
   const panel = await open()
   expect(host.contains(panel)).toBe(false)
   expect(document.body.contains(panel)).toBe(true)
   expect(panel.getAttribute('role')).toBe('menu')
   const items = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-  expect(items.map((item) => item.textContent)).toEqual(['重命名', '分叉会话', '归档会话'])
-  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true])
+  expect(items.map((item) => item.textContent)).toEqual(['重命名', '运行信息', '分叉会话', '归档会话'])
+  expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true])
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.activeElement).toBe(items[0])
 })

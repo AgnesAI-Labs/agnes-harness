@@ -34,12 +34,47 @@ function visible(node: HTMLElement): boolean {
     if (parent.hidden || parent.style.display === 'none') return false
   return true
 }
+const runtimeDescriptor = (id: string) => ({
+  sessionKey: id,
+  generation: {
+    id: 'gen-old',
+    current: false,
+    state: 'draining' as const,
+    newer: { id: 'gen-new', effect: 'new-sessions' as const },
+  },
+  preset: { name: 'code', bundles: [] },
+  loop: { id: 'default', version: '1.0.0' },
+  providers: [
+    {
+      kind: 'compaction',
+      id: 'default',
+      version: '1.0.0',
+      binding: 'generation' as const,
+      pending: { id: 'summary', effect: 'new-sessions' as const },
+    },
+  ],
+  seams: [],
+  resources: {
+    profileHash: 'h',
+    items: [{ id: 'ext:agnes/skills', resources: ['skills'], revision: 'rev-1' }],
+  },
+  policy: {
+    approvalMode: 'auto-review',
+    toolPolicy: 'default',
+    toolRuntime: 'default',
+    readOnly: false,
+    sandbox: { provider: 'local', onUnavailable: 'deny' as const },
+  },
+  restartRequired: ['sandbox'],
+})
+
 function setup() {
   document.body.innerHTML = `<section id="archived-settings-pane"><input id="archived-search" /><p id="archived-message"></p><p id="archived-empty"></p><ul id="archived-list"></ul><button id="archived-refresh"></button></section><button id="trigger">菜单</button>`
   const session = {
     list: vi.fn<(options: unknown) => Promise<PageSessionMeta>>(async () => ({ items: [] })),
     rename: vi.fn(async () => ({ title: '新名称', archived: false })),
     archive: vi.fn(async () => ({ archived: false })),
+    runtime: vi.fn(async (id: string) => runtimeDescriptor(id)),
   }
   const changed = vi.fn(async () => {})
   const fork = vi.fn(async () => {})
@@ -90,6 +125,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   const panel = document.querySelector('[role=menu]') as HTMLElement
   expect([...panel.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
     '重命名',
+    '运行信息',
     '分叉会话',
     '归档会话',
   ])
@@ -105,7 +141,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('重命名'))
   if (!document.activeElement) throw new Error('menu focus missing')
   key(document.activeElement, 'ArrowDown')
-  expect(document.activeElement?.textContent).toBe('分叉会话')
+  expect(document.activeElement?.textContent).toBe('运行信息')
   key(document.activeElement, 'End')
   expect(document.activeElement?.textContent).toBe('归档会话')
   key(document.activeElement, 'Escape')
@@ -395,4 +431,26 @@ it('tolerates an absent pane and stops reads and event handlers after disposal',
   expect(session.list).toHaveBeenCalledOnce()
   expect(changed).not.toHaveBeenCalled()
   expect(document.querySelectorAll('#archived-list li')).toHaveLength(0)
+})
+
+it('shows the Host runtime descriptor in the session menu dialog, with pending and restart notes', async () => {
+  const { actions, session, trigger } = setup()
+  await actions.act('runtime', 's', '名称', trigger)
+  await vi.waitFor(() => expect(document.querySelector('[data-session-runtime="s"]')).not.toBeNull())
+  expect(session.runtime).toHaveBeenCalledWith('s')
+  const text = document.querySelector('[data-session-runtime="s"]')?.textContent ?? ''
+  expect(text).toContain('gen-old')
+  expect(text).toContain('有更新的代次 gen-new：新会话生效')
+  expect(text).toContain('已配置 summary：新会话生效')
+  expect(text).toContain('审批 auto-review')
+  expect(text).toContain('ext:agnes/skills rev-1')
+  expect(text).toContain('你需要重启才能生效：sandbox')
+})
+
+it('reports a failed runtime read and closes the dialog', async () => {
+  const { actions, session, error, trigger } = setup()
+  session.runtime.mockRejectedValueOnce(new Error('gone'))
+  await actions.act('runtime', 's', '名称', trigger)
+  await vi.waitFor(() => expect(error).toHaveBeenCalled())
+  expect(document.querySelector('[data-session-runtime]')).toBeNull()
 })

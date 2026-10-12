@@ -3,7 +3,9 @@ import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, createRegionHost, Dialog, renderRegion, SettingsInput, unmountRegion } from '@agnes/web-ui'
 
-export type SessionAction = 'rename' | 'fork' | 'archive'
+import { createRuntimeDialog } from './session-runtime-dialog.js'
+
+export type SessionAction = 'rename' | 'fork' | 'archive' | 'runtime'
 
 export function forkTitle(title: string): string {
   const match = /^(.*) \((\d+)\)$/.exec(title)
@@ -25,6 +27,7 @@ export function createSessionActions(options: {
   translate: Translate
 }) {
   const t = options.translate
+  let runtimeDialog: ReturnType<typeof createRuntimeDialog> | undefined
   const host = createRegionHost(document.body, 'div')
   let target: string | undefined
   let pending = false
@@ -304,6 +307,7 @@ export function createSessionActions(options: {
     observer.disconnect()
     document.removeEventListener('input', onSearch, true)
     document.removeEventListener('click', onRefresh)
+    runtimeDialog?.dispose()
     window.removeEventListener('pagehide', dispose)
     if (observedRows) unmountRegion(observedRows)
     unmountRegion(host)
@@ -330,6 +334,10 @@ export function createSessionActions(options: {
         input?.focus()
         input?.select()
         return
+      }
+      if (action === 'runtime') {
+        runtimeDialog ??= createRuntimeDialog({ client: options.client, translate: t, error: options.error })
+        return runtimeDialog.open(id, trigger)
       }
       if (busy.has(id)) return
       busy.add(id)

@@ -12,6 +12,7 @@ const ITEMS: readonly (readonly [SessionAction, string, readonly string[]])[] = 
       'm15 5 4 4',
     ],
   ],
+  ['runtime', 'session.menu.runtime', ['M4 6h16', 'M4 12h16', 'M4 18h10']],
   ['fork', 'session.menu.fork', ['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']],
   [
     'archive',
