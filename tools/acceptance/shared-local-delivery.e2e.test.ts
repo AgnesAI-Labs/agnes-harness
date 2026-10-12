@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { probePowerShell } from '@agnes/host-infrastructure/adapters/powershell'
 import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { getApiKeyProvider } from '../../packages/ai/src/index.js'
 import { unixConnectTarget } from '../../packages/cli/src/boot/connect.js'
 import { ExitCode } from '../../packages/cli/src/errors.js'
@@ -88,7 +88,7 @@ it.skipIf(!entry)(
               stdoutEnded,
               stderrEnded,
             })
-            if (error) reject(error)
+            if (error) reject(Object.assign(error, { stdout }))
             else if (!stdoutEnded || !stderrEnded)
               reject(new Error('CLI capture closed before output reached EOF'))
             else done({ stdout, stderr })
@@ -362,17 +362,47 @@ it.skipIf(!entry)(
         'Shared backend acceptance reply.',
       )
       provider.queueTool({ name: 'shell', args: { command: 'echo unexpected > shell-should-not-run.txt' } })
-      // Rejection is a tool result; the model may then complete its answer with CLI exit 0.
-      // Check the actual denial and missing side effect, not the final turn exit code.
-      const denied = await command(['-p', 'Run the requested shell probe.'])
-      expect(denied.stdout).toContain('Shared backend acceptance reply.')
-      expect(provider.requests.at(-1)?.messages).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            role: 'tool',
-            content: 'the user rejected this action; do not retry the same call without asking',
-          }),
-        ]),
+      // A one-shot caller cannot answer for a person: the durable gate survives its exit.
+      const parked = await command(['-p', 'Run the requested shell probe.']).catch(
+        (error: { code: number; stdout: string }) => error,
+      )
+      expect(parked).toMatchObject({ code: ExitCode.PARKED })
+      const ticket = /parked ticket=(\S+) session=(\S+)/.exec(parked.stdout)
+      if (!ticket) throw new Error('print did not report its durable approval ticket')
+      await expect(readFile(join(cwd, 'shell-should-not-run.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+      const approver = createClient({
+        transport: {
+          kind: 'unix',
+          path: nextOwner.socketPath,
+          ...(nextOwner.socketPath.startsWith('\\\\.\\pipe\\')
+            ? { serverIdentity: { pid: nextOwner.pid, processStartId: nextOwner.processStartId } }
+            : {}),
+        },
+        auth: { kind: 'local' },
+        journal: memoryJournal(),
+      })
+      clients.push(approver)
+      const decision = (await approver.approval.list(ticket[2])).decisions.find(
+        (item) => item.handle.id === ticket[1] && !item.result && !item.invalidation,
+      )
+      if (!decision) throw new Error('approval did not survive the print process exit')
+      await approver.approval.decide({
+        ...decision.handle,
+        revision: decision.revision,
+        commandId: 'acceptance-reject-shell',
+        response: { option: 'rejected', value: null },
+      })
+      await vi.waitFor(
+        () =>
+          expect(provider.requests.at(-1)?.messages).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                role: 'tool',
+                content: 'the user rejected this action; do not retry the same call without asking',
+              }),
+            ]),
+          ),
+        { timeout: 15_000 },
       )
       await expect(readFile(join(cwd, 'shell-should-not-run.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
       // Stop the selected distribution before switching back; never overwrite a loaded binary.
