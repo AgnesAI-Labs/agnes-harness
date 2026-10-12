@@ -13,13 +13,13 @@
   }
   .session-tabs-bar {
     flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
-    padding-inline: 0.75rem;
+    gap: var(--s4) var(--s8);
+    padding-inline: var(--s12);
   }
   .session-tabs {
     min-width: 0;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--s12);
   }
   .session-tabs-bar .session-goal-host {
     margin-inline-start: 0;
@@ -48,13 +48,13 @@
   #config-form .settings-rail {
     display: block;
     max-height: none;
-    padding: 0.75rem;
+    padding: var(--s12);
     overflow: visible;
   }
   .settings-rail-heading {
     min-height: 32px;
     padding-inline-end: 2.5rem;
-    margin-block-end: 0.5rem;
+    margin-block-end: var(--s8);
   }
   #config-close {
     top: 0.75rem;
@@ -62,7 +62,7 @@
   }
   .settings-nav-group {
     display: flex;
-    gap: 0.25rem;
+    gap: var(--s4);
     overflow-x: auto;
   }
   .settings-nav-item {

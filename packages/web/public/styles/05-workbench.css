@@ -61,9 +61,9 @@ main {
 }
 .connection-group {
   flex: 0 0 auto;
-  gap: 0.25rem;
+  gap: var(--s4);
   height: 1.75rem;
-  padding: 0 0.5rem;
+  padding: 0 var(--s8);
   border: 1px solid transparent;
   border-radius: 13px;
   font-size: var(--font-size-xs);
@@ -138,12 +138,12 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
 .session-tabs-bar {
   display: flex;
   align-items: center;
-  padding: 0 1.25rem;
+  padding: 0 var(--s20);
   border-bottom: 1px solid var(--agnes-line-primary);
 }
 .session-tabs {
   display: flex;
-  gap: 1rem;
+  gap: var(--s16);
 }
 #report-problem {
   margin-left: auto;

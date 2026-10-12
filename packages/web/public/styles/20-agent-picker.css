@@ -21,7 +21,7 @@
 .agent-picker-panel {
   width: min(22rem, calc(100vw - 3rem));
   display: grid;
-  gap: 1rem;
+  gap: var(--s16);
 }
 .agent-picker-panel .agnes-ui-field {
   display: grid;
@@ -45,8 +45,8 @@
   margin-inline: auto;
 }
 .goal-card {
-  margin: 0.5rem 1rem;
-  padding: 0.5rem 0.75rem;
+  margin: var(--s8) var(--s16);
+  padding: var(--s8) var(--s12);
   border-radius: var(--radius-card);
   background: var(--agnes-bg-surface);
 }
@@ -56,8 +56,8 @@
 }
 .goal-card form {
   display: grid;
-  gap: 0.75rem;
-  padding-block: 0.75rem;
+  gap: var(--s12);
+  padding-block: var(--s12);
 }
 .goal-card .agnes-ui-field {
   display: grid;
@@ -71,7 +71,7 @@
   margin: 0;
 }
 .runtime-settings > section > .agnes-ui-tabs {
-  margin-bottom: 1rem;
+  margin-bottom: var(--s16);
 }
 .runtime-settings .config-heading {
   padding: 0;
@@ -85,14 +85,14 @@
 .session-goal-host {
   width: min(100%, 52rem);
   margin-inline: auto;
-  padding: 0.5rem 1.5rem 0;
+  padding: var(--s8) var(--s24) 0;
 }
 
 #plugin-settings-pane:has(.runtime-settings) > .config-heading {
   display: none;
 }
 #plugin-settings-pane .admin-pane-body {
-  padding-top: 1rem;
+  padding-top: var(--s16);
 }
 
 #config-form[data-runtime-page]:not([data-runtime-page="plugins"]) #plugin-settings-pane .plugin-toolbar {
@@ -118,7 +118,7 @@
   flex: 0 1 auto;
 }
 .session-tabs-bar:has(.session-goal-host:not([hidden])) #report-problem {
-  margin-left: 0.5rem;
+  margin-left: var(--s8);
 }
 .session-goal-host .agnes-ui-button {
   max-width: 14rem;
@@ -128,7 +128,7 @@
 .goal-card {
   width: min(24rem, calc(100vw - 3rem));
   margin: 0;
-  padding: 0.5rem;
+  padding: var(--s8);
   background: transparent;
 }
 .goal-card button {

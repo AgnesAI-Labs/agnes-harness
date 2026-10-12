@@ -15,7 +15,7 @@
    overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
 #transcript-content {
   margin-inline: auto;
-  padding: 1rem 2rem;
+  padding: var(--s16) var(--s32);
   width: min(100%, var(--chat-content-width));
 }
 #empty-state {
@@ -27,7 +27,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0 2rem 2rem;
+  padding: 0 var(--s32) var(--s32);
   text-align: center;
   /* hidden → 显示（新建草稿进入空态）时淡入，压平布局切换的生硬感。 */
   transition: opacity var(--transition);
@@ -53,7 +53,7 @@
 }
 .empty-state-copy {
   max-width: 30rem;
-  margin: 0.75rem 0 0;
+  margin: var(--s12) 0 0;
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-body);
   line-height: 1.5rem;
@@ -98,7 +98,7 @@
   white-space: pre-wrap;
 }
 .node-body {
-  margin-top: 0.5rem;
+  margin-top: var(--s8);
 }
 /* `.user` 原有一条卡片样式（padding/border/radius/background）。.user 只会以
    "timeline-node user" 出现，那 4 条全被 .timeline-node.user 与 .user .node-body
@@ -140,13 +140,13 @@
 .markdown blockquote,
 .markdown .table-scroll,
 .markdown .code-block {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--s16);
 }
 .markdown h1,
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  margin: 2rem 0 1rem;
+  margin: var(--s32) 0 var(--s16);
   color: var(--agnes-text-primary);
   font-weight: 700;
 }
@@ -163,7 +163,7 @@
   line-height: 1.625rem;
 }
 .markdown h4 {
-  margin: 1rem 0;
+  margin: var(--s16) 0;
   font-size: var(--font-size-body);
   font-weight: 600;
   line-height: 1.5rem;
@@ -179,7 +179,7 @@
   margin-top: 6px;
 }
 .markdown li > p {
-  margin: 8px 0;
+  margin: var(--s8) 0;
 }
 .markdown li:first-child > p {
   margin-top: 0;
@@ -227,7 +227,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--s12);
   padding: 0.5625rem 0.875rem;
   border-bottom: 0;
   color: var(--agnes-text-primary);
@@ -249,7 +249,7 @@
 }
 .code-copy {
   min-height: 1.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: var(--s4) var(--s8);
   border-color: var(--agnes-line-emphasis);
   border-radius: var(--radius-lg);
   color: var(--agnes-text-secondary);
@@ -259,14 +259,14 @@
 .code-block pre {
   max-width: 100%;
   margin: 0;
-  padding: 1rem;
+  padding: var(--s16);
   overflow: auto;
   font-size: 0.6875rem;
   line-height: 1.1875rem;
   tab-size: 2;
 }
 .resource-admin-page code {
-  padding: 0.125rem 0.25rem;
+  padding: 0.125rem var(--s4);
   border-radius: var(--radius-sm);
   background: var(--agnes-bg-card);
   color: var(--agnes-text-primary);
@@ -287,7 +287,7 @@
 }
 .markdown th,
 .markdown td {
-  padding: 0.625rem 1rem;
+  padding: 0.625rem var(--s16);
   border-bottom: 0.5px solid var(--agnes-line-primary);
   text-align: start;
   vertical-align: top;
@@ -310,7 +310,7 @@
 }
 /* 思考标题保留轻量折叠入口；正文用独立细线和 12px 缩进，避免与过程外壳叠出双导轨。 */
 .thinking {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--s16);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -334,7 +334,7 @@
   cursor: pointer;
 }
 .thinking-content {
-  margin-top: 0.25rem;
+  margin-top: var(--s4);
   padding: 0.125rem 0 0.125rem var(--s12);
   border-left: 1px solid var(--agnes-line-primary);
   color: var(--agnes-text-secondary);
@@ -359,13 +359,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--s12);
 }
 .tool-meta {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .tool-name {
   overflow: hidden;
@@ -407,15 +407,15 @@
   background: var(--agnes-bg-selected);
 }
 .approval-summary {
-  margin: 0.5rem 0 0;
+  margin: var(--s8) 0 0;
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-sm);
 }
 .timeline-node.cost {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: var(--s8);
+  margin-bottom: var(--s12);
   color: var(--agnes-text-tertiary);
   padding: 0;
   border: 0;
@@ -436,8 +436,8 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "label summary status";
   align-items: baseline;
-  column-gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  column-gap: var(--s8);
+  margin-bottom: var(--s12);
   color: var(--agnes-text-tertiary);
 }
 .approval .approval-head {
@@ -491,8 +491,8 @@
 }
 #approval {
   width: min(calc(100% - 2rem), var(--chat-content-width));
-  margin: 0 auto 0.75rem;
-  padding: 0.75rem 1rem;
+  margin: 0 auto var(--s12);
+  padding: var(--s12) var(--s16);
 }
 [data-agnes-region="approval"] {
   overflow: hidden;
@@ -536,8 +536,8 @@
 /* The arguments can be long: they scroll inside the card instead of pushing the choices off screen. */
 #approval pre {
   max-height: 14rem;
-  margin: 0.5rem 0 0;
-  padding: 0.5rem 0.75rem;
+  margin: var(--s8) 0 0;
+  padding: var(--s8) var(--s12);
   overflow: auto;
   border: 1px solid var(--agnes-line-primary);
   border-radius: 0.5rem;
@@ -552,7 +552,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--s8);
   margin-top: 0.875rem;
 }
 
