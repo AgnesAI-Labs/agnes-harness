@@ -20,6 +20,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
+import { translateSessionFailure } from '../generation/seam-pins.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import {
@@ -444,112 +445,120 @@ export async function createCompositionHost(
             await initial.host.resolveActor(input.credential ?? { kind: 'local' }, 'session'),
             input.cwd ?? options.workspaceRoot,
           )
-        let binding = store.read(key)
-        if (!binding) {
-          const parent = input.parent ? store.read(input.parent.key) : undefined
-          const sources =
-            latestTarget && !parent
-              ? new RuntimePluginCatalogue(
-                  (await options.runtimePluginSources?.()) ??
-                    options.runtimePluginCatalogue ??
-                    options.runtimePluginSnapshots ??
-                    [],
-                ).select(latestTarget)
-              : []
-          const admissionProfile = {
-            ...profile,
-            // Admission uses the published code catalog, including packages installed after boot.
-            // Persist it with the composition so cold opens can mount its loop before Kernel creation.
-            packages: [
-              ...profile.packages.filter(
-                (pkg) => !sources.some((source) => source.snapshot.packageId === pkg.id),
-              ),
-              ...sources.map(({ snapshot, trusted }) => ({
-                ...profile.packages.find((pkg) => pkg.id === snapshot.packageId),
-                id: snapshot.packageId,
-                version: snapshot.version,
-                integrity: snapshot.integrity,
-                source:
-                  profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.source ?? 'runtime-snapshot',
-                trust: 'trusted' as const,
-                enabled:
-                  trusted && (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
-              })),
-            ],
-            bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
-          }
-          const adminLoop = parent ? undefined : (await configuration.sessionDefaults()).defaults.loop
-          const tree =
-            parent?.tree ??
-            resolveComposition(
-              { ...profile, bundleCatalog: admissionProfile.bundleCatalog },
-              {
-                packageCatalog: admissionProfile.packages,
-                preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
-                  limits: profile.limits,
-                }).doc,
-                ...(adminLoop
-                  ? {
-                      admin: {
-                        composition: { loop: { provider: adminLoop.id, version: adminLoop.version } },
-                      },
-                    }
-                  : {}),
-                ...(input.loop
-                  ? { session: { loop: { provider: input.loop.id, version: input.loop.version } } }
-                  : {}),
-                ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
-              },
-            )
-          const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
-          if (
-            !parent &&
-            selectedLoop &&
-            !initial.host.kernel.loops
-              .catalog()
-              .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
-          )
-            throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', { loop: selectedLoop })
-          binding = store.pin({
-            sessionKey: key,
-            tree,
-            profile: parent?.profile ?? profileForComposition(admissionProfile, tree),
-          })
-        }
-        if (
-          input.bundles !== undefined &&
-          JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
-        )
-          throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
         try {
-          const container = await open(binding)
-          if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-          const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
-          if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
-            throw new Error(
-              'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
-            )
-          const session = await container.host.createSession({
-            ...input,
-            key,
-            preset: binding.tree.preset,
-            ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
-          })
-          sessionOwners.set(key, container)
-          const close = session.close.bind(session)
-          session.close = async () => {
-            try {
-              await close()
-            } finally {
-              sessionOwners.delete(key)
-              publish()
+          let binding = store.read(key)
+          if (!binding) {
+            const parent = input.parent ? store.read(input.parent.key) : undefined
+            const sources =
+              latestTarget && !parent
+                ? new RuntimePluginCatalogue(
+                    (await options.runtimePluginSources?.()) ??
+                      options.runtimePluginCatalogue ??
+                      options.runtimePluginSnapshots ??
+                      [],
+                  ).select(latestTarget)
+                : []
+            const admissionProfile = {
+              ...profile,
+              // Admission uses the published code catalog, including packages installed after boot.
+              // Persist it with the composition so cold opens can mount its loop before Kernel creation.
+              packages: [
+                ...profile.packages.filter(
+                  (pkg) => !sources.some((source) => source.snapshot.packageId === pkg.id),
+                ),
+                ...sources.map(({ snapshot, trusted }) => ({
+                  ...profile.packages.find((pkg) => pkg.id === snapshot.packageId),
+                  id: snapshot.packageId,
+                  version: snapshot.version,
+                  integrity: snapshot.integrity,
+                  source:
+                    profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.source ??
+                    'runtime-snapshot',
+                  trust: 'trusted' as const,
+                  enabled:
+                    trusted &&
+                    (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
+                })),
+              ],
+              bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
             }
+            const adminLoop = parent ? undefined : (await configuration.sessionDefaults()).defaults.loop
+            const tree =
+              parent?.tree ??
+              resolveComposition(
+                { ...profile, bundleCatalog: admissionProfile.bundleCatalog },
+                {
+                  packageCatalog: admissionProfile.packages,
+                  preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
+                    limits: profile.limits,
+                  }).doc,
+                  ...(adminLoop
+                    ? {
+                        admin: {
+                          composition: { loop: { provider: adminLoop.id, version: adminLoop.version } },
+                        },
+                      }
+                    : {}),
+                  ...(input.loop
+                    ? { session: { loop: { provider: input.loop.id, version: input.loop.version } } }
+                    : {}),
+                  ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
+                },
+              )
+            const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
+            if (
+              !parent &&
+              selectedLoop &&
+              !initial.host.kernel.loops
+                .catalog()
+                .some((entry) => entry.id === selectedLoop.id && entry.version === selectedLoop.version)
+            )
+              throw new CoreError('E_LOOP_MISSING', 'The selected loop is unavailable.', {
+                loop: selectedLoop,
+              })
+            binding = store.pin({
+              sessionKey: key,
+              tree,
+              profile: parent?.profile ?? profileForComposition(admissionProfile, tree),
+            })
           }
-          publish()
-          return session
+          if (
+            input.bundles !== undefined &&
+            JSON.stringify(input.bundles) !== JSON.stringify(binding.tree.sessionBundles)
+          )
+            throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
+          try {
+            const container = await open(binding)
+            if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
+            const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
+            if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
+              throw new Error(
+                'E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session composition',
+              )
+            const session = await container.host.createSession({
+              ...input,
+              key,
+              preset: binding.tree.preset,
+              ...(binding.tree.selection.loop ? { loop: binding.tree.selection.loop } : {}),
+            })
+            sessionOwners.set(key, container)
+            const close = session.close.bind(session)
+            session.close = async () => {
+              try {
+                await close()
+              } finally {
+                sessionOwners.delete(key)
+                publish()
+              }
+            }
+            publish()
+            return session
+          } catch (error) {
+            if (!generations.session(key)) store.release(key)
+            throw error
+          }
         } catch (error) {
-          if (!generations.session(key)) store.release(key)
-          throw error
+          throw translateSessionFailure(error, key)
         }
       }),
     sessionGeneration: (key) => generations.session(key)?.generationId,

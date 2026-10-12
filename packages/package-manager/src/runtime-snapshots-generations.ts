@@ -149,13 +149,17 @@ export class RuntimeGenerationSnapshotStore {
 
   read(id: string): PluginGenerationSnapshot {
     const directory = this.directory(id)
-    let record: PluginGenerationSnapshot
+    let text: string
     try {
-      record = JSON.parse(
-        readFileSync(join(directory, 'generation.json'), 'utf8'),
-      ) as PluginGenerationSnapshot
+      text = readFileSync(join(directory, 'generation.json'), 'utf8')
     } catch {
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${id} cannot be resumed`)
+    }
+    let record: PluginGenerationSnapshot
+    try {
+      record = JSON.parse(text) as PluginGenerationSnapshot
+    } catch {
+      throw new Error(`E_GENERATION_INTEGRITY: generation ${id} record is not valid JSON`)
     }
     if (typeof record.version === 'number' && record.version > GENERATION_SNAPSHOT_VERSION)
       throw new Error(
@@ -268,7 +272,12 @@ export class RuntimeGenerationSnapshotStore {
   session(sessionKey: string): SessionGenerationPin | undefined {
     const path = this.pinPath(sessionKey)
     if (!existsSync(path)) return undefined
-    const pin = JSON.parse(readFileSync(path, 'utf8')) as SessionGenerationPin
+    let pin: SessionGenerationPin
+    try {
+      pin = JSON.parse(readFileSync(path, 'utf8')) as SessionGenerationPin
+    } catch {
+      throw new Error(`E_GENERATION_INTEGRITY: session pin ${sessionKey} is not valid JSON`)
+    }
     if (pin.sessionKey !== sessionKey) throw new Error('E_GENERATION_INTEGRITY: session pin mismatch')
     if (pin.formatVersion !== undefined && pin.formatVersion > SESSION_PIN_FORMAT_VERSION)
       throw new Error(

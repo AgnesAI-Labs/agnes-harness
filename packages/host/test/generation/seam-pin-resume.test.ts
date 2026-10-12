@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { approvalKind } from '@agnes/extension-api/seams'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
@@ -213,12 +214,38 @@ const pinPathOf = (root: string) => {
   return join(directory, readdirSync(directory)[0] as string)
 }
 
+/**
+ * The real worker passes runtime plugin sources, which selects the composition host; a session on a
+ * non-default preset is reopened in its own container, so its pin is read before any Host exists.
+ */
+const hostOptions = (composition: boolean) => ({
+  disableSessionTitle: true,
+  ...(composition
+    ? {
+        runtimePluginSources: async () => [],
+        packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+        presets: {
+          reader: { name: 'reader', extends: 'standard', composition: { tools: ['read'] } },
+          writer: { name: 'writer', extends: 'standard', composition: { tools: ['write'] } },
+        },
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            composition: {},
+            presets: { default: 'reader', allowed: ['reader', 'writer'] },
+          },
+        },
+      }
+    : {}),
+})
+const presetOf = (composition: boolean) => (composition ? { preset: 'writer' } : {})
+
 /** One closed, pinned session whose stored records the case then damages in a named way. */
-async function pinnedSessionRoot() {
+async function pinnedSessionRoot(composition = false) {
   const root = scratch()
-  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  const first = await createTestHost({ dataDir: root, ...hostOptions(composition) })
   try {
-    await (await first.host.createSession({ key: 'victim', cwd: root })).close()
+    await (await first.host.createSession({ key: 'victim', cwd: root, ...presetOf(composition) })).close()
   } finally {
     await first.host.close()
   }
@@ -227,7 +254,7 @@ async function pinnedSessionRoot() {
   return { root, pinFile, generationFile: join(generationDir(root, generationId), 'generation.json') }
 }
 
-it.each([
+const damageCases = [
   [
     'a snapshot written before seams were recorded',
     'E_SESSION_VERSION_OLDER',
@@ -253,19 +280,43 @@ it.each([
       generation.compatibility = 42
     },
   ],
-] as const)(
+  [
+    'a snapshot whose JSON is damaged',
+    'E_SESSION_CORRUPT',
+    'E_GENERATION_INTEGRITY',
+    (_generation: Record<string, unknown>, files: { generationFile: string }) => {
+      writeFileSync(files.generationFile, '{"version":')
+    },
+  ],
+  [
+    'a session pin whose JSON is damaged',
+    'E_SESSION_CORRUPT',
+    'E_GENERATION_INTEGRITY',
+    (_generation: Record<string, unknown>, files: { pinFile: string }) => {
+      writeFileSync(files.pinFile, '{"sessionKey":')
+    },
+  ],
+] as const
+
+it.each(
+  damageCases.flatMap(([name, ...rest]) => [
+    [`${name} (single container)`, ...rest, false] as const,
+    [`${name} (composition)`, ...rest, true] as const,
+  ]),
+)(
   'tells the person which direction %s fails in and leaves the ledger and pin untouched',
-  async (_name, code, cause, damage) => {
-    const { root, pinFile, generationFile } = await pinnedSessionRoot()
+  async (_name, code, cause, damage, composition) => {
+    const { root, pinFile, generationFile } = await pinnedSessionRoot(composition)
     const generation = JSON.parse(readFileSync(generationFile, 'utf8')) as Record<string, unknown>
-    damage(generation)
-    writeFileSync(generationFile, JSON.stringify(generation))
+    damage(generation, { pinFile, generationFile })
+    if (!damage.toString().includes('writeFileSync'))
+      writeFileSync(generationFile, JSON.stringify(generation))
     const before = {
       pin: readFileSync(pinFile, 'utf8'),
       generation: readFileSync(generationFile, 'utf8'),
       ledgers: ledgerFiles(root).map(statSignature),
     }
-    const again = await createTestHost({ dataDir: root, disableSessionTitle: true })
+    const again = await createTestHost({ dataDir: root, ...hostOptions(composition) })
     try {
       const failure = await again.host.createSession({ key: 'victim', cwd: root }).then(
         () => undefined,
