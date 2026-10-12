@@ -40,28 +40,16 @@ export type ExtensionRowsInput = Readonly<{
 }>
 
 /**
- * The `ext:` rows: one per bundled extension this installation can admit, plus the rows for
- * extensions that exist only at runtime. They are the Host's own rows, claimed as Host-private
- * so the publisher admits them, and mount through the same runtime target as every other row.
+ * How an `ext:` row loads its extension: a bundled one through the shared builtin row host, or one
+ * that exists only at runtime. The extension is constructed inside the row's apply, so a factory
+ * that throws is a listing and an empty row, not an assembly failure.
  */
-export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionRowsInput) {
-  const { deps, say } = ctx
-  const { kernel, bootRows, rowHosts, runtimeTarget, host, bundled, skillState, buildEcosystemContext } =
-    input
-  const { builtin, bootTreeRows } = bootRows
-  const { extensionInfo } = rowHosts
-  const { enqueueRuntimeTarget, generationViews } = runtimeTarget
+function createExtensionLoaders(input: ExtensionRowsInput) {
+  const { kernel, runtimeTarget, host, bundled, skillState, buildEcosystemContext } = input
   const runtimeTargetPublisher = runtimeTarget.publisher
+  const { generationViews } = runtimeTarget
   const { managed, builtinRows, makeFactorySelector, selectExtensionFactory } = host
-  const { findBundledExtension, authorManifestOf, consumesSkills, declaredExtensionIds } = bundled
-  // ==== ext: rows ====
-  // This is the earliest point where an ext: row can exist: `managed`, `selectExtensionFactory`
-  // and `findBundledExtension` (just above) are all consts declared after the boot tree's own
-  // applyRuntimeTarget, and the row's loader needs all three.
-  const extRowOwners = new Map<string, symbol>()
-  // Extensions that exist only at runtime (one per resource), keyed by extension id. Registered by
-  // `prepare`, dropped again once an apply no longer carries their row.
-  const dynamicExtensionIds = new Set<string>()
+  const { findBundledExtension, consumesSkills } = bundled
   // Copies one owner's current Kernel registrations into the published generation sessions are
   // bound to, which otherwise keeps the copy it took when it was created.
   const mirrorGenerationOwner = (id: string) => {
@@ -138,6 +126,79 @@ export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionR
       onLateRegistration: () => mirrorGenerationOwner(extensionId),
     })
   }
+  return { extRowLoader, loadMigratedExtension, loadDynamicExtension }
+}
+
+/**
+ * Admits the bundled extensions that get a row on this installation, auditing each refusal.
+ */
+function admittedExtensionIds(ctx: AssemblyContext, input: ExtensionRowsInput): string[] {
+  const { say } = ctx
+  const { bundled, rowHosts } = input
+  const { extensionInfo } = rowHosts
+  const { findBundledExtension, declaredExtensionIds } = bundled
+  // Only extensions this installation can actually admit get a row. A row whose apply throws
+  // during assembly does not become RowState 'failed': assemble.ts's own step wrapper rewrites it
+  // into E_SEAM_INIT and unwinds the rollback, i.e. Host does not exist. Admission is therefore
+  // decided BEFORE the row is built, with the same preflight managed.load runs (identity,
+  // manifest, api range, capability ceiling). A profile that narrows `policy.capabilityCeiling`
+  // below what a builtin declares used to mean "that one extension fails to load, Host boots";
+  // rowifying it must not turn that into "Host does not exist".
+  const admitsExtensionRow = (found: NonNullable<ReturnType<typeof findBundledExtension>>) => {
+    try {
+      const ceiling = ctx.profile.policy.capabilityCeiling
+      if (found.embedded)
+        preflightEmbeddedExtension({
+          id: found.spec.id,
+          manifest: found.embedded,
+          ceiling,
+          apiVersion: extensionInfo.apiVersion,
+        })
+      else preflightExtension({ ...found.spec, ceiling, apiVersion: extensionInfo.apiVersion })
+      return true
+    } catch {
+      return false
+    }
+  }
+  const extRowIds: string[] = []
+  for (const extensionId of declaredExtensionIds) {
+    // The Computer Use gate is a supply condition, not a grant condition: when it is off there is
+    // nothing to load, so no row is built.
+    if (extensionId === 'agnes/computer-use' && !ctx.profile.computerUse.enabled) continue
+    const found = findBundledExtension(extensionId)
+    if (!found) continue
+    if (admitsExtensionRow(found)) extRowIds.push(extensionId)
+    else
+      say('extension.failed', {
+        id: extensionId,
+        code: 'E_EXT_LOAD',
+        message: 'builtin row admission failed',
+      })
+  }
+  return extRowIds
+}
+
+/**
+ * The `ext:` rows: one per bundled extension this installation can admit, plus the rows for
+ * extensions that exist only at runtime. They are the Host's own rows, claimed as Host-private
+ * so the publisher admits them, and mount through the same runtime target as every other row.
+ */
+export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionRowsInput) {
+  const { deps, say } = ctx
+  const { bootRows, runtimeTarget, bundled } = input
+  const { builtin, bootTreeRows } = bootRows
+  const { enqueueRuntimeTarget } = runtimeTarget
+  const runtimeTargetPublisher = runtimeTarget.publisher
+  const { findBundledExtension, authorManifestOf, consumesSkills } = bundled
+  // ==== ext: rows ====
+  // This is the earliest point where an ext: row can exist: `managed`, `selectExtensionFactory`
+  // and `findBundledExtension` (just above) are all consts declared after the boot tree's own
+  // applyRuntimeTarget, and the row's loader needs all three.
+  const extRowOwners = new Map<string, symbol>()
+  // Extensions that exist only at runtime (one per resource), keyed by extension id. Registered by
+  // `prepare`, dropped again once an apply no longer carries their row.
+  const dynamicExtensionIds = new Set<string>()
+  const { extRowLoader, loadMigratedExtension, loadDynamicExtension } = createExtensionLoaders(input)
   const preparedExtensionInputs = new Map<string, Parameters<Assembled['extensionRows']['prepare']>[0]>()
   const prepareExtensionRow = (
     input: Readonly<{
@@ -218,44 +279,7 @@ export async function mountExtensionRows(ctx: AssemblyContext, input: ExtensionR
           }),
         ).target,
     )
-  // Only extensions this installation can actually admit get a row. A row whose apply throws
-  // during assembly does not become RowState 'failed': assemble.ts's own step wrapper rewrites it
-  // into E_SEAM_INIT and unwinds the rollback, i.e. Host does not exist. Admission is therefore
-  // decided BEFORE the row is built, with the same preflight managed.load runs (identity,
-  // manifest, api range, capability ceiling). A profile that narrows `policy.capabilityCeiling`
-  // below what a builtin declares used to mean "that one extension fails to load, Host boots";
-  // rowifying it must not turn that into "Host does not exist".
-  const admitsExtensionRow = (found: NonNullable<ReturnType<typeof findBundledExtension>>) => {
-    try {
-      const ceiling = ctx.profile.policy.capabilityCeiling
-      if (found.embedded)
-        preflightEmbeddedExtension({
-          id: found.spec.id,
-          manifest: found.embedded,
-          ceiling,
-          apiVersion: extensionInfo.apiVersion,
-        })
-      else preflightExtension({ ...found.spec, ceiling, apiVersion: extensionInfo.apiVersion })
-      return true
-    } catch {
-      return false
-    }
-  }
-  const extRowIds: string[] = []
-  for (const extensionId of declaredExtensionIds) {
-    // The Computer Use gate is a supply condition, not a grant condition: when it is off there is
-    // nothing to load, so no row is built.
-    if (extensionId === 'agnes/computer-use' && !ctx.profile.computerUse.enabled) continue
-    const found = findBundledExtension(extensionId)
-    if (!found) continue
-    if (admitsExtensionRow(found)) extRowIds.push(extensionId)
-    else
-      say('extension.failed', {
-        id: extensionId,
-        code: 'E_EXT_LOAD',
-        message: 'builtin row admission failed',
-      })
-  }
+  const extRowIds = admittedExtensionIds(ctx, input)
   builtin.hostExtensionRows = Object.freeze([
     ...extRowIds.map((extensionId) => {
       const pinned = deps.generationBuiltinRows?.find((row) => row.id === `ext:${extensionId}`)

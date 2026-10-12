@@ -33,38 +33,25 @@ import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { SeamContexts } from './seam-contexts.js'
 
-export type WorkspaceRuntimeFactory = Readonly<{
-  /** Compiled policies by workspace root identity; the Skill installer reads the one a session runs under. */
-  workspacePlans: ReadonlyMap<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
-  /** Production per-binding constructor used when HostOptions does not supply a test override. */
-  openWorkspaceRuntime(
-    binding: WorkspaceBinding,
-    preset?: PresetDoc,
-    invocation?: import('@agnes/core').WorkspaceInvocationPort,
-  ): Promise<SessionWorkspaceRuntime>
-}>
+type WorkspacePlans = Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
 
 /**
- * Step `seams`, second half: the sandbox readiness manager and the per-workspace runtime
- * constructor. The tree and the bound seams do not exist yet; the constructor reads them
- * through `ctx.live` when a session opens a workspace.
+ * Decides, per workspace, which sandbox posture a session gets: remote, an external provider's
+ * enforcement, or the sandbox package's own probe of the local backend. The probe is revoked with the assembly.
  */
-export function createWorkspaceRuntimeFactory(
+function createReadinessManager(
   ctx: AssemblyContext,
   pkgs: PackageSet,
   proc: ProcessServices,
-  presets: PresetCatalog,
-  seamContexts: SeamContexts,
-): WorkspaceRuntimeFactory {
-  const { deps, dataDir, rollback } = ctx
-  const { hotPolicy } = ctx.gates
+  workspacePlans: WorkspacePlans,
+): SandboxReadinessManager {
+  const { deps, rollback } = ctx
   const { modules } = pkgs
   const { adapters, sandboxProviderSlot } = proc
   const sandboxPackage = modules.get(ctx.profile.seams.sandbox)
   const workspaceProbe = sandboxPackage?.sandboxWorkspaceProbe
   const rawProbe = adapters.createProbeExec()
   rollback.push('workspace-sandbox-probe', () => rawProbe.revoke())
-  const workspacePlans = new Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>()
   const readinessManager = new SandboxReadinessManager(async (key) => {
     const plan = workspacePlans.get(JSON.stringify([key.canonicalRoot, key.staticConfigHash]))
     if (!plan)
@@ -140,6 +127,37 @@ export function createWorkspaceRuntimeFactory(
     return raw
   })
   rollback.push('workspace-sandbox-readiness', () => readinessManager.revoke())
+  return readinessManager
+}
+
+export type WorkspaceRuntimeFactory = Readonly<{
+  /** Compiled policies by workspace root identity; the Skill installer reads the one a session runs under. */
+  workspacePlans: ReadonlyMap<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
+  /** Production per-binding constructor used when HostOptions does not supply a test override. */
+  openWorkspaceRuntime(
+    binding: WorkspaceBinding,
+    preset?: PresetDoc,
+    invocation?: import('@agnes/core').WorkspaceInvocationPort,
+  ): Promise<SessionWorkspaceRuntime>
+}>
+
+/**
+ * Step `seams`, second half: the sandbox readiness manager and the per-workspace runtime
+ * constructor. The tree and the bound seams do not exist yet; the constructor reads them
+ * through `ctx.live` when a session opens a workspace.
+ */
+export function createWorkspaceRuntimeFactory(
+  ctx: AssemblyContext,
+  pkgs: PackageSet,
+  proc: ProcessServices,
+  presets: PresetCatalog,
+  seamContexts: SeamContexts,
+): WorkspaceRuntimeFactory {
+  const { deps, dataDir } = ctx
+  const { hotPolicy } = ctx.gates
+  const { adapters, sandboxProviderSlot } = proc
+  const workspacePlans = new Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>()
+  const readinessManager = createReadinessManager(ctx, pkgs, proc, workspacePlans)
   const openWorkspaceRuntime = async (
     binding: WorkspaceBinding,
     preset: PresetDoc = presets.defaultPreset.doc,

@@ -43,7 +43,7 @@ import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions
 import type { OrdinaryReconciliationLifecycle } from './assembled.js'
 import type { BootRows } from './boot-rows.js'
 import { installChildAgents } from './child-agents.js'
-import type { AssemblyContext } from './context.js'
+import { type AssemblyContext, Late } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
@@ -72,35 +72,46 @@ export type RuntimeTargetHost = Readonly<{
   seamRoot: { replace?: (root: import('@agnes/cordis').Context) => void }
 }>
 
-/**
- * Builds the publisher that owns the one ordinary Cordis tree, applies the boot target and
- * returns the facades the rest of the assembly reads the published tree through. The kernel and
- * session capabilities do not exist yet; the views reach them through `ctx.live`.
- */
-export async function mountRuntimeTarget(
+type Publisher = RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>
+type RuntimeTargetInput = Readonly<{
+  pkgs: PackageSet
+  proc: ProcessServices
+  presets: PresetCatalog
+  bootRows: BootRows
+  hosts: RowHosts
+  skillState: SkillState
+}>
+
+/** State the publisher callbacks, the session views and the apply queue all read; one per assembly. */
+type Shared = {
+  /** True from the moment the publisher asks for the private input until the next apply starts. */
+  candidateMounting: boolean
+  publisher: Late<Publisher>
+  views: SessionViews
+  extensionServices: { current?: ExtensionServiceHost }
+  intelligentUi: Late<ReturnType<typeof createIntelligentUiBridge>>
+  seamRoot: RuntimeTargetHost['seamRoot']
+}
+
+type SessionViews = Readonly<{
+  generationViews: Map<string, GenerationRegistries>
+  rawSessionRuntime: RuntimeTargetHost['rawSessionRuntime']
+  sessionRuntimeView: RuntimeTargetHost['sessionRuntimeView']
+}>
+
+/** The runtime each open session sees: the published generation's registries, composition-filtered. */
+function createSessionViews(
   ctx: AssemblyContext,
-  input: Readonly<{
-    pkgs: PackageSet
-    proc: ProcessServices
-    presets: PresetCatalog
-    bootRows: BootRows
-    hosts: RowHosts
-    skillState: SkillState
-  }>,
-): Promise<RuntimeTargetHost> {
-  const { deps, rollback } = ctx
-  const { publicationGate, runtimeMutationGate, hotPolicy } = ctx.gates
-  const { pkgs, proc, presets, bootRows, hosts, skillState } = input
-  const { activeRuntimeSources, loadRuntimeModule } = pkgs
-  const { pluginCatalogue, rowExtensions, rowServices, refreshPluginCatalogue } = hosts
-  const seamRoot: RuntimeTargetHost['seamRoot'] = {}
+  skillState: SkillState,
+  publisher: Late<Publisher>,
+): SessionViews {
   const generationViews = new Map<string, GenerationRegistries>()
   const rawSessionRuntime = (sessionKey: string, runtimeRegistryRevision?: string): CurrentSessionRuntime => {
     const kernel = ctx.live.kernel.get()
     const session = kernel.get(sessionKey)
     const revision =
       runtimeRegistryRevision ??
-      runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision ??
+      publisher.get().current().value.current?.runtimeRegistryRevision ??
       'unspecified'
     const runtime = publishedSessionRuntime({
       runtimeRegistryRevision: revision,
@@ -127,12 +138,17 @@ export async function mountRuntimeTarget(
       ),
     }
   }
-  const extensionServices: { current?: ExtensionServiceHost } = {}
-  let intelligentUi!: ReturnType<typeof createIntelligentUiBridge>
-  const runtimeTargetPublisher = new RuntimeTargetPublisher<
-    HostRuntimeTargetResources,
-    IsolatedSessionOverlay
-  >({
+  return { generationViews, rawSessionRuntime, sessionRuntimeView }
+}
+
+/** The publisher of the one ordinary tree: how rows are loaded, trusted, mounted and verified. */
+function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared: Shared): Publisher {
+  const { deps } = ctx
+  const { publicationGate, runtimeMutationGate, hotPolicy } = ctx.gates
+  const { pkgs, proc, presets, bootRows, hosts } = input
+  const { loadRuntimeModule } = pkgs
+  const { pluginCatalogue, rowExtensions, rowServices } = hosts
+  return new RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>({
     catalogue: pluginCatalogue,
     publication: publicationGate,
     mutation: runtimeMutationGate,
@@ -154,7 +170,7 @@ export async function mountRuntimeTarget(
     staticClaims: () => bootRows.builtin.claims,
     privateInput: () => {
       // Asked once claims have resolved, right before the candidate tree starts mounting rows.
-      candidateMounting = true
+      shared.candidateMounting = true
       return {
         bootRows: Object.freeze([...bootRows.staticBootRows, ...bootRows.builtin.hostExtensionRows]),
         exactExtras: bootRows.builtSeams.exactExtras,
@@ -162,7 +178,7 @@ export async function mountRuntimeTarget(
         requiredRowIds: REQUIRED_SEAM_ROW_IDS,
         rootServices: (root, origins) => {
           const providers = installProviders(root)
-          extensionServices.current?.attachBinder(providers)
+          shared.extensionServices.current?.attachBinder(providers)
           providers.configurationSource((entry) =>
             providerConfigurationScopes(entry, ctx.profile, presets.defaultPreset.view),
           )
@@ -173,14 +189,14 @@ export async function mountRuntimeTarget(
           installModelAdapters(root, origins)
           const deferred = new DeferredInvocationsService(root, origins)
           rememberDeferredInvocations(root, deferred)
-          intelligentUi.attach(root, origins, deferred)
+          shared.intelligentUi.get().attach(root, origins, deferred)
           installLoops(root, origins, deferred)
           installReferenceResolvers(root)
           const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
             installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
               promptRegistry.register(source, provider, owner),
             )
-          const extensionHost = extensionServices.current
+          const extensionHost = shared.extensionServices.current
           if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
           installGitWorktreeService(extensionHost, root, origins, proc.gitWorktrees)
           installObservabilityService(extensionHost, root, origins)
@@ -214,8 +230,8 @@ export async function mountRuntimeTarget(
       // The candidate has mounted, so the Kernel tables hold its registrations and leases. A revision
       // cached by an earlier delivery (or by a candidate that was rejected) describes older ones.
       retainGenerationRegistries(
-        generationViews,
-        runtimeTargetPublisher.current().value.current?.runtimeRegistryRevision,
+        shared.views.generationViews,
+        shared.publisher.get().current().value.current?.runtimeRegistryRevision,
       )
       rowExtensions.assertReplacements(candidate.tree.rows, tree)
     },
@@ -228,52 +244,37 @@ export async function mountRuntimeTarget(
       return Object.freeze({
         desired: { preset: overlay.preset },
         overlay,
-        runtime: sessionRuntimeView(sessionKey, candidate.runtimeRegistryRevision),
+        runtime: shared.views.sessionRuntimeView(sessionKey, candidate.runtimeRegistryRevision),
         close: () => undefined,
       })
     },
     onPublished: (target) => {
-      const root = runtimeTargetPublisher.current().value.current?.ordinary.pluginTree.root
-      if (root) seamRoot.replace?.(root)
+      const root = shared.publisher.get().current().value.current?.ordinary.pluginTree.root
+      if (root) shared.seamRoot.replace?.(root)
       syncHotPolicyFromTarget(hotPolicy, target)
     },
   })
-  rollback.push('runtime-target-publisher', () => runtimeTargetPublisher.close())
-  const publishedOrdinary = (): HostPluginTreeBase => {
-    const current = runtimeTargetPublisher.current().value.current
-    if (!current) {
-      throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no ordinary tree', {
-        detail: { reason: 'runtime-target-unpublished' },
-      })
-    }
-    return current.ordinary.pluginTree
-  }
-  extensionServices.current = createExtensionServiceHost({
-    providers: () => publishedOrdinary().root.providers,
-    sessionGeneration: (key) => deps.sessionGeneration?.(key),
-  })
-  intelligentUi = createIntelligentUiBridge({
-    extensionHost: extensionServices.current,
-    profileDir: deps.profileDir,
-    profileName: ctx.profile.name,
-    agnesVersion: deps.agnesVersion ?? '0.0.0',
-    sessionGeneration: (key) => deps.sessionGeneration?.(key),
-    session: (key) => ctx.live.kernel.peek()?.get(key),
-    providers: () => publishedOrdinary().root.providers as UiDataSourceCatalog,
-  })
-  // Host admission for the one ordinary convergence path. `closeHost` seals this synchronously and
-  // then joins the queue, so a target already admitted finishes loading and applying before the
-  // rollback disposes the tree it is mounting into, and a target handed in after that is refused.
+}
+
+/**
+ * Host admission for the one ordinary convergence path, in queue order. `close` seals it
+ * synchronously and then joins the queue.
+ */
+function createApplyQueue(ctx: AssemblyContext, hosts: RowHosts, shared: Shared) {
+  const { deps } = ctx
+  const { refreshPluginCatalogue } = hosts
+  const publisher = shared.publisher.get()
+  // A target already admitted finishes loading and applying before the rollback disposes the tree
+  // it is mounting into, and a target handed in after that is refused.
   // A rejected candidate leaves the previous tree published, but the candidate's rows have already
   // taken over the extension ids they share with it (the kernel tables are shared), so the previous
   // tree's tools and hooks are gone. Mounting the published target again puts them back; nothing
   // else would, because applying an unchanged target is a no-op.
-  let candidateMounting = false
   const rebuildLiveTree = async () => {
-    const live = runtimeTargetPublisher.current().value.current?.target
+    const live = publisher.current().value.current?.target
     if (!live) return
     try {
-      await runtimeTargetPublisher.apply(live, { rebuild: true })
+      await publisher.apply(live, { rebuild: true })
     } catch (error) {
       deps.log.error('could not restore the published runtime target after a rejected one', {
         message: error instanceof Error ? error.message : String(error),
@@ -287,7 +288,7 @@ export async function mountRuntimeTarget(
   // target derived from the live one (the ext: rows' own composition) must see every apply queued
   // ahead of it, or it would be built on the tree before them and, published after them, drop them.
   const enqueueRuntimeTarget = (
-    resolveTarget: () => Parameters<typeof runtimeTargetPublisher.apply>[0],
+    resolveTarget: () => Parameters<typeof publisher.apply>[0],
   ): Promise<RuntimeConvergenceReport> => {
     if (applyClosed)
       throw new HostError('E_HOST_CLOSED', 'ordinary runtime target application is closed', {
@@ -296,10 +297,10 @@ export async function mountRuntimeTarget(
     const applied = applyQueue.then(async () => {
       const target = resolveTarget()
       await refreshPluginCatalogue()
-      let published: Awaited<ReturnType<typeof runtimeTargetPublisher.apply>>
-      candidateMounting = false
+      let published: Awaited<ReturnType<typeof publisher.apply>>
+      shared.candidateMounting = false
       try {
-        published = await runtimeTargetPublisher.apply(target)
+        published = await publisher.apply(target)
       } catch (error) {
         // A transaction compensates on the live tree itself, and a tree holding a row that never
         // finished mounting must not be retired: waiting on that fiber would hold the mutation
@@ -308,9 +309,9 @@ export async function mountRuntimeTarget(
         // compensation failed (the live tree may be left half-recovered: a row unmounted but
         // still tracked, so it silently vanishes from the plugin table on the next delivery).
         // A tainted tree already gets the backgrounded-retirement safety net either way.
-        const live = runtimeTargetPublisher.current().value.current?.ordinary.pluginTree
+        const live = publisher.current().value.current?.ordinary.pluginTree
         const compensationFailed =
-          runtimeTargetPublisher.lastAttempt === 'transaction' &&
+          publisher.lastAttempt === 'transaction' &&
           error instanceof Error &&
           error.message.includes('recovery failed')
         // Compensation failing leaves the tree tainted, but a tainted tree must still be repaired
@@ -323,8 +324,8 @@ export async function mountRuntimeTarget(
             message: error instanceof Error ? error.message : String(error),
           })
         if (
-          candidateMounting &&
-          (compensationFailed || (!live?.tainted?.() && runtimeTargetPublisher.lastAttempt !== 'transaction'))
+          shared.candidateMounting &&
+          (compensationFailed || (!live?.tainted?.() && publisher.lastAttempt !== 'transaction'))
         ) {
           await rebuildLiveTree()
         }
@@ -350,10 +351,64 @@ export async function mountRuntimeTarget(
       return applyDrain
     },
   })
+  return { enqueueRuntimeTarget, applyRuntimeTarget, ordinaryReconciliation }
+}
+
+/**
+ * Builds the publisher that owns the one ordinary Cordis tree, applies the boot target and
+ * returns the facades the rest of the assembly reads the published tree through. The kernel and
+ * session capabilities do not exist yet; the views reach them through `ctx.live`.
+ */
+export async function mountRuntimeTarget(
+  ctx: AssemblyContext,
+  input: RuntimeTargetInput,
+): Promise<RuntimeTargetHost> {
+  const { deps } = ctx
+  const { pkgs, bootRows } = input
+  const publisherRef = new Late<Publisher>('runtime target publisher')
+  const shared: Shared = {
+    candidateMounting: false,
+    publisher: publisherRef,
+    views: createSessionViews(ctx, input.skillState, publisherRef),
+    extensionServices: {},
+    intelligentUi: new Late('intelligent ui'),
+    seamRoot: {},
+  }
+  const publisher = createPublisher(ctx, input, shared)
+  shared.publisher.set(publisher)
+  ctx.rollback.push('runtime-target-publisher', () => publisher.close())
+  const publishedOrdinary = (): HostPluginTreeBase => {
+    const current = publisher.current().value.current
+    if (!current) {
+      throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no ordinary tree', {
+        detail: { reason: 'runtime-target-unpublished' },
+      })
+    }
+    return current.ordinary.pluginTree
+  }
+  shared.extensionServices.current = createExtensionServiceHost({
+    providers: () => publishedOrdinary().root.providers,
+    sessionGeneration: (key) => deps.sessionGeneration?.(key),
+  })
+  const intelligentUi = createIntelligentUiBridge({
+    extensionHost: shared.extensionServices.current,
+    profileDir: deps.profileDir,
+    profileName: ctx.profile.name,
+    agnesVersion: deps.agnesVersion ?? '0.0.0',
+    sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    session: (key) => ctx.live.kernel.peek()?.get(key),
+    providers: () => publishedOrdinary().root.providers as UiDataSourceCatalog,
+  })
+  shared.intelligentUi.set(intelligentUi)
+  const { enqueueRuntimeTarget, applyRuntimeTarget, ordinaryReconciliation } = createApplyQueue(
+    ctx,
+    input.hosts,
+    shared,
+  )
   const initialRuntimeTarget = buildCompleteRuntimeTarget({
     rows: [
       ...bootRows.bootTreeRows,
-      ...activeRuntimeSources.flatMap((source) =>
+      ...pkgs.activeRuntimeSources.flatMap((source) =>
         ctx.profile.packages.some((pkg) => pkg.id === source.snapshot.packageId && pkg.enabled)
           ? developmentPluginRows(source, bootRows.bootTreeRows).filter((row) => row.id.startsWith('web:'))
           : [],
@@ -385,27 +440,27 @@ export async function mountRuntimeTarget(
   ctx.live.pluginTree.set(pluginTree)
   const bindRuntimeSession = async (sessionKey: string, preset: string): Promise<void> => {
     deps.onGenerationSessionBinding?.(sessionKey)
-    const published = runtimeTargetPublisher.current().value.current
+    const published = publisher.current().value.current
     if (!published) return
     const overlay = isolateSessionOverlay(published.ordinary.pluginTree.root, sessionKey, preset)
-    await runtimeTargetPublisher.setSessionScope(sessionKey, { preset: overlay.preset }, async () =>
+    await publisher.setSessionScope(sessionKey, { preset: overlay.preset }, async () =>
       Object.freeze({
         desired: { preset: overlay.preset },
         overlay,
-        runtime: sessionRuntimeView(sessionKey, published.runtimeRegistryRevision),
+        runtime: shared.views.sessionRuntimeView(sessionKey, published.runtimeRegistryRevision),
         close: () => undefined,
       }),
     )
   }
   const unbindRuntimeSession = async (sessionKey: string): Promise<void> => {
-    await runtimeTargetPublisher.closeSessionScope(sessionKey)
+    await publisher.closeSessionScope(sessionKey)
   }
   return {
-    publisher: runtimeTargetPublisher,
-    generationViews,
-    rawSessionRuntime,
-    sessionRuntimeView,
-    extensionServices,
+    publisher: publisher,
+    generationViews: shared.views.generationViews,
+    rawSessionRuntime: shared.views.rawSessionRuntime,
+    sessionRuntimeView: shared.views.sessionRuntimeView,
+    extensionServices: shared.extensionServices,
     intelligentUi,
     enqueueRuntimeTarget,
     applyRuntimeTarget,
@@ -413,6 +468,6 @@ export async function mountRuntimeTarget(
     pluginTree,
     bindRuntimeSession,
     unbindRuntimeSession,
-    seamRoot,
+    seamRoot: shared.seamRoot,
   }
 }

@@ -16,7 +16,7 @@ import { buildBootRows } from './boot-rows.js'
 import { createBundledExtensions } from './bundled-extensions.js'
 import { createCapabilities } from './capabilities.js'
 import { childAgentCatalog } from './child-agents.js'
-import { createAssemblyContext, failAssembly } from './context.js'
+import { type AssemblyContext, createAssemblyContext, failAssembly } from './context.js'
 import { createEcosystemContexts } from './ecosystem-context.js'
 import { createExtensionHost } from './extension-host.js'
 import { mountExtensionRows } from './extension-rows.js'
@@ -25,9 +25,9 @@ import { startKernelHooks } from './kernel-hooks.js'
 import { createKernel, type ExtensionLeases } from './kernel-stage.js'
 import { buildOperations } from './operations.js'
 import { bindSeams } from './package-seams.js'
-import { loadPackages } from './packages.js'
-import { resolvePresetCatalog } from './presets.js'
-import { openProcessServices } from './process-services.js'
+import { loadPackages, type PackageSet } from './packages.js'
+import { type PresetCatalog, resolvePresetCatalog } from './presets.js'
+import { openProcessServices, type ProcessServices } from './process-services.js'
 import { assembleProvider } from './provider-stage.js'
 import { createRowHosts } from './row-hosts.js'
 import { mountRuntimeTarget } from './runtime-target.js'
@@ -50,284 +50,261 @@ export type {
 } from './assembled.js'
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
 
+/**
+ * Assembly runs in five phases, each returning the typed state the next one reads:
+ *
+ * - `openFoundation` (steps `packages`, `adapters`, `presets`): the enabled packages, the
+ *   process-scope services and the preset catalogue.
+ * - `mountTree` (step `seams`): the published runtime tree and everything bound to it.
+ * - `startCore` (steps `provider`, `operations`, `kernel`): model provider, operations, Kernel.
+ * - `mountExtensions` (step `extensions`): bundled extensions and the `ext:` rows.
+ * - `publish`: the `Assembled` the Host and its facade read.
+ *
+ * Only `Foundation.proc` is process scope: it is what does not depend on the plugin set a
+ * generation runs. Everything else is rebuilt for every generation container.
+ */
+type Foundation = Readonly<{ pkgs: PackageSet; proc: ProcessServices; presets: PresetCatalog }>
+
+async function openFoundation(ctx: AssemblyContext): Promise<Foundation> {
+  mkdirSync(join(ctx.dataDir, 'tmp'), { recursive: true, mode: 0o700 })
+  const pkgs = await loadPackages(ctx)
+  ctx.done('adapters')
+  const proc = await openProcessServices(ctx, pkgs)
+  ctx.done('presets')
+  const presets = resolvePresetCatalog(ctx, pkgs)
+  return { pkgs, proc, presets }
+}
+
+async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundation) {
+  ctx.done('seams')
+  const seamContexts = await openSeamContexts(ctx, pkgs, proc, presets)
+  const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts)
+  const skillState = createSkillState(ctx, proc)
+  const bootRows = buildBootRows(ctx, pkgs, presets, seamContexts)
+  const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
+  const runtimeTarget = await mountRuntimeTarget(ctx, {
+    pkgs,
+    proc,
+    presets,
+    bootRows,
+    hosts: rowHosts,
+    skillState,
+  })
+  const { seams, approvalGrantControl } = bindSeams(ctx, proc, seamContexts, runtimeTarget)
+  ctx.live.seams.set(seams)
+  const computerUse = mountComputerUse({
+    profile: ctx.profile,
+    dataDir: ctx.dataDir,
+    platform: proc.adapters.platform,
+    retention: seamContexts.retention,
+    artifacts: { put: (bytes, meta) => seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }) },
+    rollback: ctx.rollback,
+  })
+  ctx.say('seams.assembled', { seams: ctx.profile.seams, fsDigest: proc.adapters.fs.fence().digest })
+  const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse)
+  return {
+    seamContexts,
+    workspaceRuntime,
+    skillState,
+    bootRows,
+    rowHosts,
+    runtimeTarget,
+    seams,
+    approvalGrantControl,
+    computerUse,
+    ecosystem,
+  }
+}
+type Tree = Awaited<ReturnType<typeof mountTree>>
+
+async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
+  const { pkgs, proc, presets } = f
+  ctx.done('provider')
+  const providerStage = await assembleProvider(ctx, proc, presets, t.runtimeTarget.pluginTree)
+  ctx.done('operations')
+  const { operations, runtimes } = buildOperations(ctx, pkgs, proc, t.seamContexts)
+  ctx.done('kernel')
+  const extensionLeases: ExtensionLeases = {}
+  const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
+  const kernelStage = await createKernel(ctx, {
+    proc,
+    presets,
+    providerStage,
+    operations,
+    runtimeTarget: t.runtimeTarget,
+    skillState: t.skillState,
+    computerUse: t.computerUse,
+    discoveredResources,
+    extensionLeases,
+  })
+  const capabilities = createCapabilities(ctx, {
+    pkgs,
+    presets,
+    bootRows: t.bootRows,
+    providerStage,
+    runtimeTarget: t.runtimeTarget,
+    skillState: t.skillState,
+    discoveredResources,
+  })
+  const hooks = await startKernelHooks(ctx, {
+    kernel: kernelStage.kernel,
+    kernelStage,
+    capabilities,
+    ecosystem: t.ecosystem,
+    runtimeTarget: t.runtimeTarget,
+  })
+  return { providerStage, runtimes, extensionLeases, kernelStage, capabilities, hooks }
+}
+type Core = Awaited<ReturnType<typeof startCore>>
+
+async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core) {
+  ctx.done('extensions')
+  const { kernel } = c.kernelStage
+  const host = createExtensionHost(ctx, {
+    pkgs: f.pkgs,
+    proc: f.proc,
+    kernel,
+    kernelStage: c.kernelStage,
+    rowHosts: t.rowHosts,
+    runtimeTarget: t.runtimeTarget,
+    ecosystem: t.ecosystem,
+    extensionLeases: c.extensionLeases,
+  })
+  const bundled = createBundledExtensions(ctx, f.pkgs, host, t.rowHosts)
+  const rows = await mountExtensionRows(ctx, {
+    kernel,
+    bootRows: t.bootRows,
+    rowHosts: t.rowHosts,
+    runtimeTarget: t.runtimeTarget,
+    host,
+    bundled,
+    skillState: t.skillState,
+    buildEcosystemContext: t.ecosystem.buildEcosystemContext,
+  })
+  const skillRefresh = createSkillRefresh(ctx, { skillState: t.skillState, bootRows: t.bootRows, host, rows })
+  ctx.rollback.push('extensions', () => host.managed.disposeAll())
+  // A row that replaced a builtin row's extension (or the builtin coming back) evicts the
+  // incumbent without waiting for its wind-down (`ExtensionOwners.claim`); the eviction still runs
+  // to completion in the background. Left unawaited, `Host.close()` could return with an isolated
+  // child still alive, and repeated replacements during the session's life would accumulate
+  // children no one ever reaps. This runs last (LIFO), after the tree and every extension have
+  // been torn down, so it also catches whatever the teardown itself just evicted.
+  ctx.rollback.push('extension-evictions', () => t.rowHosts.extensionOwners.settled())
+  // Teardown runs last-in-first-out. The tree's ext: rows revoke their extensions when they are
+  // torn down, so the tree has to go before the extension host does, or every revoke fails.
+  // Closing twice is a no-op, so the earlier registration still covers a half-finished assembly.
+  ctx.rollback.push('runtime-target-tree', () => t.runtimeTarget.publisher.close())
+  return { host, rows, skillRefresh }
+}
+type Extensions = Awaited<ReturnType<typeof mountExtensions>>
+
+function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Extensions): Assembled {
+  const { deps } = ctx
+  const { adapters } = f.proc
+  const { pluginTree, publisher } = t.runtimeTarget
+  const { rowExtensions } = t.rowHosts
+  const { managed, builtinRows } = e.host
+  const { systemPromptProvider } = c.kernelStage
+  const extensionStatus = () =>
+    mergeExtensionStatus(
+      [managed.statusEntries(), rowExtensions.statusEntries(), builtinRows.statusEntries()],
+      rowExtensions.replacedBy,
+    )
+  ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
+  const { servicesInvocation, sessionConfiguration } = createHostServices(ctx, {
+    proc: f.proc,
+    kernel: c.kernelStage.kernel,
+    host: e.host,
+  })
+  return {
+    memory: c.kernelStage.memory,
+    activationBarrier: ctx.activationBarrier,
+    approvalGrants: t.approvalGrantControl.management,
+    callService: servicesInvocation.call,
+    inspectService: servicesInvocation.inspect,
+    prepareService: servicesInvocation.prepare,
+    callPreparedService: servicesInvocation.callPrepared,
+    inspectPreparedService: servicesInvocation.inspectPrepared,
+    kernel: c.kernelStage.kernel,
+    seams: t.seams,
+    get provider() {
+      return c.providerStage.provider
+    },
+    get providerFingerprint() {
+      return c.providerStage.providerFingerprint
+    },
+    get routes() {
+      return c.providerStage.routes
+    },
+    get preconfiguredRoutes() {
+      return c.providerStage.preconfiguredRoutes
+    },
+    observeSession: c.hooks.observeSession,
+    ...(c.hooks.observability ? { observability: c.hooks.observability } : {}),
+    ...(deps.referenceLimits ? { referenceLimits: deps.referenceLimits } : {}),
+    providers: { catalog: () => pluginTree.root.providers.catalog() },
+    modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
+    sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
+    sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
+    sessionModelSlots: async () => (await sessionConfiguration.modelSlots()).slots,
+    compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
+    childAgentCatalog: () => childAgentCatalog(pluginTree.root),
+    compositionForPreset: c.capabilities.compositionForPreset,
+    sessionCapabilities: c.capabilities.sessionCapabilities,
+    applyModelProfile: c.providerStage.applyModelProfile,
+    presets: f.presets.presets,
+    runtimes: c.runtimes,
+    adapters,
+    lockedPackageMutations: f.proc.lockedPackageMutations,
+    computerUse: t.computerUse.status,
+    get computerUseArtifactGc() {
+      return t.computerUse.artifactGc()
+    },
+    pluginTree,
+    intelligentUi: t.runtimeTarget.intelligentUi,
+    extHost: managed,
+    extensionStatus,
+    rollback: ctx.rollback,
+    defaultPreset: { view: c.providerStage.view, hash: f.presets.defaultPreset.hash },
+    openWorkspaceRuntime: t.workspaceRuntime.openWorkspaceRuntime,
+    reloadEcosystemExtension: e.skillRefresh.reloadEcosystemExtension,
+    extensionRows: e.rows.extensionRows,
+    refreshSkillRow: e.skillRefresh.refreshSkillRow,
+    ordinaryReconciliation: t.runtimeTarget.ordinaryReconciliation,
+    ordinaryConvergence: () => {
+      const report = publisher.current().value.current?.report
+      if (!report) {
+        throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no report', {
+          detail: { reason: 'runtime-target-unpublished' },
+        })
+      }
+      return report
+    },
+    publicationDispatch: ctx.gates.publicationDispatch,
+    applyRuntimeTarget: t.runtimeTarget.applyRuntimeTarget,
+    runtimeTargetSnapshot: () => {
+      const target = publisher.current().value.current?.target
+      if (!target) throw new Error('E_GENERATION_TARGET_MISSING: no published target')
+      return target
+    },
+    bindRuntimeSession: t.runtimeTarget.bindRuntimeSession,
+    unbindRuntimeSession: t.runtimeTarget.unbindRuntimeSession,
+    ...(systemPromptProvider ? { systemPromptProvider } : {}),
+    sessionPresetLimits: () => ({
+      limits: ctx.profile.limits,
+      park: businessLimit(ctx.gates.hotPolicy, 'approval.park'),
+    }),
+  }
+}
+
 export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
   const ctx = createAssemblyContext(profile, deps)
-  const {
-    dataDir,
-    workspaceRoot,
-    rollback,
-    clock,
-    env,
-    say,
-    refuse,
-    done,
-    activationBarrier,
-    workspaceInvocationFor,
-    providerSelections,
-  } = ctx
-  const ac = ctx.abort
-  const { hotPolicy, quietState, publicationGate, runtimeMutationGate, publicationDispatch } = ctx.gates
   try {
-    mkdirSync(join(dataDir, 'tmp'), { recursive: true, mode: 0o700 })
-    const pkgs = await loadPackages(ctx)
-    const {
-      dirs,
-      modules,
-      runtimePackages,
-      runtimePackageIds,
-      activeRuntimeSources,
-      inventory,
-      loadRuntimeModule,
-    } = pkgs
-    done('adapters')
-
-    const proc = await openProcessServices(ctx, pkgs)
-    const {
-      adapters,
-      sandboxProviderSlot,
-      skillReadRoots,
-      gitWorktrees,
-      lockedPackageMutations,
-      secrets,
-      nativePlatform,
-    } = proc
-    done('presets')
-
-    const presetCatalog = resolvePresetCatalog(ctx, pkgs)
-    const { presets, defaultPreset, profileConsent } = presetCatalog
-    done('seams')
-    const seamContexts = await openSeamContexts(ctx, pkgs, proc, presetCatalog)
-    const { seamProfile, baseContext, contextFor, retention, staticSeams } = seamContexts
-    const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presetCatalog, seamContexts)
-    const { openWorkspaceRuntime } = workspaceRuntime
-    const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
-    const skillState = createSkillState(ctx, proc)
-    const { owners: skillOwners } = skillState
-    const bootRows = buildBootRows(ctx, pkgs, presetCatalog, seamContexts)
-    const {
-      builtSeams,
-      builtPresets,
-      builtOrdinary,
-      compositionOwners,
-      staticBootRows,
-      bootTreeRows,
-      builtin,
-    } = bootRows
-    const rowHosts = createRowHosts(ctx, pkgs, workspaceRuntime)
-    const { pluginCatalogue, extensionInfo, extensionOrder, extensionOwners, rowExtensions, rowServices } =
-      rowHosts
-    const runtimeTarget = await mountRuntimeTarget(ctx, {
-      pkgs,
-      proc,
-      presets: presetCatalog,
-      bootRows,
-      hosts: rowHosts,
-      skillState,
-    })
-    const {
-      publisher: runtimeTargetPublisher,
-      generationViews,
-      rawSessionRuntime,
-      sessionRuntimeView,
-      extensionServices,
-      intelligentUi,
-      enqueueRuntimeTarget,
-      applyRuntimeTarget,
-      ordinaryReconciliation,
-      pluginTree,
-      bindRuntimeSession,
-      unbindRuntimeSession,
-    } = runtimeTarget
-    const { seams, approvalGrantControl } = bindSeams(ctx, proc, seamContexts, runtimeTarget)
-    ctx.live.seams.set(seams)
-    const computerUse = mountComputerUse({
-      profile: ctx.profile,
-      dataDir,
-      platform: adapters.platform,
-      retention,
-      artifacts: {
-        put: (bytes, meta) => seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }),
-      },
-      rollback,
-    })
-    say('seams.assembled', { seams: ctx.profile.seams, fsDigest: adapters.fs.fence().digest })
-    const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse)
-    const { buildEcosystemContext, ecosystemContext, privacyTrajectory } = ecosystem
-    done('provider')
-
-    const providerStage = await assembleProvider(ctx, proc, presetCatalog, pluginTree)
-    const { models, view, applyModelProfile } = providerStage
-    done('operations')
-
-    const { operations, runtimes } = buildOperations(ctx, pkgs, proc, seamContexts)
-    done('kernel')
-
-    const extensionLeases: ExtensionLeases = {}
-    const kernelStage = await createKernel(ctx, {
-      proc,
-      presets: presetCatalog,
-      providerStage,
-      operations,
-      runtimeTarget,
-      skillState,
-      computerUse,
-      discoveredResources,
-      extensionLeases,
-    })
-    const { kernel, extensionSessions, compositionLease, systemPromptProvider, memory } = kernelStage
-    const capabilities = createCapabilities(ctx, {
-      pkgs,
-      presets: presetCatalog,
-      bootRows,
-      providerStage,
-      runtimeTarget,
-      skillState,
-      discoveredResources,
-    })
-    const { compositionForPreset, sessionCapabilities } = capabilities
-    const { observability, observeSession } = await startKernelHooks(ctx, {
-      kernel,
-      kernelStage,
-      capabilities,
-      ecosystem,
-      runtimeTarget,
-    })
-    done('extensions')
-
-    const extensionHost = createExtensionHost(ctx, {
-      pkgs,
-      proc,
-      kernel,
-      kernelStage,
-      rowHosts,
-      runtimeTarget,
-      ecosystem,
-      extensionLeases,
-    })
-    const { managed, builtinRows, makeFactorySelector, selectExtensionFactory } = extensionHost
-    const bundled = createBundledExtensions(ctx, pkgs, extensionHost, rowHosts)
-    const { findBundledExtension, authorManifestOf, consumesSkills, declaredExtensionIds } = bundled
-    const rows = await mountExtensionRows(ctx, {
-      kernel,
-      bootRows,
-      rowHosts,
-      runtimeTarget,
-      host: extensionHost,
-      bundled,
-      skillState,
-      buildEcosystemContext,
-    })
-    const { extensionRows, prepareExtensionRow, preparedExtensionInputs } = rows
-    const { refreshSkillRow, reloadEcosystemExtension } = createSkillRefresh(ctx, {
-      skillState,
-      bootRows,
-      host: extensionHost,
-      rows,
-    })
-    rollback.push('extensions', () => managed.disposeAll())
-    // A row that replaced a builtin row's extension (or the builtin coming back) evicts the
-    // incumbent without waiting for its wind-down (`ExtensionOwners.claim`); the eviction still runs
-    // to completion in the background. Left unawaited, `Host.close()` could return with an isolated
-    // child still alive, and repeated replacements during the session's life would accumulate
-    // children no one ever reaps. This runs last (LIFO), after the tree and every extension have
-    // been torn down, so it also catches whatever the teardown itself just evicted.
-    rollback.push('extension-evictions', () => extensionOwners.settled())
-    // Teardown runs last-in-first-out. The tree's ext: rows revoke their extensions when they are
-    // torn down, so the tree has to go before the extension host does, or every revoke fails.
-    // Closing twice is a no-op, so the earlier registration still covers a half-finished assembly.
-    rollback.push('runtime-target-tree', () => runtimeTargetPublisher.close())
-
-    const extensionStatus = () =>
-      mergeExtensionStatus(
-        [managed.statusEntries(), rowExtensions.statusEntries(), builtinRows.statusEntries()],
-        rowExtensions.replacedBy,
-      )
-    // 10 ready
-    say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
-    const { servicesInvocation, sessionConfiguration } = createHostServices(ctx, {
-      proc,
-      kernel,
-      host: extensionHost,
-    })
-    return {
-      memory,
-      activationBarrier,
-      approvalGrants: approvalGrantControl.management,
-      callService: servicesInvocation.call,
-      inspectService: servicesInvocation.inspect,
-      prepareService: servicesInvocation.prepare,
-      callPreparedService: servicesInvocation.callPrepared,
-      inspectPreparedService: servicesInvocation.inspectPrepared,
-      kernel,
-      seams,
-      get provider() {
-        return providerStage.provider
-      },
-      get providerFingerprint() {
-        return providerStage.providerFingerprint
-      },
-      get routes() {
-        return providerStage.routes
-      },
-      get preconfiguredRoutes() {
-        return providerStage.preconfiguredRoutes
-      },
-      observeSession,
-      ...(observability ? { observability } : {}),
-      ...(deps.referenceLimits ? { referenceLimits: deps.referenceLimits } : {}),
-      providers: { catalog: () => pluginTree.root.providers.catalog() },
-      modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
-      sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
-      sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
-      sessionModelSlots: async () => (await sessionConfiguration.modelSlots()).slots,
-      compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
-      childAgentCatalog: () => childAgentCatalog(pluginTree.root),
-      compositionForPreset,
-      sessionCapabilities,
-      applyModelProfile,
-      presets,
-      runtimes,
-      adapters,
-      lockedPackageMutations,
-      computerUse: computerUse.status,
-      get computerUseArtifactGc() {
-        return computerUse.artifactGc()
-      },
-      pluginTree,
-      intelligentUi,
-      extHost: managed,
-      extensionStatus,
-      rollback,
-      defaultPreset: { view, hash: defaultPreset.hash },
-      openWorkspaceRuntime,
-      reloadEcosystemExtension,
-      extensionRows,
-      refreshSkillRow,
-      ordinaryReconciliation,
-      ordinaryConvergence: () => {
-        const report = runtimeTargetPublisher.current().value.current?.report
-        if (!report) {
-          throw new HostError('E_EXT_LOAD', 'runtime target publisher produced no report', {
-            detail: { reason: 'runtime-target-unpublished' },
-          })
-        }
-        return report
-      },
-      publicationDispatch,
-      applyRuntimeTarget,
-      runtimeTargetSnapshot: () => {
-        const target = runtimeTargetPublisher.current().value.current?.target
-        if (!target) throw new Error('E_GENERATION_TARGET_MISSING: no published target')
-        return target
-      },
-      bindRuntimeSession,
-      unbindRuntimeSession,
-      ...(systemPromptProvider ? { systemPromptProvider } : {}),
-      sessionPresetLimits: () => ({
-        limits: ctx.profile.limits,
-        park: businessLimit(hotPolicy, 'approval.park'),
-      }),
-    }
+    const foundation = await openFoundation(ctx)
+    const tree = await mountTree(ctx, foundation)
+    const core = await startCore(ctx, foundation, tree)
+    const extensions = await mountExtensions(ctx, foundation, tree, core)
+    return publish(ctx, foundation, tree, core, extensions)
   } catch (e) {
     return failAssembly(ctx, e)
   }

@@ -9,6 +9,7 @@ import {
 } from '@agnes/extension-api'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
+import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { leaseFor, ROW_BOUND_LEASE_TTL_MS } from '@agnes/host-extensions/ext-host/lease'
 import { ExtensionSessions } from '@agnes/host-extensions/ext-host/session-bindings'
 import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fetch/index'
@@ -28,6 +29,65 @@ import type { SkillState } from './skills.js'
 
 /** Hook leases an extension host registers once it exists; the kernel asks them per hook source. */
 export type ExtensionLeases = { current?: (source: string) => LeaseView | undefined }
+
+/**
+ * Selects what the Kernel runs on from the published tree: the compaction engine, the loop
+ * (a profile choice becomes part of the profile), the tool runtime and policy, and the system prompt.
+ */
+async function selectCoreProviders(
+  ctx: AssemblyContext,
+  pluginTree: HostPluginTreeBase,
+  view: ProviderStage['view'],
+) {
+  const { providerSelections } = ctx
+  const compaction =
+    ctx.profile.composition?.compaction === null
+      ? undefined
+      : await assembleCompaction(pluginTree.root.compactionEngines, ctx.profile.compaction)
+  const selectedLoop = providerSelections.loop
+  const loopFactory = selectedLoop
+    ? pluginTree.root.loops.resolve({
+        id: selectedLoop.provider,
+        version: selectedLoop.version ?? pluginTree.root.providers.select('loop', selectedLoop).version,
+      })
+    : undefined
+  const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
+  if (loop) ctx.profile = { ...ctx.profile, loop }
+  const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
+  pluginTree.root.providers.select(
+    'loop',
+    { provider: effectiveLoop.id, version: effectiveLoop.version },
+    loop ? 'profile' : 'preset',
+  )
+  pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
+  if (
+    view.approval.policy ||
+    pluginTree.root.providers
+      .catalog()
+      .some((entry) => entry.kind === 'tool-policy' && entry.id === 'default')
+  )
+    pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
+  const promptSelection = view.model.systemPrompt?.provider
+    ? { provider: view.model.systemPrompt.provider.id, version: view.model.systemPrompt.provider.version }
+    : { provider: 'agnes.system-prompt', version: '1.0.0' }
+  const systemPromptProvider = pluginTree.root.providers
+    .catalog()
+    .some((entry) => entry.kind === 'system-prompt')
+    ? (selection?: { id: string; version: string }) =>
+        pluginTree.root.providers.resolve(
+          systemPromptKind,
+          selection ? { provider: selection.id, version: selection.version } : promptSelection,
+        )
+    : undefined
+  if (
+    systemPromptProvider &&
+    pluginTree.root.providers
+      .catalog()
+      .some((entry) => entry.kind === 'system-prompt' && entry.id === promptSelection.provider)
+  )
+    pluginTree.root.providers.select('system-prompt', promptSelection, 'preset')
+  return { compaction, loop, systemPromptProvider }
+}
 
 /**
  * Step `kernel` - the repository's single Kernel.create call site. The seams, session
@@ -81,52 +141,7 @@ export async function createKernel(
       )
     : undefined
   const extensionSessions = new ExtensionSessions<HookPort>()
-  const compaction =
-    ctx.profile.composition?.compaction === null
-      ? undefined
-      : await assembleCompaction(pluginTree.root.compactionEngines, ctx.profile.compaction)
-  const selectedLoop = providerSelections.loop
-  const loopFactory = selectedLoop
-    ? pluginTree.root.loops.resolve({
-        id: selectedLoop.provider,
-        version: selectedLoop.version ?? pluginTree.root.providers.select('loop', selectedLoop).version,
-      })
-    : undefined
-  const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
-  if (loop) ctx.profile = { ...ctx.profile, loop }
-  const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
-  pluginTree.root.providers.select(
-    'loop',
-    { provider: effectiveLoop.id, version: effectiveLoop.version },
-    loop ? 'profile' : 'preset',
-  )
-  pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
-  if (
-    view.approval.policy ||
-    pluginTree.root.providers
-      .catalog()
-      .some((entry) => entry.kind === 'tool-policy' && entry.id === 'default')
-  )
-    pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
-  const promptSelection = view.model.systemPrompt?.provider
-    ? { provider: view.model.systemPrompt.provider.id, version: view.model.systemPrompt.provider.version }
-    : { provider: 'agnes.system-prompt', version: '1.0.0' }
-  const systemPromptProvider = pluginTree.root.providers
-    .catalog()
-    .some((entry) => entry.kind === 'system-prompt')
-    ? (selection?: { id: string; version: string }) =>
-        pluginTree.root.providers.resolve(
-          systemPromptKind,
-          selection ? { provider: selection.id, version: selection.version } : promptSelection,
-        )
-    : undefined
-  if (
-    systemPromptProvider &&
-    pluginTree.root.providers
-      .catalog()
-      .some((entry) => entry.kind === 'system-prompt' && entry.id === promptSelection.provider)
-  )
-    pluginTree.root.providers.select('system-prompt', promptSelection, 'preset')
+  const { compaction, loop, systemPromptProvider } = await selectCoreProviders(ctx, pluginTree, view)
   const memory = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
     const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
     if (
