@@ -3,8 +3,9 @@ import {
   type LoopContext,
   type LoopDriver,
   loopCheckpointCodec,
+  type ProviderPluginContext,
 } from '@agnes/extension-api'
-import { type LoopPluginContext as Context, defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
 
 const codec = loopCheckpointCodec(1, (state) => {
   if (!state || typeof state !== 'object' || Array.isArray(state) || typeof state.done !== 'boolean')
@@ -67,8 +68,8 @@ export const loop = defineLoop({
 })
 
 export const main = defineAgnesPlugin({
-  inject: ['loops'],
-  apply(ctx: Context) {
-    ctx.effect(() => ctx.loops.register('__PACKAGE_NAME__', loop))
+  inject: ['providers'],
+  apply(ctx: Context & ProviderPluginContext) {
+    ctx.providers.register('loop', '__PACKAGE_NAME__', loop)
   },
 })

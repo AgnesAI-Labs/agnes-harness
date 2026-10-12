@@ -14,6 +14,12 @@ describe('plugin scaffolder', () => {
         const target = await scaffold(kind, '@acme/hello.world', join(temp, kind))
         const manifest = JSON.parse(await readFile(join(target, 'package.json'), 'utf8'))
         expect(manifest.name).toBe('@acme/hello.world')
+        if (kind === 'loop' || kind === 'model-adapter') {
+          expect(manifest.agnes.plugins[0].inject).toEqual(['providers'])
+          expect(await readFile(join(target, 'src/index.ts'), 'utf8')).toContain(
+            `ctx.providers.register('${kind}', '@acme/hello.world',`,
+          )
+        }
         expect(manifest.scripts).toHaveProperty('build')
         expect(manifest.scripts).toHaveProperty('test')
         expect(manifest.agnes.kinds).toEqual(

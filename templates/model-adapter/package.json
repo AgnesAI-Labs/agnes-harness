@@ -35,7 +35,7 @@
         "apiRange": "^1.4.0",
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
-          "modelAdapters"
+          "providers"
         ]
       }
     ],

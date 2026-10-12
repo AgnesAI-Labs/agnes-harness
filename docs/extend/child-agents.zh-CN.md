@@ -26,24 +26,18 @@
 
 ## 注册提供者
 
-Host 用 `defineProviderKind` 定义 `child-agent` 类型。`childAgents` 是该注册表的类型化外观。从注入 `childAgents` 的普通 Cordis 插件注册：
+Host 用 `defineProviderKind` 定义 `child-agent` 类型。`ctx.providers` 是统一注册入口。从注入 `providers` 的普通 Cordis 插件注册：
 
 ```ts
-import type { ChildAgentPluginContext } from '@agnes/extension-api'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['childAgents'],
-  apply(ctx: Context & ChildAgentPluginContext) {
-    ctx.childAgents.register(provider)
+  inject: ['providers'],
+  apply(ctx: Context & ProviderPluginContext) {
+    ctx.providers.register('child-agent', '@example/agents', provider)
   },
 })
-```
-
-也可以走统一入口：
-
-```ts
-ctx.providers.register('child-agent', '@example/agents', provider)
 ```
 
 在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，先中止并等待启动任务，再等待通过该服务启动的句柄释放。注销函数返回幂等 Promise，并传播清理失败。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。

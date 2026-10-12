@@ -26,24 +26,18 @@ The direct in-process provider refuses worktree isolation because it does not pr
 
 ## Register a provider
 
-The host defines the `child-agent` kind with `defineProviderKind`. `childAgents` is the typed facade over that registry. Register from an ordinary Cordis plugin that injects `childAgents`:
+The host defines the `child-agent` kind with `defineProviderKind`. `ctx.providers` is the shared registration facade. Register from an ordinary Cordis plugin that injects `providers`:
 
 ```ts
-import type { ChildAgentPluginContext } from '@agnes/extension-api'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['childAgents'],
-  apply(ctx: Context & ChildAgentPluginContext) {
-    ctx.childAgents.register(provider)
+  inject: ['providers'],
+  apply(ctx: Context & ProviderPluginContext) {
+    ctx.providers.register('child-agent', '@example/agents', provider)
   },
 })
-```
-
-The same provider can be registered through the shared entry point:
-
-```ts
-ctx.providers.register('child-agent', '@example/agents', provider)
 ```
 
 Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and aborts and joins starts, then awaits disposal of handles started through the service. The unregister function returns an idempotent Promise and propagates cleanup failures. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.

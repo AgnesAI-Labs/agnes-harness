@@ -8,16 +8,16 @@ An engine chooses when to compact and how to replace older conversation context.
 
 ## Register an engine
 
-Implement [CompactionEngine](../../packages/extension-api/src/compaction-engine.ts) through public package exports. Its `create()` returns an instance with `shouldCompact(budget)` and asynchronous `compact(input, { signal, model })`. Register it from an ordinary Cordis plugin that injects `compactionEngines`:
+Implement [CompactionEngine](../../packages/extension-api/src/compaction-engine.ts) through public package exports. Its `create()` returns an instance with `shouldCompact(budget)` and asynchronous `compact(input, { signal, model })`. Register it from an ordinary Cordis plugin that injects `providers`:
 
 ```ts
-import type { CompactionEnginePluginContext } from '@agnes/extension-api'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['compactionEngines'],
-  apply(ctx: Context & CompactionEnginePluginContext) {
-    ctx.compactionEngines.register(engine)
+  inject: ['providers'],
+  apply(ctx: Context & ProviderPluginContext) {
+    ctx.providers.register('compaction', '@example/compaction', engine)
   },
 })
 ```

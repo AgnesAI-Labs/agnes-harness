@@ -92,7 +92,7 @@ A value published by `ctx.provide('name', value)` belongs to the current Context
 
 ## Model adapter packages
 
-An ordinary trusted plugin can inject `modelAdapters` and call `ctx.modelAdapters.register(adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
+An ordinary trusted plugin can inject `providers` and call `ctx.providers.register('model-adapter', packageName, adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
 
 Configure `provider.adapters` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
 
