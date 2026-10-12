@@ -1033,6 +1033,15 @@ select.agnes-settings-input {
   overflow-wrap: anywhere;
 }
 
+/* A page's primary action keeps its label on one line beside the title. */
+@media (min-width: 768px) {
+  .agnes-settings-page-heading > .agnes-settings-actions {
+    flex: 0 0 auto;
+  }
+  .agnes-settings-page-heading > .agnes-settings-actions > .agnes-ui-button {
+    white-space: nowrap;
+  }
+}
 .settings-content.agnes-settings-page > .agnes-settings-page-heading {
   flex: 0 0 auto;
   margin: 0;
