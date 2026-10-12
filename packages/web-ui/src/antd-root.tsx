@@ -133,6 +133,9 @@ function application(container: Element | DocumentFragment, shell: ReactNode, ow
     renderer(host: Element | DocumentFragment, options: StoreOptions = {}): RegionRenderer {
       let region = byHost.get(host)
       if (!region) {
+        // Portals append to a host, unlike createRoot. Retire its previous native contents before
+        // React takes ownership so legacy controls cannot shadow the live region's controls.
+        host.replaceChildren()
         region = { key: ++nextRegionKey, host, content: createExternalStore<ReactNode>(null, options) }
         byHost.set(host, region)
         regions.set([...byHost.values()])
