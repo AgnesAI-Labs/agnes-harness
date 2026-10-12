@@ -247,12 +247,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cli/tools/build-local': 381,
   'packages/web/src/serve': 1,
 
-  'packages/core/src': 24070,
+  'packages/core/src': 24160,
   'packages/ai/src': 4409,
   'packages/protocol/src': 4727,
   'packages/cli/src/tui': 38,
   'packages/cli-tui/src': 4957,
-  'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3149, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   'packages/extension-api/testkit': 730,
   'packages/sdk/src': 6109,
   'packages/sdk/src/extensions.node': 21,
@@ -289,7 +289,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/tools/build-isolation-runner': 74,
   'packages/base/tools/package-isolation-runtime': 171,
 
-  'packages/base/extensions/refine': 434,
+  'packages/base/extensions/refine': 407,
   'packages/base/extensions/plugin-creator': 211,
   'packages/model-adapters/src': 829,
   'packages/base/extensions/subagent-acp': 387,

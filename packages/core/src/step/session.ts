@@ -174,6 +174,7 @@ import {
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
+import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
@@ -279,6 +280,8 @@ export type ReplacementOperation<K extends CoreOpName = CoreOpName> = OperationC
  */
 export type Operation = SlotOperation | { [K in CoreOpName]: ReplacementOperation<K> }[CoreOpName]
 export type OpContext = {
+  /** Present on admitted operations; candidate reviews use the public decision contract. */
+  decisions?: import('@agnes/extension-api').DecisionReviewPort
   session: SessionImpl
   preset: PresetView
   state: OpStateObj | null
@@ -1690,11 +1693,12 @@ export class SessionImpl {
    * The one canonical context for a core-segment replacement. Call sites add only their typed
    * segment input; model selection, disclosure and the turn snapshot stay identical everywhere.
    */
-  operationContext(): OpContext {
+  operationContext(owner = 'core/operation'): OpContext {
     const target = resolveModel(this, 'primary')
     const computerUseAllowed = this.computerUseAllowed(target)
     const snapshot = this.turn?.snapshot ?? this.currentTools().snapshot(this.lastSeq)
     return {
+      decisions: operationDecisionPort(this, owner),
       session: this,
       preset: this.preset,
       state: this.op(),

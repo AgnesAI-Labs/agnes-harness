@@ -169,7 +169,7 @@ export type TestHostOptions = {
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
   // been handed an undefined it then had to guess about.
-  approval?: (req: ApprovalRequest) => Promise<Verdict | ApprovalAnswer>
+  approval?: (req: ApprovalRequest) => ReturnType<SeamImplementations['approval']['ask']>
   // Whoever is connected, from the assembly's point of view. It reaches a seam through
   // SeamAdapters.prompter, so it means nothing to the faked approval seam above - that one answers
   // on its own - and everything to a case that installs a real one. Without it, a real approval

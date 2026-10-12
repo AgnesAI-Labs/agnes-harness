@@ -22,6 +22,11 @@ export interface DecisionPort {
   get(handle: DecisionHandle): Promise<DecisionSnapshot>
   wait(handle: DecisionHandle, options?: { readonly signal?: AbortSignal }): Promise<DecisionWaitResult>
 }
+/** One-shot candidate review for an admitted operation; Core delivers and consumes the answer.
+ * Detached delivery withdraws the candidate. This port never creates reusable permission grants. */
+export interface DecisionReviewPort extends DecisionPort {
+  review(spec: DecisionSpec, options?: { readonly signal?: AbortSignal }): Promise<DecisionSnapshot>
+}
 export type DecisionWaitResult =
   | { readonly status: 'resolved'; readonly snapshot: DecisionSnapshot }
   | { readonly status: 'pending'; readonly handle: DecisionHandle; readonly waitEndedBy: 'detached' }
