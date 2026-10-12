@@ -40,6 +40,8 @@ vi.mock('../../src/intelligent-ui/placements.js', async (original) => ({
   ...(await original<object>()),
   openIntelligentPanel: controls.open,
 }))
+// Mount lifecycle coverage keeps the real placement policy without loading document renderers.
+vi.mock('@agnes/web-ui/assistant-ui', () => ({ DocumentPreview: () => null }))
 vi.mock('@agnes/web-client', () => ({ workbenchPanels: { register: () => () => {} } }))
 vi.mock('@agnes/web-ui', () => ({
   createDocumentLocaleSource: () => ({ source: {}, dispose() {} }),
