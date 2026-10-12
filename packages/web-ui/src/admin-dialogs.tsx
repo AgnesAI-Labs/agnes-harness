@@ -1,5 +1,8 @@
 import type { JSX, ReactNode } from 'react'
 import { ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog } from './locales/admin-dialogs.js'
+import { SettingsInput, SettingsSelect } from './settings-layout.js'
+import { Button } from './ui/button.js'
+import { Field } from './ui/field.js'
 import { useUiText } from './ui-locale.js'
 
 /**
@@ -51,19 +54,21 @@ export function SourceDialogContent({
         </div>
       </div>
       <p className="dialog-intro">{intro}</p>
-      <label className="form-field" htmlFor="source-type">
-        {t('source.type')}
-        <select id="source-type" value={type} onChange={(event) => onTypeChange(event.currentTarget.value)}>
+      <Field className="form-field" htmlFor="source-type" label={t('source.type')}>
+        <SettingsSelect
+          id="source-type"
+          value={type}
+          onChange={(event) => onTypeChange(event.currentTarget.value)}
+        >
           {typeOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
-        </select>
-      </label>
-      <label className="form-field" htmlFor="source-ref">
-        {t('source.reference')}
-        <input
+        </SettingsSelect>
+      </Field>
+      <Field className="form-field" htmlFor="source-ref" label={t('source.reference')}>
+        <SettingsInput
           id="source-ref"
           required
           autoComplete="off"
@@ -78,17 +83,17 @@ export function SourceDialogContent({
             }
           }}
         />
-      </label>
+      </Field>
       <p id="source-error" className="plugin-form-error" role="alert">
         {error}
       </p>
       <div className="dialog-actions">
-        <button id="source-cancel" type="button" className="secondary-button" onClick={onCancel}>
+        <Button id="source-cancel" htmlType="button" appearance="secondary" onClick={onCancel}>
           {t('cancel')}
-        </button>
-        <button type="button" className="primary-button" disabled={busy} onClick={onSubmit}>
+        </Button>
+        <Button htmlType="button" appearance="primary" disabled={busy} onClick={onSubmit}>
           {busy ? t('source.checking') : t('source.check')}
-        </button>
+        </Button>
       </div>
     </form>
   )
@@ -133,18 +138,18 @@ export function ConfirmDialogContent({
         </div>
       )}
       <div className="dialog-actions">
-        <button id="plugin-confirm-cancel" type="button" className="secondary-button" onClick={onCancel}>
+        <Button id="plugin-confirm-cancel" htmlType="button" appearance="secondary" onClick={onCancel}>
           {t('cancel')}
-        </button>
-        <button
+        </Button>
+        <Button
           id="plugin-confirm-action"
-          type="button"
-          className="primary-button"
+          htmlType="button"
+          appearance="primary"
           disabled={actionDisabled}
           onClick={onAction}
         >
           {actionLabel}
-        </button>
+        </Button>
       </div>
     </div>
   )
