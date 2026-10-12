@@ -112,6 +112,19 @@
   .workbench-resize:focus-visible {
     outline: 2px solid var(--agnes-text-emphasis);
   }
+  .workbench-resize::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  #workbench-right .workbench-resize::after {
+    width: var(--s32);
+    left: calc((6px - var(--s32)) / 2);
+  }
+  #workbench-bottom .workbench-resize::after {
+    height: var(--s32);
+    top: calc((6px - var(--s32)) / 2);
+  }
   .workbench-files {
     display: flex;
     flex-direction: column;

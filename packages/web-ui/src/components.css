@@ -125,6 +125,16 @@
       inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
     }
   }
+  @media (min-width: 768px) and (max-width: 900px) {
+    :is(.agh-btn--icon, .agnes-ui-switch, .switch) {
+      position: relative;
+    }
+    :is(.agh-btn--icon, .agnes-ui-switch, .switch)::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
+  }
   .agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-text-primary);
     background: transparent;

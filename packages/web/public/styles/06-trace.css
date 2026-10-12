@@ -131,7 +131,7 @@
   }
   .trace-gantt-controls select,
   .trace-gantt-clear {
-    min-height: 1.5rem;
+    min-height: var(--s32);
     padding: 0.1rem 0.3rem;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-sm);

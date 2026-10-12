@@ -893,10 +893,10 @@
     top: 20px;
     right: 14px;
     z-index: 1;
-    width: 1.75rem;
-    min-width: 1.75rem;
-    height: 1.75rem;
-    min-height: 1.75rem;
+    width: var(--s32);
+    min-width: var(--s32);
+    height: var(--s32);
+    min-height: var(--s32);
     padding: 0;
     border-radius: 28px;
     color: var(--agnes-text-primary);
