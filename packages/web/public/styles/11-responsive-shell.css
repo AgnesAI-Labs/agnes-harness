@@ -169,6 +169,7 @@
     }
     #prompt {
       min-height: 3rem;
+      font-size: var(--font-size-md);
     }
     #model {
       min-height: 2.75rem;

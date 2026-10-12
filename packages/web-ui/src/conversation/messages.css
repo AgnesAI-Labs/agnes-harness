@@ -22,58 +22,64 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    margin-block: 4px 8px;
+    gap: var(--s8);
+    margin-block: var(--s4) var(--s8);
   }
 
   /* 宽高由 antd Image 的行内尺寸给定（72×56），这里只管裁切与描边；
    object-fit 必须显式写：antd 只声明了 width/height，默认的 fill 会把图压变形。 */
   [data-agnes-conversation-messages] .user-message-image {
     display: block;
-    border: 1px solid var(--color-border-secondary, #e5e5e5);
-    border-radius: 8px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
     object-fit: cover;
     cursor: zoom-in;
   }
 
   [data-agnes-conversation-messages] .user-message-image-unavailable {
     display: inline-block;
-    color: var(--color-text-tertiary, #777);
-    font-size: 12px;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
   }
 
   [data-agnes-conversation-messages] .user-message-files {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--s8);
     padding: 0;
-    margin-block: 4px 8px;
+    margin-block: var(--s4) var(--s8);
     list-style: none;
   }
 
   [data-agnes-conversation-messages] .user-message-files li {
     display: grid;
-    gap: 4px;
+    gap: var(--s4);
     min-width: 0;
     max-width: 100%;
-    padding: 8px;
-    border: 1px solid var(--color-border-secondary, #e5e5e5);
-    border-radius: 8px;
+    padding: var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
     overflow-wrap: anywhere;
   }
 
   [data-agnes-conversation-messages] .user-message-files small {
-    color: var(--color-text-tertiary, #777);
-    font-size: 12px;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
   }
 
   [data-agnes-conversation-messages] .system-input {
     align-self: stretch;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
   }
   [data-agnes-conversation-messages] .system-input-status {
-    padding-block: 4px;
+    padding-block: var(--s4);
   }
   [data-agnes-conversation-messages] .system-input-trace pre {
     white-space: pre-wrap;

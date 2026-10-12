@@ -73,7 +73,7 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
     border: 0;
-    border-radius: 1.25rem;
+    border-radius: var(--radius-card);
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-popover);
     box-shadow: var(--shadow-elevation-prominent);
@@ -96,7 +96,7 @@
     padding: var(--s8) var(--s8) var(--s4);
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   .model-picker-list {
     flex: 0 0 auto;
@@ -160,7 +160,7 @@
   .model-picker-route {
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
     overflow-wrap: anywhere;
   }
   /* 模型行之间留出真正的空隙，不是靠行内边距撑高。 */
@@ -228,6 +228,7 @@
   }
   .model-picker-detail-value {
     color: var(--agnes-text-tertiary);
+    font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
   }
@@ -268,7 +269,7 @@
   .model-picker-notice {
     margin: 0;
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   .model-picker-hint {
     padding: var(--s4) 0.625rem var(--s8);

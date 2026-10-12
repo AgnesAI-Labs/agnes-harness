@@ -104,6 +104,21 @@
     white-space: pre;
   }
 
+  /* Reading measure applies to prose; code and data keep the full message width. */
+  .conversation-markdown :is(p, ul, ol, blockquote) {
+    max-width: 75ch;
+  }
+  .conversation-markdown :is(h1, h2, h3, h4) {
+    text-wrap: balance;
+  }
+  .conversation-markdown table {
+    font-variant-numeric: tabular-nums;
+  }
+  .conversation-markdown:lang(zh-CN) em {
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+  }
+
   /* React owns fragment lifetimes; the shared skin hook/keyframes remain available to skins. */
   .conversation-markdown .message-reveal-fragment {
     animation-duration: 480ms;

@@ -54,6 +54,7 @@
     font-size: 2rem;
     font-weight: 500;
     line-height: 2.5rem;
+    text-wrap: balance;
   }
   .empty-state-copy {
     max-width: 30rem;
@@ -61,6 +62,7 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-body);
     line-height: 1.5rem;
+    text-wrap: pretty;
   }
   /* 仅新收到的文字淡入；尾段重建时沿用已开始的进度，已读正文与布局保持稳定。
    时长和负延时由 text-reveal 提供，历史快照与选区释放后的积压内容直接显示。 */
@@ -447,7 +449,7 @@
   .cost .node-body {
     margin: 0;
     font-size: var(--font-size-xs);
-    line-height: 1.4;
+    line-height: 1.6;
   }
   .cost .node-body {
     color: var(--agnes-text-tertiary);
@@ -477,7 +479,7 @@
     margin: 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.4;
+    line-height: 1.6;
   }
   .tool[data-status="running"] .tool-status {
     color: var(--agnes-text-secondary);

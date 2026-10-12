@@ -14,9 +14,9 @@
     right: 0;
     z-index: var(--agh-z-dropdown);
     padding: 0.625rem;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-panel);
-    background: var(--agnes-bg-card);
+    border: 0;
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-popover);
     box-shadow: var(--shadow-elevation-soft);
   }
   .reference-popup ul {
@@ -39,12 +39,14 @@
   .reference-popup small {
     display: block;
     color: var(--agnes-text-secondary);
+    line-height: 1.6;
   }
   .reference-help,
   .reference-popup [role="status"] {
     margin: var(--s4) 0;
     font-size: var(--font-size-xs);
     color: var(--agnes-text-secondary);
+    line-height: 1.6;
   }
   .reference-chips {
     display: flex;

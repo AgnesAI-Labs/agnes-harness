@@ -212,7 +212,7 @@
   .turn-process-body .timeline-node.cost {
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   /* 标签不参与收缩：否则长数值会把「用量」挤成一列两个字。 */
   .turn-process-body .cost .node-label {
@@ -224,7 +224,7 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-weight: 400;
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   .turn-process-body .cost .node-body {
     color: var(--agnes-text-secondary);
@@ -236,7 +236,7 @@
     border-radius: 0.5rem;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   /* Frequent detail inspection is immediate; the grid keeps the existing collapsed layout. */
   .tool-detail-body {
@@ -375,7 +375,7 @@
     background: var(--agnes-bg-page);
     box-shadow: var(--shadow-elevation-prominent);
     font-size: var(--font-size-xs);
-    line-height: 1.125rem;
+    line-height: 1.6;
   }
   .turn-usage-grid dt,
   .turn-usage-grid dd {
