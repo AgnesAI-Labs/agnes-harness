@@ -144,51 +144,53 @@ function Fixture() {
   useSyncExternalStore(binding.subscribe, binding.getVersion)
   return (
     <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
-      <div id="fixture-controls">
+      <div id="fixture-controls" className="session-tabs-bar">
         {dockReady && (
           <Dock context={{ t: (key) => dockLocale.t(key), data: { session: { id: client.sessionId } } }} />
         )}
       </div>
-      <IntelligentInline binding={binding} />
-      <output data-testid="fixture-requests">{JSON.stringify(state.requests)}</output>
-      <button
-        type="button"
-        data-testid="fixture-complete"
-        onClick={() => {
-          const receipt = state.page.actions.at(-1)!
-          if (receipt.status !== 'received') return
-          receipt.status = 'succeeded'
-          receipt.invocationId = 'question-collector-invocation'
-          receipt.resultSeq = ++state.page.lastSeq
-          receipt.seq = ++state.page.lastSeq
-          receipt.summary = JSON.stringify(state.requests.at(-1)?.input)
-          state.page.surfaces[0]!.status = 'closed'
-          notify()
-        }}
-      >
-        Complete deferred collector
-      </button>
-      <button
-        type="button"
-        data-testid="fixture-change"
-        onClick={() => {
-          state.page.surfaces[0]!.surface.revision++
-          state.page.surfaces[0]!.updatedSeq = ++state.page.lastSeq
-          save()
-        }}
-      >
-        Change revision without notification
-      </button>
-      <button
-        type="button"
-        data-testid="fixture-deny"
-        onClick={() => {
-          state.deny = true
-          save()
-        }}
-      >
-        Deny next collector
-      </button>
+      <div className="conversation-shell">
+        <IntelligentInline binding={binding} />
+        <output data-testid="fixture-requests">{JSON.stringify(state.requests)}</output>
+        <button
+          type="button"
+          data-testid="fixture-complete"
+          onClick={() => {
+            const receipt = state.page.actions.at(-1)!
+            if (receipt.status !== 'received') return
+            receipt.status = 'succeeded'
+            receipt.invocationId = 'question-collector-invocation'
+            receipt.resultSeq = ++state.page.lastSeq
+            receipt.seq = ++state.page.lastSeq
+            receipt.summary = JSON.stringify(state.requests.at(-1)?.input)
+            state.page.surfaces[0]!.status = 'closed'
+            notify()
+          }}
+        >
+          Complete deferred collector
+        </button>
+        <button
+          type="button"
+          data-testid="fixture-change"
+          onClick={() => {
+            state.page.surfaces[0]!.surface.revision++
+            state.page.surfaces[0]!.updatedSeq = ++state.page.lastSeq
+            save()
+          }}
+        >
+          Change revision without notification
+        </button>
+        <button
+          type="button"
+          data-testid="fixture-deny"
+          onClick={() => {
+            state.deny = true
+            save()
+          }}
+        >
+          Deny next collector
+        </button>
+      </div>
       <aside id="workbench-right" hidden>
         <div id="workbench-right-content" />
       </aside>

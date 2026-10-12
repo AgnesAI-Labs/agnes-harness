@@ -201,11 +201,20 @@ for (const [locale, theme, width] of [
     await page.goto(`${url}/?locale=${locale}&theme=${theme}`)
     const inline = page.getByTestId('intelligent-ui-inline')
     const surface = inline.getByTestId('ui-surface-finance-review')
-    await expect(surface.locator('header')).toContainText(locale === 'en' ? 'Interactive' : '可操作')
-    await expect(surface.locator('h3')).toHaveAttribute('title', locale === 'en' ? 'Revision 1' : '版本 1')
-    await expect(surface.locator('header')).not.toContainText(locale === 'en' ? 'Revision 1' : '版本 1')
+    await expect(surface).toHaveAttribute('data-revision', '1')
+    await expect(surface.getByTestId('ui-expand')).toBeEnabled()
+    await expect(surface.getByTestId('ui-expand')).toHaveAttribute(
+      'title',
+      locale === 'en' ? 'Open in workbench' : '在工作台打开',
+    )
     await inline.getByTestId('ui-expand').click()
     const panel = page.getByTestId('intelligent-ui-panel')
+    const fullSurface = panel.getByTestId('ui-surface-finance-review')
+    await expect(fullSurface.locator('h3')).toHaveAttribute(
+      'title',
+      locale === 'en' ? 'Revision 1' : '版本 1',
+    )
+    await expect(fullSurface.locator('header')).not.toContainText(locale === 'en' ? 'Revision 1' : '版本 1')
     const detail = panel.getByTestId('ui-detail-summary')
     await expect(detail).toBeVisible()
     expect(await detail.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('1px')
