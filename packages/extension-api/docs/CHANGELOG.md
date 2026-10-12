@@ -56,6 +56,12 @@ render a status line and expandable data. Content remains untrusted for model po
 Intelligent UI action receipts and deferred wakeups use this path. Core `enqueue`
 optionally deduplicates commandId atomically against historical inbox facts.
 
+`SystemInputPresentation` is now a union of `ui-action` and `child-completed`. Core delivers
+one `child-completed` system input (`source: agnes/child`) to the parent when a background
+child finishes a turn or ends: `data` is `{ childKey, status, continuable?, result?, truncated?,
+credits? }` with `status` one of `completed | failed | cancelled | budget_stopped`. Workflow
+loops read it from `LoopInput.system`; `subagent_collect` stays for explicit reads.
+
 Protocol preview changes: `UserMessage`, `InboxItem` and user `UINode` replace top-level
 presentation with `system`; user `UINode` carries origin. No old-field compatibility shim.
 Use extension API dependencies and plugin `apiRange` compatible with `2.0.0` for both

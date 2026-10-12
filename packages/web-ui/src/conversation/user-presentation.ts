@@ -6,6 +6,8 @@ export function systemInputText(system: SystemInput | undefined, t: Translate): 
   if (!system) return undefined
   const presentation = system.presentation
   if (!presentation) return system.summary
+  if (presentation.kind === 'child-completed')
+    return t(`timeline.childCompleted.${presentation.status}`, { label: presentation.label })
   if (presentation.status !== 'succeeded')
     return t(`timeline.uiAction.${presentation.status}`, { label: presentation.label })
   if (presentation.operation === 'submit')

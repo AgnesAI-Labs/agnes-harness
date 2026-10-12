@@ -380,34 +380,56 @@
       }
     },
     "SystemInputPresentation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "operation", "status", "label", "fields"],
-      "properties": {
-        "kind": {
-          "const": "ui-action"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "operation", "status", "label", "fields"],
+          "properties": {
+            "kind": {
+              "const": "ui-action"
+            },
+            "operation": {
+              "enum": ["submit", "action"]
+            },
+            "status": {
+              "enum": ["succeeded", "failed", "rejected"]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "fields": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
         },
-        "operation": {
-          "enum": ["submit", "action"]
-        },
-        "status": {
-          "enum": ["succeeded", "failed", "rejected"]
-        },
-        "label": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "fields": {
-          "type": "array",
-          "maxItems": 32,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "status", "label"],
+          "properties": {
+            "kind": {
+              "const": "child-completed"
+            },
+            "status": {
+              "enum": ["completed", "failed", "cancelled", "budget_stopped"]
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
           }
         }
-      }
+      ]
     },
     "SystemInput": {
       "description": "Platform-written notification. Source is stamped by Host, never supplied by ordinary input.",

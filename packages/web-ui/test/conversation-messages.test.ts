@@ -515,6 +515,35 @@ describe('W3b projected message DOM', () => {
 })
 
 it.each([
+  ['completed', '后台任务已完成：Audit'],
+  ['failed', '后台任务失败：Audit'],
+  ['cancelled', '后台任务已取消：Audit'],
+  ['budget_stopped', '后台任务已达到预算上限而停止：Audit'],
+] as const)(
+  'shows a localized child completion status line (%s) with the result expandable',
+  async (status, summary) => {
+    const node: UINode = {
+      kind: 'user',
+      id: 'child',
+      seq: 1,
+      content: [{ type: 'text', text: 'Background child finished' }],
+      origin: 'system',
+      system: {
+        source: 'agnes/child',
+        type: 'child-completed',
+        summary: 'Background child finished',
+        data: { childKey: 'c1', status, result: 'child-result-text' },
+        presentation: { kind: 'child-completed', status, label: 'Audit' },
+      },
+    }
+    const store = createConversationProjectionStore({ sessionId: 's', nodes: [node] })
+    await act(async () => root.render(createElement(Harness, { store })))
+    expect(host.querySelector('[role=status]')?.textContent).toBe(summary)
+    expect(host.querySelector('.system-input-trace pre')?.textContent).toContain('child-result-text')
+  },
+)
+
+it.each([
   ['succeeded', '已提交：name、email'],
   ['failed', '操作失败：Submit'],
   ['rejected', '操作未执行：Submit'],
