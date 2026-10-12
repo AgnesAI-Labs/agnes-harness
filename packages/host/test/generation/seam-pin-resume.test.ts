@@ -280,6 +280,10 @@ it.each([
       // The session cannot continue, but its record is still readable without restoring anything.
       const rows = await again.host.readSessionRows('victim', { limit: 50 })
       expect(rows[0]?.type).toBe('session/start')
+      // The same holds for the projected view the clients render: read-only, no notice, no writes.
+      const view = await again.host.readSessionView('victim')
+      expect(view).toMatchObject({ sessionId: 'victim', readOnly: true, lastSeq: rows.length })
+      expect(view.notice).toBeUndefined()
       expect(readFileSync(pinFile, 'utf8')).toBe(before.pin)
       expect(readFileSync(generationFile, 'utf8')).toBe(before.generation)
       expect(ledgerFiles(root).map(statSignature)).toEqual(before.ledgers)

@@ -2932,6 +2932,89 @@
         }
       }
     },
+    "SessionViewParams": {
+      "description": "Reads one session's recorded conversation without opening it: nothing is restored, locked or written, so a session this build cannot continue stays viewable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "maxNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 200
+        }
+      }
+    },
+    "SessionViewNotice": {
+      "description": "Why the record could only be partly read. Present when the ledger itself is damaged or in a format this build cannot decode; the rows that were decoded safely are still returned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "issue", "actions", "localized"],
+      "properties": {
+        "code": {
+          "enum": ["E_SESSION_VERSION_NEWER", "E_SESSION_VERSION_OLDER", "E_SESSION_CORRUPT"]
+        },
+        "issue": {
+          "enum": ["newer", "older", "corrupt"]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "enum": ["upgrade", "new-session", "repin"]
+          }
+        },
+        "localized": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en", "zh-CN"],
+          "properties": {
+            "en": { "type": "string" },
+            "zh-CN": { "type": "string" }
+          }
+        }
+      }
+    },
+    "SessionViewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "readOnly", "lastSeq", "timeline", "history"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "readOnly": {
+          "const": true
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "timeline": {
+          "description": "Never busy: opState is null and generation is 1, because no live session stands behind it.",
+          "$ref": "#/$defs/UITimeline"
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasEarlier", "startIndex", "totalNodes"],
+          "properties": {
+            "hasEarlier": { "type": "boolean" },
+            "startIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "totalNodes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          }
+        },
+        "notice": {
+          "$ref": "#/$defs/SessionViewNotice"
+        }
+      }
+    },
     "SessionProjectUIOpeningParams": {
       "type": "object",
       "additionalProperties": false,

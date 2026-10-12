@@ -54,6 +54,7 @@ import {
 } from '../sessions/session.js'
 import { validateModelSwitch, validatePresetSwitch } from '../sessions/session-switch.js'
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
+import { readSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { closeHost } from './lifecycle.js'
@@ -111,6 +112,11 @@ export interface Host {
     sessionKey: string,
     query: { fromSeq?: number; toSeq?: number; limit: number },
   ): Promise<import('@agnes/core').Event[]>
+  /** The recorded conversation of one session, projected from its rows; see readSessionRows. */
+  readSessionView(
+    sessionKey: string,
+    options?: { maxNodes?: number },
+  ): Promise<import('@agnes/protocol').SessionViewResult>
   /** Effective runtime of one open session; produced by the generation and composition owners. */
   sessionRuntime?(sessionKey: string): import('@agnes/protocol').SessionRuntimeDescriptor
   releaseSessionGeneration?(sessionKey: string): Promise<void>
@@ -353,6 +359,18 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         limit,
         order: 'asc',
       }),
+    readSessionView: (sessionKey, options) =>
+      readSessionView(
+        (key, query) =>
+          a.kernel.o.storage.scan(key, {
+            ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
+            ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
+            limit: query.limit,
+            order: 'asc',
+          }),
+        sessionKey,
+        options,
+      ),
     get provider() {
       return a.provider
     },

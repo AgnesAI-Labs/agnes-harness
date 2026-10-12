@@ -143,6 +143,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.budget': 'client',
   '_agnes/v1/session.projectUI': 'client',
   '_agnes/v1/session.projectUIPatch': 'client',
+  '_agnes/v1/session.view': 'client',
   '_agnes/v1/session.projectUIOpening': 'client',
   '_agnes/v1/session.projectUIHistory': 'client',
   '_agnes/v1/session.runtime': 'client',

@@ -498,6 +498,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionProjectUIParams: AgnesGen.SessionProjectUIParams,
   SessionProjectUIPatchParams: AgnesGen.SessionProjectUIPatchParams,
   SessionProjectUIOpeningParams: AgnesGen.SessionProjectUIOpeningParams,
+  SessionViewParams: AgnesGen.SessionViewParams,
+  SessionViewNotice: AgnesGen.SessionViewNotice,
+  SessionViewResult: AgnesGen.SessionViewResult,
   UIHistoryCursor: AgnesGen.UIHistoryCursor,
   SessionProjectUIHistoryParams: AgnesGen.SessionProjectUIHistoryParams,
   SessionReadToolDetailParams: AgnesGen.SessionReadToolDetailParams,
@@ -2606,6 +2609,50 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: rep(513), after: 7 },
     ],
     note: 'exclusive applied cursor and optional target cut use the same seq and surface boundaries',
+  },
+  SessionViewParams: {
+    valid: { sessionId: 's', maxNodes: 200 },
+    invalid: [{ sessionId: 's', maxNodes: 0 }, { sessionId: 's', maxNodes: 5001 }, { maxNodes: 1 }],
+    note: 'a read-only view has a bounded node window and no surface or byte budget',
+  },
+  SessionViewNotice: {
+    valid: {
+      code: 'E_SESSION_VERSION_OLDER',
+      issue: 'older',
+      actions: ['new-session'],
+      localized: { en: 'Older.', 'zh-CN': '你的会话较旧。' },
+    },
+    invalid: [
+      { code: 'E_FORMAT_CORRUPT', issue: 'corrupt', actions: [], localized: { en: '', 'zh-CN': '' } },
+      {
+        code: 'E_SESSION_CORRUPT',
+        issue: 'corrupt',
+        actions: ['delete'],
+        localized: { en: '', 'zh-CN': '' },
+      },
+      { code: 'E_SESSION_CORRUPT', issue: 'corrupt', actions: [], localized: { en: '' } },
+    ],
+    note: 'the same three codes and follow-up actions as the open refusal',
+  },
+  SessionViewResult: {
+    valid: {
+      sessionId: 's',
+      readOnly: true,
+      lastSeq: 0,
+      timeline: { sessionId: 's', upto: 0, generation: 1, opState: null, nodes: [], turns: [] },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    },
+    invalid: [
+      {
+        sessionId: 's',
+        readOnly: false,
+        lastSeq: 0,
+        timeline: { sessionId: 's', upto: 0, generation: 1, opState: null, nodes: [], turns: [] },
+        history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+      },
+      { sessionId: 's', readOnly: true, lastSeq: 0 },
+    ],
+    note: 'a read result is always flagged read-only and carries one timeline plus window coordinates',
   },
   SessionProjectUIOpeningParams: {
     valid: { sessionId: 's', surface: 'tui', maxNodes: 200, maxBytes: 262_144 },
@@ -7962,6 +8009,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionProjectUIPatchParams',
     result: 'UIProjectionUpdate',
   },
+  '_agnes/v1/session.view': {
+    fileId: AGNES_ID,
+    params: 'SessionViewParams',
+    result: 'SessionViewResult',
+  },
   '_agnes/v1/session.projectUIOpening': {
     fileId: AGNES_ID,
     params: 'SessionProjectUIOpeningParams',
@@ -8723,6 +8775,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.SessionProjectUIParams as Sample,
   '_agnes/v1/session.projectUIPatch': AGNES_SAMPLES.SessionProjectUIPatchParams as Sample,
+  '_agnes/v1/session.view': AGNES_SAMPLES.SessionViewParams as Sample,
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.SessionProjectUIOpeningParams as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.SessionProjectUIHistoryParams as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailParams as Sample,
@@ -9338,6 +9391,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionBudgetResult as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.UITimeline as Sample,
   '_agnes/v1/session.projectUIPatch': AGNES_SAMPLES.UIProjectionUpdate as Sample,
+  '_agnes/v1/session.view': AGNES_SAMPLES.SessionViewResult as Sample,
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.UIOpeningResult as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.UIHistoryPage as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailResult as Sample,

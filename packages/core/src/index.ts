@@ -167,6 +167,7 @@ export type { RlafDump, RlafRange } from '@agnes/core-ledger/project/rlaf'
 export { exportRlaf } from '@agnes/core-ledger/project/rlaf'
 export type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 export { computeSurface, SurfaceCache, validateReplace } from '@agnes/core-ledger/project/surface'
+export { turnsForNodes } from '@agnes/core-ledger/project/turns'
 export type {
   CoreUIProjectionUpdate,
   CoreUITimeline,
@@ -177,7 +178,7 @@ export type {
   UIOptions,
   UIProjectionUsageOptions,
 } from '@agnes/core-ledger/project/ui'
-export { projectUI } from '@agnes/core-ledger/project/ui'
+export { boundedTimelinePage, projectUI } from '@agnes/core-ledger/project/ui'
 export type { UsageProjectionInput } from '@agnes/core-ledger/project/usage'
 export { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
 export { foldEvents, initialState, reduce } from '@agnes/core-ledger/reduce/reducer'

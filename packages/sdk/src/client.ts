@@ -522,6 +522,12 @@ export class Client {
     },
     list: (o: SessionListParams = {}): Promise<PageSessionMeta> =>
       this.call<PageSessionMeta>('_agnes/v1/session.list', o),
+    /** The recorded conversation, read without opening the session; works when it cannot be resumed. */
+    view: (
+      sessionId: string,
+      o: { maxNodes?: number } = {},
+    ): Promise<import('@agnes/protocol').SessionViewResult> =>
+      this.call('_agnes/v1/session.view', { sessionId, ...o }),
     rename: (sessionId: string, title: string): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.rename', { sessionId, title }),
     archive: (sessionId: string, archived: boolean): Promise<SessionPreferences> =>

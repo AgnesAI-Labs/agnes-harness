@@ -105,6 +105,9 @@ export const AgnesV1 = Type.Module({
   "SessionBudgetResult": Type.Object({ "state": Type.Union([Type.Ref('BudgetState'), Type.Null()]), "ledger": Type.Array(Type.Object({ "credits": Type.Optional(Type.Number()), "creditSource": Type.Union([Type.Literal('gateway'), Type.Literal('estimated')]), "purpose": Type.Optional(Type.String()), "seq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }), { maxItems: 200 }) }, { additionalProperties: false }),
   "SessionProjectUIParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "upto": Type.Optional(Type.Integer({ minimum: 0 })), "surface": Type.Optional(Type.Union([Type.Literal('tui'), Type.Literal('web'), Type.Literal('channel')])) }, { additionalProperties: false }),
   "SessionProjectUIPatchParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "after": Type.Integer({ minimum: 0 }), "upto": Type.Optional(Type.Integer({ minimum: 0 })), "surface": Type.Optional(Type.Union([Type.Literal('tui'), Type.Literal('web'), Type.Literal('channel')])) }, { additionalProperties: false }),
+  "SessionViewParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "maxNodes": Type.Optional(Type.Integer({ minimum: 1, maximum: 5000 })) }, { additionalProperties: false }),
+  "SessionViewNotice": Type.Object({ "code": Type.Union([Type.Literal('E_SESSION_VERSION_NEWER'), Type.Literal('E_SESSION_VERSION_OLDER'), Type.Literal('E_SESSION_CORRUPT')]), "issue": Type.Union([Type.Literal('newer'), Type.Literal('older'), Type.Literal('corrupt')]), "actions": Type.Array(Type.Union([Type.Literal('upgrade'), Type.Literal('new-session'), Type.Literal('repin')])), "localized": Type.Object({ "en": Type.String(), "zh-CN": Type.String() }, { additionalProperties: false }) }, { additionalProperties: false }),
+  "SessionViewResult": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "readOnly": Type.Literal(true), "lastSeq": Type.Integer({ minimum: 0, maximum: 9007199254740991 }), "timeline": Type.Ref('UITimeline'), "history": Type.Object({ "hasEarlier": Type.Boolean(), "startIndex": Type.Integer({ minimum: 0, maximum: 9007199254740991 }), "totalNodes": Type.Integer({ minimum: 0, maximum: 9007199254740991 }) }, { additionalProperties: false }), "notice": Type.Optional(Type.Ref('SessionViewNotice')) }, { additionalProperties: false }),
   "SessionProjectUIOpeningParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "surface": Type.Optional(Type.Union([Type.Literal('tui'), Type.Literal('web'), Type.Literal('channel')])), "maxNodes": Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })), "maxBytes": Type.Optional(Type.Integer({ minimum: 16384, maximum: 150990848 })) }, { additionalProperties: false }),
   "UIHistoryCursor": Type.String({ minLength: 1, maxLength: 2048 }),
   "SessionProjectUIHistoryParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "cursor": Type.Ref('UIHistoryCursor'), "limit": Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })), "maxBytes": Type.Optional(Type.Integer({ minimum: 16384, maximum: 150990848 })) }, { additionalProperties: false }),
@@ -490,6 +493,12 @@ export const SessionProjectUIParams = AgnesV1.Import('SessionProjectUIParams')
 export type SessionProjectUIParams = Static<typeof SessionProjectUIParams>
 export const SessionProjectUIPatchParams = AgnesV1.Import('SessionProjectUIPatchParams')
 export type SessionProjectUIPatchParams = Static<typeof SessionProjectUIPatchParams>
+export const SessionViewParams = AgnesV1.Import('SessionViewParams')
+export type SessionViewParams = Static<typeof SessionViewParams>
+export const SessionViewNotice = AgnesV1.Import('SessionViewNotice')
+export type SessionViewNotice = Static<typeof SessionViewNotice>
+export const SessionViewResult = AgnesV1.Import('SessionViewResult')
+export type SessionViewResult = Static<typeof SessionViewResult>
 export const SessionProjectUIOpeningParams = AgnesV1.Import('SessionProjectUIOpeningParams')
 export type SessionProjectUIOpeningParams = Static<typeof SessionProjectUIOpeningParams>
 export const UIHistoryCursor = AgnesV1.Import('UIHistoryCursor')

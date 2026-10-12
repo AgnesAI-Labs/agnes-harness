@@ -123,6 +123,7 @@ export type MethodName =
   | '_agnes/v1/session.budget'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
+  | '_agnes/v1/session.view'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
   | '_agnes/v1/session.runtime'
@@ -292,6 +293,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIPatchParams,
     result: A.UIProjectionUpdate,
   },
+  '_agnes/v1/session.view': clientRequest(A.SessionViewParams, A.SessionViewResult),
   '_agnes/v1/session.projectUIOpening': {
     kind: 'request',
     direction: 'c2s',

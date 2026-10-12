@@ -78,6 +78,7 @@ import {
   registerSessionSelection,
   sessionSelectionProvider,
 } from './methods/session-selection.js'
+import { registerSessionView } from './methods/session-view.js'
 import { registerWorkspaces } from './methods/workspaces.js'
 import { type Prompter, PrompterRouter } from './prompter.js'
 import { RegistryLister, SessionRegistry } from './sessions.js'
@@ -418,6 +419,7 @@ export function createLocalEndpoint(
   registerSessionPreferences(ep, lister, preferences)
   registerConfiguration(ep, opts.configuration)
   registerSessionRuntime(ep, host, requireSessionOwner(cx))
+  registerSessionView(ep, host, requireSessionOwner(cx))
   registerWorkspaces(ep, workspaces)
   registerAcp(ep, cx, feeds, attached)
   registerAgnes(

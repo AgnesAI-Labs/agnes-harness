@@ -70,6 +70,7 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/session.fileUpload`
 - `_agnes/v1/session.projectUI`
 - `_agnes/v1/session.projectUIPatch`
+- `_agnes/v1/session.view`
 - `_agnes/v1/session.projectUIOpening`
 - `_agnes/v1/session.projectUIHistory`
 - `_agnes/v1/ui.action`

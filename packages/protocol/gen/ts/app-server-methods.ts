@@ -135,6 +135,7 @@ export interface AppServerMethods {
   "_agnes/v1/session.budget": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").SessionBudgetResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUI": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIParams>; result: Static<typeof import("./agnes-v1.js").UITimeline>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUIPatch": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIPatchParams>; result: Static<typeof import("./agnes-v1.js").UIProjectionUpdate>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.view": { params: Static<typeof import("./agnes-v1.js").SessionViewParams>; result: Static<typeof import("./agnes-v1.js").SessionViewResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUIOpening": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIOpeningParams>; result: Static<typeof import("./agnes-v1.js").UIOpeningResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUIHistory": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIHistoryParams>; result: Static<typeof import("./agnes-v1.js").UIHistoryPage>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.runtime": { params: Static<typeof import("../../src/session-runtime.js").SessionRuntimeParams>; result: Static<typeof import("../../src/session-runtime.js").SessionRuntimeDescriptor>; direction: "c2s"; kind: "request" }
