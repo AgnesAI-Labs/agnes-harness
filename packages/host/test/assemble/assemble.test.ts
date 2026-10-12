@@ -1744,7 +1744,7 @@ describe('assemble', () => {
       throw new Error('db down')
     }
     const d = deps({ '@agnes/base': bad, '@agnes/code': codeModule, '@agnes/ai': aiModule })
-    await expect(assemble(p, d)).rejects.toThrow(/E_SEAM_INIT.*ledger/)
+    await expect(assemble(p, d)).rejects.toThrow(/E_SEAM_INIT.*billing/)
     expect(events(d).at(-1)).toMatchObject({ kind: 'startup.failed', detail: { step: 'seams' } })
   })
   it('reports the first seam in SEAM_NAMES order when two fail, not whichever rejected soonest', async () => {

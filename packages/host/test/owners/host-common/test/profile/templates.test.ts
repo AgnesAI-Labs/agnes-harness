@@ -14,17 +14,15 @@ describe('templates', () => {
     expect(TEMPLATE_NAMES).toEqual(['local-dev', 'enterprise'])
     for (const n of TEMPLATE_NAMES) expect(loadTemplate(n).name).toBe(n)
   })
-  it('local-dev names all nine seams, lists the provider package, and defaults to workspace-write', () => {
+  it('local-dev names the seven package seams, lists the provider package, and defaults to workspace-write', () => {
     const t = loadTemplate('local-dev')
     expect(Object.keys(t.seams ?? {}).sort()).toEqual([
       'approval',
       'artifacts',
       'billing',
       'checkpoint',
-      'platform',
       'principals',
       'repair',
-      'sandbox',
       'verifier',
     ])
     expect(t.packages?.map((p) => p.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
@@ -58,14 +56,11 @@ describe('checkTemplateShape says which rule fired', () => {
     seams: {
       approval: '@a',
       checkpoint: '@a',
-      ledger: '@a',
-      sandbox: '@a',
+      billing: '@a',
       verifier: '@a',
       repair: '@a',
       artifacts: '@a',
       principals: '@a',
-      platform: '@a',
-      harness: '@a',
     },
     provider: { package: '@agnes/ai' },
     presets: { default: 'standard', allowed: ['standard'] },
@@ -90,8 +85,8 @@ describe('checkTemplateShape says which rule fired', () => {
     ['a schemaVersion that is not 1', { ...ok(), schemaVersion: 2 }, /schemaVersion must be 1/],
     [
       'a missing seam',
-      { ...ok(), seams: { ...ok().seams, harness: undefined } },
-      /seams\.harness must name a package/,
+      { ...ok(), seams: { ...ok().seams, verifier: undefined } },
+      /seams\.verifier must name a package/,
     ],
     ['no provider package', { ...ok(), provider: {} }, /provider\.package is required/],
     ['no presets block', { ...ok(), presets: undefined }, /presets\.default and presets\.allowed/],
