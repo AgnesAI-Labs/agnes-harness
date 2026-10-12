@@ -55,7 +55,7 @@
   }
   .model-picker {
     position: fixed;
-    z-index: 70;
+    z-index: var(--agh-z-dropdown);
     display: flex;
     flex-direction: column;
     min-height: 0;

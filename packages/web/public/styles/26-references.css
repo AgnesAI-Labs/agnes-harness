@@ -12,7 +12,7 @@
     bottom: calc(100% + 0.5rem);
     left: 0;
     right: 0;
-    z-index: 10;
+    z-index: var(--agh-z-dropdown);
     padding: 0.625rem;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-panel);

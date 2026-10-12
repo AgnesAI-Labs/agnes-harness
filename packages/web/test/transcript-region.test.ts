@@ -36,7 +36,7 @@ describe('rendered transcript region', () => {
     expect(content?.querySelector('[data-node-id="assistant-1"]')).toBeNull()
   })
 
-  it('mounts slot cards with a per-card React root and restores the built-in after shadow unload', async () => {
+  it('mounts slot cards within the application and restores the buffered view after shadow unload', async () => {
     runtime = await mountRenderedIndex()
     bindSlotCardContext({ registry: runtime.registry, claim: () => true })
     const slot: UINode = {
@@ -65,7 +65,14 @@ describe('rendered transcript region', () => {
     await vi.waitFor(() => {
       expect(document.querySelector('#transcript-content')).toBeTruthy()
       expect(document.querySelector('#shadow-transcript')).toBeNull()
+      expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeTruthy()
     }, committed)
+    runtime.session.setSession('different-session')
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeNull(),
+      committed,
+    )
+    runtime.transcript?.reset()
   })
 
   it('renders a claimed plugin card through the default React region bootstrap', async () => {

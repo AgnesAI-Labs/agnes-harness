@@ -34,10 +34,10 @@ const stripAssets = (html: string): string =>
 
 /** Ids inside each root, plus the roots named in `selfIds`. The pane section's own id is host-specific. */
 function embeddedIds(html: string, roots: readonly string[], selfIds: readonly string[] = []): string[] {
-  document.documentElement.innerHTML = stripAssets(html)
+  const parsed = new DOMParser().parseFromString(stripAssets(html), 'text/html')
   const found = new Set(selfIds)
   for (const id of roots) {
-    const root = document.getElementById(id)
+    const root = parsed.getElementById(id)
     expect(root, `#${id} is missing from the embedded host`).not.toBeNull()
     for (const node of root?.querySelectorAll('[id]') ?? [])
       if (!node.id.startsWith('settings-dsh-slot-')) found.add(node.id)
@@ -88,17 +88,21 @@ it('guides MCP setup through chat and hides the manual creation control', async 
   resetWebDom()
 })
 
-it('the shared confirmation dialog exists in every host', () => {
-  for (const file of ['index.html', 'admin.html', 'resources.html'])
-    for (const id of [
-      'admin-confirm',
-      'admin-confirm-title',
-      'admin-confirm-description',
-      'admin-confirm-preview',
-      'admin-confirm-cancel',
-      'admin-confirm-action',
-    ])
-      expect(idsIn(read(file)), `${file} is missing #${id}`).toContain(id)
+it('the shared confirmation dialog exists in every host', async () => {
+  const required = [
+    'admin-confirm',
+    'admin-confirm-title',
+    'admin-confirm-description',
+    'admin-confirm-preview',
+    'admin-confirm-cancel',
+    'admin-confirm-action',
+  ]
+  for (const file of ['admin.html', 'resources.html'])
+    for (const id of required) expect(idsIn(read(file)), `${file} is missing #${id}`).toContain(id)
+  const runtime = await mountRenderedIndex()
+  for (const id of required) expect(document.getElementById(id)).not.toBeNull()
+  await runtime.dispose()
+  resetWebDom()
 })
 
 it('the Skill / MCP pane confirms through the shared dialog, not window.confirm', async () => {

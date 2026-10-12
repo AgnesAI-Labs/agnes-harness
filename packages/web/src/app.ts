@@ -2,7 +2,7 @@ import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { bindDialogSheets, createCatalogTranslator, materializeSettingsControls } from '@agnes/web-ui'
+import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
 import { settingsRoute } from '@agnes/web-units'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -679,8 +679,6 @@ const composerController = createComposerController(appSessionContext)
 const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext)
 const turnController = createTurnController(appSessionContext)
-
-materializeSettingsControls(document)
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)

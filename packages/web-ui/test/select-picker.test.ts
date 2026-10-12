@@ -28,6 +28,7 @@ it('preserves empty-value choices and ignores hidden/disabled items', () => {
   picker.sync()
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   const panel = document.getElementById('choice-listbox') as HTMLElement
+  expect(panel.closest('dialog[open]')).not.toBeNull()
   const row = document.getElementById('choice-listbox-1') as HTMLElement
   Object.defineProperty(panel, 'clientHeight', { value: 50 })
   Object.defineProperty(row, 'offsetTop', { value: 60 })
@@ -76,4 +77,13 @@ it('restores the native control and label on destroy, with no duplicate trigger 
   expect(document.querySelector('label')?.htmlFor).toBe('choice')
   picker = createSelectPicker(select, { label: '默认模型' })
   expect(document.querySelectorAll('#choice-trigger')).toHaveLength(1)
+})
+
+it('mounts a standalone picker in the shared overlay outlet', () => {
+  document.body.innerHTML =
+    '<div id="agnes-overlay-container"></div><select id="choice"><option value="a">Model A</option></select>'
+  const select = document.getElementById('choice') as HTMLSelectElement
+  picker = createSelectPicker(select, { label: 'Model' })
+  document.getElementById('choice-trigger')?.click()
+  expect(document.getElementById('choice-listbox')?.parentElement?.id).toBe('agnes-overlay-container')
 })

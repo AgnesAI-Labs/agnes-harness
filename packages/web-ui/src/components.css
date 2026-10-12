@@ -243,7 +243,7 @@
   }
   .agh-toast {
     position: fixed;
-    z-index: 1100;
+    z-index: var(--agh-z-notification);
     bottom: max(var(--s24), env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%);

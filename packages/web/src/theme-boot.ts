@@ -8,7 +8,6 @@ import {
   readLocalePreference,
   type UiLocale,
 } from '@agnes/web-foundation/locale-preference'
-import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
 import {
   applySkinTokens,
   readSkinCache,
@@ -53,11 +52,6 @@ let shellLocaleBootScheduled = false
 function staticShellCatalog() {
   if (document.body?.id === 'plugin-admin-page') return pluginAdminShellLocaleCatalog
   if (document.body?.id === 'resource-admin-page') return resourceAdminShellLocaleCatalog
-  if (document.documentElement.dataset.agnesShell === 'workbench')
-    return {
-      en: { ...resourceAdminShellLocaleCatalog.en, ...workbenchShellLocaleCatalog.en },
-      'zh-CN': { ...resourceAdminShellLocaleCatalog['zh-CN'], ...workbenchShellLocaleCatalog['zh-CN'] },
-    }
   return undefined
 }
 

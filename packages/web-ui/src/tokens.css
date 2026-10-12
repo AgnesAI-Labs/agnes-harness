@@ -1,14 +1,5 @@
 @import "./layers.css";
 @import "./components.css";
-@layer tokens {
-  :root {
-    --agnes-z-dropdown: 1000;
-    --agnes-z-drawer: 1100;
-    --agnes-z-modal: 1200;
-    --agnes-z-tooltip: 1300;
-    --agnes-z-notification: 1400;
-  }
-}
 @layer ui {
   /* ═══════════════════════════════════════════════════════════════════════
    Web UI 组件层 · 主题桥：--agnes-* → --ant-*
@@ -106,6 +97,16 @@
     --ant-control-height-lg: var(--control-height-form);
 
     /* Component defaults also contain light colors in Ant Design's static CSS. */
+
+    /* zeroRuntime needs the same private overlay layers in static component variables. */
+    --ant-z-index-popup-base: var(--agh-z-dropdown);
+    --ant-dropdown-z-index-popup: var(--agh-z-dropdown);
+    --ant-select-z-index-popup: var(--agh-z-dropdown);
+    --ant-popover-z-index-popup: var(--agh-z-dropdown);
+    --ant-drawer-z-index-popup: var(--agh-z-drawer);
+    --ant-tooltip-z-index-popup: var(--agh-z-tooltip);
+    --ant-message-z-index-popup: var(--agh-z-notification);
+    --ant-notification-z-index-popup: var(--agh-z-notification);
 
     /* Shared interactive overlays and tables; dark mode follows Agnes semantics. */
     --ant-table-header-bg: var(--agnes-bg-card);
@@ -954,7 +955,7 @@
     top: 1rem;
     right: 1rem;
     max-width: min(42rem, calc(100vw - 2rem));
-    z-index: var(--agnes-z-notification);
+    z-index: var(--agh-z-notification);
   }
   /* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
   .agnes-first-run-layer .ant-modal-mask {

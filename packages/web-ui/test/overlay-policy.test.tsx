@@ -6,6 +6,7 @@ import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createRegionRenderer, mountApplication, unmountApplication } from '../src/antd-root.js'
 import { getOverlayContainer, overlayLayers } from '../src/overlay-policy.js'
+import { Toast } from '../src/overlay-toast.js'
 import { Button } from '../src/ui/button.js'
 import { Dialog } from '../src/ui/dialog.js'
 import { Drawer } from '../src/ui/drawer.js'
@@ -19,9 +20,20 @@ afterEach(() => {
 it('keeps layer tokens ordered and retains native modal and Radix portal focus scopes', () => {
   const values = Object.values(overlayLayers)
   expect(values.every((value, index) => index === 0 || value > (values[index - 1] ?? 0))).toBe(true)
-  const css = readFileSync(new NodeURL('../src/tokens.css', import.meta.url), 'utf8')
+  const css = readFileSync(new NodeURL('../../web/public/styles/01-tokens.css', import.meta.url), 'utf8')
   for (const [name, value] of Object.entries(overlayLayers))
-    expect(css).toContain(`--agnes-z-${name}: ${value};`)
+    expect(css).toContain(`--agh-z-${name}: ${value};`)
+  const bridge = readFileSync(new NodeURL('../src/tokens.css', import.meta.url), 'utf8')
+  for (const [component, layer] of Object.entries({
+    dropdown: 'dropdown',
+    select: 'dropdown',
+    popover: 'dropdown',
+    drawer: 'drawer',
+    tooltip: 'tooltip',
+    message: 'notification',
+    notification: 'notification',
+  }))
+    expect(bridge).toContain(`--ant-${component}-z-index-popup: var(--agh-z-${layer});`)
   const global = document.createElement('div')
   global.id = 'agnes-overlay-container'
   const dialog = document.createElement('dialog')
@@ -35,6 +47,11 @@ it('keeps layer tokens ordered and retains native modal and Radix portal focus s
   // This exported policy is also the container supplied to custom/Radix portals.
   dialog.open = false
   expect(getOverlayContainer(trigger)).toBe(global)
+  const popup = document.createElement('div')
+  popup.setAttribute('popover', 'manual')
+  global.append(popup)
+  popup.append(trigger)
+  expect(getOverlayContainer(trigger)).toBe(popup)
 })
 
 it.each(['modal', 'drawer'] as const)(
@@ -100,3 +117,41 @@ it.each(['modal', 'drawer'] as const)(
     )
   },
 )
+
+it('mounts notification holders in the shared outlet or active native dialog scope', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  function Shell({ children }: { children?: ReactNode }) {
+    return (
+      <>
+        <div id="fixture" />
+        <div id="agnes-overlay-container">
+          <dialog id="native" open />
+        </div>
+        {children}
+      </>
+    )
+  }
+  mountApplication(root, <Shell />)
+  const page = createRegionRenderer(document.getElementById('fixture')!)
+  const dialog = createRegionRenderer(document.getElementById('native')!)
+  flushSync(() => {
+    page.render(
+      <Toast open duration={0} onDismiss={() => {}}>
+        page saved
+      </Toast>,
+    )
+    dialog.render(
+      <Toast open duration={0} onDismiss={() => {}}>
+        dialog saved
+      </Toast>,
+    )
+  })
+  await vi.waitFor(() => expect(document.querySelectorAll('[role="status"]')).toHaveLength(2))
+  const holder = document.querySelector('#agnes-overlay-container > .agh-toast-host')
+  expect(holder?.textContent).toContain('page saved')
+  expect(document.querySelector('#native > .agh-toast-host')?.textContent).toContain('dialog saved')
+  page.unmount()
+  expect(document.querySelector('#agnes-overlay-container > .agh-toast-host')).toBeNull()
+  expect(document.querySelector('#native > .agh-toast-host')?.textContent).toContain('dialog saved')
+})

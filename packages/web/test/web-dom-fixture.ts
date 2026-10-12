@@ -50,7 +50,6 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<script[\s\S]*?<\/script>/g, '')
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
-  materializeSettingsControls(document)
   const unmountShell = mountAppShell()
 
   const runtime = await startClientModules({
@@ -58,7 +57,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     // this fixture, so an empty test double keeps the fixture independent of daemon contracts.
     agnes: {} as AgnesClient,
     rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
-    panelContainer: document.getElementById('main-content') ?? undefined,
+    panelContainer: document.getElementById('workbench-plugin-panels') ?? undefined,
     sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
     ...(options.sidebar ? { sidebar: options.sidebar } : {}),
     ...(options.transcript ? { transcript: options.transcript } : {}),

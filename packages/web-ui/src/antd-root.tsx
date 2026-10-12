@@ -33,17 +33,19 @@ function LocalizedProvider({
       locale={language === 'zh-CN' ? zhCN : enUS}
       button={{ autoInsertSpace: false }}
       getPopupContainer={(trigger) => getOverlayContainer(trigger, owner)}
-      drawer={{ styles: { root: { zIndex: 'var(--agnes-z-drawer)' } } }}
+      drawer={{ styles: { root: { zIndex: 'var(--agh-z-drawer)' } } }}
       modal={{
-        styles: { wrapper: { zIndex: 'var(--agnes-z-modal)' }, mask: { zIndex: 'var(--agnes-z-modal)' } },
+        styles: { wrapper: { zIndex: 'var(--agh-z-modal)' }, mask: { zIndex: 'var(--agh-z-modal)' } },
       }}
-      tooltip={{ styles: { root: { zIndex: 'var(--agnes-z-tooltip)' } } }}
+      popover={{ styles: { root: { zIndex: 'var(--agh-z-dropdown)' } } }}
+      tooltip={{ styles: { root: { zIndex: 'var(--agh-z-tooltip)' } } }}
       theme={{
         zeroRuntime: true,
         hashed: false,
         cssVar: { key: 'agnes-theme' },
         token: { zIndexPopupBase: overlayLayers.dropdown },
         components: {
+          Popover: { zIndexPopup: overlayLayers.dropdown },
           Dropdown: { zIndexPopup: overlayLayers.dropdown },
           Select: { zIndexPopup: overlayLayers.dropdown },
           Drawer: { zIndexPopup: overlayLayers.drawer },

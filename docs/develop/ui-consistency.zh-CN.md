@@ -8,9 +8,9 @@
 
 工作台布局由 `AppShell` 渲染。controller 快照和可替换 slot 区域共享一个 React root 与一个 antd `ConfigProvider`。controller 持有的挂载点使用 `mountRegion` / `renderRegion` / `unmountRegion`；这些接口渲染应用内 portal，不创建额外 root。组件直接渲染翻译文案；切换语言必须保留草稿、焦点和 controller 绑定的节点 ID。浮层共享壳容器；从原生 dialog 打开的 popup 留在该 dialog 的顶层中。
 
-`createExternalStore` 保留 controller 的状态归属，默认同步通知以支持受控输入。组件通过 `useStoreSelector` 选择状态，可提供 equality。非输入类 controller 区域可以选择 `notify: 'animation-frame'`：多次写入每帧最多通知一次，命令和测试可用 `flush()` 同步发布。区域 roster 与各区域内容分别持有小 store；对话流式更新继续走 assistant-ui 的 projection/runtime，不经过外壳 store。
+`createExternalStore` 保留 controller 的状态归属，默认同步通知以支持受控输入。组件通过 `useStoreSelector` 选择状态，可提供 equality。非输入类 controller 区域可以选择 `notify: 'animation-frame'`：多次写入每帧最多通知一次，命令和测试可用 `flush()` 同步发布。工作台 controller 刷新启用逐帧合并，首次挂载同步发布。区域 roster 与各区域内容分别持有小 store；对话流式更新继续走 assistant-ui 的 projection/runtime，不经过外壳 store。
 
-每个 controller 区域都有 `RegionErrorBoundary`，异常只在本区域显示本地化重试，并进入脱敏的浏览器诊断日志；`SlotOutlet` 内部的插件边界继续负责插件错误。`--agnes-z-*` 基准层级依次为 dropdown 1000、drawer 1100、modal 1200、tooltip 1300、notification 1400。`getOverlayContainer` 统一提供外壳 outlet 与弹窗内部的 popup 作用域；自定义/Radix portal 使用同一公开策略，使嵌套菜单留在当前焦点范围内。
+每个 controller 区域都有 `RegionErrorBoundary`，工作台 right/bottom portal 各有独立边界，异常只在本区域显示本地化重试，并进入脱敏的浏览器诊断日志；`SlotOutlet` 内部的插件边界继续负责插件错误。`--agh-z-*` 基准层级依次为 dropdown 1000、drawer 1100、modal 1200、tooltip 1300、notification 1400。`getOverlayContainer` 统一提供外壳 outlet 与弹窗内部的 popup 作用域；自定义/Radix portal 使用同一公开策略，使嵌套菜单留在当前焦点范围内。
 
 ## 页面与面板骨架
 

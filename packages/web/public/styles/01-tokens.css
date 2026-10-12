@@ -405,6 +405,15 @@
     --transition: var(--motion-base) var(--motion-ease);
   }
 
+  /* Private application layers: outside the semantic skin vocabulary (second :root). */
+  :root {
+    --agh-z-dropdown: 1000;
+    --agh-z-drawer: 1100;
+    --agh-z-modal: 1200;
+    --agh-z-tooltip: 1300;
+    --agh-z-notification: 1400;
+  }
+
   /* ═══════════════════════════════════════════════════════════════════════ */
 }
 

@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-import { readFileSync } from 'node:fs'
-import { URL as NodeURL } from 'node:url'
 import type { ConfigAccount, ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { createSettingsController } from '@agnes/web-admin/settings'
@@ -51,12 +49,7 @@ const account = (id: string): ConfigAccount => ({
 })
 async function setup(accounts: ConfigAccount[] = [account('work'), account('personal')]) {
   window = new Window()
-  window.document.write(
-    readFileSync(new NodeURL('../public/index.html', import.meta.url), 'utf8').replace(
-      /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
-      '',
-    ),
-  )
+  window.document.write('<!doctype html><html><head></head><body><dialog id="config"></dialog></body></html>')
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('window', window)
   vi.stubGlobal('getComputedStyle', window.getComputedStyle.bind(window))

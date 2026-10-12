@@ -3,6 +3,7 @@ import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-she
 import {
   Button,
   createCatalogTranslator,
+  ListRow,
   renderRegion,
   SettingsInput,
   SettingsSelect,
@@ -98,30 +99,30 @@ function McpDialogScaffold() {
       </div>
       <p className="dialog-intro">{t('shell.dialog.description')}</p>
       <section className="agnes-settings-stack" id="mcp-methods" aria-label={t('wizard.choose')}>
-        <div className="mcp-method">
-          <div>
+        <ListRow
+          title={
             <Button id="mcp-method-local" htmlType="button" appearance="secondary">
               {t('wizard.local')}
             </Button>
-            <p>{t('wizard.localHelp')}</p>
-          </div>
-        </div>
-        <div className="mcp-method">
-          <div>
+          }
+          description={t('wizard.localHelp')}
+        />
+        <ListRow
+          title={
             <Button id="mcp-method-remote" htmlType="button" appearance="secondary">
               {t('wizard.remote')}
             </Button>
-            <p>{t('wizard.remoteHelp')}</p>
-          </div>
-        </div>
-        <div className="mcp-method">
-          <div>
-            <a id="mcp-method-agent" href="/?new=1">
+          }
+          description={t('wizard.remoteHelp')}
+        />
+        <ListRow
+          title={
+            <Button id="mcp-method-agent" href="/?new=1" appearance="secondary">
               {t('wizard.agent')}
-            </a>
-            <p>{t('wizard.agentHelp')}</p>
-          </div>
-        </div>
+            </Button>
+          }
+          description={t('wizard.agentHelp')}
+        />
       </section>
       <section className="agnes-settings-stack" id="mcp-connection-fields" hidden>
         <label className="form-field" htmlFor="mcp-name">

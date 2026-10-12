@@ -5,7 +5,7 @@ import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
-import { Dock } from '../src/workbench/dock.js'
+import { Dock, renderWorkbench, unmountWorkbench } from '../src/workbench/dock.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
@@ -212,6 +212,70 @@ it('cycles visible trace and plugin docks in both directions and leaves modal fo
     expect(document.activeElement).toBe(close)
   } finally {
     geometry.mockRestore()
+    document.body.replaceChildren()
+  }
+})
+
+it('batches controller refreshes and isolates a failed right panel from the bottom panel and controls', () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls') as HTMLElement
+  let fail = false
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frame = callback
+    return 1
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  const diagnostics = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const right = workbenchPanels.register({
+    id: 'test.error-right',
+    edge: 'right',
+    order: -100,
+    titleKey: 'Right',
+    component: ({ context }) => {
+      if (fail) throw new Error('synthetic right panel failure')
+      return <p>Right {(context.data as { progress: number }).progress}</p>
+    },
+  })
+  const bottom = workbenchPanels.register({
+    id: 'test.safe-bottom',
+    edge: 'bottom',
+    order: -100,
+    titleKey: 'Bottom',
+    component: ({ context }) => <p>Bottom {(context.data as { progress: number }).progress}</p>,
+  })
+  try {
+    renderWorkbench(host, { t: (key) => key, data: { progress: 0 } })
+    flushSync(() => {
+      host.querySelector<HTMLButtonElement>('[data-edge="right"]')?.click()
+      host.querySelector<HTMLButtonElement>('[data-edge="bottom"]')?.click()
+    })
+    const rightHost = document.getElementById('workbench-right-content')!
+    const bottomHost = document.getElementById('workbench-bottom-content')!
+    expect(rightHost.textContent).toContain('Right 0')
+    expect(bottomHost.textContent).toContain('Bottom 0')
+    for (let progress = 1; progress <= 100; progress++)
+      renderWorkbench(host, { t: (key) => key, data: { progress } })
+    expect(bottomHost.textContent).toContain('Bottom 0')
+    flushSync(() => frame?.(0))
+    expect(bottomHost.textContent).toContain('Bottom 100')
+    fail = true
+    renderWorkbench(host, { t: (key) => key, data: { progress: 101 } })
+    flushSync(() => frame?.(0))
+    expect(rightHost.querySelector('[data-agnes-region-error="workbench-right"]')).not.toBeNull()
+    expect(bottomHost.textContent).toContain('Bottom 101')
+    expect(host.querySelector('[data-edge="right"]')).not.toBeNull()
+    fail = false
+    flushSync(() => rightHost.querySelector<HTMLButtonElement>('button')?.click())
+    expect(rightHost.textContent).toContain('Right 101')
+  } finally {
+    unmountWorkbench(host)
+    right()
+    bottom()
+    diagnostics.mockRestore()
+    vi.unstubAllGlobals()
     document.body.replaceChildren()
   }
 })

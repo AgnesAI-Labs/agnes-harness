@@ -41,6 +41,16 @@ export function mountTranscriptRegion(
   if (!registry.spec(TRANSCRIPT_SLOT))
     registry.declare(TRANSCRIPT_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
   const handle = { current: null as TranscriptHandle | null }
+  let lastView: { sessionId: string | undefined; args: Parameters<TranscriptHandle['render']> } | undefined
+  const setHandle = (value: TranscriptHandle | null): void => {
+    handle.current = value
+    if (!value || !lastView) return
+    queueMicrotask(() => {
+      if (handle.current === value && lastView && lastView.sessionId === registry.sessionId)
+        value.render(...lastView.args)
+    })
+  }
+
   const removeBuiltin = registry.register(
     {
       name: TRANSCRIPT_SLOT as string,
@@ -55,7 +65,7 @@ export function mountTranscriptRegion(
     () =>
       options.nodeHost === 'react' ? (
         <TimelineNodeHost
-          ref={handle}
+          ref={setHandle}
           registry={registry}
           {...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {})}
           {...(options.claim ? { claim: options.claim } : {})}
@@ -67,7 +77,7 @@ export function mountTranscriptRegion(
         />
       ) : (
         <Transcript
-          ref={handle}
+          ref={setHandle}
           dependencies={{
             ...TRANSCRIPT_DEPENDENCIES,
             createRenderer(rendererOptions) {
@@ -144,9 +154,11 @@ export function mountTranscriptRegion(
   let disposed = false
   return {
     render(nodes, turns, meta) {
+      lastView = { sessionId: registry.sessionId, args: [nodes, turns, meta] }
       handle.current?.render(nodes, turns, meta)
     },
     reset() {
+      lastView = undefined
       handle.current?.reset()
     },
     pinToBottom() {
@@ -155,6 +167,7 @@ export function mountTranscriptRegion(
     dispose() {
       if (disposed) return
       disposed = true
+      lastView = undefined
       root.unmount()
       removeToolChildren()
       removeChatChildren()

@@ -1,20 +1,9 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, IconButton, renderRegion, Tabs, unmountRegion } from '@agnes/web-ui'
-import { useSyncExternalStore } from 'react'
-
-const subscribe = (listener: () => void) => {
-  const observer = new MutationObserver(listener)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
-  window.addEventListener('agnes:locale-changed', listener)
-  return () => {
-    observer.disconnect()
-    window.removeEventListener('agnes:locale-changed', listener)
-  }
-}
+import { Button, IconButton, Tabs, useDocumentLanguage } from '@agnes/web-ui'
 
 /** The trace controller still owns selection and visibility on these stable button nodes. */
 export function SessionViews() {
-  useSyncExternalStore(subscribe, () => document.documentElement.lang)
+  useDocumentLanguage()
   return (
     <>
       <Tabs
@@ -52,15 +41,4 @@ export function SessionViews() {
       />
     </>
   )
-}
-
-/** Materialize before controllers capture the tab nodes; topbar disposal owns the root. */
-export function renderSessionViews(): void {
-  const host = document.getElementById('session-view-controls')
-  if (host && !host.querySelector('#view-chat')) renderRegion(host, <SessionViews />)
-}
-
-export function unmountSessionViews(): void {
-  const host = document.getElementById('session-view-controls')
-  if (host) unmountRegion(host)
 }

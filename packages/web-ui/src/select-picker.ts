@@ -1,4 +1,5 @@
 import { fallbackT, type Translate } from './locales/index.js'
+import { getOverlayContainer } from './overlay-policy.js'
 import { listboxIntent, positionPopover } from './popover.js'
 
 const optionLabel = (item: HTMLOptionElement): string => item.getAttribute('label') || item.textContent || ''
@@ -178,7 +179,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       container.append(row)
     }
     // Keep the popup in the modal's subtree; native popover escapes its scroll clipping.
-    ;(select.closest('dialog') ?? doc.body).append(panel)
+    getOverlayContainer(trigger, doc).append(panel)
     if (typeof panel.showPopover === 'function') {
       panel.setAttribute('popover', 'manual')
       panel.showPopover()

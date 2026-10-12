@@ -3,7 +3,6 @@ import { createRegionRenderer } from '@agnes/web-ui'
 import { Topbar, type TopbarConnectionState, type TopbarHandle } from '@agnes/web-units'
 import { flushSync } from 'react-dom'
 import { type EmptyStateRegionMount, rootStableRegistry, TOPBAR_SLOT } from './contracts.js'
-import { unmountSessionViews } from './session-views.js'
 export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
   ready: Promise<void>
 }
@@ -70,7 +69,6 @@ export function mountTopbarRegion(
       if (disposed) return
       disposed = true
       root.unmount()
-      unmountSessionViews()
       removeBuiltin()
     },
   }

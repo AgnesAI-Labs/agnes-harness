@@ -14,7 +14,10 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 
+let disposeShell: (() => void) | undefined
 afterEach(() => {
+  disposeShell?.()
+  disposeShell = undefined
   document.documentElement.lang = 'en'
   document.documentElement.removeAttribute('data-agnes-shell')
   document.documentElement.replaceChildren(document.createElement('head'), document.createElement('body'))
@@ -54,13 +57,19 @@ it.each(['resources.html', 'index.html'])(
     materializeSettingsControls(document)
 
     await import('../src/theme-boot.js')
+    if (page === 'index.html') {
+      const { mountAppShell } = await import('../src/app-shell.js')
+      disposeShell = mountAppShell()
+    }
 
     expect(document.querySelector('#admin-confirm .eyebrow')?.textContent).toBe('需要确认')
     const transport = document.querySelector<HTMLSelectElement>('#mcp-transport')
     expect(Array.from(transport?.options ?? [], (option) => option.value)).toEqual(['stdio', 'http', 'sse'])
     expect(transport?.querySelector('[value="sse"]')?.textContent).toBe('SSE（远程，旧版协议）')
     window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: 'en' }))
-    expect(transport?.querySelector('[value="sse"]')?.textContent).toBe('SSE (remote, legacy protocol)')
+    await vi.waitFor(() =>
+      expect(transport?.querySelector('[value="sse"]')?.textContent).toBe('SSE (remote, legacy protocol)'),
+    )
   },
 )
 
