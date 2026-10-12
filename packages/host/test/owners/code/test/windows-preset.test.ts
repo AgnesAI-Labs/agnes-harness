@@ -2,6 +2,8 @@ import { BASE_SEAM_PROVIDERS, presets as basePresets } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { loadAllPresets } from '@agnes/code'
 import { type ApprovalRequest, readPreset } from '@agnes/core'
+import { readCommandRules, withCommandFloor } from '@agnes/core/command-table'
+import { defaultToolPolicy, type ToolPolicyInput } from '@agnes/extension-api'
 import { resolvePreset } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
 
@@ -38,7 +40,7 @@ const request = (path: string): ApprovalRequest => ({
   scope: 'local',
 })
 
-describe('standard-windows through the real approval seam', () => {
+describe('standard-windows command floor and approval delivery', () => {
   it('gives Skill import enough time for bounded GitHub reads and source approval', () => {
     const tools = readPreset(preset, 'standard-windows').tools
     expect(tools.timeoutMs).toBe(120_000)
@@ -54,11 +56,34 @@ describe('standard-windows through the real approval seam', () => {
     'approves contained edits under %s',
     async (root) => {
       const seam = await approvalPolicy(fakeSeamInit({ workspaceRoot: root, preset }))
+      const floor = withCommandFloor(defaultToolPolicy, readCommandRules(preset.approval?.command_policy))
+      const decide = (path: string) => {
+        const req = request(path)
+        const input: ToolPolicyInput = {
+          sessionKey: req.sessionKey,
+          workspaceRoot: root,
+          cwd: root,
+          actor: req.actor,
+          call: { id: req.toolUseId, name: 'edit', args: { path, edits: [] } },
+          policy: {
+            isReadOnly: false,
+            isDestructive: true,
+            replay: 'idempotent',
+            requiresApproval: 'destructive',
+            approvalScopes: ['tool:edit:execute'],
+          },
+          tainted: false,
+          fullAccess: false,
+          approvalMode: 'manual',
+        }
+        return floor.decide(input, new AbortController().signal)
+      }
       for (const path of ['CODE.txt', '中文 空格\\file.txt', `${root}\\src\\file.txt`]) {
-        expect(await seam.ask(request(path))).toBe('allowed-once')
+        expect(await decide(path)).toMatchObject({ effect: 'allow' })
+        expect(await seam.ask(request(path))).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
       }
       for (const path of ['../outside', 'D:/other/file', 'NUL', 'file:stream', '\\\\other\\share\\file']) {
-        expect(await seam.ask(request(path))).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
+        expect(await decide(path)).toMatchObject({ effect: 'deny' })
       }
     },
   )
