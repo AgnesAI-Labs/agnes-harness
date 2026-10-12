@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
 import { materializeSettingsControls } from '@agnes/web-ui'
 import { vi } from 'vitest'
+import { mountAppShell } from '../src/app-shell.js'
 import {
   type AgnesClient,
   type ClaimResolver,
@@ -10,7 +11,6 @@ import {
   startClientModules,
 } from '../src/client-modules/boot.js'
 import { mountNewSessionDialog } from '../src/new-session-dialog.js'
-import { renderSessionViews } from '../src/regions/session-views.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
@@ -51,7 +51,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
   materializeSettingsControls(document)
-  renderSessionViews()
+  const unmountShell = mountAppShell()
 
   const runtime = await startClientModules({
     // The region bootstrap only retains this client for the reconciler. No roster read is issued by
@@ -99,6 +99,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
   runtime.dispose = async () => {
     workspaceDialog.dispose()
     await dispose()
+    unmountShell()
   }
 
   // React roots that are not flushed by a region mount (the panel outlet, and the empty state the

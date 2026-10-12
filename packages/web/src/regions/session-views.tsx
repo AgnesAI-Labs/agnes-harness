@@ -13,7 +13,7 @@ const subscribe = (listener: () => void) => {
 }
 
 /** The trace controller still owns selection and visibility on these stable button nodes. */
-function SessionViews() {
+export function SessionViews() {
   useSyncExternalStore(subscribe, () => document.documentElement.lang)
   return (
     <>
@@ -57,7 +57,7 @@ function SessionViews() {
 /** Materialize before controllers capture the tab nodes; topbar disposal owns the root. */
 export function renderSessionViews(): void {
   const host = document.getElementById('session-view-controls')
-  if (host) renderRegion(host, <SessionViews />)
+  if (host && !host.querySelector('#view-chat')) renderRegion(host, <SessionViews />)
 }
 
 export function unmountSessionViews(): void {

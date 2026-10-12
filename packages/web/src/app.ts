@@ -74,6 +74,7 @@ import {
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
+import { mountAppShell } from './app-shell.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
@@ -91,7 +92,6 @@ import type { ModelPickerOption } from './model-picker.js'
 import { mountNewSessionDialog } from './new-session-dialog.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
-import { renderSessionViews } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
@@ -100,7 +100,8 @@ import { unmountWorkbench } from './workbench/dock.js'
 
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
-renderSessionViews()
+const unmountAppShell = mountAppShell()
+window.addEventListener('pagehide', unmountAppShell, { once: true })
 
 const unbindDialogSheets = bindDialogSheets(document)
 
@@ -697,9 +698,7 @@ const composerDraftKey: string = 'agnes-web-composer-draft'
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
-const goalHost = document.createElement('div')
-goalHost.className = 'session-goal-host'
-button('report-problem').parentElement?.before(goalHost)
+const goalHost = element('session-goal-host', 'div')
 const wsUrl = element('agnes-config', 'meta').dataset.ws
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
@@ -728,11 +727,7 @@ window.addEventListener('pagehide', stopJobsSessions, { once: true })
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
-const reconnectNotice = document.createElement('p')
-reconnectNotice.id = 'reconnect-notice'
-reconnectNotice.setAttribute('role', 'status')
-reconnectNotice.hidden = true
-notice.after(reconnectNotice)
+const reconnectNotice = element('reconnect-notice', 'p')
 const reconnect = createReconnectController({
   probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   reload: () => location.reload(),

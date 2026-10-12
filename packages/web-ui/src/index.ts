@@ -4,7 +4,13 @@ export * from './admin-dialogs.js'
 export * from './admin-list.js'
 export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
-export { createAntdRoot } from './antd-root.js'
+export {
+  createAntdRoot,
+  createRegionRenderer,
+  mountApplication,
+  unmountApplication,
+  useDocumentLanguage,
+} from './antd-root.js'
 export { appServerErrorMessage } from './app-server-errors.js'
 export * from './auxiliary-model-fields.js'
 export * from './config-form.js'
@@ -15,6 +21,7 @@ export * from './diagnostics-dialog.js'
 export { bindAutoDismissDisclosure, bindDismissibleDialog } from './dom/dialog-binding.js'
 export { releaseDialogModal } from './dom/dialog-host.js'
 export { bindDialogSheets } from './dom/dialog-sheets.js'
+export { createExternalStore } from './external-store.js'
 export * from './first-run.js'
 export * from './intelligent-ui/index.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'

@@ -34,7 +34,7 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     composer: ['form', 1],
     'composer-input': ['textarea', 1],
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
-    // The React workspace chooser also exposes its folder glyph through the shared icon hook.
+    // Includes the React workspace chooser and report-problem glyphs in the composed shell.
     icon: ['svg', 27],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],

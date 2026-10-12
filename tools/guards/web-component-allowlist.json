@@ -99,7 +99,7 @@
       "className": 23
     },
     "packages/web/src/app.ts": {
-      "dom": 4
+      "dom": 2
     },
     "packages/web/src/client-modules/boot.ts": {
       "dom": 1

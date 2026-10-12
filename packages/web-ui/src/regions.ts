@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { type AntdRoot, createAntdRoot } from './antd-root.js'
+import { type AntdRoot, createRegionRenderer } from './antd-root.js'
 
 export type RegionElement = ReactNode
 
@@ -12,7 +12,7 @@ const roots = new Map<HTMLElement, AntdRoot>()
  */
 export function mountRegion(host: HTMLElement, element: RegionElement): () => void {
   if (roots.has(host)) throw new Error('React region is already mounted')
-  const root = createAntdRoot(host)
+  const root = createRegionRenderer(host)
   roots.set(host, root)
   flushSync(() => root.render(element))
   let active = true
