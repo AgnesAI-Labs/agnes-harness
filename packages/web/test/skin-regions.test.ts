@@ -34,8 +34,8 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     composer: ['form', 1],
     'composer-input': ['textarea', 1],
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
-    // Includes the React workspace chooser and report-problem glyphs in the composed shell.
-    icon: ['svg', 27],
+    // Counts the composed shell's glyphs, including the workspace chooser and report-problem action.
+    icon: ['svg', 26],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 6],
@@ -99,6 +99,7 @@ describe('skin region hooks', () => {
   it.each(Object.keys(EXPECTED))('%s declares exactly the contracted regions', (page) => {
     const root = page === 'index.html' ? document : readStaticPage(page as 'admin.html' | 'resources.html')
     assertRegionContract(page, root)
+    expect(root.querySelectorAll('svg.icon:not([data-agnes-region="icon"])')).toHaveLength(0)
   })
 
   it('keeps the shared shell hooks on every page', () => {

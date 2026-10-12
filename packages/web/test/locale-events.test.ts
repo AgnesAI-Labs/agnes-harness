@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 
+import { bindAppearance } from '@agnes/web-foundation/appearance'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { LOCALE_STORAGE_KEY, writeLocalePreference } from '@agnes/web-foundation/locale-preference'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
@@ -15,32 +16,42 @@ afterEach(() => {
 it('uses the same-document selection when storing the locale fails', async () => {
   localStorage.setItem(LOCALE_STORAGE_KEY, 'en')
   const runtime = await mountRenderedIndex()
-  const label = document.createElement('span')
-  label.dataset.i18n = 'settings.appearance.language'
-  label.textContent = 'Language'
-  const english = document.createElement('input')
-  english.type = 'radio'
-  english.name = 'agnes-locale'
-  english.value = 'en'
-  const chinese = document.createElement('input')
-  chinese.type = 'radio'
-  chinese.name = 'agnes-locale'
-  chinese.value = 'zh-CN'
-  document.body.append(label, english, chinese)
+  const label = document
+    .querySelector('#appearance-settings-pane input[name="agnes-locale"]')
+    ?.closest('fieldset')
+    ?.querySelector('legend')
+  const english = document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')!
+  const chinese = document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')!
+  expect(label).not.toBeNull()
+  const storage = safeThemeStorage()
+  bindAppearance({
+    scope: document,
+    root: document.documentElement,
+    storage,
+    locale: {
+      rendered: true,
+      current: () => runtime.locale.locale,
+      select: (value) => {
+        writeLocalePreference(storage, value)
+        window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
+      },
+      text: (key) => runtime.locale.t(key),
+    },
+  })
 
   const originalSetItem = localStorage.setItem.bind(localStorage)
   vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
     if (key === LOCALE_STORAGE_KEY) throw new Error('storage unavailable')
     originalSetItem(key, value)
   })
-  writeLocalePreference(safeThemeStorage(), 'zh-CN')
-  runtime.locale.setLocale('zh-CN')
-  document.documentElement.lang = 'zh-CN'
-  window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: 'zh-CN' }))
+  chinese.checked = true
+  chinese.dispatchEvent(new Event('change', { bubbles: true }))
 
   expect(runtime.locale.locale).toBe('zh-CN')
   expect(document.documentElement.lang).toBe('zh-CN')
-  expect(label.textContent).toBe(webLocaleCatalog['zh-CN']?.['settings.appearance.language'])
+  await vi.waitFor(() =>
+    expect(label?.textContent).toBe(webLocaleCatalog['zh-CN']?.['settings.appearance.language']),
+  )
   expect(chinese.checked).toBe(true)
   expect(english.checked).toBe(false)
 
