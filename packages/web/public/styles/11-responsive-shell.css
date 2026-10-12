@@ -404,7 +404,6 @@
       color: var(--agnes-text-primary);
     }
     .diagnostics-include label {
-      min-height: 32px;
       align-items: center;
     }
     .turn-footer {
