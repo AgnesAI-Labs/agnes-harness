@@ -537,4 +537,10 @@
       transition: none;
     }
   }
+  :is(.trace-gantt-label, .trace-stats) {
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-gantt-note {
+    line-height: 1.6;
+  }
 }

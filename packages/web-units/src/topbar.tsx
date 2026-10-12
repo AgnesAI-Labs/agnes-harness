@@ -1,5 +1,5 @@
 import { Button, IconButton } from '@agnes/web-ui'
-import { type ForwardedRef, forwardRef, useImperativeHandle, useState } from 'react'
+import { type ForwardedRef, forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from './locales/index.js'
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
@@ -25,6 +25,13 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   const [taskTitle, setTaskTitle] = useState<string>()
   const [status, setStatus] = useState<{ text: string; state: string }>()
   const [connection, setConnection] = useState<TopbarConnectionState>('connecting')
+  useEffect(() => {
+    const previous = document.title
+    document.title = taskTitle ? `${taskTitle} · Agnes Harness` : 'Agnes Harness'
+    return () => {
+      document.title = previous
+    }
+  }, [taskTitle])
   useImperativeHandle(
     ref,
     () => ({

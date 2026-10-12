@@ -68,13 +68,6 @@
     overflow-x: auto;
     padding-inline: var(--s8);
     scroll-padding-inline: var(--s8);
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      black var(--s8),
-      black calc(100% - var(--s8)),
-      transparent
-    );
   }
   .workbench-panel-tabs > .agnes-ui-button {
     flex: 0 0 auto;
@@ -88,6 +81,8 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: var(--s8);
   }
   .workbench-resize {
     border: 0;
@@ -191,6 +186,7 @@
     border-top: 1px solid var(--agnes-line-primary);
     font-size: var(--font-size-xs);
     color: var(--agnes-text-secondary);
+    line-height: 1.6;
   }
   .workbench-files-footer p {
     margin: 0.4rem 0 0;

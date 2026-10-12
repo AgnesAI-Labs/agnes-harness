@@ -109,6 +109,11 @@ const paint = (): void => {
   applyFontScale(document.documentElement, readFontScale(storage))
   paintLocale()
   paintSkin(mode)
+  // The first frame runs after the blocking stylesheets; read the resolved skin surface too.
+  requestAnimationFrame(() => {
+    const color = getComputedStyle(document.documentElement).getPropertyValue('--agnes-bg-app-content').trim()
+    if (color) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
+  })
 }
 
 paint()

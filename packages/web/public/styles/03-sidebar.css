@@ -64,7 +64,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 1.0625rem;
-    font-weight: 650;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.25;
     letter-spacing: -0.025em;
   }
@@ -306,5 +306,9 @@
   /* Keep the navigation focus ring inside its scrollport. */
   :is(.workspace-heading, .session):focus-visible {
     outline-offset: -2px;
+  }
+  :lang(zh-CN) :is(.eyebrow, .sidebar-section-heading, .workspace-heading) {
+    letter-spacing: 0;
+    line-height: 1.6;
   }
 }

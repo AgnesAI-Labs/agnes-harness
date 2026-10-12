@@ -54,6 +54,8 @@
     gap: var(--s4) var(--s12);
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
     padding-block-end: var(--s8);
   }
   .request-trace-summary strong {
