@@ -97,7 +97,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | D1 代次快照 | `.runtime-generations/<uuid>/generation.json` 加包副本 `0..n`（`packages/package-manager/src/runtime-snapshots-generations.ts:48,60`） | 代次宿主调用 `RuntimeGenerationSnapshotStore.create`（`packages/host/src/runtime/generation/host.ts:187`） | 冷恢复时的代次宿主（`host.ts:406`） | 内存中的 `live` 容器（“由快照构建”的缓存） | 快照说了算；每个包副本在读取时重新哈希（`runtime-snapshots-generations.ts:111-132`）。重建前从锁重新检查信任（`packages/host/src/runtime/generation/trust.ts:6`） | 快照缺失或无效时报 `E_GENERATION_SNAPSHOT_MISSING` 或 `E_GENERATION_INTEGRITY`，pin 保留 |
 | D2 会话到代次的 pin | `.runtime-generations/sessions/<sha256(sessionKey)>.json`（`runtime-snapshots-generations.ts:189`） | `pin`（原子 link，从不覆盖）、`recordLoop`、`migrateSession`、`releaseSession`（`:193,235,247,315`） | 各处的 `store.session(key)`；`sessionGeneration` | Host 的 `bindings` 映射与 `kernel.sessions`（缓存） | pin 优先于头部代次；第二个冲突的绑定者得到 `E_GENERATION_BINDING_CONFLICT`（`host.ts:181`） | 持久；只在会话被删除之后才删除（`:315`） |
-| D3 头部代次 | **没有持久指针。** 代次宿主中的 `current`，启动时由新装配的目标推导（`host.ts:213-224`） | `publishTargetCore`（`host.ts:659`） | 未绑定会话的 `createSession` | 每个 worker 各自的 `current`（缓存） | 不适用，见[缺口 G2](#缺口) | 每次 worker 启动都会新建一个快照目录；无人引用的会被回收 |
+| D3 头部代次 | `.runtime-generations/heads/<sha256(compositionKey)>.json`：`{ compositionKey, generationId }`（`RuntimeGenerationSnapshotStore.setHead`）；代次宿主内存中的 `current` 是其实时副本 | worker 启动时的 `ensureCurrent`，以及头部变更提交后 `publishTargetCore`（`host.ts` 的 `recordHead`） | 后续 worker 的 `ensureCurrent`（经 `reusableHead`）；未绑定会话的 `createSession` | 每个 worker 各自的 `current`（缓存） | 指针只是捷径：仅当所记录的快照能正常读取，且与目标摘要、兼容性指纹、包列表、资源摘要和 seam 选择都一致时才使用；否则 worker 重新做快照并覆盖它 | 临时文件加 rename 原子写；创建者消失后 `collect` 仍保留所记录的头部 |
 | D4 已接受的实时配置 | 代次目录内的 `live-config.json`（`runtime-snapshots-generations.ts:147,164`） | `publishTarget` 调用 `saveLiveConfig`，失败时补偿（`host.ts:797-850`） | `build` 把它叠加到归档目标上（`host.ts:226`） | 内存中的行配置（缓存） | 重建时记录说了算；代次缺失则拒绝保存 | 原子的临时文件加 rename |
 | D5 兼容性指纹 | 存于 D1（`compatibility`）；由 Profile 重新计算（`host.ts:147-166`） | 创建时固定 | `build`、`migrate` | 无 | 指纹不同则拒绝重建与迁移（`E_GENERATION_INCOMPATIBLE`） | 由 AGH 构建与 Profile 决定 |
 | D6 会话资源 pin | 被固定代次内的 `session-resources/<sha256(key)>`，摘要记在 pin 中（`runtime-snapshots-generations.ts:269-313`） | `pinSessionResources` | 该会话的技能与资源使用方 | 实时技能目录（缓存） | 对该会话 pin 说了算 | 原子的目录 rename |
@@ -201,12 +201,12 @@
 
 ## 缺口
 
-这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办。G1、G5、G7、G8、G9 已关闭（见[已关闭缺口](#已关闭缺口)）；G2 等待 seam pin 对代次快照的改动；G6 与 G10 是读取规则，不是代码改动。
+这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办。G1、G2、G5、G7、G8、G9 已关闭（见[已关闭缺口](#已关闭缺口)）；G6 与 G10 是读取规则，不是代码改动。
 
 | 编号 | 机制 | 证据 | 影响 |
 | --- | --- | --- | --- |
 | G1 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
-| G2 | 头部代次没有持久指针，各 worker 之间也没有共享的头部 | `ensureCurrent` 对新装配的目标做快照（`host.ts`）；`collect` 在创建者 pid 存活期间保留该代次 | 每次 worker 启动都写一个新的快照目录；两个 worker 的头部可能不同；管理面只显示被询问宿主的头部。未关闭：修复会改动 seam pin 工作仍在重写的代次快照，因此按组合持久化头部指针排在该改动之后 |
+| G2 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G3 | 管理面目录描述的是共享 worker 的头部，而不是某个会话的实际运行时 | `session.catalog` 在 `@shared` 上执行（`runtime.ts:2414`；`commands.ts:805`） | 客户端无法得知某个会话在运行什么，也不知道变更何时到达它。由计划中的会话运行时描述符解决 |
 | G4 | 会话 pin 覆盖代码，但不覆盖 seam 选择 | 指纹不含 `seams.approval`、`principals`、`ledger`、`checkpoint`、`artifacts`、`verifier`、`repair`、`harness`（`host.ts:147-166`）；`build` 按实时 `profile` 解析（`host.ts:226`）；迁移只比较指纹与 loop（`host.ts:922-960`） | 重启并更改了选择后，旧会话以新实现重新打开；一次迁移可能悄悄换掉审批、身份或计费。由计划中的 seam pin 解决 |
 | G5 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
@@ -224,7 +224,8 @@
 | G5 | 已复现：切换模型路由会改变 Profile 的 `hash`，使永久授权失配。授权改为按 `policyDigest` 匹配；授权存储 schema 升为 3，旧存储报告 `reset-required`。 | `policy-digest.ts`、`approval-grants.ts`、`packages/host/src/runtime/approval/grants.ts` |
 | G7 | 写入方启动时删除已死亡或 pid 被复用的 worker 的状态文件以及无法解析的文件。 | `reapDeadLiveCompositions`（`composition-state.ts`） |
 | G8 | `generation.json` 先写临时文件再 rename，并先写 `owner.pid`。`collect` 先从 `generation.json` 读所属者，再读 `owner.pid`；两者都读不出时保留目录十分钟，之后删除。被 pin、被保留或本进程创建的代次永不删除。 | `runtime-snapshots-generations.ts` |
-| G9 | 按 `seam:sandbox` 与 `seam:platform` 行 id 的检查已随这两行一起消失。兼容性指纹（`sandboxProvider`、固定适配器）是唯一的须重启守卫；`platform` 仅宿主可用。 | `host.ts` 中的 `compatibilityFor` |
+| G2 | 每个组合记录自己的当前头部代次；之后启动的 worker 在输入完全相同时复用它，而不是再写一个快照目录，`collect` 也会保留它。 | `runtime-snapshots-generations.ts` 的 `setHead`、`reusableHead`、`collect`；`host.ts` 的 `recordHead` |
+| G9 | 按 `seam:sandbox` 与 `seam:platform` 行 id 的检查已随这两行消失；发布时对部署指纹的比较也已删除：指纹在进程生命周期内固定，不可能不同。须重启守卫是 `publishTargetCore` 中的 `adapter:` 行差异与进程级包检查，以及冷恢复时 `build` 的指纹检查；`platform` 仅宿主可用。 | `host.ts` 的 `publishTargetCore`、`build` |
 
 ## 相关页面
 
