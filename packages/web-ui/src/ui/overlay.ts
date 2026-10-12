@@ -5,7 +5,11 @@ export function useOverlayFocus(open: boolean, restoreOnClose = true) {
   // Capture before antd's child layout effects move focus into an initially open surface.
   const trigger = useMemo(
     () =>
-      open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      open &&
+      typeof document !== 'undefined' &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body &&
+      document.activeElement !== document.documentElement
         ? document.activeElement
         : null,
     [open],
