@@ -15,6 +15,8 @@ export async function sourceHash() {
       'packages',
       'tools/build-local.ts',
       'tools/third-party-notices.mjs',
+      'tools/web-style-source.mjs',
+      'tools/web-scrollbar-csp.mjs',
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
