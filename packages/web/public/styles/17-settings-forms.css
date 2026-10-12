@@ -88,7 +88,6 @@
 /* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
    外观页仍沿用两栏，未动。 */
 #model-settings-pane .config-workspace {
-  width: min(100%, 45rem);
   flex: 0 1 auto;
   display: block;
   padding-bottom: var(--s24);

@@ -137,17 +137,14 @@
 .runtime-settings > section {
   min-width: 0;
 }
-.settings-shell .agnes-settings-page[data-layout="form"],
+/* One content column for every settings page: it starts at the pane gutter, under the section
+   tabs, and shares one maximum width. Form and list pages differ in content, not in their edges. */
+.settings-shell .agnes-settings-page[data-layout],
 .settings-shell .config-workspace,
-.runtime-settings .agnes-settings-page[data-layout="form"] {
+.runtime-settings .agnes-settings-page[data-layout] {
   width: 100%;
-  max-width: 720px;
-  margin-inline: auto;
-}
-.settings-shell .agnes-settings-page[data-layout="list"],
-.runtime-settings .agnes-settings-page[data-layout="list"] {
-  max-width: 960px;
-  margin-inline: auto;
+  max-width: 60rem;
+  margin-inline: 0;
 }
 .settings-shell .agnes-settings-section-tabs button,
 .runtime-settings .agnes-settings-section-tabs button {
