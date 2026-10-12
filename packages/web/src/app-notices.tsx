@@ -7,7 +7,7 @@ type NoticeSnapshot = { text: string; kind: string; recovery?: RecoveryNotice; r
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
 type ReadOnlyNoticeView = {
   message: Readonly<{ en: string; 'zh-CN': string }>
-  actions: readonly { id: string; label: string; onSelect(): void }[]
+  actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
 }
 const readOnlyStore = createExternalStore<ReadOnlyNoticeView | undefined>(undefined)
 const reconnectStore = createExternalStore<{ phase: ReconnectPhase; retry?: () => void }>({ phase: 'idle' })
@@ -95,7 +95,7 @@ export function ReadOnlyNotice() {
       data-testid="session-read-only"
       action={view.actions.map((action) => (
         <Button key={action.id} data-read-only-action={action.id} onClick={action.onSelect}>
-          {action.label}
+          {t(action.id === 'reopen' ? 'app.readOnly.reopen' : 'app.readOnly.new')}
         </Button>
       ))}
     >

@@ -4,8 +4,83 @@ import { join, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
+import { accessible, translated } from './quality.js'
 import { command, complete, install, prompt, toolResult } from './sdk.js'
 import { preferences } from './ui.js'
+
+for (const [issue, version, action] of [
+  ['newer', 9, 'Reopen after upgrading'],
+  ['older', 1, 'Start a new session'],
+  ['corrupt', undefined, 'Start a new session'],
+] as const)
+  test(`runtime information and ${issue} session history remain readable across locale changes`, async ({
+    page,
+    runtime,
+  }, info) => {
+    await preferences(page)
+    const client = await runtime.connect()
+    const session = await client.session.new({
+      sessionKey: randomUUID(),
+      cwd: runtime.workspace,
+      preset: 'full-access',
+    })
+    await session.attach()
+    await prompt(session, 'Historical browser regression conversation')
+    const descriptor = await client.session.runtime(session.id)
+    await page.goto(`${runtime.url}/?session=${session.id}`)
+    await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
+    const trigger = page.locator(`[data-session-action-id="${session.id}"]`)
+    await page.locator('.session-row').filter({ has: trigger }).hover()
+    await trigger.click()
+    await page.getByRole('menuitem', { name: 'Runtime info', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Runtime info', exact: true })
+    await expect(dialog).toContainText(descriptor.generation.id!)
+    await expect(dialog).toContainText(descriptor.loop.id)
+    const language = async (value: string) =>
+      page.evaluate((locale) => {
+        localStorage.setItem('agnes-locale', locale)
+        window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: locale }))
+      }, value)
+    await language('zh-CN')
+    const localizedDialog = page.getByRole('dialog', { name: '运行信息', exact: true })
+    await expect(localizedDialog).toBeVisible()
+    await expect(localizedDialog).toContainText('关闭')
+    await page.keyboard.press('Escape')
+    await expect(localizedDialog).toBeHidden()
+    await expect(trigger).toBeFocused()
+    await language('en')
+    // Damage only the isolated fixture's closed generation, preserving its readable ledger.
+    await page.goto('about:blank')
+    await client.close()
+    await runtime.cli(['daemon', 'stop'])
+    const file = join(
+      runtime.home,
+      'profiles/local-dev/.runtime-generations',
+      descriptor.generation.id!,
+      'generation.json',
+    )
+    const generation = JSON.parse(await readFile(file, 'utf8'))
+    if (version !== undefined) generation.version = version
+    if (issue === 'older') delete generation.seams
+    if (issue === 'corrupt') generation.compatibility = 42
+    await writeFile(file, JSON.stringify(generation))
+    await runtime.restart()
+    await page.goto(`${runtime.url}/?session=${session.id}`)
+    const banner = page.getByTestId('session-read-only')
+    await expect(banner).toContainText('Read-only')
+    await expect(banner.getByRole('button', { name: action, exact: true })).toBeVisible()
+    await expect(page.getByTestId('conversation-turn')).toContainText(
+      'Historical browser regression conversation',
+    )
+    await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeDisabled()
+    await language('zh-CN')
+    await expect(banner).toContainText('只读')
+    await expect(
+      banner.getByRole('button', { name: issue === 'newer' ? '升级后重新打开' : '新开会话', exact: true }),
+    ).toBeVisible()
+    await translated(page)
+    await accessible(page, info, `read-only-${issue}`)
+  })
 
 test('Linux L1 admits a fresh workspace, hides secrets and anchors .agh against rename', async ({
   runtime,

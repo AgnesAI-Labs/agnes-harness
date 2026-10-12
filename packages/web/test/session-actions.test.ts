@@ -6,13 +6,14 @@ import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderSessionNavigation, renderWorkspaceOptions } from '../src/navigation.js'
 import { createSessionActions, forkTitle } from '../src/session-actions.js'
-import { zhT } from './helpers/locale.js'
+import { enT, zhT } from './helpers/locale.js'
 
 const controllers: ReturnType<typeof createSessionActions>[] = []
 afterEach(() => {
   for (const controller of controllers.splice(0)) controller.dispose()
   document.querySelectorAll<HTMLElement>('nav, [data-picker-fixture]').forEach(unmountRegion)
   document.body.replaceChildren()
+  document.documentElement.lang = 'en'
   vi.restoreAllMocks()
 })
 const row = (id: string, archived = false) => ({
@@ -68,7 +69,7 @@ const runtimeDescriptor = (id: string) => ({
   restartRequired: ['sandbox'],
 })
 
-function setup() {
+function setup(translate = zhT) {
   document.body.innerHTML = `<section id="archived-settings-pane"><input id="archived-search" /><p id="archived-message"></p><p id="archived-empty"></p><ul id="archived-list"></ul><button id="archived-refresh"></button></section><button id="trigger">菜单</button>`
   const session = {
     list: vi.fn<(options: unknown) => Promise<PageSessionMeta>>(async () => ({ items: [] })),
@@ -84,7 +85,7 @@ function setup() {
     changed,
     fork,
     error,
-    translate: zhT,
+    translate,
   })
   controllers.push(actions)
   return {
@@ -434,7 +435,10 @@ it('tolerates an absent pane and stops reads and event handlers after disposal',
 })
 
 it('shows the Host runtime descriptor in the session menu dialog, with pending and restart notes', async () => {
-  const { actions, session, trigger } = setup()
+  document.documentElement.lang = 'zh-CN'
+  const { actions, session, trigger } = setup((key, values) =>
+    (document.documentElement.lang === 'en' ? enT : zhT)(key, values),
+  )
   await actions.act('runtime', 's', '名称', trigger)
   await vi.waitFor(() => expect(document.querySelector('[data-session-runtime="s"]')).not.toBeNull())
   expect(session.runtime).toHaveBeenCalledWith('s')
@@ -445,6 +449,18 @@ it('shows the Host runtime descriptor in the session menu dialog, with pending a
   expect(text).toContain('审批 auto-review')
   expect(text).toContain('ext:agnes/skills rev-1')
   expect(text).toContain('你需要重启才能生效：sandbox')
+  document.documentElement.lang = 'en'
+  await vi.waitFor(() =>
+    expect(document.getElementById('session-runtime-heading')?.textContent).toBe('Runtime info'),
+  )
+  expect(document.querySelector('[data-session-runtime="s"]')?.textContent).toContain(
+    'Newer generation gen-new',
+  )
+  const replacement = trigger.cloneNode(true) as HTMLButtonElement
+  replacement.dataset.sessionActionId = 's'
+  trigger.replaceWith(replacement)
+  document.querySelector<HTMLButtonElement>('.dialog-actions button')?.click()
+  await vi.waitFor(() => expect(document.activeElement).toBe(replacement))
 })
 
 it('reports a failed runtime read and closes the dialog', async () => {

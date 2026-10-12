@@ -67,17 +67,15 @@ export function createReadOnlyController(
     if (!id) return
     // Switching to the current version is an administrator operation named per pinned kind
     // (`agh sessions migrate`); the page does not offer it.
-    const actions: { id: string; label: string; onSelect(): void }[] = []
+    const actions: { id: 'reopen' | 'new'; onSelect(): void }[] = []
     if (notice.actions.includes('upgrade'))
       actions.push({
         id: 'reopen',
-        label: context.t('app.readOnly.reopen'),
         onSelect: () => context.run(() => commands.open(id)),
       })
     if (notice.actions.includes('new-session'))
       actions.push({
         id: 'new',
-        label: context.t('app.readOnly.new'),
         onSelect: () => context.run(() => commands.beginNewDraft()),
       })
     appReadOnly.show({ message: notice.localized, actions })

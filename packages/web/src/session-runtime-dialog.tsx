@@ -10,6 +10,7 @@ import {
   renderRegion,
   Tag,
   unmountRegion,
+  useDocumentLanguage,
 } from '@agnes/web-ui'
 
 type Pending = NonNullable<SessionRuntimeDescriptor['providers'][number]['pending']>
@@ -107,15 +108,21 @@ export function createRuntimeDialog(options: {
   let opened = false
   let version = 0
   let returnFocus: HTMLElement | undefined
+  let sessionId: string | undefined
   const close = () => {
     opened = false
     version++
     render()
-    if (returnFocus?.isConnected) returnFocus.focus()
+    const trigger = returnFocus?.isConnected
+      ? returnFocus
+      : Array.from(document.querySelectorAll<HTMLElement>('[data-session-action-id]')).find(
+          (button) => button.dataset.sessionActionId === sessionId,
+        )
+    trigger?.focus()
   }
-  const render = () =>
-    renderRegion(
-      host,
+  function RuntimeDialog() {
+    useDocumentLanguage()
+    return (
       <dialog
         open={opened}
         hidden={!opened}
@@ -141,11 +148,14 @@ export function createRuntimeDialog(options: {
             <Button onClick={close}>{t('session.runtime.close')}</Button>
           </div>
         </Dialog>
-      </dialog>,
+      </dialog>
     )
+  }
+  const render = () => renderRegion(host, <RuntimeDialog />)
   return {
     async open(id: string, trigger: HTMLElement) {
       const mine = ++version
+      sessionId = id
       returnFocus = trigger
       runtime = undefined
       opened = true
