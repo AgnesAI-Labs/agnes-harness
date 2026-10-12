@@ -106,6 +106,10 @@ export function Chart({
               <CartesianGrid stroke="var(--agnes-line-primary)" vertical={false} />
               <XAxis
                 dataKey={categoryKey}
+                tickFormatter={(value) => {
+                  const characters = Array.from(String(value))
+                  return characters.length > 14 ? `${characters.slice(0, 14).join('')}…` : String(value)
+                }}
                 stroke="var(--agnes-text-secondary)"
                 tick={{ fill: 'var(--agnes-text-secondary)' }}
               />

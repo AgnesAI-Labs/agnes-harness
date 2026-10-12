@@ -450,4 +450,21 @@
     box-shadow: var(--elevation-1);
     min-width: 12rem;
   }
+  /* Editing gets a full-width field instead of compressing the queued message and actions. */
+  .composer-queue-row:has([data-testid="queued-steer-editor"]) {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .composer-queue-row > div:has([data-testid="queued-steer-editor"]) {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .composer-queue-row [data-testid="queued-steer-editor"] {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
 }

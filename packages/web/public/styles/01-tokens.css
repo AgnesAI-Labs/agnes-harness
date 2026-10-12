@@ -123,7 +123,7 @@
     --agnes-text-secondary: var(--agnes-color-neutral-725);
     /* Keep tertiary copy readable on both hover surfaces and soft selected backgrounds. */
     --agnes-text-tertiary: var(--agnes-color-neutral-600);
-    --agnes-text-disabled: var(--agnes-color-neutral-350);
+    --agnes-text-disabled: var(--agnes-text-tertiary);
     --agnes-text-inverse: var(--agnes-color-white);
     /* 强调文字：桌面端 token 集无此角色，本次补齐（设计 §5.4） */
     --agnes-text-emphasis: var(--agnes-color-brand-indigo-500);
@@ -243,10 +243,10 @@
     /* 三级文字：原为 neutral-700，在 #161b21 上只有 2.07:1，几乎不可读。
      neutral-500 给到 6.0:1，仍明显低于 secondary，保持三级次序。 */
     --agnes-text-tertiary: var(--agnes-color-neutral-500);
-    --agnes-text-disabled: var(--agnes-color-neutral-625);
+    --agnes-text-disabled: var(--agnes-text-tertiary);
     /* 深色品牌色是亮靛蓝，反色内容必须是近黑：白字只有 3.36:1，近黑 5.16:1。 */
     --agnes-text-inverse: var(--agnes-color-neutral-950);
-    --agnes-text-emphasis: var(--agnes-color-brand-indigo-400);
+    --agnes-text-emphasis: var(--agnes-color-brand-indigo-300);
 
     /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
     --agnes-icon-secondary: var(--agnes-text-secondary);

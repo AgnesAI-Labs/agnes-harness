@@ -8,7 +8,7 @@
 
 export type PopoverPlacement = 'above' | 'below'
 
-export type SubmenuPlacement = 'right' | 'left'
+export type SubmenuPlacement = 'right' | 'left' | PopoverPlacement
 
 export type PopoverPositionOptions = Readonly<{
   preferredWidth: number
@@ -74,7 +74,7 @@ export function positionPopover(
 
 /**
  * Places `panel` beside `parent` (an open popover), vertically aligned with `anchor` — the row that
- * opened it. Prefers the right side and flips left when the viewport has no room there.
+ * opened it. Prefers right, then left; a narrow viewport stacks it above/below the parent.
  */
 export function positionSubmenu(
   anchor: HTMLElement,
@@ -91,7 +91,9 @@ export function positionSubmenu(
   const width = Math.max(0, Math.min(options.preferredWidth, viewportWidth - padding * 2))
   const toRight = parentBounds.right + gap
   const toLeft = parentBounds.left - gap - width
-  // 右侧放不下才翻到左边；两边都放不下时选右边（至少和父面板同侧读起来连贯）。
+  // A viewport clamp must not cover the row that opened the submenu.
+  if (toRight + width + padding > viewportWidth && toLeft < padding)
+    return positionPopover(parent, panel, { ...options, width: 'fixed', gap })
   const opensRight = toRight + width + padding <= viewportWidth || toLeft < padding
   const left = Math.max(padding, Math.min(opensRight ? toRight : toLeft, viewportWidth - width - padding))
   // scrollHeight 是内容真实需要的高度。面板身上可能还带着上一轮（或 CSS）设下的

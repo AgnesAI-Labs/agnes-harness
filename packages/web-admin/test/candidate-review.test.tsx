@@ -32,7 +32,7 @@ it.each([
   const html = renderToStaticMarkup(
     <CandidateFileDiff file={{ path: 'skill.test.mjs', before, after }} t={t} />,
   )
-  expect(html).toContain('<code>skill.test.mjs</code>')
+  expect(html).toContain('<code title="skill.test.mjs">skill.test.mjs</code>')
   const lines = candidateDiff(before, after)
   expect(
     lines

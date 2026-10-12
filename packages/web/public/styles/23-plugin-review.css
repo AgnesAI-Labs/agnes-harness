@@ -147,6 +147,10 @@
     flex: 1;
     overflow-wrap: anywhere;
     white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
   }
   .plugin-candidates .candidate-file summary > .agnes-ui-badge {
     flex: none;
