@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  linkSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
@@ -85,10 +94,66 @@ export class CompositionSessionStore {
   release(key: string): void {
     rmSync(this.path(key), { force: true })
   }
+  /**
+   * A binding is the intent record written before the generation pin and released after it, so a crash
+   * on either side leaves a binding without a pin. Drops those (and the profile snapshot each carries)
+   * once older than the grace in which another worker may still be opening the session.
+   */
+  sweepOrphans(
+    hasGenerationPin: (key: string) => boolean,
+    options: { graceMs?: number; now?: number } = {},
+  ): readonly string[] {
+    const grace = options.graceMs ?? ORPHAN_GRACE_MS,
+      now = options.now ?? Date.now(),
+      removed: string[] = []
+    let names: string[]
+    try {
+      names = readdirSync(this.root)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return removed
+      throw error
+    }
+    for (const name of names) {
+      const path = join(this.root, name)
+      let age: number
+      try {
+        age = now - statSync(path).mtimeMs
+      } catch {
+        continue
+      }
+      if (age < grace) continue
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) {
+        // Interrupted pin temporaries.
+        rmSync(path, { force: true })
+        continue
+      }
+      let key: unknown
+      try {
+        key = (JSON.parse(readFileSync(path, 'utf8')) as { sessionKey?: unknown }).sessionKey
+      } catch {
+        key = undefined
+      }
+      if (typeof key === 'string') {
+        let pinned = true
+        try {
+          pinned = hasGenerationPin(key)
+        } catch {
+          // An unreadable pin is not proof of an orphan.
+        }
+        if (pinned) continue
+      }
+      rmSync(path, { force: true })
+      removed.push(name)
+    }
+    return removed
+  }
 }
+
+const ORPHAN_GRACE_MS = 10 * 60_000
 
 /** Safe status only. Private profile/config snapshots never enter the admin response. */
 export async function createLiveCompositionWriter(profileDir: string) {
+  await reapDeadLiveCompositions(profileDir)
   const identity = await defaultProcessIdentity(process.pid)
   // Status must not make an otherwise valid Host depend on an optional native identity backend.
   // Unknown identity is omitted from live inspection, rather than misreported as an active worker.
@@ -113,6 +178,39 @@ export async function createLiveCompositionWriter(profileDir: string) {
     close() {
       rmSync(file, { force: true })
     },
+  }
+}
+
+/** Removes status files whose worker is gone. An unknown identity is never treated as dead. */
+export async function reapDeadLiveCompositions(profileDir: string): Promise<void> {
+  const root = join(profileDir, '.composition-live')
+  const names = await readdir(root).catch(() => [] as string[])
+  for (const name of names) {
+    const path = join(root, name)
+    if (!/^[a-f0-9-]{36}\.json$/.test(name)) {
+      // Writer temporaries from a crashed worker; a live writer renames its temporary within one call.
+      if (/^[a-f0-9-]{36}\.json\.tmp$/.test(name)) {
+        try {
+          if (Date.now() - statSync(path).mtimeMs > 60_000) rmSync(path, { force: true })
+        } catch {}
+      }
+      continue
+    }
+    let value: { pid?: unknown; startId?: unknown } | undefined
+    try {
+      value = JSON.parse(await readFile(path, 'utf8'))
+    } catch {
+      // Writers rename a complete file into place, so unparseable content is never a live worker's.
+      rmSync(path, { force: true })
+      continue
+    }
+    if (typeof value?.pid !== 'number' || !Number.isSafeInteger(value.pid) || value.pid <= 0) {
+      rmSync(path, { force: true })
+      continue
+    }
+    const identity = await defaultProcessIdentity(value.pid)
+    if (identity.state === 'dead' || (identity.state === 'alive' && identity.startId !== value.startId))
+      rmSync(path, { force: true })
   }
 }
 
