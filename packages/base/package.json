@@ -9,8 +9,6 @@
     "./computer-use": "./extensions/computer-use/src/index.ts",
     "./schedule": "./extensions/schedule/src/runtime.ts",
     "./approval-policy": "./extensions/approval-policy/src/settings.ts",
-    "./privacy": "./extensions/privacy/src/redact.ts",
-    "./child-engines": "./extensions/subagent-sdk/src/document.ts",
     "./testkit": "./testkit/index.ts",
     "./presets/*": "./presets/*",
     "./plan-mode": "./extensions/plan-mode/src/state.ts",
@@ -540,7 +538,8 @@
     "sharp": "0.34.5",
     "turndown": "7.2.4",
     "yaml": "2.9.0",
-    "@agnes/memory-file": "workspace:*"
+    "@agnes/memory-file": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

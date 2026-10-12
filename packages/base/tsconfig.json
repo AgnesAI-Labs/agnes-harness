@@ -19,6 +19,9 @@
   ],
   "references": [
     {
+      "path": "../error-sanitization"
+    },
+    {
       "path": "../plugin-runtime"
     },
     {

@@ -13,7 +13,7 @@
       "path": "../../tsconfig.config.json"
     },
     {
-      "path": "../base"
+      "path": "../error-sanitization"
     },
     {
       "path": "../web-client"

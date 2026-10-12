@@ -11,7 +11,7 @@
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [
     {
-      "path": "../base"
+      "path": "../error-sanitization"
     },
     {
       "path": "../web-client"

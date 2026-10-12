@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { type ChildEngineSettings, DISABLED_CHILD_ENGINES } from '@agnes/base/child-engines'
+import { type ChildEngineSettings, DISABLED_CHILD_ENGINES } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'

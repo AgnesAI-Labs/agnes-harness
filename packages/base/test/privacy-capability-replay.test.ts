@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { type RedactRules, redactText } from '@agnes/error-sanitization'
 import { describe, expect, it } from 'vitest'
 import { allowsContent, allowsUpload, transitionConsent } from '../extensions/privacy/src/consent.js'
-import { type RedactRules, redactText } from '../extensions/privacy/src/redact.js'
 
 type RedactCase = {
   id: string

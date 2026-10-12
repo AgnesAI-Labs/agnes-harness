@@ -101,3 +101,25 @@ export function childEngineSettingsError(settings: ChildEngineSettings): 'allow'
   }
   return undefined
 }
+
+const oneShot = Object.freeze({
+  continuable: false,
+  interrupt: true,
+  modelSelection: false,
+  inheritsParentContext: false,
+  worktree: false,
+  budget: false,
+  toolFilter: false,
+})
+
+/** Capability flags the settings page shows. Providers must match these values. */
+export const CHILD_ENGINE_CAPABILITIES = Object.freeze({
+  codex: oneShot,
+  'claude-code': oneShot,
+  sdk: oneShot,
+  acp: Object.freeze({ ...oneShot, continuable: true }),
+})
+
+export function parseChildEngineSettings(value: unknown): ChildEngineSettings {
+  return readChildEngineSettings(value) ?? structuredClone(DISABLED_CHILD_ENGINES)
+}

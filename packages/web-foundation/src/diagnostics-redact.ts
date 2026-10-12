@@ -1,4 +1,4 @@
-import { redact } from '@agnes/base/privacy'
+import { redact } from '@agnes/error-sanitization'
 
 export const REDACTED = '***REDACTED***'
 
@@ -31,7 +31,7 @@ const PREFIX = '[A-Za-z0-9_-]{0,40}'
 const PEM_BEGIN = '-----BEGIN ' + '[A-Z ]*PRIVATE KEY-----'
 const PEM_END = '-----END ' + '[A-Z ]*PRIVATE KEY-----'
 
-// `@agnes/base/privacy`'s custom rules replace with a literal string (no `$1` backreferences), so
+// `@agnes/error-sanitization`'s custom rules replace with a literal string (no `$1` backreferences), so
 // every pattern here is a lookbehind that matches only the value, never the surrounding key/prefix.
 //
 // Every quantifier inside a lookbehind is bounded (`\s{0,16}` / `\s{1,16}`, never `\s*` /

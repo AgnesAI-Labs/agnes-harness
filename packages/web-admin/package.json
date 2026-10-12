@@ -48,7 +48,6 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/base": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
     "@agnes/sdk": "workspace:*",

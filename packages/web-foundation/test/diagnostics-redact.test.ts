@@ -1,11 +1,11 @@
-import { redact } from '@agnes/base/privacy'
+import { redact } from '@agnes/error-sanitization'
 import { describe, expect, it, vi } from 'vitest'
 import { REDACTED, redactDiagnostic, redactDiagnosticText } from '../src/diagnostics-redact.js'
 
 // Wraps the real implementation by default (every existing test keeps exercising real redaction);
 // only the fail-closed test below overrides it for a single call via mockImplementationOnce.
-vi.mock('@agnes/base/privacy', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@agnes/base/privacy')>()
+vi.mock('@agnes/error-sanitization', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/error-sanitization')>()
   return { ...actual, redact: vi.fn(actual.redact) }
 })
 

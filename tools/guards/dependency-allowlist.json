@@ -65,6 +65,7 @@
   ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api", "@agnes/system-node"],
   "@agnes/base": [
+    "@agnes/error-sanitization",
     "@agnes/protocol",
     "@agnes/protocol-validation",
     "@agnes/extension-api",
@@ -147,7 +148,8 @@
     "@agnes/resource-control-runtime",
     "@agnes/cli-tui",
     "@agnes/package-manager",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/error-sanitization"
   ],
   "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],
@@ -300,9 +302,13 @@
     "@agnes/observability",
     "@agnes/extension-api"
   ],
-  "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"],
+  "@agnes/web-foundation": [
+    "@agnes/error-sanitization",
+    "@agnes/web-client",
+    "@agnes/web-ui",
+    "@agnes/web-units"
+  ],
   "@agnes/web-admin": [
-    "@agnes/base",
     "@agnes/protocol",
     "@agnes/resource-control-web",
     "@agnes/sdk",

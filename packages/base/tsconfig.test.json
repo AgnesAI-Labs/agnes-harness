@@ -37,6 +37,9 @@
       "path": "../plugin-runtime"
     },
     {
+      "path": "../error-sanitization"
+    },
+    {
       "path": "../history-index"
     },
     {

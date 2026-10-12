@@ -308,3 +308,29 @@ it('keeps every command module outside core and extension-api', () => {
     expect(source, file).not.toMatch(/['"]@agnes\/(?:core|extension-api)(?:\/[^'"]*)?['"]/)
   }
 })
+
+// Browser packages ship to the client; backend capability packages (@agnes/base and below the web
+// layer) must not enter their dependency graph. Pure shared modules live in protocol or
+// error-sanitization.
+describe('browser packages do not depend on backend capability packages', () => {
+  const BROWSER_PACKAGES = new Set([
+    '@agnes/web-client',
+    '@agnes/web-ui',
+    '@agnes/web-units',
+    '@agnes/web-slots',
+    '@agnes/web-foundation',
+    '@agnes/web-admin',
+    '@agnes/web-conversation',
+    '@agnes/resource-control-web',
+  ])
+  const BACKEND = new Set(['@agnes/base', '@agnes/core', '@agnes/host', '@agnes/daemon', '@agnes/code'])
+  for (const pkg of listPackages(root).filter((p) => BROWSER_PACKAGES.has(p.name))) {
+    it(`${pkg.name} has no backend @agnes dependency`, () => {
+      const deps = {
+        ...(pkg.json.dependencies as Record<string, string> | undefined),
+        ...(pkg.json.peerDependencies as Record<string, string> | undefined),
+      }
+      expect(Object.keys(deps).filter((d) => BACKEND.has(d))).toEqual([])
+    })
+  }
+})

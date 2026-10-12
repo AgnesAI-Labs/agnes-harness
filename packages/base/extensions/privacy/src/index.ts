@@ -1,7 +1,7 @@
+import { DEFAULT_RULES, type RedactRules, redact } from '@agnes/error-sanitization'
 import { defineExtension, type ExtensionAPI, type SessionRef } from '@agnes/extension-api'
 import { allowsUpload, type ConsentLevel } from './consent.js'
 import { egressReceipt } from './egress.js'
-import { DEFAULT_RULES, type RedactRules, redact } from './redact.js'
 
 type SessionEgressState = {
   active: boolean
@@ -183,6 +183,7 @@ export const privacyExtension = createPrivacyExtension()
 
 export default privacyExtension
 
+export { DEFAULT_RULES, type RedactRules, redact, redactText } from '@agnes/error-sanitization'
 export {
   allowsContent,
   allowsUpload,
@@ -194,4 +195,3 @@ export {
   transitionConsent,
 } from './consent.js'
 export { type EgressReceipt, egressReceipt } from './egress.js'
-export { DEFAULT_RULES, type RedactRules, redact, redactText } from './redact.js'

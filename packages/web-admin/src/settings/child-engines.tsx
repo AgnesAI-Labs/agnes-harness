@@ -3,7 +3,7 @@ import {
   type ChildEngineSettings,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
-} from '@agnes/base/child-engines'
+} from '@agnes/protocol'
 import {
   Button,
   configIssues,

@@ -138,6 +138,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/error-sanitization':
+        specifier: workspace:*
+        version: link:../error-sanitization
       '@agnes/git-worktree-contract':
         specifier: workspace:*
         version: link:../git-worktree-contract
@@ -264,6 +267,9 @@ importers:
       '@agnes/daemon':
         specifier: workspace:*
         version: link:../daemon
+      '@agnes/error-sanitization':
+        specifier: workspace:*
+        version: link:../error-sanitization
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
@@ -1388,9 +1394,6 @@ importers:
 
   packages/web-admin:
     dependencies:
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -1496,9 +1499,9 @@ importers:
 
   packages/web-foundation:
     dependencies:
-      '@agnes/base':
+      '@agnes/error-sanitization':
         specifier: workspace:*
-        version: link:../base
+        version: link:../error-sanitization
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../web-client

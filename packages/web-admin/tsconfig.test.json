@@ -13,9 +13,6 @@
       "path": "../../tsconfig.config.json"
     },
     {
-      "path": "../base"
-    },
-    {
       "path": "../protocol"
     },
     {

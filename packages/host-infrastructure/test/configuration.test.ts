@@ -602,7 +602,7 @@ it('persists session defaults in existing configuration with cross-instance revi
 })
 
 it('persists child engines beside session defaults and drops invalid fields', async () => {
-  const { DISABLED_CHILD_ENGINES } = await import('@agnes/base/child-engines')
+  const { DISABLED_CHILD_ENGINES } = await import('@agnes/protocol')
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   const file = join(root, 'profiles', 'local-dev', 'configuration.json')

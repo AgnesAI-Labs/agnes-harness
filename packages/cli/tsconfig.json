@@ -31,6 +31,9 @@
       "path": "../sdk"
     },
     {
+      "path": "../error-sanitization"
+    },
+    {
       "path": "../resource-control-cli"
     },
     {
