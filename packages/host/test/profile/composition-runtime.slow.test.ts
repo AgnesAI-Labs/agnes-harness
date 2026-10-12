@@ -7,6 +7,7 @@ import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillReso
 import { ToolRegistry } from '@agnes/core'
 import { compactionKind, loopKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
+import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import {
   CompositionSessionStore,
@@ -431,7 +432,7 @@ it('publishes model changes per composition and reports a partial provider refus
         ? Object.fromEntries(Object.entries(value).reverse())
         : value,
     ) as ResolvedProfile
-    const route = next.provider.routes?.find((route) => route.route === 'gw')
+    const route = next.provider.routes?.find((route: RouteDecl) => route.route === 'gw')
     const first = route?.models?.[0]
     if (!route || !first) throw new Error('fixture route missing')
     route.models = [...(route.models ?? []), { ...first, id: 'live-model', name: 'live-model' }]
