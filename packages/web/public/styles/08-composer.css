@@ -109,7 +109,7 @@
     border-radius: var(--radius-card);
     background: var(--agnes-bg-page);
     /* The card has one quiet edge; elevation is reserved for floating surfaces. */
-    box-shadow: 0 0 0 1px var(--agnes-line-emphasis);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--agnes-input-border) 80%, var(--agnes-bg-page));
     backdrop-filter: none;
   }
   /* Focus belongs to the whole card, since the textarea itself draws no ring. */

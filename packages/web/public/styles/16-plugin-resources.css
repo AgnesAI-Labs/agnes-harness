@@ -860,7 +860,7 @@
   }
   #config::backdrop {
     background: var(--agnes-bg-scrim);
-    backdrop-filter: blur(2px);
+    backdrop-filter: none;
   }
   #config-form .settings-rail-heading .eyebrow,
   .settings-nav-label,
