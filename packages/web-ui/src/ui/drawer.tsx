@@ -1,9 +1,11 @@
-import { type DialogHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react'
-import { createPortal } from 'react-dom'
+import { Drawer as AntDrawer, type DrawerProps as AntDrawerProps } from 'antd'
+import { type ReactNode, useId } from 'react'
 import { fallbackT } from '../locales/index.js'
 import { IconButton } from './icon-button.js'
+import { useOverlayFocus } from './overlay.js'
 
-export type DrawerProps = Omit<DialogHTMLAttributes<HTMLDialogElement>, 'title' | 'onClose'> & {
+export type DrawerProps = Omit<AntDrawerProps, 'title' | 'onClose'> & {
+  onCancel?: AntDrawerProps['onClose']
   open: boolean
   title: ReactNode
   description?: ReactNode
@@ -11,7 +13,7 @@ export type DrawerProps = Omit<DialogHTMLAttributes<HTMLDialogElement>, 'title' 
   onClose(): void
   closeLabel?: string
 }
-/** A native top-layer detail surface. Open it after closing any other modal host. */
+/** Modal detail surface. Close competing native modal hosts before opening. */
 export function Drawer({
   open,
   title,
@@ -21,50 +23,43 @@ export function Drawer({
   closeLabel,
   children,
   className,
+  onCancel,
   ...props
 }: DrawerProps) {
-  const dialog = useRef<HTMLDialogElement>(null)
-  const restore = useRef<HTMLElement | null>(null)
   const id = useId()
-  useEffect(() => {
-    const node = dialog.current
-    if (!node || !open) return
-    restore.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    node.showModal()
-    return () => {
-      node.close()
-      if (restore.current?.isConnected) restore.current.focus()
-    }
-  }, [open])
-  if (!open) return null
-  return createPortal(
-    // biome-ignore lint/a11y/useKeyWithClickEvents: native dialog cancellation is the keyboard equivalent of backdrop dismissal.
-    <dialog
+  useOverlayFocus(open)
+  return (
+    <AntDrawer
       {...props}
-      ref={dialog}
-      className={['agh-drawer', className].filter(Boolean).join(' ')}
+      open={open}
+      placement="right"
+      size="min(480px, 100vw)"
+      keyboard
       aria-labelledby={`${id}-title`}
       aria-describedby={description ? `${id}-description` : undefined}
-      onCancel={(event) => {
+      focusable={{ trap: true, focusTriggerAfterClose: false }}
+      destroyOnHidden
+      rootClassName="agh-drawer-layer"
+      className={['agh-drawer', className].filter(Boolean).join(' ')}
+      closable={false}
+      title={
+        <div className="agh-drawer-heading">
+          <div>
+            <h2 id={`${id}-title`}>{title}</h2>
+            {description && <p id={`${id}-description`}>{description}</p>}
+          </div>
+          <IconButton name="x" label={closeLabel ?? fallbackT('ui.close')} onClick={onClose} />
+        </div>
+      }
+      footer={footer}
+      onClose={(event) => {
         event.preventDefault()
-        props.onCancel?.(event)
+        if ('key' in event && event.key === 'Escape') onCancel?.(event)
         onClose()
       }}
-      onClick={(event) => {
-        props.onClick?.(event)
-        if (event.target === event.currentTarget) onClose()
-      }}
+      drawerRender={(node) => <div className="agh-drawer-frame">{node}</div>}
     >
-      <header className="agh-drawer-heading">
-        <div>
-          <h2 id={`${id}-title`}>{title}</h2>
-          {description && <p id={`${id}-description`}>{description}</p>}
-        </div>
-        <IconButton name="x" label={closeLabel ?? fallbackT('ui.close')} onClick={onClose} />
-      </header>
       <div className="agh-drawer-content">{children}</div>
-      {footer && <footer className="agh-dialog-footer">{footer}</footer>}
-    </dialog>,
-    document.body,
+    </AntDrawer>
   )
 }

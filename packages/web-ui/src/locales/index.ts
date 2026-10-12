@@ -23,6 +23,10 @@ import { modelSettingsLocaleCatalog } from './model-settings.js'
 const primitiveCatalog: LocaleCatalog = {
   en: {
     'ui.close': 'Close',
+    'ui.cancel': 'Cancel',
+    'ui.confirm': 'Confirm',
+    'ui.table': 'Data table',
+    'ui.tableEmpty': 'No records to display.',
     'ui.dismiss': 'Dismiss',
     'ui.optional': '(optional)',
     'ui.unsaved': 'You have unsaved changes',
@@ -37,6 +41,10 @@ const primitiveCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'ui.close': '关闭',
+    'ui.cancel': '取消',
+    'ui.confirm': '确认',
+    'ui.table': '数据表',
+    'ui.tableEmpty': '没有可显示的记录。',
     'ui.dismiss': '关闭提示',
     'ui.optional': '（可选）',
     'ui.unsaved': '有未保存的更改',

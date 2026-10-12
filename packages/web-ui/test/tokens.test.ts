@@ -35,6 +35,18 @@ describe('web-ui theme bridge', () => {
       '--ant-color-border',
       '--ant-color-split',
       '--ant-control-outline',
+      '--ant-table-header-bg',
+      '--ant-table-header-color',
+      '--ant-table-border-color',
+      '--ant-table-row-hover-bg',
+      '--ant-table-row-selected-bg',
+      '--ant-table-header-sort-active-bg',
+      '--ant-menu-popup-bg',
+      '--ant-menu-item-color',
+      '--ant-menu-item-hover-bg',
+      '--ant-menu-item-disabled-color',
+      '--ant-menu-danger-item-color',
+      '--ant-message-content-bg',
     ]
     expect(required.filter((name) => !antd.includes(`var(${name})`))).toEqual([])
     expect(required.filter((name) => !bridge.includes(`${name}: var(--agnes-`))).toEqual([])

@@ -1,0 +1,86 @@
+import { Table as AntTable, type TableProps as AntTableProps, Tooltip as AntTooltip } from 'antd'
+import { createContext, type HTMLAttributes, type ReactNode, useContext } from 'react'
+import { fallbackT } from '../locales/index.js'
+
+export type TableProps<T extends object> = AntTableProps<T> & {
+  captionRepeatsHeading?: boolean
+  caption?: string
+  empty?: ReactNode
+  scrollLabel?: string
+  testId?: string
+}
+const TableCaption = createContext<{
+  caption: string | undefined
+  testId: string | undefined
+  repeats: boolean | undefined
+}>({ caption: undefined, testId: undefined, repeats: undefined })
+function CaptionTable({ children, ...props }: HTMLAttributes<HTMLTableElement>) {
+  const { caption, testId, repeats } = useContext(TableCaption)
+  return (
+    <table {...props} data-testid={testId}>
+      {caption && <caption data-repeats-heading={repeats || undefined}>{caption}</caption>}
+      {children}
+    </table>
+  )
+}
+
+/** Sticky, sortable antd table with an independently focusable horizontal scroll region. */
+export function Table<T extends object>({
+  caption,
+  captionRepeatsHeading,
+  empty,
+  scrollLabel,
+  testId,
+  columns,
+  className,
+  ...props
+}: TableProps<T>) {
+  const enhanced = columns?.map((column) => {
+    if ('children' in column) return column
+    const render = column.render
+    return {
+      ...column,
+      ellipsis: column.ellipsis ?? { showTitle: false },
+      render(value: unknown, row: T, index: number) {
+        const rendered = render ? render(value, row, index) : value
+        if ((typeof rendered === 'string' || typeof rendered === 'number') && column.ellipsis !== false) {
+          const text = String(rendered)
+          return (
+            <AntTooltip title={text}>
+              <span className="agh-table-cell" title={text}>
+                {text}
+              </span>
+            </AntTooltip>
+          )
+        }
+        return rendered as ReactNode
+      },
+    }
+  })
+  return (
+    <TableCaption.Provider value={{ caption, testId, repeats: captionRepeatsHeading }}>
+      <div
+        className="agnes-intelligent-table-scroll agh-table-scroll"
+        role="region"
+        aria-label={scrollLabel ?? caption ?? fallbackT('ui.table')}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: wide tables have a keyboard-scrollable labelled region.
+        tabIndex={0}
+      >
+        <AntTable<T>
+          size="small"
+          pagination={false}
+          sticky
+          scroll={{ x: 'max-content' }}
+          {...props}
+          className={['agh-table', className].filter(Boolean).join(' ')}
+          columns={enhanced ?? []}
+          locale={{ emptyText: empty ?? <p role="status">{fallbackT('ui.tableEmpty')}</p>, ...props.locale }}
+          components={{
+            ...props.components,
+            table: CaptionTable,
+          }}
+        />
+      </div>
+    </TableCaption.Provider>
+  )
+}

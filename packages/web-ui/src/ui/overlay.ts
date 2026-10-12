@@ -1,0 +1,41 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+
+/** Modal surfaces trap focus through antd; anchored surfaces return to their trigger on dismissal. */
+export function useOverlayFocus(open: boolean, restoreOnClose = true) {
+  // Capture before antd's child layout effects move focus into an initially open surface.
+  const trigger = useMemo(
+    () =>
+      open && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null,
+    [open],
+  )
+  const generation = useRef(0)
+  useLayoutEffect(() => {
+    if (!open || !restoreOnClose) return
+    const current = ++generation.current
+    return () => {
+      // Child modal traps must release before restoration, including when the region unmounts.
+      queueMicrotask(() => {
+        if (generation.current === current && trigger?.isConnected) trigger.focus({ preventScroll: true })
+      })
+    }
+  }, [open, restoreOnClose, trigger])
+  return () => {
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true })
+  }
+}
+
+export function useReducedMotion() {
+  const [reduce, setReduce] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setReduce(media.matches)
+    media.addEventListener('change', update)
+    update()
+    return () => media.removeEventListener('change', update)
+  }, [])
+  return reduce
+}

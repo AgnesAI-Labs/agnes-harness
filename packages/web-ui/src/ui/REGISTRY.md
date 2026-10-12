@@ -51,13 +51,13 @@ StateSwitch also renders Boolean schema/settings fields; optional id/testId and 
 SettingsPage accepts `headingId` and `bodyClassName` for existing native pane IDs and scroll bodies. / SettingsPage 可保留原生设置面板的标题 ID 与正文滚动类。
 
 | `Tag` / `MetaText` / `Count` | Shared | Contract CSS | Actionable warn/bad/info tags; descriptive metadata stays text; zero counts are omitted. |
-| `Menu` | Shared | Popover | Action menu with arrows, Home/End, typeahead, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
+| `Menu` | Shared | antd Dropdown / Menu | Action menu with arrows, Home/End, typeahead, Enter/Space, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
 | `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
 | `Icon` / `createSettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
-| `Toast` | Shared | Nonmodal status | Three-second success feedback, Escape dismissal and lifecycle cleanup. |
+| `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `className="agh-toast--info|agh-toast--error"` retains the outcome colours. Duration remains milliseconds. |
 | `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
 | `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
-| `Drawer` | Shared | Native dialog | 480px right detail surface, narrow full screen, Escape and focus return. Close other modal hosts before opening. |
+| `Drawer` | Shared | antd Drawer | 480px right detail surface, narrow full screen, Escape and focus return. Close other modal hosts before opening. |
 
 `Dialog` adds `size="sm|md|lg"` (420/560/720px) while retaining all existing Modal props,
 including explicit width. Narrow confirmations use a bottom sheet with a draggable close handle.
@@ -76,3 +76,20 @@ release their own listeners. Existing IDs and controllers remain authoritative.
 `releaseDialogModal(host)` temporarily keeps a native settings host visible without modal focus, then restores it after an owned detail surface closes if its owner has kept it open. Cleanup is idempotent and preserves an owner's closed state.
 
 | `Skeleton` | Shared | Contract CSS | Decorative loading lines, semantic surface tokens and no motion. `SettingsState tone="loading"` supplies it with a localized live announcement and busy state. |
+
+
+| `Table` | Shared | antd Table | Generic `TableProps<T>` / antd columns, caller sorters, sticky header and responsive overflow; plain text uses ellipsis + tooltip. `caption`, `captionRepeatsHeading`, `scrollLabel`, `testId` and `empty` preserve labelled tables and empty states. |
+| `DataList` | Shared | Custom ListRow | `items`, `rowKey`, `renderRow` produce flat rows with independent `onOpen` and `actions`; caller supplies `empty`. |
+| `ConfirmDialog` | Shared | Dialog / Button | `onConfirm`, `onCancel`, `confirmLabel`, `cancelLabel`, `destructive`, `busy`; one primary action, filled destructive confirmation, Enter/Escape and busy refusal. Remaining Dialog props pass through. |
+| `Chart` | Shared | Recharts | `chartType="bar|line|area|pie"`, `title`, `categoryKey`, `series`, `rows`, `dataLabel`, optional `formatValue`; token colours, responsive sizing, quiet rendering and an accessible source table. |
+
+Dialog and Drawer use the antd modal focus trap, Escape cancellation and trigger focus return.
+Popover and Menu remain nonmodal: Escape returns focus and Tab keeps the natural navigation order.
+All four overlays respect reduced motion through component-layer motion rules. Drawer retains the
+480px right surface and becomes full width below 768px; its native-dialog attributes now target
+an antd div surface, and `onCancel` receives the antd close event.
+
+Recharts and its React-18-matched `react-is` peer are owned by web-ui. Both Web build paths externalize
+`recharts`, supply `/vendor/recharts.js` and keep React/ReactDOM resolved through the existing import map.
+The Chart primitive supports area plots; the Intelligent UI surface contract remains bar/line/pie.
+Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain custom.

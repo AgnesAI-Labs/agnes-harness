@@ -4,10 +4,33 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 import type { UiSourceStatus, UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
 import { SurfaceRenderBoundary } from '../src/intelligent-ui/render-boundary.js'
 import { type UiLocale, UiLocaleProvider, type UiLocaleSource } from '../src/ui-locale.js'
+
+// Recharts observes real layout; happy-dom has no layout engine.
+const originalRect = HTMLElement.prototype.getBoundingClientRect
+beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const rect = originalRect.call(this)
+    return this.classList.contains('recharts-responsive-container')
+      ? {
+          ...rect,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 600,
+          bottom: 210,
+          width: 600,
+          height: 210,
+          toJSON: () => ({}),
+        }
+      : rect
+  })
+})
+afterEach(() => vi.restoreAllMocks())
 
 const surface: UiSurface = {
   id: 'finance',
@@ -96,7 +119,7 @@ describe('preset Intelligent UI catalog', () => {
         expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.getAttribute('title')).toBe(
           'txn-1',
         )
-        expect(host.querySelector('svg')?.getAttribute('role')).toBe('img')
+        expect(host.querySelector('[data-testid="ui-chart-chart"] svg')?.getAttribute('role')).toBe('img')
         await act(async () =>
           host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
         )
@@ -141,9 +164,9 @@ describe('preset Intelligent UI catalog', () => {
         expect(host.querySelector('[data-testid="ui-table-rows"] [role="status"]')?.textContent).toBe(
           'No records to display.',
         )
-        expect(host.querySelector('[data-testid="ui-table-rows"] tbody td')?.getAttribute('colspan')).toBe(
-          '4',
-        )
+        expect(
+          host.querySelector('[data-testid="ui-table-rows"] tbody td[colspan]')?.getAttribute('colspan'),
+        ).toBe('4')
       } finally {
         await act(async () => root.unmount())
       }
@@ -746,3 +769,35 @@ it('contains renderer failures and retries without losing sibling conversation c
     failureLog.mockRestore()
   }
 })
+
+it.each(['bar', 'line', 'area', 'pie'] as const)(
+  'renders the %s Chart primitive with exact accessible source values',
+  async (chartType) => {
+    const { Chart } = await import('../src/ui/chart.js')
+    const host = document.createElement('div'),
+      root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          <Chart
+            chartType={chartType}
+            title="Measurements"
+            categoryKey="category"
+            series={[{ key: 'value', label: 'Value' }]}
+            rows={[
+              { category: 'Repeated', value: 2 },
+              { category: 'Repeated', value: 4 },
+            ]}
+            dataLabel="Source data"
+          />,
+        ),
+      )
+      expect(host.querySelector('svg title')?.textContent).toBe('Measurements')
+      expect([...host.querySelectorAll('tbody td')].map((cell) => cell.textContent)).toEqual(['2', '4'])
+      expect(host.querySelector('summary')?.textContent).toBe('Source data')
+      expect(host.querySelector('svg')?.innerHTML).not.toMatch(/NaN|Infinity/)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

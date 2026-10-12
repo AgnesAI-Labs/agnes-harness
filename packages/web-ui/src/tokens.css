@@ -97,6 +97,46 @@
     --ant-control-height-lg: var(--control-height-form);
 
     /* Component defaults also contain light colors in Ant Design's static CSS. */
+
+    /* Shared interactive overlays and tables; dark mode follows Agnes semantics. */
+    --ant-table-header-bg: var(--agnes-bg-card);
+    --ant-table-header-color: var(--agnes-text-primary);
+    --ant-table-header-sort-active-bg: var(--agnes-bg-selected);
+    --ant-table-header-sort-hover-bg: var(--agnes-bg-hover);
+    --ant-table-fixed-header-sort-active-bg: var(--agnes-bg-selected);
+    --ant-table-header-filter-hover-bg: var(--agnes-bg-hover);
+    --ant-table-header-split-color: var(--agnes-line-primary);
+    --ant-table-border-color: var(--agnes-line-primary);
+    --ant-table-footer-bg: var(--agnes-bg-card);
+    --ant-table-footer-color: var(--agnes-text-primary);
+    --ant-table-row-hover-bg: var(--agnes-bg-hover);
+    --ant-table-row-selected-bg: var(--agnes-bg-selected);
+    --ant-table-row-selected-hover-bg: var(--agnes-bg-hover);
+    --ant-table-body-sort-bg: var(--agnes-bg-app-content);
+    --ant-table-row-expanded-bg: var(--agnes-bg-card);
+    --ant-table-filter-dropdown-bg: var(--agnes-bg-popover);
+    --ant-table-filter-dropdown-menu-bg: var(--agnes-bg-popover);
+    --ant-table-expand-icon-bg: var(--agnes-bg-app-content);
+    --ant-table-header-icon-color: var(--agnes-text-secondary);
+    --ant-table-header-icon-hover-color: var(--agnes-text-primary);
+    --ant-table-sticky-scroll-bar-bg: var(--agnes-line-emphasis);
+    --ant-message-content-bg: var(--agnes-bg-popover);
+    --ant-menu-item-bg: var(--agnes-bg-popover);
+    --ant-menu-popup-bg: var(--agnes-bg-popover);
+    --ant-menu-sub-menu-item-bg: var(--agnes-bg-popover);
+    --ant-menu-item-color: var(--agnes-text-primary);
+    --ant-menu-item-hover-color: var(--agnes-text-primary);
+    --ant-menu-item-selected-color: var(--agnes-text-primary);
+    --ant-menu-item-hover-bg: var(--agnes-bg-hover);
+    --ant-menu-item-active-bg: var(--agnes-bg-selected);
+    --ant-menu-item-selected-bg: var(--agnes-bg-selected);
+    --ant-menu-item-disabled-color: var(--agnes-text-disabled);
+    --ant-menu-group-title-color: var(--agnes-text-secondary);
+    --ant-menu-danger-item-color: var(--agnes-status-danger-text);
+    --ant-menu-danger-item-hover-color: var(--agnes-status-danger-text);
+    --ant-menu-danger-item-selected-color: var(--agnes-status-danger-text);
+    --ant-menu-danger-item-active-bg: var(--agnes-status-danger-bg);
+    --ant-menu-danger-item-selected-bg: var(--agnes-status-danger-bg);
     --ant-button-default-color: var(--agnes-text-primary);
     --ant-button-default-ghost-color: var(--agnes-text-primary);
     --ant-button-default-ghost-border-color: var(--agnes-line-primary);

@@ -1,27 +1,14 @@
-import { type HTMLAttributes, useEffect, useRef } from 'react'
+import { message } from 'antd'
+import { createContext, type HTMLAttributes, useContext, useEffect, useId, useRef } from 'react'
 
 export type ToastProps = HTMLAttributes<HTMLDivElement> & {
   open: boolean
   onDismiss(): void
   duration?: number
 }
-/** A nonmodal, three-second success announcement; it never takes keyboard focus. */
-export function Toast({ open, onDismiss, duration = 3000, children, className, ...props }: ToastProps) {
-  const dismiss = useRef(onDismiss)
-  dismiss.current = onDismiss
-  useEffect(() => {
-    if (!open) return
-    const timer = setTimeout(() => dismiss.current(), duration)
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss.current()
-    }
-    document.addEventListener('keydown', onEscape)
-    return () => {
-      clearTimeout(timer)
-      document.removeEventListener('keydown', onEscape)
-    }
-  }, [open, duration])
-  if (!open) return null
+const ToastContent = createContext<HTMLAttributes<HTMLDivElement>>({})
+function ToastBody() {
+  const { children, className, ...props } = useContext(ToastContent)
   return (
     <div
       {...props}
@@ -31,5 +18,52 @@ export function Toast({ open, onDismiss, duration = 3000, children, className, .
     >
       {children}
     </div>
+  )
+}
+/** Context-bound antd message; outcome classes preserve the existing success/info/error colours. */
+export function Toast({ open, onDismiss, duration = 3000, children, className, ...props }: ToastProps) {
+  const host = useRef<HTMLDivElement>(null)
+  const dismiss = useRef(onDismiss)
+  const id = useId()
+  dismiss.current = onDismiss
+  const [api, holder] = message.useMessage({
+    getContainer: () => host.current ?? document.body,
+    pauseOnHover: false,
+  })
+  useEffect(() => {
+    if (!open) return
+    let active = true
+    const finish = () => {
+      if (!active) return
+      active = false
+      api.destroy(id)
+      dismiss.current()
+    }
+    // The pinned message hook forwards notice attributes; content owns the sole polite live region.
+    const notice = {
+      key: id,
+      duration: duration / 1000,
+      icon: null,
+      role: 'presentation',
+      onClose: finish,
+      content: <ToastBody />,
+    }
+    api.open(notice)
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') finish()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      active = false
+      api.destroy(id)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [open, duration, api, id])
+  return (
+    <ToastContent.Provider value={{ ...props, className, children }}>
+      <div ref={host} className="agh-toast-host">
+        {holder}
+      </div>
+    </ToastContent.Provider>
   )
 }

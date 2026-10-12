@@ -842,4 +842,106 @@
       inset: min(0px, calc((100% - var(--s32)) / 2));
     }
   }
+  .agh-drawer-frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .agh-drawer .ant-drawer-header,
+  .agh-drawer .ant-drawer-body {
+    padding: 0;
+  }
+  .agh-drawer .ant-drawer-header {
+    border-bottom: 0;
+  }
+  .agh-drawer .ant-drawer-title,
+  .agh-drawer .ant-drawer-body {
+    min-width: 0;
+  }
+  .agh-drawer .ant-drawer-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .agh-drawer .ant-drawer-footer {
+    padding: var(--s16) var(--s24);
+    border-color: var(--agnes-line-primary);
+  }
+  .agh-menu-popup .agh-menu {
+    display: block;
+    min-width: 180px;
+    background: var(--agnes-bg-popover);
+  }
+  .agh-menu-popup .agh-menu-item {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    height: var(--control-height);
+  }
+  .agh-toast-host {
+    display: contents;
+  }
+  .agh-toast-host .ant-message {
+    top: auto !important;
+    bottom: max(var(--s24), env(safe-area-inset-bottom));
+  }
+  .agh-toast-host .ant-message-notice-content,
+  .agh-toast-host .ant-message-notice-wrapper,
+  .agh-toast-host .ant-message-notice {
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .agh-toast-host .agh-toast {
+    position: static;
+    transform: none;
+    margin-inline: auto;
+  }
+  .agh-table-scroll {
+    min-width: 0;
+    max-width: 100%;
+    overflow: auto;
+  }
+  .agh-table caption {
+    text-align: start;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--s8) 0;
+  }
+  .agh-table .agh-table-cell {
+    display: block;
+    max-width: 32rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agh-chart-plot {
+    min-width: 0;
+    color: var(--agnes-text-primary);
+    font: var(--font-size-xs) var(--font-sans);
+  }
+  .agh-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  @media (max-width: 767px) {
+    .agh-menu-popup .agh-menu-item {
+      min-height: var(--control-height-touch);
+    }
+    .agh-drawer .ant-drawer-content {
+      border-radius: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.agh-dialog, .agh-drawer-layer, .agnes-ui-popover, .agh-menu-popup, .agh-toast-host) *,
+    :is(.agh-dialog, .agh-drawer-layer, .agnes-ui-popover, .agh-menu-popup, .agh-toast-host) {
+      animation-duration: 0s !important;
+      transition-duration: 0s !important;
+    }
+  }
 }

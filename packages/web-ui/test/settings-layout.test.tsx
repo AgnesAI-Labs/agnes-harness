@@ -130,26 +130,39 @@ it('keeps row actions separate from its detail button', () => {
   expect(open).toHaveBeenCalledTimes(2)
   expect(document.activeElement).toBe(buttons[0])
 })
-it('closes the native detail drawer on Escape and returns focus to its trigger', async () => {
+it('closes the detail drawer on Escape and returns focus to its trigger', async () => {
   function Fixture() {
     const [open, setOpen] = useState(false)
     return createElement(
       'div',
       null,
       createElement(Button, { onClick: () => setOpen(true) }, 'Details'),
-      createElement(Drawer, { open, title: 'Plugin details', onClose: () => setOpen(false) }, 'Contents'),
+      createElement(
+        Drawer,
+        { id: 'detail-drawer', open, title: 'Plugin details', onClose: () => setOpen(false) },
+        'Contents',
+      ),
     )
   }
   const host = render(createElement(Fixture))
   const trigger = host.querySelector('button')!
   trigger.focus()
   trigger.click()
-  await vi.waitFor(() => expect(document.querySelector('dialog')?.open).toBe(true))
-  const drawer = document.querySelector('dialog')!
-  const cancel = new Event('cancel', { cancelable: true })
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+  const drawer = document.querySelector('[role="dialog"]')!
+  expect(document.querySelectorAll('#detail-drawer')).toHaveLength(1)
+  const labelledBy = drawer.getAttribute('aria-labelledby')
+  expect(labelledBy && document.getElementById(labelledBy)?.textContent).toBe('Plugin details')
+  const cancel = new KeyboardEvent('keydown', {
+    key: 'Escape',
+    code: 'Escape',
+    keyCode: 27,
+    bubbles: true,
+    cancelable: true,
+  })
   drawer.dispatchEvent(cancel)
   expect(cancel.defaultPrevented).toBe(true)
-  await vi.waitFor(() => expect(document.querySelector('dialog')).toBeNull())
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
   expect(document.activeElement).toBe(trigger)
 })
 
