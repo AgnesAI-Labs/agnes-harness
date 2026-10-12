@@ -552,7 +552,7 @@
     border-color: var(--agnes-input-border-focus);
     background: var(--agnes-brand-emphasis-soft);
   }
-  .agnes-intelligent-chip .agnes-intelligent-chip-main {
+  .agnes-intelligent-chip .agnes-intelligent-chip-main:not(:disabled) {
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -572,7 +572,7 @@
     text-align: start;
     cursor: pointer;
   }
-  .agnes-intelligent-chip .agnes-intelligent-chip-main:hover {
+  .agnes-intelligent-chip .agnes-intelligent-chip-main:hover:not(:disabled) {
     background: var(--agnes-bg-hover);
   }
   .agnes-intelligent-chip :focus-visible {

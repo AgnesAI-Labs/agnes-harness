@@ -131,6 +131,7 @@ describe('docked surface chip', () => {
     const { host, onExpand, unmount } = await mount()
     const chip = host.querySelector('[data-testid="ui-surface-card-schedule"]')!
     const main = chip.querySelector<HTMLButtonElement>('[data-testid="ui-expand"]')!
+    expect(main.type).toBe('button')
     expect(main.textContent).toContain('提醒')
     expect(main.querySelector('[data-testid="ui-summary"]')?.textContent).toContain('下次')
     expect(chip.textContent).not.toContain('可操作')
