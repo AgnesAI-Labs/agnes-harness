@@ -1,5 +1,6 @@
 import type { UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import { useId, useState } from 'react'
+import { Button } from '../ui/button.js'
 import { Icon } from '../ui/icon.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu, type MenuItem } from '../ui/menu.js'
@@ -72,8 +73,9 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
       <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
         {copyMessage}
       </Toast>
-      <button
-        type="button"
+      <Button
+        htmlType="button"
+        appearance="ghost"
         className="agnes-intelligent-chip-main"
         data-testid="ui-expand"
         aria-pressed={!!props.workbenchOpen}
@@ -93,7 +95,7 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
         <span className="agnes-intelligent-chip-state">
           {props.workbenchOpen ? t('ui.dock.shown') : <Icon name="panel-right" />}
         </span>
-      </button>
+      </Button>
       <Menu
         label={t('ui.menu')}
         trigger={<IconButton name="ellipsis" label={t('ui.menu')} />}

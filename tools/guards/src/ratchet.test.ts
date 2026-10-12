@@ -207,7 +207,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
-  'packages/web-ui/src': 15156,
+  'packages/web-ui/src': 15158,
   'packages/web-units/src': 9920,
   'packages/base/extensions/tools-core': 1125,
   'packages/base/extensions/mcp-server': 446,
