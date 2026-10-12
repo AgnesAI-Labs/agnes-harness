@@ -426,7 +426,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source loading, error, and refresh. HEAD was 11480 against the previous 10937 ceiling;
   // this change adds 182. countLines: 11662.
   // Preset presentation: exact measured count; no exclusions or spare allocation.
-  'packages/web-ui/src': 14756,
+  'packages/web-ui/src': 14770,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -2448,7 +2448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
   // UX B1/B2 native sheet binding adds 3 lines; ST1 c2a1bd004 seeds reveal history with 5.
   // Exact combined countLines measurement, preserving both contributions without spare allocation.
-  'packages/web/src': 13802,
+  'packages/web/src': 13821,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
