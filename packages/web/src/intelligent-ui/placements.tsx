@@ -1,5 +1,5 @@
 import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
-import { type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
+import { type ClientResourceService, type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
   INTELLIGENT_UI_NAMESPACE,
@@ -11,10 +11,12 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { ArtifactFile } from './artifact-file.js'
 import type { IntelligentUiClient } from './client.js'
 import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 
 export interface UiPlacementBinding {
+  resources?: ClientResourceService
   subscribe(listener: () => void): () => void
   getSnapshot(): IntelligentUiClient | undefined
   getVersion(): number
@@ -162,6 +164,14 @@ export function BoundSurface({
   )
   return (
     <IntelligentSurface
+      renderArtifact={(file) => (
+        <ArtifactFile
+          key={file.artifact.sha256}
+          file={file}
+          laneId={record.lane}
+          resources={binding.resources}
+        />
+      )}
       {...(binding.customModules ? { renderCustom } : {})}
       record={record}
       placement={placement}

@@ -1,11 +1,14 @@
+import { validateAgainst } from '@agnes/protocol'
 import type {
   JsonValue,
   UiAction,
+  UiArtifactFileData,
   UiComponent,
   UiRowContext,
   UiSourceStatus,
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
+import { UiArtifactFileData as ArtifactFileSchema } from '@agnes/protocol/gen/intelligent-ui'
 import { Component, type ReactNode, useCallback, useId } from 'react'
 import { SettingsState } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
@@ -34,6 +37,7 @@ import {
 import { uiObject } from './validate.js'
 
 export interface IntelligentCatalogProps {
+  renderArtifact?(file: UiArtifactFileData): ReactNode
   renderCustom?: CustomUiRenderer
   surface: UiSurface
   sources?: Readonly<Record<string, UiSourceStatus>>
@@ -205,7 +209,18 @@ function CatalogComponent(
         <PresetStatus value={String(surface.data[component.dataKey])} />
       </p>
     )
-  else if (component.kind === 'detail-card')
+  else if (component.kind === 'artifact-file') {
+    const parsed = validateAgainst<UiArtifactFileData>(ArtifactFileSchema, surface.data[component.dataKey])
+    content = parsed.ok ? (
+      (props.renderArtifact?.(parsed.value) ?? (
+        <p>
+          {parsed.value.name} — {parsed.value.description}
+        </p>
+      ))
+    ) : (
+      <ComponentFailed />
+    )
+  } else if (component.kind === 'detail-card')
     content = (
       <DetailCard
         id={component.id}

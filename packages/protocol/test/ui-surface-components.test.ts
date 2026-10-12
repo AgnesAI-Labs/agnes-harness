@@ -25,6 +25,32 @@ describe('reviewed preset components', () => {
     expect(accept({ ...basic, placement: { inline: false, workbench: false } })).toBe(false)
     expect(accept({ ...basic, placement: { workbench: true } })).toBe(false)
     expect(accept({ ...basic, summary: '3 orders need review' })).toBe(true)
+    const file = surface([{ id: 'file', kind: 'artifact-file', dataKey: 'file' }], {
+      file: {
+        name: 'report.html',
+        description: 'Cities',
+        artifact: { sha256: sha, size: 1024, mime: 'text/html' },
+      },
+    })
+    expect(accept({ ...file, titleKey: 'ui.deliverables' })).toBe(true)
+    expect(
+      accept({
+        ...file,
+        data: {
+          file: {
+            name: 'report.html',
+            description: '',
+            artifact: { sha256: 'invalid', size: 1024, mime: 'text/html' },
+          },
+        },
+      }),
+    ).toBe(false)
+    expect(
+      accept({
+        ...file,
+        data: { file: { name: 'report.html', description: '', url: 'https://example.com' } },
+      }),
+    ).toBe(false)
     expect(accept({ ...basic, summary: 'x'.repeat(1025) })).toBe(false)
     expect(accept({ ...basic, summary: 3 })).toBe(false)
     expect(

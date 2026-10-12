@@ -62,6 +62,21 @@ export const intelligentUiSamples = {
   ]),
   UiColumn: sample({ key: 'price', label: 'Price' }, [{ key: 'price' }, { key: 'price', label: '' }]),
   UiChartSeries: sample({ key: 'price', label: 'Price' }, [{ key: 'price' }]),
+  UiArtifactFileData: sample(
+    {
+      name: 'report.html',
+      description: 'Cities',
+      artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
+    },
+    [
+      { name: 'report.html' },
+      {
+        name: 'report.html',
+        description: '',
+        artifact: { sha256: 'invalid', size: 1024, mime: 'text/html' },
+      },
+    ],
+  ),
   UiComponent: sample(component, [
     { ...component, kind: 'html' },
     { ...component, schema: null },

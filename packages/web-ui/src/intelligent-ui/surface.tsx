@@ -20,6 +20,7 @@ import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { SurfaceRenderBoundary } from './render-boundary.js'
 
 export interface IntelligentSurfaceProps {
+  renderArtifact?: IntelligentCatalogProps['renderArtifact']
   renderCustom?: IntelligentCatalogProps['renderCustom']
   record: UiSurfaceRecord
   placement: 'inline' | 'workbench'
@@ -53,12 +54,16 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
   const { record, receipts } = props
   const { surface } = record
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const translatedTitle = surface.titleKey ? t(surface.titleKey) : surface.title
   const titleId = useId()
   const [sourceVisible, setSourceVisible] = useState(false)
   const [copyMessage, setCopyMessage] = useState('')
   const textComponent = surface.components.find((component) => component.kind === 'text')
   const text = textComponent && 'dataKey' in textComponent ? surface.data[textComponent.dataKey] : undefined
-  const summaryOnly = props.placement === 'inline' && surface.placement.workbench
+  const summaryOnly =
+    props.placement === 'inline' &&
+    surface.placement.workbench &&
+    (!surface.placement.inline || !surface.components.some((component) => component.kind === 'artifact-file'))
   const summary =
     surface.summary ??
     (typeof text === 'string' ? text.slice(0, 240) : undefined) ??
@@ -89,7 +94,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       </Toast>
       <header>
         <h3 id={titleId} title={t('ui.revision', { revision: surface.revision })}>
-          {surface.title}
+          {translatedTitle === surface.titleKey ? surface.title : translatedTitle}
         </h3>
         <Tag tone="info">{t(`ui.${record.status}`)}</Tag>
         <Menu
@@ -157,6 +162,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
               retry={t('ui.refresh')}
             >
               <IntelligentCatalog
+                {...(props.renderArtifact ? { renderArtifact: props.renderArtifact } : {})}
                 {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
                 surface={surface}
                 {...(record.sources

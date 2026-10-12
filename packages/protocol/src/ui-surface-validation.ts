@@ -3,7 +3,7 @@ import {
   type UiComponentDeclaration,
   UiComponentDeclaration as UiComponentDeclarationSchema,
 } from '../gen/ts/extension-manifest.js'
-import { UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/intelligent-ui.js'
+import { UiArtifactFileData, UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/intelligent-ui.js'
 import type { JsonValue } from '../gen/ts/session-v1.js'
 import { validateAgainst } from './validate.js'
 
@@ -345,6 +345,7 @@ export function componentDataValid(
     )
   }
   if (component.kind === 'text' || component.kind === 'status') return typeof data === 'string'
+  if (component.kind === 'artifact-file') return validateAgainst(UiArtifactFileData, data).ok
   if (component.kind === 'detail-card') return validDetail(component, data)
   if (component.kind === 'steps') return validSteps(data)
   if (component.kind === 'progress') return validProgress(data)

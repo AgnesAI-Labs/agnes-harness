@@ -130,8 +130,64 @@
         }
       }
     },
+    "UiArtifactFileData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "artifact"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "size", "mime"],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mime": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        }
+      }
+    },
     "UiComponent": {
       "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "dataKey"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "artifact-file"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -548,6 +604,11 @@
         },
         "revision": {
           "$ref": "#/$defs/UiRevision"
+        },
+        "titleKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         },
         "title": {
           "type": "string",

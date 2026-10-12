@@ -122,13 +122,18 @@ export default defineExtension((agnes) => {
             await renderInteractionSurface(ctx, {
               id: interactionSurfaceId(ctx.session.toolUseId),
               revision: 1,
-              title: 'Deliverables / 交付物',
+              title: 'Deliverables',
+              titleKey: 'ui.deliverables',
               placement: { inline: true, workbench: true, preferred: 'inline' },
-              components: files.map((_, i) => ({ id: 'file-' + i, kind: 'text', dataKey: 'file-' + i })),
+              components: files.map((_, i) => ({
+                id: 'file-' + i,
+                kind: 'artifact-file',
+                dataKey: 'file-' + i,
+              })),
               data: Object.fromEntries(
                 files.map((file, i) => [
                   'file-' + i,
-                  `${file.name} — ${file.description} (${file.ref.size} bytes; artifact ${file.ref.sha256})`,
+                  { name: file.name, description: file.description, artifact: file.ref },
                 ]),
               ),
               actions: [],

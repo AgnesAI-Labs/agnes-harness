@@ -358,3 +358,9 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 ### 对话摘要与完整界面
 
 同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。两个位置字段都是必填布尔值，且至少一个为 true。可选 `summary` 最长 1024 字符；省略时显示可用操作数量。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。
+
+### 交付文件卡片
+
+`artifact-file` 组件的 `dataKey` 指向 `{name, description, artifact: {sha256, size, mime}}`。只接受会话产物标识，不接受路径或 URL。Web 在对话和工作台均显示文件名、描述、类型、格式化大小及预览、下载入口，复用会话/lane 授权的资源加载器，在卸载时释放资源。HTML 预览沿用已有文档清洗器，不能执行脚本或请求外部资源。不支持预览的类型以及超过现有 1 MiB 预览限制的文件仍可下载（沿用 32 MiB 下载限制）。
+
+`UiSurface.titleKey` 为可选字段，Web 使用 Intelligent UI 语言目录解析；必填 `title` 仍供其他客户端显示。内置交付物使用 `ui.deliverables`。原有组件及持久记录继续有效。

@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
+import type { ClientResourceService } from '@agnes/web-client'
 import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -19,17 +20,28 @@ const deliverablesRecord = () => {
   record.surface = {
     ...record.surface,
     id: 'card-deliverable',
-    title: 'Deliverables / 交付物',
+    title: 'Deliverables',
+    titleKey: 'ui.deliverables',
     placement: { inline: true, workbench: true, preferred: 'inline' },
-    components: [{ id: 'file-0', kind: 'text', dataKey: 'file-0' }],
-    data: { 'file-0': 'report.md — contract-review: final (457 bytes; artifact abc)' },
-    summary: 'report.md — contract-review: final',
+    components: [{ id: 'file-0', kind: 'artifact-file', dataKey: 'file-0' }],
+    data: {
+      'file-0': {
+        name: 'report.html',
+        description: 'contract-review: final',
+        artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
+      },
+    },
+    summary: 'report.html — contract-review: final',
     actions: [],
   }
   return record
 }
 
-const mounted = async (receipt = uiReceipt('pending-approval'), record = financeRecord()) => {
+const mounted = async (
+  receipt = uiReceipt('pending-approval'),
+  record = financeRecord(),
+  resources?: ClientResourceService,
+) => {
   const client = new IntelligentUiClient('session-finance', {
     read: async () => uiPage(record, [receipt], 20),
     refresh: async () => record,
@@ -44,6 +56,7 @@ const mounted = async (receipt = uiReceipt('pending-approval'), record = finance
     getSnapshot: () => client,
     getVersion: () => 0,
     locale: locale.source,
+    ...(resources ? { resources } : {}),
     target: () => undefined,
     expand: vi.fn(),
     approval: vi.fn(),
@@ -66,6 +79,7 @@ const mounted = async (receipt = uiReceipt('pending-approval'), record = finance
   return {
     client,
     binding,
+    locale,
     host,
     root,
     cleanup: async () => {
@@ -98,19 +112,59 @@ describe('shared Intelligent UI placements', () => {
     }
   })
 
-  it('shows a deliverables text surface in the conversation and the workbench', async () => {
-    const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord())
+  it('shows an actionable deliverables surface in the conversation and the workbench', async () => {
+    const releasePreview = vi.fn(),
+      releaseDownload = vi.fn()
+    const loadPreview = vi.fn(async () => ({
+      kind: 'html',
+      artifact: deliverablesRecord().surface.data['file-0'],
+      content: '<h1>Cities</h1><script>window.bad=1</script><img src="https://external.test">',
+      release: releasePreview,
+    }))
+    const loadDownload = vi.fn(async () => ({ url: 'blob:synthetic', release: releaseDownload }))
+    const resources = {
+      documents: { load: loadPreview },
+      files: { load: loadDownload },
+    } as unknown as ClientResourceService
+    const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe('report.html')
+      expect(this.href).toBe('blob:synthetic')
+    })
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord(), resources)
     try {
       const articles = [...host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')]
       expect(articles.map((node) => node.getAttribute('data-placement'))).toEqual(['inline', 'workbench'])
       for (const article of articles) {
         expect(article.hasAttribute('hidden')).toBe(false)
         expect((article as HTMLElement).hidden).toBe(false)
-        expect(article.textContent).toContain('Deliverables / 交付物')
-        expect(article.textContent).toContain('report.md — contract-review: final')
+        expect(article.textContent).toContain('Deliverables')
+        expect(article.textContent).toContain('report.html')
+        expect(article.textContent).toContain('contract-review: final')
+        expect(article.textContent).not.toContain('a'.repeat(64))
+        expect(article.querySelector('[data-testid="deliverable-open"]')).toBeTruthy()
+        expect(article.querySelector('[data-testid="deliverable-download"]')).toBeTruthy()
       }
-      expect(articles[0]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
+      expect(articles[0]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeTruthy()
       expect(articles[1]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeTruthy()
+      await act(async () =>
+        (articles[0]?.querySelector('[data-testid="deliverable-open"]') as HTMLButtonElement)?.click(),
+      )
+      expect(loadPreview).toHaveBeenCalledWith({
+        laneId: 'main',
+        kind: 'html',
+        artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
+      })
+      expect(articles[0]?.querySelector('[data-document-preview="html"]')?.textContent).toContain('Cities')
+      expect(articles[0]?.querySelector('script, img')).toBeNull()
+      await act(async () =>
+        (articles[0]?.querySelector('[data-testid="deliverable-download"]') as HTMLButtonElement)?.click(),
+      )
+      expect(loadDownload).toHaveBeenCalledWith({
+        laneId: 'main',
+        artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
+      })
       const seen = new Set<string>()
       const hiddenConversation = newSurfacePlacements(seen, [deliverablesRecord()])
       expect(hiddenConversation).toMatchObject({ showConversation: true, showWorkbench: false })
@@ -124,7 +178,37 @@ describe('shared Intelligent UI placements', () => {
       expect(newSurfacePlacements(seen, [update]).showWorkbench).toBe(true)
     } finally {
       await cleanup()
+      expect(releasePreview).toHaveBeenCalledOnce()
+      expect(releaseDownload).toHaveBeenCalledOnce()
+      anchor.mockRestore()
     }
+  })
+
+  it('localizes deliverable titles and releases a late preview after unmount', async () => {
+    let resolve: ((value: unknown) => void) | undefined
+    const release = vi.fn()
+    const resources = {
+      documents: {
+        load: () =>
+          new Promise((value) => {
+            resolve = value
+          }),
+      },
+      files: { load: vi.fn() },
+    } as unknown as ClientResourceService
+    const record = deliverablesRecord()
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), record, resources)
+    // Locale sources follow the document event, just like a live language change.
+    document.documentElement.lang = 'zh-CN'
+    await act(async () => window.dispatchEvent(new CustomEvent('agnes:locale-changed')))
+    expect(host.querySelector('h3')?.textContent).toBe('交付物')
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="deliverable-open"]')?.click())
+    await cleanup()
+    await act(async () =>
+      resolve?.({ kind: 'markdown', content: 'Late', artifact: record.surface.data['file-0'], release }),
+    )
+    expect(release).toHaveBeenCalledOnce()
+    document.documentElement.lang = 'en'
   })
 
   it('renders the same revision/receipt in both places and opens the original approval', async () => {

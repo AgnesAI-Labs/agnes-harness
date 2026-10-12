@@ -999,6 +999,7 @@ const renderer = clientModules.transcript as NonNullable<typeof clientModules.tr
 if (!renderer) throw new Error('missing transcript region')
 bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
 const unmountIntelligentUi = mountIntelligentUi({
+  resources: clientModules.resources,
   customModules: {
     theme: clientModules.theme,
     async list(sessionId) {

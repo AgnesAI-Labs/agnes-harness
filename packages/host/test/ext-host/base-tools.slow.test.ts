@@ -591,7 +591,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         { sessionId: session.key },
         new AbortController().signal,
       )
-      expect(surfaces.surfaces[0]?.surface).toMatchObject({ title: 'Deliverables / 交付物', actions: [] })
+      expect(surfaces.surfaces[0]?.surface).toMatchObject({
+        title: 'Deliverables',
+        titleKey: 'ui.deliverables',
+        components: [{ kind: 'artifact-file' }],
+        actions: [],
+      })
       expect(JSON.stringify(surfaces)).toContain('report.txt')
       expect(JSON.stringify(ui)).toContain('report.txt')
       await prompt('Present missing file')

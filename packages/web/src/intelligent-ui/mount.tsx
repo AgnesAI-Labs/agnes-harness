@@ -1,6 +1,7 @@
 import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import type { Client } from '@agnes/sdk/browser'
 import {
+  type ClientResourceService,
   type LocaleService,
   type SessionService,
   type SlotRegistry,
@@ -20,6 +21,7 @@ import { intelligentUiServer } from './server.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {
+  resources?: ClientResourceService
   customModules?: CustomUiModuleSource
   client: Client
   registry: SlotRegistry
@@ -54,6 +56,7 @@ export function mountIntelligentUi(options: {
     },
     getSnapshot: () => current,
     getVersion: () => version,
+    ...(options.resources ? { resources: options.resources } : {}),
     ...(options.customModules ? { customModules: options.customModules } : {}),
     locale: documentLocale.source,
     target: () => target,

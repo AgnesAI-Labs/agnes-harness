@@ -98,7 +98,10 @@ function componentLines(
     lines.push(component.fallback)
     return lines
   }
-  if (component.kind === 'text' || component.kind === 'status')
+  if (component.kind === 'artifact-file') {
+    const file = surface.data[component.dataKey]
+    if (object(file)) lines.push(`${file.name} — ${file.description}`)
+  } else if (component.kind === 'text' || component.kind === 'status')
     lines.push(String(surface.data[component.dataKey]))
   else if (component.kind === 'table') {
     lines.push(component.columns.map((column) => column.label).join(' | '))
