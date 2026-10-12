@@ -1,7 +1,7 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
-import { isPending } from '@agnes/core-effects/effects/approval-answer'
+import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
 import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
-import { validateActor } from '@agnes/protocol'
+import { requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
 /** A file candidate has its own one-shot binding; full access and session grants cannot approve it. */
@@ -28,7 +28,18 @@ export async function approveMemoryFile(
     options: ['allowed-once', 'rejected'] as Array<'allowed-once' | 'rejected'>,
     deadline: new Date(session.d.clock() + session.preset.approval.timeoutMs).toISOString(),
   }
-  const answer = await session.askApprovalAnswer(
+  const operationId = `${proposal.source.toolUseId ?? proposal.source.turn}:${step}:${asked.approval.subjectRevision}`
+  const decision = await requestDomainDecision(
+    session,
+    'memory',
+    operationId,
+    {
+      path: proposal.path,
+      baseHash: proposal.baseHash,
+      newHash: proposal.newHash,
+      source: { ...proposal.source },
+      risk: 'always',
+    },
     {
       ...asked,
       sessionKey: session.key,
@@ -39,38 +50,37 @@ export async function approveMemoryFile(
       context: proposal.diff,
     },
     signal,
-  )
-  // Pending leaves the request unanswered here rather than parking a mutation: the candidate was not committed and a later
-  // tool invocation must review a fresh base. Do not resurrect a lost approval after restart.
-  const human =
-    !isPending(answer) &&
-    answer.answeredBy &&
-    validateActor(answer.answeredBy).ok &&
-    answer.answeredBy.role !== 'agent'
-  const validChoice = human && !isPending(answer) && ['allowed-once', 'rejected'].includes(answer.verdict)
-  const verdict = validChoice ? answer.verdict : 'unavailable'
-  const reason = isPending(answer)
-    ? ('invalid-answer' as const)
-    : answer.verdict === 'unavailable' || answer.verdict === 'cancelled'
-      ? (answer.reason ?? (answer.verdict === 'cancelled' ? ('stopped' as const) : ('no-approver' as const)))
-      : !validChoice &&
-          answer.verdict === 'rejected' &&
-          (answer.reason === 'policy_denied' || answer.reason === 'subagent_scope')
-        ? answer.reason
-        : ('invalid-answer' as const)
-  await session.d.log.append([
-    session.ev('approval/asked', asked),
-    session.ev('approval/decided', {
-      requestId: asked.requestId,
-      verdict,
-      via: 'sync',
-      scope: asked.scope,
-      ...(validChoice ? { answeredBy: answer.answeredBy } : {}),
-      ...(!validChoice ? { reason } : {}),
-    }),
-  ])
-  if (signal.aborted) return { status: 'unanswered', reason: 'stopped' }
-  if (verdict === 'allowed-once') return { status: 'approved' }
-  if (verdict === 'rejected') return { status: 'rejected' }
-  return { status: 'unanswered', reason }
+  ).catch((error) => {
+    if (signal.aborted) return undefined
+    throw error
+  })
+  if (!decision) return { status: 'unanswered', reason: 'stopped' }
+  // A detached candidate cannot be committed later: another invocation reviews a fresh base.
+  const result = decision.snapshot.result
+  if (signal.aborted) {
+    await session.decisions.withdraw(decision.snapshot.handle, decision.source, 'stopped')
+    return { status: 'unanswered', reason: 'stopped' }
+  }
+  if (result?.reason === 'answered' && !decision.snapshot.invalidation) {
+    await session.locked(async () => {
+      await session.d.log.append([
+        ...session.decisions.consumptionEvents([decision.snapshot.handle], decision.source, null),
+        session.ev(
+          'x/core/decision-checkpoint',
+          { handle: decision.snapshot.handle, operationId },
+          { ignorable: true },
+        ),
+      ])
+    })
+    return result.response.option === 'allowed-once' ? { status: 'approved' } : { status: 'rejected' }
+  }
+  const deliveryReason = (decision.park?.data as { waitEndedBy?: string } | undefined)?.waitEndedBy
+  const code =
+    result && result.reason !== 'answered'
+      ? result.code
+      : deliveryReason === 'detached'
+        ? 'invalid-answer'
+        : (deliveryReason ?? 'invalid-answer')
+  await session.decisions.withdraw(decision.snapshot.handle, decision.source, code)
+  return { status: 'unanswered', reason: isApprovalReason(code) ? code : 'invalid-answer' }
 }
