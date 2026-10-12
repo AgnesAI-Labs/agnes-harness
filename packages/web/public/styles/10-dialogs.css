@@ -120,9 +120,10 @@
     padding: 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.6;
   }
   #config-key-hint:empty {
     display: none;

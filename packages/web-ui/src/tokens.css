@@ -586,8 +586,10 @@
   .agnes-ui-popover .ant-popover-inner {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-popover);
-    border: 1px solid var(--agnes-line-primary);
+    border: 0;
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow-elevation);
+    line-height: 1.6;
   }
   .agnes-ui-popover .ant-popover-arrow {
     --antd-arrow-background-color: var(--agnes-bg-popover);
