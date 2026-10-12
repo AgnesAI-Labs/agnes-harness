@@ -5,6 +5,7 @@
     "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
   },
   "include": [
+    "testkit/decisions.ts",
     "testkit/index.ts",
     "testkit/loop.ts",
     "testkit/model-adapter.test.ts",
