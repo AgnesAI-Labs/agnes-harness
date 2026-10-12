@@ -317,10 +317,14 @@ export async function createCompositionHost(
     writer.close()
     throw error
   }
-  const owner = (key: string): Container =>
-    sessionOwners.get(key) ??
-    [...containers.values()].find((container) => container.host.kernel.get(key)) ??
-    initial
+  const owner = (key: string): Container => {
+    const active =
+      sessionOwners.get(key) ?? [...containers.values()].find((container) => container.host.kernel.get(key))
+    if (active) return active
+    // Closed sessions retain their composition owner until their durable pin is released.
+    const binding = store.read(key)
+    return (binding && containers.get(binding.tree.hash)) ?? initial
+  }
   const live = () => {
     const sessions = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
     return [...sessions.values()].map((session) => {
