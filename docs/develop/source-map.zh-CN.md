@@ -57,7 +57,7 @@ Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时
 
 | 入口 | 所属模块 |
 | --- | --- |
-| 轨迹视图 | [纯轨迹模型](../../packages/web-units/src/trace-model.ts)、[React 视图](../../packages/web-units/src/trace.ts) |
+| 轨迹视图 | [纯轨迹模型](../../packages/web-units/src/trace-model.ts)、[React 视图](../../packages/web-units/src/trace.tsx) |
 | 插件管理 | [页面生命周期与操作](../../packages/web-admin/src/admin/plugins/admin/page.tsx)、[视图](../../packages/web-admin/src/admin/plugins/admin/views.tsx)、[控制面板](../../packages/web-admin/src/admin/plugins/control-panel.tsx) |
 | 设置与模型选择 | [对话框辅助](../../packages/web-admin/src/settings/dialog.ts)、[模型选择辅助](../../packages/web/src/model-picker)、[设置词典](../../packages/web-admin/src/settings/locales)、[插件词典](../../packages/web-admin/src/admin/plugins/locales/admin) |
 | 资源管理 | [MCP 表单](../../packages/resource-control-web/src/mcp-form.ts)、[页面](../../packages/resource-control-web/src/admin.tsx) |

@@ -1,5 +1,7 @@
 # 协议分层
 
+[English](protocol-tiers.md) | 简体中文
+
 协议的 RPC 方法分为两层。分层定义在 `packages/protocol/src/method-tiers.ts`（`METHOD_TIERS`）；测试要求每个方法都已分类并列在本页。
 
 ## 客户端契约

@@ -59,7 +59,7 @@ Large frontend entries retain their original exports while delegating to domain 
 
 | Entry | Owning modules |
 | --- | --- |
-| Trace view | [pure trace model](../../packages/web-units/src/trace-model.ts), [React view](../../packages/web-units/src/trace.ts) |
+| Trace view | [pure trace model](../../packages/web-units/src/trace-model.ts), [React view](../../packages/web-units/src/trace.tsx) |
 | Plugin administration | [page lifecycle and operations](../../packages/web-admin/src/admin/plugins/admin/page.tsx), [views](../../packages/web-admin/src/admin/plugins/admin/views.tsx), [control panels](../../packages/web-admin/src/admin/plugins/control-panel.tsx) |
 | Settings and model picker | [dialog helpers](../../packages/web-admin/src/settings/dialog.ts), [model picker helpers](../../packages/web/src/model-picker), [settings catalogs](../../packages/web-admin/src/settings/locales), [plugin catalogs](../../packages/web-admin/src/admin/plugins/locales/admin) |
 | Resource administration | [MCP form](../../packages/resource-control-web/src/mcp-form.ts), [page](../../packages/resource-control-web/src/admin.tsx) |

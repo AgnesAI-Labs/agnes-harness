@@ -1,5 +1,7 @@
 # Protocol tiers
 
+English | [简体中文](protocol-tiers.zh-CN.md)
+
 The protocol's RPC methods fall into two tiers. The split lives in `packages/protocol/src/method-tiers.ts` (`METHOD_TIERS`); a test requires that every method is classified and listed here.
 
 ## Client contract

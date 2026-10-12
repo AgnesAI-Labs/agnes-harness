@@ -97,7 +97,7 @@ Computer Use 显示驱动状态、系统权限、诊断与维护进度。切换�
 
 工具结果以受约束预览/详情呈现，不是任意 HTML。不要推定每种产物都支持上传、下载、重命名，或每条消息都有编辑/重新生成；界面只暴露当前后端支持的动作。真实浏览器全链路的验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
-实现依据：[Web 入口](../../packages/web/src/serve-entry.ts)、[应用](../../packages/web/src/app.ts)、[服务与来源校验](../../packages/web-server/src/server.ts)、[会话操作](../../packages/web/src/session-actions.ts)。
+实现依据：[Web 入口](../../packages/web/src/serve-entry.ts)、[应用](../../packages/web/src/app.ts)、[服务与来源校验](../../packages/web-server/src/server.ts)、[会话操作](../../packages/web/src/session-actions.tsx)。
 
 ## 终端与后台任务
 
