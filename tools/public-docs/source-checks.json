@@ -261,5 +261,21 @@
     "path": "packages/host-providers/src/assemble/model-adapters.ts",
     "includes": ["await record.adapter.create(config, signal)"],
     "excludes": ["builtin()", "builtin?:"]
+  },
+  {
+    "path": "packages/core-ledger/src/reduce/tracker.ts",
+    "includes": ["verifyRegisters(tracker, log.allRegisters())", "replaceRegisterCache"]
+  },
+  {
+    "path": "packages/package-manager/src/runtime-snapshots-generations.ts",
+    "includes": ["'.runtime-generations'", "linkSync(temporary, path)", "ownerPid"]
+  },
+  {
+    "path": "packages/daemon-foundation/src/storage/composite-target-store.ts",
+    "includes": ["The only durable composite-target authority", "last_good_json"]
+  },
+  {
+    "path": "packages/daemon/src/supervisor/configuration.ts",
+    "includes": ["appliedRevision = -1", "'new-sessions' : 'restart-required'"]
   }
 ]

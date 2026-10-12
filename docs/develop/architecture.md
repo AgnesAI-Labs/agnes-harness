@@ -60,6 +60,8 @@ Code: [browser session client](../../packages/web/src/app.ts), [browser SDK expo
 | Core | Execution state machine, event facts, and required capability seams |
 | AI/Base/Code | Provider protocols, standard capabilities, and programmable workflows |
 
+For each class of state — the sole authority, what other modules hold, and how disagreement is repaired — see [State ownership](state-ownership.md).
+
 A prompt reaches the daemon through the SDK and is routed to a session worker. Host supplies model, tool, approval, sandbox, storage, and other seams for that session. Core generates the next step, records state, and consumes model or tool results. Clients read events or derived projections. Backend state determines cancellation, failure, parking, and recovery.
 
 Core accepts a rejected-before-effect diagnostic from the Host-owned platform adapter's optional `HostToolDispatchPort.preflight`, before ToolRuntime or plugin execution, or from an invocation-bound proof minted by the Core-owned memory approval callback before candidate mutation. The memory proof is refused once another controlled effect or concurrent write may have started, and after write admission; CAS and post-commit metadata failures remain unknown. It validates the closed, bounded `RejectedBeforeEffectError` data at runtime and atomically records a failed tool result, `effect: "none"`, and an `error` settlement. Correctable `path`, `expected`, and `issues` appear in both model-visible text and structured data. A plugin's `INVALID_PARAMS` claim grants no such authority. Adapter throws, timeouts, disconnects, partial persistence and incomplete returns remain uncertain; mutation/never-replay calls retain unknown settlement and human reconciliation, without automatic redispatch.

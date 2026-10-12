@@ -1,0 +1,224 @@
+# State ownership: authority, copies and reconciliation
+
+English | [简体中文](state-ownership.zh-CN.md)
+
+[Documentation](../README.md) · [Architecture](architecture.md) · [Plugin architecture](architecture-plugins.md) · [Source map](source-map.md)
+
+This page answers three questions for every class of state AGH keeps:
+
+1. **Who is the sole authority?** One writer-owned record that defines the truth.
+2. **What do other modules hold?** A *fact* (a second authority, which is a defect), a *cache*, a *projection*, or an *observation*.
+3. **When two copies disagree, which wins and how is it repaired?**
+
+Execution facts (session ledger, decisions, effects) are the settled core: one append-only log, everything else derived. The classes that are less obvious are plugin installation and publication, composition, code generations and session pins, resource catalogs, profile and configuration layers, admin snapshots and client state. They get the same treatment here, and the places where the code does not yet meet the standard are listed under [Gaps](#gaps).
+
+File references use `path:line` and were checked against commit `a6bf884c2`. A line number can drift after later changes; the symbol next to it is the stable anchor. Bare file names repeat the last full path of the same table, except that `host.ts` always means the generation host (`packages/host/src/runtime/generation/host.ts`), `runtime.ts` the daemon supervisor (`packages/daemon/src/supervisor/runtime.ts`) and `configuration.ts` the configuration service (`packages/host-infrastructure/src/configuration.ts`).
+
+## Vocabulary
+
+| Term | Meaning | Disagreement rule |
+| --- | --- | --- |
+| **Authority** | The one durable record, or one in-process owner, that defines the state. Only its owning port mutates it. | It wins by definition. |
+| **Projection** | A value computed from authorities by a deterministic function and safe to discard. Examples: the register table, the history index, a UI timeline. | Discard and rebuild from the authority. |
+| **Cache** | A copy kept for speed, with an invalidation trigger. It never answers a safety question alone. | Re-read the authority; treat the cache as stale. |
+| **Observation** | A report of what is actually running, produced by the thing that runs. It never overwrites desired state. | Show both; reconcile by acting on desired state. |
+| **Pin** | A durable binding that fixes a *choice* (a generation, a composition, a resource set) to a session at first use. | The pin wins over the current default for that session; changing it is an explicit migration. |
+
+"Desired", "actual" and "effect" recur in the tables below. *Desired* is what an authority says should run; *actual* is an observation; *effect* (`new-sessions`, `restart-required`) is the label telling a client when a change reaches a session.
+
+## Map
+
+| Class | Sole authority | Section |
+| --- | --- | --- |
+| Session execution facts | Session ledger (`events`) | [A](#a-execution-facts) |
+| Permanent approval grants | Host grant table | [A](#a-execution-facts) |
+| Session directory and presentation preferences | Storage `sessions` table; preference table | [A](#a-execution-facts) |
+| Package install, trust, enablement | `agnes-lock.json` plus package trees | [B](#b-plugin-installation) |
+| Desired runtime target (rows, plugin config) | Composite target store | [C](#c-publication-and-composition) |
+| Session composition | Composition binding file | [C](#c-publication-and-composition) |
+| Code generation snapshots and session pins | Generation snapshot store | [D](#d-code-generations-and-session-pins) |
+| MCP servers, skills control state | Resource-control journals | [E](#e-resource-catalogs-and-model-configuration) |
+| Model accounts, slots, session defaults | `configuration.json` plus credential store | [E](#e-resource-catalogs-and-model-configuration) |
+| Resolved profile | None: a projection of layered inputs | [F](#f-profile-and-configuration-layers) |
+| Admin snapshots | None: live projections | [G](#g-admin-snapshots) |
+| Client state | Daemon; the client keeps cursors and drafts only | [H](#h-web-and-client-state) |
+
+## A. Execution facts
+
+The session ledger is the only authority for what happened in a session. Models propose; the ledger records. Core folds the ledger into state; no module keeps a competing record of an outcome.
+
+| State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1 Session events | `events` table, one hash-chained row per event, keyed `(session_key, seq)` (`packages/host-infrastructure/src/adapters/ddl.ts:7`; chain in `packages/core-ledger/src/log/integrity.ts:101`) | `SessionLogImpl` append under a writer claim (`packages/core-ledger/src/log/session-log.ts:168`) | Core, daemon listers, history index, clients through events | Everything below in this table (projections) | Ledger wins; a broken chain fails the open (`E_LEDGER_INTEGRITY`) rather than serving state | `SessionLogImpl.open` verifies the full chain before exposing replayed state (`session-log.ts:176-186`) |
+| A2 Register table | `registers` table (`ddl.ts:22`): the latest cell of each named register | Written with the event batch by the storage adapter | `openTracked`, the log cache | **Projection** of A1 | The table is the copy to discard (`packages/core-ledger/src/reduce/tracker.ts:72-77`) | `openTracked` replays the log and compares the table (`tracker.ts:249-257`, option `verify`, default `always`); a disagreeing table is replaced in the log's cache by the replay (`tracker.ts:128-135`). Exception: the `op.state` program counter is not folded, so it is kept from the table and checked separately (`verifyOpCells`) |
+| A3 Human decisions | `decision/state` register, folded from decision events (`packages/core-ledger/src/reduce/reducer.ts:138`) | Core `decision` state functions only; approval providers deliver the question and never hold the answer (`packages/core/src/step/decisions.ts`) | Core gates, deferred invocations, UI projection (`packages/core-ledger/src/project/ui.ts:1037`) | Pending-approval views in clients (projection) | Register wins; a client view that shows pending after settlement is stale | Replay rebuilds it |
+| A4 Effects and unknown outcomes | Effect and settlement events in A1 | Core step runner; Host adapters report results through the dispatch port | Core resume, UI | Parked-turn records (projection) | A settlement event is final; an effect with no settlement stays *unknown* and goes to human reconciliation, never auto-replayed (see [Architecture](architecture.md#状态归属)) | Resume reads pending effects from the tracker (`packages/core-ledger/src/reduce/tracker.ts`) |
+| A5 UI timeline, surface cache | None | `openTracked` feeds `SurfaceCache` and `UIProjectionCell` from appended batches (`tracker.ts:140`) | SDK `UIProjectionSync`, Web | **Projection** | Rebuilt from A1 | Re-seeded by replay on open |
+| A6 Writer claim | `writer_claims` row with lease and generation counter (`ddl.ts:25`; `packages/host-infrastructure/src/adapters/storage-sqlite.ts:325`) | Storage adapter claim, renew, release | Core on open, daemon lister (live flag) | Lister's "running" flag (projection) | Expired lease loses | Leases expire (`storage-sqlite.ts:351` lists expired claims) |
+| A7 Permanent approval grants | `approval_grants` table in the Host persistence namespace (`packages/host/src/runtime/approval/grants.ts:30`) | Host grant control plane only (`grants.ts`); never an approval provider | Core tool gate through the grant port | None | Table wins; revocation is a row flag (`revoked_at`) | Durable; no replay needed |
+| A8 Session directory | `sessions` table (`ddl.ts:28`) plus the events it indexes | Storage adapter when a session is created or forked | Daemon `StorageLister` (`packages/daemon-foundation/src/storage/lister.ts:39`) | Listing pages (projection) | Storage wins | Listing is recomputed per call |
+| A9 Presentation preferences (title override, archived) | `session_preferences` table in daemon job storage (`packages/daemon-foundation/src/storage/session-preferences.ts:6`) | `SessionPreferencesStore` through daemon RPC | `withSessionPreferences` overlays the lister | None | It is the authority *for presentation only*; the class is documented as independent of generated titles and conversation history, so it never rewrites a ledger fact | Durable |
+| A10 History search index | `history-index.db` (`packages/history-index/src/directory.ts`) | The indexer only | Search RPC | **Projection** of the ledger directory, stamped | Stamp mismatch means rebuild (`directory.ts:48`; `packages/history-index/src/store.ts:246`) | Rebuilt on the next search |
+
+Related control tables (child tasks, budget scopes and reservations) live beside the events in the same database (`ddl.ts:32` onward). This page does not audit them.
+
+## B. Plugin installation
+
+Installation answers "what code is on disk, is it trusted, is it enabled". It is separate from "what is running" (class C) and "what a session uses" (class D).
+
+| State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- | --- | --- |
+| B1 Package lock | `agnes-lock.json` in the profile directory, schema-validated on read and write (`packages/package-manager/src/lockfile.ts:23,73,98`) | `PackageManager` under the profile lock (`lockfile.ts:116`) through `commitPackage` | Host boot, daemon admin, trust gate | Resolved profile `packages` (projection at boot, `packages/host/src/runtime/profile/inputs.ts:88`); installed inventory (projection) | Lock wins; a stale profile `packages` list is a boot-time snapshot and later installs reach sessions through the published target, not the profile | Writes are tmp + rename |
+| B2 Package trees | `<data>/profiles/<profile>/packages/<id>` directories, integrity pinned by the lock entry (`treeIntegrity`) | `commitPackage` stages then renames (`packages/package-manager/src/store.ts:242`) | Loader, snapshotting | Runtime snapshots (immutable copies, D) | Tree must hash to the lock's `treeIntegrity`; otherwise `E_LOCK_MISMATCH` (`store.ts:262`) | A transaction journal `.agnes-package-transaction.json` (`store.ts:54`) is replayed by `recoverPackageStore` (`store.ts:208`) to either finish or roll back |
+| B3 Package audit | Append-only audit file via `appendPackageAudit` (`packages/package-manager/src/audit.ts`) | Written inside `finish` of the commit (`store.ts:151`) | Operators | None | Audit is evidence, not state | Idempotent on `eventId = transactionId` |
+| B4 Runtime snapshots (development and pins by purpose) | `.agnes-runtime-snapshots.json` plus `.runtime-snapshots/` (`packages/package-manager/src/runtime-snapshots.ts:130-132`) | `pinRuntimeSnapshotStore`, `releaseRuntimePinStore`, `collectRuntimeSnapshotsStore` under the profile lock | Package admin pin inspection | Snapshot copies | State file lists known directories; unknown directories are refused (`assertKnownRuntimeDirectories`) | `recoverRuntimeSnapshotStore` replays its journal (`runtime-snapshots.ts:590`). "Runtime state never decides the active revision": the lock does |
+| B5 Package operations | Operation journal in the daemon admin store (`packages/daemon-admin/src/packages/operations.ts:33`) | Package admin handler | Admin clients (poll operation state) | None | Operation record is the request/response ledger, not install state | Pending operations are re-scheduled at boot (`packages/daemon-admin/src/packages/handler.ts:532`) |
+| B6 Local development sources | Directories the author points at; read as `developmentSources` | `reloadPlugin` publication (`packages/host/src/runtime/generation/host.ts:865`) | Generation host | In-memory `developmentSources` map (cache) | Disk wins on the next reload | Lost on restart; re-registered from the lock's `file:` source |
+
+## C. Publication and composition
+
+"What should run" is a target: a set of plugin rows plus resource rows. It is distinct from lock state because rows carry configuration and the order of publication.
+
+| State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- | --- | --- |
+| C1 Desired runtime target | `composite_targets` row per profile: `desired`, `previous`, `last_good`, `report`, `last_failure`, `acknowledged` (`packages/daemon-foundation/src/storage/composite-target-store.ts:50,89,123`) | Publication coordinator; a probe in an isolated worker must accept an artifact before it becomes desired (`packages/daemon/src/supervisor/publication/composite-target-activation.ts:47`) | Workers (boot and deliver), admin | Worker live tree (observation, C2); per-package views (projection) | Desired is what should run; `acknowledged` says what a worker confirmed; a failed desired is reverted before the next publication (`revertFailedDesired`, `composite-target-activation.ts:268-275`) | Durable SQLite transaction; a worker with no acknowledgement boots from desired |
+| C2 Live plugin tree in a worker | Process memory behind one pointer, `RuntimeStateCoordinator` (`packages/host-providers/src/runtime-state.ts:43`) | `RuntimeTargetPublisher` (`packages/host-providers/src/runtime-target-publisher.ts:130`) under the publication gate | Kernel, sessions through `runtimeRegistryRevisionForTarget` (`runtime-target-publisher.ts:58`) | The `acknowledged` row in C1 and `pluginTreeActual` (observation) (`packages/daemon-admin/src/plugin-tree-surface.ts:36`) | Never an authority: it converges to C1. Epoch check refuses a publication built on a stale base (`E_RUNTIME_STATE_STALE`) | Empty after restart; rebuilt from C1 |
+| C3 Plugin configuration values | `plugin_config_values` and `plugin_config_audit` tables in the same store (`packages/daemon-foundation/src/storage/plugin-config-audit.ts:5`) | `PluginConfigAuditStore.stage` inside the publication transaction | Row construction in `rebuildDesiredFromInventory` (`packages/daemon-foundation/src/composite-desired.ts:173`) | `config` field on desired rows (projection) | Table wins when a row is rebuilt; an unpublished intent is deleted at boot, "a crashed unpublished intent is not a successful change" | `plugin_config_intents` cleared in the constructor |
+| C4 Desired from lock | Derived: per-package patch of the previous desired target from the inventory | `rebuildDesiredFromInventory` (`composite-desired.ts:173`) per enable, disable, update, rollback, remove | C1 | Previous desired rows kept for other packages | Lock decides eligibility; C1 decides rows. See [gap G6](#gaps) | Boot repairs local sources and web rows only (`packages/daemon/src/supervisor/runtime.ts:1450-1500`); other drift relies on the B5 operation journal |
+| C5 Session composition | `.session-compositions/<sha256(sessionKey)>.json`: resolved composition tree plus a profile snapshot (`packages/host-providers/src/profile/composition-state.ts:41,69`) | `CompositionSessionStore.pin` through the composition host (`packages/host/src/runtime/profile/composition-runtime.ts:260`) | Composition host, fact-chain binding, client module admission | In-memory containers keyed by tree hash (`composition-runtime.ts:54`, cache) | Pin wins for the session; the container is rebuilt from it | Link-based first-writer-wins publish; read validates tree hash |
+| C6 Live composition status | `.composition-live/<uuid>.json` per worker, tagged with pid and process start id (`composition-state.ts:91,119`) | `createLiveCompositionWriter` | Migration and bundle-selection guards | None | A file whose process identity no longer matches is ignored | Not deleted when ignored; see [gap G7](#gaps) |
+| C7 Admin bundle selection | `bundle-selection.json` with a revision (`packages/host/src/runtime/profile/bundle-selection.ts:32`) | Configuration service under the configuration lock | Profile input reader (`inputs.ts:109`) | Resolved profile `adminBundles` (projection) | File wins | Durable |
+
+## D. Code generations and session pins
+
+A *generation* is an immutable archive of the code a set of sessions run: the target artifact, copies of the package trees, the package list and a compatibility fingerprint. A session is bound to one generation at first use and stays on it until an administrator migrates it.
+
+| State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- | --- | --- |
+| D1 Generation snapshot | `.runtime-generations/<uuid>/generation.json` plus package copies `0..n` (`packages/package-manager/src/runtime-snapshots-generations.ts:48,60`) | `RuntimeGenerationSnapshotStore.create` from the generation host (`packages/host/src/runtime/generation/host.ts:187`) | Generation host on cold resume (`host.ts:406`) | In-memory `live` containers (cache of "built from snapshot") | Snapshot wins; every package copy is re-hashed on read (`runtime-snapshots-generations.ts:111-132`). Trust is re-checked from the lock before a rebuild (`packages/host/src/runtime/generation/trust.ts:6`) | Missing or invalid snapshot raises `E_GENERATION_SNAPSHOT_MISSING` or `E_GENERATION_INTEGRITY`; the pin is kept |
+| D2 Session to generation pin | `.runtime-generations/sessions/<sha256(sessionKey)>.json` (`runtime-snapshots-generations.ts:189`) | `pin` (atomic link, never overwrites), `recordLoop`, `migrateSession`, `releaseSession` (`:193,235,247,315`) | `store.session(key)` everywhere; `sessionGeneration` | Host `bindings` map and `kernel.sessions` (cache) | Pin wins over the head generation; a conflicting second binder gets `E_GENERATION_BINDING_CONFLICT` (`host.ts:181`) | Durable; deleted only after the session is deleted (`:315`) |
+| D3 Head generation | **No durable pointer.** `current` in the generation host, derived at boot from the freshly assembled target (`host.ts:213-224`) | `publishTargetCore` (`host.ts:659`) | `createSession` for unbound sessions | Each worker's `current` (cache) | Not applicable; see [gap G2](#gaps) | A new snapshot directory is created at each worker boot; unreferenced ones are collected |
+| D4 Accepted live configuration | `live-config.json` inside a generation directory (`runtime-snapshots-generations.ts:147,164`) | `saveLiveConfig` from `publishTarget`, compensated on failure (`host.ts:797-850`) | `build` overlays it on the archived target (`host.ts:226`) | In-memory row config (cache) | Record wins on rebuild; missing generation refuses the save | Atomic tmp + rename |
+| D5 Compatibility fingerprint | Stored in D1 (`compatibility`); recomputed from the profile (`host.ts:147-166`) | Fixed at creation | `build`, `migrate` | None | Different fingerprint refuses rebuild and migration (`E_GENERATION_INCOMPATIBLE`) | Fixed per build of AGH and profile |
+| D6 Session resource pin | `session-resources/<sha256(key)>` in the pinned generation, digest recorded in the pin (`runtime-snapshots-generations.ts:269-313`) | `pinSessionResources` | Skill and resource consumers for that session | Live skill catalog (cache) | Pin wins for the session | Atomic directory rename |
+| D7 Reclamation | Rule, not data: keep a generation if a pin or a live container references it, or its creating pid is alive (`runtime-snapshots-generations.ts:319-345`) | `collect`, called after publish, release, migrate and idle close (`host.ts:435`) | Host | None | A referenced generation is never removed | Idle containers close after `worker.generation_idle_close_ms` (default 60 s, `host.ts:132-137`); a later open is a cold resume from D1 |
+| D8 Per-container state in the generation host | `preparedRows`, `rowsByGeneration`, `latestSkills`, `failures`, `failedSnapshots` (`host.ts:105-113`) | The host's serialized queue (`enqueue`) | The same host | **Caches**; durable equivalents are D1 `resources` and the claims rebuilt by `restoreGenerationRows` (`packages/host/src/runtime/generation/resources.ts`) | Snapshot resources win on cold rebuild | Lost on restart; rebuilt |
+
+### Three notions of "generation"
+
+Three different counters share the word and are not interchangeable. A *plugin generation* is the immutable code archive in D1 and the unit of session pinning. A *runtime registry revision* identifies the Core tool and hook registry and drives copy-on-write session rebinding (`runtime-target-publisher.ts:58`). A *resource generation* is the live resource set held by `ResourceGenerationCell` (`packages/host-providers/src/resource-generation-cell.ts:190`). A publication can advance one without the others.
+
+### Publication rule
+
+Within a bound code container a publication that changes code forks a new generation; one that changes only resources, or is registry-neutral, or arrives while no session is bound, updates in place (`host.ts:756-770`). Backend facets cannot change in a running process: rows `adapter:*`, `seam:sandbox` and `seam:platform`, and packages that own process-scope providers, are refused with `E_GENERATION_RESTART_REQUIRED` (`host.ts:687-703`). The fingerprint separately stops an old generation from being rebuilt under a different backend deployment (`E_GENERATION_INCOMPATIBLE`, `host.ts:230`).
+
+### After seam-provider slice 3 (target state)
+
+These rows describe the target design and are not in the code yet.
+
+| State | Authority | Disagreement rule |
+| --- | --- | --- |
+| Seam selections of a generation (approval, principals, billing, checkpoint, artifacts, verifier, repair) | A `seams` field inside the generation snapshot (D1), recording each selection and its resolved provider, version, source package and integrity | The snapshot wins: a rebuilt old container resolves seams from it, not from the current profile. A session-time check compares the container's actual bindings with the snapshot and refuses a mismatch (`E_SEAM_PIN_MISMATCH`) |
+| Seam pin change | Administrator migration with an explicit list of kinds to re-pin; it writes a host audit record | A migration whose pinned seams differ and that does not list them is refused (`E_SEAM_PIN_CHANGE`) |
+| Session runtime descriptor | None: computed by the instance manager from the session binding, the container binding table and the current run plan | Descriptor is a projection. A differing current selection appears as `pending` with an effect of `new-sessions`, `restart-required` or `migrate` |
+| Run plan, container handle, change result | Pure compile of profile and manifests; container handle from the instance manager; change result from the change coordinator | They carry explicit results between the three Host duties and replace the late-bound `live.seams` slot |
+
+## E. Resource catalogs and model configuration
+
+| State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- | --- | --- |
+| E1 MCP server definitions, trust, desired state | `<data>/resource-control/mcp/<profile>.mcp.json` journal (`packages/resource-control-store/src/mcp.ts:147,159`) | `McpResourceStore.txn` behind `ResourceControlStore.call`, serialized per profile (`packages/resource-control-store/src/control-store.ts:14`) | Daemon RPC, worker snapshot writer | Worker snapshot (projection, E3); worker-reported status (observation) | Journal wins. `status` in the journal is "the last Host observation, never a live connection" (`mcp.ts:355-365`) | `recover` re-drives non-terminal operations (`mcp.ts:355`; `control-store.ts:191`) |
+| E2 Skill control state (trust, priority, desired, operations) | `SkillJournal` version 4 (`packages/resource-control-store/src/skill-journal.ts:26`) | Skill store behind the same facade | Daemon RPC, worker snapshot writer | `actual` and `discovered` are observations: "desired/operation never synthesize actual" (`skill-journal.ts:34`) | Desired and actual are kept apart and never merged | `recover` as above |
+| E3 Worker snapshot | `<data>/resource-control/worker-snapshots/<profile>.json` (`control-store.ts:209,213`) | `writeWorkerSnapshot` after every mutation, tmp + rename | Workers at boot; resource service workers confirm its sha256 (`packages/resource-control-daemon/src/service-adapters.ts:55-58`) | **Projection** of E1 and E2 | Journals win; a worker that cannot confirm the snapshot digest is refused (`service-adapters.ts:74-75`) | Rewritten at daemon start (`packages/daemon/src/supervisor/runtime.ts:1013`) and at `recover` |
+| E4 Package skill snapshot | `worker-snapshots/<profile>.package-skills.json` (`runtime.ts:1014`) | `writePackageSkillInventory`, which verifies the lock and installed tree first (`runtime.ts:1026`) | Workers | **Projection** of B1 and B2 | Lock wins; a failed verification fails startup rather than scanning an unverified directory | Rewritten at start and by `refreshPackageSkills` |
+| E5 Observed worker state | Reported by the shared worker (`observeWorker`, `control-store.ts:243`; `service-adapters.ts:101-106`) | Worker through the daemon only; only the `@shared` session counts | Resource admin UI | **Observation** | Never overwrites desired | Next report |
+| E6 Generation resource capture | `resources/` inside a generation directory plus `resourcesDigest` (`packages/host/src/runtime/generation/resources.ts:22`) | Generation create | Cold rebuild of retained containers | **Projection** frozen at generation time | Snapshot wins for old sessions | Digest checked on read |
+| E7 Model accounts, slots, session defaults, child engines | `configuration.json` in the profile directory, versioned, with a monotonic `revision` (`packages/host-infrastructure/src/configuration.ts:254,1047-1048`) | `ConfigurationService` under a lock file; compare-and-set on `expectedRevision` | Profile input reader, admin UI | Resolved profile `provider` (projection, F); per-provider catalogue cache (`configuration.ts:703`, cache) | File wins; a stale `expectedRevision` is refused (`CONFIG_REVISION_CONFLICT`) | Durable; an older state version migrates on read (`configuration.ts:225`) |
+| E8 Credentials | Credential store under the home directory; configuration holds only `secret://` references with revision suffix (`configuration.ts:244`) | Credential store through `ConfigurationService` | Host secret store at model-call time | References in E7 (pointer) | Store wins; a reference whose revision exceeds the configuration revision is rejected on decode (`configuration.ts:575-583`) | Durable; permissions are validated on read |
+| E9 Applied model profile | Process memory in each Host (`applyModelProfile`, `packages/host/src/runtime/assemble/provider-stage.ts:106`) | Daemon `configurationApplication.apply` after a save (`packages/daemon/src/supervisor/configuration.ts:11`) | Sessions opened afterward | Persisted copy `<profileFile>.<hash>.json` used by starting workers (`runtime.ts:678,1867`) | E7 wins; the daemon compares hashes and labels the saved revision `new-sessions` only when the applied revision matches, otherwise `restart-required` (`packages/daemon/src/supervisor/configuration.ts:22-27`) | At daemon start a changed resolved-profile hash sets applied revision to -1 (`packages/daemon/src/supervisor/configuration.ts:23`), so the label is recomputed |
+
+## F. Profile and configuration layers
+
+There is no authority for "the profile". It is a pure function of layered inputs, resolved once at boot and again for a model-profile change.
+
+| Layer (order) | Source | Writer | Who may set what |
+| --- | --- | --- | --- |
+| 1 builtin | Shipped template, optionally extending a parent (`packages/host-common/src/profile/resolve.ts:406-413`) | AGH release | Defaults for every key |
+| 2 user | `profiles/<name>/profile.yaml` merged with `configuration.json` keys (`packages/host/src/runtime/profile/inputs.ts:66-86`) | User; configuration service | Everything the schema allows. For overlapping keys the configuration service value wins (shallow spread) except `adapters` and extension isolation, which are merged |
+| 3 workspace overlay | The verified deploy manifest of a trusted workspace, projected through the lock (`packages/package-manager/src/lock-state.ts:70-133`) | Workspace owner, only after workspace trust | A fixed fragment: packages, capability ceiling (tighten only), approval mode (tighten only), Computer Use (tighten only), extension isolation (`packages/host-common/src/profile/types.ts:153-160`). Cannot set transports or package config (`resolve.ts:416-426`) or persistence (`resolve.ts:284-293`) |
+| 4 local, flags | `.agnes/profile.local.yaml`, CLI flags | Operator | `extensionIsolation` only; any other key is refused with `E_DEP_MISSING` rather than ignored (`resolve.ts:433-436`; `packages/host-common/src/profile/isolation.ts:49-77`) |
+| 5 managed | Managed policy | Administrator | `version`, an empty `policy` and `extensionIsolation` only; the general managed layer is not implemented and anything else is refused (`isolation.ts:61-77`) |
+
+Projections of the resolved profile, and their disagreement rule:
+
+| Copy | Kind | Rule |
+| --- | --- | --- |
+| `ResolvedProfile` inside a Host (`packages/host-common/src/profile/types.ts:225`) | Projection, deep-frozen (`resolve.ts:626-627`) | Recompute from inputs; never edit in place |
+| `<profileFile>.<hash>.json` (`runtime.ts:678`) | Projection; hash-addressed so a starting worker reads the artifact it was told about | Replace atomically; old files are never mutated |
+| Binding profile in a session composition (C5) | Pin | Intentionally frozen for the session |
+| Compatibility fingerprint (D5) | Projection of the fixed part (adapters, persistence, sandbox, platform, composition, built-in integrity) | Differs means restart or a new deployment |
+
+The resolved profile's `hash` covers the whole profile, including model routes. Anything keyed on it changes when model configuration changes; see [gap G5](#gaps).
+
+## G. Admin snapshots
+
+Admin snapshots are projections for display. None may be used to decide authorization or to write back.
+
+| Snapshot | Built from | Built where | Staleness and rule |
+| --- | --- | --- | --- |
+| `RuntimeAdminSnapshot` (`packages/protocol/src/runtime-admin.ts:88`) | `host.providers.catalog()`, presets, publication status and security status of the **shared worker's** Host, plus local plugin roots | On request: `session.catalog` command (`packages/worker-runtime/src/commands.ts:805`), assembled in `packages/daemon/src/supervisor/runtime.ts:2414` | Live read, no cache. It describes the shared worker's head, not any particular session's container; see [gap G3](#gaps) |
+| `PluginGenerationStatus` (`host.ts:36,496`) | Pins (D2), live containers, snapshots (D1), `failures` | On request in the generation host; wrapped by the composition host | Derived. Failure strings are reduced to an `E_` code before leaving the host |
+| `pluginTreeActual` (`plugin-tree-surface.ts:36`) | `acknowledged` and `report` rows of C1 for the current worker generation | Daemon | Observation; reports "not running" when no worker generation exists |
+| Config snapshot `effect` (`packages/protocol/src/runtime-admin.ts:172`) | E7 revision against the applied revision | `configurationApplication.present` | See E9 |
+| Package list and operation state | B1 plus B5 plus C1 observation | Package admin handler | Read per request; operation record is eventually consistent with activation observation |
+
+## H. Web and client state
+
+Clients hold no session fact. They hold a cursor into the ledger, pending commands, drafts and a mirror of the daemon's projections.
+
+| State | Authority | Client copy (kind) | Disagreement rule | Recovery |
+| --- | --- | --- | --- | --- |
+| Session events and timeline | Ledger (A1) via the daemon | Live projection in the page (`packages/web-conversation/src/live-projection.ts:17`): "an authoritative timeline from the daemon: an opening, a patch or a history page", with streamed text overlaid locally | Daemon timeline replaces local overlay when it arrives | Reconnect resumes from the cursor |
+| Stream cursor and pending commands | SDK `JournalStore` (`packages/sdk/src/journal.ts:34`), browser implementation in `localStorage` key `agnes-sdk-journal` | The daemon dedups writes by `(clientId, commandId)`, so a re-sent pending command is idempotent | Journal records how far this client read; the ledger decides what exists | Resume from the saved cursor; unsent commands are resent |
+| Composer draft and memory | Browser `sessionStorage` and `localStorage` (`packages/web/src/composer-memory.ts:16`; `packages/web/src/app.ts:691`) | Per-viewer convenience | Safe to lose | Absent storage is tolerated |
+| Admin operation records | `sessionStorage` (`packages/web-admin/src/admin/plugins/admin/operation-storage.ts:16`) | Hint only; the operation journal (B5) is authoritative | Server operation state wins | Re-fetched |
+| Client module roster | Daemon package state (B1, C1) | The page reconciles its own roster, imports, styles and fibers (`packages/web/src/client-modules/reconcile.ts:23`) | Daemon roster decides which modules should run; the page's loaded set is an observation | Reload; reconcile again |
+| Session lists, controls | Daemon | Polling and invalidation through `createRefreshCoordinator` (`packages/web/src/refresh-coordinator.ts:4`) | Re-read after any change boundary | Interval refresh |
+| Connectivity | Daemon liveness | `createReconnectController` probes and reloads once for a different daemon (`packages/web/src/reconnect.ts:35`) | A reload reaching a different daemon picks up its bootstrap | Capped backoff |
+
+Browser plugins cannot read or write host state except through row-bound relays; see [plugin boundaries](plugins.md).
+
+## Invariants
+
+1. **One writer per fact.** Each authority above has one mutation port. Approval providers, clients, admin views and observation reports never write facts.
+2. **Model-visible means logged.** Anything a model sees, and every outcome of an effect, is an event in the ledger. State a model cannot see through the ledger cannot influence a decision.
+3. **Projections are disposable.** A register table, UI timeline, history index, worker snapshot or admin snapshot can be deleted and recomputed without loss. The first of these that disagrees with its authority is the one that is discarded (`tracker.ts:72-77`).
+4. **Desired and actual stay apart.** Journals and targets store desired state; workers report actual state; no code path derives actual from desired.
+5. **A pin is a choice, not a default.** A durable pin (generation, composition, resource set) fixes behavior for the session. Changing it requires an explicit migration that checks compatibility and open state (`host.ts:922-960`).
+6. **Crashes land on either side of a commit.** Multi-file writes use a journal, link or tmp + rename and are recoverable at boot (`store.ts:208`, `runtime-snapshots-generations.ts:193`, `composite-target-store.ts:123`).
+7. **Fail closed on identity.** A generation whose trust, integrity or fingerprint no longer matches is refused and its pin kept; it is never replaced silently (`trust.ts:6`).
+8. **Effect labels are honest.** `new-sessions` is returned only when the live applied revision equals the saved one (`packages/daemon/src/supervisor/configuration.ts:22-27`).
+
+## Gaps
+
+These are places where the code has two authorities, an undocumented cache treated as truth, or no reconciliation path. They are named by mechanism and recorded as backlog; none is fixed by this change.
+
+| ID | Mechanism | Evidence | Effect |
+| --- | --- | --- | --- |
+| G1 | Two per-session pins without a joint commit: the composition binding (C5) and the generation pin (D2) are written by different stores at different times, and released in sequence | Binding written at `composition-runtime.ts:260`; generation pin by the inner host; release order `composition-runtime.ts:555-560` | A crash between the writes or the releases leaves an orphan binding with no sweeper. Benign for correctness (the next open repairs or ignores it) but it leaks files and a profile snapshot per orphan |
+| G2 | Head generation has no durable pointer and no shared head across workers | `ensureCurrent` snapshots whatever the freshly assembled target is (`host.ts:213-224`); `collect` keeps a generation while its creator pid is alive (`runtime-snapshots-generations.ts:325-338`) | Every worker boot writes a new snapshot directory; two workers can have different heads; admin shows only the asked host's head |
+| G3 | Admin catalog describes the shared worker head, not a session's actual runtime | `session.catalog` runs on `@shared` (`runtime.ts:2414`; `commands.ts:805`) | A client cannot tell what a given session is running or when a change will reach it. Addressed by the planned session runtime descriptor |
+| G4 | Session pins cover code, not seam selections | Fingerprint omits `seams.approval`, `principals`, `ledger`, `checkpoint`, `artifacts`, `verifier`, `repair`, `harness` (`host.ts:147-166`); `build` resolves from the live `profile` (`host.ts:226`); migration compares only the fingerprint and loop (`host.ts:922-960`) | After a restart with a changed selection, an old session reopens with the new implementation; a migration can swap approval, identity or billing silently. Addressed by the planned seam pins |
+| G5 | Grant binding key is the whole resolved-profile hash | Grants match on `profileHash` (`grants.ts:199`); sessions record `profile.hash` (`packages/host/src/runtime/sessions/session.ts:441`); the hash covers `provider` (`resolve.ts:626`) and is replaced by `applyModelProfile` (`host.ts:1026`) | Found by reading, not exercised: a model route or account change may stop earlier permanent grants from matching new sessions. A grant should bind to a policy digest, not to every profile field |
+| G6 | Desired target is patched per package operation; there is no full lock-to-desired diff at boot | `rebuildDesiredFromInventory` edits one package (`composite-desired.ts:173`); boot repairs local sources and web rows only (`runtime.ts:1450-1500`) | Out-of-band lock changes (an offline CLI edit) are not reconciled until that package is next operated on. Not exhaustively audited: other repair paths may exist |
+| G7 | Live-composition status files of dead workers are ignored but never reaped | `readLiveCompositionSessions` skips files whose pid or start id no longer matches (`composition-state.ts:119-141`) | Files accumulate in `.composition-live/` after crashes |
+| G8 | A torn `generation.json` is never reclaimed | `create` writes it in place (`runtime-snapshots-generations.ts:85-96`); `collect` skips directories whose owner pid cannot be read (`:327-333`) | A crash during write leaves an unreadable generation directory forever. A tmp + rename write would close it |
+| G9 | Overlapping restart-required guards | Fingerprint covers sandbox and platform (`host.ts:147-166`); a second check keys on row ids `seam:sandbox` and `seam:platform` (`host.ts:687`) | Two mechanisms for one rule; whether the second can still match is unverified |
+| G10 | Resolved profile `packages` is a boot-time copy of the lock | `inputs.ts:88` reads the lock once; later installs reach new sessions through published sources (`composition-runtime.ts:458-480`) | Code that reads `profile.packages` after boot sees stale install state. The composition host compensates by merging the live catalogue; other readers must not rely on it |
+
+## Related pages
+
+- [Architecture](architecture.md) for the request path and layer responsibilities
+- [Plugin architecture](architecture-plugins.md) for rows, targets and generations from the author's side
+- [Deferred invocations](deferred-invocations.md) for the decision register
+- [Source map](source-map.md) for locating the owning package
