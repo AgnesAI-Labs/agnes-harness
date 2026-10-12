@@ -77,9 +77,14 @@ describe('API-key provider registry', () => {
     expect(API_KEY_PROVIDER_REGISTRY.every((entry) => entry.availability === 'available')).toBe(true)
   })
 
-  it.each(['api-key', 'oauth'] as const)(
-    'constructs official %s adapters through the public factory and credential path',
-    async (mode) => {
+  it.each([
+    ['api-key', 'deepseek-v4-pro'],
+    ['oauth', 'deepseek-v4-pro'],
+    ['api-key', 'deepseek-flash'],
+    ['oauth', 'deepseek-flash'],
+  ] as const)(
+    'constructs official %s adapters for %s through the public factory and credential path',
+    async (mode, model) => {
       const definitions: ModelAdapter[] = []
       modelAdaptersPlugin.apply({ modelAdapters: { register: (adapter) => definitions.push(adapter) } })
       const configs = await createApiKeyProviderConfigs()
@@ -107,8 +112,11 @@ describe('API-key provider registry', () => {
       expect(adapter.id).toBe('deepseek')
       if (mode === 'api-key') adapter.bindCredential?.('deepseek', 'synthetic-live-auth')
       const auth: (string | null)[] = []
+      const bodies: Record<string, unknown>[] = []
       const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-        auth.push(new Request(input, init).headers.get('authorization'))
+        const request = new Request(input, init)
+        auth.push(request.headers.get('authorization'))
+        bodies.push((await request.json()) as Record<string, unknown>)
         return new Response(
           'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
           { headers: { 'content-type': 'text/event-stream' } },
@@ -119,13 +127,20 @@ describe('API-key provider registry', () => {
           const events = await collect(
             adapter.stream(
               'deepseek',
-              fakeRequest({ route: 'deepseek', model: 'deepseek-v4-pro' }),
+              fakeRequest({
+                route: 'deepseek',
+                model,
+                ...(request === 1 ? { sampling: { maxTokens: 32768 } } : {}),
+              }),
               streamOptions(),
             ),
           )
           expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
         }
         expect(auth).toEqual(['Bearer synthetic-live-auth', 'Bearer synthetic-live-auth'])
+        expect(bodies[0]?.max_tokens).toBe(32768)
+        if (model === 'deepseek-flash') expect(bodies[0]?.thinking).toEqual({ type: 'disabled' })
+        expect(bodies[1]?.max_tokens).toBe(32768)
         expect(resolveCalls).toBe(mode === 'oauth' ? 2 : 0)
       } finally {
         fetch.mockRestore()
@@ -330,9 +345,11 @@ describe('API-key provider registry', () => {
     const models = adapter?.models('deepseek') ?? []
     const byId = new Map(models.map((model) => [model.id, model]))
     expect(byId.get('deepseek-v4-pro')?.thinkingLevelMap).toEqual({ low: 'low', high: 'high', max: 'max' })
+    expect(byId.get('deepseek-v4-pro')?.maxTokens).toBe(384000)
     // V4.1 Flash uses the new upstream id and capabilities, not the retired V4 correction.
     expect(byId.get('deepseek-flash')).toMatchObject({
       name: 'DeepSeek V4.1 Flash',
+      maxTokens: 384000,
       reasoning: true,
       input: ['text', 'image'],
       thinkingLevelMap: { off: 'off', low: 'low', high: 'high', max: 'max' },
@@ -446,6 +463,14 @@ it('retains pi image input limits in the public model catalogue', () => {
   } as Model<Api>
   const record = modelRecord({ id: 'gw', api: source.api, baseUrl: source.baseUrl }, source)
   expect(record.inputLimits).toEqual(inputLimits)
+  expect(record.maxTokens).toBe(1000)
+  expect(
+    modelRecord({ id: 'gw', api: source.api, baseUrl: source.baseUrl }, { ...source, id: 'deepseek-flash' })
+      .maxTokens,
+  ).toBe(1000)
+  expect(modelRecord({ id: 'deepseek', api: source.api, baseUrl: source.baseUrl }, source).maxTokens).toBe(
+    1000,
+  )
   expect(validateModelRecord(record).ok).toBe(true)
   inputLimits.images.maxPerMessage = 9
   expect(record.inputLimits?.images?.maxPerMessage).toBe(2)

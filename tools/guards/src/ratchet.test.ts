@@ -248,7 +248,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/serve': 1,
 
   'packages/core/src': 23778,
-  'packages/ai/src': 4401,
+  'packages/ai/src': 4409,
   'packages/protocol/src': 4725,
   'packages/cli/src/tui': 38,
   'packages/cli-tui/src': 4957,

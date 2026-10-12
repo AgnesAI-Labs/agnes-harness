@@ -485,6 +485,32 @@ describe('PiAdapter', () => {
     expect(seen[0]?.options?.apiKey).toBe('sk-1')
     expect(seen[0]?.model.baseUrl).toBe('https://gw.invalid/v1')
     expect(seen[0]?.model.id).toBe('flash')
+    expect(seen[0]?.options?.maxTokens).toBeUndefined()
+    for (const baseUrl of [
+      'https://api.deepseek.com',
+      'https://api.deepseek.com/v1/',
+      'https://api.deepseek.com/beta',
+    ]) {
+      for (const capacity of [384000, 2048]) {
+        const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+        const record = fakeModel({ id: 'flash', route: 'gw', baseUrl, maxTokens: capacity })
+        const direct = bound({
+          manualRoutes: [{ ...route, baseUrl, models: [record] }],
+          streamImpl: wire.impl,
+        })
+        for (const maxTokens of [undefined, 512, ...(capacity > 65536 ? [65536] : [])]) {
+          const request = fakeRequest({
+            route: 'gw',
+            model: 'flash',
+            ...(maxTokens === undefined ? {} : { sampling: { maxTokens } }),
+          })
+          await collect(direct.stream('gw', request, opts()))
+          expect(wire.seen.at(-1)?.options?.maxTokens).toBe(maxTokens ?? Math.min(32768, capacity))
+          expect(direct.models('gw')[0]?.maxTokens).toBe(capacity)
+          expect(request.sampling?.maxTokens).toBe(maxTokens)
+        }
+      }
+    }
     // the session key travels from the request, which is what the stamp committed to
     expect(seen[0]?.options?.sessionId).toBe('agnes:t:a:cli:dm:s7')
     // pi's own retry loop stays off: retrying is this adapter's decision, and it only retries

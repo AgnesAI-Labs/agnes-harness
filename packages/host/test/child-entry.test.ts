@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getApiKeyProvider } from '@agnes/ai'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { subagentCollectTool, subagentForkTool, subagentSpawnTool } from '@agnes/base'
 import { createWorkspaceInvocationPort, Kernel, presetDefaults } from '@agnes/core'
@@ -115,12 +116,13 @@ function kernel(
     generationLimit: 2,
     maxFanOut: 4,
   },
+  seams = fakeSeams(),
 ) {
   Object.assign(provider, { models: () => [model()] })
   return Kernel.create({
     loops: defaultLoops(),
     storage,
-    seams: fakeSeams(),
+    seams,
     provider,
     contract: { contract_id: null, parser_version: '1' },
     preset,
@@ -358,6 +360,69 @@ describe('host sqlite + core children factory entry (legacy factory path)', () =
       expect(nobudget.requests.length).toBe(beforeB)
       log.push(`pass ${pass} default-budget providerCalls=${nobudget.requests.length}`)
       await kB.close()
+
+      // Use the installed DeepSeek catalog in a scripted child. At unit output cost, the
+      // existing 384000 cap fits 0.39 credits; the proposed 393216 catalog increase does not.
+      const deepseek = (await getApiKeyProvider('deepseek')!.createAdapter())
+        .models('deepseek')
+        .find((entry) => entry.id === 'deepseek-flash')!
+      for (const inflated of [false, true]) {
+        const script = textTurn('bounded child completed').map((event) =>
+          event.type === 'usage' ? { ...event, credits: 0.01 } : event,
+        )
+        const budgetProvider = fakeProvider([script])
+        const budgetKernel = kernel(
+          createSqliteStorage({
+            file: join(dir, `deepseek-${inflated}.db`),
+            tablesDir: join(dir, `tables-deepseek-${inflated}`),
+          }),
+          budgetProvider,
+          { ...presetDefaults(), treeBudgetCredits: 1, generationLimit: 2, maxFanOut: 4 },
+          fakeSeams({
+            ledger: { projected: async () => ({ credits: 0.000001, creditSource: 'estimated' }) },
+          }),
+        )
+        Object.assign(budgetProvider, {
+          models: () => [
+            {
+              ...deepseek,
+              maxTokens: inflated ? 393216 : deepseek.maxTokens,
+              id: 'm1',
+              route: 'default',
+              cost: { input: 0, output: 1, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+        })
+        try {
+          const root = await budgetKernel.session('deepseek-root', {
+            ...workspaceSessionOptions('deepseek-root'),
+            actor,
+            resolvedProfileHash: 'h1',
+            cwd: '/w',
+            writerRunId: 'rd',
+          })
+          const child = await root.d.children.create({
+            parent: root.key,
+            cwd: '/w',
+            input: 'bounded child',
+            budget: 0.39,
+          })
+          if (inflated) {
+            await expect(child.run('bounded child')).rejects.toMatchObject({
+              code: 'E_RELATION',
+              message: expect.stringContaining('budget'),
+            })
+            expect(budgetProvider.requests.some((request) => request.sessionKey === child.key)).toBe(false)
+          } else {
+            await expect(child.run('bounded child')).resolves.toMatchObject({
+              text: 'bounded child completed',
+            })
+            expect(budgetProvider.requests.some((request) => request.sessionKey === child.key)).toBe(true)
+          }
+        } finally {
+          await budgetKernel.close()
+        }
+      }
 
       const liveDb = join(dir, 'live.db')
       const tables = join(dir, 'tables-live')

@@ -25,6 +25,7 @@ import { providerPayloadImageError } from './input-limits.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
+import { deepSeekDefaultOutput } from './request-output.js'
 import { toContext } from './to-context.js'
 import { responseMeta, translateEvent, withResponse } from './translate.js'
 import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
@@ -623,6 +624,10 @@ export class PiAdapter extends WireAdapter {
           ),
         )
         if (this.providerId) requestModel.provider = this.providerId
+        const defaultOutput =
+          decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
+            ? record.maxTokens
+            : deepSeekDefaultOutput(decl.baseUrl, record.maxTokens)
         const it = network.run(() =>
           this.streamImpl(requestModel, context, {
             ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
@@ -640,10 +645,8 @@ export class PiAdapter extends WireAdapter {
                 ),
               )
             },
-            // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
-            ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
-              ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
-              : {}),
+            // Raw pi streaming omits output caps. Known defaults must not raise catalog capacity.
+            ...(defaultOutput !== undefined ? { maxTokens: req.sampling?.maxTokens ?? defaultOutput } : {}),
             ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
             // pi-ai checks header-owned authentication in stream options before it
             // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
