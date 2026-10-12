@@ -99,15 +99,6 @@
   .timeline-node.user {
     max-width: 92%;
   }
-  .timeline-node.assistant {
-    padding-left: var(--s32);
-  }
-  .timeline-node.tool,
-  .timeline-node.cost,
-  .timeline-node.artifact,
-  .timeline-node.compaction {
-    margin-left: var(--s32);
-  }
   #composer {
     width: calc(100% - 1rem);
     min-height: 6.75rem;

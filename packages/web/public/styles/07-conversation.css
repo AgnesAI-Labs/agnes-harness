@@ -178,6 +178,15 @@
 .markdown li + li {
   margin-top: 6px;
 }
+.markdown li::marker {
+  color: var(--agnes-text-secondary);
+}
+.markdown hr {
+  height: 0;
+  margin: var(--s24) 0;
+  border: 0;
+  border-top: 1px solid var(--agnes-line-primary);
+}
 .markdown li > p {
   margin: var(--s8) 0;
 }
@@ -192,9 +201,14 @@
   margin: 0.25em 0 0.35em;
 }
 .markdown blockquote {
-  padding: 0 0 0 14px;
-  border-inline-start: 2px solid var(--agnes-text-tertiary);
+  padding: var(--s8) var(--s12) var(--s8) var(--s16);
+  border-inline-start: 3px solid var(--agnes-line-emphasis);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-subtle);
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
 }
 .markdown a {
   color: var(--agnes-text-emphasis);
@@ -294,8 +308,12 @@
 }
 .markdown th {
   color: var(--agnes-text-primary);
-  font-weight: 500;
-  background: transparent;
+  font-weight: 600;
+  background: var(--agnes-bg-subtle);
+  white-space: nowrap;
+}
+.markdown tbody tr:hover td {
+  background: var(--agnes-bg-hover);
 }
 .markdown th:first-child,
 .markdown td:first-child {
@@ -513,11 +531,23 @@
   }
 }
 #approval h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
   margin: 0;
   color: var(--agnes-text-primary);
   font-size: 0.9375rem;
   font-weight: 500;
   line-height: 1.5rem;
+}
+/* A warning dot ties the title to the card's warning border without adding markup. */
+#approval h2::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-status-warning-text);
 }
 #approval p {
   margin: 0.375rem 0 0;
@@ -555,12 +585,40 @@
   gap: var(--s8);
   margin-top: 0.875rem;
 }
+.approval-actions button {
+  border-radius: var(--radius-control);
+  font-weight: var(--font-weight-medium);
+}
+/* One primary answer: approving once is the filled action; the other approvals stay outlined
+   and rejecting reads as the cautious choice. */
+.approval-actions button[data-approval-action$="allow_once"]:not(:disabled) {
+  border-color: var(--agnes-button-primary-bg);
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+}
+.approval-actions button[data-approval-action$="allow_once"]:hover:not(:disabled) {
+  border-color: var(--agnes-button-primary-bg-hover);
+  background: var(--agnes-button-primary-bg-hover);
+}
+.approval-actions button[data-approval-action*="reject"]:not(:disabled) {
+  color: var(--agnes-status-danger-text);
+}
+.approval-actions button[data-approval-action*="reject"]:hover:not(:disabled) {
+  border-color: var(--agnes-status-danger-border);
+  background: var(--agnes-status-danger-bg);
+}
+@media (max-width: 480px) {
+  .approval-actions button {
+    flex: 1 1 auto;
+    min-height: var(--control-height-touch);
+  }
+}
 
 /* Message feedback remains keyboard reachable while quiet in the conversation. */
 [data-testid="message-feedback"] .feedback-actions {
   border: 0;
   padding: 0;
-  margin: var(--s4) 0;
+  margin: var(--s4) 0 0;
   color: var(--agnes-text-secondary);
 }
 .feedback-actions [aria-pressed="true"] {

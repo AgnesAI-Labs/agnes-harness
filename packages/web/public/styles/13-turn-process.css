@@ -1,5 +1,5 @@
 .conversation-turn {
-  margin: 0 0 var(--s16);
+  margin: 0 0 var(--s24);
 }
 .turn-user:empty,
 .turn-final:empty,
@@ -49,10 +49,37 @@
   overflow-wrap: anywhere;
 }
 .turn-error {
-  margin: 0 0 var(--s8);
+  margin: 0 0 var(--s12);
+  padding: var(--s8) var(--s12);
+  border: 1px solid var(--agnes-status-danger-border);
+  border-radius: var(--radius-md);
   color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.conversation-turn[data-status="failed"] .turn-status {
+  color: var(--agnes-status-danger-text);
+}
+/* A running turn breathes: the avatar ring pulses while the model or a tool is working.
+   The global reduced-motion rule stops the loop. */
+@keyframes turn-running-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--agnes-focus-ring-soft);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.conversation-turn[data-status="running"] .process-avatar {
+  border-color: var(--agnes-brand-primary);
+  animation: turn-running-pulse 1.6s var(--motion-ease) infinite;
+}
+.conversation-turn[data-status="waiting"] .process-avatar {
+  border-color: var(--agnes-status-warning-text);
 }
 .process-avatar {
   width: 1.75rem;
@@ -108,6 +135,13 @@
 .turn-process[open] .process-chevron {
   transform: rotate(0deg);
 }
+/* Each process step is a quiet card; the answer that follows keeps a clear gap. */
+.turn-process-body + .turn-process-body {
+  margin-top: var(--s8);
+}
+.turn-process-body + .turn-final {
+  margin-top: var(--s16);
+}
 .turn-process > summary:hover,
 .turn-process > summary:focus-visible {
   color: var(--agnes-text-primary);
@@ -118,9 +152,11 @@
 }
 /* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
 .turn-process-body {
-  margin-top: var(--s8);
-  padding-left: 0;
-  border-left: 0;
+  margin-top: 0;
+  padding: var(--s8) var(--s12);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-subtle);
 }
 .turn-process-body > * {
   margin: 0;
@@ -251,10 +287,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--s8);
+  gap: var(--s4);
   row-gap: var(--s8);
   min-height: 1.75rem;
-  margin: 1rem 0 0 -0.375rem;
+  margin: var(--s8) 0 0 -0.375rem;
   color: var(--agnes-text-tertiary);
 }
 .turn-action,
@@ -288,8 +324,23 @@
 .turn-meta:hover:not(:disabled),
 .turn-meta:focus-visible {
   border-color: transparent;
-  color: var(--agnes-text-secondary);
+  color: var(--agnes-text-primary);
   background: var(--agnes-bg-hover);
+}
+.turn-action:active:not(:disabled) {
+  background: var(--agnes-bg-selected);
+}
+@media (max-width: 767px) {
+  .turn-action {
+    width: 2.5rem;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    min-height: 2.5rem;
+  }
+  .turn-meta {
+    min-height: 2.5rem;
+    height: 2.5rem;
+  }
 }
 .turn-meta {
   min-width: 0;
