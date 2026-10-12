@@ -207,7 +207,7 @@ export function SearchPanel({
       if (field) document.getElementById(field)?.focus()
       return
     }
-    const savedDefault = status.providers.find((row) => row.isDefault)?.id ?? null
+    const savedDefault = status.defaultProvider
     const defaultProvider = makeDefault ? providerId : savedDefault === providerId ? null : savedDefault
     setBusy(true)
     setError('')
@@ -367,6 +367,8 @@ export function SearchPanel({
         : ''
   const configured = (row: SearchRow) =>
     row.enabled || row.secretConfigured || row.isDefault || (!row.needsKey && !!row.endpoint)
+  const readyWithoutDefault =
+    status && !status.configured ? status.providers.filter((row) => row.enabled && row.ready) : []
   const serviceRow = (row: SearchRow) => (
     <ListRow
       key={row.id}
@@ -374,7 +376,11 @@ export function SearchPanel({
       title={row.label}
       meta={[
         row.isDefault ? ux('default') : '',
-        row.ready ? ux('connected') : row.secretConfigured ? ux('keySaved') : '',
+        row.ready
+          ? ux(row.id === status?.defaultProvider && status.configured ? 'connected' : 'ready')
+          : row.secretConfigured
+            ? ux('keySaved')
+            : '',
       ]
         .filter(Boolean)
         .join(' · ')}
@@ -389,6 +395,15 @@ export function SearchPanel({
             disabled={!canSave || busy}
             onToggle={(enabled) => void changeRow(row, { enabled })}
           />
+          {readyWithoutDefault.some((ready) => ready.id === row.id) && (
+            <Button
+              data-testid={`search-set-default-${row.id}`}
+              disabled={!canSave || busy}
+              onClick={() => void changeRow(row, { makeDefault: true })}
+            >
+              {t('searchMakeDefault')}
+            </Button>
+          )}
           <Button data-testid={`search-settings-${row.id}`} onClick={() => edit(row.id)}>
             {ux('settings')}
           </Button>
@@ -459,13 +474,16 @@ export function SearchPanel({
         </Banner>
       )}
       {!canSave && <p>{t('searchReadOnly')}</p>}
-      {status && !status.configured && (
+      {status && !status.providers.some(configured) && (
         <EmptyState
           data-testid="search-empty"
           icon={<Icon name="search" size={48} />}
           title={ux('empty')}
           description={ux('emptyHelp')}
         />
+      )}
+      {!!readyWithoutDefault.length && (
+        <Banner data-testid="search-needs-default">{ux('needsDefault')}</Banner>
       )}
       {status?.providers.filter(configured).map(serviceRow)}
       {status?.providers.some((row) => !configured(row)) && (
@@ -543,6 +561,25 @@ export function SearchPanel({
       >
         <form id="search-settings-editor" onSubmit={(event) => void save(event)}>
           <fieldset disabled={!canSave || busy || !status}>
+            <StateSwitch
+              id="search-editor-enabled"
+              testId="search-editor-enabled"
+              label={t('searchEnabled')}
+              checked={enabled}
+              disabled={!canSave || busy}
+              onToggle={(value) => {
+                setEnabled(value)
+                if (!value) setMakeDefault(false)
+              }}
+            />
+            <StateSwitch
+              id="search-editor-default"
+              testId="search-editor-default"
+              label={t('searchMakeDefault')}
+              checked={makeDefault}
+              disabled={!canSave || busy || !enabled}
+              onToggle={setMakeDefault}
+            />
             <Field label={ux('provider')} htmlFor="search-edit-provider">
               <SchemaControl
                 schema={searchConfigSchema.properties.id}

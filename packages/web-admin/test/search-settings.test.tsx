@@ -153,3 +153,52 @@ it('shows the unconfigured state and saves a key without rendering it again', as
     'https://example.test/result',
   )
 })
+
+it('offers an explicit default action for a ready service and exposes saved drawer controls', async () => {
+  const ready = { ...brave, enabled: true, ready: true, secretConfigured: true }
+  let refuseDefault = true
+  let current = { ...status, defaultProvider: null as string | null, providers: [ready] }
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body))
+      if (refuseDefault) throw new Error('offline')
+      expect(body.defaultProvider).toBe('brave')
+      expect(body.provider.enabled).toBe(true)
+      current = {
+        ...current,
+        configured: true,
+        defaultProvider: 'brave',
+        providers: [{ ...ready, isDefault: true }],
+      }
+    }
+    return Response.json(current)
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  await act(async () => root.render(createElement(SearchPanel, { t, canSave: true, fetcher })))
+  expect(host.querySelector('[data-testid="search-empty"]')).toBeNull()
+  expect(host.querySelector('[data-testid="search-needs-default"]')?.textContent).toContain('default')
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(true)
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="search-set-default-brave"]')?.click(),
+  )
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(true)
+  expect(host.querySelector('[data-testid="search-error"]')).not.toBeNull()
+  refuseDefault = false
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="search-set-default-brave"]')?.click(),
+  )
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(false)
+  expect(host.querySelector('[data-testid="search-needs-default"]')).toBeNull()
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="search-settings-brave"]')?.click(),
+  )
+  expect(document.querySelector('[data-testid="search-editor-enabled"]')?.getAttribute('aria-checked')).toBe(
+    'true',
+  )
+  expect(document.querySelector('[data-testid="search-editor-default"]')?.getAttribute('aria-checked')).toBe(
+    'true',
+  )
+})
