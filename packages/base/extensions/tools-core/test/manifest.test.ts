@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import factory, { TOOLS_CORE } from '../src/index.js'
 
@@ -48,7 +49,7 @@ describe('tools-core manifest', () => {
     // path, so the file has to be there for the declaration to mean anything.
     const entry = fileURLToPath(new URL(`../${manifest.entry.replace(/^\.\//, '')}`, import.meta.url))
     expect(existsSync(entry), entry).toBe(true)
-    expect(manifest.apiRange).toBe('^2.0.0')
+    expect(manifest.apiRange).toBe('^3.0.0')
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
@@ -68,7 +69,7 @@ describe('tools-core manifest', () => {
         }
       },
     } as unknown as ExtensionAPI
-    const dispose = (await factory(api)) as Disposer
+    const dispose = (await extensionFactoryOf(factory)(api)) as Disposer
     expect(registered).toEqual(TOOLS_CORE.map((t) => t.name))
     // The manifest is what the host grants authority on, and the code is what claims it. Comparing
     // the two lists whole, in order, is what makes a name declared and never registered - or worse,

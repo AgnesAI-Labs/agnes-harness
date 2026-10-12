@@ -4,12 +4,15 @@ import {
   type ExtensionContext,
   ExtensionError,
   type ExtensionManifest,
+  type HookEvent,
+  type HookHandler,
   type LeaseView,
   type Logger,
-  type PluginExtensionAPI,
+  type PluginContextFacets,
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { JsonValue } from '@agnes/protocol'
 import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
 import { diagnostic, loadError } from './diagnostics.js'
 import { DisposerBag } from './disposers.js'
@@ -22,7 +25,7 @@ import {
 import { type Lease, leaseFor, ROW_BOUND_LEASE_TTL_MS } from './lease.js'
 import type { ExtensionStatus } from './managed-host.js'
 import type { KernelPorts } from './ports.js'
-import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS } from './row-extension-api.js'
+import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS, type RowExtensionApi } from './row-extension-api.js'
 
 export type RowExtensionHostOptions = Readonly<{
   mcpManage?: import('../resources/mcp-manage-port.js').McpManageBridge
@@ -86,7 +89,7 @@ type RowRecord = {
   pending: Set<Pending>
   /** How many live registrations the row holds per hook event. */
   hookEvents: Map<string, number>
-  api: PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort }
+  api: RowExtensionApi
   state: 'dormant' | 'live' | 'retired'
   /** Host has listed this row at some point, so a later failure is worth reporting. */
   announced: boolean
@@ -124,7 +127,7 @@ function manifestLikeFor(source: string, version: string): ExtensionManifest {
 }
 
 /**
- * Registrations made by plugin rows through `ctx.extension()`: who owns them, what wind-down they
+ * Registrations made by plugin rows through `ctx.hooks`, `ctx.eventLog` and `ctx.tools`: who owns them, what wind-down they
  * get when the row goes, and what `Host.extensions()` shows for them.
  */
 export function createRowExtensionHost(options: RowExtensionHostOptions) {
@@ -406,15 +409,12 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     return fiber
   }
 
-  const apiFor = (
-    caller: Context,
-    origins: RowOriginLookup,
-  ): PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort } => {
+  const apiFor = (caller: Context, origins: RowOriginLookup): RowExtensionApi => {
     const found = rowFiberOf(caller.fiber, origins)
     if (!found || found.origin.trustTier !== 'third-party')
       throw new ExtensionError(
         'E_CAPABILITY_UNDECLARED',
-        'ctx.extension() is only available to third-party plugin rows',
+        'plugin facets are only available to installed plugin rows',
       )
     const existing = byFiber.get(found.fiber)
     if (existing && existing.state !== 'retired') return existing.api
@@ -442,15 +442,61 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
   return Object.freeze({
     /** Provides the `extension` service on one tree's root. Called once per root. */
     installRoot(root: Context, origins: RowOriginLookup): void {
-      class ExtensionFacade extends Service {
+      class HooksService extends Service {
         constructor(context: Context) {
-          super(context, 'extension')
+          super(context, 'hooks')
         }
-        [Service.invoke](this: { ctx: Context }) {
-          return apiFor(this.ctx, origins)
+        register<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
+          const dispose = apiFor(this.ctx, origins).registerHook(event, handler)
+          const row = rowFiberOf(this.ctx.fiber, origins)
+          // The row wind-down dispatches shutdown before revoking registrations.
+          if (row?.fiber === this.ctx.fiber) return dispose
+          return this.ctx.effect(() => dispose, `ctx.hooks.register(${event})`)
         }
       }
-      new ExtensionFacade(root)
+      new HooksService(root)
+      class EventLogService extends Service {
+        constructor(context: Context) {
+          super(context, 'eventLog')
+        }
+        append(name: string, data: JsonValue) {
+          return apiFor(this.ctx, origins).events.append(name, data)
+        }
+      }
+      new EventLogService(root)
+      class SelfService extends Service {
+        constructor(context: Context) {
+          super(context, 'self')
+        }
+        private get facts(): PluginContextFacets['self'] {
+          return apiFor(this.ctx, origins).ctx
+        }
+        get extId() {
+          return this.facts.extId
+        }
+        get version() {
+          return this.facts.version
+        }
+        get trust() {
+          return this.facts.trust
+        }
+        get lease() {
+          return this.facts.lease
+        }
+        get log() {
+          return this.facts.log
+        }
+        get signal() {
+          return this.facts.signal
+        }
+        get info() {
+          return this.facts.info
+        }
+        get platform() {
+          return this.facts.platform
+        }
+      }
+      new SelfService(root)
       class ToolsService extends Service {
         constructor(context: Context) {
           super(context, 'tools')

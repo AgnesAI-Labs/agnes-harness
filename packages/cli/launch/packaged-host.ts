@@ -30,7 +30,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
     [
       {
         export: 'toolPolicyPlugin',
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         id: 'tool-policy:default',
         inject: ['providers'],
         runtime: 'in-process',
@@ -42,7 +42,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         configReload: 'next-session',
         configSchema: {
           type: 'object',
@@ -131,7 +131,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       },
       {
         export: 'seamProvidersPlugin',
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         id: 'seam-providers:default',
         inject: ['providers'],
         default: true,
@@ -143,7 +143,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         export: 'codexChildAgentsPlugin',
@@ -151,7 +151,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         export: 'claudeCodeChildAgentsPlugin',
@@ -159,7 +159,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         export: 'sdkChildAgentsPlugin',
@@ -167,7 +167,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         id: 'memory:file',
@@ -175,7 +175,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         id: 'skills:remembering',
@@ -183,7 +183,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['skills'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
       {
         id: 'reference-resolvers:default',
@@ -191,7 +191,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
       },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
   ).map((entry) => {
@@ -204,7 +204,7 @@ export const AGNES_CODE_PLUGIN_DECLARATIONS = Object.freeze([
   Object.freeze({
     id: 'system-prompt:default',
     export: 'systemPromptPlugin',
-    apiRange: '^2.0.0',
+    apiRange: '^3.0.0',
     inject: ['providers'],
     runtime: 'in-process',
     default: true,

@@ -42,7 +42,7 @@ function deployment(options: { sourceId?: string; secretRef?: string } = {}): Re
         integrity: 'sha256-package',
         descriptor: {
           id: 'dashboard',
-          apiRange: '^2.0.0',
+          apiRange: '^3.0.0',
           artifact: { kind: 'node', entry: './dist/server.mjs' },
           healthPath: '/healthz',
           requires: { services: [] },

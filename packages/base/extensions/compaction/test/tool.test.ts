@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { checkToolDef, type ExtensionAPI } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import factory from '../src/index.js'
@@ -37,7 +38,7 @@ describe('staged compaction extension', () => {
       },
     } as unknown as ExtensionAPI
 
-    const dispose = await factory(api)
+    const dispose = await extensionFactoryOf(factory)(api)
     expect(registered).toEqual(['tool:compact'])
     expect(manifest.capabilities.hooks).toEqual([])
     expect(manifest.capabilities.tools).toEqual({ prefix: '', names: ['compact'] })

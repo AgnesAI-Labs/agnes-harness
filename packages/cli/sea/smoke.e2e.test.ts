@@ -88,7 +88,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
               integrity: hashDirectory(packageDirectory),
               trust: 'trusted',
               license: 'MIT',
-              apiRange: '^2.0.0',
+              apiRange: '^3.0.0',
               // The SEA loader harness imports this fixture directly; Host requires an immutable
               // runtime snapshot before an external package can be enabled.
               state: { installed: timestamp, trusted: timestamp, enabled: false },

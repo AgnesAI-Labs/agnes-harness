@@ -115,7 +115,7 @@ describe('prompt section order table has one claimant per order, across both con
         // Scoped to files that actually register a 'context' hook: an incidental id/order pair
         // elsewhere (a fixture object, an unrelated registry) is not a prompt-section claim, and
         // scanning every file for the bare pattern would make this guard fire on those.
-        if (!/registerHook\(\s*['"]context['"]/.test(text)) continue
+        if (!/hooks\.register\(\s*['"]context['"]/.test(text)) continue
         for (const { id, order } of extract(HOOK_SECTION_RE, text)) {
           const claimant = byOrder.get(order)
           expect(claimant, `${relative(root, f)} claims order ${order} for '${id}'`).toBe(id)

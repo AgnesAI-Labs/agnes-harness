@@ -19,7 +19,7 @@ function select(mode: 'off' | 'preferred' | 'required', supports?: ('in-process'
     JSON.stringify({
       id,
       version: '1.0.0',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       entry: './index.js',
       capabilities: {},
       ...(supports ? { runtime: { supports } } : {}),
@@ -88,7 +88,7 @@ it('preserves release-owned embedded manifest selection without filesystem disco
           id,
           ecosystem: { [id]: prepare },
           embeddedExtensions: [
-            { id, version: '1.0.0', apiRange: '^2.0.0', entry: './index.js', capabilities: {} },
+            { id, version: '1.0.0', apiRange: '^3.0.0', entry: './index.js', capabilities: {} },
           ],
         },
       ],

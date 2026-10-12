@@ -118,7 +118,7 @@ for (const [name, version, entry, label] of [
   )
   await writeFile(
     join(destination, 'extensions/main/agnes.extension.json'),
-    `${JSON.stringify({ id: 'examples/client-panel-failure', version, apiRange: '^2.0.0', entry: './index.mjs', runtime: { supports: ['in-process'] }, capabilities: { ui: ['client'] }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }, null, 2)}\n`,
+    `${JSON.stringify({ id: 'examples/client-panel-failure', version, apiRange: '^3.0.0', entry: './index.mjs', runtime: { supports: ['in-process'] }, capabilities: { ui: ['client'] }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }, null, 2)}\n`,
   )
   await writeFile(join(destination, 'extensions/main/client/index.js'), entry)
   failureFixtures[name] = { type: 'file', ref: `file:./client-module-failure-fixtures/${name}` }

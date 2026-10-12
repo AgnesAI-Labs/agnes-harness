@@ -8,10 +8,10 @@
     "plugins": [
       {
         "export": "hooksRunnerReplacement",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:agnes/hooks-runner",
         "inject": [
-          "extension"
+          "hooks"
         ],
         "metadata": {
           "displayName": "Hook replacement example",

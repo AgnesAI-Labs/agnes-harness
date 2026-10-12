@@ -13,6 +13,7 @@ import {
 } from '@agnes/base'
 import { testFsPolicy } from '@agnes/core/testkit'
 import { createPosixPlatform, createWin32Platform } from '@agnes/host-infrastructure/adapters/platform'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { InferenceEvent, ToolCall } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
@@ -870,36 +871,38 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       manifest: {
         id: extensionId,
         version: '0.1.0',
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         entry: './index.mjs',
         capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
       },
       factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
-        mcpServerExtension(
-          { id: 'gh', transport: 'stdio', cmd: ['x'], defer: false },
-          {
-            catalogHub: mcpCatalogHubFor(ctx),
-            onFirstAttempt: (attempt) => {
-              ready = attempt
+        extensionFactoryOf(
+          mcpServerExtension(
+            { id: 'gh', transport: 'stdio', cmd: ['x'], defer: false },
+            {
+              catalogHub: mcpCatalogHubFor(ctx),
+              onFirstAttempt: (attempt) => {
+                ready = attempt
+              },
+              connect: async () => ({
+                id: 'gh',
+                async listTools() {
+                  return [
+                    {
+                      name: 'echo',
+                      description: 'Echo text.',
+                      inputSchema: { type: 'object' },
+                      annotations: { readOnlyHint: true },
+                    },
+                  ]
+                },
+                async callTool() {
+                  return { content: [] }
+                },
+                async close() {},
+              }),
             },
-            connect: async () => ({
-              id: 'gh',
-              async listTools() {
-                return [
-                  {
-                    name: 'echo',
-                    description: 'Echo text.',
-                    inputSchema: { type: 'object' },
-                    annotations: { readOnlyHint: true },
-                  },
-                ]
-              },
-              async callTool() {
-                return { content: [] }
-              },
-              async close() {},
-            }),
-          },
+          ),
         ),
     }
     await host.extensionRows.apply([
@@ -968,16 +971,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         manifest: {
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^2.0.0',
+          apiRange: '^3.0.0',
           entry: './index.mjs',
           capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
         },
         // deps.connect is omitted -- mcpServerExtension defaults it to the real connectMcp(), so
         // this is a real stdio subprocess, not a hand-rolled McpConnection.
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
-          mcpServerExtension(
-            { id: serverId, transport: 'stdio', cmd: [process.execPath, script], defer: false },
-            { catalogHub: mcpCatalogHubFor(ctx) },
+          extensionFactoryOf(
+            mcpServerExtension(
+              { id: serverId, transport: 'stdio', cmd: [process.execPath, script], defer: false },
+              { catalogHub: mcpCatalogHubFor(ctx) },
+            ),
           ),
       }
       await host.extensionRows.apply([

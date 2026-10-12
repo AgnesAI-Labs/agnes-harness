@@ -1,8 +1,9 @@
 import type { Context as CordisContext, Inject, Plugin } from '@agnes/cordis'
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import type { PluginContextFacets } from '@agnes/extension-api'
 import './author/context.js'
-export type Context = CordisContext & ProviderPluginContext
-export type { ProviderPluginContext } from '@agnes/extension-api'
+/** What `apply` receives: the Cordis context plus the Host-supplied facets the plugin lists in `inject`. */
+export type Context = CordisContext & PluginContextFacets
+export type { PluginContextFacets, ProviderPluginContext } from '@agnes/extension-api'
 
 /** A standard Cordis plugin accepted by the Agnes package loader. */
 export type AgnesPlugin<Config = unknown> = Plugin<Config>

@@ -1,5 +1,4 @@
-import { defineExtension } from '@agnes/extension-api'
-import { defineTool } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import {
   bindSessionQuery,
@@ -83,30 +82,33 @@ export const sessionEventReadTool = defineTool({
 })
 
 export function createSessionQueryExtension(options: { dataDir?: string } = {}) {
-  return defineExtension((agnes) => {
-    const dataDir = options.dataDir
-    if (!dataDir) agnes.ctx.log.warn('session query has no data directory')
-    else bindSessionQuery(dataDir)
-    const disposers = [
-      agnes.registerTool(sessionSearchTool),
-      agnes.registerTool(sessionEventSearchTool),
-      agnes.registerTool(sessionTraceTool),
-      agnes.registerTool(sessionEventTraceTool),
-      agnes.registerTool(sessionEventReadTool),
-      agnes.registerHook('context', () => ({
-        sections: [
-          {
-            id: 'session-query',
-            order: 168,
-            content:
-              'Use session_search and session_event_search to find earlier sessions and events in this workspace. Use session_trace, session_event_trace, and session_event_read to inspect an authorized session. These tools are read-only and cannot run SQL.',
-          },
-        ],
-      })),
-    ]
-    return () => {
-      for (const dispose of disposers.reverse()) dispose()
-      closeSessionQuery()
-    }
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks', 'self'],
+    apply(plugin: Context) {
+      const dataDir = options.dataDir
+      if (!dataDir) plugin.self.log.warn('session query has no data directory')
+      else bindSessionQuery(dataDir)
+      const disposers = [
+        plugin.tools.register(sessionSearchTool),
+        plugin.tools.register(sessionEventSearchTool),
+        plugin.tools.register(sessionTraceTool),
+        plugin.tools.register(sessionEventTraceTool),
+        plugin.tools.register(sessionEventReadTool),
+        plugin.hooks.register('context', () => ({
+          sections: [
+            {
+              id: 'session-query',
+              order: 168,
+              content:
+                'Use session_search and session_event_search to find earlier sessions and events in this workspace. Use session_trace, session_event_trace, and session_event_read to inspect an authorized session. These tools are read-only and cannot run SQL.',
+            },
+          ],
+        })),
+      ]
+      return () => {
+        for (const dispose of disposers.reverse()) dispose()
+        closeSessionQuery()
+      }
+    },
   })
 }

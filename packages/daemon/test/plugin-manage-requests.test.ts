@@ -18,7 +18,7 @@ afterEach(async () => {
   for (const dir of roots.splice(0))
     rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
-const source = `export const main = { inject: ['extension'], apply(ctx) {} }`
+const source = `export const main = { inject: ['hooks', 'eventLog', 'self'], apply(ctx) {} }`
 const files = [
   {
     path: 'package.json',
@@ -29,7 +29,14 @@ const files = [
       exports: './index.mjs',
       license: 'Apache-2.0',
       agnes: {
-        plugins: [{ apiRange: '^2.0.0', id: 'ext:test-plugin/main', export: 'main', inject: ['extension'] }],
+        plugins: [
+          {
+            apiRange: '^3.0.0',
+            id: 'ext:test-plugin/main',
+            export: 'main',
+            inject: ['hooks', 'eventLog', 'self'],
+          },
+        ],
       },
     }),
   },

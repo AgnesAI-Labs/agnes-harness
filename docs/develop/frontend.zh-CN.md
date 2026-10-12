@@ -6,7 +6,7 @@
 
 做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后新会话使用内置界面、旧会话保留原版本。先理解生命周期，再把版本文字替换成岗位需要的内容。
 
-复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已支持的 `ui:sidebar` 槽展示版本文字，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.extension()` 的 slot 注册。
+复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已支持的 `ui:sidebar` 槽展示版本文字，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.slots` 的 slot 注册。
 
 ## 声明和代码
 

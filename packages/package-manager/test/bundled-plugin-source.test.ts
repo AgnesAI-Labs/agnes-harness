@@ -107,10 +107,10 @@ it('generates an executable tool plugin using the current owned registration por
   const text = result.content.find((part) => part.type === 'text')
   if (!text || text.type !== 'text') throw new Error('guide returned no text')
   const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }
-  expect(data.apiVersion).toBe('2.0.0')
+  expect(data.apiVersion).toBe('3.0.0')
   const source = data.files.find((file) => file.path === 'index.mjs')!
   const { main } = await import(`data:text/javascript,${encodeURIComponent(source.content)}`)
-  main.apply({ tools, extension: () => ({ on() {}, ctx: { log: { info() {} } } }) })
+  main.apply({ tools, hooks: { register() {} }, self: { log: { info() {} } } })
   const generated = registered.get('my_text_stats')!
   expect(await generated.execute({ text: 'two words' }, {} as never)).toMatchObject({
     structured: { characters: 9, words: 2 },

@@ -1,5 +1,6 @@
 import { applyContextResults } from '@agnes/core'
 import type { ExtensionAPI, HookContext, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { validateAgainst } from '@agnes/protocol'
 import { ContextReturn } from '@agnes/protocol/gen/hooks'
 import { describe, expect, it, vi } from 'vitest'
@@ -46,7 +47,7 @@ function install(runtime: Parameters<typeof skillsExtension>[0]) {
   const resources: ResourceEntry[] = []
   const tools: ToolDef[] = []
   const hooks = new Map<string, (payload: unknown, context?: HookContext) => unknown>()
-  skillsExtension(runtime)({
+  extensionFactoryOf(skillsExtension(runtime))({
     registerTool(tool: ToolDef) {
       tools.push(tool)
       return () => undefined

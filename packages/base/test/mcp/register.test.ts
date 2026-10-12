@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { deflateSync } from 'node:zlib'
-import { checkToolDef, type ExtensionAPI, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
+import { checkToolDef, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
 import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
@@ -103,16 +104,20 @@ function fakeApi() {
   const warn = vi.fn()
   return {
     api: {
-      registerTool: (tool: ToolDef) => {
-        tools.push(tool)
-        return () => disposed.push(`tool:${tool.name}`)
+      tools: {
+        register: (tool: ToolDef) => {
+          tools.push(tool)
+          return () => disposed.push(`tool:${tool.name}`)
+        },
       },
-      registerResource: (resource: ResourceEntry) => {
-        resources.push(resource)
-        return () => disposed.push(`resource:${resource.id}`)
+      resources: {
+        register: (resource: ResourceEntry) => {
+          resources.push(resource)
+          return () => disposed.push(`resource:${resource.id}`)
+        },
       },
-      ctx: { log: { debug() {}, info() {}, warn, error() {} } },
-    } as unknown as ExtensionAPI,
+      self: { log: { debug() {}, info() {}, warn, error() {} } },
+    } as unknown as Pick<Context, 'tools' | 'resources' | 'self'>,
     disposed,
     resources,
     tools,

@@ -65,7 +65,7 @@ const callStats: InferenceEvent[] = [
 
 describe('the hot-tool-plugin example', () => {
   it('declares one plugin entry that asks for tools and extension services', () => {
-    expect(declared).toMatchObject({ export: 'textStatsTool', inject: ['tools', 'extension'] })
+    expect(declared).toMatchObject({ export: 'textStatsTool', inject: ['tools', 'hooks', 'self'] })
   })
 
   it('gives the model a tool, and takes it away with the row', async () => {

@@ -40,7 +40,7 @@ export async function setupMcpLegacySentinel(input: { home: string; workspace: s
       type: 'module',
       license: 'MIT',
       exports: './index.js',
-      agnes: { plugins: [{ apiRange: '^2.0.0', id: 'ext:test/legacy-preset', export: 'default' }] },
+      agnes: { plugins: [{ apiRange: '^3.0.0', id: 'ext:test/legacy-preset', export: 'default' }] },
     }),
   )
   await writeFile(

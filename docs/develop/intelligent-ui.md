@@ -181,7 +181,7 @@ A terminal result/refusal is delivered to the Agent only through the existing SC
 
 ## UI data sources
 
-A business plugin can bind one `data[dataKey]` value to a read-only query instead of embedding the rows. The persisted surface stores that binding. The host resolves it for an authenticated read. Literal `data[dataKey]` values stay valid and keep the checks above. Kind, provider and instance types, the result enum and the failure codes live in `@agnes/intelligent-ui-contract` beside `intelligentUiKind`. That package depends only on `@agnes/extension-api` and `@agnes/protocol`. Host reaches the contract without importing `@agnes/base`. The kind is not a `KindMap` entry. A short index of this section is [UI data sources](ui-data-source.md).
+A business plugin can bind one `data[dataKey]` value to a read-only query instead of embedding the rows. The persisted surface stores that binding. The host resolves it for an authenticated read. Literal `data[dataKey]` values stay valid and keep the checks above. Kind, provider and instance types, the result enum and the failure codes live in `@agnes/intelligent-ui-contract` beside `intelligentUiKind`. That package depends only on `@agnes/extension-api` and `@agnes/protocol`. Host reaches the contract without importing `@agnes/base`. The kind is its own token. A short index of this section is [UI data sources](ui-data-source.md).
 
 | Item | Value |
 | --- | --- |

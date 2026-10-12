@@ -4,6 +4,7 @@ import type {
   UiSourceResolveInput,
   UiSourceResolveResult,
 } from '@agnes/intelligent-ui-contract'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type {
   DeferredInvocationReceipt,
   DeferredToolInvocation,
@@ -336,7 +337,7 @@ describe('preset surface contract and ledger lifecycle', () => {
   it('exposes eager bounded data contracts and keeps nested argument validation', async () => {
     const tools: ToolDef[] = []
     const f = fixture()
-    intelligentUi({
+    extensionFactoryOf(intelligentUi)({
       providers: { register: () => () => {}, bindOwn: async () => f.service() },
       registerProjection: () => () => {},
       registerTool: (tool: ToolDef) => {
@@ -1173,7 +1174,7 @@ describe('bound UI data sources', () => {
     async (code) => {
       const f = fixture()
       const tools: ToolDef[] = []
-      intelligentUi({
+      extensionFactoryOf(intelligentUi)({
         providers: { register: () => () => {}, bindOwn: async () => f.service() },
         registerProjection: () => () => {},
         registerTool: (tool: ToolDef) => {

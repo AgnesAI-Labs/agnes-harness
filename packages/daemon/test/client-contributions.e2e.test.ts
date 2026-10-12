@@ -122,7 +122,7 @@ it('enables single and multiple client contributions and retains their roster af
       const directory = join(root, `client-${count}`)
       await mkdir(directory)
       const plugins = Array.from({ length: count }, (_, index) => ({
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         export: `panel${index}`,
         id: `ext:acme/client-${count}/panel${index}`,
         runtime: 'in-process',

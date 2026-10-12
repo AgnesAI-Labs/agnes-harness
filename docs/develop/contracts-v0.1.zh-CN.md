@@ -12,7 +12,7 @@
 
 已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 不会将 extension API `1.4.0` 重新编号。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
-弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。stable 别名至少保留至后续一个次版本发行，且只能在主版本中删除。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineProviderKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。现有顶层配置拼法继续支持。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
+弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。stable 别名至少保留至后续一个次版本发行，且只能在主版本中删除。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。现有顶层配置拼法继续支持。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
 | 身份 | 含义与准入 |
 | --- | --- |
@@ -34,7 +34,7 @@
 | [工具定义与元数据](../../packages/extension-api/src/tool.ts)：`ToolDef`、`ToolMeta`、`ToolResult`、`ResolvedToolCallPolicy`、校验与策略解析 | stable | 参数/结果 schema、调用安全分类、replay/risk、并发元数据和输出上限；分类不能签发 Host 权限 |
 | [工具调用上下文](../../packages/extension-api/src/tool.ts)：`ToolContext`、FS/exec/net/artifact/授权/session 端口 | stable | Host 绑定的 actor/工作区、审批、lease、取消与输出限制；缺失能力就是不支持 |
 | 工具上下文可选 `runtime`/`codeRuntime`、流式 `sandbox.openProcess`、子代理后续消息、`net.fetchPublic` | experimental | 各功能独立的可用性与生命周期；声明不等于已装配后端 |
-| [扩展构造](../../packages/extension-api/src/extension.ts)、[普通插件 facade](../../packages/extension-api/src/plugin-extension.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `defineExtension`/`ExtensionAPI` 受控注册；普通 `ctx.tools.register` 管理工具注册；`ctx.extension()` 提供全部支持的 hooks 与账本事件，通过该 facade 注册 slots/services/projections/resources 仍被拒绝 |
+| [扩展构造](../../packages/extension-api/src/extension.ts)、[插件 context facet](../../packages/extension-api/src/plugin-context.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `PluginContextFacets`（`ctx.tools`/`hooks`/`projections`/`services`/`slots`/`resources`/`eventLog`/`providers`/`self`）是唯一的作者面；`ExtensionAPI` 是内置包的这些 facet 所运行在其上的 Host 后端 |
 | [Hooks](../../packages/extension-api/src/hooks.ts)、[slots](../../packages/extension-api/src/slots.ts)、生成的 hook/slot/theme 表、[JSON payload 校验](../../packages/extension-api/src/json-payload.ts) | stable | 类型化 payload/return、白名单与大小校验；生成表为权威；浏览器组件 slot 是独立版本目录 |
 | [服务](../../packages/extension-api/src/services.ts)、[投影](../../packages/extension-api/src/projections.ts) | stable | Schema 校验调用、Host 身份绑定、owner 读取与显式 unavailable；查询服务不能获得效果权限，效果服务的进程访问须经过已装配授权路径 |
 | [公共类型](../../packages/extension-api/src/common.ts)、[资源](../../packages/extension-api/src/resources.ts)、[工作区 hook 快照](../../packages/extension-api/src/workspace-hooks.ts) | stable | Session/lease/logger/platform/enforcement 事实、资源种类与不可变调用配置；事实不是授权 |
@@ -46,7 +46,7 @@
 | [Sandbox provider](../../packages/extension-api/src/sandbox-provider.ts)、[进程句柄](../../packages/extension-api/src/process.ts) | experimental | 每调用授权策略与真实 enforcement、能力拒绝、进程归属与工作区/配置实例 |
 | [工具 runtime](../../packages/extension-api/src/tool-runtime.ts)、[policy](../../packages/extension-api/src/tool-policy.ts) | experimental | 会话调度与 generation 决策策略分离；Core 维护 dispatch/审批/授权/效果 |
 | [子代理](../../packages/extension-api/src/child-agent.ts) | experimental | 类型化父会话绑定 start/adopt/list/message/result/event/interrupt/dispose 及约束 |
-| [Provider kinds、注册与目录](../../packages/extension-api/src/provider-kind.ts)、`ProviderError` | experimental | 内置 `KindMap`、精确自定义 token、来源归属、semver 准入、不可变元数据、等待式 unregister 与生命周期 scope |
+| [Provider kinds、注册与目录](../../packages/extension-api/src/provider-kind.ts)、`ProviderError` | experimental | 精确 kind token（`defineKind`）、来源归属、semver 准入、不可变元数据、等待式 unregister 与生命周期 scope |
 | [搜索 provider](../../packages/extension-api/src/search-provider.ts)、[Skill 安装请求端口](../../packages/extension-api/src/skill-install.ts) | experimental | 部署拥有的搜索、经审批的 prepare/commit/status/cancel 安装；请求元数据不是授权 |
 | [普通包元数据](../../packages/package-manager/src/plugin-manifest.ts)、[能力声明](../../packages/package-manager/src/plugin-capabilities.ts)、bundles 与 profile composition | experimental | 静态声明、独立 trust/enablement、确定性选择与可见性；下文详述 |
 | 插件管理、SDK 会话选择、generation 迁移/发布 API | experimental | 认证操作与后台持久绑定；浏览器模块不获得 Node 凭据 |
@@ -93,7 +93,7 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 
 ## 注册、选择与重启 scope
 
-`ctx.providers.register(kind, sourcePackage, provider)` / `resolve(kind, selection)` 经 `KindMap` 推断内置类型；自定义 kind 必须使用服务安装的精确 `defineProviderKind<T>()` token。同名但不同身份 token 被拒绝。经验证的 plugin owner 决定来源身份，冲突声明拒绝。不可变目录含 kind/id/version/source/capabilities/scope/restartRequired/active/selectedFor，不含 factory/凭据。Active 表示配置选中，不表示活动会话数。具名 service facade 继续存在。
+`ctx.providers.register(kind, sourcePackage, provider)` / `resolve(kind, selection)` 必须使用其 owner 安装的精确 kind token（`defineKind<T>()`）。同名但不同身份 token 被拒绝。经验证的 plugin owner 决定来源身份，冲突声明拒绝。不可变目录含 kind/id/version/source/capabilities/scope/restartRequired/active/selectedFor，不含 factory/凭据。Active 表示配置选中，不表示活动会话数。具名 service facade 继续存在。
 
 `ProviderError` codes 为 `E_PROVIDER_DUPLICATE/E_PROVIDER_UNKNOWN/E_PROVIDER_INVALID/E_PROVIDER_INCOMPATIBLE/E_PROVIDER_UNAVAILABLE`，字段为 `kind`、可选 `provider`、`operation`、默认 false 的 `retryable`、可选 `hint` 和原始 `cause`。应按 code 分支，不依赖文本。八种具名 Host facade 与独立 Core Loop/tool registry 对注册、解析、选择、能力不兼容和无效构造结果统一使用这些码；provider 自己抛出的操作错误和 AbortSignal reason 保持原样，不自动包装为准入错误。
 
@@ -180,11 +180,11 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | 运行时出口组 | 名称 |
 | --- | --- |
 | 兼容/错误 | `API_VERSION`, `parseSemver`, `satisfiesApiRange`, `checkApiRange`, `EXTENSION_ERROR_CODES`, `ExtensionError`, `isExtensionError`, `PROVIDER_ERROR_CODES`, `ProviderError`, `isProviderError` |
-| 扩展/清单 | `defineExtension`, `checkManifest`, `extEventType`, `EXTENSION_ID_PATTERN`, `EVENT_NAME_PATTERN`, `NETWORK_HOST_PATTERN` |
+| 扩展/清单 | `checkManifest`, `extEventType`, `EXTENSION_ID_PATTERN`, `EVENT_NAME_PATTERN`, `NETWORK_HOST_PATTERN` |
 | Hooks/UI/JSON | `HOOK_EVENTS`, `HOOK_TABLE`, `SLOT_NAMES`, `SLOT_TABLE`, `THEME_TOKEN_NAMES`, `SLOT_PAYLOAD_MAX_BYTES`, `isJsonPayload` |
 | 工具校验/策略 | `checkToolDef`, `checkToolMeta`, `checkResolvedToolCallPolicy`, `resolveToolCallPolicy`, `TOOL_META_KEYS`, `RESOLVED_TOOL_CALL_POLICY_KEYS`, `TOOL_NAME_PATTERN`, `TOOL_POLICY_VERSION_PATTERN`, `APPROVAL_SCOPE_PATTERN`, `MAX_APPROVAL_SCOPES`, `TOOL_DESCRIPTION_MAX_LENGTH`, `TOOL_PARAMETERS_MAX_BYTES`, `TOOL_PARAMETERS_MAX_DEPTH`, `DEFAULT_OUTPUT_MAX_BYTES`, `MIN_OUTPUT_MAX_BYTES`, `MAX_OUTPUT_MAX_BYTES` |
 | 服务/投影/资源 | `checkServiceDef`, `unavailableProjections`, `RESOURCE_KINDS` |
-| Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `defineProviderKind`, `defineServiceKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
+| Loop/provider 注册 | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `defineKind`, `providerRestartRequired` |
 | 公共默认算法 | `createCompactionThreshold`、`defaultToolPolicy`（experimental，不依赖 Core） |
 | 持久化/sandbox | `DEFAULT_PERSISTENCE_PROVIDER_ID`, `PERSISTENCE_EFFECT`, `PERSISTENCE_SCAN_PAGE_MAX`, `definePersistenceProvider`, `persistenceRegisterKey`, `isPersistenceTombstone`, `LOCAL_SANDBOX_PROVIDER_ID`, `sandboxUnavailable` |
 
@@ -206,7 +206,7 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 | # | 要求 | 状态 | 当前证据与剩余义务 |
 | --- | --- | --- | --- |
 | 1 | 独立身份、静态准入、canonical/旧配置选择与拒绝 | done | [Manifest parser](../../packages/package-manager/src/plugin-manifest.ts)、[range parser](../../packages/extension-api/src/api-range.ts)、[provider selection](../../packages/host-providers/src/assemble/provider-selection.ts)、[Loop selection tests](../../packages/host/test/loop-selection.test.ts)；已说明 embedding-only 省略 |
-| 2 | 类型化注册、owner、等待卸载、不可变目录与错误 | done | [KindMap/token](../../packages/extension-api/src/provider-kind.ts)、[registry](../../packages/host-common/src/assemble/provider-registry.ts)、[测试](../../packages/host/test/owners/host-common/test/assemble/provider-registry.test.ts)；具名 registry 错误已统一；前文明确列出消费边界兼容码 |
+| 2 | 类型化注册、owner、等待卸载、不可变目录与错误 | done | [kind token](../../packages/extension-api/src/provider-kind.ts)、[registry](../../packages/host-common/src/assemble/provider-registry.ts)、[测试](../../packages/host/test/owners/host-common/test/assemble/provider-registry.test.ts)；具名 registry 错误已统一；前文明确列出消费边界兼容码 |
 | 3 | 可用高低层 Loop views/input/preparation/typed output | done | [公开端口](../../packages/extension-api/src/loop.ts)、[装配端口](../../packages/core/src/loop/ports.ts)、[独立 ReAct tests](../../packages/core/test/react-loop.test.ts)、[Loop tests](../../packages/core/test/loop-plugin.test.ts)；可读请求 stamps 与宽泛 emit 保留为 experimental 暴露 |
 | 4 | 显式 outcome、run/finish/reentry/park/wake 与事件规则 | done | [Stop rule](../../packages/extension-api/src/loop.ts)、[waterfall](../../packages/core/src/loop/events.ts)、[耐久 wake](../../packages/core/src/loop/wait.ts)、[testkit 共用 stop rule](../../packages/plugin-runtime/testkit/loop.ts)；上述按操作通知规则不含 crash exactly-once |
 | 5 | 可恢复效果身份/checkpoint 与所有 Loop 的 budget/auth/media 边界 | done | [Invocation receipts](../../packages/core/src/loop/invocations.ts)、[assistant/checkpoint commits](../../packages/core/src/loop/ports.ts)、[crash/budget/wake/child/job cases](../../packages/core/test/react-loop.test.ts)；身份/status/association 保守合同已接受为 v0.1 experimental；外部 exactly-once 排除在保证外 |

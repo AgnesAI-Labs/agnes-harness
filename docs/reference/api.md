@@ -21,8 +21,8 @@ APIs evolve with the source. `@agnes/*` packages currently resolve through the r
 | Node client | Node conditional export of `@agnes/sdk` | createClient, session, config, packages, resources, skills, mcp |
 | Browser host | `@agnes/sdk/browser` | Sessions and browser-allowed protocol methods, without Node management capabilities |
 | Browser plugin | Host-supplied ClientContext | slots, session, theme, locale, commands, agnes.services |
-| Backend Cordis plugin row | `@agnes/plugin-runtime` / Cordis Context | Config, inject/provide, effect, ctx.extension, ctx.skills, and ctx.services/slots/projections/resources on verified rows |
-| Constrained extension capabilities | PluginExtensionAPI from `@agnes/extension-api` | Tools, `on` observation hooks, all `registerHook` categories, and events; service and similar contributions use row Cordis APIs |
+| Backend Cordis plugin row | `@agnes/plugin-runtime` / Cordis Context | Config, inject/provide, effect, and the `ctx.tools`/`hooks`/`eventLog`/`self`/`skills`/`services`/`slots`/`projections`/`resources` facets |
+| Plugin context facets | `PluginContextFacets` from `@agnes/extension-api` | Tools, hooks (all 16 events), ledger events, services, slots, projections, resources, providers and the plugin's own identity |
 
 Current SDK exports: [index.node.ts](../../packages/sdk/src/index.node.ts) and [index.browser.ts](../../packages/sdk/src/index.browser.ts). Consume only package `exports`; source links explain behavior and do not authorize deep imports.
 

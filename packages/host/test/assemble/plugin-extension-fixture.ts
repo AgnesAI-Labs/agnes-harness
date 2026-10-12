@@ -61,10 +61,10 @@ export function pluginSourceWith(
       exports: './index.js',
       agnes: {
         plugins: exports.map((e) => ({
-          apiRange: '^2.0.0',
+          apiRange: '^3.0.0',
           export: e.exportName,
           id: e.rowId,
-          inject: ['extension', 'tools'],
+          inject: ['hooks', 'eventLog', 'self', 'tools'],
         })),
       },
     })}\n`,
@@ -74,7 +74,7 @@ export function pluginSourceWith(
     `${TOOL_HELPER}\n${exports
       .map(
         (e) =>
-          `export const ${e.exportName} = { inject: ['extension', 'tools'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = ctx.extension()\n'}${e.body}\n} }\n`,
+          `export const ${e.exportName} = { inject: ['hooks', 'eventLog', 'self', 'tools'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = { on: (e, h) => ctx.hooks.register(e, h), registerHook: (e, h) => ctx.hooks.register(e, h), events: ctx.eventLog, ctx: ctx.self }\n'}${e.body}\n} }\n`,
       )
       .join('')}`,
   )
@@ -118,7 +118,7 @@ export const pluginRow = (
     entryRevision: identity.snapshotId ?? SNAPSHOT_ID,
     extrasRevision: 'none',
     mountRevision: 'host-ordinary-row:v1',
-    inject: ['extension', 'tools'],
+    inject: ['hooks', 'eventLog', 'self', 'tools'],
     ...(disabled ? { disabled } : {}),
   })
 

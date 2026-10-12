@@ -11,7 +11,7 @@ export function skinFiles() {
           license: 'Apache-2.0',
           exports: './index.mjs',
           agnes: {
-            plugins: [{ apiRange: '^2.0.0', id: 'ext:my-mint-skin/main', export: 'main' }],
+            plugins: [{ apiRange: '^3.0.0', id: 'ext:my-mint-skin/main', export: 'main' }],
             clientDescriptors: [
               { rowId: 'ext:my-mint-skin/main', path: './extensions/main/agnes.client.json' },
             ],

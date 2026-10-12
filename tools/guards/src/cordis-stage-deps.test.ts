@@ -210,7 +210,10 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
     const keys = Object.keys(runtime.exports).sort()
     if (
       keys.some(
-        (key) => !['.', './host', './testkit', './provided-externals', './deferred-contract'].includes(key),
+        (key) =>
+          !['.', './host', './bundled', './testkit', './provided-externals', './deferred-contract'].includes(
+            key,
+          ),
       )
     ) {
       errors.push(`plugin-runtime exports unexpected subpaths: ${keys.join(', ')}`)

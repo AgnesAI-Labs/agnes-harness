@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { type McpCatalogHub, mcpCatalogHubFor } from '@agnes/base'
-import { API_VERSION, defineExtension, type ExtensionAPI, type ExtensionManifest } from '@agnes/extension-api'
+import { API_VERSION, type ExtensionAPI, type ExtensionManifest } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
@@ -52,16 +52,15 @@ function resourceExtension(name: string, log: string[], options: { failOpen?: bo
       revision: 'r1',
     },
     manifest,
-    factory: () =>
-      defineExtension(async (agnes) => {
-        log.push(`open:${name}`)
-        if (options.failOpen) throw new Error(`cannot open ${name}`)
-        const dispose = agnes.registerTool(fixtureTool(`${name}_ping`))
-        return () => {
-          dispose()
-          log.push(`close:${name}`)
-        }
-      }),
+    factory: () => async (agnes: ExtensionAPI) => {
+      log.push(`open:${name}`)
+      if (options.failOpen) throw new Error(`cannot open ${name}`)
+      const dispose = agnes.registerTool(fixtureTool(`${name}_ping`))
+      return () => {
+        dispose()
+        log.push(`close:${name}`)
+      }
+    },
   }
 }
 
@@ -91,10 +90,9 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
     let captured: ExtensionAPI | undefined
     const dynamic = {
       ...base,
-      factory: () =>
-        defineExtension((api) => {
-          captured = api
-        }),
+      factory: () => (api: ExtensionAPI) => {
+        captured = api
+      },
     }
     await h.host.extensionRows.apply([
       ...h.host.extensionRows.current(),
@@ -343,7 +341,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
         } as ExtensionManifest,
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) => {
           seen.set(name, mcpCatalogHubFor(ctx))
-          return defineExtension(() => undefined)
+          return () => undefined
         },
       }
     }

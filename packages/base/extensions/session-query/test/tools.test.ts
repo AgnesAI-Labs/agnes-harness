@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionAPI, ToolContext, ToolResult } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createSessionQueryExtension,
@@ -146,7 +147,7 @@ describe('session query tools', () => {
     const dir = tempDir()
     const warnings: string[] = []
     const factory = createSessionQueryExtension({ dataDir: dir })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool: () => () => undefined,
       registerHook: () => () => undefined,
       ctx: {

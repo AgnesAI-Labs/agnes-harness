@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 
 export const CONSENT_LEVELS = ['DISABLED', 'LOCAL', 'ANON', 'FULL'] as const
 export type ConsentLevel = (typeof CONSENT_LEVELS)[number]
@@ -40,7 +40,7 @@ export function allowsContent(level: ConsentLevel): boolean {
 
 /** Validates a consent change before recording the accepted state transition. */
 export async function changeConsent(
-  agnes: ExtensionAPI,
+  host: Pick<Context, 'eventLog'>,
   from: ConsentLevel,
   to: ConsentLevel,
   by: string,
@@ -48,6 +48,6 @@ export async function changeConsent(
 ): Promise<ConsentTransition> {
   const transition = transitionConsent(from, to, { explicit, by })
   if (!transition.ok) return transition
-  await agnes.events.append('consent', { from, to, by })
+  await host.eventLog.append('consent', { from, to, by })
   return { ok: true }
 }

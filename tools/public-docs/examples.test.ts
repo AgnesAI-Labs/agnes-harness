@@ -59,7 +59,7 @@ describe('public documentation examples (no provider, no daemon)', () => {
   it('loads the actual backend export, validates its schema and executes its documented result', async () => {
     const pkg = JSON.parse(await readFile(exampleUrl('hot-tool-plugin/package.json'), 'utf8'))
     const [declaration] = parseAgnesPluginEntries(pkg.name, pkg.agnes.plugins)
-    expect(declaration?.inject).toEqual(['tools', 'extension'])
+    expect(declaration?.inject).toEqual(['tools', 'hooks', 'self'])
     const mod = await moduleAt('hot-tool-plugin/index.mjs')
     let tool: ToolDef | undefined
     const hooks: string[] = []
@@ -70,11 +70,12 @@ describe('public documentation examples (no provider, no daemon)', () => {
           tool = def
         },
       },
-      extension: () => ({
-        on(event: string) {
+      hooks: {
+        register(event: string) {
           hooks.push(event)
         },
-      }),
+      },
+      self: { log: { info() {} } },
     })
     if (!tool) throw new Error('example did not register its tool')
     expect(checkToolDef(tool, { prefix: '' })).toMatchObject({ ok: true })

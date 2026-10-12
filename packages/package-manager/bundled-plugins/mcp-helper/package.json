@@ -18,7 +18,7 @@
     "plugins": [
       {
         "export": "mcpHelper",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:mcp-helper/main",
         "inject": [
           "tools"

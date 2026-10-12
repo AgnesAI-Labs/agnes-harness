@@ -1,5 +1,6 @@
 import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
 import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createSubagentExtension } from '../src/index.js'
@@ -158,7 +159,7 @@ describe('subagent tool definitions', () => {
     const names: string[] = []
     const disposed: string[] = []
     const factory = createSubagentExtension(deps())
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         names.push(tool.name)
         return () => disposed.push(tool.name)

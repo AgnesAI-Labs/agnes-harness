@@ -9,6 +9,7 @@ import {
   mcpStablePrefix,
 } from '@agnes/base'
 import type { DynamicExtension } from '@agnes/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import {
   type DesiredState,
   type McpServerDefinitionInput,
@@ -133,7 +134,7 @@ export function mcpServerRowsFromDefinitions(
         manifest: Object.freeze({
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^2.0.0',
+          apiRange: '^3.0.0',
           entry: './index.mjs',
           // Each server can register only its own stable tool names. Shared resource tools
           // live on `agnes/mcp-resources`, which owns their separate grant.
@@ -144,17 +145,19 @@ export function mcpServerRowsFromDefinitions(
           }),
         }),
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
-          mcpServerExtension(cfg, {
-            catalogHub: mcpCatalogHubFor(ctx),
-            connect: (_cfg: McpServerConfig, signal: AbortSignal) =>
-              leaseMcpConnection(opener, `${serverId}\0${revision}`, definition, signal),
-            ...(options.onFirstAttempt
-              ? { onFirstAttempt: (ready) => options.onFirstAttempt?.(definition.serverId, ready) }
-              : {}),
-            ...(options.onStatus
-              ? { onStatus: (event) => options.onStatus?.(definition.serverId, event) }
-              : {}),
-          }),
+          extensionFactoryOf(
+            mcpServerExtension(cfg, {
+              catalogHub: mcpCatalogHubFor(ctx),
+              connect: (_cfg: McpServerConfig, signal: AbortSignal) =>
+                leaseMcpConnection(opener, `${serverId}\0${revision}`, definition, signal),
+              ...(options.onFirstAttempt
+                ? { onFirstAttempt: (ready) => options.onFirstAttempt?.(definition.serverId, ready) }
+                : {}),
+              ...(options.onStatus
+                ? { onStatus: (event) => options.onStatus?.(definition.serverId, event) }
+                : {}),
+            }),
+          ),
       }),
     )
   }

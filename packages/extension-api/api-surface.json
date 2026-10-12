@@ -1,5 +1,5 @@
 {
-  "apiVersion": "2.3.0",
+  "apiVersion": "3.0.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
@@ -22,6 +22,7 @@
     "NETWORK_HOST_PATTERN",
     "PERSISTENCE_EFFECT",
     "PERSISTENCE_SCAN_PAGE_MAX",
+    "PLUGIN_FACET_NAMES",
     "PLUGIN_SECRET_REF_PATTERN",
     "PROVIDER_ERROR_CODES",
     "ProviderError",
@@ -50,7 +51,6 @@
     "compilePluginConfig",
     "createCompactionThreshold",
     "defaultToolPolicy",
-    "defineExtension",
     "defineKind",
     "definePersistenceProvider",
     "extEventType",

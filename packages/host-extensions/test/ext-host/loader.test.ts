@@ -68,7 +68,7 @@ it('requires compatible ordinary plugin apiRange before evaluating any source', 
   }
   f.write(
     'package.json',
-    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^2.0.0' }] } }),
+    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0' }] } }),
   )
   expect(await f.loader.import(entry)).toHaveProperty('main')
   expect(readFileSync(marker, 'utf8')).toBe('yes')
@@ -128,7 +128,7 @@ it('shares host modules even when the extension carries decoy copies', async () 
   expect(shared.inspectJsonData).toBe(inspectJsonData)
   expect(shared.Type).toBe(Type)
   expect(shared.Value).toBe(Value)
-  expect(typeof mod.default).toBe('function')
+  expect(typeof (mod.default as { apply?: unknown }).apply).toBe('function')
 })
 
 it.each(['ts', 'mjs', 'js'])(
@@ -167,7 +167,7 @@ it('loads the real author example module through jiti', async () => {
   const mod = await f.loader.import(
     fileURLToPath(new URL('../../../plugin-runtime/examples/minimal/index.ts', import.meta.url)),
   )
-  expect(typeof mod.default).toBe('function')
+  expect(typeof (mod.default as { apply?: unknown }).apply).toBe('function')
 })
 
 it.each(['mjs', 'js', 'cjs'])(
@@ -317,7 +317,7 @@ it.each(['ts', 'js'])(
         agnes: {
           hostProvidedExternals: {
             '@agnes/plugin-runtime': '0.0.0',
-            '@agnes/extension-api': '^2.0.0',
+            '@agnes/extension-api': '^3.0.0',
             '@sinclair/typebox': '~0.34.0',
           },
         },

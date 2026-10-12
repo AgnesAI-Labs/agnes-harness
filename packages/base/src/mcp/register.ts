@@ -8,7 +8,7 @@ import {
   type ToolDef,
   type ToolResult,
 } from '@agnes/extension-api'
-import { defineTool } from '@agnes/plugin-runtime'
+import { type Context, defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
 import {
@@ -517,7 +517,7 @@ export async function inspectRemoteCatalog(
  * registration and closing its connection when this extension owns it.
  */
 export async function registerRemoteToolsStrict(
-  agnes: ExtensionAPI,
+  host: Pick<Context, 'tools' | 'resources' | 'self'>,
   conn: McpConnection,
   cfg: McpServerConfig,
   opts: {
@@ -565,7 +565,7 @@ export async function registerRemoteToolsStrict(
     }
     const definitions = allocated.map((row) => remoteDefinition(conn, cfg, row.tool, mediaLimits, row.name))
     const admitted = admitMcpResourceTools(conn, cfg, reserved, (name) =>
-      agnes.ctx.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
+      host.self.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
     )
     const resourceTools = admitted.tools
     const catalog = [...definitions, ...resourceTools].map((definition) => ({
@@ -580,7 +580,7 @@ export async function registerRemoteToolsStrict(
           }`
         : ''
     disposers.push(
-      agnes.registerResource({
+      host.resources.register({
         id: cfg.id,
         kind: 'mcp',
         name: cfg.id,
@@ -589,7 +589,7 @@ export async function registerRemoteToolsStrict(
     )
     disposers.push(bindMcpResourceServer(cfg.id, conn, cfg))
     for (const definition of [...definitions, ...resourceTools])
-      disposers.push(agnes.registerTool(definition))
+      disposers.push(host.tools.register(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
     if (cfg.defer) opts.onCatalog?.(catalog)
@@ -606,7 +606,7 @@ export async function registerRemoteToolsStrict(
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false)
       void conn.close().catch((error) =>
-        agnes.ctx.log.warn('MCP connection did not close cleanly', {
+        host.self.log.warn('MCP connection did not close cleanly', {
           id: cfg.id,
           message: errorText(error, cfg),
         }),

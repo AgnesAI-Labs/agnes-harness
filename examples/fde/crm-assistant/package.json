@@ -23,7 +23,7 @@
     "test": "vitest run test/workflow.e2e.test.mjs --maxWorkers=1"
   },
   "dependencies": {
-    "@agnes/extension-api": "2.0.0",
+    "@agnes/extension-api": "^3.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
     "@modelcontextprotocol/sdk": "1.25.2",
@@ -56,7 +56,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:@agnes-fde/crm-assistant/main",
         "inject": [
           "tools",

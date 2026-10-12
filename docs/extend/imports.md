@@ -4,7 +4,7 @@ English | [简体中文](imports.zh-CN.md)
 
 [Author kit](README.md) · [Quickstart](quickstart.md) · [Testing](testing.md)
 
-Start with `@agnes/plugin-runtime` for author helpers, `@agnes/extension-api` for contracts, and **`@agnes/host/author-testkit` for author tests**. Import a service kind token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#4-optional-compilation-and-tests).
+Start with `@agnes/plugin-runtime` for author helpers, `@agnes/extension-api` for contracts, and **`@agnes/host/author-testkit` for author tests**. Every kind, registered or bound, is one token type; import a Host-service token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#4-optional-compilation-and-tests).
 
 **Author** below means the supported public author surface in this preview, not a frozen API guarantee. **Specialist** means an explicit contract or integration task. **Internal/legacy — don't use** means avoid that entry in new author templates; existing exports remain available.
 
@@ -15,7 +15,7 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 | Task | Import package | Exported symbols | Surface / use |
 | --- | --- | --- | --- |
 | Define a tool and its plugin | `@agnes/plugin-runtime` | `defineAgnesPlugin`, `defineTool`, `readOnlyTool`, `writeTool`, `toolError`, `toolCancelled`; types `Context`, `TypedToolDef`, `TypedToolResult` | Author. Inject `tools`, then call `ctx.tools.register(tool)`; [tool starter](../../templates/tool/src/index.ts). |
-| Describe tool inputs, results and invocation ports | `@agnes/extension-api` | Types `ToolDef`, `ToolMeta`, `ToolContext`, `ToolResult`, `PluginExtensionAPI` | Author contracts. The only `defineTool` is exported by `@agnes/plugin-runtime`, for official and community authors. |
+| Describe tool inputs, results and invocation ports | `@agnes/extension-api` | Types `ToolDef`, `ToolMeta`, `ToolContext`, `ToolResult`, `PluginContextFacets` | Author contracts. The only `defineTool` is exported by `@agnes/plugin-runtime`, for official and community authors. |
 | Build TypeBox schemas | `@sinclair/typebox` | `Type`; types `Static`, `TSchema` | Author. Schemas must carry TypeBox Kind symbols; plain JSON Schema is insufficient for tool inputs. |
 | Validate or compile a schema | `@sinclair/typebox/value`, `@sinclair/typebox/compiler` | `Value`, `TypeCompiler`, respectively | Author, when needed. These are separate subpaths, not exports of Agnes helpers. |
 | Add a browser panel or UI asset | `@agnes/web-client` | Types `ClientContext`, `ClientModule`; `workbenchPanels` | Author, browser only. Export `apply(ctx, config)`, register through `ctx.slots` or `workbenchPanels`, and declare entry/styles/slots in a client descriptor. A simple JS sidebar needs no SDK import; see [frontend modules](../develop/frontend.md) and [workbench panels](workbench-panels.md). |
@@ -27,14 +27,18 @@ Names marked “type” use `import type`. Registration methods are supplied by 
 | Package MCP + Skills | `@agnes/plugin-runtime`, `@agnes/protocol` | `defineAgnesPlugin`, type `Context`; type `McpServerDefinitionInput`, respectively | Author. MCP definitions and `SKILL.md` are package data, not tool helpers. Inject `skills` and call `ctx.skills.register(...)`; the source starter imports `@agnes/resource-control-runtime` for its context typing. That package is not a Host-provided external; the candidate creator omits that import. See [starter](../../templates/mcp-skills/src/index.ts) and [MCP management](../guide/mcp.md). |
 | Declare package capabilities / scopes | `@agnes/protocol` | Type `PluginCapabilities` | Author. Describes `package.json` → `agnes.capabilities` (filesystem paths, network hosts, exec commands, model/UI flags). See [capability format](../guide/packages.md#capabilities). Metadata does not grant authorization. |
 | Describe an extension's capabilities / tool approval policy | `@agnes/extension-api` | Types `ExtensionCapabilities`, `ExtensionManifest`, `ToolMeta`, `ResolvedToolCallPolicy` | Author contracts. Descriptor capabilities and package capabilities have different shapes. Use invocation `ToolContext` ports for authorized I/O; see [tool policies](tool-runtime.md). |
-| Use a Host service by kind token | Owning contract package in the table below | Types `ServiceKind`, `ServiceBindingPort`, `LoopServiceReader` from `@agnes/extension-api` | Specialist. Use the actual supplied service port; importing a token does not install, select or authorize its provider. |
+| Use a Host service by kind token | Owning contract package in the table below | Types `BindableKind`, `LoopServiceReader` from `@agnes/extension-api` | Specialist. Use the actual supplied service port; importing a token does not install, select or authorize its provider. |
 | Test tools, Skills, Loops and adapters | `@agnes/host/author-testkit` | `createPluginTestHost`, `driveLoop`, `scriptedModel`, `runModelAdapter` | Author, test files only. The Host registration bridge is automatic. Supply explicit service doubles for lightweight contracts. |
 | Test sessions, generation pins, model replay or HTTP/SSE faults | `@agnes/host/author-testkit` | `createAuthorTestkit`, `recordModelFixture`, `replayModelFixture`, `startModelFaultServer`, `ScriptedProvider`, `fakeModel`, `fakeRequest` | Author, test files only; [testing guide](testing.md) explains fixture limits and cleanup. |
 | Check specialist provider lifecycle contracts | `@agnes/extension-api/testkit` | `runProviderConformance`, `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance`, `childAgentConformance` | Specialist. Requires a real Host registration/session probe; this is not a second starter testkit. Optional Vitest persistence suites live at `@agnes/extension-api/testkit/persistence-contract`. |
 
-## Host service kind tokens
+## Kind tokens
 
-These are the six service-kind tokens in the Host-provided public author namespaces. Import the exact owning path so reloads preserve token identity; do not copy a token or recreate it with `defineServiceKind`.
+A kind is one token made with `defineKind`. It declares whether it supports `ctx.providers.register`, `ctx.providers.bindOwn`, or both (a `bind` option adds binding). `ctx.providers.register(kind, packageId, provider)` and `ctx.providers.bindOwn(kind)` take the same token type, and the Host refuses an operation the kind does not declare.
+
+Host-installed provider kinds are exported by `@agnes/extension-api` (and re-exported by `@agnes/plugin-runtime`): `loopKind`, `modelAdapterKind`, `compactionKind`, `persistenceKind`, `sandboxKind`, `toolRuntimeKind`, `toolPolicyKind`, `childAgentKind`, `referenceResolverKind`, `memoryKind`, `systemPromptKind`, `webhookTriggerKind`; the seven seam kinds (`approvalKind`, `principalsKind`, `billingKind`, `checkpointKind`, `artifactsKind`, `verifierKind`, `repairKind`) come from `@agnes/extension-api/seams`.
+
+These are the six bindable kinds in the Host-provided public author namespaces. Import the exact owning path so reloads preserve token identity; do not copy a token or recreate it with `defineKind`.
 
 | Service | Import package | Exported token | Contract source |
 | --- | --- | --- | --- |
@@ -46,8 +50,6 @@ These are the six service-kind tokens in the Host-provided public author namespa
 | Deferred invocation producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
 `ctx.providers.bindOwn(kind)` binds the admitted owner's instance when that port is available. A Loop uses its optional `LoopContext.services.get(kind)` reader and must handle an absent service. Ordinary plugins register through `ctx.providers.register(kind, packageId, provider)` and bind through `ctx.providers.bindOwn(kind)`. Host admission, owner and source-package checks apply to both. Some tokens are for Host-owned services; their presence in a public namespace does not make every instance callable by every plugin.
-
-`memoryKind`, `systemPromptKind` and `webhookTriggerKind` are also exported from `@agnes/extension-api`. They are **provider registration tokens**, not `ServiceKind` tokens for `bindOwn` or the Loop service reader. Use their corresponding provider contracts and registration paths.
 
 ## Entries to avoid in new author code
 

@@ -59,7 +59,7 @@ export const pluginHelper = {
         if (kind === 'skin')
           return result({
             host: 'Agnes Harness',
-            apiVersion: '2.0.0',
+            apiVersion: '3.0.0',
             guidance: skinGuidance,
             files: [
               ...skinFiles(),
@@ -81,10 +81,10 @@ export const pluginHelper = {
           agnes: {
             plugins: [
               {
-                apiRange: '^2.0.0',
+                apiRange: '^3.0.0',
                 id: 'ext:my-agh-plugin/main',
                 export: 'main',
-                inject: kind === 'tool' ? ['tools', 'extension'] : ['skills'],
+                inject: kind === 'tool' ? ['tools', 'hooks', 'self'] : ['skills'],
               },
             ],
           },
@@ -95,7 +95,7 @@ export const pluginHelper = {
             : "export const main = { inject: ['skills'], apply(ctx) { ctx.skills.register({ name: 'my-workflow', description: 'Use when the user requests this workflow.', body: 'Describe the concrete workflow here.' }) } }\n"
         return result({
           host: 'Agnes Harness',
-          apiVersion: '2.0.0',
+          apiVersion: '3.0.0',
           guidance:
             'Understand the requested behavior, select the minimum capabilities and implement it using the template. Rename the package, row and tool/Skill. agnes.plugins named exports and inject must match the exported plugin object. Tool schemas require TypeBox Kind symbols, with explicit ToolMeta safety fields; optional fields have defaults. Use invocation ctx.fs/net/shell for user operations; never use ambient Node access to bypass AGH policy. Install executes generated JavaScript with local process privileges; inspection does not prove safety or correctness. This first helper accepts text-only self-contained ESM, tool/Skill rows or the skin guide template, no dependencies/scripts; replacement must review the installed base hash. For Node tests, import createPluginTestHost from @agnes/host/author-testkit and call createPluginTestHost(main); the registration bridge is automatic. Advanced services/client UI follow the public import map and the standard package manager. Save only in the Host private candidate area via plugin_helper_create; plugin_helper_install test asks permission to run Node tests, commit submits the passing hash for human review. The human must publish in Settings → Plugins; status reads the durable candidate, and publication affects only new sessions. Do not claim UI effects were verified from backend status. Never bypass denial with shell/config edits.',
           documentation: 'https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/extend/imports.md',

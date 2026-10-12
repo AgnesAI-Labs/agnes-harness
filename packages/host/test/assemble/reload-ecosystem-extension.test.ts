@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
-import { defineExtension, type ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionManifest } from '@agnes/extension-api'
 import type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -87,7 +87,7 @@ describe('Host.reloadEcosystemExtension', () => {
     const manifest: ExtensionManifest = {
       id: 'acme/live-skills',
       version: '1.0.0',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       entry: './index.js',
       liveResources: ['skills'],
       capabilities: {},
@@ -103,14 +103,13 @@ describe('Host.reloadEcosystemExtension', () => {
         revision: 'pinned-code',
       },
       manifest,
-      factory: (ctx) =>
-        defineExtension(() => {
-          if (failNext) {
-            failNext = false
-            throw new Error('consumer refresh failed')
-          }
-          read = () => ctx.skillResources?.list().map((skill) => skill.name) ?? []
-        }),
+      factory: (ctx) => () => {
+        if (failNext) {
+          failNext = false
+          throw new Error('consumer refresh failed')
+        }
+        read = () => ctx.skillResources?.list().map((skill) => skill.name) ?? []
+      },
     }
     try {
       const second = host.extensionRows.prepare({

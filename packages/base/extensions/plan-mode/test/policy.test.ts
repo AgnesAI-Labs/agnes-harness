@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDef, ToolPolicyInput } from '@agnes/extension-api'
 import { defaultToolPolicy } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import planMode from '../src/index.js'
@@ -155,7 +156,7 @@ describe('plan mode extension', () => {
       string,
       (payload: unknown, ctx: { session: { workspaceRoot: string } }) => unknown
     >()
-    planMode({
+    extensionFactoryOf(planMode)({
       registerTool(tool: ToolDef) {
         tools.push(tool)
         return () => undefined

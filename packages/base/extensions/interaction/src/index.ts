@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { defineExtension, type ProjectionDef } from '@agnes/extension-api'
-import { defineTool } from '@agnes/plugin-runtime'
+import type { ProjectionDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 import { type Answers, QuestionParams, type Questions, questionSurface } from './question.js'
 
@@ -67,86 +67,91 @@ export const questionProjection: ProjectionDef<State> = {
   },
 }
 
-export default defineExtension((agnes) => {
-  const read = async (ctx: { projections: import('@agnes/extension-api').ProjectionReader }) => {
-    const result = await ctx.projections.readOwn<State>('questions')
-    if (result.status !== 'available') throw new Error('question persistence unavailable')
-    return result.value
-  }
-  const disposers = [agnes.registerProjection(questionProjection)]
-  disposers.push(
-    agnes.registerTool(
-      defineTool({
-        name: 'ask_user_question',
-        description:
-          'Ask one to four questions with single choice, multiple choice, or free text. Use present for files the user should open or download, and ui_render for tables, charts, forms or dashboards in the UI instead. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
-        parameters: QuestionParams,
-        meta: {
-          isReadOnly: true,
-          isDestructive: false,
-          isConcurrencySafe: true,
-          isOpenWorld: false,
-          replay: 'idempotent',
-          costHint: {},
-          deferLoading: false,
-          requiresApproval: 'never',
-        },
-        async execute(args, ctx) {
-          if (new TextEncoder().encode(JSON.stringify(args.questions)).length > 60000)
-            return {
-              content: [{ type: 'text', text: 'questions exceed the surface payload limit' }],
-              isError: true,
-            }
-          if (new Set(args.questions.map((q) => q.id)).size !== args.questions.length)
-            return { content: [{ type: 'text', text: 'question ids must be unique' }], isError: true }
-          const state = await read(ctx)
-          const previous = state.questions.find((q) => q.toolUseId === ctx.session.toolUseId)
-          if (previous?.answer)
-            return {
-              content: [{ type: 'text', text: JSON.stringify(previous.answer) }],
-              details: { questionId: previous.id, answers: previous.answer },
-            }
-          const id = ctx.session.toolUseId
-          const deadline = previous?.deadline ?? Date.now() + (args.timeoutMs ?? 0)
-          if (!previous) {
-            await renderInteractionSurface(ctx, questionSurface(interactionSurfaceId(id), args.questions))
-            await agnes.events.append('requested', {
-              id,
-              toolUseId: id,
-              questions: args.questions,
-              answer: null,
-              deadline,
-            })
-          }
-          while (Date.now() < deadline) {
-            ctx.signal.throwIfAborted()
-            const latest = await read(ctx)
-            const answer = latest.questions.find((q) => q.id === id)?.answer
-            if (answer)
+export default defineAgnesPlugin({
+  inject: ['tools', 'projections', 'eventLog'],
+  apply(plugin: Context) {
+    const read = async (ctx: { projections: import('@agnes/extension-api').ProjectionReader }) => {
+      const result = await ctx.projections.readOwn<State>('questions')
+      if (result.status !== 'available') throw new Error('question persistence unavailable')
+      return result.value
+    }
+    const disposers = [plugin.projections.register(questionProjection)]
+    disposers.push(
+      plugin.tools.register(
+        defineTool({
+          name: 'ask_user_question',
+          description:
+            'Ask one to four questions with single choice, multiple choice, or free text. Use present for files the user should open or download, and ui_render for tables, charts, forms or dashboards in the UI instead. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
+          parameters: QuestionParams,
+          meta: {
+            isReadOnly: true,
+            isDestructive: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: 'idempotent',
+            costHint: {},
+            deferLoading: false,
+            requiresApproval: 'never',
+          },
+          async execute(args, ctx) {
+            if (new TextEncoder().encode(JSON.stringify(args.questions)).length > 60000)
               return {
-                content: [{ type: 'text', text: JSON.stringify(answer) }],
-                details: { questionId: id, answers: answer },
+                content: [{ type: 'text', text: 'questions exceed the surface payload limit' }],
+                isError: true,
               }
-            if (Object.values(latest.submissions).some((item) => item.surfaceId === interactionSurfaceId(id)))
-              break
-            await delay(Math.min(100, deadline - Date.now()), undefined, { signal: ctx.signal })
-          }
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Question remains open; continue independent work. A late answer arrives through the surface action.
+            if (new Set(args.questions.map((q) => q.id)).size !== args.questions.length)
+              return { content: [{ type: 'text', text: 'question ids must be unique' }], isError: true }
+            const state = await read(ctx)
+            const previous = state.questions.find((q) => q.toolUseId === ctx.session.toolUseId)
+            if (previous?.answer)
+              return {
+                content: [{ type: 'text', text: JSON.stringify(previous.answer) }],
+                details: { questionId: previous.id, answers: previous.answer },
+              }
+            const id = ctx.session.toolUseId
+            const deadline = previous?.deadline ?? Date.now() + (args.timeoutMs ?? 0)
+            if (!previous) {
+              await renderInteractionSurface(ctx, questionSurface(interactionSurfaceId(id), args.questions))
+              await plugin.eventLog.append('requested', {
+                id,
+                toolUseId: id,
+                questions: args.questions,
+                answer: null,
+                deadline,
+              })
+            }
+            while (Date.now() < deadline) {
+              ctx.signal.throwIfAborted()
+              const latest = await read(ctx)
+              const answer = latest.questions.find((q) => q.id === id)?.answer
+              if (answer)
+                return {
+                  content: [{ type: 'text', text: JSON.stringify(answer) }],
+                  details: { questionId: id, answers: answer },
+                }
+              if (
+                Object.values(latest.submissions).some((item) => item.surfaceId === interactionSurfaceId(id))
+              )
+                break
+              await delay(Math.min(100, deadline - Date.now()), undefined, { signal: ctx.signal })
+            }
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Question remains open; continue independent work. A late answer arrives through the surface action.
 ${args.questions.map((q) => `${q.question}${q.options ? '\n' + q.options.map((o, i) => `${i + 1}. ${o}`).join('\n') : ''}`).join('\n\n')}
 [Open questions](/?session=${encodeURIComponent(ctx.session.key)}&surface=${interactionSurfaceId(id)})`,
-              },
-            ],
-            details: { questionId: id, surfaceId: interactionSurfaceId(id), status: 'pending', deadline },
-          }
-        },
-      }),
-    ),
-  )
-  return () => {
-    for (const dispose of disposers) dispose()
-  }
+                },
+              ],
+              details: { questionId: id, surfaceId: interactionSurfaceId(id), status: 'pending', deadline },
+            }
+          },
+        }),
+      ),
+    )
+    return () => {
+      for (const dispose of disposers) dispose()
+    }
+  },
 })

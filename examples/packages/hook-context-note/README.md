@@ -1,14 +1,14 @@
 # hook-context-note（第三方插件新增改写类钩子，不替换任何内置扩展）
 
-通过 `ctx.extension().registerHook` 注册 `context` 改写钩子，为任务添加说明。`on` 用于观察类事件；返回内容需要通过对应的改写钩子生效。
+通过 `ctx.hooks.register` 注册 `context` 改写钩子，为任务添加说明。观察类事件的返回值被丢弃；改写类事件的返回内容才会生效。
 
 ## 写法
 
-跟 `hot-tool-plugin` 一样用 `agnes.plugins` 声明入口，`index.mjs` 里 `const agnes = ctx.extension()`，
-区别是调用 `agnes.registerHook('context', handler)` 而不是 `agnes.on(...)`：
+跟 `hot-tool-plugin` 一样用 `agnes.plugins` 声明入口，`inject: ['hooks']`，
+区别是注册的是改写类事件：`ctx.hooks.register('context', handler)`：
 
 ```js
-agnes.registerHook('context', () => ({
+ctx.hooks.register('context', () => ({
   sections: [{ id: 'hook-context-note/reminder', order: 250, content: '...' }],
 }))
 ```

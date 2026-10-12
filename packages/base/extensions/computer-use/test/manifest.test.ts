@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { HookHandler } from '@agnes/extension-api'
 import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import blockedComputerUseExtension, { createComputerUseExtension } from '../src/index.js'
@@ -23,7 +24,7 @@ describe('computer-use extension boundary', () => {
         throw new Error('not called during registration')
       },
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => disposed.push(tool.name)
@@ -58,7 +59,7 @@ describe('computer-use extension boundary', () => {
       release,
       dispose: disposeProvider,
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool: () => () => undefined,
       registerHook(event: string, handler: HookHandler<'shutdown'>) {
         if (event === 'shutdown') shutdown = handler
@@ -77,7 +78,9 @@ describe('computer-use extension boundary', () => {
       agnes?: { extensions?: string[] }
     }
     expect(pkg.agnes?.extensions ?? []).toContain('./extensions/computer-use')
-    expect(() => blockedComputerUseExtension({} as never)).toThrow('Host-owned backend provider')
+    expect(() => extensionFactoryOf(blockedComputerUseExtension)({} as never)).toThrow(
+      'Host-owned backend provider',
+    )
   })
 
   it('resets screenshot dedup for the compacted session', async () => {
@@ -110,7 +113,7 @@ describe('computer-use extension boundary', () => {
         }),
       }),
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => undefined
@@ -179,7 +182,7 @@ describe('computer-use extension boundary', () => {
         }),
       }),
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => undefined

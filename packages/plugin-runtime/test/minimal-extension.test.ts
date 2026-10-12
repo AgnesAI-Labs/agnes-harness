@@ -10,6 +10,7 @@ import {
   type ToolContext,
   type ToolDef,
 } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import fixture from '../examples/minimal/fixtures/basic.fixture.js'
 import sample from '../examples/minimal/index.js'
@@ -71,7 +72,7 @@ describe('minimal author example', () => {
   })
   it('registers all four contracts and disposes them in reverse order exactly once', async () => {
     const recorded = capture(),
-      dispose = await sample(recorded.api)
+      dispose = await extensionFactoryOf(sample)(recorded.api)
     expect([...recorded.active]).toEqual(['tool', 'hook', 'slot', 'resource'])
     expect(checkToolDef(recorded.tool(), { prefix: 'minimal_' })).toEqual({ ok: true })
     expect(recorded.events).toEqual(['loaded'])
@@ -83,7 +84,7 @@ describe('minimal author example', () => {
   })
   it('runs the example callbacks in isolation without claiming host dispatch', async () => {
     const recorded = capture(),
-      dispose = await sample(recorded.api)
+      dispose = await extensionFactoryOf(sample)(recorded.api)
     const tool = recorded.tool(),
       hook = recorded.hook(),
       slot = recorded.slot()
@@ -112,13 +113,13 @@ describe('minimal author example', () => {
   })
   it('rolls back earlier registrations when a later registration fails', async () => {
     const recorded = capture(false, true)
-    await expect(sample(recorded.api)).rejects.toThrow('registration refused')
+    await expect(extensionFactoryOf(sample)(recorded.api)).rejects.toThrow('registration refused')
     expect(recorded.active.size).toBe(0)
     expect(recorded.closed).toEqual(['tool'])
   })
   it('rejects a failed event write and rolls back all registrations', async () => {
     const recorded = capture(true)
-    await expect(sample(recorded.api)).rejects.toThrow('event refused')
+    await expect(extensionFactoryOf(sample)(recorded.api)).rejects.toThrow('event refused')
     expect(recorded.active.size).toBe(0)
     expect(recorded.closed).toEqual(['resource', 'slot', 'hook', 'tool'])
   })

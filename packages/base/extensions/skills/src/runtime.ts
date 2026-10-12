@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto'
-import {
-  type Disposer,
-  defineExtension,
-  type ExtensionFactory,
-  type Logger,
-  type ToolDef,
-} from '@agnes/extension-api'
-import { defineTool } from '@agnes/plugin-runtime'
+import type { Disposer, Logger, ToolDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
@@ -436,27 +430,33 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
   })
 }
 
-export function skillsExtension(init: SeamInitContext): ExtensionFactory {
+export function skillsExtension(init: SeamInitContext) {
   // A package can be present in a legacy Host before the daemon has supplied a resource-control
   // snapshot. Do not add a callable-looking empty `skill_read` tool in that case: it changes the
   // existing tool disclosure contract while offering no resource capability. The managed worker
   // path always supplies this private runtime, including an intentionally empty skill catalogue.
-  if (!init.skillResources) return defineExtension(() => undefined)
+  if (!init.skillResources)
+    return defineAgnesPlugin({
+      apply() {},
+    })
   const runtime = init.skillResources
-  return defineExtension((agnes) => {
-    const disposers: Disposer[] = [
-      agnes.registerTool(readTool(runtime)),
-      agnes.registerTool(fileTool(runtime)),
-      agnes.registerHook('context', (_payload, hookContext) => {
-        if (!hookContext?.session?.key)
-          throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
-            code: 'E_WORKSPACE_REQUIRED',
-          })
-        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
-      }),
-    ]
-    return () => {
-      for (const dispose of disposers.reverse()) dispose()
-    }
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks'],
+    apply(ctx: Context) {
+      const disposers: Disposer[] = [
+        ctx.tools.register(readTool(runtime)),
+        ctx.tools.register(fileTool(runtime)),
+        ctx.hooks.register('context', (_payload, hookContext) => {
+          if (!hookContext?.session?.key)
+            throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
+              code: 'E_WORKSPACE_REQUIRED',
+            })
+          return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
+        }),
+      ]
+      return () => {
+        for (const dispose of disposers.reverse()) dispose()
+      }
+    },
   })
 }

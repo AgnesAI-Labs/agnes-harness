@@ -1,4 +1,5 @@
-import { type Disposer, defineExtension, type ExtensionAPI } from '@agnes/extension-api'
+import type { Disposer } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { processRuntime } from '../../runtime/process.js'
 import { createBridge } from './bridge.js'
 import { createRunCodeTool } from './run-code.js'
@@ -15,39 +16,42 @@ export const CODE_MODE_EVENTS = ['snapshot', 'kernel', 'sdk-skipped'] as const
 export type CodeModeEvent = (typeof CODE_MODE_EVENTS)[number]
 
 /** The extension delegates execution and all nested tool authority to public invocation ports. */
-export default defineExtension((agnes: ExtensionAPI) => {
-  const language = 'typescript' as const
-  const runCode = createRunCodeTool({
-    language,
-    acquire: async (ctx) => {
-      if (ctx.codeRuntime?.state === 'persistent')
-        throw new Error('E_PRESET_UNSUPPORTED: this runtime supports stateless cells only')
-      if (ctx.codeRuntime && ctx.codeRuntime.isolation !== 'process')
-        throw new Error('E_PRESET_UNSUPPORTED: this runtime requires process isolation')
-      return processRuntime(ctx, ctx.codeRuntime?.language ?? language, {
-        rawIo: ctx.codeRuntime?.rawIo ?? false,
-      })
-    },
-    bridge: (ctx) =>
-      createBridge(ctx, {
-        maxParallel: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
-        maxCalls: 256,
-        toolsOnly: true,
+export default defineAgnesPlugin({
+  inject: ['tools', 'hooks', 'eventLog'],
+  apply(plugin: Context) {
+    const language = 'typescript' as const
+    const runCode = createRunCodeTool({
+      language,
+      acquire: async (ctx) => {
+        if (ctx.codeRuntime?.state === 'persistent')
+          throw new Error('E_PRESET_UNSUPPORTED: this runtime supports stateless cells only')
+        if (ctx.codeRuntime && ctx.codeRuntime.isolation !== 'process')
+          throw new Error('E_PRESET_UNSUPPORTED: this runtime requires process isolation')
+        return processRuntime(ctx, ctx.codeRuntime?.language ?? language, {
+          rawIo: ctx.codeRuntime?.rawIo ?? false,
+        })
+      },
+      bridge: (ctx) =>
+        createBridge(ctx, {
+          maxParallel: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
+          maxCalls: 256,
+          toolsOnly: true,
+        }),
+      limits: (ctx) => ({
+        language: ctx.codeRuntime?.language ?? language,
+        wallMs: Math.min(ctx.codeRuntime?.wallMs ?? ctx.timeoutMs, ctx.timeoutMs),
+        maxOutputChars: ctx.codeRuntime?.maxOutputChars ?? ctx.outputMaxBytes,
+        maxParallelSubCalls: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
       }),
-    limits: (ctx) => ({
-      language: ctx.codeRuntime?.language ?? language,
-      wallMs: Math.min(ctx.codeRuntime?.wallMs ?? ctx.timeoutMs, ctx.timeoutMs),
-      maxOutputChars: ctx.codeRuntime?.maxOutputChars ?? ctx.outputMaxBytes,
-      maxParallelSubCalls: ctx.codeRuntime?.maxParallelSubCalls ?? 4,
-    }),
-  })
-  const disposers: Disposer[] = [
-    agnes.registerTool(runCode),
-    agnes.registerHook('session_start', async () => {
-      await agnes.events.append('kernel', { alive: false })
-    }),
-  ]
-  return () => {
-    for (const dispose of disposers) dispose()
-  }
+    })
+    const disposers: Disposer[] = [
+      plugin.tools.register(runCode),
+      plugin.hooks.register('session_start', async () => {
+        await plugin.eventLog.append('kernel', { alive: false })
+      }),
+    ]
+    return () => {
+      for (const dispose of disposers) dispose()
+    }
+  },
 })

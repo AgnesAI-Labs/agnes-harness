@@ -12,9 +12,9 @@ const purpose = {
 describe('package.json agnes.plugins', () => {
   it('normalizes the author shape with a required contract range and freezes the result', () => {
     const entries = parseAgnesPluginEntries('@acme/example', [
-      { apiRange: '^2.0.0', export: 'main' },
+      { apiRange: '^3.0.0', export: 'main' },
       {
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         export: 'optional',
         id: 'ext:acme/optional',
         runtime: 'isolated',
@@ -25,14 +25,14 @@ describe('package.json agnes.plugins', () => {
 
     expect(entries).toEqual([
       {
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         export: 'main',
         id: 'ext:@acme/example/main',
         runtime: 'in-process',
         default: true,
       },
       {
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         export: 'optional',
         id: 'ext:acme/optional',
         runtime: 'isolated',
@@ -48,19 +48,19 @@ describe('package.json agnes.plugins', () => {
     [[{ export: 'missing-range' }], 'apiRange'],
     [[{ export: 'incompatible', apiRange: '^99.0.0' }], 'apiRange'],
     [null, 'list'],
-    [{ apiRange: '^2.0.0', export: 'main' }, 'list'],
+    [{ apiRange: '^3.0.0', export: 'main' }, 'list'],
     [[{}], 'export'],
-    [[{ apiRange: '^2.0.0', export: '' }], 'export'],
-    [[{ apiRange: '^2.0.0', export: 'main', runtime: 'worker' }], 'runtime'],
-    [[{ apiRange: '^2.0.0', export: 'main', default: 'yes' }], 'default'],
-    [[{ apiRange: '^2.0.0', export: 'main', extra: true }], 'unknown'],
-    [[{ apiRange: '^2.0.0', export: 'main', configReload: 'restart' }], 'configReload'],
-    [[{ apiRange: '^2.0.0', export: 'main', configSchema: { type: 'invalid' } }], 'JSON Schema'],
-    [[{ apiRange: '^2.0.0', export: 'main', configSchema: { type: 'integer' }, config: 'bad' }], 'config'],
+    [[{ apiRange: '^3.0.0', export: '' }], 'export'],
+    [[{ apiRange: '^3.0.0', export: 'main', runtime: 'worker' }], 'runtime'],
+    [[{ apiRange: '^3.0.0', export: 'main', default: 'yes' }], 'default'],
+    [[{ apiRange: '^3.0.0', export: 'main', extra: true }], 'unknown'],
+    [[{ apiRange: '^3.0.0', export: 'main', configReload: 'restart' }], 'configReload'],
+    [[{ apiRange: '^3.0.0', export: 'main', configSchema: { type: 'invalid' } }], 'JSON Schema'],
+    [[{ apiRange: '^3.0.0', export: 'main', configSchema: { type: 'integer' }, config: 'bad' }], 'config'],
     [
       [
         {
-          apiRange: '^2.0.0',
+          apiRange: '^3.0.0',
           export: 'main',
           configSchema: { type: 'string', writeOnly: true },
           config: 'synthetic-plaintext',
@@ -68,21 +68,21 @@ describe('package.json agnes.plugins', () => {
       ],
       'config',
     ],
-    [[{ apiRange: '^2.0.0', export: 'main', id: '../escape' }], 'id'],
+    [[{ apiRange: '^3.0.0', export: 'main', id: '../escape' }], 'id'],
   ])('rejects invalid input %j', (value, message) => {
     expect(() => parseAgnesPluginEntries('@acme/example', value)).toThrow(message)
   })
 
   it('preserves localized row purpose in a frozen independent author snapshot', () => {
     const [row] = parseAgnesPluginEntries('@acme/example', [
-      { export: 'main', apiRange: '^2.0.0', metadata: purpose },
+      { export: 'main', apiRange: '^3.0.0', metadata: purpose },
     ])
     expect(row?.metadata).toEqual(purpose)
     expect(row?.metadata).not.toBe(purpose)
     expect(Object.isFrozen(row?.metadata?.locales?.['zh-CN'])).toBe(true)
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { export: 'main', apiRange: '^2.0.0', metadata: { ...purpose, category: 'invented' } },
+        { export: 'main', apiRange: '^3.0.0', metadata: { ...purpose, category: 'invented' } },
       ]),
     ).toThrow('metadata')
   })
@@ -90,8 +90,8 @@ describe('package.json agnes.plugins', () => {
   it('rejects duplicate normalized ids', () => {
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { apiRange: '^2.0.0', export: 'main' },
-        { apiRange: '^2.0.0', export: 'other', id: 'ext:@acme/example/main' },
+        { apiRange: '^3.0.0', export: 'main' },
+        { apiRange: '^3.0.0', export: 'other', id: 'ext:@acme/example/main' },
       ]),
     ).toThrow(/duplicate/i)
   })
@@ -99,22 +99,22 @@ describe('package.json agnes.plugins', () => {
   it('rejects package-authored web rows because that namespace belongs to the daemon', () => {
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { apiRange: '^2.0.0', export: 'panel', id: 'web:@victim/example' },
+        { apiRange: '^3.0.0', export: 'panel', id: 'web:@victim/example' },
       ]),
     ).toThrow(/web:.*reserved/i)
   })
 
   it('rejects non-JSON and cyclic config values', () => {
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main', config: () => 1 }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main', config: () => 1 }]),
     ).toThrow(/config/i)
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main', config: Number.NaN }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main', config: Number.NaN }]),
     ).toThrow(/config/i)
     const cyclic: { self?: unknown } = {}
     cyclic.self = cyclic
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main', config: cyclic }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main', config: cyclic }]),
     ).toThrow(/cyclic/i)
   })
 
@@ -126,7 +126,7 @@ describe('package.json agnes.plugins', () => {
 
   it('accepts declared provide and inject service names and freezes them', () => {
     const [entry] = parseAgnesPluginEntries('@acme/example', [
-      { apiRange: '^2.0.0', export: 'main', provide: ['acmeStats'], inject: ['clock', 'seam:approval'] },
+      { apiRange: '^3.0.0', export: 'main', provide: ['acmeStats'], inject: ['clock', 'seam:approval'] },
     ])
     expect(entry?.provide).toEqual(['acmeStats'])
     expect(entry?.inject).toEqual(['clock', 'seam:approval'])
@@ -136,20 +136,20 @@ describe('package.json agnes.plugins', () => {
 
   it('separates Surface-callable services from Cordis provide names', () => {
     const [entry] = parseAgnesPluginEntries('@acme/example', [
-      { apiRange: '^2.0.0', export: 'main', provide: ['clock'], services: ['data.read'] },
+      { apiRange: '^3.0.0', export: 'main', provide: ['clock'], services: ['data.read'] },
     ])
     expect(entry?.provide).toEqual(['clock'])
     expect(entry?.services).toEqual(['data.read'])
     expect(Object.isFrozen(entry?.services)).toBe(true)
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { apiRange: '^2.0.0', export: 'main', services: ['Bad/Name'] },
+        { apiRange: '^3.0.0', export: 'main', services: ['Bad/Name'] },
       ]),
     ).toThrow(/Surface service name syntax/)
   })
 
   it('leaves provide and inject absent when the author declares neither', () => {
-    const [entry] = parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main' }])
+    const [entry] = parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main' }])
     expect(entry).not.toHaveProperty('provide')
     expect(entry).not.toHaveProperty('inject')
   })
@@ -165,17 +165,17 @@ describe('package.json agnes.plugins', () => {
     ['an over-long name', ['x'.repeat(129)]],
   ])('rejects provide with %s', (_label, provide) => {
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main', provide }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main', provide }]),
     ).toThrow(/provide/)
   })
 
   it('rejects an invalid inject list the same way', () => {
     expect(() =>
-      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^2.0.0', export: 'main', inject: 'clock' }]),
+      parseAgnesPluginEntries('@acme/example', [{ apiRange: '^3.0.0', export: 'main', inject: 'clock' }]),
     ).toThrow(/inject/)
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [
-        { apiRange: '^2.0.0', export: 'main', inject: ['clock', 'clock'] },
+        { apiRange: '^3.0.0', export: 'main', inject: ['clock', 'clock'] },
       ]),
     ).toThrow(/duplicate/)
   })

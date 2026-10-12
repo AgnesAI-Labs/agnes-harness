@@ -59,7 +59,7 @@ The current ordinary plugin entry is `agnes.plugins` in `package.json`, referenc
   "exports": "./index.mjs",
   "agnes": {
     "plugins": [
-      { "apiRange": "^2.0.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
+      { "apiRange": "^3.0.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
     ]
   }
 }
@@ -106,7 +106,7 @@ A full Host provider implements ledger, metadata, child control, reclaim and int
 
 ## Child agent providers
 
-A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineProviderKind`. Register it through `ctx.providers.register(childAgentKind, sourcePackage, provider)`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
+A provider starts a child and returns a handle with events, `sendMessage`, `interrupt`, and `result`. The kind is `child-agent`, defined with `defineKind`. Register it through `ctx.providers.register(childAgentKind, sourcePackage, provider)`. The built-in id is `in-process`. `acp` runs an external ACP process and is not loaded by default. Capabilities that are false are refused at start. The author guide is [Child agent providers](../extend/child-agents.md).
 
 The preset schema has no child allowlist. Set `allow` and `sessions` on the subagent extension, or call `childAgents.setSessionAllowlist`. An omitted list is unrestricted. An empty list refuses that kind. A set model list requires the caller to name the model.
 
@@ -122,14 +122,14 @@ When fitted, `LoopContext.children` is the parent-bound `ChildAgentSessionServic
 | --- | --- | --- |
 | Ordinary Cordis Context | Plugins, services, events, and effect lifecycle | In-process services do not automatically become cross-process RPC |
 | `ctx.tools` | `register(tool)`, owned by the calling plugin lifecycle | Uses the same validation and permission boundary as official tools |
-| `ctx.extension()` / PluginExtensionAPI | `on` observation hooks, `registerHook` transform/intercept hooks, and constrained events | Cannot register Service/Projection/Slot/Resource through this API; runtime permissions and ordering still apply |
+| `ctx.hooks`, `ctx.eventLog`, `ctx.self` | `hooks.register(event, handler)` for all 16 hook events, ledger events in the plugin's own namespace, and the plugin's identity/logger/signal | Observe-only events ignore handler results; runtime permissions and ordering still apply |
 | `ctx.skills` | Runtime Skill contributions and providers | Cannot read/enumerate other Skills; separate from disk governance |
-| Row `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | Corresponding contributions on verified rows, cleaned up with the row fiber | Not unconditional global objects; service calls still require identity, session, and client allow-list checks |
+| `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | Corresponding contributions, cleaned up with the plugin | Not unconditional global objects; service calls still require identity, session, and client allow-list checks |
 | Browser ClientContext | Declared slots, frontend services/commands, and constrained backend service relay | No Host Context, Node system capabilities, or daemon management credentials |
 
-The [full-stack tutorial](fullstack.md) uses `ctx.services.register()` and `agnes.clientDescriptors` on the same trusted Cordis row. It does not turn `ctx.provide()` into a remote method or bypass restrictions with `ctx.extension().registerService()`.
+The [full-stack tutorial](fullstack.md) uses `ctx.services.register()` and `agnes.clientDescriptors` on the same trusted Cordis row. It does not turn `ctx.provide()` into a remote method.
 
-Current source exposes all 16 hook types through `registerHook` and routes ordinary third-party backends through `agnes.plugins` rows. Legacy `agnes.extensions` is no longer an ordinary third-party backend entry. Built-in compatibility rules differ from third-party authoring rules. Check current source, package preview, and actual row state for registration and authorization.
+Official and third-party packages share one plugin form: `defineAgnesPlugin({ inject, apply })`, with the facets listed above injected by name. Bundled packages are mounted by the Host over its backend API and installed packages as Cordis rows, but `apply` is the same code. Check current source, package preview, and actual row state for registration and authorization.
 
 <a id="前后端生命周期"></a>
 
@@ -141,7 +141,7 @@ Third-party runtime sources require trusted immutable snapshots. An arbitrary fi
 
 Next: [Backend tools](backend.md) · [Frontend panels](frontend.md) · [Full-stack integration](fullstack.md) · [Installation and updates](../guide/packages.md).
 
-Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts), [row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).
+Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [plugin context facets](../../packages/extension-api/src/plugin-context.ts), [row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).
 
 ## Writing an Agent Loop
 

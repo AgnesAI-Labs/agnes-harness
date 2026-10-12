@@ -1,5 +1,6 @@
 import { ToolRegistry } from '@agnes/core'
-import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { ToolDef } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { validateAgainst } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { type McpConnection, type McpSkippedTool, registerRemoteToolsStrict } from '../../src/mcp/register.js'
@@ -23,12 +24,15 @@ async function attempted(
     close: vi.fn(async () => undefined),
   }
   const api = {
-    registerResource: () => () => undefined,
-    registerTool: (tool: ToolDef) => {
-      captured = tool
-      return () => undefined
+    resources: { register: () => () => undefined },
+    tools: {
+      register: (tool: ToolDef) => {
+        captured = tool
+        return () => undefined
+      },
     },
-  } as unknown as ExtensionAPI
+    self: { log: { debug() {}, info() {}, warn() {}, error() {} } },
+  } as unknown as Pick<Context, 'tools' | 'resources' | 'self'>
   await registerRemoteToolsStrict(
     api,
     conn,

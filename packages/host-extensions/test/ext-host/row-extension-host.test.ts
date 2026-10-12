@@ -1,10 +1,5 @@
 import { Context, type Fiber } from '@agnes/cordis'
-import {
-  EXTENSION_ID_PATTERN,
-  type PluginExtensionAPI,
-  type SkillInstallPort,
-  type ToolDef,
-} from '@agnes/extension-api'
+import { EXTENSION_ID_PATTERN, type SkillInstallPort, type ToolDef } from '@agnes/extension-api'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureTool } from '../../../host/test/fixtures/tool.js'
@@ -119,17 +114,13 @@ function setup(
         declaredProvides: [],
       }),
     )
-  const mount = async (
-    name: string,
-    rowId: string,
-    apply: (ctx: any, agnes: PluginExtensionAPI) => unknown,
-  ) => {
+  const mount = async (name: string, rowId: string, apply: (ctx: any, agnes: RowFacade) => unknown) => {
     originFor(name, rowId)
     const fiber = root.plugin({
       name,
-      inject: ['extension', 'tools'],
+      inject: ['hooks', 'eventLog', 'self', 'tools'],
       async apply(ctx: any) {
-        await apply(ctx, ctx.extension())
+        await apply(ctx, facade(ctx))
       },
     } as any)
     // A row that throws leaves its failure on the fiber; some cases look at the listing it leaves.
@@ -427,6 +418,23 @@ describe('pluginRowSource', () => {
   })
 })
 
+/** The row-facing facets regrouped the way these cases read them. */
+type RowFacade = {
+  on(event: string, handler: (...args: any[]) => unknown): () => void
+  registerHook(event: string, handler: (...args: any[]) => unknown): () => void
+  events: { append(name: string, data: unknown): Promise<number> }
+  ctx: any
+}
+const facade = (ctx: any): RowFacade => {
+  void ctx.self.extId // the first facet use is what creates the row's registration record
+  return {
+    on: (event, handler) => ctx.hooks.register(event, handler),
+    registerHook: (event, handler) => ctx.hooks.register(event, handler),
+    events: ctx.eventLog,
+    ctx: ctx.self,
+  }
+}
+
 describe('registration and wind-down', () => {
   it('registers a tool and an observe hook and lists the row', async () => {
     const t = setup()
@@ -507,7 +515,7 @@ describe('registration and wind-down', () => {
     })
     await t.host.settled()
     // The outgoing tree's row is still mounted and asks again, for instance from a timer.
-    expect(() => lateCtx.extension()).toThrow(/replaced/)
+    expect(() => lateCtx.self.extId).toThrow(/replaced/)
     await t.host.settled()
     expect(t.kernel.ports.registrations(pluginRowSource('ext:acme/a'))).toEqual(['tool:tool_a'])
     expect(t.kinds('extension.revoked')).toHaveLength(1)
@@ -566,17 +574,17 @@ describe('registration and wind-down', () => {
   })
 })
 
-describe('who may call ctx.extension()', () => {
+describe('who may use the row facets', () => {
   it('refuses the root, an unattested fiber and a builtin row', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    const ask = (ctx: Context) => (ctx as unknown as { extension(): unknown }).extension()
-    expect(() => ask(t.root)).toThrow(/third-party/)
+    const ask = (ctx: Context) => (ctx as unknown as { self: { extId: string } }).self.extId
+    expect(() => ask(t.root)).toThrow(/installed plugin rows/)
     let builtinError: unknown
     t.originFor('row-b', 'ext:agnes/x', 'builtin')
     const fiber = t.root.plugin({
       name: 'row-b',
-      inject: ['extension', 'tools'],
+      inject: ['self', 'tools'],
       apply(ctx: Context) {
         try {
           ask(ctx)
@@ -586,11 +594,11 @@ describe('who may call ctx.extension()', () => {
       },
     } as any)
     await fiber.await()
-    expect((builtinError as Error).message).toMatch(/third-party/)
+    expect((builtinError as Error).message).toMatch(/installed plugin rows/)
     let unattested: unknown
     const other = t.root.plugin({
       name: 'no-origin',
-      inject: ['extension', 'tools'],
+      inject: ['self', 'tools'],
       apply(ctx: Context) {
         try {
           ask(ctx)
@@ -600,33 +608,32 @@ describe('who may call ctx.extension()', () => {
       },
     } as any)
     await other.await()
-    expect((unattested as Error).message).toMatch(/third-party/)
+    expect((unattested as Error).message).toMatch(/installed plugin rows/)
   })
 
   it('gives a nested plugin its row and hands back one API per row', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    const seen: PluginExtensionAPI[] = []
+    const seen: string[] = []
     await t.mount('row-a', 'ext:acme/a', async (ctx, agnes) => {
-      seen.push(agnes, ctx.extension())
+      seen.push(agnes.ctx.extId, ctx.self.extId)
       const child = ctx.plugin({
         name: 'child',
-        inject: ['extension', 'tools'],
+        inject: ['self', 'tools'],
         apply(childCtx: any) {
-          seen.push(childCtx.extension())
+          seen.push(childCtx.self.extId)
         },
       })
       await child.await()
     })
     expect(seen).toHaveLength(3)
     expect(new Set(seen).size).toBe(1)
-    expect(seen[0]?.ctx.extId).toBe(pluginRowSource('ext:acme/a'))
-    expect(seen[0]?.ctx.trust).toBe('trusted')
+    expect(seen[0]).toBe(pluginRowSource('ext:acme/a'))
   })
 })
 
 describe('fixed rules', () => {
-  it('opens tools, all 16 hook events (via registerHook) and events; keeps slots/services/projections/resources refused', async () => {
+  it('opens tools, all 16 hook events (via ctx.hooks) and events', async () => {
     const t = setup()
     t.host.activate(t.activation)
     const codes: Record<string, string> = {}
@@ -640,10 +647,6 @@ describe('fixed rules', () => {
           codes[label] = (error as { code: string }).code
         }
       }
-      // `on` stays the simplified observe-only entry: non-observe events are still refused there.
-      attempt('tool_call', () => agnes.on('tool_call' as never, () => undefined as never))
-      attempt('context', () => agnes.on('context' as never, () => undefined as never))
-      attempt('compact', () => agnes.on('compact', () => {}))
       // registerHook opens every one of the 16 events, transform/intercept-category included -
       // the same events `on` above just refused.
       attempt('registerHook:tool_call', () => api.registerHook?.('tool_call', () => ({ allow: true })))
@@ -652,22 +655,11 @@ describe('fixed rules', () => {
       attempt('registerHook:before_provider_headers', () =>
         api.registerHook?.('before_provider_headers', () => ({})),
       )
-      attempt('registerSlot', () => api.registerSlot?.('status.line', () => null))
-      attempt('registerService', () => api.registerService?.({}))
-      attempt('registerProjection', () => api.registerProjection?.({}))
-      attempt('registerResource', () => api.registerResource?.({}))
     })
     expect(codes).toEqual({
-      tool_call: 'E_CAPABILITY_UNDECLARED',
-      context: 'E_CAPABILITY_UNDECLARED',
-      compact: 'allowed',
       'registerHook:tool_call': 'allowed',
       'registerHook:context': 'allowed',
       'registerHook:before_provider_headers': 'E_CAPABILITY_UNDECLARED',
-      registerSlot: 'E_CAPABILITY_UNDECLARED',
-      registerService: 'E_CAPABILITY_UNDECLARED',
-      registerProjection: 'E_CAPABILITY_UNDECLARED',
-      registerResource: 'E_CAPABILITY_UNDECLARED',
     })
   })
 

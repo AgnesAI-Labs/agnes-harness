@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
 import { checkApiRange, checkManifest, checkToolDef, extEventType } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
-import { CODE_MODE_EVENTS, CODE_MODE_EXT_ID, codeModeExtension as factory } from '../src/index.js'
+import { CODE_MODE_EVENTS, CODE_MODE_EXT_ID, codeModeExtension as plugin } from '../src/index.js'
 
 const manifestPath = fileURLToPath(
   new URL('../src/extensions/code-mode/agnes.extension.json', import.meta.url),
@@ -66,12 +67,8 @@ describe('code-mode manifest', () => {
 })
 
 describe('code-mode extension entry', () => {
-  // R5: the stale draft wrote `defineExtension((api, ctx) => {...})`, a two-parameter factory.
-  // The real, current signature in `packages/extension-api/src/extension.ts` is
-  // `ExtensionFactory = (agnes: ExtensionAPI) => ...` — exactly one parameter; the context comes
-  // from `agnes.ctx`, not a second argument.
-  it('is a single-parameter factory (agnes: ExtensionAPI), not (api, ctx)', () => {
-    expect(factory.length).toBeLessThanOrEqual(1)
+  it('is one plugin whose apply takes the context only', () => {
+    expect(plugin.apply.length).toBeLessThanOrEqual(1)
   })
 
   // R5 forbids an empty no-op factory ("不提交无注册工厂为完成"). This verifies the factory
@@ -105,7 +102,7 @@ describe('code-mode extension entry', () => {
       },
     } as unknown as ExtensionAPI
 
-    const dispose = (await factory(api)) as Disposer
+    const dispose = (await extensionFactoryOf(plugin)(api)) as Disposer
     expect(registeredTools.map((tool) => tool.name)).toEqual(['run_code'])
     expect(checkToolDef(registeredTools[0])).toEqual({ ok: true })
     await expect(registeredTools[0]?.execute({ code: 'print(1)' }, {} as never)).rejects.toThrow(

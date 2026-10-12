@@ -20,7 +20,7 @@ function extension(capabilities: unknown, files: Record<string, string>): string
     JSON.stringify({
       id: 'agnes/x',
       version: '0.1.0',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       entry: './src/index.ts',
       capabilities,
     }),
@@ -70,7 +70,7 @@ describe('usedCapabilities reads call sites, not every word in the file', () => 
   // `kind` and `name` are ordinary words. A whole-file scan for them credited an extension with
   // capabilities it never asked for - tools-core alone writes `kind: 'file'` for directory entries
   // and `name:` in schemas - which is a manifest check that reports authority nobody requested.
-  it('ignores kind and name outside a registerResource / defineTool call', () => {
+  it('ignores kind and name outside a resources.register / defineTool call', () => {
     // The decoys come first in the file and the real calls after, so a scan that reads from the top
     // of the file rather than from the call site picks the decoy up instead: `mcp` for the resource
     // and `x_two` for the tool, neither of which this manifest declares.
@@ -80,7 +80,7 @@ describe('usedCapabilities reads call sites, not every word in the file', () => 
         'index.ts': [
           `const decoyEntry = { kind: 'mcp' }`,
           `const decoyField = { name: 'x_two' }`,
-          `agnes.registerResource({ kind: 'skill', id: 'a' })`,
+          `ctx.resources.register({ kind: 'skill', id: 'a' })`,
           `export const t = defineTool({\n  name: 'x_one',\n})`,
           `export default [decoyEntry, decoyField]`,
         ].join('\n'),
@@ -102,7 +102,7 @@ describe('usedCapabilities reads call sites, not every word in the file', () => 
   })
 
   it('does not read test files as source', () => {
-    const dir = extension(NOTHING, { 'a.test.ts': `agnes.registerHook('tool_call', () => {})\n` })
+    const dir = extension(NOTHING, { 'a.test.ts': `ctx.hooks.register('tool_call', () => {})\n` })
     expect([...usedCapabilities(join(dir, 'src')).hooks]).toEqual([])
   })
 })
@@ -116,7 +116,7 @@ describe('expectManifestMatchesCode', () => {
   })
 
   it('reports a hook the code registers and the manifest does not grant', () => {
-    const dir = extension(NOTHING, { 'index.ts': `agnes.registerHook('tool_call', () => {})\n` })
+    const dir = extension(NOTHING, { 'index.ts': `ctx.hooks.register('tool_call', () => {})\n` })
     expect(() => expectManifestMatchesCode(dir)).toThrow(/hook used but not declared: tool_call/)
   })
 
@@ -126,14 +126,14 @@ describe('expectManifestMatchesCode', () => {
   })
 
   it('reports a slot in each direction', () => {
-    const used = extension(NOTHING, { 'index.ts': `agnes.registerSlot('chat.footer', () => null)\n` })
+    const used = extension(NOTHING, { 'index.ts': `ctx.slots.register('chat.footer', () => null)\n` })
     expect(() => expectManifestMatchesCode(used)).toThrow(/slot used but not declared: chat.footer/)
     const idle = extension({ ...NOTHING, slots: ['chat.footer'] }, { 'index.ts': 'export default 1\n' })
     expect(() => expectManifestMatchesCode(idle)).toThrow(/slot declared but unused: chat.footer/)
   })
 
   it('reports a resource kind in each direction', () => {
-    const used = extension(NOTHING, { 'index.ts': `agnes.registerResource({ kind: 'skill', id: 'a' })\n` })
+    const used = extension(NOTHING, { 'index.ts': `ctx.resources.register({ kind: 'skill', id: 'a' })\n` })
     expect(() => expectManifestMatchesCode(used)).toThrow(/resource used but not declared: skill/)
     const idle = extension({ ...NOTHING, resources: ['mcp'] }, { 'index.ts': 'export default 1\n' })
     expect(() => expectManifestMatchesCode(idle)).toThrow(/resource declared but unused: mcp/)
@@ -141,13 +141,13 @@ describe('expectManifestMatchesCode', () => {
 
   // A kind computed at run time cannot be compared with a static declaration. Passing such a call
   // silently would make the check strongest on the extensions that need it least.
-  it('refuses a registerResource whose kind is not a literal instead of skipping it', () => {
-    const dir = extension(NOTHING, { 'index.ts': `agnes.registerResource({ kind: k, id: 'a' })\n` })
+  it('refuses a resources.register whose kind is not a literal instead of skipping it', () => {
+    const dir = extension(NOTHING, { 'index.ts': `ctx.resources.register({ kind: k, id: 'a' })\n` })
     expect(() => expectManifestMatchesCode(dir)).toThrow(/no literal kind/)
   })
 
-  it('reports events.append against a manifest that does not grant events', () => {
-    const dir = extension(NOTHING, { 'index.ts': `await agnes.events.append('x', {})\n` })
+  it('reports eventLog.append against a manifest that does not grant events', () => {
+    const dir = extension(NOTHING, { 'index.ts': `await ctx.eventLog.append('x', {})\n` })
     expect(() => expectManifestMatchesCode(dir)).toThrow(/events\.append used but capabilities\.events/)
   })
 

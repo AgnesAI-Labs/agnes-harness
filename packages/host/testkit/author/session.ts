@@ -128,7 +128,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
             {
               export: 'main',
               id: `ext:${id}/main`,
-              apiRange: '^2.0.0',
+              apiRange: '^3.0.0',
               default: true,
               inject: Object.keys(entry.inject),
               provide: entry.provides,
@@ -301,7 +301,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
                 declaration: {
                   export: 'authorLoop',
                   id: 'loop:author.invoke',
-                  apiRange: '^2.0.0',
+                  apiRange: '^3.0.0',
                   default: true,
                   inject: ['providers'],
                   provide: [],

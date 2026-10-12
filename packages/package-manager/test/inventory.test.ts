@@ -35,7 +35,7 @@ function currentFixture() {
       version: '1.0.0',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { capabilities: { ui: true }, plugins: [{ export: 'main', apiRange: '^2.0.0' }] },
+      agnes: { capabilities: { ui: true }, plugins: [{ export: 'main', apiRange: '^3.0.0' }] },
     }),
   )
   writeFileSync(join(directory, 'index.mjs'), 'export const main = () => {}\n')
@@ -158,7 +158,7 @@ afterEach(() => {
 })
 
 it.each([
-  [{ apiRange: '^2.0.0', export: 'panel', id: 'web:legacy/panel' }, ['reserved-row-id:web:']],
+  [{ apiRange: '^3.0.0', export: 'panel', id: 'web:legacy/panel' }, ['reserved-row-id:web:']],
   [{ export: 'panel', id: 'ext:legacy/panel' }, ['plugin-api-range-required', 'docs/guide/packages.md']],
   [
     { apiRange: '^99.0.0', export: 'panel', id: 'ext:legacy/panel' },
@@ -239,7 +239,7 @@ it.each([
       version: '1.0.1',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { plugins: [{ apiRange: '^2.0.0', export: 'panel', id: 'ext:legacy/panel' }] },
+      agnes: { plugins: [{ apiRange: '^3.0.0', export: 'panel', id: 'ext:legacy/panel' }] },
     }),
   )
   const source = parseSource('file:./migrated')

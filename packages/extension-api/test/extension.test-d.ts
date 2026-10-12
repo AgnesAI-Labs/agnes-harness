@@ -1,11 +1,10 @@
 import type { JsonValue } from '@agnes/protocol'
 import { describe, expectTypeOf, it } from 'vitest'
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory, PlatformFacts } from '../src/index.js'
-import { defineExtension } from '../src/index.js'
 
 type RootHookEvent = import('../src/index.js').HookEvent
 
-describe('ExtensionAPI surface', () => {
+describe('ExtensionAPI backend surface', () => {
   it('registerHook is constrained by the HookEvent on the root surface', () => {
     expectTypeOf<Parameters<ExtensionAPI['registerHook']>[0]>().toEqualTypeOf<RootHookEvent>()
   })
@@ -58,10 +57,26 @@ describe('ExtensionAPI surface', () => {
     void [withBoth, withoutEither]
   })
   it('a factory returning nothing, a Disposer, or a promise of either all type-check', () => {
-    const nothing: ExtensionFactory = defineExtension(() => {})
-    const disposer: ExtensionFactory = defineExtension(() => () => {})
-    const asyncNothing: ExtensionFactory = defineExtension(async () => {})
-    const asyncDisposer: ExtensionFactory = defineExtension(async () => () => {})
+    const nothing: ExtensionFactory = () => {}
+    const disposer: ExtensionFactory = () => () => {}
+    const asyncNothing: ExtensionFactory = async () => {}
+    const asyncDisposer: ExtensionFactory = async () => () => {}
     void [nothing, disposer, asyncNothing, asyncDisposer]
+  })
+})
+
+describe('plugin context facets', () => {
+  it('lists every facet a plugin can inject', () => {
+    expectTypeOf<keyof import('../src/index.js').PluginContextFacets>().toEqualTypeOf<
+      | 'tools'
+      | 'hooks'
+      | 'projections'
+      | 'services'
+      | 'slots'
+      | 'resources'
+      | 'eventLog'
+      | 'providers'
+      | 'self'
+    >()
   })
 })

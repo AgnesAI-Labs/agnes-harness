@@ -230,8 +230,8 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
               {
                 export: 'textStatsTool',
                 id: 'ext:e2e-version',
-                apiRange: '^2.0.0',
-                inject: ['tools', 'extension'],
+                apiRange: '^3.0.0',
+                inject: ['tools', 'hooks', 'eventLog', 'self'],
               },
             ],
           },

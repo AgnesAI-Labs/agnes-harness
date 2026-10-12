@@ -7,7 +7,7 @@
     "surfaces": [
       {
         "id": "dashboard",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "artifact": {
           "kind": "node",
           "entry": "./dist/server.mjs"
@@ -27,7 +27,7 @@
     "plugins": [
       {
         "export": "backend",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:acme/dashboard/backend",
         "runtime": "in-process",
         "services": [

@@ -2,6 +2,36 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 3.0.0
+
+### Removed
+
+- Two kind-token families. `defineProviderKind` and `defineServiceKind` are replaced by
+  `defineKind`: a kind with a `bind` option also supports `ctx.providers.bindOwn`, a kind
+  without it is register-only, and `register: false` makes a Host-installed bind-only kind.
+  `ServiceKind` / `ServiceKindToken` become `BindableKind` / `BindableKindToken`. Every kind
+  carries `operations: { register, bind }`; the registry refuses an operation the kind does
+  not declare.
+- `KindMap`, `PROVIDER_LIFECYCLE_SCOPES` and string kind names in `ctx.providers.register` /
+  `resolve`. Host-installed kinds export tokens: `loopKind`, `modelAdapterKind`,
+  `compactionKind`, `persistenceKind`, `sandboxKind`, `toolRuntimeKind`, `toolPolicyKind`,
+  `childAgentKind`, `referenceResolverKind`, beside the existing `memoryKind`,
+  `systemPromptKind` and `webhookTriggerKind`. The token carries the lifecycle scope and
+  validator, so `defineProvider(kind, provider)` in `@agnes/plugin-runtime` takes a token too.
+- `defineExtension` and the author-facing role of `ExtensionAPI` / `ExtensionFactory`. A bundled
+  package is `defineAgnesPlugin({ inject, apply })` like any other: the Host injects the
+  `PluginContextFacets` it lists (`tools`, `hooks`, `projections`, `services`, `slots`,
+  `resources`, `eventLog`, `providers`, `self`). `ExtensionAPI` stays only as the Host backend the
+  facets run over for a bundled package (`@agnes/plugin-runtime/bundled`: `extensionFactoryOf`).
+- `PluginExtensionAPI` and the `ctx.extension()` service. `ctx.hooks.register(event, handler)`
+  replaces both `on` and `registerHook` (all 16 events), `ctx.eventLog.append` replaces
+  `extension().events`, and `ctx.self` replaces `extension().ctx`.
+
+### Changed
+
+- `ctx.providers.register(kind, source, provider)` no longer infers its provider type from
+  `provider`; the kind token alone decides it.
+
 ## 2.3.0
 
 ### Added
@@ -85,19 +115,6 @@ API additions require a minor version; removals or semantic changes require a ma
 ## 2.0.0
 
 ### Removed
-
-- Two kind-token families. `defineProviderKind` and `defineServiceKind` are replaced by
-  `defineKind`: a kind with a `bind` option also supports `ctx.providers.bindOwn`, a kind
-  without it is register-only, and `register: false` makes a Host-installed bind-only kind.
-  `ServiceKind` / `ServiceKindToken` become `BindableKind` / `BindableKindToken`. Every kind
-  carries `operations: { register, bind }`; the registry refuses an operation the kind does
-  not declare.
-- `KindMap`, `PROVIDER_LIFECYCLE_SCOPES` and string kind names in `ctx.providers.register` /
-  `resolve`. Host-installed kinds export tokens: `loopKind`, `modelAdapterKind`,
-  `compactionKind`, `persistenceKind`, `sandboxKind`, `toolRuntimeKind`, `toolPolicyKind`,
-  `childAgentKind`, `referenceResolverKind`, beside the existing `memoryKind`,
-  `systemPromptKind` and `webhookTriggerKind`. The token carries the lifecycle scope and
-  validator, so `defineProvider(kind, provider)` in `@agnes/plugin-runtime` takes a token too.
 
 - `ExtensionAPI.latestExtEvent`, a declared optional method no host implemented.
 - Authored root profile `loop`, `compaction`, model `provider.adapters`, composition

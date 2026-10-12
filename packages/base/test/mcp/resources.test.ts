@@ -1,6 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { checkToolDef, type ExtensionAPI, type ToolDef } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import { connectMcp } from '../../src/mcp/connect.js'
 import { mcpPublicToolName } from '../../src/mcp/naming.js'
@@ -46,15 +47,19 @@ function apiOf() {
   const resources: Array<{ description?: string }> = []
   const warn = { calls: [] as string[] }
   const api = {
-    registerTool: (tool: ToolDef) => {
-      tools.push(tool)
-      return () => undefined
+    tools: {
+      register: (tool: ToolDef) => {
+        tools.push(tool)
+        return () => undefined
+      },
     },
-    registerResource: (resource: { description?: string }) => {
-      resources.push(resource)
-      return () => undefined
+    resources: {
+      register: (resource: { description?: string }) => {
+        resources.push(resource)
+        return () => undefined
+      },
     },
-    ctx: {
+    self: {
       log: {
         debug() {},
         info() {},
@@ -64,7 +69,7 @@ function apiOf() {
         error() {},
       },
     },
-  } as unknown as ExtensionAPI
+  } as unknown as Pick<Context, 'tools' | 'resources' | 'self'>
   return { api, tools, resources, warn }
 }
 

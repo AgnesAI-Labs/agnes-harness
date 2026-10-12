@@ -3,6 +3,8 @@ import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionFactory } from '@agnes/extension-api'
 import { gitWorktreeKind } from '@agnes/git-worktree-contract'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { type BundledPlugin, extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
@@ -52,7 +54,7 @@ const generatedHookMap = JSON.parse(
 
 export type HooksRunnerEcosystemDeps = Partial<HooksRunnerExtensionDeps>
 
-function privacyFactory(init: SeamInitContext): ExtensionFactory {
+function privacyFactory(init: SeamInitContext): BundledPlugin {
   const trajectory = init.privacyTrajectory
   return createPrivacyExtension({
     rules: {
@@ -95,10 +97,10 @@ export function readSubagentLimits(preset: Record<string, unknown>): SubagentLim
 
 /** Factories that need the trusted assembly context, kept separate from the static extension host. */
 export function createEcosystemExtensions(init: SeamInitContext): {
-  hooksRunner(deps?: HooksRunnerEcosystemDeps): ExtensionFactory
-  refine(): ExtensionFactory
-  subagent(): ExtensionFactory
-  skills(): ExtensionFactory
+  hooksRunner(deps?: HooksRunnerEcosystemDeps): BundledPlugin
+  refine(): BundledPlugin
+  subagent(): BundledPlugin
+  skills(): BundledPlugin
 } {
   return {
     hooksRunner: (deps = {}) =>
@@ -197,60 +199,74 @@ function officialSearchProvider(init: SeamInitContext) {
   })
 }
 
-function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
+function defineSubagentExtension(init: SeamInitContext): BundledPlugin {
   const limits = readSubagentLimits(init.profile.preset)
-  return (agnes) =>
-    createSubagentExtension({
-      limits,
-      worktrees: gitWorktrees({
-        events: agnes.events,
-        persist: sqliteWorktreePersist(init.profile.dataDir),
-        open: () => agnes.providers.bindOwn(gitWorktreeKind),
-      }),
-    })(agnes)
+  return defineAgnesPlugin({
+    inject: ['tools', 'eventLog', 'providers'],
+    apply(ctx: Context) {
+      return createSubagentExtension({
+        limits,
+        worktrees: gitWorktrees({
+          events: ctx.eventLog,
+          persist: sqliteWorktreePersist(init.profile.dataDir),
+          open: () => ctx.providers.bindOwn(gitWorktreeKind),
+        }),
+      }).apply(ctx)
+    },
+  })
 }
 
-/** Trusted factories keyed by the manifest id the host is about to admit. */
-export const ecosystem = {
-  'agnes/intelligent-ui': (): ExtensionFactory => intelligentUiExtension,
-  'agnes/workflow': (): ExtensionFactory => workflowExtension,
-  'agnes/context-rules': (): ExtensionFactory => contextRulesExtension,
-  'agnes/time-context': (): ExtensionFactory => timeContextExtension,
+/** Bundled extensions as plugins; `ecosystem` mounts each one over the backend API. */
 
-  'agnes/goal': (): ExtensionFactory => goalExtension,
-  'agnes/interaction': (): ExtensionFactory => interactionExtension,
-  'agnes/deliverables': (): ExtensionFactory => deliverablesExtension,
-  'agnes/plugin-creator': (): ExtensionFactory => pluginCreatorExtension,
-  'agnes/tools-core': (init: SeamInitContext): ExtensionFactory =>
+const bundled = {
+  'agnes/intelligent-ui': (): BundledPlugin => intelligentUiExtension,
+  'agnes/workflow': (): BundledPlugin => workflowExtension,
+  'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
+  'agnes/time-context': (): BundledPlugin => timeContextExtension,
+
+  'agnes/goal': (): BundledPlugin => goalExtension,
+  'agnes/interaction': (): BundledPlugin => interactionExtension,
+  'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
+  'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
+  'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
     createToolsCoreExtension(shellJobsFor(init.signal)),
-  'agnes/jobs-web': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/jobs-web': (init: SeamInitContext): BundledPlugin =>
     createJobsWebExtension(shellJobsFor(init.signal)),
-  'agnes/jobs': (init: SeamInitContext): ExtensionFactory => createJobsExtension(shellJobsFor(init.signal)),
-  'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
-  'agnes/tools-web': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/jobs': (init: SeamInitContext): BundledPlugin => createJobsExtension(shellJobsFor(init.signal)),
+  'agnes/tools-search': (): BundledPlugin => toolsSearchExtension,
+  'agnes/tools-web': (init: SeamInitContext): BundledPlugin =>
     createToolsWebExtension(init.searchProvider ?? officialSearchProvider(init)),
-  'agnes/compaction': (): ExtensionFactory => compactionExtension,
-  'agnes/privacy': (init: SeamInitContext): ExtensionFactory => privacyFactory(init),
+  'agnes/compaction': (): BundledPlugin => compactionExtension,
+  'agnes/privacy': (init: SeamInitContext): BundledPlugin => privacyFactory(init),
   // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it
   // a live Skill view; MCP servers themselves are per-server rows, never an ecosystem extension.
-  'agnes/mcp-search': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/mcp-search': (init: SeamInitContext): BundledPlugin =>
     mcpSearchExtension({
       catalogHub: mcpCatalogHubFor(init),
       ...(init.skillDiscovery ? { skillDiscovery: init.skillDiscovery } : {}),
     }),
-  'agnes/hooks-runner': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/hooks-runner': (init: SeamInitContext): BundledPlugin =>
     createEcosystemExtensions(init).hooksRunner(),
-  'agnes/refine': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).refine(),
-  'agnes/subagent': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).subagent(),
-  'agnes/skills': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).skills(),
-  'agnes/plan-mode': (): ExtensionFactory => planModeExtension,
-  'agnes/mcp-resources': (): ExtensionFactory => mcpResourcesExtension,
-  'agnes/schedule': (init: SeamInitContext): ExtensionFactory => createScheduleExtension(init.scheduleTables),
-  'agnes/computer-use': (init: SeamInitContext): ExtensionFactory => {
+  'agnes/refine': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).refine(),
+  'agnes/subagent': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).subagent(),
+  'agnes/skills': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).skills(),
+  'agnes/plan-mode': (): BundledPlugin => planModeExtension,
+  'agnes/mcp-resources': (): BundledPlugin => mcpResourcesExtension,
+  'agnes/schedule': (init: SeamInitContext): BundledPlugin => createScheduleExtension(init.scheduleTables),
+  'agnes/computer-use': (init: SeamInitContext): BundledPlugin => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')
     return createComputerUseExtension(init.computerUseBackendProvider, init.computerUseOptions)
   },
-  'agnes/session-query': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/session-query': (init: SeamInitContext): BundledPlugin =>
     createSessionQueryExtension({ dataDir: init.profile.dataDir }),
 } as const
+
+/** Trusted factories keyed by the manifest id the host is about to admit. */
+export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
+  Object.fromEntries(
+    Object.entries(bundled).map(([id, make]) => [
+      id,
+      (init: SeamInitContext) => extensionFactoryOf((make as (init: SeamInitContext) => BundledPlugin)(init)),
+    ]),
+  ) as never

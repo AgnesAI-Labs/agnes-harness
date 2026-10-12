@@ -6,6 +6,7 @@ import type {
   Logger,
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
 import { buildExtensionAPI } from './api-proxy.js'
 import { diagnostic, type LoadStage, loadError } from './diagnostics.js'
 import { DisposerBag, LateRegistrationBag } from './disposers.js'
@@ -208,9 +209,8 @@ export function createManagedExtHost(options: Options) {
         stage = 'import'
         const module = await o.loader.import(entry)
         stage = 'export'
-        if (typeof module.default !== 'function')
-          throw new HostError('E_EXT_LOAD', 'extension factory missing')
-        factory = module.default as ExtensionFactory
+        if (!isBundledPlugin(module.default)) throw new HostError('E_EXT_LOAD', 'extension plugin missing')
+        factory = extensionFactoryOf(module.default)
       }
       r.lease = leaseFor(manifest, { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: clock(), clock })
       let registering = true

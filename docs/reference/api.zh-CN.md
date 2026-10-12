@@ -18,7 +18,7 @@ API 随源码演进，`@agnes/*` 目前通过仓库 workspace 解析。使用与
 | 浏览器宿主 | `@agnes/sdk/browser` | 会话与浏览器允许的协议，未提供 Node 管理能力 |
 | 浏览器插件 | 宿主传入的 ClientContext | slots、session、theme、locale、commands、agnes.services |
 | 后端 Cordis 插件行 | `@agnes/plugin-runtime` / Cordis Context | Config、inject/provide、effect、ctx.extension、ctx.skills、已验证行上的 ctx.services/slots/projections/resources |
-| 受限扩展能力 | `@agnes/extension-api` 的 PluginExtensionAPI | 工具、`on` 观察 hook、`registerHook` 全类 hook 与事件；服务等贡献走行上的 Cordis 入口 |
+| 插件 context facet | `@agnes/extension-api` 的 `PluginContextFacets` | 工具、hooks（16 类全部）、账本事件、服务、槽位、投影、资源、providers 与插件自身身份 |
 
 SDK 的现行 Node 出口：[index.node.ts](../../packages/sdk/src/index.node.ts)；浏览器出口：[index.browser.ts](../../packages/sdk/src/index.browser.ts)。应用只能使用各包 exports 暴露的入口；源码深链接用于解释，不是鼓励消费者深导入。
 

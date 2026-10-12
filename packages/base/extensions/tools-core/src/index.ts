@@ -1,4 +1,5 @@
-import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
 import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
 import { createEditTool, editTool } from './tools/edit.js'
@@ -20,23 +21,32 @@ export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, sh
 export { SHELL_SENTINEL } from './tools/shell.js'
 
 export function createToolsCoreExtension(jobs: ShellJobs = standaloneShellJobs) {
-  return defineExtension((agnes) => {
-    const record: FileChangeRecorder = async (input, context) => {
-      const receipt = fileChangeReceipt(input, context)
-      if (receipt) await agnes.events.append('file-change', receipt)
-    }
-    const tools = [readTool, createWriteTool(record), createEditTool(record), createShellTool(jobs), todoTool]
-    const disposers = tools.map((t) => agnes.registerTool(t))
-    disposers.push(
-      agnes.registerHook('shutdown', async (_payload, ctx) => {
-        await jobs.closeSession(ctx.session.key, ctx.session.lane)
-      }),
-    )
-    const dispose: Disposer = async () => {
-      for (const d of disposers) d()
-      await jobs.dispose()
-    }
-    return dispose
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks', 'eventLog'],
+    apply(plugin: Context) {
+      const record: FileChangeRecorder = async (input, context) => {
+        const receipt = fileChangeReceipt(input, context)
+        if (receipt) await plugin.eventLog.append('file-change', receipt)
+      }
+      const tools = [
+        readTool,
+        createWriteTool(record),
+        createEditTool(record),
+        createShellTool(jobs),
+        todoTool,
+      ]
+      const disposers = tools.map((t) => plugin.tools.register(t))
+      disposers.push(
+        plugin.hooks.register('shutdown', async (_payload, ctx) => {
+          await jobs.closeSession(ctx.session.key, ctx.session.lane)
+        }),
+      )
+      const dispose: Disposer = async () => {
+        for (const d of disposers) d()
+        await jobs.dispose()
+      }
+      return dispose
+    },
   })
 }
 export default createToolsCoreExtension()

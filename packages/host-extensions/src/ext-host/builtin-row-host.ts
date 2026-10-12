@@ -6,6 +6,7 @@ import type {
   Logger,
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
 import { buildExtensionAPI } from './api-proxy.js'
 import { diagnostic, type LoadStage, loadError } from './diagnostics.js'
 import { DisposerBag, LateRegistrationBag } from './disposers.js'
@@ -218,9 +219,8 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
         stage = 'import'
         const module = await options.loader.import(entry)
         stage = 'export'
-        if (typeof module.default !== 'function')
-          throw new HostError('E_EXT_LOAD', 'extension factory missing')
-        factory = module.default as ExtensionFactory
+        if (!isBundledPlugin(module.default)) throw new HostError('E_EXT_LOAD', 'extension plugin missing')
+        factory = extensionFactoryOf(module.default)
       }
       // Taken over while the factory was being prepared: nothing is registered yet, and a lease
       // issued now would never be revoked and would shadow the successor's.

@@ -31,7 +31,7 @@ describe('S1 Extension Service contract', () => {
     const manifest = {
       id: 'acme/dashboard',
       version: '1.0.0',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       entry: './index.js',
       capabilities: { services: [capability] },
     }

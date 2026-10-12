@@ -43,7 +43,12 @@ const files = [
       agnes: {
         capabilities: {},
         plugins: [
-          { apiRange: '^2.0.0', export: 'main', id: 'ext:reviewed-tool/main', inject: ['extension'] },
+          {
+            apiRange: '^3.0.0',
+            export: 'main',
+            id: 'ext:reviewed-tool/main',
+            inject: ['hooks', 'eventLog', 'self'],
+          },
         ],
       },
     }),

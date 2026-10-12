@@ -2,10 +2,13 @@ import { type Context, type Fiber, FiberState, symbols } from '@agnes/cordis'
 import {
   checkServiceDef,
   ExtensionError,
+  type PluginProjectionDef,
+  type PluginProjectionsPort,
+  type PluginResourcesPort,
+  type PluginServicesPort,
+  type PluginSlotsPort,
   type ProjectionCapability,
-  type ProjectionDef,
   type ResourceEntry,
-  type ServiceDef,
   SLOT_NAMES,
   type SlotFill,
   type SlotName,
@@ -26,28 +29,11 @@ import type { KernelPorts } from './ports.js'
 import { adaptProjection } from './projections.js'
 import { pluginRowSource } from './row-extension-host.js'
 
-export type RowServiceContribution = Readonly<{
-  register(def: ServiceDef): () => void
-}>
-export type RowResourceContribution = Readonly<{
-  register(entry: ResourceEntry): () => void
-}>
-export type RowSlotContribution = Readonly<{
-  register<S extends SlotName>(slot: S, fill: NoInfer<SlotFill<S>>): () => void
-}>
-export type RowProjectionDef<S extends JsonValue = JsonValue> = ProjectionDef<S> & ProjectionCapability
-export type RowProjectionContribution = Readonly<{
-  register<S extends JsonValue>(def: RowProjectionDef<S>): () => void
-}>
-
-declare module '@agnes/cordis' {
-  interface Context {
-    services: RowServiceContribution
-    resources: RowResourceContribution
-    slots: RowSlotContribution
-    projections: RowProjectionContribution
-  }
-}
+export type RowServiceContribution = PluginServicesPort
+export type RowResourceContribution = PluginResourcesPort
+export type RowSlotContribution = PluginSlotsPort
+export type RowProjectionDef<S extends JsonValue = JsonValue> = PluginProjectionDef<S> & ProjectionCapability
+export type RowProjectionContribution = PluginProjectionsPort
 
 type BoundRow = Readonly<{ fiber: Fiber; origin: Readonly<RowOrigin> }>
 
@@ -248,11 +234,11 @@ export function createRowServiceHost(
           const found = nearestRow(this.ctx.fiber, origins)
           if (!found)
             throw new ExtensionError('E_CAPABILITY_UNDECLARED', 'projection requires a verified row')
-          const capability: ProjectionCapability = {
+          const capability = {
             name: def.name,
             inputEventTypes: def.inputEventTypes,
             maxStateBytes: def.maxStateBytes,
-          }
+          } as ProjectionCapability
           if (!validateProjectionCapability(capability).ok)
             throw new ExtensionError('E_PROJECTION_DEF', 'invalid projection capability')
           const { fiber, origin } = found

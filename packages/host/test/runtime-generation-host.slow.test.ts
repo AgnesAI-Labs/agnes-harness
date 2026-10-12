@@ -53,8 +53,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           plugins: [
             {
               export: 'main',
-              apiRange: '^2.0.0',
-              inject: ['extension'],
+              apiRange: '^3.0.0',
+              inject: ['hooks', 'eventLog', 'self'],
               configReload: 'live',
               config: version === '1.0.0' ? { limit: 100 } : { limit: 2 },
               configSchema:
@@ -105,7 +105,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       integrity: source.snapshot.integrity,
       trust: 'trusted',
       license: 'MIT',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       dependencies: {},
       previous: null,
       state: {
@@ -205,7 +205,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         if (version === 'broken') throw new Error('fixture activation refused')
         return {
           main: defineAgnesPlugin({
-            inject: ['extension'],
+            inject: ['hooks', 'eventLog', 'self'],
             apply(ctx: Context, config: { limit?: number } | undefined) {
               if (!config || typeof config.limit !== 'number' || (version === '1.0.0' && config.limit < 10))
                 throw new Error('fixture code received configuration from the wrong version')
@@ -245,7 +245,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
                   entryRevision: source.snapshot.integrity,
                   extrasRevision: 'none',
                   mountRevision: 'v1',
-                  inject: ['extension'],
+                  inject: ['hooks', 'eventLog', 'self'],
                   configReload: 'live',
                   config: config ?? (source.snapshot.version === '1.0.0' ? { limit: 100 } : { limit: 2 }),
                 }),

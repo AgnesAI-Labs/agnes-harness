@@ -81,8 +81,8 @@ ${
       writeFileSync(
         entry,
         readFileSync(entry, 'utf8').replace(
-          "inject: ['extension', 'tools']",
-          "inject: ['extension', 'tools', 'providers']",
+          "inject: ['hooks', 'eventLog', 'self', 'tools']",
+          "inject: ['hooks', 'eventLog', 'self', 'tools', 'providers']",
         ),
       )
     }
@@ -106,7 +106,10 @@ ${
       ...pluginRow('ext:' + vendor, 'plugin', disabled, { vendor }),
       snapshotDigest: `sha256-${'8'.repeat(64)}`,
       exportName: 'plugin',
-      inject: vendor === 'acme/a' ? ['extension', 'tools', 'providers'] : ['extension', 'tools'],
+      inject:
+        vendor === 'acme/a'
+          ? ['hooks', 'eventLog', 'self', 'tools', 'providers']
+          : ['hooks', 'eventLog', 'self', 'tools'],
     })
   return { ids, sources, options, row }
 }
@@ -722,7 +725,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
         version,
         exports: './index.mjs',
         agnes: {
-          plugins: [{ apiRange: '^2.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
+          plugins: [{ apiRange: '^3.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
         },
       }),
     )

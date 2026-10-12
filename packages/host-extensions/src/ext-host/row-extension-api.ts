@@ -8,7 +8,6 @@ import {
   HOOK_TABLE,
   type HookEvent,
   type HookHandler,
-  type PluginExtensionAPI,
   type ToolDef,
 } from '@agnes/extension-api'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
@@ -22,7 +21,6 @@ import { invalidToolMessage } from './tool-def-message.js'
 export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
   (Object.keys(HOOK_TABLE) as HookEvent[]).filter((event) => HOOK_TABLE[event].category === 'observe'),
 )
-const OBSERVE = new Set<string>(OBSERVE_HOOK_EVENTS)
 
 export type RowExtensionApiInput = {
   mcpManage?: (
@@ -72,12 +70,17 @@ export type RowExtensionApiInput = {
 }
 
 /**
- * The API a plugin row gets: tools, observe-only hooks and ledger events. There is no manifest for a
+ * The backend behind an installed plugin row's `tools`, `hooks`, `eventLog` and `self` facets. There is no manifest for a
  * plugin row, so nothing here reads one; the lease and the fixed rules below are the whole policy.
  */
-export function buildRowExtensionAPI(
-  input: RowExtensionApiInput,
-): PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort } {
+export type RowExtensionApi = Readonly<{
+  ctx: ExtensionContext
+  tools: import('@agnes/extension-api').ToolRegistrationPort
+  registerHook: ExtensionAPI['registerHook']
+  events: ExtensionAPI['events']
+}>
+
+export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionApi {
   const { source, lease, signal } = input
   const meta: RegMeta = Object.freeze({
     source,
@@ -120,7 +123,6 @@ export function buildRowExtensionAPI(
     log,
     signal,
   })
-  const denied = (what: string) => () => refuse(`${what} is not open to plugin rows`)
   const api = {
     ctx,
     tools: {
@@ -252,32 +254,6 @@ export function buildRowExtensionAPI(
         })
       },
     },
-    on<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
-      registering()
-      if (!OBSERVE.has(event) || typeof handler !== 'function')
-        return refuse('only observe-only hook events are open to plugin rows')
-      return input.attach('hook', event, (ports) => {
-        const projections = projectionReader(ports.projections, meta, lease, alive, [])
-        const observed = async (
-          payload: Parameters<HookHandler<E>>[0],
-          hctx: Parameters<HookHandler<E>>[1],
-        ) => {
-          if (event !== 'shutdown') alive()
-          // Observe-only: whatever the handler returns is dropped, a throw is the kernel's to report.
-          await handler(
-            payload,
-            Object.freeze({
-              ...hctx,
-              projections,
-              lease: lease.view(),
-              log,
-              signal: event === 'shutdown' ? hctx.signal : AbortSignal.any([hctx.signal, signal]),
-            }),
-          )
-        }
-        return ports.hooks.on(event, observed as unknown as HookHandler<E>, meta)
-      })
-    },
     events: Object.freeze({
       append(name: string, value: Parameters<ExtensionAPI['events']['append']>[1]) {
         alive()
@@ -314,12 +290,6 @@ export function buildRowExtensionAPI(
         return ports.hooks.on(event, wrapped as unknown as HookHandler<E>, meta)
       })
     },
-    registerSlot: denied('slots'),
-    registerService: denied('services'),
-    registerProjection: denied('projections'),
-    registerResource: denied('resources'),
   }
-  return Object.freeze(api) as unknown as PluginExtensionAPI & {
-    tools: import('@agnes/extension-api').ToolRegistrationPort
-  }
+  return Object.freeze(api) as RowExtensionApi
 }

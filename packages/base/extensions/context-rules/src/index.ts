@@ -1,5 +1,6 @@
 import { dirname } from 'node:path'
-import { defineExtension, type ProjectionDef } from '@agnes/extension-api'
+import type { ProjectionDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { loadContextRules } from './files.js'
 
 type Scopes = { directories: string[] }
@@ -29,27 +30,30 @@ export const rulesProjection: ProjectionDef<Scopes> = {
     return { directories: next }
   },
 }
-export default defineExtension((agnes) => {
-  const disposers = [
-    agnes.registerProjection(rulesProjection),
-    agnes.registerHook('context', async (_payload, ctx) => {
-      const state = await ctx.projections.readOwn<Scopes>('scopes')
-      const snapshot = await loadContextRules(
-        ctx.session.workspaceRoot,
-        state.status === 'available' ? state.value.directories : [],
-        undefined,
-        undefined,
-        ctx.signal,
-      )
-      return {
-        refreshOnRequest: true,
-        sections: [{ id: 'agents-md', order: 120, content: snapshot.content }],
-      }
-    }),
-  ]
-  return () => {
-    for (const dispose of disposers.reverse()) dispose()
-  }
+export default defineAgnesPlugin({
+  inject: ['hooks', 'projections'],
+  apply(plugin: Context) {
+    const disposers = [
+      plugin.projections.register(rulesProjection),
+      plugin.hooks.register('context', async (_payload, ctx) => {
+        const state = await ctx.projections.readOwn<Scopes>('scopes')
+        const snapshot = await loadContextRules(
+          ctx.session.workspaceRoot,
+          state.status === 'available' ? state.value.directories : [],
+          undefined,
+          undefined,
+          ctx.signal,
+        )
+        return {
+          refreshOnRequest: true,
+          sections: [{ id: 'agents-md', order: 120, content: snapshot.content }],
+        }
+      }),
+    ]
+    return () => {
+      for (const dispose of disposers.reverse()) dispose()
+    }
+  },
 })
 export {
   type ContextConfig,

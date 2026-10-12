@@ -21,7 +21,7 @@ const resetProbe = () => {
   ;(globalThis as { __pluginProbe?: Record<string, unknown> }).__pluginProbe = {}
 }
 
-describe('a third-party row registers through ctx.extension()', () => {
+describe('a third-party row registers through its facets', () => {
   it('adds a tool and an observe hook owned by a Host-stamped source', async () => {
     const h = await pluginHost(
       pluginSource(`
@@ -73,18 +73,13 @@ describe('a third-party row registers through ctx.extension()', () => {
     await h.host.close()
   })
 
-  it('refuses everything that is not a tool, any hook event (via registerHook) or a ledger event', async () => {
+  it('opens tools, every hook event (via ctx.hooks) and ledger events', async () => {
     resetProbe()
     const h = await pluginHost(
       pluginSource(`
   const refused = {}
   const attempt = (label, run) => { try { run(); refused[label] = 'allowed' } catch (e) { refused[label] = e.code } }
-  attempt('rewriting hook', () => agnes.on('tool_call', () => {}))
   attempt('registerHook', () => agnes.registerHook('tool_call', () => {}))
-  attempt('registerSlot', () => agnes.registerSlot('status.line', () => null))
-  attempt('registerService', () => agnes.registerService({}))
-  attempt('registerProjection', () => agnes.registerProjection({}))
-  attempt('registerResource', () => agnes.registerResource({}))
   attempt('observe hook', () => agnes.on('shutdown', () => {}))
   globalThis.__pluginProbe = { refused }
 `),
@@ -92,12 +87,7 @@ describe('a third-party row registers through ctx.extension()', () => {
     await h.host.applyRuntimeTarget(targetOf([pluginRow()]))
     await settle()
     expect(probe().refused).toEqual({
-      'rewriting hook': 'E_CAPABILITY_UNDECLARED',
       registerHook: 'allowed',
-      registerSlot: 'E_CAPABILITY_UNDECLARED',
-      registerService: 'E_CAPABILITY_UNDECLARED',
-      registerProjection: 'E_CAPABILITY_UNDECLARED',
-      registerResource: 'E_CAPABILITY_UNDECLARED',
       'observe hook': 'allowed',
     })
     await h.host.close()

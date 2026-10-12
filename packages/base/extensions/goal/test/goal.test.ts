@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { checkManifest, type ExtensionAPI, type HookContext, type HookHandler } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import goalExtension from '../src/index.js'
@@ -163,7 +164,7 @@ it('blocks exhausted budgets and unavailable continuation through the public hoo
       },
     },
   } as unknown as ExtensionAPI
-  await goalExtension(api)
+  await extensionFactoryOf(goalExtension)(api)
   const ctx = {
     signal: new AbortController().signal,
     projections: {

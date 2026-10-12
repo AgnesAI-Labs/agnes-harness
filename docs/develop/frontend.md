@@ -8,7 +8,7 @@ English | [简体中文](frontend.zh-CN.md)
 
 Display your own panel, update its version, and confirm that disabling it restores the built-in interface. Learn the lifecycle first, then replace the version label with content useful for the role.
 
-Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `ui:sidebar` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.extension()`.
+Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `ui:sidebar` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.slots`.
 
 <a id="声明和代码"></a>
 

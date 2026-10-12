@@ -49,7 +49,7 @@ AGH 使用仓内 `@agnes/cordis` 的 Context、服务依赖和 fiber 生命周�
   "exports": "./index.mjs",
   "agnes": {
     "plugins": [
-      { "apiRange": "^2.0.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
+      { "apiRange": "^3.0.0", "export": "example", "id": "ext:example/plugin", "inject": ["skills"] }
     ]
   }
 }
@@ -94,7 +94,7 @@ export const example = {
 
 ## 子代理提供者
 
-提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineProviderKind` 定义。通过 `ctx.providers.register(childAgentKind, sourcePackage, provider)` 注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
+提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineKind` 定义。通过 `ctx.providers.register(childAgentKind, sourcePackage, provider)` 注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
 
 预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
 
@@ -108,14 +108,14 @@ export const example = {
 | --- | --- | --- |
 | 普通 Cordis Context | 插件、服务、事件、effect 生命周期 | 进程内服务，不自动变成跨进程 RPC |
 | `ctx.tools` | `register(tool)`，由调用插件生命周期清理 | 与官方工具共用验证和权限边界 |
-| `ctx.extension()` / PluginExtensionAPI | `on` 观察 hook、`registerHook` 的 transform/intercept hook、受约束事件 | 不能通过这个 API 注册 Service/Projection/Slot/Resource；结果仍受运行时权限与顺序约束 |
+| `ctx.hooks`、`ctx.eventLog`、`ctx.self` | `hooks.register(event, handler)` 覆盖全部 16 类 hook、写入插件自己命名空间的账本事件、插件身份/日志/信号 | 观察类事件忽略 handler 返回值；结果仍受运行时权限与顺序约束 |
 | `ctx.skills` | 运行时 Skill 贡献与 provider | 不能读取/枚举其他 Skill；与磁盘治理分离 |
-| 行上的 `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | 在已验证行上注册对应贡献，随行 fiber 清理 | 不是无条件全局对象；服务调用仍受身份、会话和客户端 allow-list 约束 |
+| `ctx.services` / `ctx.slots` / `ctx.projections` / `ctx.resources` | 注册对应贡献，随插件清理 | 不是无条件全局对象；服务调用仍受身份、会话和客户端 allow-list 约束 |
 | 浏览器 ClientContext | 已声明槽位、前端服务/命令与受限 backend service relay | 没有 Host Context、Node 系统能力或 daemon 管理凭据 |
 
-[联动教程](fullstack.zh-CN.md)使用同一受信 Cordis 行上的 `ctx.services.register()` 和 `agnes.clientDescriptors`。它不把 `ctx.provide()` 伪装成远程方法，也不让 `ctx.extension().registerService()` 绕过限制。
+[联动教程](fullstack.zh-CN.md)使用同一受信 Cordis 行上的 `ctx.services.register()` 和 `agnes.clientDescriptors`。它不把 `ctx.provide()` 伪装成远程方法。
 
-当前源码已开放 16 类 hook 的 `registerHook`，并收敛第三方后端插件到 `agnes.plugins` 行；旧 `agnes.extensions` 不能继续作为第三方普通后端入口。内置兼容清单与第三方作者入口的规则不同。具体注册和授权仍以当前源码、包预览与实际行状态为准。
+官方包和第三方包共用一种插件形态：`defineAgnesPlugin({ inject, apply })`，按名字注入上表的 facet。内置包由 Host 在后端 API 之上挂载，安装的包作为 Cordis 行挂载，但 `apply` 是同一份代码。具体注册和授权仍以当前源码、包预览与实际行状态为准。
 
 ## 前后端生命周期
 
@@ -125,7 +125,7 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 下一步：[后端工具](backend.zh-CN.md) · [前端面板](frontend.zh-CN.md) · [联动](fullstack.zh-CN.md) · [安装与更新](../guide/packages.zh-CN.md)。
 
-事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts)、[行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
+事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[插件 context facet](../../packages/extension-api/src/plugin-context.ts)、[行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
 
 ## 编写 Agent Loop
 

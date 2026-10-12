@@ -25,7 +25,7 @@
   "type": "module",
   "exports": "./index.mjs",
   "agnes": {
-    "plugins": [{ "apiRange": "^2.0.0", "id": "ext:my-agh-skin/main", "export": "main" }],
+    "plugins": [{ "apiRange": "^3.0.0", "id": "ext:my-agh-skin/main", "export": "main" }],
     "clientDescriptors": [{ "rowId": "ext:my-agh-skin/main", "path": "./extensions/main/agnes.client.json" }]
   }
 }

@@ -26,7 +26,7 @@ The direct in-process provider refuses worktree isolation because it does not pr
 
 ## Register a provider
 
-The host defines the `child-agent` kind with `defineProviderKind`. `ctx.providers` is the shared registration facade. Register from an ordinary Cordis plugin that injects `providers`:
+The host defines the `child-agent` kind with `defineKind`. `ctx.providers` is the shared registration facade. Register from an ordinary Cordis plugin that injects `providers`:
 
 ```ts
 import type { ProviderPluginContext } from '@agnes/extension-api'
@@ -120,7 +120,7 @@ In-process events carry turn status and the turn's text. They are not a token st
 
 ## Codex, Claude Code, and the generic engine
 
-`@agnes/base` declares three ordinary plugin rows, each `default: false`, `apiRange: "^2.0.0"`, `inject: ["childAgents"]`, and `runtime: "in-process"`:
+`@agnes/base` declares three ordinary plugin rows, each `default: false`, `apiRange: "^3.0.0"`, `inject: ["childAgents"]`, and `runtime: "in-process"`:
 
 | Row | Export |
 | --- | --- |

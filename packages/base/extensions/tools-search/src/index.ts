@@ -1,4 +1,5 @@
-import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { lsTool } from './tools/ls.js'
 import { ripgrepFindTool as findTool, ripgrepGrepTool as grepTool } from './tools/ripgrep.js'
 
@@ -12,10 +13,13 @@ export const TOOLS_SEARCH: readonly ToolDef[] = [grepTool, findTool, lsTool]
 
 // The module the manifest's `entry` points at. Registration is the whole of it: a factory reaching
 // for anything else would be taking authority this manifest does not declare.
-export default defineExtension((agnes) => {
-  const disposers = TOOLS_SEARCH.map((t) => agnes.registerTool(t))
-  const dispose: Disposer = () => {
-    for (const d of disposers) d()
-  }
-  return dispose
+export default defineAgnesPlugin({
+  inject: ['tools'],
+  apply(ctx: Context) {
+    const disposers = TOOLS_SEARCH.map((t) => ctx.tools.register(t))
+    const dispose: Disposer = () => {
+      for (const d of disposers) d()
+    }
+    return dispose
+  },
 })

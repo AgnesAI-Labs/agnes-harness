@@ -22,7 +22,7 @@ extensions/main/client/index.js
 
 浏览器 Context → 当前 client row 的 service allow-list → 本地同源 BFF → daemon 的身份/状态校验 → worker/Host 的行服务授权 → handler。
 
-`ctx.provide()` 只在本端 Context 发布 Cordis 依赖，不会自动成为远程服务。后端行应通过 `ctx.services.register()` 注册受 Host 约束的服务；`ctx.extension().registerService()` 仍被拒绝。不要创建第二个浏览器 SDK/daemon socket 来绕过 BFF。
+`ctx.provide()` 只在本端 Context 发布 Cordis 依赖，不会自动成为远程服务。后端行应通过 `ctx.services.register()` 注册受 Host 约束的服务。不要创建第二个浏览器 SDK/daemon socket 来绕过 BFF。
 
 ## 运行前显式配置能力上限
 

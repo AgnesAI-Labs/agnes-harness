@@ -1,4 +1,5 @@
 import type { ExtensionAPI, HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it } from 'vitest'
 import extension from '../src/index.js'
 import { workflowProjection } from '../src/state.js'
@@ -28,7 +29,7 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
       },
     },
   } as unknown as ExtensionAPI
-  await extension(api)
+  await extensionFactoryOf(extension)(api)
   const ac = new AbortController()
   const ctx = {
     session: { toolUseId: 'call-1' },

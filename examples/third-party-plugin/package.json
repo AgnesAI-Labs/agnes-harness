@@ -11,7 +11,7 @@
         "provide": [
           "ext:example/echo"
         ],
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:example/echo",
         "runtime": "in-process",
         "default": true,

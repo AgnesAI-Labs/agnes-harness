@@ -309,7 +309,7 @@ describe('isolated hooks-runner spike', () => {
       JSON.stringify({
         id: 'fixture/unawaited-event',
         version: '1.0.0',
-        apiRange: '^2.0.0',
+        apiRange: '^3.0.0',
         entry: './index.js',
         runtime: { supports: ['isolated'] },
         capabilities: { hooks: ['before_step'] },

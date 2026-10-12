@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./host": "./src/host/index.ts",
+    "./bundled": "./src/bundled.ts",
     "./testkit": "./testkit/index.ts",
     "./provided-externals": "./src/provided-externals.ts",
     "./deferred-contract": "./src/deferred-contract.ts"

@@ -35,7 +35,7 @@ Host 启动时，选中的不可变快照集合先完成身份、信任/profile�
 
 ## 一套 provider 模式
 
-每种类型通过 `@agnes/extension-api` 的 `defineProviderKind<T>()` 描述校验、能力、身份与重启要求。Host 的 `ProviderRegistry<T>` 统一管理注册、重复拒绝、选择、只读目录和释放。注册项可归插件 fiber 所有；卸载时注销并执行原有资源清理。loop 按 `id@version` 注册，其他现有类型拒绝重复 id。
+每种类型通过 `@agnes/extension-api` 的 `defineKind<T>()` 描述校验、能力、身份与重启要求。Host 的 `ProviderRegistry<T>` 统一管理注册、重复拒绝、选择、只读目录和释放。注册项可归插件 fiber 所有；卸载时注销并执行原有资源清理。loop 按 `id@version` 注册，其他现有类型拒绝重复 id。
 
 作者可以通过同一个服务注册已有类型：
 
@@ -55,7 +55,7 @@ export const plugin = {
 }
 ```
 
-tool-policy 与 tool-runtime 只通过 `providers` 注册和读取目录；类型化选型、执行与 cancel/dispose 包装仍留在原 owner。`loops`、`modelAdapters`、`compactionEngines`、`sandboxProviders`、`childAgents` 保留实例 API；统一入口委托各 owner 执行生命周期与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineProviderKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
+tool-policy 与 tool-runtime 只通过 `providers` 注册和读取目录；类型化选型、执行与 cancel/dispose 包装仍留在原 owner。`loops`、`modelAdapters`、`compactionEngines`、`sandboxProviders`、`childAgents` 保留实例 API；统一入口委托各 owner 执行生命周期与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
 
 ## 选择与兼容
 
@@ -89,7 +89,7 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 | `tool-policy` | Base approval policy 的 `default` | preset 选择；主体授权仍由 Core 决定。 |
 | `persistence` | Host 的 `sqlite` | 启动选择，变更需重启；不会迁移其他 provider 的文件。 |
 | `sandbox` | Host 的 `local` | 启动选择、首个 workspace 绑定，变更需重启。 |
-| `child-agent` | Base 的 `in-process` | 用 `defineProviderKind` 定义，`childAgents` 保留类型化外观。可选 `acp` 默认不加载。fiber 卸载会中止 provider 生命周期并释放所属 handle；能力检查与会话 allowlist 继续有效。 |
+| `child-agent` | Base 的 `in-process` | 用 `defineKind` 定义，`childAgents` 保留类型化外观。可选 `acp` 默认不加载。fiber 卸载会中止 provider 生命周期并释放所属 handle；能力检查与会话 allowlist 继续有效。 |
 
 ## 插件阶梯
 
@@ -125,15 +125,15 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 ## Provider 合同与迁移
 
-内置 kind 字符串通过公开 `KindMap` 绑定注册与解析的类型；自定义 kind 使用 `defineProviderKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `2.0.0`；旧插件需要迁移删除的作者入口。
+每种 kind 都使用其精确的不变 token，`register`/`resolve` 从 token 推断 provider 类型；自定义 kind 使用 `defineKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `2.0.0`；旧插件需要迁移删除的作者入口。
 
-服务提供者共用这套注册表。`defineServiceKind()` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ExtensionAPI.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
+服务提供者共用这套注册表。`defineKind({ bind })` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ctx.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
 
 反馈是这条路径上的第一个功能：每个 profile 一个提供者，每个请求一个新实例，作用域为 workspace，因此更换该提供者的代码要等进程重启。提交反馈、起草 Skill 候选和实时配置不会重启。
 
 Intelligent UI 是 generation 作用域、每个会话一个提供者。Host 与官方插件共用 `@agnes/intelligent-ui-contract` 里的 kind 令牌。工具用 `providers.bindOwn` 取得实例。用户动作和读取走会话端口：端口接纳已认证 actor，并从持久的动作事实解析 SC1 投递。结果键保持精确（`ui-result:`）。
 
-UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数为 multi，实例作用域为 request，作用域为 generation。会话按 provider id 绑定一个数据源。该 kind 不是 `KindMap` 条目，端口为空。规则见 [UI 数据源](intelligent-ui.zh-CN.md#ui-数据源)。
+UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数为 multi，实例作用域为 request，作用域为 generation。会话按 provider id 绑定一个数据源。该 kind 是它自己的 token，端口为空。规则见 [UI 数据源](intelligent-ui.zh-CN.md#ui-数据源)。
 
 Git worktree 是每个规范工作区一个、作用域为 workspace 的提供者。Host 与内置子 Agent 共用 `@agnes/git-worktree-contract` 的 `gitWorktreeKind`。Host 注册该提供者，插件不能注册。子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。Git 元数据留在 host-infrastructure，子 Agent 得不到 shell 或 argv 端口。
 

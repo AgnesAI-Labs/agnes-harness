@@ -15,7 +15,7 @@
     "test": "node --import tsx --test test/*.test.mjs"
   },
   "dependencies": {
-    "@agnes/extension-api": "2.0.0",
+    "@agnes/extension-api": "^3.0.0",
     "@agnes/plugin-runtime": "0.0.0"
   },
   "devDependencies": {
@@ -28,7 +28,7 @@
       {
         "id": "compaction-engine:sliding-window",
         "export": "main",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "inject": [
           "providers"
         ],

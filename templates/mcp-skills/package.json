@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "2.0.0",
+    "@agnes/extension-api": "^3.0.0",
     "@agnes/resource-control-runtime": "0.0.0",
     "@agnes/protocol": "0.0.0"
   },
@@ -33,7 +33,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
           "skills"
@@ -42,7 +42,7 @@
     ],
     "hostProvidedExternals": {
       "@agnes/plugin-runtime": "0.0.0",
-      "@agnes/extension-api": "2.0.0",
+      "@agnes/extension-api": "^3.0.0",
       "@agnes/resource-control-runtime": "0.0.0",
       "@agnes/protocol": "0.0.0"
     },

@@ -41,6 +41,22 @@ tool.execute = async () => { await api.events.append('note', { kind: 'tool' }); 
 api.registerTool(tool); api.registerHook('before_step', () => ({}));
 api.registerSlot('status.line', () => ({ text: 'loaded', level: 'info' }));
 api.registerResource({ id: 's', kind: 'skill', name: 's', description: 'loaded' });`
+const PLUGIN_SHIM = `export default {
+  inject: ['tools', 'hooks', 'projections', 'services', 'slots', 'resources', 'eventLog', 'providers', 'self'],
+  apply(ctx) {
+    return factory({
+      registerTool: (def) => ctx.tools.register(def),
+      registerHook: (event, handler) => ctx.hooks.register(event, handler),
+      registerSlot: (slot, fill) => ctx.slots.register(slot, fill),
+      registerResource: (entry) => ctx.resources.register(entry),
+      registerService: (def) => ctx.services.register(def),
+      registerProjection: (def) => ctx.projections.register(def),
+      events: ctx.eventLog,
+      providers: ctx.providers,
+      get ctx() { return ctx.self },
+    })
+  },
+}`
 function extension(root: string, name: string, source: string, capabilities = caps): ExtensionSpec {
   const dir = join(root, name)
   mkdirSync(dir)
@@ -54,7 +70,11 @@ function extension(root: string, name: string, source: string, capabilities = ca
       capabilities,
     }),
   )
-  writeFileSync(join(dir, 'index.ts'), `import { Type } from '@sinclair/typebox';\n${source}`)
+  // The fixtures below are written against the backend API; the module still has to be a plugin.
+  const module = source.includes('export default')
+    ? `${source.replace('export default ', 'const factory = ')}\n${PLUGIN_SHIM}`
+    : source
+  writeFileSync(join(dir, 'index.ts'), `import { Type } from '@sinclair/typebox';\n${module}`)
   return {
     id: `fixture/${name}`,
     package: '@fixture/package',

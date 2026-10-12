@@ -16,7 +16,7 @@
       {
         "id": "ext:example-plan-execute",
         "export": "plugin",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "default": true,
         "inject": [
           "providers"

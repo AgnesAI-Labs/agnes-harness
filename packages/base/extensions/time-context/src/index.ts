@@ -1,4 +1,5 @@
-import { defineExtension, type ProjectionDef } from '@agnes/extension-api'
+import type { ProjectionDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { readContextConfig } from '../../context-rules/src/config.js'
 
 type TimeState = { turn: number; sampledAt: number; precedingTurnAt: number | null; endedAt: number | null }
@@ -41,26 +42,29 @@ export function renderTimeContext(now: number, zone: string, preceding: number |
       : `${Math.max(0, Math.floor((now - preceding) / 1000))} seconds`
   return `Current time: ${current}\nTime zone: ${zone}. This is the configured display zone; ask for clarification when the user's zone matters.\nElapsed since the preceding turn ended: ${elapsed}.`
 }
-export default defineExtension((agnes) => {
-  const disposers = [
-    agnes.registerProjection(timeProjection),
-    agnes.registerHook('context', async (_payload, ctx) => {
-      const config = readContextConfig()
-      if (!config.timeEnabled) return { refreshOnRequest: true }
-      const read = await ctx.projections.readOwn<TimeState>('clock')
-      if (read.status !== 'available') throw new Error('time context persistence unavailable')
-      const now = Date.now()
-      const start = read.value.sampledAt || now
-      const interval = config.refreshIntervalMs
-      const sampledAt =
-        interval === 0 ? now : start + Math.floor(Math.max(0, now - start) / interval) * interval
-      return {
-        refreshOnRequest: true,
-        additionalContext: renderTimeContext(sampledAt, config.timeZone, read.value.precedingTurnAt),
-      }
-    }),
-  ]
-  return () => {
-    for (const dispose of disposers.reverse()) dispose()
-  }
+export default defineAgnesPlugin({
+  inject: ['hooks', 'projections'],
+  apply(plugin: Context) {
+    const disposers = [
+      plugin.projections.register(timeProjection),
+      plugin.hooks.register('context', async (_payload, ctx) => {
+        const config = readContextConfig()
+        if (!config.timeEnabled) return { refreshOnRequest: true }
+        const read = await ctx.projections.readOwn<TimeState>('clock')
+        if (read.status !== 'available') throw new Error('time context persistence unavailable')
+        const now = Date.now()
+        const start = read.value.sampledAt || now
+        const interval = config.refreshIntervalMs
+        const sampledAt =
+          interval === 0 ? now : start + Math.floor(Math.max(0, now - start) / interval) * interval
+        return {
+          refreshOnRequest: true,
+          additionalContext: renderTimeContext(sampledAt, config.timeZone, read.value.precedingTurnAt),
+        }
+      }),
+    ]
+    return () => {
+      for (const dispose of disposers.reverse()) dispose()
+    }
+  },
 })

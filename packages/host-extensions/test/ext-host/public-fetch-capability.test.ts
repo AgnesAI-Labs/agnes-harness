@@ -6,7 +6,7 @@ import { capabilityToolContext } from '../../src/ext-host/tool-context-capabilit
 const manifest = (enabled = false): ExtensionManifest => ({
   id: 'test/web',
   version: '1.0.0',
-  apiRange: '^2.0.0',
+  apiRange: '^3.0.0',
   entry: './index.js',
   capabilities: { network: { hosts: ['example.com'] }, ...(enabled ? { 'network.publicRead': true } : {}) },
 })

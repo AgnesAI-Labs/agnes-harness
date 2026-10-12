@@ -49,7 +49,7 @@
   },
   {
     "path": "examples/packages/hot-tool-plugin/index.mjs",
-    "includes": ["demo_text_stats", "ctx.extension()"]
+    "includes": ["demo_text_stats", "ctx.hooks.register"]
   },
   {
     "path": "examples/packages/client-service-panel/v1/package.json",
@@ -171,8 +171,8 @@
     ]
   },
   {
-    "path": "packages/extension-api/src/plugin-extension.ts",
-    "includes": ["registerHook: ExtensionAPI['registerHook']"]
+    "path": "packages/extension-api/src/plugin-context.ts",
+    "includes": ["export interface PluginContextFacets", "readonly eventLog: PluginEventLogPort"]
   },
   {
     "path": "packages/extension-api/src/loop.ts",

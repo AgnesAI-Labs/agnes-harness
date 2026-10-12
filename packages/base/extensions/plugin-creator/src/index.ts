@@ -1,5 +1,5 @@
-import { defineExtension, type ToolContext } from '@agnes/extension-api'
-import { defineTool } from '@agnes/plugin-runtime'
+import type { ToolContext } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
@@ -108,21 +108,24 @@ export const pluginCreatorTools = [
     },
   }),
 ] as const
-export default defineExtension((api) => {
-  const disposers = pluginCreatorTools.map((tool) => api.registerTool(tool))
-  disposers.push(
-    api.registerHook('context', () => ({
-      sections: [
-        {
-          id: 'plugin-creator',
-          order: 165,
-          content:
-            'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation. Keep new text <=8 KiB per reply; use run_code for incremental full-tree edits. After OUTPUT_LIMIT, read and continue the same candidate.',
-        },
-      ],
-    })),
-  )
-  return () => {
-    for (const dispose of disposers.reverse()) dispose()
-  }
+export default defineAgnesPlugin({
+  inject: ['tools', 'hooks'],
+  apply(ctx: Context) {
+    const disposers = pluginCreatorTools.map((tool) => ctx.tools.register(tool))
+    disposers.push(
+      ctx.hooks.register('context', () => ({
+        sections: [
+          {
+            id: 'plugin-creator',
+            order: 165,
+            content:
+              'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation. Keep new text <=8 KiB per reply; use run_code for incremental full-tree edits. After OUTPUT_LIMIT, read and continue the same candidate.',
+          },
+        ],
+      })),
+    )
+    return () => {
+      for (const dispose of disposers.reverse()) dispose()
+    }
+  },
 })

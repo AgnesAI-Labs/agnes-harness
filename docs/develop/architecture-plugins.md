@@ -35,7 +35,7 @@ At Host startup, the complete selected immutable snapshot set passes identity, t
 
 ## One provider pattern
 
-Every kind describes validation, capabilities, semver identity and lifecycle scope with `defineProviderKind<T>()` from `@agnes/extension-api`. Host's `ProviderRegistry<T>` owns registration, duplicate refusal, selection, immutable catalogs and disposal. Registration may be owned by a plugin fiber; unregister returns an idempotent `Promise<void>`. Model, compaction, policy and tool-runtime owners stop admission, abort and drain creates/calls, dispose instances, then run registration cleanup. Cleanup failures are aggregated. Loop identity is `id@version`; the other current kinds refuse duplicate ids.
+Every kind describes validation, capabilities, semver identity and lifecycle scope with `defineKind<T>()` from `@agnes/extension-api`. Host's `ProviderRegistry<T>` owns registration, duplicate refusal, selection, immutable catalogs and disposal. Registration may be owned by a plugin fiber; unregister returns an idempotent `Promise<void>`. Model, compaction, policy and tool-runtime owners stop admission, abort and drain creates/calls, dispose instances, then run registration cleanup. Cleanup failures are aggregated. Loop identity is `id@version`; the other current kinds refuse duplicate ids.
 
 An author can register an existing kind through one service:
 
@@ -55,7 +55,7 @@ export const plugin = {
 }
 ```
 
-Tool policies and runtimes register and appear in catalogs only through `providers`; their typed selection, execution and cancel/dispose wrappers stay with their owners. Named services (`loops`, `modelAdapters`, `compactionEngines`, `sandboxProviders`, `childAgents`) retain their instance APIs. The common entry point delegates to the owning lifecycle and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineProviderKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
+Tool policies and runtimes register and appear in catalogs only through `providers`; their typed selection, execution and cancel/dispose wrappers stay with their owners. Named services (`loops`, `modelAdapters`, `compactionEngines`, `sandboxProviders`, `childAgents`) retain their instance APIs. The common entry point delegates to the owning lifecycle and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
 
 ## Selection and compatibility
 
@@ -89,7 +89,7 @@ A versionless loop selection requires exactly one installed version. An explicit
 | `tool-policy` | `default`, Base approval policy | Selected per preset; principal authorization remains in Core. |
 | `persistence` | `sqlite`, Host | Process startup selection; restart required. Providers do not migrate another store's files. |
 | `sandbox` | `local`, Host | Startup selection, bound on first workspace; restart required to change it. |
-| `child-agent` | `in-process`, Base | Defined with `defineProviderKind`; `childAgents` remains the typed facade. Optional `acp` stays unloaded by default. Fiber unload aborts the provider lifetime and disposes its handles; capability checks and session allowlists still apply. |
+| `child-agent` | `in-process`, Base | Defined with `defineKind`; `childAgents` remains the typed facade. Optional `acp` stays unloaded by default. Fiber unload aborts the provider lifetime and disposes its handles; capability checks and session allowlists still apply. |
 
 ## Pinned code, live resources
 
@@ -122,15 +122,15 @@ Each rung works without learning the next: **0 Use** — select installed plugin
 
 ## Provider author contracts
 
-Built-in string kinds use `KindMap`: `register(kind, sourcePackage, provider)` and `resolve(kind, selection)` infer the matching provider type. Custom kinds use the exact invariant token returned by `defineProviderKind<T>()` and installed by their service. A token with the same name but a different identity is refused. The verified plugin owner determines `sourcePackage`; a conflicting claim fails admission.
+Every kind uses its exact invariant token: `register(kind, sourcePackage, provider)` and `resolve(kind, selection)` infer the provider type from it. Custom kinds use the token returned by `defineKind<T>()` and installed by their service. A token with the same name but a different identity is refused. The verified plugin owner determines `sourcePackage`; a conflicting claim fails admission.
 
-Service providers use that same registry. `defineServiceKind()` adds cardinality, an instance scope, and the maximum port grant (`ledger`, `input`, `projections`). Host installs one descriptor, which can only shrink the grant, and admits the current callback through `ExtensionAPI.providers`. The loader supplies the package id and the manifest supplies the owner. Each admitted call opens its own instance. A handle used after that callback, generation, or dispose fails closed. Process-wide sharing stays inside the feature that already reference-counts the resource.
+Service providers use that same registry. `defineKind({ bind })` adds cardinality, an instance scope, and the maximum port grant (`ledger`, `input`, `projections`). Host installs one descriptor, which can only shrink the grant, and admits the current callback through `ctx.providers`. The loader supplies the package id and the manifest supplies the owner. Each admitted call opens its own instance. A handle used after that callback, generation, or dispose fails closed. Process-wide sharing stays inside the feature that already reference-counts the resource.
 
 Feedback is the first feature on this path: one provider per profile, a new instance per request, and workspace scope so replacing that provider's code waits for a process restart. Sending feedback, drafting a Skill candidate, and live configuration do not restart.
 
 Intelligent UI is a generation-scoped, single provider per session. Host and the official plugin share the kind token from `@agnes/intelligent-ui-contract`. Tools bind it with `providers.bindOwn`. User actions and reads enter through the session port, which admits the authenticated actor and resolves SC1 delivery from the durable action fact. Result keys stay exact (`ui-result:`).
 
-UI data sources are a separate kind, `ui-data-source`, from that same contract package. Cardinality is multi, instance scope is request, and scope is generation. A session binds one source by provider id. The kind is not a `KindMap` entry, and its ports stay empty. The rules are in [UI data sources](intelligent-ui.md#ui-data-sources).
+UI data sources are a separate kind, `ui-data-source`, from that same contract package. Cardinality is multi, instance scope is request, and scope is generation. A session binds one source by provider id. The kind is its own token, and its ports stay empty. The rules are in [UI data sources](intelligent-ui.md#ui-data-sources).
 
 Git worktrees are one workspace-scoped provider for each canonical workspace. Host and the bundled subagent share `gitWorktreeKind` from `@agnes/git-worktree-contract`. Host registers that provider; plugins cannot. The subagent binds it with `providers.bindOwn` during a tool call. Git metadata stays in host-infrastructure, and the subagent does not receive a shell or argv port.
 

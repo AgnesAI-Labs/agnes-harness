@@ -1,4 +1,5 @@
-import { type Disposer, defineExtension, type ExtensionFactory } from '@agnes/extension-api'
+import type { Disposer } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import type { McpCatalogHub } from '../../mcp-server/src/catalog-hub.js'
 import type { SkillRuntimeDiscovery } from '../../skills/src/runtime.js'
 import { toolDescribeTool, toolSearchTool } from './search-tools.js'
@@ -19,17 +20,20 @@ export type McpSearchExtensionDeps = Readonly<{
  * reload this extension: Skills registered through the Cordis root service land in the same registry
  * and are listed on the next call.
  */
-export function mcpSearchExtension(deps: McpSearchExtensionDeps): ExtensionFactory {
-  return defineExtension((agnes) => {
-    const disposers: Disposer[] = [
-      agnes.registerTool(toolSearchTool(deps.catalogHub, deps.skillDiscovery)),
-      agnes.registerTool(toolDescribeTool(deps.catalogHub)),
-    ]
-    let disposed = false
-    return () => {
-      if (disposed) return
-      disposed = true
-      for (const dispose of disposers.reverse()) dispose()
-    }
+export function mcpSearchExtension(deps: McpSearchExtensionDeps) {
+  return defineAgnesPlugin({
+    inject: ['tools'],
+    apply(ctx: Context) {
+      const disposers: Disposer[] = [
+        ctx.tools.register(toolSearchTool(deps.catalogHub, deps.skillDiscovery)),
+        ctx.tools.register(toolDescribeTool(deps.catalogHub)),
+      ]
+      let disposed = false
+      return () => {
+        if (disposed) return
+        disposed = true
+        for (const dispose of disposers.reverse()) dispose()
+      }
+    },
   })
 }

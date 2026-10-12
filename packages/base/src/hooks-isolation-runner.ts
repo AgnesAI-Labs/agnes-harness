@@ -7,6 +7,7 @@ import type {
   PlatformFacts,
 } from '@agnes/extension-api'
 import { EXTENSION_ERROR_CODES, ExtensionError, unavailableProjections } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { CcHookGroup } from '../extensions/hooks-runner/src/config.js'
 import {
   type HooksRunnerExtensionDeps,
@@ -160,7 +161,7 @@ async function prepare(message: Message): Promise<void> {
         payload,
       }) as ReturnType<NonNullable<HooksRunnerExtensionDeps['runHttp']>>,
   }
-  const returned = await preparedHooksRunnerExtension(init, deps, input.groups)(api)
+  const returned = await extensionFactoryOf(preparedHooksRunnerExtension(init, deps, input.groups))(api)
   if (typeof returned === 'function') disposer = returned
   else if (returned !== undefined) throw new Error('invalid disposer')
   phase = 'ready'

@@ -176,7 +176,7 @@ UI 动作身份从已认证连接的 credential 解析，worker 内也重新绑�
 
 ## UI 数据源
 
-业务插件可以把某一个 `data[dataKey]` 绑到只读查询上，而不把行写进 surface。持久 surface 只保存该绑定。Host 在已认证读取时解析。字面量 `data[dataKey]` 仍然有效，并继续使用上文的校验。Kind、provider 与实例类型、结果枚举和失败码放在 `@agnes/intelligent-ui-contract`，与 `intelligentUiKind` 并列。该包只依赖 `@agnes/extension-api` 与 `@agnes/protocol`。Host 使用这份合同，不为此导入 `@agnes/base`。该 kind 不是 `KindMap` 条目。本节的短索引是 [UI 数据源](ui-data-source.zh-CN.md)。
+业务插件可以把某一个 `data[dataKey]` 绑到只读查询上，而不把行写进 surface。持久 surface 只保存该绑定。Host 在已认证读取时解析。字面量 `data[dataKey]` 仍然有效，并继续使用上文的校验。Kind、provider 与实例类型、结果枚举和失败码放在 `@agnes/intelligent-ui-contract`，与 `intelligentUiKind` 并列。该包只依赖 `@agnes/extension-api` 与 `@agnes/protocol`。Host 使用这份合同，不为此导入 `@agnes/base`。该 kind 是它自己的 token。本节的短索引是 [UI 数据源](ui-data-source.zh-CN.md)。
 
 | 项 | 值 |
 | --- | --- |

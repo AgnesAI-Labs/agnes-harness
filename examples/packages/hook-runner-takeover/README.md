@@ -7,7 +7,7 @@
 跟 `hook-context-note` 一样是普通 Cordis 对象插件，区别是：
 
 1. `package.json` 的 `id` 写成 `"ext:agnes/hooks-runner"`（内置扩展自己的行 id），不是自己起的 id。
-2. `index.mjs` 里对 12 个事件全部调用 `agnes.registerHook(...)`——11 个原样透传（不拦截、不改写），只有
+2. `index.mjs` 里对 12 个事件全部调用 `ctx.hooks.register(...)`——11 个原样透传（不拦截、不改写），只有
    `tool_call` 真的做一件事：拦截一次专门标记好的演示调用（`name === 'demo_text_stats'` 且
    `args.text === 'BLOCK_ME'`），证明返回值真的进了内核判断，不只是"挂上去没报错"。
 

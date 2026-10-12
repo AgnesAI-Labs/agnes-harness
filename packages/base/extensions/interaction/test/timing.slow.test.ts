@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
 import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -8,7 +9,7 @@ it('continues immediately or at the durable deadline, accepts late answers and c
   let state = questionProjection.init()
   let tool: ToolDef | undefined
   const hooks: string[] = []
-  interaction({
+  extensionFactoryOf(interaction)({
     registerProjection: () => () => {},
     registerTool: (value: ToolDef) => {
       tool = value

@@ -20,7 +20,7 @@ AGH can execute tools, write files, and connect to external systems. Model text,
 | Tool approval | Allow an action once or within the scope of the selected option | Successful creation of an operating-system sandbox |
 | Sandbox / execution constraints | Limit execution according to actual platform probes and policy | Isolation of malicious in-process plugins |
 
-Ordinary third-party Cordis plugins are trusted in-process code. Trusting one may let it use Node capabilities available to the process. `ctx.extension()` constrains the extension API, not arbitrary Node code. Review both source and declared capabilities before installing a third-party package.
+Ordinary third-party Cordis plugins are trusted in-process code. Trusting one may let it use Node capabilities available to the process. The plugin facets constrain registrations, not arbitrary Node code. Review both source and declared capabilities before installing a third-party package.
 
 <a id="审批"></a>
 

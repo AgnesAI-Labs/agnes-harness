@@ -27,13 +27,12 @@ There is no session directory-change feature in this contract change.
 
 ## Entry point and tool
 
-The package points `agnes.plugins` at `textStatsTool`. Both manifest and exported object declare `inject: ['tools', 'extension']`. The core registration is:
+The package points `agnes.plugins` at `textStatsTool`. Both manifest and exported object declare `inject: ['tools', 'hooks', 'self']`. The core registration is:
 
 ```js
 export const textStatsTool = {
-  inject: ['tools', 'extension'],
+  inject: ['tools', 'hooks', 'self'],
   apply(ctx) {
-    const agnes = ctx.extension()
     ctx.tools.register({
       name: 'demo_text_stats',
       description: 'Count characters and words in text.',

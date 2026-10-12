@@ -13,7 +13,7 @@
       {
         "id": "ext:example-decision",
         "export": "plugin",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "default": true,
         "inject": [
           "providers"

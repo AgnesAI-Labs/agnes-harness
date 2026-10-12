@@ -1,6 +1,7 @@
 import type { HarnessEntry, OpContext, RefineProposal, SeamImplementations } from '@agnes/core'
 import { actor, fakeProvider, fakeSeams, openSession, textTurn } from '@agnes/core/testkit'
 import type { ExtensionAPI, HookHandler, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { createEcosystemExtensions } from '../../../src/ecosystem.js'
 import { operations } from '../../../src/index.js'
@@ -71,7 +72,7 @@ describe('refine after-core operation', () => {
       },
       events: { append: async () => 1 },
     } as unknown as ExtensionAPI
-    await createEcosystemExtensions(init).refine()(api)
+    await extensionFactoryOf(createEcosystemExtensions(init).refine())(api)
 
     const tool = tools.find((candidate) => candidate.name === 'harness_propose')
     if (!tool) throw new Error('production refine extension did not register harness_propose')

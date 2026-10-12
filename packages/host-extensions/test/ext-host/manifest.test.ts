@@ -43,7 +43,7 @@ const manifest = (over: Record<string, unknown> = {}): string =>
   JSON.stringify({
     id: 'fixture/x',
     version: '1.0.0',
-    apiRange: '^2.0.0',
+    apiRange: '^3.0.0',
     entry: './index.ts',
     capabilities: {},
     ...over,
@@ -55,7 +55,7 @@ describe('readExtensionManifest', () => {
     expect(readExtensionManifest(dir)).toEqual({
       id: 'fixture/ok',
       version: '1.0.0',
-      apiRange: '^2.0.0',
+      apiRange: '^3.0.0',
       entry: './index.ts',
       tools: { prefix: 'fx_', names: ['fx_one', 'fx_two'] },
     })
@@ -124,7 +124,7 @@ describe('checkApiRange', () => {
   it('accepts the supported subset through real on-disk manifests and the default API path', () => {
     // The narrow tilde entry tracks the running API_VERSION rather than a hardcoded version, so it
     // stays a real positive case (not an accidental exclusion) across future version bumps.
-    for (const apiRange of [`~${API_VERSION}`, '>=2.0.0 <3.0.0', '2.*', '*']) {
+    for (const apiRange of [`~${API_VERSION}`, '>=3.0.0 <4.0.0', '3.*', '*']) {
       const dir = scratch({ 'agnes.extension.json': manifest({ apiRange }), 'index.ts': '' })
       expect(readExtensionManifest(dir).apiRange).toBe(apiRange)
     }

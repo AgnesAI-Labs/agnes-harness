@@ -20,7 +20,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
           agnes: {
             kinds: ['skills'],
             capabilities: {},
-            plugins: [{ apiRange: '^2.0.0', id: `ext:${name}/main`, export: 'main', inject: ['skills'] }],
+            plugins: [{ apiRange: '^3.0.0', id: `ext:${name}/main`, export: 'main', inject: ['skills'] }],
           },
         }),
       },
@@ -65,7 +65,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
   pkg.files = ['src', 'client', 'skills', 'mcp.json']
   delete pkg.dependencies
   delete pkg.devDependencies
-  pkg.agnes.plugins = pkg.agnes.plugins.map((p: object) => ({ ...p, apiRange: '^2.0.0' }))
+  pkg.agnes.plugins = pkg.agnes.plugins.map((p: object) => ({ ...p, apiRange: '^3.0.0' }))
   pkg.scripts = { test: 'node --test test/*.test.mjs' }
   manifest.content = JSON.stringify(pkg, null, 2) + '\n'
   if (['tool', 'tool-with-panel'].includes(template))

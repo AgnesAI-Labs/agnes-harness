@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "cancelTool",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:agnes-e2e/cancel-tool",
         "inject": [
           "tools"

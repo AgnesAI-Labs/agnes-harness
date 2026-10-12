@@ -7,7 +7,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^2.0.0",
+        "apiRange": "^3.0.0",
         "id": "ext:examples/skin-example/main",
         "runtime": "in-process",
         "metadata": {

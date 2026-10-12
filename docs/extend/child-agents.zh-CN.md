@@ -26,7 +26,7 @@
 
 ## 注册提供者
 
-Host 用 `defineProviderKind` 定义 `child-agent` 类型。`ctx.providers` 是统一注册入口。从注入 `providers` 的普通 Cordis 插件注册：
+Host 用 `defineKind` 定义 `child-agent` 类型。`ctx.providers` 是统一注册入口。从注入 `providers` 的普通 Cordis 插件注册：
 
 ```ts
 import type { ProviderPluginContext } from '@agnes/extension-api'
@@ -120,7 +120,7 @@ acpChildAgentsPlugin({
 
 ## Codex、Claude Code 与通用引擎
 
-`@agnes/base` 声明三行普通插件，每一行都是 `default: false`、`apiRange: "^2.0.0"`、`inject: ["childAgents"]`、`runtime: "in-process"`：
+`@agnes/base` 声明三行普通插件，每一行都是 `default: false`、`apiRange: "^3.0.0"`、`inject: ["childAgents"]`、`runtime: "in-process"`：
 
 | 行 | 导出 |
 | --- | --- |

@@ -4,7 +4,7 @@
 
 [作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md) · [测试](testing.zh-CN.md)
 
-从 `@agnes/plugin-runtime` 导入作者 helper，从 `@agnes/extension-api` 导入合同，**作者测试统一使用 `@agnes/host/author-testkit`**。只有需要某项服务时，才从对应合同包导入 kind token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#4-可选的构建和测试)。
+从 `@agnes/plugin-runtime` 导入作者 helper，从 `@agnes/extension-api` 导入合同，**作者测试统一使用 `@agnes/host/author-testkit`**。所有 kind（无论注册还是绑定）都是同一种 token 类型；只有需要某项 Host 服务时，才从对应合同包导入 token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#4-可选的构建和测试)。
 
 下文的**作者面**表示预览版支持的公开作者入口，不代表 API 已冻结。**专用合同**用于明确的合同或集成任务。**内部/旧入口——不要使用**表示新作者模板应避开该入口，现有导出仍保留。
 
@@ -15,7 +15,7 @@
 | 任务 | 导入包 | 导出符号 | 入口与用法 |
 | --- | --- | --- | --- |
 | 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`readOnlyTool`、`writeTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `tools`，调用 `ctx.tools.register(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
-| 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginExtensionAPI` | 作者合同。官方和社区作者共用 `@agnes/plugin-runtime` 唯一导出的 `defineTool`。 |
+| 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginContextFacets` | 作者合同。官方和社区作者共用 `@agnes/plugin-runtime` 唯一导出的 `defineTool`。 |
 | 构造 TypeBox schema | `@sinclair/typebox` | `Type`；类型 `Static`、`TSchema` | 作者面。工具输入 schema 必须带 TypeBox Kind 符号，普通 JSON Schema 不够。 |
 | 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
 | 添加浏览器面板或 UI 资产 | `@agnes/web-client` | 类型 `ClientContext`、`ClientModule`；`workbenchPanels` | 作者面，仅浏览器。导出 `apply(ctx, config)`，通过 `ctx.slots` 或 `workbenchPanels` 注册，在客户端描述文件声明 entry/styles/slots。简单 JS 侧栏无需导入 SDK；见[前端模块](../develop/frontend.zh-CN.md)和[工作台面板](workbench-panels.zh-CN.md)。 |
@@ -27,14 +27,18 @@
 | 打包 MCP + Skills | `@agnes/plugin-runtime`、`@agnes/protocol` | 分别为 `defineAgnesPlugin`、类型 `Context`；类型 `McpServerDefinitionInput` | 作者面。MCP 定义和 `SKILL.md` 是包数据，不是工具 helper。注入 `skills`，调用 `ctx.skills.register(...)`；源码模板导入 `@agnes/resource-control-runtime` 以获得 context 类型。该包不是 Host 提供的 external；候选 creator 会省略此导入。见[模板](../../templates/mcp-skills/src/index.ts)和 [MCP 管理](../guide/mcp.zh-CN.md)。 |
 | 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → `agnes.capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
 | 描述扩展能力 / 工具审批策略 | `@agnes/extension-api` | 类型 `ExtensionCapabilities`、`ExtensionManifest`、`ToolMeta`、`ResolvedToolCallPolicy` | 作者合同。描述文件能力与包能力的形状不同。使用调用时的 `ToolContext` 端口执行已授权 I/O；见[工具策略](tool-runtime.zh-CN.md)。 |
-| 通过 kind token 使用 Host 服务 | 下表中的所属合同包 | 从 `@agnes/extension-api` 导入类型 `ServiceKind`、`ServiceBindingPort`、`LoopServiceReader` | 专用合同。使用实际提供的服务端口；导入 token 不会安装、选择或授权 provider。 |
+| 通过 kind token 使用 Host 服务 | 下表中的所属合同包 | 从 `@agnes/extension-api` 导入类型 `BindableKind`、`LoopServiceReader` | 专用合同。使用实际提供的服务端口；导入 token 不会安装、选择或授权 provider。 |
 | 测试工具、Skills、Loop 和适配器 | `@agnes/host/author-testkit` | `createPluginTestHost`、`driveLoop`、`scriptedModel`、`runModelAdapter` | 作者面，仅测试文件。自动提供 Host 注册桥；轻量合同测试可显式提供服务替身。 |
 | 测试会话、代际绑定、模型回放或 HTTP/SSE 故障 | `@agnes/host/author-testkit` | `createAuthorTestkit`、`recordModelFixture`、`replayModelFixture`、`startModelFaultServer`、`ScriptedProvider`、`fakeModel`、`fakeRequest` | 作者面，仅测试文件；[测试指南](testing.zh-CN.md)解释 fixture 的边界与清理。 |
 | 检查专用 provider 生命周期合同 | `@agnes/extension-api/testkit` | `runProviderConformance`、`loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance` | 专用合同。需要真实 Host 注册/会话 probe，不是第二套 starter testkit。可选 Vitest 持久化 suites 位于 `@agnes/extension-api/testkit/persistence-contract`。 |
 
-## Host 服务 kind token
+## Kind token
 
-Host 提供的公开作者命名空间共有以下六个 service kind token。请从准确的所属路径导入，以保留重载时的 token 身份；不要复制 token 或用 `defineServiceKind` 重建它。
+kind 是用 `defineKind` 创建的同一种 token，自己声明支持 `ctx.providers.register`、`ctx.providers.bindOwn` 还是两者都支持（带 `bind` 选项即可绑定）。`ctx.providers.register(kind, packageId, provider)` 与 `ctx.providers.bindOwn(kind)` 接受同一种 token 类型，Host 会拒绝 kind 未声明的操作。
+
+Host 安装的 provider kind 由 `@agnes/extension-api` 导出（`@agnes/plugin-runtime` 同样再导出）：`loopKind`、`modelAdapterKind`、`compactionKind`、`persistenceKind`、`sandboxKind`、`toolRuntimeKind`、`toolPolicyKind`、`childAgentKind`、`referenceResolverKind`、`memoryKind`、`systemPromptKind`、`webhookTriggerKind`；七个 seam kind（`approvalKind`、`principalsKind`、`billingKind`、`checkpointKind`、`artifactsKind`、`verifierKind`、`repairKind`）来自 `@agnes/extension-api/seams`。
+
+Host 提供的公开作者命名空间共有以下六个可绑定 kind。请从准确的所属路径导入，以保留重载时的 token 身份；不要复制 token 或用 `defineKind` 重建它。
 
 | 服务 | 导入包 | 导出 token | 合同源码 |
 | --- | --- | --- | --- |
@@ -46,8 +50,6 @@ Host 提供的公开作者命名空间共有以下六个 service kind token。�
 | 延迟调用 producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
 当提供了该端口时，`ctx.providers.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通插件通过 `ctx.providers.register(kind, packageId, provider)` 注册，通过 `ctx.providers.bindOwn(kind)` 绑定；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
-
-`@agnes/extension-api` 还导出 `memoryKind`、`systemPromptKind`、`webhookTriggerKind`。它们是 **provider 注册 token**，不是用于 `bindOwn` 或 Loop service reader 的 `ServiceKind` token。应使用对应 provider 合同与注册路径。
 
 ## 新作者代码应避开的入口
 
@@ -82,7 +84,7 @@ TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供
 
 请求先落 ledger 再返回 handle。同 owner/key 的相同 spec 返回原 ID 和期限，内容变化则冲突。`wait` 返回 resolved snapshot 或断开后的 pending handle；断线和取消本地 waiter 都保留持久 pending。答复只能经认证的后台入口接收。
 
-Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。ServiceKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。
+Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。BindableKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。
 
 工具权限与计划审核先持久化再展示。原生客户端使用
 `client.approval.decide({ sessionId, id, revision, commandId, response: { option, value } })`

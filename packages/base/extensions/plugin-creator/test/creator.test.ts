@@ -1,5 +1,6 @@
 import { runInNewContext } from 'node:vm'
 import type { ExtensionAPI, ToolContext } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
 import pluginCreator, { pluginCreatorTools } from '../src/index.js'
 
@@ -47,7 +48,7 @@ it('scaffolds complete inert text through the host rather than reading virtual a
     expect(input.files.some((f) => /\.test\.mjs$/.test(f.path))).toBe(true)
     const pkg = JSON.parse(input.files.find((f) => f.path === 'package.json')!.content)
     expect(pkg.name).toBe('review-demo')
-    expect(pkg.agnes.plugins[0].apiRange).toBe('^2.0.0')
+    expect(pkg.agnes.plugins[0].apiRange).toBe('^3.0.0')
   }
   expect(exec).not.toHaveBeenCalled()
 })
@@ -61,7 +62,7 @@ it('reads the bundled creator skill without executing commands and fails closed 
   expect(guide).toContain('After OUTPUT_LIMIT')
   expect(pluginCreatorTools[4].description).toContain('run_code')
   let sections: { content: string }[] = []
-  pluginCreator({
+  extensionFactoryOf(pluginCreator)({
     registerTool: () => () => {},
     registerHook: (_name: string, hook: () => { sections: { content: string }[] }) => {
       sections = hook().sections

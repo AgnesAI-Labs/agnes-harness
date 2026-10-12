@@ -26,7 +26,7 @@ extensions/main/client/index.js
 
 Browser Context → current client row's service allow-list → local same-origin BFF → daemon identity/state checks → worker/Host row-service authorization → handler.
 
-`ctx.provide()` publishes a Cordis dependency only in its local Context; it does not automatically become a remote service. Backend rows register Host-constrained services through `ctx.services.register()`. `ctx.extension().registerService()` remains forbidden. Do not create a second browser SDK/daemon socket to bypass the BFF.
+`ctx.provide()` publishes a Cordis dependency only in its local Context; it does not automatically become a remote service. Backend rows register Host-constrained services through `ctx.services.register()`. Do not create a second browser SDK/daemon socket to bypass the BFF.
 
 <a id="运行前显式配置能力上限"></a>
 

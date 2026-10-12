@@ -33,8 +33,9 @@ export interface ExtensionContext {
   readonly platform: PlatformFacts // assembly-time snapshot; terminal.width is not live (spec §5.2)
 }
 
-// Six controlled registrations, the shared provider facade, events and ctx. Feature contracts such
-// as Intelligent UI live on their own service kind. Required profile components remain deployment-owned.
+// Host backend port behind the plugin context facets (`PluginContextFacets`): six controlled
+// registrations, the provider facade, events and ctx. Plugin authors never see this object; the Host
+// builds the facets over it for a bundled package and over row services for an installed one.
 // test/extension.test-d.ts pins the surface.
 export interface ExtensionAPI {
   registerService<I extends JsonValue, O extends JsonValue>(def: ServiceDef<I, O>): Disposer
@@ -53,7 +54,3 @@ export interface ExtensionAPI {
 // 「没有返回值」那一支——biome 建议的 undefined 会让 `defineExtension(async () => {})` 不再可赋值。
 // biome-ignore lint/suspicious/noConfusingVoidType: 见上，Promise<void> 是必须能赋值的返回形状
 export type ExtensionFactory = (agnes: ExtensionAPI) => void | Disposer | Promise<void | Disposer>
-
-export function defineExtension(f: ExtensionFactory): ExtensionFactory {
-  return f
-}

@@ -1,4 +1,4 @@
-import { defineExtension } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import {
   openScheduleCatalog,
@@ -19,53 +19,56 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
   const catalog: ScheduleCatalog | undefined = tables
     ? openScheduleCatalog(openSeamScheduleDb(tables.table('schedules')))
     : undefined
-  return defineExtension((agnes) => {
-    const disposers = createScheduleTools(catalog).map((tool) =>
-      agnes.registerTool({
-        ...tool,
-        async execute(args: Parameters<typeof tool.execute>[0], ctx) {
-          const result = await tool.execute(args, ctx)
-          const details = result.details as
-            | { id?: string; schedules?: ScheduleView[]; deleted?: boolean }
-            | undefined
-          const target =
-            details?.id ??
-            (details?.deleted && 'id' in args && typeof args.id === 'string' ? args.id : undefined)
-          if (catalog && details && (target || details.schedules)) {
-            const row = target ? catalog.read(target) : undefined
-            const rows =
-              details.schedules?.filter((row) => row.status === 'active') ??
-              (row?.sessionKey === ctx.session.key ? [row] : [])
-            if (rows.length)
-              await renderInteractionSurface(
-                ctx,
-                tableSurface(
-                  ctx.session.toolUseId,
-                  'Reminders',
-                  ['Title', { label: 'Next', format: 'date' }, { label: 'Status', format: 'status' }],
-                  rows.map((row) => [
-                    clip(row.title, 1024),
-                    row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
-                    row.status,
-                  ]),
-                  { titleKey: 'ui.schedule' },
-                ),
-              )
-          }
-          return result
-        },
-      }),
-    )
-    disposers.push(
-      agnes.registerSlot('notification', async (ctx) => {
-        if (ctx.trigger.kind !== 'turn_end' || !catalog) return null
-        const note = catalog.recentDelivery(ctx.session.key, Date.now() - 120_000)
-        return note ? { title: clip(note.title, 256), body: clip(note.prompt, 4096) } : null
-      }),
-    )
-    return () => {
-      for (const dispose of disposers) dispose()
-    }
+  return defineAgnesPlugin({
+    inject: ['tools', 'slots'],
+    apply(plugin: Context) {
+      const disposers = createScheduleTools(catalog).map((tool) =>
+        plugin.tools.register({
+          ...tool,
+          async execute(args: Parameters<typeof tool.execute>[0], ctx) {
+            const result = await tool.execute(args, ctx)
+            const details = result.details as
+              | { id?: string; schedules?: ScheduleView[]; deleted?: boolean }
+              | undefined
+            const target =
+              details?.id ??
+              (details?.deleted && 'id' in args && typeof args.id === 'string' ? args.id : undefined)
+            if (catalog && details && (target || details.schedules)) {
+              const row = target ? catalog.read(target) : undefined
+              const rows =
+                details.schedules?.filter((row) => row.status === 'active') ??
+                (row?.sessionKey === ctx.session.key ? [row] : [])
+              if (rows.length)
+                await renderInteractionSurface(
+                  ctx,
+                  tableSurface(
+                    ctx.session.toolUseId,
+                    'Reminders',
+                    ['Title', { label: 'Next', format: 'date' }, { label: 'Status', format: 'status' }],
+                    rows.map((row) => [
+                      clip(row.title, 1024),
+                      row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
+                      row.status,
+                    ]),
+                    { titleKey: 'ui.schedule' },
+                  ),
+                )
+            }
+            return result
+          },
+        }),
+      )
+      disposers.push(
+        plugin.slots.register('notification', async (ctx) => {
+          if (ctx.trigger.kind !== 'turn_end' || !catalog) return null
+          const note = catalog.recentDelivery(ctx.session.key, Date.now() - 120_000)
+          return note ? { title: clip(note.title, 256), body: clip(note.prompt, 4096) } : null
+        }),
+      )
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    },
   })
 }
 

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '../../../src/mcp/config.js'
 import { mcpPublicToolName, mcpStablePrefix } from '../../../src/mcp/naming.js'
@@ -119,7 +120,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => fakeConnection('gh'))
     const factory = mcpServerExtension(cfg, { catalogHub: fakeCatalogHub(), connect })
 
-    const result = factory(api)
+    const result = extensionFactoryOf(factory)(api)
 
     expect(result).not.toBeInstanceOf(Promise)
     expect(typeof result).toBe('function')
@@ -135,7 +136,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     await vi.waitFor(() =>
       expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['ping', 'pong'])),
@@ -154,7 +155,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(eagerCfg, { catalogHub, connect })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     expect(catalogHub.upserts).toEqual([])
@@ -166,7 +167,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     void resources
 
@@ -193,10 +194,12 @@ describe('mcpServerExtension', () => {
       conn.closeCount += 1
     }
     const catalogHub = fakeCatalogHub()
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub,
-      connect: async () => conn,
-    })(api) as () => Promise<void>
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub,
+        connect: async () => conn,
+      }),
+    )(api) as () => Promise<void>
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     const pending = dispose()
     expect(pending).toBeInstanceOf(Promise)
@@ -221,7 +224,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    factory(api)
+    extensionFactoryOf(factory)(api)
     await vi.waitFor(() => expect(tools).toHaveLength(1))
 
     conn.fireToolsChanged()
@@ -265,7 +268,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(catalogHub.upserts).toHaveLength(1))
 
     for (const listener of [...toolsChangedListeners]) listener()
@@ -296,7 +299,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const policy = { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 }
     const factory = mcpServerExtension(cfg, { catalogHub, connect, policy })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
 
     dispose()
@@ -312,10 +315,12 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const mount = async () => {
       const { api, tools } = fakeApi()
-      const dispose = mcpServerExtension(cfg, {
-        catalogHub,
-        connect: vi.fn(async () => fakeConnection('gh')),
-      })(api) as () => void
+      const dispose = extensionFactoryOf(
+        mcpServerExtension(cfg, {
+          catalogHub,
+          connect: vi.fn(async () => fakeConnection('gh')),
+        }),
+      )(api) as () => void
       await vi.waitFor(() => expect(tools).toHaveLength(1))
       return dispose
     }
@@ -336,13 +341,15 @@ describe('mcpServerExtension', () => {
   it('hands onFirstAttempt the first attempt outcome: settled once tools are registered, or on failure', async () => {
     const ok = fakeApi()
     let okReady: Promise<{ error?: unknown }> | undefined
-    mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => fakeConnection('gh')),
-      onFirstAttempt: (ready) => {
-        okReady = ready
-      },
-    })(ok.api)
+    extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => fakeConnection('gh')),
+        onFirstAttempt: (ready) => {
+          okReady = ready
+        },
+      }),
+    )(ok.api)
     expect(okReady).toBeDefined()
     expect(await okReady).toEqual({})
     // Settling means the tools are already there, not merely that the socket opened.
@@ -350,16 +357,18 @@ describe('mcpServerExtension', () => {
 
     const failed = fakeApi()
     let failedReady: Promise<{ error?: unknown }> | undefined
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async (): Promise<McpConnection> => {
-        throw new Error('down')
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async (): Promise<McpConnection> => {
+          throw new Error('down')
+        }),
+        policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 },
+        onFirstAttempt: (ready) => {
+          failedReady = ready
+        },
       }),
-      policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 },
-      onFirstAttempt: (ready) => {
-        failedReady = ready
-      },
-    })(failed.api) as () => void
+    )(failed.api) as () => void
     expect((await failedReady)?.error).toBeInstanceOf(Error)
     expect(failed.tools).toEqual([])
     dispose()
@@ -371,11 +380,13 @@ describe('mcpServerExtension', () => {
     const eagerCfg: McpServerConfig = { id: 'gh', transport: 'stdio', cmd: ['gh-mcp'], defer: false }
     const events: unknown[] = []
     const { api } = fakeApi()
-    mcpServerExtension(eagerCfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => fakeConnection('gh', ['ping', 'pong'])),
-      onStatus: (event) => events.push(event),
-    })(api)
+    extensionFactoryOf(
+      mcpServerExtension(eagerCfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => fakeConnection('gh', ['ping', 'pong'])),
+        onStatus: (event) => events.push(event),
+      }),
+    )(api)
     await vi.waitFor(() => expect(events).toHaveLength(2))
     expect(events[0]).toEqual({ state: 'connecting' })
     expect(events[1]).toMatchObject({ state: 'ready', toolCount: 2 })
@@ -384,14 +395,16 @@ describe('mcpServerExtension', () => {
 
   it('reports unavailable, with the failure, once reconnection gives up', async () => {
     const events: unknown[] = []
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async (): Promise<McpConnection> => {
-        throw new Error('down')
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async (): Promise<McpConnection> => {
+          throw new Error('down')
+        }),
+        policy: { initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 1 },
+        onStatus: (event) => events.push(event),
       }),
-      policy: { initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 1 },
-      onStatus: (event) => events.push(event),
-    })(fakeApi().api) as () => void
+    )(fakeApi().api) as () => void
     await vi.waitFor(() =>
       expect(events.at(-1)).toMatchObject({ state: 'unavailable', error: new Error('down') }),
     )
@@ -409,12 +422,14 @@ describe('mcpServerExtension: name collisions among a partly skipped catalog', (
   const run = async (tools: readonly unknown[]) => {
     const events: { state: string }[] = []
     const state = fakeApi()
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => catalogConnection(tools)),
-      policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 1 },
-      onStatus: (event) => events.push(event),
-    })(state.api) as () => void
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => catalogConnection(tools)),
+        policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 1 },
+        onStatus: (event) => events.push(event),
+      }),
+    )(state.api) as () => void
     await vi.waitFor(() => expect(events.length).toBeGreaterThan(1))
     dispose()
     return { events, tools: state.tools }
