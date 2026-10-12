@@ -678,12 +678,17 @@
     /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
     dialog:not(.agh-drawer):not(.lightbox)[open] {
       --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
+      display: flex;
+      flex-direction: column;
       inset: auto 0 0;
       width: 100vw !important;
       max-width: 100vw !important;
       max-height: calc(100dvh - var(--s16));
       margin: 0;
       border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    }
+    dialog[open]:has(> .agh-native-sheet-handle) > .account-dialog-body {
+      flex: 1 1 auto;
     }
   }
 
