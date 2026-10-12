@@ -9,7 +9,7 @@ export type ObserveHookEvent = {
 }[HookEvent]
 
 /**
- * What a plugin row receives from `ctx.extension()`: tools, any of the 16 hook events (`on` for
+ * What a plugin row receives from `ctx.extension()`: any of the 16 hook events (`on` for
  * observe-only convenience, `registerHook` for the full transform/intercept chain), and ledger
  * events. Slots, services, projections and resources remain refused at runtime
  * (third-party-transform-directive-hooks design; `registerHook` opened up in draft 3, `on` stayed as
@@ -18,7 +18,6 @@ export type ObserveHookEvent = {
 export interface PluginExtensionAPI {
   readonly providers: ExtensionAPI['providers']
   readonly ctx: ExtensionAPI['ctx']
-  registerTool: ExtensionAPI['registerTool']
   on<E extends ObserveHookEvent>(event: E, handler: NoInfer<HookHandler<E>>): Disposer
   registerHook: ExtensionAPI['registerHook']
   readonly events: ExtensionAPI['events']

@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { defineTool, type PluginExtensionAPI } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   capabilityHash,
@@ -11,7 +10,7 @@ import {
   type RuntimePluginSnapshot,
   writeLock,
 } from '@agnes/package-manager'
-import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent, JsonValue, UiSurface } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -43,10 +42,9 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
     approve = resolve
   })
   const plugin = defineAgnesPlugin({
-    inject: ['extension'],
+    inject: ['tools'],
     apply(ctx) {
-      const api = (ctx as unknown as { extension(): PluginExtensionAPI }).extension()
-      api.registerTool(
+      ctx.tools.register(
         defineTool({
           name: 'review_commit',
           description: 'Record a synthetic reviewed change',
@@ -75,7 +73,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
       name: 'fixture/review',
       version: '1.0.0',
       main: './index.js',
-      agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', default: true, inject: ['extension'] }] },
+      agnes: { plugins: [{ export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools'] }] },
     }),
   )
   const integrity = `sha256-${'a'.repeat(64)}`
@@ -120,7 +118,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
         integrity,
         trust: 'trusted',
         license: 'MIT',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         dependencies: {},
         previous: null,
         state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: true },
@@ -183,7 +181,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
           entryRevision: integrity,
           extrasRevision: 'none',
           mountRevision: 'v1',
-          inject: ['extension'],
+          inject: ['tools'],
         }),
       ],
       resources: base.resource.resources,
@@ -261,7 +259,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
 
 it('updates revision 2 through custom Loop tool ports after approval in one turn', async () => {
   const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
-  const { loopCheckpointCodec, registerLoopPlugin } = await import('@agnes/extension-api')
+  const { loopCheckpointCodec } = await import('@agnes/extension-api')
   const { defineLoop } = await import('@agnes/plugin-runtime')
   let asked!: () => void
   const pending = new Promise<void>((resolve) => {
@@ -317,9 +315,9 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
       }
     },
     plugin: defineAgnesPlugin({
-      inject: ['extension', 'loops'],
+      inject: ['tools', 'providers'],
       apply(ctx) {
-        ctx.extension().registerTool(
+        ctx.tools.register(
           defineTool({
             name: 'review_commit',
             description: 'Record a synthetic reviewed change',
@@ -337,7 +335,7 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
             execute: async () => ({ content: [{ type: 'text', text: 'Approved change recorded' }] }),
           }),
         )
-        registerLoopPlugin(ctx, '@author/plugin', loop)
+        ctx.providers.register('loop', '@author/plugin', loop)
       },
     }),
   })

@@ -1,4 +1,5 @@
-import { type Bytes, defineTool, type ToolResult } from '@agnes/extension-api'
+import type { Bytes, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import type { FileChangeRecorder } from '../file-change.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'

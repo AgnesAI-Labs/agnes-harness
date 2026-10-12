@@ -46,7 +46,7 @@ export function feedbackSkillFiles(input: unknown, feedback: FeedbackItem) {
                 {
                   id: `ext:feedback-skill-${name}/main`,
                   export: 'main',
-                  apiRange: '^1.4.0',
+                  apiRange: '^2.0.0',
                   inject: ['skills'],
                 },
               ],

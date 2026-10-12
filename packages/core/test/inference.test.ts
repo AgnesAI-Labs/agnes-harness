@@ -133,6 +133,7 @@ function mediaRegistry(toolName = 'computer_use'): ToolRegistry {
       description: 'capture',
       parameters: Type.Object({}),
       meta: {
+        requiresImageInput: toolName === 'computer_use',
         isReadOnly: true,
         isDestructive: false,
         isConcurrencySafe: true,
@@ -858,6 +859,7 @@ describe('Inference segment', () => {
         { additionalProperties: false },
       ),
       meta: {
+        requiresImageInput: true,
         isReadOnly: false,
         isDestructive: true,
         isConcurrencySafe: false,
@@ -923,6 +925,7 @@ describe('Inference segment', () => {
         description: 'computer use',
         parameters: Type.Object({ action: Type.Literal('capture') }, { additionalProperties: false }),
         meta: {
+          requiresImageInput: true,
           isReadOnly: true,
           isDestructive: false,
           isConcurrencySafe: true,

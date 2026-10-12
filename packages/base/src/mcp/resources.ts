@@ -1,4 +1,5 @@
-import { defineTool, type ToolDef, type ToolResult } from '@agnes/extension-api'
+import type { ToolDef, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardOutput, refBlock } from '../../extensions/tools-core/src/guards/output.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
@@ -38,7 +39,6 @@ const readOnlyMeta = (defer: boolean) =>
     replay: 'safe' as const,
     costHint: Object.freeze({}),
     deferLoading: defer,
-    requiresApproval: undefined,
   })
 
 export function mcpResourceToolName(serverId: string, suffix: McpResourceToolSuffix): string {

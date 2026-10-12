@@ -1,5 +1,6 @@
 import { basename, extname } from 'node:path'
-import { type ArtifactRef, defineExtension, defineTool, type ProjectionDef } from '@agnes/extension-api'
+import { type ArtifactRef, defineExtension, type ProjectionDef } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 

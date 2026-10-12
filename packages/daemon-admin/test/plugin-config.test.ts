@@ -28,7 +28,7 @@ it.each([false, true])(
               {
                 export: 'main',
                 id: rowId,
-                apiRange: '^1.4.0',
+                apiRange: '^2.0.0',
                 configReload: 'live',
                 configSchema: {
                   type: 'object',

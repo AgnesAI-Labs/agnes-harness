@@ -1182,7 +1182,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             installCompactionEngines(root, origins)
             installChildAgents(root, origins, providerSelections['child-agent'])
             const sandboxProviders = installSandboxProviders(root, origins)
-            sandboxProviders.register(createLocalSandboxProvider(adapters.exec, adapters.platform.os))
+            root.providers.register(
+              'sandbox',
+              '@agnes/host',
+              createLocalSandboxProvider(adapters.exec, adapters.platform.os),
+            )
             sandboxProviderSlot.registry = sandboxProviders
           },
           ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
@@ -2053,7 +2057,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       {
         id: 'agnes/observability',
         version: '1.0.0',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         entry: './observability',
         capabilities: { hooks: ['session_start', 'shutdown', 'subagent_start', 'subagent_end'] },
       },
@@ -2065,7 +2069,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           {
             id: 'agnes/composition',
             version: '0.1.0',
-            apiRange: '^1.0',
+            apiRange: '^2.0.0',
             entry: './composition',
             capabilities: { hooks: ['tool_call'] },
           },
@@ -2161,7 +2165,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       storage: adapters.storage,
       ...(loop ? { loop } : {}),
       loops: {
-        register: (source, factory) => pluginTree.root.loops.register(source, factory),
         resolve: (selection) => pluginTree.root.loops.resolve(selection),
         catalog: () => pluginTree.root.loops.catalog(),
       },

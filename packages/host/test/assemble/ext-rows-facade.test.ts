@@ -21,9 +21,9 @@ const ROW = 'ext:agnes/tools-search'
 const ID = 'agnes/tools-search'
 const SEARCH_TOOLS = ['find', 'grep', 'ls']
 const REPLACEMENT = `
-  agnes.registerTool(tool('grep'))
-  agnes.registerTool(tool('find'))
-  agnes.registerTool(tool('ls'))
+  ctx.tools.register(tool('grep'))
+  ctx.tools.register(tool('find'))
+  ctx.tools.register(tool('ls'))
 `
 const packageDirs = {
   '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)),
@@ -136,7 +136,7 @@ describe('a plugin replaces tools-search and gives way again', () => {
 
   it('keeps a replacement to the names of what it replaces', async () => {
     const h = await pluginHost(
-      pluginSource(`${REPLACEMENT}\n  agnes.registerTool(tool('read'))`, 'plugin', ROW),
+      pluginSource(`${REPLACEMENT}\n  ctx.tools.register(tool('read'))`, 'plugin', ROW),
     )
     await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(ROW)]))).rejects.toThrow()
     await settle()
@@ -165,7 +165,7 @@ describe('the model reaches tools-search through the row it is supplied by', () 
     const source = pluginSource(
       `const schema = { [Symbol.for('TypeBox.Kind')]: 'Object', type: 'object', properties: {}, additionalProperties: false }
        for (const name of ['grep', 'find', 'ls'])
-         agnes.registerTool({ ...tool(name), parameters: schema, async execute() { return { content: [{ type: 'text', text: 'replaced:' + name }] } } })`,
+         ctx.tools.register({ ...tool(name), parameters: schema, async execute() { return { content: [{ type: 'text', text: 'replaced:' + name }] } } })`,
       'plugin',
       ROW,
     )

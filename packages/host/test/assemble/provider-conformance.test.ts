@@ -22,7 +22,7 @@ it('runs the public provider suites through an assembled Host and its ordinary p
             declaration: {
               id: 'providers:conformance',
               export: 'main',
-              apiRange: '^1.4.0',
+              apiRange: '^2.0.0',
               runtime: 'in-process',
               default: true,
               inject: ['providers'],

@@ -27,7 +27,7 @@ function setup(over: Partial<ServiceDef> = {}, budget = Infinity) {
   const manifest: ExtensionManifest = {
     id: 'fixture/service',
     version: '1.0.0',
-    apiRange: '^1.0',
+    apiRange: '^2.0.0',
     entry: './index.ts',
     capabilities: { services: [cap] },
     ...(budget === Infinity ? {} : { lease: { budget } }),

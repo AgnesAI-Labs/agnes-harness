@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { ModelRecord as ModelRecordSchema } from '@agnes/protocol/gen/model'
@@ -39,19 +40,22 @@ export function supportsComputerUse(input: ModelInput): boolean {
   return input.includes('text') && input.includes('image')
 }
 
-export function modelAllowsTool(name: string, computerUseAllowed: boolean): boolean {
-  return name !== 'computer_use' || computerUseAllowed
+export function modelAllowsTool(
+  tool: { meta: Pick<ToolDef['meta'], 'requiresImageInput'> },
+  computerUseAllowed: boolean,
+): boolean {
+  return tool.meta.requiresImageInput !== true || computerUseAllowed
 }
 
 /** Platform action targets stay executable internally but never enter model discovery or schemas. */
-export function modelVisibleTool(name: string, computerUseAllowed: boolean): boolean {
-  return name !== 'ui_submit' && modelAllowsTool(name, computerUseAllowed)
+export function modelVisibleTool(tool: Pick<ToolDef, 'meta'>, computerUseAllowed: boolean): boolean {
+  return tool.meta.modelVisible !== false && modelAllowsTool(tool, computerUseAllowed)
 }
 
 /** Filter model discovery and operation-owned renderers such as the code-mode SDK. */
 export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: boolean): RegistrySnapshot {
   const defs = Object.freeze(
-    snapshot.defs.filter((definition) => modelVisibleTool(definition.name, computerUseAllowed)),
+    snapshot.defs.filter((definition) => modelVisibleTool(definition, computerUseAllowed)),
   )
   if (defs.length === snapshot.defs.length) return snapshot
   const byName = new Map<string, RegisteredTool>()
@@ -65,6 +69,13 @@ export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: bo
   return Object.freeze({ defs, byName, hash, takenAtSeq: snapshot.takenAtSeq })
 }
 
-export function toolNamesForModel(names: readonly string[], computerUseAllowed: boolean): string[] {
-  return names.filter((name) => modelVisibleTool(name, computerUseAllowed))
+export function toolNamesForModel(
+  names: readonly string[],
+  snapshot: RegistrySnapshot,
+  computerUseAllowed: boolean,
+): string[] {
+  return names.filter((name) => {
+    const tool = snapshot.byName.get(name)
+    return !tool || modelVisibleTool(tool, computerUseAllowed)
+  })
 }

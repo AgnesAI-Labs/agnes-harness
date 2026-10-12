@@ -1,7 +1,7 @@
 {
   "id": "agnes/code-mode",
   "version": "0.1.0",
-  "apiRange": "^1.0",
+  "apiRange": "^2.0.0",
   "entry": "./index.ts",
   "capabilities": {
     "tools": { "prefix": "", "names": ["run_code"] },

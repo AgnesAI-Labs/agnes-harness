@@ -12,7 +12,8 @@
     "**/test/**/*.ts",
     "**/tests/**/*.ts",
     "tools/**/*.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "examples/**/*.ts"
   ],
   "exclude": [
     "dist",
@@ -43,6 +44,9 @@
     },
     {
       "path": "tsconfig.testkit.json"
+    },
+    {
+      "path": "../protocol"
     }
   ]
 }

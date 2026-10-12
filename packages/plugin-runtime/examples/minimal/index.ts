@@ -1,4 +1,5 @@
-import { type Disposer, defineExtension, defineTool } from '@agnes/extension-api'
+import { type Disposer, defineExtension } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 
 export default defineExtension(async (agnes) => {
@@ -22,9 +23,6 @@ export default defineExtension(async (agnes) => {
             isConcurrencySafe: true,
             isOpenWorld: false,
             replay: 'safe',
-            costHint: undefined,
-            deferLoading: undefined,
-            requiresApproval: undefined,
           },
           execute: async (args, ctx) => {
             ctx.progress('echoing')

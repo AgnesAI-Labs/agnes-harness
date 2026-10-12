@@ -409,8 +409,7 @@ export function discloseTools(s: SessionImpl): string[] {
   const eager = (): string[] =>
     snap.defs
       .filter(
-        (d) =>
-          modelVisibleTool(d.name, true) && (d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)),
+        (d) => modelVisibleTool(d, true) && (d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)),
       )
       .map((d) => d.name)
   let names: string[]
@@ -507,6 +506,7 @@ export async function prepareInferenceRequest(
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
   const coreTools = toolNamesForModel(
     options.tools ? [...options.tools] : discloseTools(s),
+    t.snapshot,
     computerUseAllowed,
   )
   if (coreTools.some((name) => !t.snapshot.byName.has(name)))

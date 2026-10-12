@@ -121,7 +121,7 @@ describe('hooks-runner as a row, isolated', () => {
   it('forks the child for new sessions and drains the pinned child after session deletion', async () => {
     const fake = fakeIsolation()
     const dataDir = scratch()
-    const source = pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
+    const source = pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
     const h = await createTestHost({
       dataDir,
       packageDirs,
@@ -170,7 +170,7 @@ describe('hooks-runner as a row, isolated', () => {
     // after unsubscribe, allowing a late child failure to be delivered deterministically.
     const fake = fakeIsolation()
     const dataDir = scratch()
-    const source = pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
+    const source = pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x')
     const h = await createTestHost({
       dataDir,
       packageDirs,

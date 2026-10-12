@@ -1,4 +1,4 @@
-import type { ModelAdapterPluginContext } from '@agnes/plugin-runtime'
+import type { ProviderPluginContext } from '@agnes/plugin-runtime'
 import { localOpenAIAdapter } from './local-openai.js'
 import { replayAdapter, scriptedAdapter } from './replay.js'
 
@@ -8,10 +8,10 @@ export { type ModelResponseRecord, readModelResponses, recordModelResponses } fr
 
 /** Ordinary registry contributions, reusable in community and local-dev profiles. */
 export const modelAdaptersPlugin = {
-  inject: ['modelAdapters'],
-  apply(ctx: ModelAdapterPluginContext) {
-    ctx.modelAdapters.register(replayAdapter)
-    ctx.modelAdapters.register(scriptedAdapter)
-    ctx.modelAdapters.register(localOpenAIAdapter)
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('model-adapter', '@agnes/model-adapters', replayAdapter)
+    ctx.providers.register('model-adapter', '@agnes/model-adapters', scriptedAdapter)
+    ctx.providers.register('model-adapter', '@agnes/model-adapters', localOpenAIAdapter)
   },
 }

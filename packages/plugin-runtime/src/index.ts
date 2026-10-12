@@ -11,9 +11,8 @@ export type {
   AgnesPlugin,
   Context,
   Inject,
-  LoopPluginContext,
-  ModelAdapterPluginContext,
   Plugin,
+  ProviderPluginContext,
   TypedToolDef,
   TypedToolResult,
 } from './author.js'
@@ -22,8 +21,10 @@ export {
   defineLoop,
   defineModelAdapter,
   defineTool,
+  readOnlyTool,
   toolCancelled,
   toolError,
+  writeTool,
 } from './author.js'
 
 export { drainDeferredToolInvocations, withDeferredToolInvocations } from './deferred-invocations.js'

@@ -60,7 +60,9 @@ const tool = {
   name: 'computer_use',
   description: 'computer use',
   parameters: { type: 'object' },
-  meta: {},
+  meta: {
+    requiresImageInput: true,
+  },
   execute: async () => ({ content: [] }),
 } as unknown as ToolDef
 const imageModel: ModelRecord = {

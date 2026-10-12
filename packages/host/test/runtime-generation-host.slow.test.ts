@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
-import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
@@ -54,7 +53,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           plugins: [
             {
               export: 'main',
-              apiRange: '^1.4.0',
+              apiRange: '^2.0.0',
               inject: ['extension'],
               configReload: 'live',
               config: version === '1.0.0' ? { limit: 100 } : { limit: 2 },
@@ -106,7 +105,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       integrity: source.snapshot.integrity,
       trust: 'trusted',
       license: 'MIT',
-      apiRange: '^1.4.0',
+      apiRange: '^2.0.0',
       dependencies: {},
       previous: null,
       state: {
@@ -211,7 +210,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
             apply(ctx: Context, config: { limit?: number } | undefined) {
               if (!config || typeof config.limit !== 'number' || (version === '1.0.0' && config.limit < 10))
                 throw new Error('fixture code received configuration from the wrong version')
-              ;(ctx as unknown as { extension(): PluginExtensionAPI }).extension().registerTool({
+              ctx.tools.register({
                 ...fixtureTool('generation_value'),
                 description: version,
                 execute: async (_args, context) => {

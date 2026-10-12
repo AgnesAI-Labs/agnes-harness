@@ -1,4 +1,5 @@
-import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
+import { defineExtension, type ToolContext } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { candidateTemplate } from './candidate-templates.js'
 import { creatorAssets } from './generated/assets.js'
@@ -10,8 +11,6 @@ const meta = {
   isOpenWorld: false,
   replay: 'never' as const,
   requiresApproval: 'always' as const,
-  costHint: undefined,
-  deferLoading: undefined,
 }
 const candidateId = Type.String({ pattern: '^candidate-[a-f0-9]{32}$' }),
   expectedHash = Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })

@@ -25,7 +25,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   it('adds a tool and an observe hook owned by a Host-stamped source', async () => {
     const h = await pluginHost(
       pluginSource(`
-  agnes.registerTool(tool('plugin_echo'))
+  ctx.tools.register(tool('plugin_echo'))
   agnes.on('session_start', () => {})
 `),
     )
@@ -58,7 +58,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   })
 
   it('runs the tool through its lease and drops it when the row goes', async () => {
-    const h = await pluginHost(pluginSource(`  agnes.registerTool(tool('plugin_echo'))`))
+    const h = await pluginHost(pluginSource(`  ctx.tools.register(tool('plugin_echo'))`))
     await h.host.applyRuntimeTarget(targetOf([pluginRow()]))
     await settle()
     expect(h.host.extensions().find((e) => e.id === SOURCE)?.lease?.scope.toolPrefix).toBe('')
@@ -104,7 +104,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   })
 
   it('cannot take a builtin tool name', async () => {
-    const source = pluginSource(`  agnes.registerTool(tool('grep'))`)
+    const source = pluginSource(`  ctx.tools.register(tool('grep'))`)
     const h = await pluginHost(source)
     await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(ROW)]))).rejects.toThrow(/reserved/)
     await settle()
@@ -116,7 +116,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   // agnes/mcp-search declares its two tool names (design §3.9, D123), so as a builtin row they are
   // reserved like any other builtin's. agnes/mcp-client declared none, so nothing was reserved before.
   it('cannot take tool_search, which agnes/mcp-search declares', async () => {
-    const source = pluginSource(`  agnes.registerTool(tool('tool_search'))`)
+    const source = pluginSource(`  ctx.tools.register(tool('tool_search'))`)
     const h = await pluginHost(source)
     await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(ROW)]))).rejects.toThrow(/reserved/)
     await settle()
@@ -170,7 +170,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   })
 
   it('fails the target when two different rows register the same tool name', async () => {
-    const h = await pluginHost(pluginSource(`  agnes.registerTool(tool('plugin_echo'))`))
+    const h = await pluginHost(pluginSource(`  ctx.tools.register(tool('plugin_echo'))`))
     await expect(
       h.host.applyRuntimeTarget(targetOf([pluginRow('ext:acme/first'), pluginRow('ext:acme/second')])),
     ).rejects.toThrow(/E_REGISTRY_DUPLICATE/)
@@ -182,7 +182,7 @@ describe('a third-party row registers through ctx.extension()', () => {
   it('stays out of the way when the same row is applied again', async () => {
     const h = await pluginHost(
       pluginSource(`
-  agnes.registerTool(tool('plugin_echo'))
+  ctx.tools.register(tool('plugin_echo'))
   agnes.on('session_start', () => {})
 `),
     )
@@ -203,7 +203,7 @@ describe('a third-party tool whose package comes back to a state the Host has al
   // The model-facing tool must carry a TypeBox schema, or the Host refuses the call's arguments.
   const OBJECT_SCHEMA = `{ [Symbol.for('TypeBox.Kind')]: 'Object', type: 'object', properties: {}, required: [], additionalProperties: false }`
   const echoTool = (text: string) =>
-    `  agnes.registerTool({ ...tool('plugin_echo'), parameters: ${OBJECT_SCHEMA}, async execute() { return { content: [{ type: 'text', text: '${text}' }] } } })`
+    `  ctx.tools.register({ ...tool('plugin_echo'), parameters: ${OBJECT_SCHEMA}, async execute() { return { content: [{ type: 'text', text: '${text}' }] } } })`
   // A provider whose next turn is a call to the named tool, so a test decides what the model does.
   const caller = () => {
     let next = fakeProvider([])
@@ -354,7 +354,7 @@ describe('installing a third-party tool row', () => {
 
   it('keeps the wire system string byte-identical while adding an eagerly disclosed tool', async () => {
     const bare = await turnWith(undefined)
-    const installed = await turnWith(pluginSource(`  agnes.registerTool(tool('plugin_echo'))`))
+    const installed = await turnWith(pluginSource(`  ctx.tools.register(tool('plugin_echo'))`))
     // Without differing tool lists the equality below would prove nothing about the tool axis.
     expect(installed.tools.map((t) => t.name)).toContain('plugin_echo')
     expect(bare.tools.map((t) => t.name)).not.toContain('plugin_echo')
@@ -367,7 +367,7 @@ describe('a third-party tool whose description is too long for the wire', () => 
   it('fails that row with the tool name and the problem, and the next turn still reaches the model', async () => {
     const provider = fakeProvider([textTurn('done')], '2')
     const h = await pluginHost(
-      pluginSource(`  agnes.registerTool({ ...tool('plugin_verbose'), description: 'v'.repeat(9000) })`),
+      pluginSource(`  ctx.tools.register({ ...tool('plugin_verbose'), description: 'v'.repeat(9000) })`),
       { provider },
     )
     try {

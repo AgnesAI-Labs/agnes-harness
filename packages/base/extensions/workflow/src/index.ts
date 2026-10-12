@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
+import { defineExtension, type ToolContext } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { WORKFLOW_RECEIPT_RULE, workflowReceipts } from './receipts.js'
@@ -29,7 +30,7 @@ const meta = {
   isConcurrencySafe: false,
   isOpenWorld: true,
   replay: 'never' as const,
-  costHint: undefined,
+
   deferLoading: false,
   requiresApproval: 'never' as const,
 }

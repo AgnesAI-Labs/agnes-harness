@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { defineTool, type PlanItem, type ToolResult } from '@agnes/extension-api'
+import type { PlanItem, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { TodoParams } from './schemas.js'
 
 // The tool's parameter schema is the model-visible face and is hashed into the prompt, so it keeps

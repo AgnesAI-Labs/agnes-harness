@@ -54,7 +54,7 @@ describe('Task20 document validators', () => {
       P.validateExtensionManifest({
         id: 'fixture/ext',
         version: '0.1.0',
-        apiRange: '^1.0.0',
+        apiRange: '^2.0.0',
         entry: './index.ts',
         capabilities: {},
       }).ok,
@@ -74,7 +74,7 @@ describe('Task20 document validators', () => {
     expect(route).not.toHaveProperty('keyless')
   })
   it('preserves empty prefix authority and an explicit empty names allowlist', () => {
-    const manifest = { id: 'fixture/ext', version: '0.1.0', apiRange: '^1.0.0', entry: './index.ts' }
+    const manifest = { id: 'fixture/ext', version: '0.1.0', apiRange: '^2.0.0', entry: './index.ts' }
     const broad = { ...manifest, capabilities: { tools: { prefix: '' } } }
     const none = { ...manifest, capabilities: { tools: { prefix: '', names: [] } } }
     expect(P.validateExtensionManifest(broad)).toEqual({ ok: true, value: broad })
@@ -115,7 +115,7 @@ describe('Task20 document validators', () => {
 
 describe('Task20 accepts actual bundled extension manifests', () => {
   it('rejects nonempty legacy network arrays without guessing their authority', () => {
-    const base = { id: 'fixture/ext', version: '0.1.0', apiRange: '^1.0.0', entry: './index.ts' }
+    const base = { id: 'fixture/ext', version: '0.1.0', apiRange: '^2.0.0', entry: './index.ts' }
     expect(P.validateExtensionManifest({ ...base, capabilities: { network: ['example.invalid'] } }).ok).toBe(
       false,
     )

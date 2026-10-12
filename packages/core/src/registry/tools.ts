@@ -61,8 +61,8 @@ export class ToolRegistry {
       parameters: cloneFrozenSchema(input.parameters),
       meta: materializedMeta as ToolMeta,
     }
-    // The author-facing package owns what "well formed" means: the name grammar, all eight meta
-    // keys present, the replay and requiresApproval enums, the per-key costHint shape and the four
+    // The author-facing package owns what "well formed" means: the name grammar, required safety
+    // keys, the replay and requiresApproval enums, the per-key costHint shape and the four
     // booleans. Re-stating any of it here would let a tool that fails the author-facing check still
     // register in the kernel, and the two gates would drift apart one key at a time.
     const check = checkToolDef(candidateDefinition)
@@ -183,9 +183,11 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     isConcurrencySafe: meta.isConcurrencySafe,
     isOpenWorld: meta.isOpenWorld,
     replay: meta.replay,
-    costHint,
-    deferLoading: meta.deferLoading,
-    requiresApproval: meta.requiresApproval,
+    ...(costHint === undefined ? {} : { costHint }),
+    ...(meta.deferLoading === undefined ? {} : { deferLoading: meta.deferLoading }),
+    ...(meta.requiresApproval === undefined ? {} : { requiresApproval: meta.requiresApproval }),
+    ...(meta.modelVisible === undefined ? {} : { modelVisible: meta.modelVisible }),
+    ...(meta.requiresImageInput === undefined ? {} : { requiresImageInput: meta.requiresImageInput }),
     ...(meta.paths
       ? {
           paths: Object.freeze(
@@ -286,6 +288,8 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
         name: def.name,
         parametersHash: sha256Hex(canonicalJson(def.parameters)),
         ...(def.meta.paths ? { paths: def.meta.paths } : {}),
+        ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
+        ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
         policyVersion: def.policyVersion,
         isConcurrencySafe: def.meta.isConcurrencySafe,
         isOpenWorld: def.meta.isOpenWorld,
@@ -301,6 +305,8 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
       name: def.name,
       parametersHash: sha256Hex(canonicalJson(def.parameters)),
       ...(def.meta.paths ? { paths: def.meta.paths } : {}),
+      ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
+      ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
       policyVersion: 'static-v1',
       policy: {
         isReadOnly: def.meta.isReadOnly,

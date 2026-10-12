@@ -23,13 +23,13 @@ describe('harness_propose tool', () => {
     const seam = { propose: vi.fn(async () => 'queued' as const) }
     const def = createProposeTool(seam)
     expect(def.name).toBe('harness_propose')
+    expect(def.meta.requiresApproval).toBeUndefined()
     expect(def.meta).toMatchObject({
       isReadOnly: false,
       isDestructive: false,
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'idempotent',
-      requiresApproval: undefined,
     })
   })
 

@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { defineExtension, defineTool, type ProjectionDef } from '@agnes/extension-api'
+import { defineExtension, type ProjectionDef } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 import { type Answers, QuestionParams, type Questions, questionSurface } from './question.js'
 

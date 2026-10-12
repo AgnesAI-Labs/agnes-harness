@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto'
 import {
   type Disposer,
   defineExtension,
-  defineTool,
   type ExtensionFactory,
   type Logger,
   type ToolDef,
 } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
@@ -85,9 +85,6 @@ const meta = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe' as const,
-  costHint: undefined,
-  deferLoading: undefined,
-  requiresApproval: undefined,
 }
 
 function active(runtime: SkillRuntimeInput): readonly SkillRuntimeActual[] {

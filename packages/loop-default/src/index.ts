@@ -5,9 +5,8 @@ import {
   type LoopContext,
   type LoopDriver,
   type LoopFactory,
-  type LoopPluginContext,
   type LoopStepOutcome,
-  registerLoopPlugin,
+  type ProviderPluginContext,
 } from '@agnes/extension-api'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 
@@ -94,9 +93,9 @@ export const defaultLoopFactory: LoopFactory = Object.freeze({
 
 /** Loaded and cleaned up as an ordinary provider plugin, with no Core/Host registration privilege. */
 export const defaultLoopPlugin = {
-  inject: ['loops'],
-  apply(ctx: LoopPluginContext) {
-    registerLoopPlugin(ctx, '@agnes/loop-default', defaultLoopFactory)
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('loop', '@agnes/loop-default', defaultLoopFactory)
   },
 }
 export { DEFAULT_LOOP }

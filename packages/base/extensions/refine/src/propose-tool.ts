@@ -1,5 +1,5 @@
 import type { HarnessEntry, HarnessSeam, RefineProposal } from '@agnes/core'
-import { defineTool } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
 
 // Every entry this tool proposes is stamped with this fixed provenance. `source` is a required
@@ -108,7 +108,7 @@ export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'idempotent',
-      costHint: undefined,
+
       // THIRD self-discovered correction (see task report): the plan's own Step 7 sample wrote
       // `deferLoading: undefined` here, which core's discloseTools (core/src/step/inference.ts:50,
       // `d.meta.deferLoading !== true`) treats as eager - shown in every request's system prompt by
@@ -120,7 +120,6 @@ export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
       // alongside every ordinary coding tool; a caller that specifically needs it can still reach it
       // through the deferred-tools listing (registry/tools.ts's `list({ deferred: true })`).
       deferLoading: true,
-      requiresApproval: undefined,
     },
     async execute(args) {
       const verdict = await seam.propose(toRealProposal(args))

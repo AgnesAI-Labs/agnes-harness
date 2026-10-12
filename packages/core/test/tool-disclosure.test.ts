@@ -109,7 +109,12 @@ it('renders a deterministic live deferred catalog and bounds long descriptions a
     description,
     meta: { ...eager.meta, deferLoading: true },
   })
-  const rows = [row('zeta'), row('alpha'), eager, row('ui_submit')]
+  const rows = [
+    row('zeta'),
+    row('alpha'),
+    eager,
+    { ...row('ui_submit'), meta: { ...row('ui_submit').meta, modelVisible: false } },
+  ]
   const section = deferredToolsSection(rows)
   expect(section).toEqual(deferredToolsSection([...rows].reverse()))
   expect(section?.text).toContain('alpha — Search records.\nzeta — Search records.')
@@ -132,7 +137,7 @@ it('keeps internal UI collection out of model requests, discovery and disclosure
   const eager = readTool() as ToolDef
   const seen: string[][] = []
   registry.add(
-    { ...eager, name: 'ui_submit', meta: { ...eager.meta, deferLoading: true } },
+    { ...eager, name: 'hidden_collect', meta: { ...eager.meta, deferLoading: true, modelVisible: false } },
     { source: 'test', trust: 'builtin' },
   )
   registry.add(
@@ -141,21 +146,21 @@ it('keeps internal UI collection out of model requests, discovery and disclosure
       name: 'describe',
       async execute(_args, ctx) {
         seen.push(ctx.tools.list().map((tool) => tool.name))
-        await expect(ctx.tools.disclose!('ui_submit')).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+        await expect(ctx.tools.disclose!('hidden_collect')).rejects.toMatchObject({ code: 'E_ENVELOPE' })
         return { content: [{ type: 'text', text: 'internal target unavailable' }] }
       },
     },
     { source: 'test', trust: 'builtin' },
   )
-  const provider = fakeProvider([toolTurn('ui_submit', {}), toolTurn('describe', {}), textTurn('done')])
+  const provider = fakeProvider([toolTurn('hidden_collect', {}), toolTurn('describe', {}), textTurn('done')])
   const { session } = await openSession({ provider, registry })
   try {
     await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'discover' }] })
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(
-      provider.requests.every((request) => request.tools.every((tool) => tool.name !== 'ui_submit')),
+      provider.requests.every((request) => request.tools.every((tool) => tool.name !== 'hidden_collect')),
     ).toBe(true)
-    expect(provider.requests[0]?.system).not.toContain('ui_submit')
+    expect(provider.requests[0]?.system).not.toContain('hidden_collect')
     expect(seen).toEqual([['describe']])
     const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
     expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })

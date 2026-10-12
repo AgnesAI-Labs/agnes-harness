@@ -1,4 +1,5 @@
-import { defineExtension, defineTool } from '@agnes/extension-api'
+import { defineExtension } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
 import { createPtyTools } from './pty-tools.js'

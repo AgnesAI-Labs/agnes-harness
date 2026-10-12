@@ -20,7 +20,7 @@ function extension(capabilities: unknown, files: Record<string, string>): string
     JSON.stringify({
       id: 'agnes/x',
       version: '0.1.0',
-      apiRange: '^1.0',
+      apiRange: '^2.0.0',
       entry: './src/index.ts',
       capabilities,
     }),

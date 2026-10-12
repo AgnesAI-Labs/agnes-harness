@@ -172,7 +172,7 @@ export function withBuiltinToolPolicies(
         declaration: {
           id: 'tool-policy:default',
           export: 'toolPolicyPlugin',
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           default: true,
           inject: ['providers'],
           provide: [],

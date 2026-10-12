@@ -438,7 +438,6 @@ it('compacts at a low-level step boundary and uses the resulting visible history
 function childService(): ChildAgentService {
   const child = inProcessChildAgentProvider()
   const service: ChildAgentService = {
-    register: () => async () => {},
     catalog: () => [],
     setSessionAllowlist() {},
     allowlist: () => undefined,

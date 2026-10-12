@@ -1,4 +1,5 @@
-import { defineExtension, defineTool } from '@agnes/extension-api'
+import { defineExtension } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { runSharedMcpResource } from '../../../src/mcp/resources.js'
 
@@ -10,7 +11,6 @@ const readOnly = Object.freeze({
   replay: 'safe' as const,
   costHint: Object.freeze({}),
   deferLoading: false,
-  requiresApproval: undefined,
 })
 
 const server = Type.String({ minLength: 1, maxLength: 256 })

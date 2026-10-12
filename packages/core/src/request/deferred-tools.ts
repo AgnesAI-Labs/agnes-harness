@@ -25,7 +25,7 @@ function sentence(description: string): string {
 /** Live turn catalog, including loaded deferred tools so discovery does not churn the cached prefix. */
 export function deferredToolsSection(defs: readonly ToolDef[]): PromptSection | undefined {
   const rows = defs
-    .filter((tool) => tool.meta.deferLoading === true && modelVisibleTool(tool.name, true))
+    .filter((tool) => tool.meta.deferLoading === true && modelVisibleTool(tool, true))
     .map((tool) => ({ name: tool.name, description: sentence(tool.description) }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   if (!rows.length) return undefined

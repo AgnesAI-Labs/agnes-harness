@@ -77,7 +77,9 @@ export type RowExtensionApiInput = {
  * The API a plugin row gets: tools, observe-only hooks and ledger events. There is no manifest for a
  * plugin row, so nothing here reads one; the lease and the fixed rules below are the whole policy.
  */
-export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensionAPI {
+export function buildRowExtensionAPI(
+  input: RowExtensionApiInput,
+): PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort } {
   const { source, lease, signal } = input
   const meta: RegMeta = Object.freeze({
     source,
@@ -143,132 +145,134 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
         }
       },
     }),
-    registerTool(def: ToolDef) {
-      registering()
-      let copy: ToolDef
-      try {
-        copy = {
-          name: def.name,
-          description: def.description,
-          parameters: def.parameters,
-          meta: structuredClone(def.meta),
-          ...(def.policyVersion === undefined ? {} : { policyVersion: def.policyVersion }),
-          ...(def.classify === undefined ? {} : { classify: def.classify }),
-          execute: def.execute,
+    tools: {
+      register(def: ToolDef) {
+        registering()
+        let copy: ToolDef
+        try {
+          copy = {
+            name: def.name,
+            description: def.description,
+            parameters: def.parameters,
+            meta: structuredClone(def.meta),
+            ...(def.policyVersion === undefined ? {} : { policyVersion: def.policyVersion }),
+            ...(def.classify === undefined ? {} : { classify: def.classify }),
+            execute: def.execute,
+          }
+        } catch {
+          throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: source })
         }
-      } catch {
-        throw new ExtensionError('E_TOOLDEF_META', 'invalid tool definition', { extId: source })
-      }
-      const checked = checkToolDef(copy, { prefix: '' })
-      if (!checked.ok)
-        throw new ExtensionError('E_TOOLDEF_META', invalidToolMessage(copy.name, checked.problems), {
-          extId: source,
+        const checked = checkToolDef(copy, { prefix: '' })
+        if (!checked.ok)
+          throw new ExtensionError('E_TOOLDEF_META', invalidToolMessage(copy.name, checked.problems), {
+            extId: source,
+          })
+        if (input.reservedTool(copy.name)) refuse('tool name is reserved for a builtin extension')
+        if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
+        const execute = copy.execute.bind(copy)
+        return input.attach('tool', copy.name, (ports) => {
+          const projections = projectionReader(ports.projections, meta, lease, alive, [])
+          const wrapped: ToolDef = {
+            ...copy,
+            execute: async (args, tctx) => {
+              alive()
+              lease.consume()
+              let finished = false
+              const lifetime = new AbortController()
+              const callSignal = AbortSignal.any([tctx.signal, signal, lifetime.signal])
+              const skillInstall = input.skillInstall
+              const mcpManage = input.mcpManage
+              const pluginManage = input.pluginManage
+              try {
+                return await execute(args, {
+                  ...observePluginCapabilities(tctx, input.declaredCapabilities, log),
+                  projections,
+                  ...(mcpManage
+                    ? {
+                        mcpManage: Object.freeze({
+                          request: async (request: unknown) => {
+                            const assertLive = () => {
+                              lease.assertInvocationAlive()
+                              if (finished || callSignal.aborted)
+                                throw new Error('MCP management invocation expired')
+                              if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage MCP')
+                            }
+                            assertLive()
+                            const result = await mcpManage(
+                              {
+                                input: structuredClone(request),
+                                toolUseId: tctx.session.toolUseId,
+                                sessionKey: tctx.session.key,
+                              },
+                              callSignal,
+                            )
+                            assertLive()
+                            return result
+                          },
+                        }),
+                      }
+                    : {}),
+                  ...(pluginManage
+                    ? {
+                        pluginManage: Object.freeze({
+                          request: async (request: unknown) => {
+                            const assertLive = () => {
+                              lease.assertInvocationAlive()
+                              if (finished || callSignal.aborted)
+                                throw new Error('plugins management invocation expired')
+                              if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage plugins')
+                            }
+                            assertLive()
+                            const result = await pluginManage(
+                              {
+                                input: structuredClone(request),
+                                toolUseId: tctx.session.toolUseId,
+                                turn: tctx.session.turn ?? 0,
+                                sessionKey: tctx.session.key,
+                              },
+                              callSignal,
+                            )
+                            assertLive()
+                            return result
+                          },
+                        }),
+                      }
+                    : {}),
+                  ...(skillInstall
+                    ? {
+                        skillInstall: Object.freeze({
+                          request: async (request: import('@agnes/extension-api').SkillInstallRequest) => {
+                            lease.assertInvocationAlive()
+                            if (finished || callSignal.aborted)
+                              throw new Error('Skill installation invocation expired')
+                            if (tctx.session.depth !== 0)
+                              throw new Error('Subagents cannot request Skill installation')
+                            const result = await skillInstall(
+                              {
+                                input: structuredClone(request),
+                                toolUseId: tctx.session.toolUseId,
+                                sessionKey: tctx.session.key,
+                              },
+                              callSignal,
+                            )
+                            lease.assertInvocationAlive()
+                            if (finished || callSignal.aborted)
+                              throw new Error('Skill installation invocation expired')
+                            return result
+                          },
+                        }),
+                      }
+                    : {}),
+                })
+              } finally {
+                finished = true
+                lifetime.abort()
+              }
+            },
+          }
+          return ports.tools.add(wrapped, toolMeta)
         })
-      if (input.reservedTool(copy.name)) refuse('tool name is reserved for a builtin extension')
-      if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
-      const execute = copy.execute.bind(copy)
-      return input.attach('tool', copy.name, (ports) => {
-        const projections = projectionReader(ports.projections, meta, lease, alive, [])
-        const wrapped: ToolDef = {
-          ...copy,
-          execute: async (args, tctx) => {
-            alive()
-            lease.consume()
-            let finished = false
-            const lifetime = new AbortController()
-            const callSignal = AbortSignal.any([tctx.signal, signal, lifetime.signal])
-            const skillInstall = input.skillInstall
-            const mcpManage = input.mcpManage
-            const pluginManage = input.pluginManage
-            try {
-              return await execute(args, {
-                ...observePluginCapabilities(tctx, input.declaredCapabilities, log),
-                projections,
-                ...(mcpManage
-                  ? {
-                      mcpManage: Object.freeze({
-                        request: async (request: unknown) => {
-                          const assertLive = () => {
-                            lease.assertInvocationAlive()
-                            if (finished || callSignal.aborted)
-                              throw new Error('MCP management invocation expired')
-                            if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage MCP')
-                          }
-                          assertLive()
-                          const result = await mcpManage(
-                            {
-                              input: structuredClone(request),
-                              toolUseId: tctx.session.toolUseId,
-                              sessionKey: tctx.session.key,
-                            },
-                            callSignal,
-                          )
-                          assertLive()
-                          return result
-                        },
-                      }),
-                    }
-                  : {}),
-                ...(pluginManage
-                  ? {
-                      pluginManage: Object.freeze({
-                        request: async (request: unknown) => {
-                          const assertLive = () => {
-                            lease.assertInvocationAlive()
-                            if (finished || callSignal.aborted)
-                              throw new Error('plugins management invocation expired')
-                            if (tctx.session.depth !== 0) throw new Error('Subagents cannot manage plugins')
-                          }
-                          assertLive()
-                          const result = await pluginManage(
-                            {
-                              input: structuredClone(request),
-                              toolUseId: tctx.session.toolUseId,
-                              turn: tctx.session.turn ?? 0,
-                              sessionKey: tctx.session.key,
-                            },
-                            callSignal,
-                          )
-                          assertLive()
-                          return result
-                        },
-                      }),
-                    }
-                  : {}),
-                ...(skillInstall
-                  ? {
-                      skillInstall: Object.freeze({
-                        request: async (request: import('@agnes/extension-api').SkillInstallRequest) => {
-                          lease.assertInvocationAlive()
-                          if (finished || callSignal.aborted)
-                            throw new Error('Skill installation invocation expired')
-                          if (tctx.session.depth !== 0)
-                            throw new Error('Subagents cannot request Skill installation')
-                          const result = await skillInstall(
-                            {
-                              input: structuredClone(request),
-                              toolUseId: tctx.session.toolUseId,
-                              sessionKey: tctx.session.key,
-                            },
-                            callSignal,
-                          )
-                          lease.assertInvocationAlive()
-                          if (finished || callSignal.aborted)
-                            throw new Error('Skill installation invocation expired')
-                          return result
-                        },
-                      }),
-                    }
-                  : {}),
-              })
-            } finally {
-              finished = true
-              lifetime.abort()
-            }
-          },
-        }
-        return ports.tools.add(wrapped, toolMeta)
-      })
+      },
     },
     on<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
       registering()
@@ -337,5 +341,7 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): PluginExtensi
     registerProjection: denied('projections'),
     registerResource: denied('resources'),
   }
-  return Object.freeze(api) as unknown as PluginExtensionAPI
+  return Object.freeze(api) as unknown as PluginExtensionAPI & {
+    tools: import('@agnes/extension-api').ToolRegistrationPort
+  }
 }

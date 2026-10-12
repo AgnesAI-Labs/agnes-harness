@@ -9,7 +9,6 @@ import {
   type SandboxProviderCatalogEntry,
   type SandboxProviderConfig,
   type SandboxProviderInstance,
-  type SandboxProviderRegistration,
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -91,7 +90,7 @@ function validCapabilities(capabilities: SandboxCapabilities | undefined): boole
 }
 
 /** Per-Cordis-root catalog. The selected id is fixed until the process starts again. */
-export class SandboxProviderRegistry extends Service implements SandboxProviderRegistration {
+export class SandboxProviderRegistry extends Service {
   private readonly registrations: ProviderRegistry<SandboxProvider>
   private readonly records = new WeakMap<SandboxProvider, Registration>()
   private selection: { id: string; instance: SandboxProviderInstance } | undefined
@@ -123,11 +122,15 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
           ...provider.capabilities.platform.map((platform) => `platform:${platform}`),
         ],
       }),
-      (owner, source, provider) => owner.sandboxProviders.register(provider, source),
+      (owner, source, provider) => this.registerOwned(owner, provider, source),
     )
   }
 
-  register(provider: SandboxProvider, sourcePackage?: string): () => Promise<void> {
+  private registerOwned(
+    owner: Context,
+    provider: SandboxProvider,
+    sourcePackage?: string,
+  ): () => Promise<void> {
     this.registrations.validate(sourcePackage ?? '@agnes/host', provider)
     const record: Registration = {
       id: provider.id,
@@ -137,7 +140,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
         id: provider.id,
         version: provider.version,
         sourcePackage: providerSource(
-          this.ctx,
+          owner,
           this.origins,
           sourcePackage ?? '@agnes/host',
           sourcePackage !== undefined,
@@ -157,7 +160,7 @@ export class SandboxProviderRegistry extends Service implements SandboxProviderR
           signal,
         ),
     }
-    const unregister = this.registrations.register(record.entry.sourcePackage, wrapped, this.ctx, () =>
+    const unregister = this.registrations.register(record.entry.sourcePackage, wrapped, owner, () =>
       record.lifetime.close(() => provider.cleanup?.()),
     )
     this.records.set(wrapped, record)

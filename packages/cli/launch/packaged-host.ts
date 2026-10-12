@@ -30,7 +30,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
     [
       {
         export: 'toolPolicyPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'tool-policy:default',
         inject: ['providers'],
         runtime: 'in-process',
@@ -42,7 +42,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         configReload: 'next-session',
         configSchema: {
           type: 'object',
@@ -131,56 +131,56 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       },
       {
         export: 'approvalPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:approval',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'principalsPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:principals',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'artifactsPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:artifacts',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'checkpointPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:checkpoint',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'ledgerPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:ledger',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'verifierPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:verifier',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'repairPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:repair',
         default: true,
         runtime: 'in-process',
       },
       {
         export: 'harnessPlugin',
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         id: 'seam:harness',
         default: true,
         runtime: 'in-process',
@@ -191,7 +191,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['loops'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         export: 'codexChildAgentsPlugin',
@@ -199,7 +199,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['childAgents'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         export: 'claudeCodeChildAgentsPlugin',
@@ -207,7 +207,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['childAgents'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         export: 'sdkChildAgentsPlugin',
@@ -215,7 +215,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['childAgents'],
         runtime: 'in-process',
         default: false,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         id: 'memory:file',
@@ -223,7 +223,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         id: 'skills:remembering',
@@ -231,7 +231,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['skills'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
       {
         id: 'reference-resolvers:default',
@@ -239,7 +239,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         inject: ['providers'],
         runtime: 'in-process',
         default: true,
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
       },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
   ).map((entry) => {
@@ -252,7 +252,7 @@ export const AGNES_CODE_PLUGIN_DECLARATIONS = Object.freeze([
   Object.freeze({
     id: 'system-prompt:default',
     export: 'systemPromptPlugin',
-    apiRange: '^1.4.0',
+    apiRange: '^2.0.0',
     inject: ['providers'],
     runtime: 'in-process',
     default: true,

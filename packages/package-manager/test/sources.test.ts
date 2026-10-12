@@ -164,7 +164,7 @@ describe('fetchSource', () => {
       dir: into,
       version: '1.0.0',
       license: 'MIT',
-      dependencies: { '@agnes/extension-api': '^1.0.0' },
+      dependencies: { '@agnes/extension-api': '2.0.0' },
     })
     expect(fetched.integrity).toBe(hashDirectory(into))
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('acme/pkg-a')

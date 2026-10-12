@@ -245,7 +245,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
       let instance: unknown
       if (kind === 'loop') {
         const codec = loopCheckpointCodec(1, (value) => value)
-        unregister = root.loops.register('@test/provider', {
+        unregister = root.providers.register('loop', '@test/provider', {
           id,
           version: '1.0.0',
           capabilities: [],
@@ -267,7 +267,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
         }
       } else if (kind === 'sandbox') {
         const capabilities = { network: false, fsWrite: [], platform: ['linux' as const], available: true }
-        unregister = sandbox.register({
+        unregister = root.providers.register('sandbox', '@test/provider', {
           id,
           version: '1.0.0',
           capabilities,

@@ -1,4 +1,5 @@
-import { defineTool, type SearchProvider } from '@agnes/extension-api'
+import type { SearchProvider } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
 

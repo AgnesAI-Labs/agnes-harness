@@ -1,4 +1,5 @@
-import { defineExtension, defineTool } from '@agnes/extension-api'
+import { defineExtension } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 
 export default defineExtension((api) => {
@@ -13,7 +14,7 @@ export default defineExtension((api) => {
         isConcurrencySafe: true,
         isOpenWorld: false,
         replay: 'safe',
-        costHint: undefined,
+
         deferLoading: false,
         requiresApproval: 'never',
       },

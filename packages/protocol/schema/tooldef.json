@@ -10,16 +10,7 @@
     "ToolMeta": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "isReadOnly",
-        "isDestructive",
-        "isConcurrencySafe",
-        "isOpenWorld",
-        "replay",
-        "costHint",
-        "deferLoading",
-        "requiresApproval"
-      ],
+      "required": ["isReadOnly", "isDestructive", "isConcurrencySafe", "isOpenWorld", "replay"],
       "properties": {
         "isReadOnly": {
           "type": "boolean",
@@ -61,11 +52,11 @@
               }
             }
           ],
-          "description": "An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage."
+          "description": "Optional estimate for budget preflight. Omission or null means no estimate."
         },
         "deferLoading": {
           "type": ["boolean", "null"],
-          "description": "true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure."
+          "description": "Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery."
         },
         "requiresApproval": {
           "oneOf": [
@@ -76,7 +67,7 @@
               "type": "null"
             }
           ],
-          "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
+          "description": "Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies."
         },
         "isPresentational": {
           "type": "boolean",
@@ -113,6 +104,14 @@
               }
             }
           }
+        },
+        "modelVisible": {
+          "type": "boolean",
+          "description": "Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available."
+        },
+        "requiresImageInput": {
+          "type": "boolean",
+          "description": "Optional, defaults to false. Only a model with native image input can discover or execute this tool."
         }
       }
     },

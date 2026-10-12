@@ -85,11 +85,15 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
         capabilities: (provider) =>
           ([...CAPABILITIES, 'budget', 'toolFilter'] as const).filter((flag) => provider.capabilities[flag]),
       }),
-      (owner, source, provider) => owner.childAgents.register(provider, source),
+      (owner, source, provider) => this.registerOwned(owner, provider, source),
     )
   }
 
-  register(provider: ChildAgentProvider, sourcePackage?: string): () => Promise<void> {
+  private registerOwned(
+    owner: Context,
+    provider: ChildAgentProvider,
+    sourcePackage?: string,
+  ): () => Promise<void> {
     this.registry.validate(sourcePackage ?? '@agnes/base', provider)
     const record = {
       provider,
@@ -97,7 +101,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
         id: provider.id,
         version: provider.version,
         sourcePackage: providerSource(
-          this.ctx,
+          owner,
           this.origins,
           sourcePackage ?? '@agnes/base',
           sourcePackage !== undefined,
@@ -108,7 +112,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       handles: new Set<ChildAgentHandle>(),
       starting: new Set<Promise<unknown>>(),
     }
-    const unregister = this.registry.register(record.entry.sourcePackage, provider, this.ctx, async () => {
+    const unregister = this.registry.register(record.entry.sourcePackage, provider, owner, async () => {
       record.lifetime.abort()
       this.registry.clearSelection(`child:${provider.id}`)
       const starts = await Promise.allSettled([...record.starting])
@@ -354,14 +358,14 @@ export function withBuiltinChildAgents(
           id: 'child-agent:in-process',
           export: 'childAgentPlugin',
           default: true,
-          inject: ['childAgents'],
+          inject: ['providers'],
           provide: [],
           runtime: 'in-process',
         },
         entry: normalizePluginExport({
-          inject: ['childAgents'],
+          inject: ['providers'],
           apply(ctx: Context) {
-            ctx.childAgents.register(provider)
+            ctx.providers.register('child-agent', '@agnes/base', provider)
           },
         }),
       },

@@ -1,5 +1,6 @@
 import { basename, relative } from 'node:path'
-import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'

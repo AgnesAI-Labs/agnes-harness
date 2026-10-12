@@ -9,10 +9,10 @@ import type {
   ChildAgentCapabilities,
   ChildAgentHandle,
   ChildAgentListing,
-  ChildAgentPluginContext,
   ChildAgentProvider,
   ChildAgentStartOptions,
   ChildAgentStatus,
+  ProviderPluginContext,
 } from '@agnes/extension-api'
 import { AcpChildProcess, type AcpCommand } from './client.js'
 
@@ -237,9 +237,9 @@ function openSession(
 export function acpChildAgentsPlugin(options: AcpChildAgentOptions) {
   const provider = acpChildAgentProvider(options)
   return {
-    inject: ['childAgents'] as const,
-    apply(ctx: ChildAgentPluginContext) {
-      ctx.childAgents.register(provider)
+    inject: ['providers'] as const,
+    apply(ctx: ProviderPluginContext) {
+      ctx.providers.register('child-agent', '@agnes/base', provider)
     },
   }
 }

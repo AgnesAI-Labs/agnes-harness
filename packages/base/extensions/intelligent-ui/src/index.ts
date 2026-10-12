@@ -1,6 +1,7 @@
-import { defineExtension, defineTool } from '@agnes/extension-api'
+import { defineExtension } from '@agnes/extension-api'
 import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
 import { intelligentUiKind, UI_PROVIDER_ID, UI_PROVIDER_VERSION } from '@agnes/intelligent-ui-contract'
+import { defineTool } from '@agnes/plugin-runtime'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
 import { UI_DATA_DESCRIPTION } from './data-contracts.js'
@@ -145,7 +146,7 @@ export default defineExtension((agnes) => {
           },
           { additionalProperties: false },
         ),
-        meta: { ...meta, isReadOnly: true },
+        meta: { ...meta, isReadOnly: true, modelVisible: false },
         async execute(args, ctx) {
           const accepted = await bound((ui) => ui.submittedInput(ctx.session.toolUseId, args, ctx.signal))
           return { content: [{ type: 'text', text: JSON.stringify(accepted) }] }

@@ -1,7 +1,7 @@
 {
   "id": "test/hello",
   "version": "0.0.1",
-  "apiRange": "^1.4.0",
+  "apiRange": "^2.0.0",
   "entry": "./index.ts",
   "capabilities": {
     "tools": {

@@ -34,7 +34,7 @@ import {
 } from '../../step/approval-grants.js'
 import { finishAborted } from '../../step/control.js'
 import { deferredEffectId } from '../../step/deferred.js'
-import { modelVisibleTool } from '../../step/model-tools.js'
+import { modelAllowsTool, modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
@@ -328,7 +328,9 @@ export async function approveAndExecute(
   if (!t) return { result: errorResult('no open turn') }
   // A recovered attempt may already have reached the OS and must finish its exactly-once
   // settlement. New/planned calls are still refused before hooks, approval, or effect intent.
-  if (!o.resumeDispatch && call.name === 'computer_use' && !s.computerUseAllowed())
+  const def = t.snapshot.byName.get(call.name)
+  if (!def) return { result: await refuse(s, call.toolUseId, 'TOOL_NOT_FOUND', `unknown tool ${call.name}`) }
+  if (!o.resumeDispatch && !modelAllowsTool(def, s.computerUseAllowed()))
     return {
       result: await refuse(
         s,
@@ -337,8 +339,6 @@ export async function approveAndExecute(
         'tool is unavailable to the current primary model',
       ),
     }
-  const def = t.snapshot.byName.get(call.name)
-  if (!def) return { result: await refuse(s, call.toolUseId, 'TOOL_NOT_FOUND', `unknown tool ${call.name}`) }
   if (!hasAuthenticToolPolicyHash(call))
     return {
       result: errorResult('parked: persisted tool policy hash does not match its policy'),
@@ -1388,7 +1388,7 @@ export async function approveAndExecute(
           invoke: invokeNested,
           discloseTool: (name, signal) => discloseTool(s, name, signal),
           listTools: () =>
-            t.snapshot.defs.filter((definition) => modelVisibleTool(definition.name, computerUseAllowed)),
+            t.snapshot.defs.filter((definition) => modelVisibleTool(definition, computerUseAllowed)),
           appendPlan: (items) =>
             s.d.log
               .append([s.ev('plan.items', { items }, { register: 'plan.items' })])

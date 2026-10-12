@@ -330,13 +330,13 @@ export {
   sdkChildAgentsPlugin,
 } from '../extensions/subagent-sdk/src/index.js'
 
-import { type LoopPluginContext, registerLoopPlugin } from '@agnes/extension-api'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defaultLoopFactory } from '@agnes/loop-default'
 /** The distribution bundle owns this ordinary row; the implementation lives in loop-default. */
 export const defaultLoopPlugin = {
-  inject: ['loops'],
-  apply(ctx: LoopPluginContext) {
-    registerLoopPlugin(ctx, '@agnes/base', defaultLoopFactory)
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('loop', '@agnes/base', defaultLoopFactory)
   },
 }
 

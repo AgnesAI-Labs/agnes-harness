@@ -5,7 +5,7 @@ import type {
   ModelAdapterCatalogEntry,
   ModelAdapterConfig,
   ModelAdapterInstance,
-  ModelAdapterRegistration,
+  ProviderPluginContext,
 } from '@agnes/extension-api'
 import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -139,7 +139,7 @@ class CommunityWireAdapter extends WireAdapter {
 }
 
 /** Per-Cordis-root catalog; registrations and instances follow the owning plugin fiber. */
-export class ModelAdapterRegistry extends Service implements ModelAdapterRegistration {
+export class ModelAdapterRegistry extends Service {
   private readonly registrations: ProviderRegistry<ModelAdapter>
   private readonly records = new Map<string, Registration>()
 
@@ -171,11 +171,11 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
             .filter(([, enabled]) => enabled)
             .map(([name]) => name),
       }),
-      (owner, source, provider) => owner.modelAdapters.register(provider, source),
+      (owner, source, provider) => this.registerOwned(owner, provider, source),
     )
   }
 
-  register(adapter: ModelAdapter, sourcePackage?: string): () => Promise<void> {
+  private registerOwned(owner: Context, adapter: ModelAdapter, sourcePackage?: string): () => Promise<void> {
     const record: Registration = {
       id: adapter.id,
       version: adapter.version,
@@ -185,7 +185,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         wireApi: adapter.wireApi,
         version: adapter.version,
         sourcePackage: providerSource(
-          this.ctx,
+          owner,
           this.origins,
           sourcePackage ?? '@agnes/ai',
           sourcePackage !== undefined,
@@ -216,7 +216,7 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
           }
         },
       },
-      this.ctx,
+      owner,
       () =>
         record.lifetime
           .close(() => adapter.cleanup?.())
@@ -286,10 +286,10 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
 }
 
 export const builtinModelAdaptersPlugin = {
-  inject: ['modelAdapters'],
-  apply(ctx: { modelAdapters: ModelAdapterRegistration }) {
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
     modelAdaptersPlugin.apply(ctx)
-    ctx.modelAdapters.register(scriptedAdapter)
+    ctx.providers.register('model-adapter', '@agnes/ai', scriptedAdapter)
   },
 }
 
@@ -314,7 +314,7 @@ export function withBuiltinModelAdapters(
           id: 'model-adapters:pi',
           export: 'modelAdaptersPlugin',
           default: true,
-          inject: ['modelAdapters'],
+          inject: ['providers'],
           provide: [],
           runtime: 'in-process',
         },

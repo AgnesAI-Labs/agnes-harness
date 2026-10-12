@@ -107,7 +107,7 @@ describe('PM4 management contracts', () => {
       kind: 'extension',
       id: `pkg${i}`,
       path: './index.js',
-      apiRange: '^1.0',
+      apiRange: '^2.0.0',
       capabilities: {
         tools: { prefix: 'fx_', names: Array.from({ length: 256 }, () => `fx_${'x'.repeat(50)}`) },
       },

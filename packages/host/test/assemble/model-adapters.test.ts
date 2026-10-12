@@ -47,7 +47,9 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   const lifecycle: string[] = []
   let release: (() => Promise<void>) | undefined
   const plugin = root.plugin((ctx) => {
-    release = ctx.modelAdapters.register(
+    release = ctx.providers.register(
+      'model-adapter',
+      '@agnes/host',
       definition({
         create: (config) => ({
           ...(definition().create(config) as ModelAdapterInstance),
@@ -69,10 +71,16 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   })
   expect(modelAdapterCatalog(root)[0]).not.toHaveProperty('api')
   expect(() =>
-    root.modelAdapters.register({ ...definition(), wireApi: undefined, api: 'custom-wire' } as never),
+    root.providers.register('model-adapter', '@agnes/host', {
+      ...definition(),
+      wireApi: undefined,
+      api: 'custom-wire',
+    } as never),
   ).toThrow('invalid model adapter registration')
   expect(Object.isFrozen(modelAdapterCatalog(root)[0]?.capabilities)).toBe(true)
-  expect(() => root.modelAdapters.register(definition())).toThrow('duplicate model adapter')
+  expect(() => root.providers.register('model-adapter', '@agnes/host', definition())).toThrow(
+    'duplicate model adapter',
+  )
   const instance = await root.modelAdapters.create('custom', { routes: [] })
   await plugin.dispose()
   expect(lifecycle).toEqual(['instance', 'registration'])
@@ -99,7 +107,9 @@ it('cleans up an instance whose asynchronous factory finishes after unregisterin
   installModelAdapters(root)
   let finish!: (instance: ModelAdapterInstance) => void
   let disposed = false
-  const release = root.modelAdapters.register(
+  const release = root.providers.register(
+    'model-adapter',
+    '@agnes/host',
     definition({
       create: () =>
         new Promise((resolve) => {

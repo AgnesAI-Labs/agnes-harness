@@ -1,4 +1,5 @@
-import { defineTool, type FsEntry, type ToolResult } from '@agnes/extension-api'
+import type { FsEntry, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { guardedResult } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'

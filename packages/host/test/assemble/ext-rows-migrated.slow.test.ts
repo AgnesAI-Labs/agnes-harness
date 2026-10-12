@@ -188,7 +188,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
 
   it('keeps the relative order of compact hooks: refine runs before hooks-runner, also after a rebuild', async () => {
     const h = await pluginHost(
-      pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
+      pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
     )
     const order = () =>
       h.host.kernel.hooks
@@ -242,7 +242,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
   for (const [id, tools] of cases) {
     it(`swaps ${id} for a plugin row and back`, async () => {
       const row = `ext:${id}`
-      const body = tools.map((n) => `agnes.registerTool(tool('${n}'))`).join('\n')
+      const body = tools.map((n) => `ctx.tools.register(tool('${n}'))`).join('\n')
       const h = await pluginHost(pluginSource(body, 'plugin', row))
       const before = h.host.kernel.tools.resolve(tools[0] as string)?.source.source
       expect(before).toBe(id)
@@ -262,7 +262,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
 
   it('refuses to replace privacy: a plugin row cannot register the hooks it declares', async () => {
     const row = 'ext:agnes/privacy'
-    const h = await pluginHost(pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', row))
+    const h = await pluginHost(pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', row))
     await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(row)]))).rejects.toThrow(
       /replacement of ext:agnes\/privacy must register hooks/,
     )
@@ -320,7 +320,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
 
   it('leaves the live tree alone when a target fails before any of its rows mounts', async () => {
     const h = await pluginHost(
-      pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
+      pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
     )
     await h.host.applyRuntimeTarget(targetOf([pluginRow('ext:acme/x')]))
     await settle()
@@ -349,7 +349,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
 
   it('keeps a working plugin and the builtins when a later candidate is rejected', async () => {
     const source = pluginSourceWith([
-      { exportName: 'good', rowId: 'ext:acme/good', body: `agnes.registerTool(tool('good_tool'))` },
+      { exportName: 'good', rowId: 'ext:acme/good', body: `ctx.tools.register(tool('good_tool'))` },
       { exportName: 'bad', rowId: 'ext:acme/bad', body: `throw new Error('plugin failed to start')` },
     ])
     const h = await pluginHost(source)
@@ -380,7 +380,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
 
   it('keeps refine single-instance when unrelated rows come and go around it', async () => {
     const h = await pluginHost(
-      pluginSource(`agnes.registerTool(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
+      pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
     )
     for (const disabled of [false, true, false]) {
       const report = await h.host.applyRuntimeTarget(targetOf([pluginRow('ext:acme/x', 'plugin', disabled)]))

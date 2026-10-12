@@ -284,7 +284,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
         declaration: {
           export: 'defaultLoopPlugin',
           id: 'loop:agnes.default',
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           default: true,
           inject: ['loops'],
           provide: [],

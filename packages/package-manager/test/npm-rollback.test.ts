@@ -52,7 +52,7 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
           exports: './extension/index.ts',
           agnes: {
             plugins: [
-              { apiRange: '^1.4.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' },
+              { apiRange: '^2.0.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' },
             ],
           },
           scripts: { postinstall: 'exit 99' },

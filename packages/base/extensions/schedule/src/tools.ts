@@ -1,4 +1,5 @@
-import { defineTool, type ToolResult } from '@agnes/extension-api'
+import type { ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { type ScheduleCatalog, ScheduleRejected, type ScheduleWrite } from './catalog.js'
 

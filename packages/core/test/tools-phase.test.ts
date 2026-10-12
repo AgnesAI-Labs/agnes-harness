@@ -261,6 +261,7 @@ describe('tools phase', () => {
       description: 'computer',
       parameters: Type.Object({}),
       meta: {
+        requiresImageInput: true,
         isReadOnly: false,
         isDestructive: false,
         isConcurrencySafe: false,

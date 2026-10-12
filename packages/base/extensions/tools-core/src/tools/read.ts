@@ -1,4 +1,5 @@
-import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { observe, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'

@@ -86,7 +86,7 @@ type RowRecord = {
   pending: Set<Pending>
   /** How many live registrations the row holds per hook event. */
   hookEvents: Map<string, number>
-  api: PluginExtensionAPI
+  api: PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort }
   state: 'dormant' | 'live' | 'retired'
   /** Host has listed this row at some point, so a later failure is worth reporting. */
   announced: boolean
@@ -406,7 +406,10 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     return fiber
   }
 
-  const apiFor = (caller: Context, origins: RowOriginLookup): PluginExtensionAPI => {
+  const apiFor = (
+    caller: Context,
+    origins: RowOriginLookup,
+  ): PluginExtensionAPI & { tools: import('@agnes/extension-api').ToolRegistrationPort } => {
     const found = rowFiberOf(caller.fiber, origins)
     if (!found || found.origin.trustTier !== 'third-party')
       throw new ExtensionError(
@@ -448,6 +451,19 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         }
       }
       new ExtensionFacade(root)
+      class ToolsService extends Service {
+        constructor(context: Context) {
+          super(context, 'tools')
+        }
+        register(def: import('@agnes/extension-api').ToolDef) {
+          const dispose = apiFor(this.ctx, origins).tools.register(def)
+          const row = rowFiberOf(this.ctx.fiber, origins)
+          // The row wind-down dispatches shutdown before revoking registrations.
+          if (row?.fiber === this.ctx.fiber) return dispose
+          return this.ctx.effect(() => dispose, `ctx.tools.register(${def.name})`)
+        }
+      }
+      new ToolsService(root)
     },
     /** Called once the kernel exists: rows mounted earlier now get their registrations. */
     activate(input: RowExtensionActivation): void {

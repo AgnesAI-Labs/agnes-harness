@@ -27,7 +27,7 @@ describe('author documentation generation', () => {
     )
     expect(docs['projections.md']).toContain('required: name, inputEventTypes, maxStateBytes')
   })
-  it('uses all four real slots and eight metadata keys in order', () => {
+  it('uses all four real slots and required and optional metadata fields in order', () => {
     const docs = generateAll(),
       slots = docs['slots.md'] ?? '',
       tools = docs['tools-meta.md'] ?? ''
@@ -35,7 +35,13 @@ describe('author documentation generation', () => {
     expect(slots.match(/^\| `[a-z.]+` \|/gm)).toHaveLength(4)
     expect((tools.match(/^\| `([^`]+)` \|/gm) ?? []).map((row) => row.split('`')[1])).toEqual([
       ...TOOL_META_KEYS,
+      'costHint',
+      'deferLoading',
+      'requiresApproval',
       'isPresentational',
+      'modelVisible',
+      'requiresImageInput',
+      'paths',
     ])
     expect(tools).toContain('`isPresentational` is optional')
     expect(tools).toContain('does not override explicit approval or concurrency flags')

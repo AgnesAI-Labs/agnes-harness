@@ -72,15 +72,6 @@ export type CompactionEngineCatalogEntry = Readonly<{
   sourcePackage: string
 }>
 
-export interface CompactionEngineRegistration {
-  register(engine: CompactionEngine): () => Promise<void>
-  catalog(): readonly CompactionEngineCatalogEntry[]
-}
-
-export type CompactionEnginePluginContext = {
-  compactionEngines: CompactionEngineRegistration
-}
-
 /** Experimental default threshold: at most one marginal warm-cache deferral per instance.
  * Session-local state; restart can forget one grace period, never suppress overflow compaction. */
 export function createCompactionThreshold(

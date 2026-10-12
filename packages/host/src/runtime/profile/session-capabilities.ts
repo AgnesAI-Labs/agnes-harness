@@ -25,6 +25,7 @@ export type CapabilityTool = Readonly<{
   name: string
   packageId?: string | undefined
   readOnly: boolean
+  requiresImageInput?: boolean
 }>
 export type CapabilityResource = Readonly<{ id: string; name?: string; packageId?: string | undefined }>
 export type CapabilityModule = Readonly<{
@@ -151,7 +152,10 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
     decision(tool.name, [
       [packageEnabled(tool.packageId), 'package-enabled', source('packages')],
       [
-        modelAllowsTool(tool.name, input.computerUseAllowed !== false),
+        modelAllowsTool(
+          { meta: { requiresImageInput: tool.requiresImageInput === true } },
+          input.computerUseAllowed !== false,
+        ),
         'model-input',
         { layer: 'session', name: 'primary-model' },
       ],
@@ -338,6 +342,9 @@ export function capabilityToolCatalog(tools: ToolRegistry): readonly CapabilityT
   return tools.list().map((tool) => ({
     name: tool.name,
     readOnly: tool.meta.isReadOnly,
+    ...(tool.meta.requiresImageInput === undefined
+      ? {}
+      : { requiresImageInput: tool.meta.requiresImageInput }),
     packageId: tools.resolve(tool.name)?.packageIdentity,
   }))
 }

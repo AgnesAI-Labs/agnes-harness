@@ -1,10 +1,5 @@
-import {
-  type CodeRuntime,
-  defineTool,
-  type ToolContext,
-  type ToolDef,
-  type ToolResult,
-} from '@agnes/extension-api'
+import type { CodeRuntime, ToolContext, ToolDef, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
 import type { BridgeHandler } from '../../runtime/index.js'
 import type { RunLimits } from './limits.js'
@@ -49,7 +44,7 @@ export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodePara
       isConcurrencySafe: false,
       isOpenWorld: true,
       replay: 'never',
-      costHint: undefined,
+
       deferLoading: false,
       requiresApproval: 'always',
     },

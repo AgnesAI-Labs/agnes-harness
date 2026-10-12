@@ -33,9 +33,9 @@ describe('loop author driver', () => {
     })
     const host = await createPluginTestHost(
       {
-        inject: ['extension'],
+        inject: ['tools'],
         apply(ctx: Context) {
-          ctx.extension().registerTool(tool)
+          ctx.tools.register(tool)
         },
       },
       { registration: createPluginTestRegistration() },

@@ -39,6 +39,7 @@ function computerTool(execute: ToolDef<typeof parameters>['execute']): ToolDef<t
     description: 'trusted computer use wrapper',
     parameters,
     meta: {
+      requiresImageInput: true,
       isReadOnly: false,
       isDestructive: true,
       isConcurrencySafe: false,
@@ -157,7 +158,10 @@ describe('durable tool dispatch state', () => {
       })
       const registry = domain === 'workspace' ? new ToolRegistry() : computerRegistry(tool)
       if (domain === 'workspace')
-        registry.add({ ...tool, name: 'synthetic_write' }, { source: 'test', trust: 'builtin' })
+        registry.add(
+          { ...tool, name: 'synthetic_write', meta: { ...tool.meta, requiresImageInput: false } },
+          { source: 'test', trust: 'builtin' },
+        )
       const diagnostic: RejectedBeforeEffectError = {
         code: 'INVALID_PARAMS',
         message: 'invalid synthetic status',
@@ -259,6 +263,7 @@ describe('durable tool dispatch state', () => {
             return { content: [{ type: 'text', text: 'must not write' }] }
           }),
           name: 'synthetic_memory_writer',
+          meta: { ...computerTool(async () => ({ content: [] })).meta, requiresImageInput: false },
         },
         { source: 'fixture/memory-writer', trust: 'builtin' },
       )

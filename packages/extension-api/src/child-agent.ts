@@ -120,7 +120,7 @@ export interface ChildAgentHandle {
   dispose(): Promise<void>
 }
 
-/** Register through an ordinary Cordis plugin that injects `childAgents`. */
+/** Register through an ordinary Cordis plugin that injects `providers`. */
 export interface ChildAgentProvider {
   readonly id: string
   readonly version: string
@@ -166,13 +166,8 @@ export type ChildAgentAllowlistConfig = Readonly<{
   sessions?: Readonly<Record<string, ChildAgentAllowlist>>
 }>
 
-export interface ChildAgentRegistration {
-  /** Duplicate ids are refused. The disposer belongs to the calling plugin fiber. */
-  register(provider: ChildAgentProvider): () => Promise<void>
+export interface ChildAgentService {
   catalog(): readonly ChildAgentCatalogEntry[]
-}
-
-export interface ChildAgentService extends ChildAgentRegistration {
   /** Bind once for a parent session; the caller owns and must await facade disposal. */
   forSession(parent: ChildAgentParentScope): ChildAgentSessionService
   setSessionAllowlist(sessionKey: string, allowlist: ChildAgentAllowlist | undefined): void

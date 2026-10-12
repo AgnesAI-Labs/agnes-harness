@@ -62,9 +62,9 @@ function permissionFixture(dataDir: string): Partial<TestHostOptions> {
           {
             export: 'main',
             id: 'ext:@fixture/permission/main',
-            apiRange: '^1.4.0',
+            apiRange: '^2.0.0',
             default: true,
-            inject: ['extension'],
+            inject: ['tools'],
             provide: [],
             runtime: 'in-process',
           },
@@ -74,9 +74,9 @@ function permissionFixture(dataDir: string): Partial<TestHostOptions> {
   )
   const source = { ...readDevelopmentPlugin(directory, 'local-dev'), trusted: true }
   const plugin = {
-    inject: ['extension'],
+    inject: ['tools'],
     apply(ctx: Context) {
-      ctx.extension().registerTool({
+      ctx.tools.register({
         name: 'permission_probe',
         description: 'Plain permission test tool',
         parameters: ConfigEmptyParams,

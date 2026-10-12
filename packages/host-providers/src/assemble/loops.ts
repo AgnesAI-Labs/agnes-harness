@@ -48,10 +48,10 @@ export class LoopsService extends Service implements LoopRegistryPort {
         },
         capabilities: (factory) => factory.capabilities,
       }),
-      (owner, source, provider) => owner.loops.register(source, provider),
+      (owner, source, provider) => this.registerOwned(owner, source, provider),
     )
   }
-  register(sourcePackage: string, factory: LoopFactory): () => Promise<void> {
+  private registerOwned(owner: Context, sourcePackage: string, factory: LoopFactory): () => Promise<void> {
     const lifetime = new ProviderLifetime('loop', factory.id)
     const drivers = new Set<LoopDriver>()
     const own = async (driver: LoopDriver, signal: AbortSignal): Promise<LoopDriver> => {
@@ -95,7 +95,7 @@ export class LoopsService extends Service implements LoopRegistryPort {
       }
     }
     return this.registry.register(
-      providerSource(this.ctx, this.origins, sourcePackage, true),
+      providerSource(owner, this.origins, sourcePackage, true),
       {
         ...factory,
         create: (ctx, signal) =>
@@ -103,7 +103,7 @@ export class LoopsService extends Service implements LoopRegistryPort {
         resume: (ctx, checkpoint, signal) =>
           lifetime.run(async (joined) => own(await factory.resume(ctx, checkpoint, joined), joined), signal),
       },
-      this.ctx,
+      owner,
       () =>
         lifetime.close(undefined, async () => {
           const results = await Promise.allSettled([...drivers].map((driver) => driver.cancel()))

@@ -68,7 +68,7 @@ it('runs the fresh local-dev demo through registry and provider without credenti
               declaration: {
                 id: 'observability:otel',
                 export: 'observabilityPlugin',
-                apiRange: '^1.4.0',
+                apiRange: '^2.0.0',
                 default: true,
                 inject: ['providers'],
                 provide: [],

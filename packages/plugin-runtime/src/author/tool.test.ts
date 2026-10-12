@@ -1,23 +1,14 @@
 import type { ToolContext } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { defineTool, toolCancelled, toolError } from './tool.js'
+import { defineTool, readOnlyTool, toolCancelled, toolError, writeTool } from './tool.js'
 
 export const greeting = defineTool({
   name: 'greeting',
   description: 'Return a greeting.',
   parameters: Type.Object({ name: Type.String() }),
   result: Type.Object({ greeting: Type.String() }),
-  meta: {
-    isReadOnly: true,
-    isDestructive: false,
-    isConcurrencySafe: true,
-    isOpenWorld: false,
-    replay: 'safe',
-    costHint: undefined,
-    deferLoading: undefined,
-    requiresApproval: 'never',
-  },
+  meta: readOnlyTool,
   async execute({ name }) {
     expectTypeOf(name).toEqualTypeOf<string>()
     if (!name) return toolError('A name is required')
@@ -27,6 +18,8 @@ export const greeting = defineTool({
 
 describe('typed tool authoring', () => {
   it('infers schemas, supports business failures, and refuses malformed successful results', async () => {
+    expect(defineTool(greeting).meta).toBe(readOnlyTool)
+    expect(writeTool).toMatchObject({ isReadOnly: false, replay: 'never', requiresApproval: 'always' })
     const ctx = { signal: new AbortController().signal } as ToolContext
     expect(await greeting.execute({ name: 'Agnes' }, ctx)).toMatchObject({
       structured: { greeting: 'Hello Agnes' },

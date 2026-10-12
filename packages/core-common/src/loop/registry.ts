@@ -51,5 +51,3 @@ export class LoopRegistry implements LoopRegistryPort {
   }
 }
 export const loopKey = (selection: LoopSelection): string => `${selection.id}@${selection.version}`
-
-export { type LoopPluginContext, registerLoopPlugin } from '@agnes/extension-api'

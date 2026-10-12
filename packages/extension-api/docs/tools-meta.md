@@ -2,7 +2,7 @@
 
 # Tool metadata
 
-All eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META.
+The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld, replay) must be present. Optional costHint, deferLoading and requiresApproval default to no estimate, initial discovery and approval inferred from isDestructive. Import readOnlyTool / writeTool presets from @agnes/plugin-runtime and override fields for your contract.
 
 `isPresentational` is optional. Omitting it means the tool is not presentational.
 
@@ -13,7 +13,10 @@ All eight keys must be explicitly present. Authors may explicitly set costHint, 
 | `isConcurrencySafe` | The tool may run alongside other calls. The inner batch scheduler and the code runtime's sub-calls read this same judgement. |
 | `isOpenWorld` | The result comes from outside. The row carrying it is written untrusted, injection defence trims it, and surface projection reads this. |
 | `replay` | How crash recovery treats an unsettled call: safe reruns it verbatim, idempotent reruns it under the same effectId, never synthesises an unknown outcome. Consumed by the effect sandwich. |
-| `costHint` | An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage. |
-| `deferLoading` | true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure. |
-| `requiresApproval` | The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage. |
+| `costHint` | Optional estimate for budget preflight. Omission or null means no estimate. |
+| `deferLoading` | Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery. |
+| `requiresApproval` | Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies. |
 | `isPresentational` | Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask. |
+| `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |
+| `requiresImageInput` | Optional, defaults to false. Only a model with native image input can discover or execute this tool. |
+| `paths` | Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence. |

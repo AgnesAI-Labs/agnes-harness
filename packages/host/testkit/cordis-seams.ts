@@ -81,7 +81,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
         declaration: {
           id,
           export: exportName,
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           default: true,
           inject: [service],
           runtime: 'in-process',
@@ -102,7 +102,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
             Object.freeze({
               declaration: Object.freeze({
                 export: `${name}Plugin`,
-                apiRange: '^1.4.0',
+                apiRange: '^2.0.0',
                 id: `seam:${name}`,
                 runtime: 'in-process' as const,
                 default: true,

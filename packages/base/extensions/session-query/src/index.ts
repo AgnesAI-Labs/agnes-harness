@@ -1,4 +1,5 @@
-import { defineExtension, defineTool } from '@agnes/extension-api'
+import { defineExtension } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import {
   bindSessionQuery,
@@ -16,7 +17,7 @@ const READ_ONLY = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe' as const,
-  costHint: undefined,
+
   deferLoading: false,
   requiresApproval: 'never' as const,
 }

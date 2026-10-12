@@ -79,7 +79,13 @@
     "@agnes/git-worktree-contract",
     "@agnes/intelligent-ui-contract"
   ],
-  "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
+  "@agnes/code": [
+    "@agnes/protocol",
+    "@agnes/extension-api",
+    "@agnes/core",
+    "@agnes/base",
+    "@agnes/plugin-runtime"
+  ],
   "@agnes/runtime-python": ["@agnes/code", "@agnes/protocol"],
   "@agnes/host": [
     "@agnes/cordis",

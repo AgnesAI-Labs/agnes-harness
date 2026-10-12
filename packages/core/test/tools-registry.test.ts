@@ -145,10 +145,10 @@ describe('ToolRegistry', () => {
     expect(() => r.add(def('bad-name'), { source: 's', trust: 'trusted' })).toThrow(
       /name: must match \^\[A-Za-z_\]/,
     )
-    const { costHint: _dropped, ...seven } = meta
+    const { isReadOnly: _dropped, ...seven } = meta
     expect(() =>
       r.add({ ...def('x'), meta: seven } as unknown as ToolDef, { source: 's', trust: 'trusted' }),
-    ).toThrow(/meta\.costHint: missing/)
+    ).toThrow(/meta\.isReadOnly: missing/)
     expect(() => r.add(def('y', { replay: 'maybe' }), { source: 's', trust: 'trusted' })).toThrow(
       /replay: expected safe \| never \| idempotent/,
     )

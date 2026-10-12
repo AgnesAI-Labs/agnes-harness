@@ -1,4 +1,4 @@
-import { defineTool } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { scoreToolIndexRows, type ToolIndexReader } from '../../../src/mcp/index-table.js'
 import { modelVisibleSkill, type SkillRuntimeDiscovery } from '../../skills/src/runtime.js'

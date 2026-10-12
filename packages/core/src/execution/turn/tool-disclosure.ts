@@ -29,7 +29,7 @@ export async function restoreToolDisclosure(s: SessionImpl): Promise<void> {
 export async function discloseTool(s: SessionImpl, name: string, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted()
   const def = s.turn?.snapshot.byName.get(name)
-  if (!def || !modelVisibleTool(name, s.computerUseAllowed()))
+  if (!def || !modelVisibleTool(def, s.computerUseAllowed()))
     throw new CoreError('E_ENVELOPE', 'Cannot disclose a tool outside the available turn catalog')
   if (def.meta.deferLoading !== true || loadedToolNames(s).has(name)) return
   await s.d.log.append([s.ev(EVENT, { name }, { ignorable: true })])

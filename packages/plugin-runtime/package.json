@@ -21,5 +21,8 @@
     "@sinclair/typebox": "0.34.33",
     "@standard-schema/spec": "1.1.0"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/protocol": "workspace:*"
+  }
 }

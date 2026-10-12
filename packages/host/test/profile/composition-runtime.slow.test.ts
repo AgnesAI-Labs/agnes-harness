@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
-import { defineTool } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import {
@@ -20,6 +19,7 @@ import {
   type RuntimePluginSnapshot,
   writeLock,
 } from '@agnes/package-manager'
+import { defineTool } from '@agnes/plugin-runtime'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -55,7 +55,7 @@ function bundleFixture() {
           body: `agnes.registerTool(tool('fixture_${index}'))
 ${
   index === 0
-    ? `ctx.loops.register('acme/a', {
+    ? `ctx.providers.register('loop', 'acme/a', {
   id: 'fixture.business', version: '1.0.0', capabilities: [],
   codec: { version: 1, encode: (state) => ({ codecVersion: 1, state }), decode: (checkpoint) => checkpoint.state },
   create: () => ({ step: async () => ({ outcome: 'idle' }), cancel() {}, dispose() {}, checkpoint: () => ({ codecVersion: 1, state: null }) }),
@@ -79,7 +79,7 @@ ${
       const entry = join(source.snapshot.directory, 'index.js')
       writeFileSync(
         entry,
-        readFileSync(entry, 'utf8').replace("inject: ['extension']", "inject: ['extension', 'loops']"),
+        readFileSync(entry, 'utf8').replace("inject: ['tools']", "inject: ['tools', 'providers']"),
       )
     }
     writeFileSync(file, JSON.stringify(manifest))
@@ -281,14 +281,14 @@ function presetCompositionFixture() {
               id: 'compaction-engine:fixture',
               export: 'fixture',
               default: true,
-              inject: ['compactionEngines'],
+              inject: ['providers'],
               provide: [],
               runtime: 'in-process' as const,
             },
             entry: normalizePluginExport({
-              inject: ['compactionEngines'],
+              inject: ['providers'],
               apply(ctx) {
-                ctx.compactionEngines.register({
+                ctx.providers.register('compaction', '@agnes/host', {
                   id: 'fixture',
                   version: '1.0.0',
                   create: () => ({
@@ -718,9 +718,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
         version,
         exports: './index.mjs',
         agnes: {
-          plugins: [
-            { apiRange: '^1.4.0', export: 'main', id: 'ext:composition-code', inject: ['extension'] },
-          ],
+          plugins: [{ apiRange: '^2.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
         },
       }),
     )
@@ -780,9 +778,9 @@ it('opens a new composition from the published code after retiring a boot snapsh
           const version = readFileSync(file, 'utf8')
           return {
             main: {
-              inject: ['extension'],
+              inject: ['tools'],
               apply(ctx: import('@agnes/cordis').Context) {
-                ctx.extension().registerTool({
+                ctx.tools.register({
                   name: 'code_version',
                   description: version,
                   parameters: Type.Object({}),
@@ -821,7 +819,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
             entryRevision: two.snapshot.integrity,
             extrasRevision: 'none',
             mountRevision: 'host-ordinary-row:v1',
-            inject: ['extension'],
+            inject: ['tools'],
           }),
         ],
         resources: base.resource.resources,

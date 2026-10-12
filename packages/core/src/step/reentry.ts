@@ -7,6 +7,7 @@ import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
+import { modelAllowsTool } from './model-tools.js'
 import { operationDecisionPort } from './operation-decisions.js'
 import type {
   CoreReplacementInputMap,
@@ -58,14 +59,14 @@ export async function invokeTool(
   const cap = s.turnBudgetCap()
   if (cap !== null && s.state.creditsUsed > cap)
     throw Object.assign(new Error('BUDGET_EXCEEDED'), { code: 'BUDGET_EXCEEDED' })
-  if (name === 'computer_use' && !s.computerUseAllowed())
+  const def = t.snapshot.byName.get(name)
+  if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
+  if (!modelAllowsTool(def, s.computerUseAllowed()))
     throw Object.assign(new Error('tool was not disclosed for the current primary model'), {
       code: 'TOOL_NOT_DISCLOSED',
     })
   const ordinal = t.ordinal++
   const toolUseId = s.d.ids.toolUseId(ordinal)
-  const def = t.snapshot.byName.get(name)
-  if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
   const argumentError = toolArgumentError(def.parameters, args)
   if (argumentError)
     throw Object.assign(new Error(argumentError), {

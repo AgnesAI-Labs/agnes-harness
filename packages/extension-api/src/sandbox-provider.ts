@@ -101,7 +101,7 @@ export type SandboxProviderConfig = Readonly<{
 
 /**
  * A replaceable sandbox backend. Register it through a plugin that injects
- * `sandboxProviders`. The host picks one id at startup. Changing the id needs
+ * `providers`. The host picks one id at startup. Changing the id needs
  * a process restart. Instances are workspace/configuration scoped; running processes stay where they started.
  */
 export interface SandboxProvider {
@@ -125,12 +125,6 @@ export type SandboxProviderCatalogEntry = Readonly<{
   /** The running process keeps the provider it selected at startup. */
   restartRequired: true
 }>
-
-export interface SandboxProviderRegistration {
-  /** Duplicate ids are refused. The disposer is owned by the calling plugin fiber. */
-  register(provider: SandboxProvider): () => Promise<void>
-  catalog(): readonly SandboxProviderCatalogEntry[]
-}
 
 /** Built-in host sandbox. Seatbelt, bubblewrap, or the current Windows posture. */
 export const LOCAL_SANDBOX_PROVIDER_ID = 'local'

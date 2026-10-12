@@ -1,9 +1,9 @@
 import { assertChildAgentAllowed } from '@agnes/core'
 import type {
   ChildAgentCapabilities,
-  ChildAgentPluginContext,
   ChildAgentProvider,
   ChildAgentStartOptions,
+  ProviderPluginContext,
 } from '@agnes/extension-api'
 import { DISABLED_CHILD_ENGINES, readEngineDocument } from '../../subagent-sdk/src/document.js'
 import { assertEngineLaunch, type EngineLaunch, engineArgs } from '../../subagent-sdk/src/launch.js'
@@ -101,11 +101,11 @@ export function claudeCodeChildAgentProvider(config: ClaudeCodeChildEngineConfig
 }
 
 export const claudeCodeChildAgentsPlugin = {
-  inject: ['childAgents'] as const,
-  apply(ctx: ChildAgentPluginContext, config?: unknown) {
+  inject: ['providers'] as const,
+  apply(ctx: ProviderPluginContext, config?: unknown) {
     const parsed = readEngineDocument(config)
     if (!parsed?.enabled) return
     assertEngineLaunch(parsed)
-    return ctx.childAgents.register(claudeCodeChildAgentProvider(parsed))
+    ctx.providers.register('child-agent', '@agnes/base', claudeCodeChildAgentProvider(parsed))
   },
 }

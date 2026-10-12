@@ -92,9 +92,9 @@ describe('package plugin loader', () => {
   })
   it('loads only statically declared named exports and normalizes them for Host', async () => {
     const { snapshot } = packageSnapshot([
-      { apiRange: '^1.4.0', export: 'main' },
+      { apiRange: '^2.0.0', export: 'main' },
       {
-        apiRange: '^1.4.0',
+        apiRange: '^2.0.0',
         export: 'optional',
         id: 'ext:acme/optional',
         config: { enabled: true },
@@ -114,7 +114,7 @@ describe('package plugin loader', () => {
     ).toMatchObject([
       {
         declaration: {
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           export: 'main',
           id: 'ext:@acme/example/main',
           runtime: 'in-process',
@@ -130,7 +130,7 @@ describe('package plugin loader', () => {
       },
       {
         declaration: {
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           export: 'optional',
           id: 'ext:acme/optional',
           runtime: 'in-process',
@@ -151,19 +151,19 @@ describe('package plugin loader', () => {
   })
 
   it('rejects a missing declared export and an invalid plugin shape', async () => {
-    const missing = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }]).snapshot
+    const missing = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }]).snapshot
     await expect(
       loadPackagePlugins({ snapshot: missing, generation: 1, importModule: async () => ({}) }),
     ).rejects.toMatchObject({ legacyCode: 'E_EXT_LOAD', detail: { reason: 'plugin-export-missing' } })
 
-    const invalid = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }]).snapshot
+    const invalid = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }]).snapshot
     await expect(
       loadPackagePlugins({ snapshot: invalid, generation: 1, importModule: async () => ({ main: 42 }) }),
     ).rejects.toMatchObject({ legacyCode: 'E_EXT_LOAD', detail: { reason: 'plugin-export-shape' } })
   })
 
   it('fails closed before import when an isolated declaration cannot use the in-process loader', async () => {
-    const snapshot = packageSnapshot([{ apiRange: '^1.4.0', export: 'main', runtime: 'isolated' }]).snapshot
+    const snapshot = packageSnapshot([{ apiRange: '^2.0.0', export: 'main', runtime: 'isolated' }]).snapshot
     const importModule = vi.fn(async () => ({ main: () => {} }))
 
     await expect(loadPackagePlugins({ snapshot, generation: 1, importModule })).rejects.toMatchObject({
@@ -174,7 +174,7 @@ describe('package plugin loader', () => {
   })
 
   it('rejects a generation that cannot form a verified candidate', async () => {
-    const snapshot = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }]).snapshot
+    const snapshot = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }]).snapshot
     const importModule = vi.fn(async () => ({ main: () => {} }))
 
     await expect(loadPackagePlugins({ snapshot, generation: 0, importModule })).rejects.toMatchObject({
@@ -185,7 +185,7 @@ describe('package plugin loader', () => {
   })
 
   it('rejects stale input and a package mutation during dynamic loading', async () => {
-    const stale = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }])
+    const stale = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }])
     writeFileSync(join(stale.directory, 'changed.txt'), 'changed')
     await expect(
       loadPackagePlugins({
@@ -195,7 +195,7 @@ describe('package plugin loader', () => {
       }),
     ).rejects.toMatchObject({ legacyCode: 'E_LOCK_MISMATCH', detail: { reason: 'snapshot-stale' } })
 
-    const changed = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }])
+    const changed = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }])
     await expect(
       loadPackagePlugins({
         snapshot: changed.snapshot,
@@ -206,7 +206,7 @@ describe('package plugin loader', () => {
             `${JSON.stringify({
               name: '@acme/example',
               version: '1.2.3',
-              agnes: { plugins: [{ apiRange: '^1.4.0', export: 'replacement' }] },
+              agnes: { plugins: [{ apiRange: '^2.0.0', export: 'replacement' }] },
             })}\n`,
           )
           return { main: () => {} }
@@ -226,7 +226,7 @@ describe('package plugin loader', () => {
   })
 
   it('refuses a snapshot that declares both executable loading formats before import', async () => {
-    const { snapshot } = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }], {
+    const { snapshot } = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }], {
       extensions: ['./legacy'],
     })
     const importModule = vi.fn(async () => ({ main: () => {} }))
@@ -238,7 +238,7 @@ describe('package plugin loader', () => {
   })
 
   it('verifies candidates only against the exact live immutable snapshot generation', async () => {
-    const { directory, snapshot } = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }])
+    const { directory, snapshot } = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }])
     const verifier = createPackageSnapshotVerifier([{ snapshot, generation: 7, trusted: true }])
     const candidate = {
       packageId: snapshot.packageId,
@@ -269,7 +269,7 @@ describe('package plugin loader', () => {
     })
   })
   it('the live verifier sees a trust change without being rebuilt', async () => {
-    const { snapshot } = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }])
+    const { snapshot } = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }])
     let trusted = true
     const verifier = createLivePackageSnapshotVerifier(() => ({ snapshot, generation: 1, trusted }))
     const candidate = {
@@ -284,7 +284,7 @@ describe('package plugin loader', () => {
   })
 
   it('the live verifier reports an uninstalled or other-generation snapshot as unavailable', async () => {
-    const { snapshot } = packageSnapshot([{ apiRange: '^1.4.0', export: 'main' }])
+    const { snapshot } = packageSnapshot([{ apiRange: '^2.0.0', export: 'main' }])
     const candidate = {
       packageId: snapshot.packageId,
       snapshotId: snapshot.snapshotId,

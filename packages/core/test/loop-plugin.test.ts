@@ -1,5 +1,5 @@
 import { defaultIds } from '@agnes/core-common/ids'
-import { registerLoopPlugin } from '@agnes/core-common/loop/registry'
+import type { LoopRegistry } from '@agnes/core-common/loop/registry'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
@@ -268,10 +268,10 @@ describe('loop plugins', () => {
       await expect(k.session('after-close', options)).rejects.toMatchObject({ code: 'E_CLOSED' })
     },
   )
-  it('registers through a plugin lifecycle and exposes an immutable catalog', () => {
+  it('exposes an immutable backend catalog', () => {
     const loops = defaultLoops()
     const cleanups: Array<() => void> = []
-    registerLoopPlugin({ loops, effect: (callback) => cleanups.push(callback()) }, '@test/echo', echo)
+    cleanups.push(loops.register('@test/echo', echo))
     expect(loops.resolve(echo)).toBe(echo)
     expect(loops.catalog()).toContainEqual({
       id: echo.id,
@@ -365,7 +365,7 @@ describe('loop plugins', () => {
     const empty = kernel(storage)
     await expect(empty.session('pinned', options)).rejects.toThrow('test.echo@1.0.0 is not installed')
     // A failed lookup closes the writer lease, so fitting the missing plugin permits reopening.
-    empty.loops.register('@test/echo', echo)
+    ;(empty.loops as LoopRegistry).register('@test/echo', echo)
     expect((await empty.session('pinned', options)).loop.id).toBe(echo.id)
     await k.close()
     await empty.close()

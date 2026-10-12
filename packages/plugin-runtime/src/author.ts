@@ -1,5 +1,8 @@
-import type { Context, Inject, Plugin } from '@agnes/cordis'
+import type { Context as CordisContext, Inject, Plugin } from '@agnes/cordis'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import './author/context.js'
+export type Context = CordisContext & ProviderPluginContext
+export type { ProviderPluginContext } from '@agnes/extension-api'
 
 /** A standard Cordis plugin accepted by the Agnes package loader. */
 export type AgnesPlugin<Config = unknown> = Plugin<Config>
@@ -17,7 +20,6 @@ export {
   type ServiceInstance,
   type ServicePorts,
 } from '@agnes/extension-api'
-export type { LoopPluginContext, ModelAdapterPluginContext } from './author/context.js'
 export { defineLoop } from './author/loop.js'
 export { defineModelAdapter } from './author/model-adapter.js'
 export {
@@ -30,5 +32,5 @@ export {
   defineToolRuntime,
 } from './author/providers.js'
 export type { TypedToolDef, TypedToolResult } from './author/tool.js'
-export { defineTool, toolCancelled, toolError } from './author/tool.js'
-export type { Context, Inject, Plugin }
+export { defineTool, readOnlyTool, toolCancelled, toolError, writeTool } from './author/tool.js'
+export type { Inject, Plugin }

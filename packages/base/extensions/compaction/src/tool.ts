@@ -1,4 +1,4 @@
-import { defineTool } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 
 export const compactTool = defineTool({

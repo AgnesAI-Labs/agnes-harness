@@ -80,7 +80,7 @@ describe('stable API subset boundary cases', () => {
     expect(parseSemver('1.2.3-rc.1+build.01')).toEqual({ major: 1, minor: 2, patch: 3, pre: 'rc.1' })
   })
   it('exercises checkApiRange default version through both acceptance and rejection', () => {
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^1.0' })).not.toThrow()
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^2.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^2.0' })).not.toThrow()
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^3.0' })).toThrow(/E_API_RANGE/)
   })
 })

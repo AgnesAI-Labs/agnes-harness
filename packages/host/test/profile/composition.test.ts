@@ -127,7 +127,7 @@ it.each(capabilityCases)(
           { id: 'tool:active', enabled: true },
         ],
         tools: [
-          { name: 'computer_use', readOnly: true },
+          { name: 'computer_use', readOnly: true, requiresImageInput: true },
           { name: 'read', readOnly: true },
           { name: 'write', readOnly: false },
           { name: 'owned', readOnly: true, packageId: 'acme/cap' },

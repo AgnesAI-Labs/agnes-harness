@@ -68,7 +68,7 @@ it('requires compatible ordinary plugin apiRange before evaluating any source', 
   }
   f.write(
     'package.json',
-    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0' }] } }),
+    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^2.0.0' }] } }),
   )
   expect(await f.loader.import(entry)).toHaveProperty('main')
   expect(readFileSync(marker, 'utf8')).toBe('yes')
@@ -165,7 +165,7 @@ it('reloads a nested TS dependency and keeps its imports on host namespaces', as
 it('loads the real author example module through jiti', async () => {
   const f = setup()
   const mod = await f.loader.import(
-    fileURLToPath(new URL('../../../extension-api/examples/minimal/index.ts', import.meta.url)),
+    fileURLToPath(new URL('../../../plugin-runtime/examples/minimal/index.ts', import.meta.url)),
   )
   expect(typeof mod.default).toBe('function')
 })

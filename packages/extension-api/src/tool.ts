@@ -54,11 +54,6 @@ export const DEFAULT_OUTPUT_MAX_BYTES = 32768
 export const MIN_OUTPUT_MAX_BYTES = 4096
 export const MAX_OUTPUT_MAX_BYTES = 1048576
 
-// All eight keys must be written out on every tool, including the ones a tool has nothing to
-// say about: "no cost hint" is spelled `costHint: undefined`, not an omitted key. That is why
-// the last three are required keys typed `T | undefined` rather than optional `?:` members —
-// with exactOptionalPropertyTypes on, that is what forces the author to type the word. The
-// runtime check in checkToolMeta enforces the same rule for tools that arrive as plain data.
 /** One top-level string argument checked against the live workspace fence before policy decisions.
  * Missing arguments use `default` when declared, otherwise no path is checked. Non-workspace URI
  * schemes are delegated to the tool's own resource service; they never widen filesystem access. */
@@ -74,9 +69,16 @@ export interface ToolMeta {
   isConcurrencySafe: boolean
   isOpenWorld: boolean
   replay: ReplayPolicy
-  costHint: { credits?: number; wallMs?: number } | undefined
-  deferLoading: boolean | undefined
-  requiresApproval: RiskClass | undefined
+  /** Omitted means no cost estimate. */
+  costHint?: { credits?: number; wallMs?: number } | undefined
+  /** Omitted/false means available in initial model discovery. */
+  deferLoading?: boolean | undefined
+  /** Omitted means destructive for destructive tools, otherwise never. */
+  requiresApproval?: RiskClass | undefined
+  /** Omitted/true means discoverable by the model; false keeps internal invocation available. */
+  modelVisible?: boolean
+  /** Only models with native image input may discover or execute this tool. Default false. */
+  requiresImageInput?: boolean
   paths?: readonly WorkspacePathArgument[]
   /**
    * The effect only publishes display state to the user and has no external side effect.
@@ -91,9 +93,6 @@ export const TOOL_META_KEYS = [
   'isConcurrencySafe',
   'isOpenWorld',
   'replay',
-  'costHint',
-  'deferLoading',
-  'requiresApproval',
 ] as const
 export const TOOL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 
@@ -384,6 +383,11 @@ export interface ToolContext {
   readonly log: Logger
 }
 
+/** Registration cleanup belongs to the calling plugin lifecycle. */
+export interface ToolRegistrationPort {
+  register(def: ToolDef): import('./common.js').Disposer
+}
+
 export interface ToolDef<P extends TSchema = TSchema> {
   name: string
   description: string
@@ -400,10 +404,6 @@ export interface ToolDef<P extends TSchema = TSchema> {
    */
   classify?(args: Readonly<Static<P>>): ResolvedToolCallPolicy
   execute(args: Static<P>, ctx: ToolContext): Promise<ToolResult>
-}
-
-export function defineTool<P extends TSchema>(def: ToolDef<P>): ToolDef<P> {
-  return def
 }
 
 const REPLAY = new Set<string>(['safe', 'never', 'idempotent'])
@@ -447,6 +447,9 @@ export function checkToolMeta(meta: unknown): CheckResult {
     problems.push('deferLoading: expected boolean | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
+  for (const key of ['modelVisible', 'requiresImageInput'] as const)
+    if (m[key] !== undefined && typeof m[key] !== 'boolean')
+      problems.push(`${key}: expected boolean | undefined`)
   if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
     problems.push('isPresentational: expected boolean | undefined')
   if (m.isPresentational === true && m.isDestructive === true)

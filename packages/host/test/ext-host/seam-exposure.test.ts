@@ -66,7 +66,7 @@ function fixture() {
     JSON.stringify({
       id: 'fixture/seam-consumer',
       version: '1.0.0',
-      apiRange: '^1.1',
+      apiRange: '^2.0.0',
       entry: './index.js',
       capabilities: {
         tools: { prefix: 'sx_', names: ['sx_probe'] },
@@ -164,7 +164,7 @@ describe('seam exposure: what a third-party extension can reach at each moment (
       JSON.stringify({
         id: 'fixture/isolated-consumer',
         version: '1.0.0',
-        apiRange: '^1.1',
+        apiRange: '^2.0.0',
         entry: './index.js',
         runtime: { supports: ['isolated'] },
         capabilities: { hooks: ['before_step'] },
@@ -172,7 +172,7 @@ describe('seam exposure: what a third-party extension can reach at each moment (
     )
     writeFileSync(
       entry,
-      `import { defineTool } from '@agnes/extension-api';
+      `import { defineTool } from '@agnes/plugin-runtime';
 export default (api) => {
   api.registerHook('before_step', (_payload, hctx) => ({
     block: true,

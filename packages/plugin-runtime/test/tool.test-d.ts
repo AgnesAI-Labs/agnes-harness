@@ -1,6 +1,3 @@
-import type { Action, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
-import { Type } from '@sinclair/typebox'
-import { describe, expectTypeOf, it } from 'vitest'
 import type {
   CapabilityReport,
   ExecResult,
@@ -10,7 +7,10 @@ import type {
   ToolDef,
   ToolMeta,
   ToolResult,
-} from '../src/index.js'
+} from '@agnes/extension-api'
+import type { Action, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
+import { describe, expectTypeOf, it } from 'vitest'
 import { defineTool } from '../src/index.js'
 
 declare const json: JsonValue
@@ -30,9 +30,6 @@ describe('tool types', () => {
         isConcurrencySafe: true,
         isOpenWorld: false,
         replay: 'safe',
-        costHint: undefined,
-        deferLoading: undefined,
-        requiresApproval: undefined,
       },
       execute: async (args, ctx) => {
         expectTypeOf(args).toEqualTypeOf<{ path: string; limit?: number }>()
@@ -56,8 +53,7 @@ describe('tool types', () => {
         isConcurrencySafe: false,
         isOpenWorld: false,
         replay: 'never',
-        costHint: undefined,
-        deferLoading: undefined,
+
         requiresApproval: 'destructive',
       },
       policyVersion: 'v1',
@@ -89,9 +85,6 @@ describe('tool types', () => {
         isConcurrencySafe: true,
         isOpenWorld: false,
         replay: 'safe' as const,
-        costHint: undefined,
-        deferLoading: undefined,
-        requiresApproval: undefined,
       },
       policyVersion: 'v1',
       execute: async () => ({ content: [] }),
@@ -120,7 +113,7 @@ describe('tool types', () => {
       }),
     })
   })
-  it('ToolMeta requires all eight policy keys and permits optional paths', () => {
+  it('ToolMeta requires safety keys and permits omitted hints', () => {
     expectTypeOf<keyof ToolMeta>().toEqualTypeOf<
       | 'isReadOnly'
       | 'isDestructive'
@@ -132,16 +125,15 @@ describe('tool types', () => {
       | 'requiresApproval'
       | 'paths'
       | 'isPresentational'
+      | 'modelVisible'
+      | 'requiresImageInput'
     >()
-    // @ts-expect-error costHint 键不能省略——「声明无」也要显式写 undefined
     const m: ToolMeta = {
       isReadOnly: true,
       isDestructive: false,
       isConcurrencySafe: true,
       isOpenWorld: false,
       replay: 'safe',
-      deferLoading: undefined,
-      requiresApproval: undefined,
     }
     void m
   })

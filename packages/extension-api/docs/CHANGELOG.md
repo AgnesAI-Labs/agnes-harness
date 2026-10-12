@@ -2,6 +2,35 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 2.0.0
+
+### Removed
+
+- Named author registration ports (`loops`, `modelAdapters`, `compactionEngines`,
+  `childAgents`, `sandboxProviders`), their registration context types, and
+  `registerLoopPlugin`. Use `ctx.providers.register(kind, packageId, provider)`;
+  registration cleanup is owned by the calling plugin fiber. Runtime operations stay
+  with their backend owners.
+- `PluginExtensionAPI.registerTool`. Inject `tools` and use `ctx.tools.register(tool)`.
+- `extension-api.defineTool`. Import the sole `defineTool` from `@agnes/plugin-runtime`
+  in official extensions and community plugins alike; it also validates optional
+  structured result schemas.
+
+### Changed
+
+`ToolMeta.costHint`, `deferLoading` and `requiresApproval` are optional. Omission means
+no estimate, initial model discovery, and the existing approval default (destructive
+for destructive tools, otherwise never). Required safety booleans and replay remain
+explicit. `@agnes/plugin-runtime` exports `readOnlyTool` / `writeTool` metadata presets;
+spread a preset to declare contract-specific overrides.
+
+### Added
+
+`ToolMeta.modelVisible` defaults to true; false hides a tool from model schemas and
+discovery while preserving internal invocation. `requiresImageInput` defaults to false
+and restricts discovery/execution to a model with native image input. Neither grants
+execution authority. Update manifest `apiRange` to `^2.0.0` when migrating.
+
 ## 1.6.0
 
 Removed from the unpublished protocol `0.1.0` ledger contract: `approval/asked`,

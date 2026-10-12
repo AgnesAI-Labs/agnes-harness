@@ -36,9 +36,9 @@ describe('plugin author host', () => {
     let cleaned = false
     const host = await createPluginTestHost(
       defineAgnesPlugin({
-        inject: ['extension'],
+        inject: ['tools'],
         apply(ctx: Context) {
-          ctx.extension().registerTool(tool)
+          ctx.tools.register(tool)
           ctx.effect(() => () => {
             cleaned = true
           })
@@ -69,13 +69,13 @@ describe('plugin author host', () => {
     await expect(
       createPluginTestHost(
         {
-          inject: ['extension'],
+          inject: ['tools'],
           apply(ctx: Context) {
             ctx.effect(() => () => {
               cleaned = true
             })
-            ctx.extension().registerTool(tool)
-            ctx.extension().registerTool(tool)
+            ctx.tools.register(tool)
+            ctx.tools.register(tool)
           },
         },
         { registration: createPluginTestRegistration() },

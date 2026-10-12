@@ -1,4 +1,5 @@
-import { defineTool, type ToolResult } from '@agnes/extension-api'
+import type { ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { guardedResult } from '../guards/output.js'
@@ -29,7 +30,6 @@ export function createShellTool(jobs?: ShellJobs) {
       replay: 'never',
       costHint: {},
       deferLoading: false,
-      requiresApproval: undefined,
     },
     async execute(args, ctx): Promise<ToolResult> {
       if (jobs && (ctx.platform.shell === 'posix' || ctx.sandbox.openProcess)) {

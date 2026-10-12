@@ -291,7 +291,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
       {
         exportName: 'plugin',
         rowId: 'ext:acme/plugin-tools',
-        body: "  agnes.registerTool(tool('acme_ping'))",
+        body: "  ctx.tools.register(tool('acme_ping'))",
       },
     ])
     const h = await createTestHost({

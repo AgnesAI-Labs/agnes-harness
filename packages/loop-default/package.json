@@ -12,11 +12,11 @@
         "export": "defaultLoopPlugin",
         "id": "loop:agnes.default",
         "inject": [
-          "loops"
+          "providers"
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "metadata": {
           "displayName": "Default Agent Loop",
           "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",

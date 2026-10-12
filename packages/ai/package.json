@@ -25,9 +25,9 @@
       {
         "id": "model-adapters:pi",
         "export": "modelAdaptersPlugin",
-        "apiRange": "^1.4.0",
+        "apiRange": "^2.0.0",
         "inject": [
-          "modelAdapters"
+          "providers"
         ]
       }
     ]

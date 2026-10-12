@@ -86,7 +86,11 @@ describe('API-key provider registry', () => {
     'constructs official %s adapters for %s through the public factory and credential path',
     async (mode, model) => {
       const definitions: ModelAdapter[] = []
-      modelAdaptersPlugin.apply({ modelAdapters: { register: (adapter) => definitions.push(adapter) } })
+      modelAdaptersPlugin.apply({
+        providers: {
+          register: (_kind: unknown, _source: unknown, adapter: ModelAdapter) => definitions.push(adapter),
+        },
+      } as unknown as import('@agnes/extension-api').ProviderPluginContext)
       const configs = await createApiKeyProviderConfigs()
       const legacy = await createApiKeyProviderAdapters()
       expect(configs.map((config) => ({ id: config.id, routes: config.routes }))).toEqual(

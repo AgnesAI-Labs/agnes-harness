@@ -30,7 +30,7 @@ const manifest = (extra: Record<string, unknown> = {}): ExtensionManifest =>
   ({
     id: ID,
     version: '0.1.0',
-    apiRange: '^1.0',
+    apiRange: '^2.0.0',
     entry: './index.js',
     capabilities: { tools: { prefix: '', names: ['grep', 'find'] }, hooks: ['shutdown'], ...extra },
   }) as ExtensionManifest
@@ -449,7 +449,7 @@ const fullManifest = (budget?: number): ExtensionManifest =>
   ({
     id: ID,
     version: '0.1.0',
-    apiRange: '^1.0',
+    apiRange: '^2.0.0',
     entry: './index.js',
     capabilities: {
       tools: { prefix: '', names: ['grep', 'find'] },

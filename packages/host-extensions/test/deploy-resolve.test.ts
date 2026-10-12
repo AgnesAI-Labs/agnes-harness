@@ -17,7 +17,7 @@ import { pluginRowSource } from '../src/ext-host/row-extension-host.js'
 const id = 'acme/dashboard',
   rowId = 'ext:acme/backend',
   ext = pluginRowSource(rowId)
-const plugins = [{ apiRange: '^1.4.0', id: rowId, export: 'main', services: ['data.read', 'other.read'] }]
+const plugins = [{ apiRange: '^2.0.0', id: rowId, export: 'main', services: ['data.read', 'other.read'] }]
 const grant = { extension: ext, name: 'data.read', range: '^1.0' }
 const instance = {
   package: id,
@@ -30,7 +30,7 @@ const instance = {
 }
 const descriptor = {
   id: 'dashboard',
-  apiRange: '^1.0',
+  apiRange: '^2.0.0',
   artifact: { kind: 'node', entry: './dist/server.js' },
   healthPath: '/health',
   requires: { services: [grant] },

@@ -6,14 +6,13 @@ import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { Plugin } from '@agnes/cordis'
 import { type Event, type Provider, scanAll } from '@agnes/core'
-import type { LoopPluginContext } from '@agnes/extension-api'
+import type { ProviderPluginContext } from '@agnes/extension-api'
 import {
   type LoopContext,
   type LoopFactory,
   type LoopStepOutcome,
   loopCheckpointCodec,
   loopShouldStop,
-  registerLoopPlugin,
   type ToolResult,
 } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -128,7 +127,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
             {
               export: 'main',
               id: `ext:${id}/main`,
-              apiRange: '^1.4.0',
+              apiRange: '^2.0.0',
               default: true,
               inject: Object.keys(entry.inject),
               provide: entry.provides,
@@ -303,16 +302,16 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
                 declaration: {
                   export: 'authorLoop',
                   id: 'loop:author.invoke',
-                  apiRange: '^1.4.0',
+                  apiRange: '^2.0.0',
                   default: true,
-                  inject: ['loops'],
+                  inject: ['providers'],
                   provide: [],
                   runtime: 'in-process',
                 },
                 entry: normalizePluginExport({
-                  inject: ['loops'],
-                  apply(ctx: LoopPluginContext) {
-                    registerLoopPlugin(ctx, '@agnes/code', toolLoop)
+                  inject: ['providers'],
+                  apply(ctx: ProviderPluginContext) {
+                    ctx.providers.register('loop', '@agnes/code', toolLoop)
                   },
                 }),
               },

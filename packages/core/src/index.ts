@@ -46,10 +46,8 @@ export type {
 export { canTransitionChildState, isTerminalChildState } from '@agnes/core-child-control/child/types'
 export { defaultIds } from '@agnes/core-common/ids'
 export {
-  type LoopPluginContext,
   LoopRegistry,
   loopKey,
-  registerLoopPlugin,
 } from '@agnes/core-common/loop/registry'
 export { canonicalJson, sha256Hex, utf8 } from '@agnes/core-common/request/hash'
 export type {

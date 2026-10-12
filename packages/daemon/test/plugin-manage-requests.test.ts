@@ -29,7 +29,7 @@ const files = [
       exports: './index.mjs',
       license: 'Apache-2.0',
       agnes: {
-        plugins: [{ apiRange: '^1.4.0', id: 'ext:test-plugin/main', export: 'main', inject: ['extension'] }],
+        plugins: [{ apiRange: '^2.0.0', id: 'ext:test-plugin/main', export: 'main', inject: ['extension'] }],
       },
     }),
   },

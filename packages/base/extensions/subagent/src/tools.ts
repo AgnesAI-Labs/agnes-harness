@@ -6,15 +6,15 @@ import {
   externalChildren,
   IN_PROCESS_CHILD_PROVIDER_ID,
 } from '@agnes/core'
-import {
-  type ChildAgentAllowlistConfig,
-  type ChildAgentListing,
-  type ChildAgentToolFilter,
-  defineTool,
-  type ToolContext,
-  type ToolDef,
-  type ToolResult,
+import type {
+  ChildAgentAllowlistConfig,
+  ChildAgentListing,
+  ChildAgentToolFilter,
+  ToolContext,
+  ToolDef,
+  ToolResult,
 } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import type { JsonValue } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import type { WorktreeFinishResult, WorktreeManager } from './worktree.js'
@@ -174,7 +174,7 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
     isConcurrencySafe: true,
     isOpenWorld: true,
     replay: 'never',
-    costHint: undefined,
+
     deferLoading: false,
     requiresApproval: 'never',
   },
@@ -239,7 +239,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
       isConcurrencySafe: true,
       isOpenWorld: true,
       replay: 'never',
-      costHint: undefined,
+
       deferLoading: false,
       requiresApproval: 'never',
     },
@@ -367,7 +367,7 @@ export const listSubagentModelsTool = defineTool({
     isOpenWorld: false,
     replay: 'safe',
     requiresApproval: 'never',
-    costHint: undefined,
+
     deferLoading: false,
   },
   async execute(_args, ctx) {
@@ -405,7 +405,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       isConcurrencySafe: true,
       isOpenWorld: false,
       replay: 'safe',
-      costHint: undefined,
+
       deferLoading: false,
       requiresApproval: 'never',
     },
@@ -456,7 +456,7 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
       isConcurrencySafe: true,
       isOpenWorld: false,
       replay: 'never',
-      costHint: undefined,
+
       deferLoading: false,
       requiresApproval: 'never',
     },
@@ -483,7 +483,7 @@ const controlMeta = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'never' as const,
-  costHint: undefined,
+
   deferLoading: false,
   requiresApproval: 'never' as const,
 }

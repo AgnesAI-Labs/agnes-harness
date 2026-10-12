@@ -24,6 +24,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
-    "@agnes/loop-default": "workspace:*"
+    "@agnes/loop-default": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*"
   }
 }

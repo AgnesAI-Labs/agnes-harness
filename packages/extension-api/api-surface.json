@@ -1,5 +1,5 @@
 {
-  "apiVersion": "1.6.0",
+  "apiVersion": "2.0.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
@@ -51,7 +51,6 @@
     "definePersistenceProvider",
     "defineProviderKind",
     "defineServiceKind",
-    "defineTool",
     "extEventType",
     "isExtensionError",
     "isJsonPayload",
@@ -65,7 +64,6 @@
     "persistenceRegisterKey",
     "providerRestartRequired",
     "redactPluginConfig",
-    "registerLoopPlugin",
     "resolveToolCallPolicy",
     "sandboxUnavailable",
     "satisfiesApiRange",

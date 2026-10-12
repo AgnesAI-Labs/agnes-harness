@@ -94,8 +94,12 @@ describe('sandbox providers', () => {
   it('catalogs the local provider and refuses a second id until restart', async () => {
     const root = new Context()
     const registry = installSandboxProviders(root)
-    registry.register(createLocalSandboxProvider(createExec(), process.platform))
-    registry.register(box('box'))
+    root.providers.register(
+      'sandbox',
+      '@agnes/host',
+      createLocalSandboxProvider(createExec(), process.platform),
+    )
+    root.providers.register('sandbox', '@agnes/host', box('box'))
     expect(registry.catalog().map((entry) => entry.id)).toEqual(['box', LOCAL_SANDBOX_PROVIDER_ID])
     expect(registry.catalog().every((entry) => entry.restartRequired)).toBe(true)
     expect(
@@ -105,7 +109,9 @@ describe('sandbox providers', () => {
       fsWrite: [],
       available: true,
     })
-    expect(() => registry.register(box('box'))).toThrow(/duplicate sandbox provider/)
+    expect(() => root.providers.register('sandbox', '@agnes/host', box('box'))).toThrow(
+      /duplicate sandbox provider/,
+    )
     const selected = await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: cwd })
     expect(selected.id).toBe(LOCAL_SANDBOX_PROVIDER_ID)
     expect(await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: cwd })).toBe(selected)
@@ -184,7 +190,7 @@ describe('sandbox providers', () => {
     const slot: SandboxProviderSlot = {}
     const root = new Context()
     slot.registry = installSandboxProviders(root)
-    slot.registry.register(box('box', false))
+    root.providers.register('sandbox', '@agnes/host', box('box', false))
     const id = await bindStartupSandboxProvider(slot, { sandbox: { provider: 'box' } }, cwd, false)
     expect(id).toBe('box')
     const dispatch = createSandboxDispatchExec(wrapped, slot)
@@ -205,7 +211,7 @@ describe('sandbox providers', () => {
       resolveExit = resolve
     })
     const provider = box('box')
-    registry.register({
+    root.providers.register('sandbox', '@agnes/host', {
       ...provider,
       capabilities: { ...provider.capabilities, enforcement },
       create(config) {
@@ -364,7 +370,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'loop:agnes.default',
                 export: 'defaultLoopPlugin',
-                apiRange: '^1.4.0',
+                apiRange: '^2.0.0',
                 default: true,
                 inject: ['loops'],
                 provide: [],
@@ -376,7 +382,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'tool-policy:default',
                 export: 'toolPolicyPlugin',
-                apiRange: '^1.4.0',
+                apiRange: '^2.0.0',
                 default: true,
                 inject: ['providers'],
                 provide: [],

@@ -48,7 +48,7 @@ export function renderToolsMetaDoc(input: {
   const optional = input.keys.includes('isPresentational')
     ? '\n`isPresentational` is optional. Omitting it means the tool is not presentational.\n'
     : ''
-  return `${header('tooldef.json')}# Tool metadata\n\nAll eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META.\n${optional}\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
+  return `${header('tooldef.json')}# Tool metadata\n\nThe five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld, replay) must be present. Optional costHint, deferLoading and requiresApproval default to no estimate, initial discovery and approval inferred from isDestructive. Import readOnlyTool / writeTool presets from @agnes/plugin-runtime and override fields for your contract.\n${optional}\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
 }
 type Schema = {
   description?: string
@@ -112,7 +112,16 @@ export function generateAll(): Record<string, string> {
       return [name, schemaSummary(slots, 'slots.json', mapping.payload)]
     }),
   ) as Record<SlotName, string>
-  const documentedMetaKeys = [...TOOL_META_KEYS, 'isPresentational']
+  const documentedMetaKeys = [
+    ...TOOL_META_KEYS,
+    'costHint',
+    'deferLoading',
+    'requiresApproval',
+    'isPresentational',
+    'modelVisible',
+    'requiresImageInput',
+    'paths',
+  ]
   const descriptionsMeta = Object.fromEntries(
     documentedMetaKeys.map((key) => [key, tools.$defs.ToolMeta?.properties?.[key]?.description ?? '']),
   )

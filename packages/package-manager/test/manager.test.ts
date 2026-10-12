@@ -112,7 +112,7 @@ describe('PackageManager lifecycle', () => {
       JSON.stringify({
         id: 'acme/legacy',
         version: '1.0.0',
-        apiRange: '^1.0',
+        apiRange: '^2.0.0',
         entry: './index.js',
         capabilities: { tools: { prefix: 'legacy_', names: ['legacy_echo'] } },
       }),
@@ -279,7 +279,7 @@ describe('PackageManager project trust', () => {
       JSON.stringify({
         id: 'xinwei/sales-analysis',
         version: '1.0.0',
-        apiRange: '^1.0',
+        apiRange: '^2.0.0',
         entry: './index.ts',
         capabilities: { tools: { prefix: 'xw_', names: ['xw_analyze'] } },
       }),

@@ -129,7 +129,6 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "recoverCreatingChildAttempts",
   "reduce",
   "registerKey",
-  "registerLoopPlugin",
   "replacementFor",
   "resetChildAgentAllowlists",
   "resolveValidatedToolCallPolicy",

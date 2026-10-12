@@ -130,7 +130,7 @@ function setup(
     originFor(name, rowId)
     const fiber = root.plugin({
       name,
-      inject: ['extension'],
+      inject: ['extension', 'tools'],
       async apply(ctx: any) {
         await apply(ctx, ctx.extension())
       },
@@ -164,7 +164,7 @@ describe('community service author facade', () => {
       grants: () => ({ events: false, projections: [] }),
     }
     let api!: PluginExtensionAPI
-    const mounted = await t.mount('reviewer', 'ext:acme/reviewer', (_ctx, agnes) => {
+    const mounted = await t.mount('reviewer', 'ext:acme/reviewer', (ctx, agnes) => {
       api = agnes
       agnes.providers.register(kind, { id: 'review', version: '1.0.0', open: () => ({}) })
     })
@@ -197,10 +197,10 @@ describe('plugin Skill install request port', () => {
     const t = setup({}, bridge)
     t.host.activate(t.activation)
     let escaped: SkillInstallPort | undefined
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('install_skill'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           escaped = ctx.skillInstall
           await ctx.skillInstall!.request({ action: 'status', proposalId: 'proposal' })
           return { content: [] }
@@ -229,10 +229,10 @@ describe('plugin Skill install request port', () => {
     const bridge = vi.fn<SkillInstallBridge>()
     const t = setup({}, bridge)
     t.host.activate(t.activation)
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('install_skill'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           await ctx.skillInstall!.request({ action: 'status', proposalId: 'proposal' })
           return { content: [] }
         },
@@ -258,10 +258,10 @@ describe('plugin MCP management request port', () => {
     const t = setup({}, undefined, bridge)
     t.host.activate(t.activation)
     let escaped: NonNullable<import('@agnes/extension-api').ToolContext['mcpManage']> | undefined
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_mcp'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           escaped = ctx.mcpManage
           if (!ctx.mcpManage) throw new Error('Missing MCP port')
           await ctx.mcpManage.request({ action: 'status', proposalId: 'proposal' })
@@ -305,10 +305,10 @@ describe('plugin MCP management request port', () => {
     }
     const t = setup({}, undefined, bridge)
     t.host.activate(t.activation)
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_mcp'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           if (!ctx.mcpManage) throw new Error('Missing MCP port')
           await ctx.mcpManage.request({ action: 'list' })
           return { content: [] }
@@ -333,10 +333,10 @@ describe('plugin MCP management request port', () => {
     const bridge = vi.fn<import('../../src/resources/mcp-manage-port.js').McpManageBridge>()
     const t = setup({}, undefined, bridge)
     t.host.activate(t.activation)
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_mcp'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           if (!ctx.mcpManage) throw new Error('Missing MCP port')
           await ctx.mcpManage.request({ action: 'status', proposalId: 'proposal' })
           return { content: [] }
@@ -367,10 +367,10 @@ describe('plugin plugin management request port', () => {
     const t = setup({}, undefined, undefined, bridge)
     t.host.activate(t.activation)
     let escaped: NonNullable<import('@agnes/extension-api').ToolContext['pluginManage']> | undefined
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_plugin'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           escaped = ctx.pluginManage
           if (!ctx.pluginManage) throw new Error('Missing plugin port')
           await ctx.pluginManage.request({ action: 'status', proposalId: 'proposal' })
@@ -414,10 +414,10 @@ describe('plugin plugin management request port', () => {
     }
     const t = setup({}, undefined, undefined, bridge)
     t.host.activate(t.activation)
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_plugin'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           if (!ctx.pluginManage) throw new Error('Missing plugin port')
           await ctx.pluginManage.request({ action: 'list' })
           return { content: [] }
@@ -442,10 +442,10 @@ describe('plugin plugin management request port', () => {
     const bridge = vi.fn<import('../../src/resources/plugin-manage-port.js').PluginManageBridge>()
     const t = setup({}, undefined, undefined, bridge)
     t.host.activate(t.activation)
-    const fiber = await t.mount('installer', 'ext:acme/installer', (_ctx, agnes) => {
-      agnes.registerTool({
+    const fiber = await t.mount('installer', 'ext:acme/installer', (ctx, agnes) => {
+      ctx.tools.register({
         ...tool('manage_plugin'),
-        async execute(_args, ctx) {
+        async execute(_args: unknown, ctx: import('@agnes/extension-api').ToolContext) {
           if (!ctx.pluginManage) throw new Error('Missing plugin port')
           await ctx.pluginManage.request({ action: 'status', proposalId: 'proposal' })
           return { content: [] }
@@ -479,8 +479,8 @@ describe('registration and wind-down', () => {
   it('registers a tool and an observe hook and lists the row', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       agnes.on('session_start', () => {})
     })
     await tick()
@@ -505,8 +505,8 @@ describe('registration and wind-down', () => {
   it('winds a row down in four steps when it unmounts', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       agnes.on('shutdown', () => {})
     })
     const source = pluginRowSource('ext:acme/a')
@@ -528,8 +528,8 @@ describe('registration and wind-down', () => {
     const t = setup()
     t.host.activate(t.activation)
     t.kernel.leak.add('tool_a')
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
     })
     await fiber.dispose()
     await tick()
@@ -547,10 +547,10 @@ describe('registration and wind-down', () => {
     let lateCtx: any
     await t.mount('row-old', 'ext:acme/a', (ctx, agnes) => {
       lateCtx = ctx
-      agnes.registerTool(tool('tool_a') as never)
+      ctx.tools.register(tool('tool_a') as never)
     })
-    await t.mount('row-new', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    await t.mount('row-new', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
     })
     await t.host.settled()
     // The outgoing tree's row is still mounted and asks again, for instance from a timer.
@@ -563,13 +563,13 @@ describe('registration and wind-down', () => {
   it('evicts an incumbent with the same row id before the newcomer registers', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    const first = await t.mount('row-old', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    const first = await t.mount('row-old', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       agnes.on('session_start', () => {})
     })
     // A candidate tree mounts the same row while the old one is still live: same names, no clash.
-    await t.mount('row-new', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    await t.mount('row-new', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       agnes.on('session_start', () => {})
     })
     await t.host.settled()
@@ -588,8 +588,8 @@ describe('registration and wind-down', () => {
   it('rebuilds its registrations when the row restarts', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
     })
     await fiber.restart()
     await tick()
@@ -603,8 +603,8 @@ describe('registration and wind-down', () => {
     const t = setup()
     t.host.activate(t.activation)
     let dispose: (() => void) | undefined
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      dispose = agnes.registerTool(tool('tool_a') as never) as () => void
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      dispose = ctx.tools.register(tool('tool_a') as never) as () => void
     })
     await fiber.dispose()
     await tick()
@@ -623,7 +623,7 @@ describe('who may call ctx.extension()', () => {
     t.originFor('row-b', 'ext:agnes/x', 'builtin')
     const fiber = t.root.plugin({
       name: 'row-b',
-      inject: ['extension'],
+      inject: ['extension', 'tools'],
       apply(ctx: Context) {
         try {
           ask(ctx)
@@ -637,7 +637,7 @@ describe('who may call ctx.extension()', () => {
     let unattested: unknown
     const other = t.root.plugin({
       name: 'no-origin',
-      inject: ['extension'],
+      inject: ['extension', 'tools'],
       apply(ctx: Context) {
         try {
           ask(ctx)
@@ -658,7 +658,7 @@ describe('who may call ctx.extension()', () => {
       seen.push(agnes, ctx.extension())
       const child = ctx.plugin({
         name: 'child',
-        inject: ['extension'],
+        inject: ['extension', 'tools'],
         apply(childCtx: any) {
           seen.push(childCtx.extension())
         },
@@ -677,7 +677,7 @@ describe('fixed rules', () => {
     const t = setup()
     t.host.activate(t.activation)
     const codes: Record<string, string> = {}
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
       const api = agnes as unknown as Record<string, (...a: unknown[]) => unknown>
       const attempt = (label: string, run: () => unknown) => {
         try {
@@ -721,13 +721,13 @@ describe('fixed rules', () => {
   it('refuses registration once the row is gone', async () => {
     const t = setup()
     t.host.activate(t.activation)
-    let api: PluginExtensionAPI | undefined
-    const row = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      api = agnes
+    let register: ((def: import('@agnes/extension-api').ToolDef) => unknown) | undefined
+    const row = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      register = (def) => ctx.tools.register(def)
     })
     await row.dispose()
     await tick()
-    expect(() => api?.registerTool(tool('late') as never)).toThrow(/closed|revoked/)
+    expect(() => register?.(tool('late'))).toThrow(/closed|revoked|inactive/)
     expect(t.kernel.tools.size).toBe(0)
   })
 
@@ -737,17 +737,17 @@ describe('fixed rules', () => {
     })
     t.host.activate(t.activation)
     let outsider: unknown
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
       try {
-        agnes.registerTool(tool('grep') as never)
+        ctx.tools.register(tool('grep') as never)
       } catch (error) {
         outsider = error
       }
     })
     expect((outsider as { code: string }).code).toBe('E_CAPABILITY_UNDECLARED')
     expect(t.kernel.tools.has('grep')).toBe(false)
-    await t.mount('row-b', 'ext:agnes/tools-search', (_ctx, agnes) => {
-      agnes.registerTool(tool('grep') as never)
+    await t.mount('row-b', 'ext:agnes/tools-search', (ctx, agnes) => {
+      ctx.tools.register(tool('grep') as never)
     })
     expect(t.kernel.tools.get('grep')).toBe(pluginRowSource('ext:agnes/tools-search'))
     expect(t.host.replacedBy('agnes/tools-search')).toBe(pluginRowSource('ext:agnes/tools-search'))
@@ -756,11 +756,11 @@ describe('fixed rules', () => {
   it('stamps ledger events with the Host-chosen source and needs a live kernel', async () => {
     const t = setup()
     let appended: Promise<unknown> | undefined
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
       expect(() => agnes.events.append('note', { a: 1 })).toThrow(/no active session/)
     })
     t.host.activate(t.activation)
-    await t.mount('row-b', 'ext:acme/b', (_ctx, agnes) => {
+    await t.mount('row-b', 'ext:acme/b', (ctx, agnes) => {
       appended = agnes.events.append('note', { a: 1 })
     })
     await appended
@@ -773,8 +773,8 @@ describe('fixed rules', () => {
 describe('before the kernel exists', () => {
   it('keeps registrations back and lists nothing until the kernel is up', async () => {
     const t = setup()
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       agnes.on('session_start', () => {})
     })
     expect(t.kernel.tools.size).toBe(0)
@@ -794,12 +794,12 @@ describe('before the kernel exists', () => {
 
   it('drops what a row cancelled or unmounted while waiting', async () => {
     const t = setup()
-    const fiber = await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('cancelled') as never)()
-      agnes.registerTool(tool('kept') as never)
+    const fiber = await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('cancelled') as never)()
+      ctx.tools.register(tool('kept') as never)
     })
-    const other = await t.mount('row-b', 'ext:acme/b', (_ctx, agnes) => {
-      agnes.registerTool(tool('gone') as never)
+    const other = await t.mount('row-b', 'ext:acme/b', (ctx, agnes) => {
+      ctx.tools.register(tool('gone') as never)
     })
     await other.dispose()
     t.host.activate(t.activation)
@@ -809,9 +809,9 @@ describe('before the kernel exists', () => {
 
   it('reports a waiting registration that turns out to be refused, without failing the Host', async () => {
     const t = setup({ reservedTool: (name) => name === 'grep' })
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('grep') as never)
-      agnes.registerTool(tool('fine') as never)
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('grep') as never)
+      ctx.tools.register(tool('fine') as never)
     })
     expect(() => t.host.activate(t.activation)).not.toThrow()
     expect([...t.kernel.tools.keys()]).toEqual(['fine'])
@@ -828,11 +828,11 @@ describe('replacing a governance builtin', () => {
   it('needs every hook the builtin declared', async () => {
     const t = setup({ governance })
     t.host.activate(t.activation)
-    await t.mount('row-a', 'ext:agnes/privacy', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:agnes/privacy', (ctx, agnes) => {
       agnes.on('session_start', () => {})
     })
     expect(() => t.host.assertReplacements([row('@acme/tools@snap/plugin')], t.root)).toThrow(/shutdown/)
-    await t.mount('row-b', 'ext:agnes/privacy', (_ctx, agnes) => {
+    await t.mount('row-b', 'ext:agnes/privacy', (ctx, agnes) => {
       agnes.on('session_start', () => {})
       agnes.on('shutdown', () => {})
     })
@@ -850,7 +850,7 @@ describe('replacing a governance builtin', () => {
   it('does not credit a candidate with what a row of another tree registered', async () => {
     const t = setup({ governance })
     t.host.activate(t.activation)
-    await t.mount('row-a', 'ext:agnes/privacy', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:agnes/privacy', (ctx, agnes) => {
       agnes.on('session_start', () => {})
       agnes.on('shutdown', () => {})
     })
@@ -865,7 +865,7 @@ describe('replacing a governance builtin', () => {
   it('stops counting a hook the row released again', async () => {
     const t = setup({ governance })
     t.host.activate(t.activation)
-    await t.mount('row-a', 'ext:agnes/privacy', (_ctx, agnes) => {
+    await t.mount('row-a', 'ext:agnes/privacy', (ctx, agnes) => {
       agnes.on('session_start', () => {})
       const release = agnes.on('shutdown', () => {}) as unknown as () => void
       release()
@@ -889,10 +889,10 @@ describe('replacing a governance builtin', () => {
   it('inherits the replaced builtin’s fixed hookRank; an ordinary third-party row id gets none', async () => {
     const t = setup({ governance })
     t.host.activate(t.activation)
-    await t.mount('row-privacy', 'ext:agnes/privacy', (_ctx, agnes) => {
+    await t.mount('row-privacy', 'ext:agnes/privacy', (ctx, agnes) => {
       agnes.on('session_start', () => {})
     })
-    await t.mount('row-other', 'ext:acme/other', (_ctx, agnes) => {
+    await t.mount('row-other', 'ext:acme/other', (ctx, agnes) => {
       agnes.on('session_start', () => {})
     })
     const [privacyEntry, otherEntry] = t.kernel.hooks
@@ -958,8 +958,8 @@ describe('an installed row that throws', () => {
     const t = setup()
     t.host.activate(t.activation)
     const failing = vi.fn()
-    await t.mount('row-a', 'ext:acme/a', (_ctx, agnes) => {
-      agnes.registerTool(tool('tool_a') as never)
+    await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
+      ctx.tools.register(tool('tool_a') as never)
       failing()
       throw new Error('boom')
     })

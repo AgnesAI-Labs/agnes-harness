@@ -10,16 +10,16 @@ import {
   replayModelFixture,
   ScriptedProvider,
 } from '@agnes/host/author-testkit'
-import type { Context, LoopPluginContext } from '@agnes/plugin-runtime'
+import type { Context, ProviderPluginContext } from '@agnes/plugin-runtime'
 import { defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
 import { describe, expect, it } from 'vitest'
 import { fixtureTool } from './fixtures/tool.js'
 
 function plugin(version: string, approval = false, wait?: (signal: AbortSignal) => Promise<void>) {
   return defineAgnesPlugin({
-    inject: ['extension'],
+    inject: ['tools'],
     apply(ctx: Context) {
-      ctx.extension().registerTool({
+      ctx.tools.register({
         ...fixtureTool('version'),
         meta: { ...fixtureTool('version').meta, requiresApproval: approval ? 'always' : 'never' },
         async execute(_args, ctx) {
@@ -207,14 +207,14 @@ describe('public author testkit', () => {
       },
     })
     const main = {
-      inject: ['loops', 'skills'],
-      apply(ctx: LoopPluginContext) {
+      inject: ['providers', 'skills'],
+      apply(ctx: Context) {
         ctx.skills.register({
           name: 'author-model',
           description: 'Synthetic model instructions',
           body: 'Offline business fixture',
         })
-        ctx.effect(() => ctx.loops.register('@author/plugin', loop))
+        ctx.providers.register('loop', '@author/plugin', loop)
       },
     }
     try {
@@ -300,9 +300,9 @@ describe('public author testkit', () => {
       version: '1.0.0',
       loop,
       plugin: {
-        inject: ['loops'],
-        apply(ctx: LoopPluginContext) {
-          ctx.effect(() => ctx.loops.register('@author/plugin', loop))
+        inject: ['providers'],
+        apply(ctx: Context) {
+          ctx.providers.register('loop', '@author/plugin', loop)
         },
       },
     })

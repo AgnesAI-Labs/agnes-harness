@@ -172,7 +172,7 @@
   },
   {
     "path": "packages/extension-api/src/plugin-extension.ts",
-    "includes": ["registerHook: ExtensionAPI['registerHook']", "registerTool: ExtensionAPI['registerTool']"]
+    "includes": ["registerHook: ExtensionAPI['registerHook']"]
   },
   {
     "path": "packages/extension-api/src/loop.ts",

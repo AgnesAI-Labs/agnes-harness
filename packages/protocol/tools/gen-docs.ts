@@ -57,7 +57,7 @@ export function renderToolsMetaDoc(): string {
   const props = meta.properties as Record<string, Record<string, unknown>>
   let md =
     '# ToolDef meta\n\nGenerated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.\n\n' +
-    'Eight keys are required: `isReadOnly`, `isDestructive`, `isConcurrencySafe`, `isOpenWorld`, `replay`, `costHint`, `deferLoading`, and `requiresApproval`. `isPresentational` and `paths` are optional.\n\n'
+    'Five keys are required: `isReadOnly`, `isDestructive`, `isConcurrencySafe`, `isOpenWorld` and `replay`. Other fields are optional; omitted costHint, deferLoading and requiresApproval mean no estimate, initial discovery and approval inferred from isDestructive.\n\n'
   md += '| key | shape | meaning and consumer |\n|---|---|---|\n'
   for (const k of Object.keys(props)) {
     const { description, ...shape } = props[k] as Record<string, unknown>

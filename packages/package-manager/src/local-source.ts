@@ -70,14 +70,14 @@ export function stageLocalPlugin(candidate: LocalPluginCandidate, stage: string)
         agnes: {
           kinds: ['tool'],
           plugins: [
-            { apiRange: '^1.4.0', export: 'main', id: `ext:${candidate.name}/main`, inject: ['extension'] },
+            { apiRange: '^2.0.0', export: 'main', id: `ext:${candidate.name}/main`, inject: ['tools'] },
           ],
         },
       }),
     )
     writeFileSync(
       join(stage, '.agnes-local-entry.mjs'),
-      `import * as author from ${JSON.stringify(`./${entry}`)}\nimport { defineAgnesPlugin } from "@agnes/plugin-runtime"\nconst value = author.default ?? author.main\nexport const main = value && typeof value.execute === "function"\n  ? defineAgnesPlugin({ inject: ["extension"], apply(ctx) {\n      const unregister = ctx.extension().registerTool(value)\n      ctx.effect(() => () => unregister())\n    } })\n  : value\n`,
+      `import * as author from ${JSON.stringify(`./${entry}`)}\nimport { defineAgnesPlugin } from "@agnes/plugin-runtime"\nconst value = author.default ?? author.main\nexport const main = value && typeof value.execute === "function"\n  ? defineAgnesPlugin({ inject: ["tools"], apply(ctx) {\n      ctx.tools.register(value)\n    } })\n  : value\n`,
     )
   }
   const pkg = readStaticJson(join(stage, 'package.json'))

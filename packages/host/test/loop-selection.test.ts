@@ -10,9 +10,8 @@ import {
   type ChildAgentStartOptions,
   type LoopContext,
   type LoopFactory,
-  type LoopPluginContext,
   loopCheckpointCodec,
-  registerLoopPlugin,
+  type ProviderPluginContext,
 } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
@@ -60,8 +59,8 @@ async function fixture(
             {
               export: 'main',
               id: 'loop:children',
-              apiRange: '^1.4.0',
-              inject: ['loops', 'childAgents'],
+              apiRange: '^2.0.0',
+              inject: ['providers'],
               runtime: 'in-process',
             },
           ],
@@ -421,11 +420,11 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
   }
   const f = await fixture(true, false, {
     main: {
-      inject: ['loops', 'childAgents'],
-      apply(ctx: LoopPluginContext & ChildAgentPluginContext) {
+      inject: ['providers', 'childAgents'],
+      apply(ctx: ProviderPluginContext & ChildAgentPluginContext) {
         registry = ctx.childAgents
-        registerLoopPlugin(ctx, 'acme/child-loop', loop)
-        ctx.childAgents.register(provider)
+        ctx.providers.register('loop', 'acme/child-loop', loop)
+        ctx.providers.register('child-agent', 'acme/child-loop', provider)
         for (const key of ['loop-parent', 'other-parent'])
           ctx.childAgents.setSessionAllowlist(key, { providers: ['public-fixture'], models: ['fast'] })
       },

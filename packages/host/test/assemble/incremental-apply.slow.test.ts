@@ -40,10 +40,10 @@ describe('incremental apply on the live tree', () => {
   })
 
   it('a newly installed version is importable', async () => {
-    let installed = [source(A, V1, `agnes.registerTool(tool('a_tool'))`)]
+    let installed = [source(A, V1, `ctx.tools.register(tool('a_tool'))`)]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
-    installed = [source(A, V2, `agnes.registerTool(tool('a_tool'))`), ...installed]
+    installed = [source(A, V2, `ctx.tools.register(tool('a_tool'))`), ...installed]
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V2)]))
     await settle()
     expect(toolNames(h)).toContain('a_tool')
@@ -52,14 +52,14 @@ describe('incremental apply on the live tree', () => {
 
   it('upgrading A leaves B untouched', async () => {
     let installed = [
-      source(A, V1, `${counter('a')}; agnes.registerTool(tool('a_tool'))`),
-      source(B, V1, `${counter('b')}; agnes.registerTool(tool('b_tool'))`),
+      source(A, V1, `${counter('a')}; ctx.tools.register(tool('a_tool'))`),
+      source(B, V1, `${counter('b')}; ctx.tools.register(tool('b_tool'))`),
     ]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1), rowOf(B, V1)]))
     await settle()
     const before = runs('b')
-    installed = [source(A, V2, `${counter('a')}; agnes.registerTool(tool('a_tool'))`), ...installed]
+    installed = [source(A, V2, `${counter('a')}; ctx.tools.register(tool('a_tool'))`), ...installed]
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V2), rowOf(B, V1)]))
     await settle()
     expect(runs('b')).toBe(before)
@@ -68,7 +68,7 @@ describe('incremental apply on the live tree', () => {
   })
 
   it('a failed upgrade rolls back to the old version of A', async () => {
-    let installed = [source(A, V1, `agnes.registerTool(tool('a_v1'))`)]
+    let installed = [source(A, V1, `ctx.tools.register(tool('a_v1'))`)]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
     await settle()
@@ -90,7 +90,7 @@ describe('incremental apply on the live tree', () => {
       globalThis.__runs['a_v1'] = (globalThis.__runs['a_v1'] ?? 0) + 1
       if (globalThis.__runs['a_v1'] === 2 || globalThis.__runs['a_v1'] === 3)
         throw new Error('a_v1 compensation attempt fails')
-      agnes.registerTool(tool('a_v1'))
+      ctx.tools.register(tool('a_v1'))
     `
     let installed = [source(A, V1, flakyBody)]
     const h = await livePluginHost(() => installed)
@@ -122,7 +122,7 @@ describe('incremental apply on the live tree', () => {
       globalThis.__runs['a_v1_hang'] = (globalThis.__runs['a_v1_hang'] ?? 0) + 1
       if (globalThis.__runs['a_v1_hang'] === 2 || globalThis.__runs['a_v1_hang'] === 3)
         await new Promise(() => undefined)
-      else agnes.registerTool(tool('a_v1'))
+      else ctx.tools.register(tool('a_v1'))
     `
     let installed = [source(A, V1, hangDuringCompensation)]
     const h = await livePluginHost(() => installed, { startTimeoutMs: 1_500 })
@@ -140,7 +140,7 @@ describe('incremental apply on the live tree', () => {
   }, 20_000)
 
   it('an untrusted package is not remounted when the delivery that removes it is rejected', async () => {
-    const a = source(A, V1, `agnes.registerTool(tool('a_tool'))`)
+    const a = source(A, V1, `ctx.tools.register(tool('a_tool'))`)
     let installed = [a]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
@@ -168,7 +168,7 @@ describe('incremental apply on the live tree', () => {
   })
 
   it('a hung mount times out, and a later builtin change and Host close do not hang', async () => {
-    let installed = [source(A, V1, `agnes.registerTool(tool('a_v1'))`)]
+    let installed = [source(A, V1, `ctx.tools.register(tool('a_v1'))`)]
     const h = await livePluginHost(() => installed, { startTimeoutMs: 200 })
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
     await settle()
@@ -197,8 +197,8 @@ describe('incremental apply on the live tree', () => {
 
   it('a failed delivery does not restart the rows it never touched', async () => {
     let installed = [
-      source(A, V1, `agnes.registerTool(tool('a_v1'))`),
-      source(B, V1, `${counter('b_failed')}; agnes.registerTool(tool('b_tool'))`),
+      source(A, V1, `ctx.tools.register(tool('a_v1'))`),
+      source(B, V1, `${counter('b_failed')}; ctx.tools.register(tool('b_tool'))`),
     ]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1), rowOf(B, V1)]))

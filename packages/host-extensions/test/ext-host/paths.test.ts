@@ -130,7 +130,7 @@ it('loads a real in-root linked module while rejecting an escaping module before
       JSON.stringify({
         id: `fixture/${id}`,
         version: '1.0.0',
-        apiRange: '^1.0',
+        apiRange: '^2.0.0',
         entry: './alias.mjs',
         capabilities: {},
       }),

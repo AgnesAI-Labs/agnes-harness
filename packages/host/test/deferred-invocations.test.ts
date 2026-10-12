@@ -315,18 +315,13 @@ it('leaves the default scheduler unchanged without a producing plugin and ignore
     } as unknown as LoopContext
     let factory: LoopFactory | undefined
     defaultLoopPlugin.apply({
-      loops: {
-        register: (_source, value) => {
+      providers: {
+        register: (_kind: unknown, _source: string, value: LoopFactory) => {
           factory = value
           return async () => undefined
         },
-        resolve: () => {
-          throw new Error('Not used')
-        },
-        catalog: () => [],
       },
-      effect: (callback) => callback(),
-    })
+    } as unknown as import('@agnes/extension-api').ProviderPluginContext)
     const driver = await factory!.create(bare)
     expect(await driver.step(signal)).toEqual({ outcome: 'idle', phase: 'idle' })
     await driver.dispose()
@@ -996,9 +991,9 @@ it.each(['allowed-once', 'rejected'] as const)(
     const root = await mkdtemp(join(tmpdir(), 'agnes-deferred-decision-'))
     const executions: string[] = []
     const plugin = defineAgnesPlugin({
-      inject: ['extension'],
+      inject: ['tools'],
       apply(ctx) {
-        ctx.extension().registerTool({
+        ctx.tools.register({
           ...fixtureTool('review_commit'),
           meta: { ...fixtureTool('review_commit').meta, requiresApproval: 'always' },
           async execute() {
@@ -1036,7 +1031,7 @@ it.each(['allowed-once', 'rejected'] as const)(
         version: '1.0.0',
         type: 'module',
         exports: './index.mjs',
-        agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', default: true, inject: ['extension'] }] },
+        agnes: { plugins: [{ export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools'] }] },
       }),
     )
     const source: RuntimePluginSnapshot = {

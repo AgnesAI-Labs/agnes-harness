@@ -1,4 +1,4 @@
-import type { ToolContext, ToolDef, ToolResult } from '@agnes/extension-api'
+import type { ToolContext, ToolDef, ToolMeta, ToolResult } from '@agnes/extension-api'
 import type { Static, TSchema } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 
@@ -40,3 +40,23 @@ export function toolError(message: string): { content: ToolResult['content']; is
 export function toolCancelled(signal: AbortSignal): never {
   throw signal.reason ?? new DOMException('Tool cancelled', 'AbortError')
 }
+
+/** Closed-world read: safe replay, concurrent execution, no approval by default. */
+export const readOnlyTool: Readonly<ToolMeta> = Object.freeze({
+  isReadOnly: true,
+  isDestructive: false,
+  isConcurrencySafe: true,
+  isOpenWorld: false,
+  replay: 'safe',
+  requiresApproval: 'never',
+})
+
+/** Closed-world write: serial execution, no replay, explicit approval. Override for your contract. */
+export const writeTool: Readonly<ToolMeta> = Object.freeze({
+  isReadOnly: false,
+  isDestructive: true,
+  isConcurrencySafe: false,
+  isOpenWorld: false,
+  replay: 'never',
+  requiresApproval: 'always',
+})

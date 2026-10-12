@@ -2,13 +2,13 @@ import { sanitize } from '@agnes/core'
 import {
   checkToolDef,
   type Disposer,
-  defineTool,
   type ExtensionAPI,
   TOOL_DESCRIPTION_MAX_LENGTH,
   TOOL_PARAMETERS_MAX_BYTES,
   type ToolDef,
   type ToolResult,
 } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
 import {

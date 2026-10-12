@@ -10,8 +10,6 @@ export type {
   CompactionEngine,
   CompactionEngineCatalogEntry,
   CompactionEngineInstance,
-  CompactionEnginePluginContext,
-  CompactionEngineRegistration,
   CompactionInput,
   CompactionModelPort,
   CompactionNode,
@@ -27,7 +25,6 @@ export { SLOT_TABLE } from './generated/slot-table.js'
 export * from './hooks.js'
 export * from './loop.js'
 export * from './loop-events.js'
-export * from './loop-plugin.js'
 export * from './manifest.js'
 export * from './memory.js'
 export * from './model-adapter.js'

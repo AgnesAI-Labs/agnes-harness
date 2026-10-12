@@ -61,10 +61,10 @@ export function pluginSourceWith(
       exports: './index.js',
       agnes: {
         plugins: exports.map((e) => ({
-          apiRange: '^1.4.0',
+          apiRange: '^2.0.0',
           export: e.exportName,
           id: e.rowId,
-          inject: ['extension'],
+          inject: ['extension', 'tools'],
         })),
       },
     })}\n`,
@@ -74,7 +74,7 @@ export function pluginSourceWith(
     `${TOOL_HELPER}\n${exports
       .map(
         (e) =>
-          `export const ${e.exportName} = { inject: ['extension'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = ctx.extension()\n'}${e.body}\n} }\n`,
+          `export const ${e.exportName} = { inject: ['extension', 'tools'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = ctx.extension()\n'}${e.body}\n} }\n`,
       )
       .join('')}`,
   )
@@ -118,7 +118,7 @@ export const pluginRow = (
     entryRevision: identity.snapshotId ?? SNAPSHOT_ID,
     extrasRevision: 'none',
     mountRevision: 'host-ordinary-row:v1',
-    inject: ['extension'],
+    inject: ['extension', 'tools'],
     ...(disabled ? { disabled } : {}),
   })
 

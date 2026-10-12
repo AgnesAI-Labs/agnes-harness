@@ -1,7 +1,4 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import fixture from '../examples/minimal/fixtures/basic.fixture.js'
-import sample from '../examples/minimal/index.js'
 import {
   checkManifest,
   checkToolDef,
@@ -12,7 +9,10 @@ import {
   type SlotFill,
   type ToolContext,
   type ToolDef,
-} from '../src/index.js'
+} from '@agnes/extension-api'
+import { describe, expect, it } from 'vitest'
+import fixture from '../examples/minimal/fixtures/basic.fixture.js'
+import sample from '../examples/minimal/index.js'
 
 const dir = new URL('../examples/minimal/', import.meta.url)
 
@@ -64,6 +64,7 @@ describe('minimal author example', () => {
     const source = readFileSync(new URL('index.ts', dir), 'utf8')
     expect([...source.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort()).toEqual([
       '@agnes/extension-api',
+      '@agnes/plugin-runtime',
       '@sinclair/typebox',
     ])
     expect(fixture.cases.map((c) => c.kind)).toEqual(['tool', 'slot', 'negative'])

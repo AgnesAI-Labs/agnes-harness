@@ -1,4 +1,5 @@
-import { defineExtension, defineTool, type ProjectionReader } from '@agnes/extension-api'
+import { defineExtension, type ProjectionReader } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { CONTINUE_PREFIX, type GoalState, goalProjection } from './state.js'
 

@@ -74,7 +74,7 @@ export type ModelAdapterCapabilities = Readonly<{
   streaming: boolean
 }>
 
-/** Register through an ordinary Cordis plugin that injects modelAdapters. */
+/** Register through an ordinary Cordis plugin that injects providers. */
 export interface ModelAdapterDefinition {
   readonly id: string
   readonly version: string
@@ -97,9 +97,3 @@ export type ModelAdapterCatalogEntry = Readonly<{
   sourcePackage: string
   capabilities: ModelAdapterCapabilities
 }>
-
-export interface ModelAdapterRegistration {
-  /** The disposer is also owned by the calling plugin fiber. Duplicate ids are refused. */
-  register(adapter: ModelAdapter): () => Promise<void>
-  catalog(): readonly ModelAdapterCatalogEntry[]
-}

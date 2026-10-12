@@ -1,4 +1,4 @@
-import { defineTool } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
 import type { ShellJobs } from './registry.js'
@@ -22,7 +22,6 @@ const meta = {
   replay: 'never' as const,
   costHint: {},
   deferLoading: false,
-  requiresApproval: undefined,
 }
 
 export function createPtyTools(jobs: ShellJobs) {

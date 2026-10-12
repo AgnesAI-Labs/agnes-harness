@@ -4,7 +4,6 @@ import type {
   CompactionEngine,
   CompactionEngineCatalogEntry,
   CompactionEngineInstance,
-  CompactionEngineRegistration,
 } from '@agnes/extension-api'
 import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -22,7 +21,7 @@ declare module '@agnes/cordis' {
   }
 }
 
-export class CompactionEngineRegistry extends Service implements CompactionEngineRegistration {
+export class CompactionEngineRegistry extends Service {
   private readonly registry: ProviderRegistry<CompactionEngine>
   private readonly records = new WeakMap<
     CompactionEngine,
@@ -54,11 +53,15 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
         },
         capabilities: () => ['budget', 'summarize'],
       }),
-      (owner, source, provider) => owner.compactionEngines.register(provider, source),
+      (owner, source, provider) => this.registerOwned(owner, provider, source),
     )
   }
 
-  register(engine: CompactionEngine, sourcePackage?: string): () => Promise<void> {
+  private registerOwned(
+    owner: Context,
+    engine: CompactionEngine,
+    sourcePackage?: string,
+  ): () => Promise<void> {
     const record = {
       id: engine.id,
       version: engine.version,
@@ -67,7 +70,7 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
         id: engine.id,
         version: engine.version,
         sourcePackage: providerSource(
-          this.ctx,
+          owner,
           this.origins,
           sourcePackage ?? '@agnes/base',
           sourcePackage !== undefined,
@@ -77,7 +80,7 @@ export class CompactionEngineRegistry extends Service implements CompactionEngin
     }
     this.registry.validate(record.entry.sourcePackage, engine)
     const wrapped: CompactionEngine = { ...engine, create: (signal) => this.createOwned(record, signal) }
-    const unregister = this.registry.register(record.entry.sourcePackage, wrapped, this.ctx, () =>
+    const unregister = this.registry.register(record.entry.sourcePackage, wrapped, owner, () =>
       record.lifetime.close(() => engine.cleanup?.()),
     )
     this.records.set(wrapped, record)
@@ -181,14 +184,14 @@ export function withBuiltinCompactionEngines(
           id: 'compaction-engine:default',
           export: 'compactionEnginePlugin',
           default: true,
-          inject: ['compactionEngines'],
+          inject: ['providers'],
           provide: [],
           runtime: 'in-process',
         },
         entry: normalizePluginExport({
-          inject: ['compactionEngines'],
+          inject: ['providers'],
           apply(ctx: Context) {
-            ctx.compactionEngines.register(defaultEngine)
+            ctx.providers.register('compaction', '@agnes/host-providers', defaultEngine)
           },
         }),
       },

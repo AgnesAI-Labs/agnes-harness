@@ -1698,7 +1698,7 @@ export class SessionImpl {
       state: this.op(),
       snapshot: toolsForModel(snapshot, computerUseAllowed),
       signal: this.ac.signal,
-      disclosed: toolNamesForModel(discloseTools(this), computerUseAllowed),
+      disclosed: toolNamesForModel(discloseTools(this), snapshot, computerUseAllowed),
       model: { slot: 'primary', ...target },
     }
   }

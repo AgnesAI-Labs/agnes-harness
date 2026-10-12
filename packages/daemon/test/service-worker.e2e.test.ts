@@ -296,7 +296,7 @@ describe('S5 service worker boundary', () => {
         agnes: {
           plugins: [
             {
-              apiRange: '^1.4.0',
+              apiRange: '^2.0.0',
               id: serviceRowId,
               export: 'main',
               services: [capability.name, effectCapability.name],
@@ -461,7 +461,7 @@ describe('S5 service worker boundary', () => {
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          plugins: [{ apiRange: '^1.4.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+          plugins: [{ apiRange: '^2.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
         },
       }),
     )
