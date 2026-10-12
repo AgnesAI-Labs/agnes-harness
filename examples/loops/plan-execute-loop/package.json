@@ -1,0 +1,40 @@
+{
+  "name": "@agnes-example/plan-execute-loop",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
+  "devDependencies": {
+    "@agnes/plugin-runtime": "workspace:*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example-plan-execute",
+        "export": "plugin",
+        "apiRange": "^2.0.0",
+        "default": true,
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Plan-Execute Loop",
+          "summary": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+          "description": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "计划-执行 Loop",
+              "summary": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。",
+              "description": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

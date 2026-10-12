@@ -86,6 +86,16 @@ importers:
         specifier: '*'
         version: link:../../../packages/extension-api
 
+  examples/loops/plan-execute-loop:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: '*'
+        version: link:../../../packages/extension-api
+    devDependencies:
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/plugin-runtime
+
   examples/loops/react-loop:
     dependencies:
       '@agnes/extension-api':
