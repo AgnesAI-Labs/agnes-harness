@@ -262,7 +262,12 @@ for (const locale of ['en', 'zh-CN'])
         await inspect('wizard-ready')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toBeHidden()
-        await expect(page.locator('#new-session[open]')).toHaveCount(0)
+        await expect(
+          page.getByRole('dialog', {
+            name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+            exact: true,
+          }),
+        ).toBeHidden()
         await inspect('selected-workspace')
         for (const viewport of viewports) {
           await page.setViewportSize(viewport)

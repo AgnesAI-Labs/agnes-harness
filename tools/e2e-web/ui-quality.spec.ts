@@ -82,7 +82,14 @@ for (const locale of ['zh-CN', 'en'])
         } else {
           await expect(page.locator('#settings')).toBeVisible()
           await page.waitForTimeout(1000)
-          if (await page.locator('#new-session[open]').count()) {
+          if (
+            await page
+              .getByRole('dialog', {
+                name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+                exact: true,
+              })
+              .isVisible()
+          ) {
             if (!workspace) throw new Error('Set AGH_UI_WORKSPACE to an isolated workspace for a fresh home')
             await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
               element.open = true
@@ -92,7 +99,14 @@ for (const locale of ['zh-CN', 'en'])
           } else {
             await page.locator('#new').click()
             await page.waitForTimeout(350)
-            if (await page.locator('#new-session[open]').count()) {
+            if (
+              await page
+                .getByRole('dialog', {
+                  name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+                  exact: true,
+                })
+                .isVisible()
+            ) {
               if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for workspace selection')
               await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
                 element.open = true
