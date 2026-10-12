@@ -403,17 +403,42 @@ describe('result line helpers', () => {
       ts: 't',
       id: `01J6ZM2Q3R4S5T6V7W8X9Y0${String(seq).padStart(3, '0')}`,
       type: 'approval/asked',
-      data: { kind: 'tool', ...(pending ? { pending: { ...pending, expiresAt: 'x' } } : {}) },
+      data: { kind: 'budget', ...(pending ? { pending: { ...pending, expiresAt: 'x' } } : {}) },
       actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       origin: 'system',
       trust: 'trusted',
     }) as never
 
-  it('takes the last ask that actually parked, skipping asks that were answered', () => {
+  const decision = (
+    seq: number,
+    id: string,
+    state: 'pending' | 'answered' | 'consumed' | 'invalidated' = 'pending',
+  ) =>
+    ({
+      seq,
+      type: 'decision/state',
+      data: {
+        handle: { id, sessionId: 'session' },
+        revision: seq,
+        request: { owner: 'core/tool-permission', purpose: 'tool.permission' },
+        result: state === 'answered' ? { option: 'allowed-once' } : null,
+        consumption: state === 'consumed' ? {} : null,
+        invalidation: state === 'invalidated' ? {} : null,
+      },
+    }) as never
+
+  it('reports pending durable decisions and domain tickets without reviving closed requests', () => {
     expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2, { ticket: 'new' })])).toBe('new')
     expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2)])).toBe('old')
     expect(findParkedTicket([asked(1)])).toBeUndefined()
     expect(findParkedTicket([])).toBeUndefined()
+    expect(findParkedTicket([decision(1, 'old'), decision(2, 'current')])).toBe('current')
+    expect(
+      findParkedTicket([decision(1, 'old'), decision(2, 'current'), decision(3, 'current', 'answered')]),
+    ).toBe('old')
+    for (const state of ['answered', 'consumed', 'invalidated'] as const)
+      expect(findParkedTicket([decision(1, 'closed'), decision(2, 'closed', state)])).toBeUndefined()
+    expect(findParkedTicket([decision(1, '')])).toBeUndefined()
   })
 
   const message = (seq: number, content: unknown) =>

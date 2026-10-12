@@ -1,4 +1,4 @@
-import type { EventEnvelope, TurnEndReason } from '@agnes/protocol'
+import type { DecisionSnapshot, EventEnvelope, TurnEndReason } from '@agnes/protocol'
 
 export const RESULT_V = 'agnes-cli-result/v1' as const
 
@@ -18,16 +18,22 @@ export function cliResultLine(o: CliResult): string {
 }
 
 /**
- * The ticket a parked turn left behind, which is what `agnes resume` is given. Scanned backwards
- * because a turn can ask more than once and only the last ask is the one still open; rows that ask
- * without parking carry no `pending`, so they are skipped rather than treated as the answer.
- *
- * The shape is core's, not the protocol schema's: `approval/asked` has no `$def` in session-v1.json,
- * so `data` is JsonValue on the wire and the reading is written defensively here.
+ * The current unanswered decision a parked turn left behind. Read only each handle's latest
+ * state so an answered, consumed or invalidated request cannot revive its earlier open state.
+ * Budget and uncertain-effect gates still publish their own pending domain tickets.
  */
 export function findParkedTicket(events: EventEnvelope[]): string | undefined {
+  const seen = new Set<string>()
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i] as EventEnvelope
+    if (e.type === 'decision/state') {
+      const value = e.data as Partial<DecisionSnapshot> | null
+      const id = value?.handle?.id
+      if (typeof id !== 'string' || !id || seen.has(id)) continue
+      seen.add(id)
+      if (value?.result === null && value.consumption === null && value.invalidation === null) return id
+      continue
+    }
     if (e.type !== 'approval/asked') continue
     const t = (e.data as { pending?: { ticket?: unknown } } | null)?.pending?.ticket
     if (typeof t === 'string' && t) return t

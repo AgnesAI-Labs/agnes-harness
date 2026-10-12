@@ -39,38 +39,6 @@ function printIo(cwd: string) {
   }
 }
 
-/** The approval service is an allowed test seam; every layer around it is the real product chain. */
-function parkedApproval(): {
-  seam: {
-    ask(request: { requestId: string; bindingHash: string }): Promise<{ ticket: string; expiresAt: string }>
-    resume(ticket: string): Promise<{
-      requestId: string
-      bindingHash: string
-      expiresAt: string
-    } | null>
-  }
-  ticket: string
-} {
-  const ticket = '0123456789abcdef0123456789abcdef'
-  let stored: { requestId: string; bindingHash: string; expiresAt: string } | null = null
-  return {
-    ticket,
-    seam: {
-      async ask(request) {
-        const expiresAt = new Date(Date.now() + 60_000).toISOString()
-        stored = { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt }
-        return { ticket, expiresAt }
-      },
-      async resume(got) {
-        if (got !== ticket || !stored) return null
-        const receipt = stored
-        stored = null
-        return receipt
-      },
-    },
-  }
-}
-
 const toolCall = (): InferenceEvent[] => [
   {
     type: 'toolcall_end',
@@ -93,7 +61,6 @@ const completion = (): InferenceEvent[] => [
 describe('parked approval across the CLI one-shot boundary', () => {
   it('print reports the durable ticket and a reopened TUI decides it through Host/daemon/SDK/core', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agnes-resume-flow-'))
-    const approval = parkedApproval()
     let opens = 0
     const createHostImpl = async () => {
       const current = opens++
@@ -103,7 +70,7 @@ describe('parked approval across the CLI one-shot boundary', () => {
           packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
           packages: { '@agnes/code': { operations } },
           seams: {
-            approval: approval.seam,
+            approval: { ask: async () => 'unavailable' },
             principals: {
               resolve: async (_credential, surface) => (surface === 'approval' ? APPROVER : REQUESTER),
             },
@@ -121,10 +88,14 @@ describe('parked approval across the CLI one-shot boundary', () => {
       const output = printIo(home)
       expect(await runPrint(first, parseArgs(['-p', 'clean']), output)).toBe(3)
       const match = /ticket=(\S+) session=(\S+)/.exec(output.out())
-      expect(match?.[1]).toBe(approval.ticket)
       expect(output.err()).toContain('turn ended: parked (exit 3)')
       const sessionId = match?.[2]
       expect(sessionId).toEqual(expect.any(String))
+      const pending = (await first.client.approval.list(sessionId as string)).decisions.find(
+        (value) => value.request.owner === 'core/tool-permission' && !value.result && !value.invalidation,
+      )
+      expect(pending).toBeDefined()
+      expect(match?.[1]).toBe(pending?.handle.id)
       await first.close()
       first = undefined
 
