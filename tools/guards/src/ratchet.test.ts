@@ -316,11 +316,11 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-foundation/src': 4443,
   'packages/host/src/runtime/approval/expiry': 120,
   'packages/host/src/runtime/adapters': 465,
-  'packages/host/src/runtime/profile': 1684,
+  'packages/host/src/runtime/profile': 1686,
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 13042,
+  'packages/host/src/runtime': 13044,
   // UI data-source catalog wiring on that tree. countLines: 3517.
   'packages/host/src/runtime/assemble': 3648,
   'packages/host-providers/src/adapters': 477,
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13580,
+  'packages/host/src': 13582,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

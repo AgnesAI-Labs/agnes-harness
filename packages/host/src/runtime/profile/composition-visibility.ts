@@ -104,23 +104,25 @@ export function compositionSkills(
 ): SkillRuntimeInput | undefined {
   if (!input) return input
   if (!selection.skills?.length && !selection.packages?.some((pkg) => pkg.enabled === false)) return input
-  const visible = (id: string) =>
-    capabilityEnabled(
-      resolveSessionCapabilities({
-        selection,
-        live: {
-          skills: input.list().map((skill) => ({
-            id: skill.resourceId,
-            name: skill.name,
-            packageId: owners.get(skill.resourceId),
-          })),
-        },
-      }).skills,
-      id,
-    )
+  const capabilities = (skills = input.list()) =>
+    resolveSessionCapabilities({
+      selection,
+      live: {
+        skills: skills.map((skill) => ({
+          id: skill.resourceId,
+          name: skill.name,
+          packageId: owners.get(skill.resourceId),
+        })),
+      },
+    }).skills
+  const visible = (id: string) => capabilityEnabled(capabilities(), id)
   return Object.freeze({
     ...input,
-    list: () => input.list().filter((skill) => visible(skill.resourceId)),
+    list: () => {
+      const skills = input.list()
+      const set = capabilities(skills)
+      return skills.filter((skill) => capabilityEnabled(set, skill.resourceId))
+    },
     read: (id, session) =>
       visible(id) ? input.read(id, session) : { ok: false, code: 'UNAUTHORIZED' as const },
     readFile: (id, revision, path, session) =>

@@ -532,6 +532,22 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     code: 'UNAUTHORIZED',
   })
   expect(skills.readRoots?.()).toEqual([])
+  // A live catalog may refresh between reads; each returned list must use one catalog snapshot.
+  const snapshot = listed
+  const refreshing = compositionSkills(
+    {
+      ...input,
+      list: () => {
+        const current = input.list()
+        listed = []
+        return current
+      },
+    },
+    { skills: ['read'] },
+  )!
+  expect(refreshing.list().map((skill) => skill.resourceId)).toEqual(['visible'])
+  listed = snapshot
+
   listed = [
     { resourceId: 'replacement', name: 'read' },
     { resourceId: 'added-hidden', name: 'write' },
