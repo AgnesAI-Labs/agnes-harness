@@ -138,12 +138,13 @@ describe('tools phase', () => {
         list: async () => [],
       },
     }
-    const release = vi.fn(() => {
+    let liveInvocations = 0
+    const release = () => {
+      liveInvocations--
       events.push('release')
-    })
-    let acquisitions = 0
+    }
     const workspaceInvocation = createWorkspaceInvocationPort(() => {
-      acquisitions++
+      liveInvocations++
       events.push('acquire')
       return { source, release }
     })
@@ -208,7 +209,7 @@ describe('tools phase', () => {
     })
     await heldStarted
     await Promise.resolve()
-    expect(acquisitions).toBe(3)
+    expect(liveInvocations).toBe(1)
     expect(events.lastIndexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
     expect(events).toEqual(
       expect.arrayContaining([
@@ -224,37 +225,39 @@ describe('tools phase', () => {
       ]),
     )
     expect(settled).toBe(false)
-    expect(release).toHaveBeenCalledTimes(acquisitions - 1)
     for (const operation of Object.values(fallbackFs)) expect(operation).not.toHaveBeenCalled()
 
     finishHeldRead()
     await expect(running).resolves.toEqual({ phase: 'checkpoint' })
-    expect(release).toHaveBeenCalledTimes(acquisitions)
+    expect(liveInvocations).toBe(0)
     expect(events.at(-1)).toBe('release')
   })
 
   it('leases and revokes cached workspace capabilities for a host-computer-use tool', async () => {
     const seams = fakeSeams()
-    let releases = 0
-    const workspaceInvocation = createWorkspaceInvocationPort(() => ({
-      source: {
-        root: '/w',
-        fs: {
-          read: async () => new Uint8Array(),
-          write: async () => undefined,
-          list: async () => [],
-          stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+    let liveInvocations = 0
+    const workspaceInvocation = createWorkspaceInvocationPort(() => {
+      liveInvocations++
+      return {
+        source: {
+          root: '/w',
+          fs: {
+            read: async () => new Uint8Array(),
+            write: async () => undefined,
+            list: async () => [],
+            stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+          },
+          ready: async () => ({ confine: async (argv) => argv }),
+          hookSnapshot: async () => ({ workspaceDigest: 'digest', policyRevision: 'policy', hooks: [] }),
+          hookSandbox: seams.sandbox,
+          approval: seams.approval,
+          checkpoint: seams.checkpoint,
         },
-        ready: async () => ({ confine: async (argv) => argv }),
-        hookSnapshot: async () => ({ workspaceDigest: 'digest', policyRevision: 'policy', hooks: [] }),
-        hookSandbox: seams.sandbox,
-        approval: seams.approval,
-        checkpoint: seams.checkpoint,
-      },
-      release: () => {
-        releases++
-      },
-    }))
+        release: () => {
+          liveInvocations--
+        },
+      }
+    })
     let cached!: ToolContext
     const tool = {
       name: 'computer_use',
@@ -316,7 +319,7 @@ describe('tools phase', () => {
     await opened.session.acceptInput()
     await opened.session.runInference()
     await expect(opened.session.runToolsPhase()).resolves.toEqual({ phase: 'checkpoint' })
-    expect(releases).toBe(3)
+    expect(liveInvocations).toBe(0)
     await expect(cached.fs.stat('.')).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.exec(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.sandbox.confine(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
