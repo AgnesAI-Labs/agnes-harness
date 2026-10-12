@@ -480,10 +480,6 @@ export async function approveAndExecute(
           }
       }
     }
-    if (!(await s.d.runtime.approvalToolAllowed(call.name, call.args)))
-      return {
-        result: await refuse(s, call.toolUseId, 'POLICY_DENIED', 'blocked by the command policy', decisionId),
-      }
     const approvalMode = s.d.approvalMode ?? 'manual'
     const initialSettings = await s.d.toolPolicySettings?.(
       s.preset.approval.policy ?? 'default',
@@ -545,7 +541,7 @@ export async function approveAndExecute(
     recheckPermission = async () => {
       toolDecisionSource(s, call).alive()
       const authority = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
-      if (authority.effect === 'deny' || !(await s.d.runtime.approvalToolAllowed(call.name, call.args)))
+      if (authority.effect === 'deny')
         throw new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED')
       const settings = await s.d.toolPolicySettings?.(
         s.preset.approval.policy ?? 'default',
@@ -870,26 +866,6 @@ export async function approveAndExecute(
         options: [...options],
         ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       }
-      // Command rules are policy authority. They cannot manufacture a human answer.
-      const existing = [...s.state.registers.decisionStates.values()].some(
-        ({ value }) =>
-          value.request.owner === 'core/tool-permission' &&
-          value.request.sourcePackage === '@agnes/core' &&
-          value.request.operationId === call.toolUseId &&
-          (value.request.spec.subject as { scope?: string }).scope === scope,
-      )
-      const intrinsic = existing ? 'ask' : await s.d.runtime.approvalPolicy(approvalRequest)
-      if (intrinsic === 'deny')
-        return {
-          result: await refuse(
-            s,
-            call.toolUseId,
-            'POLICY_DENIED',
-            'blocked by the command policy',
-            decisionId,
-          ),
-        }
-      if (!humanOnly && intrinsic === 'allow') continue
       const storage = s.d.log.storage
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
       const delivery = await deliverToolDecision(

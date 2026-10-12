@@ -230,10 +230,7 @@ function immutableJson<T>(value: T, ancestors = new WeakSet<object>()): T {
 }
 
 function invocationView(source: WorkspaceInvocationSource, scope: InvocationScope): WorkspaceInvocationView {
-  const listGrants = source.approval.listGrants
-  const putGrant = source.approval.putGrant
-  const revokeGrant = source.approval.revokeGrant
-  const onGrantRevoked = source.approval.onGrantRevoked
+  const ask = source.approval.ask
   const fs: RevocableFsOps = Object.freeze({
     ...(source.fs.authorizeWrite
       ? {
@@ -261,46 +258,8 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
     stat: (path) => scope.track(() => source.fs.stat(path)),
   })
   const approval: ApprovalWorkspaceContext = Object.freeze({
-    ...(source.approval.policy
-      ? {
-          policy: (request: ApprovalRequest) =>
-            scope.track(() => source.approval.policy!(request), { cancelOnAbort: true }),
-        }
-      : {}),
-    ...(source.approval.checkTool
-      ? {
-          checkTool: (name: string, args: unknown) =>
-            scope.track(() => source.approval.checkTool!(name, args), { cancelOnAbort: true }),
-        }
-      : {}),
     ask: (request: ApprovalRequest, opts?: { signal: AbortSignal }) =>
-      scope.track(() => source.approval.ask(request, opts), { cancelOnAbort: true }),
-    ...(listGrants
-      ? {
-          listGrants: (query: Parameters<typeof listGrants>[0]) =>
-            scope.track(() => listGrants.call(source.approval, query), { cancelOnAbort: true }),
-        }
-      : {}),
-    ...(putGrant
-      ? {
-          putGrant: (grant: Parameters<typeof putGrant>[0]) =>
-            scope.track(() => putGrant.call(source.approval, grant), { cancelOnAbort: true }),
-        }
-      : {}),
-    ...(revokeGrant
-      ? {
-          revokeGrant: (grantId: string, revokedAt: string) =>
-            scope.track(() => revokeGrant.call(source.approval, grantId, revokedAt), {
-              cancelOnAbort: true,
-            }),
-        }
-      : {}),
-    ...(onGrantRevoked
-      ? {
-          onGrantRevoked: (listener: (grantId: string) => void) =>
-            scope.subscription(onGrantRevoked.bind(source.approval), listener),
-        }
-      : {}),
+      scope.track(() => ask.call(source.approval, request, opts), { cancelOnAbort: true }),
   })
   const checkpoint: CheckpointWorkspaceContext = Object.freeze({
     snapshot: (paths: string[], stepId: string) =>

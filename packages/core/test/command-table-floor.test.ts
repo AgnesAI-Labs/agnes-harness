@@ -60,6 +60,11 @@ describe('command floor', () => {
     expect((await decide([{ tool: '.*', argv: '.*', action: 'allow' }], { policy })).effect).toBe('ask')
   })
 
+  it('matches an empty argv against the table instead of treating it as a failure', async () => {
+    const call = { id: 't', name: 'shell', args: { command: '   ' } }
+    expect((await decide([{ tool: 'shell', argv: '', action: 'allow' }], { call })).effect).toBe('allow')
+  })
+
   it('treats require_approval like a miss', async () => {
     expect((await decide([{ tool: 'edit', argv: 'a\\.ts', action: 'require_approval' }])).effect).toBe('ask')
   })

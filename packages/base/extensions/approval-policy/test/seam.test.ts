@@ -30,81 +30,12 @@ const req = (over: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
   ...over,
 })
 
-/** The same request with no tool at all, which is what a budget or unknown-outcome question is. */
-const withoutTool = (over: Partial<ApprovalRequest>): ApprovalRequest => {
-  const { tool: _none, ...rest } = req(over)
-  return rest as ApprovalRequest
-}
-
-// fakeSeamInit's workspace is /work/proj, which is what normalizeArgv resolves the path against.
-const EDIT_ALLOW = { tool: 'edit|write', argv: '/work/proj/(?:[^/]+/)*[^/]+', action: 'allow' }
-
-describe('approval-policy sync path', () => {
-  it('does not let an empty command table narrow full file access', async () => {
-    const seam = await approvalPolicy(fakeSeamInit({ preset: { approval: { command_policy: [] } } }))
-    expect(await seam.checkTool?.('read', { path: '/outside/workspace/file' })).toBe(true)
+describe('approval delivery', () => {
+  it('exposes delivery and nothing else', async () => {
+    expect(Object.keys(await approvalPolicy(fakeSeamInit()))).toEqual(['ask'])
   })
 
-  it('allows by policy without asking anyone', async () => {
-    const init = fakeSeamInit({ preset: { approval: { command_policy: [EDIT_ALLOW] } } })
-    expect(await (await approvalPolicy(init)).ask(req())).toBe('allowed-once')
-  })
-
-  it('binds path normalization to the invocation workspace instead of the startup root', async () => {
-    const init = fakeSeamInit({
-      preset: {
-        approval: {
-          command_policy: [{ tool: 'edit', argv: '/work/other/src/a\\.ts', action: 'allow' }],
-        },
-      },
-    })
-    const seam = await approvalPolicy(init)
-    expect(await seam.ask(req())).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
-    const workspace = await seam.forWorkspace?.({ root: '/work/other' })
-    expect(workspace).toBeDefined()
-    expect(await workspace?.ask(req())).toBe('allowed-once')
-  })
-
-  it('rejects by policy deny', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: 'shell', argv: '^rm', action: 'deny' }] } },
-    })
-    const seam = await approvalPolicy(init)
-    expect(await seam.checkTool?.('shell', { command: 'rm -rf /' })).toBe(false)
-    expect(await seam.checkTool?.('shell', { command: 'pwd' })).toBe(true)
-    const verdict = await seam.ask(
-      req({
-        tool: {
-          name: 'shell',
-          args: { command: 'rm -rf /' },
-          meta: { ...meta, replay: 'never', requiresApproval: undefined },
-        },
-      }),
-    )
-    expect(verdict).toEqual({ verdict: 'rejected', reason: 'policy_denied' })
-  })
-
-  // A deny in the table beats the prompter too: nobody is asked a question whose answer is already
-  // no, so an operator cannot click past it.
-  it('does not ask the prompter about a denied call', async () => {
-    let asked = 0
-    const init = fakeSeamInit({
-      preset: {
-        approval: { command_policy: [EDIT_ALLOW, { tool: 'edit', argv: 'a\\.ts', action: 'deny' }] },
-      },
-      prompter: async () => {
-        asked++
-        return 'allowed-session'
-      },
-    })
-    expect(await (await approvalPolicy(init)).ask(req())).toEqual({
-      verdict: 'rejected',
-      reason: 'policy_denied',
-    })
-    expect(asked).toBe(0)
-  })
-
-  it('asks the prompter when no rule applies', async () => {
+  it('hands the question to the prompter and returns its answer', async () => {
     const asked: string[] = []
     const init = fakeSeamInit({
       prompter: async (r) => {
@@ -116,6 +47,19 @@ describe('approval-policy sync path', () => {
     expect(asked).toEqual(['edit src/a.ts'])
   })
 
+  it('delivers questions that carry no tool, such as a budget quote', async () => {
+    const asked: string[] = []
+    const init = fakeSeamInit({
+      prompter: async (r) => {
+        asked.push(r.kind)
+        return 'rejected'
+      },
+    })
+    const { tool: _none, ...rest } = req({ kind: 'budget', risk: 'budget' })
+    expect(await (await approvalPolicy(init)).ask(rest as ApprovalRequest)).toBe('rejected')
+    expect(asked).toEqual(['budget'])
+  })
+
   it("hands the prompter's reason on untouched", async () => {
     const init = fakeSeamInit({ prompter: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) })
     expect(await (await approvalPolicy(init)).ask(req())).toEqual({
@@ -124,65 +68,6 @@ describe('approval-policy sync path', () => {
     })
   })
 
-  it('asks about a tainted call even when a rule allows it', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [EDIT_ALLOW] } },
-      prompter: async () => 'rejected',
-    })
-    expect(await (await approvalPolicy(init)).ask(req({ taint: true }))).toBe('rejected')
-  })
-
-  // A delegated child's own scope is always `<parentKey>/<childUlid>` (the sole place core's
-  // KernelChildren.createWithKind produces that separator); a top-level scope never contains one.
-  // The child runs unattended, so falling through to "ask a human" here just means nobody answers
-  // — the table's own allow rule is the only real answer available to it.
-  it('lets the table answer a tainted call for a delegated child instead of asking nobody', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [EDIT_ALLOW] } },
-      prompter: async () => 'rejected',
-    })
-    expect(await (await approvalPolicy(init)).ask(req({ taint: true, scope: 'parent/childUlid' }))).toBe(
-      'allowed-once',
-    )
-  })
-
-  it('still asks a tainted, table-unmatched call for a delegated child', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: 'edit', argv: 'never-matches', action: 'allow' }] } },
-      prompter: async () => 'rejected',
-    })
-    expect(await (await approvalPolicy(init)).ask(req({ taint: true, scope: 'parent/childUlid' }))).toBe(
-      'rejected',
-    )
-  })
-
-  it('never auto-allows a tool that asks always, whatever the table says', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: '.*', argv: '.*', action: 'allow' }] } },
-    })
-    const verdict = await (await approvalPolicy(init)).ask(
-      req({ tool: { name: 'edit', args: {}, meta: { ...meta, requiresApproval: 'always' } } }),
-    )
-    expect(verdict).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
-  })
-
-  // require_approval is a match that does not end the question: it reaches the prompter like a miss.
-  it('sends a require_approval match to the prompter rather than allowing it', async () => {
-    let asked = 0
-    const init = fakeSeamInit({
-      preset: {
-        approval: { command_policy: [{ tool: 'edit', argv: 'a\\.ts', action: 'require_approval' }] },
-      },
-      prompter: async () => {
-        asked++
-        return 'allowed-once'
-      },
-    })
-    expect(await (await approvalPolicy(init)).ask(req())).toBe('allowed-once')
-    expect(asked).toBe(1)
-  })
-
-  // The default with nothing configured: no rules, no prompter, so the answer is a refusal.
   it('is unavailable without a prompter, and when the prompter throws', async () => {
     expect(await (await approvalPolicy(fakeSeamInit())).ask(req())).toEqual({
       verdict: 'unavailable',
@@ -197,78 +82,5 @@ describe('approval-policy sync path', () => {
       verdict: 'unavailable',
       reason: 'transport',
     })
-  })
-
-  // A request with no tool - a budget quote, an unknown outcome - skips the command table entirely.
-  // Deliberate, and asserted so nobody "fixes" it into matching rules written about command lines.
-  it('a request with no tool bypasses the policy table and asks', async () => {
-    const asked: string[] = []
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: '.*', argv: '.*', action: 'allow' }] } },
-      prompter: async (r) => {
-        asked.push(r.kind)
-        return 'rejected'
-      },
-    })
-    const seam = await approvalPolicy(init)
-    expect(await seam.ask(withoutTool({ kind: 'budget', risk: 'budget' }))).toBe('rejected')
-    expect(await seam.ask(withoutTool({ kind: 'unknown-outcome', risk: 'unknown' }))).toBe('rejected')
-    expect(asked).toEqual(['budget', 'unknown-outcome'])
-  })
-
-  // An argument that cannot be canonicalized is not a policy miss to be waved through; it is a
-  // question for a human. It must reach the prompter, and must never be auto-allowed by a rule.
-  it('an argv that cannot be canonicalized asks instead of matching a rule', async () => {
-    let asked = 0
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: 'read', argv: '.*', action: 'allow' }] } },
-      prompter: async () => {
-        asked++
-        return 'rejected'
-      },
-    })
-    const verdict = await (await approvalPolicy(init)).ask(
-      req({ tool: { name: 'read', args: { path: 'a\u0000b.ts' }, meta } }),
-    )
-    expect(verdict).toBe('rejected')
-    expect(asked).toBe(1)
-  })
-
-  it('an argv that cannot be canonicalized is unavailable when nobody is connected', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: 'read', argv: '.*', action: 'allow' }] } },
-    })
-    const verdict = await (await approvalPolicy(init)).ask(
-      req({ tool: { name: 'read', args: { path: '../../etc/passwd' }, meta } }),
-    )
-    expect(verdict).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
-  })
-
-  // A whitespace-only shell command normalizes to the empty string, which is a value and not a
-  // failure. It must still be matched against the table rather than treated as uncanonicalizable.
-  it('matches an empty argv against the table instead of treating it as a failure', async () => {
-    const init = fakeSeamInit({
-      preset: { approval: { command_policy: [{ tool: 'shell', argv: '', action: 'allow' }] } },
-    })
-    const verdict = await (await approvalPolicy(init)).ask(
-      req({ tool: { name: 'shell', args: { command: '   ' }, meta } }),
-    )
-    expect(verdict).toBe('allowed-once')
-  })
-
-  it('refuses to assemble against a table it cannot read', async () => {
-    await expect(
-      approvalPolicy(
-        fakeSeamInit({
-          preset: { approval: { command_policy: [{ tool: '^shell$', argv: 'ls', action: 'allow' }] } },
-        }),
-      ),
-    ).rejects.toThrow(/anchor/)
-  })
-
-  it('refuses unsupported domain parking without inventing an answer', async () => {
-    const init = fakeSeamInit({ preset: { approval: { on_unavailable: 'park' } } })
-    const seam = await approvalPolicy(init)
-    await expect(seam.ask(req())).resolves.toEqual({ verdict: 'unavailable', reason: 'no-approver' })
   })
 })

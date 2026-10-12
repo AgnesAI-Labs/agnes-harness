@@ -1,4 +1,4 @@
-import { type ApprovalGrantQuery, type ApprovalSeam, canonicalJson } from '@agnes/core'
+import { type ApprovalGrantQuery, type ApprovalGrantsPort, canonicalJson } from '@agnes/core'
 import type {
   PersistenceMetadataNamespace,
   PersistenceSqliteTableHandle as TableHandle,
@@ -67,7 +67,8 @@ export interface ApprovalGrantManagement extends ApprovalGrantStore {
 
 export type ApprovalGrantControlPlane = Readonly<{
   management: ApprovalGrantManagement
-  bind(seam: ApprovalSeam): ApprovalSeam
+  /** What Core reads and writes permanent grants through. */
+  port: ApprovalGrantsPort
 }>
 
 type ApprovalGrantRuntimeStore = ApprovalGrantStore & {
@@ -543,50 +544,15 @@ export function createApprovalGrantControlPlane(
       return () => listeners.delete(listener)
     },
   })
-  const bind = (seam: ApprovalSeam): ApprovalSeam => {
-    const bound: ApprovalSeam = {
-      ...(seam.forWorkspace
-        ? {
-            forWorkspace: async (workspace) => {
-              const fitted = await seam.forWorkspace?.(workspace)
-              if (!fitted) throw new Error('approval workspace fitting is unavailable')
-              return bind(fitted)
-            },
-          }
-        : {}),
-      ask: (request, options) => seam.ask(request, options),
-      ...(seam.checkTool ? { checkTool: (name: string, args: unknown) => seam.checkTool!(name, args) } : {}),
-      ...(seam.policy
-        ? { policy: (request: Parameters<ApprovalSeam['ask']>[0]) => seam.policy!(request) }
-        : {}),
-      // Permanent grants are not cached today: every authorization reads durable storage. This listener
-      // remains the explicit active-session/cache invalidation port so a future cache cannot make
-      // revocation eventually consistent by accident.
-      listGrants: async (query) => store.list(query),
-      putGrant: async (grant) => {
-        bindTicket?.(grant.grantId)
-        store.put(grant)
-      },
-      revokeGrant: async (grantId, revokedAt) => {
-        const result = store.revokeByIdWithState(grantId, revokedAt)
-        if (result.changed && result.grant) emit(result.grant)
-        return result.grant
-      },
-      onGrantRevoked(listener) {
-        const offHost = management.onRevoked((grant) => listener(grant.grantId))
-        const offPackage = seam.onGrantRevoked?.(listener)
-        return () => {
-          offHost()
-          offPackage?.()
-        }
-      },
-    }
-    return bound
-  }
-  return Object.freeze({ management, bind })
+  // Permanent grants are not cached today: every authorization reads durable storage. Revocation
+  // emits through `management.onRevoked`, the explicit invalidation port for any future cache.
+  const port: ApprovalGrantsPort = Object.freeze({
+    list: async (query: ApprovalGrantQuery) => store.list(query),
+    put: async (grant: ApprovalGrant) => {
+      bindTicket?.(grant.grantId)
+      store.put(grant)
+    },
+  })
+  return Object.freeze({ management, port })
 }
 
-/** Compatibility helper for callers that need only the fitted Core seam. */
-export function bindApprovalGrantStore(seam: ApprovalSeam, tables: GrantStorage): ApprovalSeam {
-  return createApprovalGrantControlPlane(tables).bind(seam)
-}

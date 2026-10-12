@@ -10,8 +10,8 @@ import type { SeamContexts } from './seam-contexts.js'
 
 /**
  * The ten seams the Kernel runs on: `sandbox` and `platform` are static, the other eight follow
- * the published tree (they change when a seam row is replaced), and `approval` passes through
- * the Host's grant control plane so a stored grant can answer before the package seam is asked.
+ * the published tree (they change when a seam row is replaced). Permanent approval grants are not
+ * a seam: the Host's grant control plane hands Core its own port.
  */
 export function bindSeams(
   ctx: AssemblyContext,
@@ -40,9 +40,5 @@ export function bindSeams(
       bindApprovalTicket(ctx.gates.hotPolicy, grantId)
     },
   )
-  const seams: SeamImplementations = {
-    ...mutable.seams,
-    approval: approvalGrantControl.bind(mutable.seams.approval),
-  }
-  return { seams, approvalGrantControl }
+  return { seams: mutable.seams as SeamImplementations, approvalGrantControl }
 }

@@ -62,6 +62,7 @@ async function atTools(o: {
   /** Text turns queued after the tool turns, for tests that drive the session past the tool phase. */
   tail?: number
   seams?: ReturnType<typeof fakeSeams>
+  grants?: import('@agnes/core-effects/effects/seams').ApprovalGrantsPort
   approvalMode?: 'manual' | 'off' | 'auto-review'
   toolPolicies?: ToolPolicyRegistryPort
   provider?: Provider
@@ -91,6 +92,7 @@ async function atTools(o: {
     registry: registryWith(tool),
     ...(o.fsOps ? { fsOps: o.fsOps } : {}),
     ...(o.seams ? { seams: o.seams } : {}),
+    ...(o.grants ? { approvalGrants: o.grants } : {}),
     ...(o.approvalMode ? { approvalMode: o.approvalMode } : {}),
     ...(o.preset ? { preset: o.preset } : {}),
     ...(o.toolPolicies ? { toolPolicies: o.toolPolicies } : {}),
@@ -133,11 +135,14 @@ describe('v3 approval modes and grants', () => {
             executions++
             return { content: [{ type: 'text', text: 'reviewed' }] }
           },
+          grants: {
+            list: async () => {
+              throw new Error('human review cannot use durable grants')
+            },
+            put: async () => undefined,
+          },
           seams: fakeSeams({
             approval: {
-              listGrants: async () => {
-                throw new Error('human review cannot use durable grants')
-              },
               ask: async (req) => {
                 offered.push(req.options)
                 expect(req.approval).toEqual({
@@ -223,6 +228,12 @@ describe('v3 approval modes and grants', () => {
           executions++
           return { content: [{ type: 'text', text: 'done' }] }
         },
+        grants: {
+          list: async () => grants,
+          put: async (grant) => {
+            grants.push(grant)
+          },
+        },
         seams: fakeSeams({
           approval: {
             ask: async (request) => {
@@ -230,10 +241,6 @@ describe('v3 approval modes and grants', () => {
               return humanOnly
                 ? { verdict: 'rejected' as const, answeredBy: { ...actor, id: 'reviewer' } }
                 : { verdict: grantVerdict, answeredBy: actor }
-            },
-            listGrants: async () => grants,
-            putGrant: async (grant) => {
-              grants.push(grant)
             },
           },
         }),
@@ -365,38 +372,41 @@ describe('v3 approval modes and grants', () => {
           asks++
           return { verdict: 'allowed-permanent' as const, answeredBy: actor }
         },
-        listGrants: async (query) =>
-          grants.filter(
-            (grant) =>
-              grant.profileHash === query.profileHash &&
-              grant.actorId === query.actorId &&
-              grant.actorOrg === query.actorOrg &&
-              grant.toolId === query.toolId &&
-              grant.scope === query.scope &&
-              grant.policyVersion === query.policyVersion,
-          ),
-        putGrant: async (grant) => {
-          const decisions = await opened?.session.decisions.list()
-          expect(
-            decisions?.some(
-              (value) =>
-                value.result?.reason === 'answered' &&
-                value.result.response.option === 'allowed-permanent' &&
-                permanentGrantId({
-                  sessionKey: value.handle.sessionId,
-                  toolUseId: value.request.operationId,
-                  scope: (value.request.spec.subject as { scope: string }).scope,
-                }) === grant.grantId,
-            ),
-          ).toBe(true)
-          grants.push(grant)
-        },
       },
     })
+    const port = {
+      list: async (query: import('@agnes/core-effects/effects/seams').ApprovalGrantQuery) =>
+        grants.filter(
+          (grant) =>
+            grant.profileHash === query.profileHash &&
+            grant.actorId === query.actorId &&
+            grant.actorOrg === query.actorOrg &&
+            grant.toolId === query.toolId &&
+            grant.scope === query.scope &&
+            grant.policyVersion === query.policyVersion,
+        ),
+      put: async (grant: ApprovalGrant) => {
+        const decisions = await opened?.session.decisions.list()
+        expect(
+          decisions?.some(
+            (value) =>
+              value.result?.reason === 'answered' &&
+              value.result.response.option === 'allowed-permanent' &&
+              permanentGrantId({
+                sessionKey: value.handle.sessionId,
+                toolUseId: value.request.operationId,
+                scope: (value.request.spec.subject as { scope: string }).scope,
+              }) === grant.grantId,
+          ),
+        ).toBe(true)
+        grants.push(grant)
+      },
+    }
     opened = await atTools({
       scopes: ['cua:click:background', 'cua:bring_to_front:background'],
       calls: 2,
       seams,
+      grants: port,
     })
     await opened.session.runToolsPhase()
     expect(grants).toHaveLength(2)
@@ -424,13 +434,14 @@ describe('v3 approval modes and grants', () => {
         executions++
         return { content: [{ type: 'text', text: 'must not execute' }] }
       },
-      seams: fakeSeams({
-        approval: {
-          ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }),
-          putGrant: async () => {
-            throw new Error('store unavailable')
-          },
+      grants: {
+        list: async () => [],
+        put: async () => {
+          throw new Error('store unavailable')
         },
+      },
+      seams: fakeSeams({
+        approval: { ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }) },
       }),
     })
     await opened.session.runToolsPhase()
@@ -452,14 +463,14 @@ describe('v3 approval modes and grants', () => {
     const original = await atTools({
       scopes: ['cua:click:background'],
       profile: profileHash,
-      seams: fakeSeams({
-        approval: {
-          ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }),
-          listGrants: async () => originalGrants,
-          putGrant: async (grant) => {
-            originalGrants.push(grant)
-          },
+      grants: {
+        list: async () => originalGrants,
+        put: async (grant) => {
+          originalGrants.push(grant)
         },
+      },
+      seams: fakeSeams({
+        approval: { ask: async () => ({ verdict: 'allowed-permanent' as const, answeredBy: actor }) },
       }),
     })
     await original.session.runToolsPhase()
@@ -505,16 +516,18 @@ describe('v3 approval modes and grants', () => {
         writerRunId: `permanent-reopen-${alreadyStored}`,
         approvalMode: 'manual',
         resolvedProfileHash: profileHash,
+        approvalGrants: {
+          list: async () => grants,
+          put: async (grant) => {
+            puts++
+            grants.push(grant)
+          },
+        },
         seams: fakeSeams({
           approval: {
             ask: async () => {
               asks++
               return { verdict: 'rejected' as const, answeredBy: actor }
-            },
-            listGrants: async () => grants,
-            putGrant: async (grant) => {
-              puts++
-              grants.push(grant)
             },
           },
         }),
@@ -642,12 +655,16 @@ describe('v3 approval modes and grants', () => {
         expect(executions).toBe(2)
       }
     }
+    const denying = new ToolPolicyRegistry()
+    denying.register('test', {
+      id: 'floor-deny',
+      version: '1',
+      decide: () => ({ effect: 'deny', reason: 'blocked by the command policy' }),
+    })
     const blocked = await atTools({
       scopes: ['tool:write'],
-      toolPolicySettings: async () => {
-        throw new Error('Hard deny must precede review')
-      },
-      seams: fakeSeams({ approval: { checkTool: async () => false } }),
+      toolPolicies: denying,
+      toolPolicySettings: async () => ({ policy: 'floor-deny' }),
     })
     await blocked.session.runToolsPhase()
     expect((await blocked.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({

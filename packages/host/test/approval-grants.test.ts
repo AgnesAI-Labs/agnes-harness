@@ -1,14 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { presetDefaults, SeamRuntime } from '@agnes/core'
+import { type ApprovalGrantsPort, presetDefaults, SeamRuntime } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { ApprovalGrant } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type ApprovalGrantBinding,
-  bindApprovalGrantStore,
   createApprovalGrantControlPlane,
   createApprovalGrantStore,
 } from '../src/runtime/approval/grants.js'
@@ -59,14 +58,12 @@ function open(root: string) {
   return {
     storage,
     store: createApprovalGrantStore(tables),
-    approval: bindApprovalGrantStore(fakeSeams().approval, tables),
+    grants: createApprovalGrantControlPlane(tables).port,
   }
 }
 
 async function activate(opened: ReturnType<typeof open>, value: ApprovalGrant): Promise<void> {
-  const put = opened.approval.putGrant
-  if (!put) throw new Error('Host approval binding did not install putGrant')
-  await put(value)
+  await opened.grants.put(value)
 }
 
 describe('Host approval grant store', () => {
@@ -302,14 +299,9 @@ describe('Host approval grant store', () => {
     })
     const first = createApprovalGrantControlPlane(firstStorage.tables('@agnes/host/approval-grants'))
     const second = createApprovalGrantControlPlane(secondStorage.tables('@agnes/host/approval-grants'))
-    const seam = first.bind(fakeSeams().approval)
-    const put = seam.putGrant
-    if (!put) throw new Error('Host approval binding did not install putGrant')
-    await put(grant)
+    await first.port.put(grant)
     const grants: ApprovalGrant[] = []
-    const ids: string[] = []
     const offManagement = first.management.onRevoked((value) => grants.push(value))
-    const offSeam = seam.onGrantRevoked?.((grantId) => ids.push(grantId))
     let reentrantCalls = 0
     let resubscribed = false
     let offReentrant = () => {}
@@ -334,12 +326,10 @@ describe('Host approval grant store', () => {
         ),
       ).toBeNull()
       expect(grants).toEqual([])
-      expect(ids).toEqual([])
 
       const revoked = first.management.revoke(query, grant.grantId, '2026-09-17T00:01:00Z')
       expect(revoked).toEqual({ ...grant, revokedAt: '2026-09-17T00:01:00Z' })
       expect(grants).toEqual([revoked])
-      expect(ids).toEqual([grant.grantId])
       expect(reentrantCalls).toBe(1)
       expect(second.management.list(query)).toEqual([])
 
@@ -351,7 +341,6 @@ describe('Host approval grant store', () => {
       )
     } finally {
       offManagement()
-      offSeam?.()
       offReentrant()
       firstStorage.close()
       secondStorage.close()
@@ -369,59 +358,17 @@ describe('Host approval grant store', () => {
     const root = temp()
     const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
     const failures: string[] = []
-    const seams = fakeSeams()
-    seams.approval = bindApprovalGrantStore(seams.approval, storage.tables('@agnes/host'))
+    const port = createApprovalGrantControlPlane(storage.tables('@agnes/host')).port
     await storage.close()
-    const runtime = new SeamRuntime(seams, presetDefaults(), {
+    const runtime = new SeamRuntime(fakeSeams(), presetDefaults(), {
       clock: () => 0,
       onFailure: (failure) => failures.push(`${failure.seam}.${failure.op}`),
+      approvalGrants: port,
     })
     const signal = new AbortController().signal
     await expect(runtime.approvalGrants(query, signal)).resolves.toEqual([])
     await expect(runtime.approvalPutGrant(grant, signal)).resolves.toBe(false)
-    await expect(
-      runtime.approvalRevokeGrant(grant.grantId, '2026-09-17T00:01:00Z', signal),
-    ).resolves.toBeNull()
-    expect(failures).toEqual(['approval.listGrants', 'approval.putGrant', 'approval.revokeGrant'])
-  })
-
-  it('composes the package revocation listener with the Host invalidation port', () => {
-    const packageListeners = new Set<(grantId: string) => void>()
-    const onGrantRevoked = (listener: (grantId: string) => void) => {
-      packageListeners.add(listener)
-      return () => packageListeners.delete(listener)
-    }
-    const seam = { ...fakeSeams().approval, onGrantRevoked }
-    const root = temp()
-    const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
-    try {
-      const bound = bindApprovalGrantStore(seam, storage.tables('@agnes/host'))
-      const listener = vi.fn()
-      const off = bound.onGrantRevoked?.(listener)
-      for (const notify of packageListeners) notify('package-grant')
-      expect(listener).toHaveBeenCalledWith('package-grant')
-      off?.()
-      expect(packageListeners).toHaveLength(0)
-    } finally {
-      void storage.close()
-    }
-  })
-
-  it('preserves Host grant management when the package seam is fitted to a workspace', async () => {
-    const fit = vi.fn(async () => fakeSeams().approval)
-    const seam = Object.assign(fakeSeams().approval, { forWorkspace: fit })
-    const root = temp()
-    const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
-    try {
-      const bound = bindApprovalGrantStore(seam, storage.tables('@agnes/host'))
-      const workspace = await bound.forWorkspace?.({ root: '/work/session-a' })
-      expect(fit).toHaveBeenCalledWith({ root: '/work/session-a' })
-      expect(workspace?.listGrants).toBeTypeOf('function')
-      expect(workspace?.putGrant).toBeTypeOf('function')
-      expect(workspace?.revokeGrant).toBeTypeOf('function')
-    } finally {
-      await storage.close()
-    }
+    expect(failures).toEqual(['approval.listGrants', 'approval.putGrant'])
   })
 
   it('passes the resolved profile mode into the assembled Kernel', async () => {
@@ -440,27 +387,20 @@ describe('Host approval grant store', () => {
     }
   })
 
-  it('wires the Host store into the approval seam and preserves grants across Host reopen', async () => {
+  it('wires the Host store into the Kernel grants port and preserves grants across Host reopen', async () => {
     const dataDir = temp()
     const legacy = createSqliteStorage({
       file: join(dataDir, 'sessions.db'),
       tablesDir: join(dataDir, 'tables'),
     })
-    const oldApproval = createApprovalGrantControlPlane(legacy.tables('@agnes/host/approval-grants')).bind(
-      fakeSeams().approval,
-    )
-    if (!oldApproval.putGrant) throw new Error('activation port missing')
-    await oldApproval.putGrant(grant)
+    await createApprovalGrantControlPlane(legacy.tables('@agnes/host/approval-grants')).port.put(grant)
     await legacy.close()
     const first = await createTestHost({ dataDir, disableSessionTitle: true })
     try {
       expect(first.host.approvalGrants.list(query)).toEqual([grant])
-      const approval = (
-        first.host.kernel as unknown as {
-          o: { seams: { approval: { putGrant(value: ApprovalGrant): Promise<void> } } }
-        }
-      ).o.seams.approval
-      await approval.putGrant(grant)
+      const port = (first.host.kernel as unknown as { o: { approvalGrants: ApprovalGrantsPort } }).o
+        .approvalGrants
+      await port.put(grant)
       expect(first.host.approvalGrants.list(query)).toEqual([grant])
     } finally {
       await first.host.close()
@@ -468,12 +408,9 @@ describe('Host approval grant store', () => {
 
     const second = await createTestHost({ dataDir, disableSessionTitle: true })
     try {
-      const approval = (
-        second.host.kernel as unknown as {
-          o: { seams: { approval: { listGrants(value: ApprovalGrantBinding): Promise<ApprovalGrant[]> } } }
-        }
-      ).o.seams.approval
-      await expect(approval.listGrants(query)).resolves.toEqual([grant])
+      const port = (second.host.kernel as unknown as { o: { approvalGrants: ApprovalGrantsPort } }).o
+        .approvalGrants
+      await expect(port.list(query)).resolves.toEqual([grant])
       expect(second.host.approvalGrants.list(query)).toEqual([grant])
       second.host.approvalGrants.revoke(query, grant.grantId, '2026-10-07T00:00:00Z')
     } finally {
@@ -496,10 +433,8 @@ it('persists metadata grants and revocation with exact bindings and malformed-ro
   const first = await persistenceProvider.open({ dataDir: root })
   const ns = first.metadata.namespace('@agnes/host/approval-grants', 'grants')
   const control = createApprovalGrantControlPlane(ns)
-  const fitted = control.bind(fakeSeams().approval)
-  if (!fitted.putGrant) throw new Error('activation port missing')
-  await fitted.putGrant(grant)
-  await fitted.putGrant(grant)
+  await control.port.put(grant)
+  await control.port.put(grant)
   expect(control.management.list(query)).toEqual([grant])
   expect(control.management.list({ ...query, actorOrg: 'other' })).toEqual([])
   expect(

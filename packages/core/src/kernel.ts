@@ -163,6 +163,8 @@ export type KernelOptions = {
   quiet?: NonNullable<SessionImpl['d']['quiet']>
   /** Host publication admission shared by every session and descendant. */
   workspacePublication?: NonNullable<SessionImpl['d']['workspacePublication']>
+  /** Host-owned permanent approval store. Without it no permanent grant is read or written. */
+  approvalGrants?: import('@agnes/core-effects/effects/seams').ApprovalGrantsPort
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
@@ -557,6 +559,7 @@ export class Kernel {
         ...(this.o.timers ? { timers: this.o.timers } : {}),
         ...(workspaceInvocation ? { workspaceInvocation } : {}),
         ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
+        ...(this.o.approvalGrants ? { approvalGrants: this.o.approvalGrants } : {}),
       })
       // The Operation, if any, standing in for each of core's own named step-machine segments. Built
       // once per session here (rather than read fresh by whatever eventually dispatches on it) because

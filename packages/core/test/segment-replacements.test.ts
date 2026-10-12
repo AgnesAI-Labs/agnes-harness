@@ -41,14 +41,12 @@ describe('typed core segment replacements', () => {
     registry.add(shellTool(), { source: 'test', trust: 'builtin' })
     const grants: import('@agnes/protocol').ApprovalGrant[] = []
     const opened = await openSession({
-      seams: fakeSeams({
-        approval: {
-          listGrants: async () => grants,
-          putGrant: async (grant) => {
-            grants.push(grant)
-          },
+      approvalGrants: {
+        list: async () => grants,
+        put: async (grant) => {
+          grants.push(grant)
         },
-      }),
+      },
       provider: fakeProvider([toolTurn('shell', { command: 'x' }), textTurn('done')]),
       registry,
       operations,

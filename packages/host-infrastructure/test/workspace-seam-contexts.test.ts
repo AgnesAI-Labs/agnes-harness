@@ -19,56 +19,31 @@ const checkpoint = (): CheckpointSeam => ({
 })
 
 describe('workspace seam contexts', () => {
-  it('fits both seams to the authoritative runtime and closes them in reverse order', async () => {
+  it('fits the checkpoint to the authoritative runtime and passes the approval seam through', async () => {
     const order: string[] = []
-    const fittedApproval = Object.assign(approval(), { close: () => void order.push('approval') })
     const fittedCheckpoint = Object.assign(checkpoint(), { close: () => void order.push('checkpoint') })
-    const approvalFit = vi.fn(async () => fittedApproval)
     const checkpointFit = vi.fn(async () => fittedCheckpoint)
+    const delivery = approval()
 
     const contexts = await openWorkspaceSeamContexts(
-      {
-        approval: Object.assign(approval(), { forWorkspace: approvalFit }),
-        checkpoint: Object.assign(checkpoint(), { forWorkspace: checkpointFit }),
-      },
+      { approval: delivery, checkpoint: Object.assign(checkpoint(), { forWorkspace: checkpointFit }) },
       runtime,
     )
 
-    expect(approvalFit).toHaveBeenCalledWith({ root: runtime.root })
     expect(checkpointFit).toHaveBeenCalledWith({ root: runtime.root, fs: runtime.fencedFs })
-    expect(contexts.approval).toBe(fittedApproval)
+    expect(contexts.approval).toBe(delivery)
     expect(contexts.checkpoint).toBe(fittedCheckpoint)
     await contexts.close()
     await contexts.close()
-    expect(order).toEqual(['checkpoint', 'approval'])
+    expect(order).toEqual(['checkpoint'])
   })
 
-  it('fails closed when either dynamic seam cannot bind a workspace', async () => {
+  it('fails closed when the checkpoint cannot bind a workspace', async () => {
     await expect(
       openWorkspaceSeamContexts({ approval: approval(), checkpoint: checkpoint() }, runtime),
     ).rejects.toMatchObject({
       code: 'E_WORKSPACE_REQUIRED',
-      detail: { seam: 'approval', reason: 'workspace-fitting-unavailable' },
+      detail: { seam: 'checkpoint', reason: 'workspace-fitting-unavailable' },
     })
-  })
-
-  it('rolls back the fitted approval when checkpoint fitting fails', async () => {
-    const close = vi.fn()
-    await expect(
-      openWorkspaceSeamContexts(
-        {
-          approval: Object.assign(approval(), {
-            forWorkspace: async () => Object.assign(approval(), { close }),
-          }),
-          checkpoint: Object.assign(checkpoint(), {
-            forWorkspace: async () => {
-              throw new Error('checkpoint failed')
-            },
-          }),
-        },
-        runtime,
-      ),
-    ).rejects.toThrow('checkpoint failed')
-    expect(close).toHaveBeenCalledOnce()
   })
 })

@@ -2,13 +2,14 @@ import type { PresetView } from '@agnes/core-common/step/preset'
 import type { Clock } from '@agnes/core-common/types'
 import type { Timers } from '@agnes/core-ledger/log/session-log'
 import type { ArtifactJob } from '@agnes/core-ledger/reduce/shapes'
-import type { Actor } from '@agnes/protocol'
+import type { Actor, ApprovalGrant } from '@agnes/protocol'
 import type { WorkspaceInvocationPort } from '../workspace/runtime.js'
 import { isPending, normalizeApproval, type RawApproval } from './approval-answer.js'
 import { platformView } from './platform-facts.js'
 import type {
   ApprovalAnswer,
   ApprovalGrantQuery,
+  ApprovalGrantsPort,
   ApprovalRequest,
   ApprovalSeam,
   BillingRow,
@@ -134,6 +135,8 @@ export class SeamRuntime {
       onFailure: (f: SeamFailure) => void
       timers?: Timers
       workspaceInvocation?: WorkspaceInvocationPort
+      /** Host-owned permanent approval store; absent means no permanent grant can be read or written. */
+      approvalGrants?: ApprovalGrantsPort
       workspacePublication?: import('../workspace/runtime.js').WorkspacePublicationDispatch
     },
   ) {
@@ -216,32 +219,12 @@ export class SeamRuntime {
     return answer.reason === undefined && answer.answeredBy === undefined ? answer.verdict : answer
   }
 
-  async approvalToolAllowed(name: string, args: unknown): Promise<boolean> {
-    try {
-      return await this.withApproval((approval) => approval.checkTool?.(name, args) ?? Promise.resolve(true))
-    } catch {
-      return false
-    }
-  }
-
-  async approvalPolicy(req: ApprovalRequest): Promise<'allow' | 'ask' | 'deny'> {
-    try {
-      const result = await this.withApproval(
-        (approval) => approval.policy?.(structuredClone(req)) ?? Promise.resolve('ask' as const),
-      )
-      return result === 'allow' || result === 'ask' ? result : 'deny'
-    } catch {
-      return 'deny'
-    }
-  }
-
   async approvalGrants(query: ApprovalGrantQuery, signal: AbortSignal) {
+    const port = this.o.approvalGrants
+    if (!port) return []
     try {
       const grants = await withTimeout(
-        this.withApproval((approval) => {
-          const list = approval.listGrants
-          return list ? list.call(approval, query) : Promise.resolve([])
-        }),
+        port.list(query),
         this.preset.approval.timeoutMs,
         'approval.listGrants',
         signal,
@@ -254,44 +237,21 @@ export class SeamRuntime {
     }
   }
 
-  async approvalPutGrant(
-    grant: Parameters<NonNullable<SeamImplementations['approval']['putGrant']>>[0],
-    signal: AbortSignal,
-  ): Promise<boolean> {
+  async approvalPutGrant(grant: ApprovalGrant, signal: AbortSignal): Promise<boolean> {
+    const port = this.o.approvalGrants
+    if (!port) return false
     try {
-      return await withTimeout(
-        this.withApproval(async (approval) => {
-          const put = approval.putGrant
-          if (!put) return false
-          await put.call(approval, grant)
-          return true
-        }),
+      await withTimeout(
+        port.put(grant),
         this.preset.approval.timeoutMs,
         'approval.putGrant',
         signal,
         this.o.timers,
       )
+      return true
     } catch (err) {
       this.fail('approval', 'putGrant', err)
       return false
-    }
-  }
-
-  async approvalRevokeGrant(grantId: string, revokedAt: string, signal: AbortSignal) {
-    try {
-      return await withTimeout(
-        this.withApproval((approval) => {
-          const revoke = approval.revokeGrant
-          return revoke ? revoke.call(approval, grantId, revokedAt) : Promise.resolve(null)
-        }),
-        this.preset.approval.timeoutMs,
-        'approval.revokeGrant',
-        signal,
-        this.o.timers,
-      )
-    } catch (err) {
-      this.fail('approval', 'revokeGrant', err)
-      return null
     }
   }
 

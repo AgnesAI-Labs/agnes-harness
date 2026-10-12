@@ -1,7 +1,7 @@
 import { defaultIds } from '@agnes/core-common/ids'
 import { type PresetView, presetDefaults } from '@agnes/core-common/step/preset'
 import type { FsPolicy } from '@agnes/core-effects/effects/fs-guard'
-import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
+import type { ApprovalGrantsPort, SeamImplementations } from '@agnes/core-effects/effects/seams'
 import type { FsOps } from '@agnes/core-effects/effects/tool-context'
 import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
@@ -152,6 +152,7 @@ export async function openSession(
     writerRunId?: string
     clock?: () => number
     fsOps?: FsOps
+    approvalGrants?: ApprovalGrantsPort
   },
 ) {
   const storage = over.storage ?? new MemoryStorage()
@@ -179,8 +180,9 @@ export async function openSession(
     clock,
     onFailure: () => undefined,
     workspaceInvocation,
+    ...(over.approvalGrants ? { approvalGrants: over.approvalGrants } : {}),
   })
-  const { fsOps: _fsOps, ...sessionOver } = over
+  const { fsOps: _fsOps, approvalGrants: _grants, ...sessionOver } = over
   const registry = over.registry ?? new ToolRegistry()
   const session = new SessionImpl({
     loopFactory: defaultLoopFactory,

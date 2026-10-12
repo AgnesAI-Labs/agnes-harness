@@ -131,12 +131,8 @@ describe('WorkspaceInvocationPort', () => {
   })
 
   it('revokes cached fs, confine, approval, checkpoint and hook operations as one scope', async () => {
-    const dispose = vi.fn()
-    const raw = source()
     const port = createWorkspaceInvocationPort(() => ({
-      source: source({
-        approval: { ...raw.approval, onGrantRevoked: () => dispose },
-      }),
+      source: source(),
       release: () => undefined,
     }))
     let leaked!: WorkspaceInvocationView
@@ -153,10 +149,8 @@ describe('WorkspaceInvocationPort', () => {
       approval = view.approvalContext()
       checkpoint = view.checkpointContext()
       snapshot = await view.hookSnapshot()
-      approval.onGrantRevoked?.(() => undefined)
     })
 
-    expect(dispose).toHaveBeenCalledOnce()
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.hooks)).toBe(true)
     expect(Object.isFrozen(snapshot.hooks[0])).toBe(true)

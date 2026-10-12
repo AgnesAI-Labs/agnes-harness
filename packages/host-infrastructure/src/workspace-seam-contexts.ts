@@ -10,7 +10,7 @@ export type WorkspaceSeamContexts = Readonly<{
   close(): Promise<void>
 }>
 
-const unavailable = (seam: 'approval' | 'checkpoint'): HostError =>
+const unavailable = (seam: 'checkpoint'): HostError =>
   new HostError('E_WORKSPACE_REQUIRED', `${seam} seam cannot be fitted to the session workspace`, {
     detail: { seam, reason: 'workspace-fitting-unavailable' },
   })
@@ -34,15 +34,11 @@ export async function openWorkspaceSeamContexts(
   runtime: SessionWorkspaceRuntime,
 ): Promise<WorkspaceSeamContexts> {
   if (!runtime.fencedFs) throw unavailable('checkpoint')
-  const fitApproval = seams.approval.forWorkspace
-  if (!fitApproval) throw unavailable('approval')
   const fitCheckpoint = seams.checkpoint.forWorkspace
   if (!fitCheckpoint) throw unavailable('checkpoint')
 
   const opened: Closeable[] = []
   try {
-    const approval = await fitApproval.call(seams.approval, { root: runtime.root })
-    opened.push(approval as ApprovalSeam & Closeable)
     const checkpoint = await fitCheckpoint.call(seams.checkpoint, {
       root: runtime.root,
       fs: runtime.fencedFs,
@@ -50,7 +46,7 @@ export async function openWorkspaceSeamContexts(
     opened.push(checkpoint as CheckpointSeam & Closeable)
     let closed = false
     return Object.freeze({
-      approval,
+      approval: seams.approval,
       checkpoint,
       async close() {
         if (closed) return

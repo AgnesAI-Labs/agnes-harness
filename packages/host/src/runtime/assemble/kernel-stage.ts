@@ -1,5 +1,5 @@
 import { dirname } from 'node:path'
-import { DEFAULT_LOOP, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
+import { type ApprovalGrantsPort, DEFAULT_LOOP, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
 import { readCommandRules, withCommandFloorRegistry } from '@agnes/core/command-table'
 import {
   type LeaseView,
@@ -106,6 +106,7 @@ export async function createKernel(
     runtimeTarget: RuntimeTargetHost
     skillState: SkillState
     computerUse: ComputerUseHost
+    approvalGrants: ApprovalGrantsPort
     discoveredResources: WeakMap<SessionImpl, readonly ResourceEntry[]>
     extensionLeases: ExtensionLeases
   }>,
@@ -268,6 +269,7 @@ export async function createKernel(
       : {}),
     ...(skillState.promptPreloader ? { runtimePromptPreloader: skillState.promptPreloader } : {}),
     workspacePublication: publicationDispatch,
+    approvalGrants: input.approvalGrants,
     // A spawned child's run is its own turn: activation waits for it, and one started while an
     // activation holds the gate queues behind it.
     detachedChildRun: async (run) => (await activationBarrier.enqueue('turn').start()).run(run),

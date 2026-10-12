@@ -53,19 +53,18 @@ export type ApprovalGrantQuery = {
   scope: string
   policyVersion: string
 }
-/** Host-authorized workspace identity used to fit an approval policy for one session. */
-export type ApprovalWorkspaceBinding = Readonly<{ root: string }>
+/** How a question reaches a person and the answer comes back. Who may answer and what is durable is Core's. */
 export interface ApprovalSeam {
-  /** Dynamic seams fit the shared implementation to the session before it enters an invocation. */
-  forWorkspace?(workspace: ApprovalWorkspaceBinding): ApprovalSeam | Promise<ApprovalSeam>
-  checkTool?(name: string, args: unknown): Promise<boolean>
-  /** Intrinsic command rules run before a durable human question, never impersonate its responder. */
-  policy?(req: ApprovalRequest): Promise<'allow' | 'ask' | 'deny'>
   ask(req: ApprovalRequest, opts?: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer | Pending>
-  listGrants?(query: ApprovalGrantQuery): Promise<ApprovalGrant[]>
-  putGrant?(grant: ApprovalGrant): Promise<void>
-  revokeGrant?(grantId: string, revokedAt: string): Promise<ApprovalGrant | null>
-  onGrantRevoked?(listener: (grantId: string) => void): () => void
+}
+
+/**
+ * Permanent approvals the Host stores. They are bound to the approver and the tool definition when
+ * written; storage, listing and revocation live in the Host, not in the selected approval provider.
+ */
+export interface ApprovalGrantsPort {
+  list(query: ApprovalGrantQuery): Promise<ApprovalGrant[]>
+  put(grant: ApprovalGrant): Promise<void>
 }
 
 export type ResolvedApprovalMode = ApprovalMode

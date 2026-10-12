@@ -134,6 +134,7 @@ async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
     runtimeTarget: t.runtimeTarget,
     skillState: t.skillState,
     computerUse: t.computerUse,
+    approvalGrants: t.approvalGrantControl.port,
     discoveredResources,
     extensionLeases,
   })

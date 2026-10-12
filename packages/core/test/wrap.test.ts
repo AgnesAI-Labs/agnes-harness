@@ -202,17 +202,16 @@ describe('SeamRuntime', () => {
 
   it('a failed durable put is never reported successful', async () => {
     const failures: unknown[] = []
-    const rt = new SeamRuntime(
-      fakeSeams({
-        approval: {
-          putGrant: async () => {
-            throw new Error('grant store down')
-          },
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), {
+      clock: () => 0,
+      onFailure: (f) => failures.push(f),
+      approvalGrants: {
+        list: async () => [],
+        put: async () => {
+          throw new Error('grant store down')
         },
-      }),
-      presetDefaults(),
-      { clock: () => 0, onFailure: (f) => failures.push(f) },
-    )
+      },
+    })
     await expect(
       rt.approvalPutGrant(
         {
@@ -235,7 +234,7 @@ describe('SeamRuntime', () => {
     expect(failures).toEqual([expect.objectContaining({ op: 'putGrant', message: 'grant store down' })])
   })
 
-  it('lists and revokes durable approval grants through the bounded seam runtime', async () => {
+  it('lists and stores durable approval grants through the bounded host port', async () => {
     const grant = {
       grantId: 'g',
       profileHash: `sha256-${'a'.repeat(64)}`,
@@ -250,17 +249,11 @@ describe('SeamRuntime', () => {
       policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     }
-    const rt = new SeamRuntime(
-      fakeSeams({
-        approval: {
-          listGrants: async () => [grant],
-          revokeGrant: async (grantId, revokedAt) =>
-            grantId === grant.grantId ? { ...grant, revokedAt } : null,
-        },
-      }),
-      presetDefaults(),
-      { clock: () => 0, onFailure: () => undefined },
-    )
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), {
+      clock: () => 0,
+      onFailure: () => undefined,
+      approvalGrants: { list: async () => [grant], put: async () => undefined },
+    })
     const query = {
       profileHash: grant.profileHash,
       actorId: grant.actorId,
@@ -270,10 +263,13 @@ describe('SeamRuntime', () => {
       policyVersion: grant.policyVersion,
     }
     await expect(rt.approvalGrants(query, sig())).resolves.toEqual([grant])
-    await expect(rt.approvalRevokeGrant('g', '2026-09-17T01:00:00.000Z', sig())).resolves.toEqual({
-      ...grant,
-      revokedAt: '2026-09-17T01:00:00.000Z',
-    })
+    await expect(rt.approvalPutGrant(grant, sig())).resolves.toBe(true)
+  })
+
+  it('reads no grants and stores none without a host port', async () => {
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), { clock: () => 0, onFailure: () => undefined })
+    await expect(rt.approvalGrants({} as never, sig())).resolves.toEqual([])
+    await expect(rt.approvalPutGrant({} as never, sig())).resolves.toBe(false)
   })
 
   it('owns one workspace lease across approval timeout, failure, and park outcomes', async () => {
@@ -367,12 +363,7 @@ describe('SeamRuntime', () => {
       throw new Error('global checkpoint called')
     })
     const global = fakeSeams({
-      approval: {
-        ask: globalApproval,
-        listGrants: globalApproval,
-        putGrant: globalApproval,
-        revokeGrant: globalApproval,
-      },
+      approval: { ask: globalApproval },
       checkpoint: {
         snapshot: globalCheckpoint,
         rewind: globalCheckpoint,
@@ -380,12 +371,7 @@ describe('SeamRuntime', () => {
       },
     })
     const bound = fakeSeams({
-      approval: {
-        ask: async () => 'allowed-once',
-        listGrants: async () => [grant],
-        putGrant: async () => undefined,
-        revokeGrant: async (_id, revokedAt) => ({ ...grant, revokedAt }),
-      },
+      approval: { ask: async () => 'allowed-once' },
       checkpoint: {
         snapshot: async () => ({ id: 'cp' }),
         rewind: async () => undefined,
@@ -397,6 +383,7 @@ describe('SeamRuntime', () => {
       clock: () => 0,
       onFailure: () => undefined,
       workspaceInvocation: workspacePort(bound, release),
+      approvalGrants: { list: async () => [grant], put: async () => undefined },
     })
 
     await expect(rt.approvalAsk(req, sig())).resolves.toBe('allowed-once')
@@ -414,15 +401,11 @@ describe('SeamRuntime', () => {
       ),
     ).resolves.toEqual([grant])
     await expect(rt.approvalPutGrant(grant, sig())).resolves.toBe(true)
-    await expect(rt.approvalRevokeGrant('g', 'revoked', sig())).resolves.toMatchObject({
-      grantId: 'g',
-      revokedAt: 'revoked',
-    })
     await expect(rt.checkpointSnapshot(['a'], '1/1')).resolves.toEqual({ ok: true, id: 'cp' })
     await expect(rt.checkpointRewind('cp')).resolves.toBe(true)
     await expect(rt.checkpointList()).resolves.toEqual([{ id: 'cp', stepId: '1/1' }])
 
-    expect(release).toHaveBeenCalledTimes(7)
+    expect(release).toHaveBeenCalledTimes(4)
     expect(globalApproval).not.toHaveBeenCalled()
     expect(globalCheckpoint).not.toHaveBeenCalled()
   })

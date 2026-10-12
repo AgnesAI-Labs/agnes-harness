@@ -15,14 +15,8 @@ export function fakeSeams(
     fsPolicy: () => testFsPolicy('/w'),
     enforcement: () => ({ level: 'full', scope: ['file', 'network', 'process'] }),
   }
-  let approval!: SeamImplementations['approval']
-  approval = {
-    forWorkspace: async () => approval,
+  const approval: SeamImplementations['approval'] = {
     ask: async () => ({ verdict: 'allowed-once', answeredBy: actor }),
-    listGrants: async () => [],
-    putGrant: async () => undefined,
-    revokeGrant: async () => null,
-    onGrantRevoked: () => () => undefined,
   }
   let checkpoint!: SeamImplementations['checkpoint']
   checkpoint = {
@@ -63,7 +57,6 @@ export function fakeSeams(
   for (const [k, v] of Object.entries(over))
     out[k] = { ...(base as unknown as Record<string, object>)[k], ...(v as object) }
   const seams = out as unknown as SeamImplementations
-  if (!over.approval?.forWorkspace) seams.approval.forWorkspace = async () => seams.approval
   if (!over.checkpoint?.forWorkspace) seams.checkpoint.forWorkspace = async () => seams.checkpoint
   return seams
 }
