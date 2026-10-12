@@ -89,7 +89,7 @@ export const pluginCreatorTools = [
   defineTool({
     name: 'plugin_candidate_write',
     description:
-      'Replace candidate files through the Host authoring port. Supply the complete text tree. Every change invalidates tests and human review.',
+      'Replace the complete candidate text tree. Build in <=8 KiB new-text steps; use run_code to read/modify/write the full tree without re-emitting unchanged files. After truncation, read the same candidate. Changes invalidate tests and review.',
     parameters: Type.Object(
       { candidateId, expectedHash, files: Type.Array(file, { minItems: 1, maxItems: 64 }) },
       { additionalProperties: false },
@@ -118,7 +118,7 @@ export default defineExtension((api) => {
           id: 'plugin-creator',
           order: 165,
           content:
-            'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation.',
+            'To grow a plugin or Skill: read plugin_creator_guide; plugin_scaffold creates a private candidate, plugin_candidate_read/write edit its full text tree, plugin_test runs tests for its hash, plugin_install_local submits it for human review. Only the human may publish in Settings → Plugins. Never write drafts to plugin/Skill discovery roots. Old sessions keep their pinned generation. Keep new text <=8 KiB per reply; use run_code for incremental full-tree edits. After OUTPUT_LIMIT, read and continue the same candidate.',
         },
       ],
     })),

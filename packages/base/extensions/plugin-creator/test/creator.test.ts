@@ -1,6 +1,7 @@
-import type { ToolContext } from '@agnes/extension-api'
+import { runInNewContext } from 'node:vm'
+import type { ExtensionAPI, ToolContext } from '@agnes/extension-api'
 import { expect, it, vi } from 'vitest'
-import { pluginCreatorTools } from '../src/index.js'
+import pluginCreator, { pluginCreatorTools } from '../src/index.js'
 
 it('submits only an exact candidate hash through the host, propagates refusal and cancellation, and never executes an install', async () => {
   const exec = vi.fn(),
@@ -55,6 +56,68 @@ it('reads the bundled creator skill without executing commands and fails closed 
     ctx = { signal: new AbortController().signal, exec } as unknown as ToolContext
   const result = await pluginCreatorTools[0].execute({}, ctx)
   expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('scriptedModel') })
+  const guide = (result.content[0] as { text: string }).text
+  expect(guide).toContain('8 KiB')
+  expect(guide).toContain('After OUTPUT_LIMIT')
+  expect(pluginCreatorTools[4].description).toContain('run_code')
+  let sections: { content: string }[] = []
+  pluginCreator({
+    registerTool: () => () => {},
+    registerHook: (_name: string, hook: () => { sections: { content: string }[] }) => {
+      sections = hook().sections
+      return () => {}
+    },
+  } as unknown as ExtensionAPI)
+  expect(sections[0]?.content).toContain('8 KiB')
+  expect(sections[0]?.content).toContain('OUTPUT_LIMIT')
+  // Execute the shipped bounded-edit example against the real tools and a synthetic author port.
+  const candidateId = `candidate-${'a'.repeat(32)}`,
+    candidateHash = `sha256-${'b'.repeat(64)}`
+  const sourceFiles = [
+    { path: 'package.json', content: '{"name":"example"}' },
+    { path: 'skills/example/SKILL.md', content: '# Example\n<!-- next-section -->\n' },
+    { path: 'untouched.md', content: 'Unchanged text '.repeat(2000) },
+  ]
+  let saved = sourceFiles
+  const writable = {
+    ...ctx,
+    pluginManage: {
+      request: async (input: unknown) => {
+        const args = input as {
+          action: string
+          candidateId: string
+          expectedHash?: string
+          files: typeof sourceFiles
+        }
+        expect(args.candidateId).toBe(candidateId)
+        if (args.action === 'candidate.show') return { candidateId, candidateHash, sourceFiles }
+        expect(args.action).toBe('candidate.write')
+        expect(args.expectedHash).toBe(candidateHash)
+        saved = args.files
+        return { candidateId, candidateHash: `sha256-${'c'.repeat(64)}`, sourceFiles: saved }
+      },
+    },
+  } as ToolContext
+  const program = guide.match(/```ts\n([\s\S]*?)\n```/)?.[1]?.replace('CANDIDATE_ID', candidateId)
+  expect(program).toBeDefined()
+  expect(program!.length).toBeLessThan(8192)
+  const tools = {
+    plugin_candidate_read: (args: { candidateId: string }) => pluginCreatorTools[5].execute(args, writable),
+    plugin_candidate_write: (args: {
+      candidateId: string
+      expectedHash: string
+      files: typeof sourceFiles
+    }) => pluginCreatorTools[4].execute(args, writable),
+  }
+  expect(await runInNewContext(`(async () => {${program}})()`, { tools })).toEqual({
+    candidateId,
+    candidateHash: `sha256-${'c'.repeat(64)}`,
+  })
+  expect(saved).toEqual([
+    sourceFiles[0],
+    { path: sourceFiles[1]!.path, content: '# Example\nA complete small section.\n' },
+    sourceFiles[2],
+  ])
   expect(await pluginCreatorTools[1].execute({ template: 'skill', name: 'review-demo' }, ctx)).toMatchObject({
     isError: true,
   })

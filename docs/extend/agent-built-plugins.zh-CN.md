@@ -31,6 +31,8 @@ call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
 
 可选 `agnes/plugin-creator` 扩展另有 `plugin_scaffold`（tool、tool-with-panel、mcp-skills、model-adapter、loop、skill）、`plugin_candidate_read`、`plugin_candidate_write`、`plugin_test` 和 `plugin_install_local`。写入须提供旧 `candidateHash` 并替换完整文本树；`plugin_install_local` 只提交测试通过的摘要，不将代码复制到发现根目录。
 
+大包分步构建，每次回复的新文件文本最多 8 KiB，每次完成一个文件或带唯一标记的完整段落。写入仍替换完整树，不能只发送变化文件。存在 `run_code` 时，在 cell 内读取当前候选，程序化更新 `sourceFiles`，用新摘要写入完整数组，仅输出返回的摘要；内置 `plugin_creator_guide` 提供小型 cell 示例。没有代码工具时，将完整草稿控制在输出额度内，或配置服务商支持的更高 `model.max_tokens`。发生 `OUTPUT_LIMIT` 后，读取原候选并用更小片段接续：未完成调用已被丢弃。最终摘要必须重新测试才能提交审阅；部分草稿或输出额度提示不是测试通过的证据。
+
 在 **设置 → 插件 → 候选** 从列表选择草稿；状态标签区分待审阅、已拒绝和已发布。摘要显示插件、来源会话与轮次、测试结果及新增权限。逐个展开文件查看新增和删除行，长文件在差异区域内滚动。默认收起的 **技术详情** 包含候选、已安装基线、审阅和测试运行的摘要，原始能力变化、会话／工具 ID 及测试输出。检查改动时，审阅页底部保持 **批准发布** 和 **拒绝** 可见。
 
 先看源码再运行测试：作者测试在本机执行可信 JavaScript，剥离环境、限制时间和输出并支持取消，但不是恶意代码沙箱。运行器使用 Node 24 与公开作者 SDK，不运行包生命周期脚本，不将 Markdown 当命令；至少一个实际执行的测试通过后才能提交。
