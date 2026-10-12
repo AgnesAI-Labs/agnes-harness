@@ -19,6 +19,7 @@ import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { scaffold } from '../../../templates/create-agh-plugin.mjs'
@@ -98,8 +99,14 @@ async function fixture(
     generation: 1,
     trusted: true,
   }
+  const skills = createSkillCandidateRegistry({
+    barrier: { quiesce: async (_id, publish) => publish({}) },
+  })
   const { host, profile } = await createTestHost({
     dataDir,
+    ...(template
+      ? { skillContribution: createSkillCordisService(skills), skillResources: skills.snapshot() }
+      : {}),
     packageDirs: installedAfterBoot ? {} : { [source.snapshot.packageId]: directory },
     script: template
       ? [
@@ -306,15 +313,19 @@ it('activates the zero-build loop template from an installed snapshot without SD
       id: 'tiny-loop',
       version: '0.1.0',
       sourcePackage: 'tiny-loop',
-      capabilities: ['model'],
+      capabilities: ['tools', 'model', 'checkpoint', 'deferred-invocations', 'approval'],
     })
     const session = await f.host.createSession({ key: 'template-loop', cwd: f.dataDir })
     expect(session.loop).toEqual({ id: 'tiny-loop', version: '0.1.0' })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor: session.d.actor })
     const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(result.reason, JSON.stringify(result)).toBe('completed')
-    const reply = await session.scan({ type: 'assistant/message', limit: 1 })
-    expect(reply[0]?.data).toMatchObject({ content: [{ type: 'text', text: 'Demo reply' }] })
+    const replies = await session.scan({ type: 'assistant/message', toSeq: session.lastSeq, limit: 100 })
+    expect(replies.map((row) => row.data)).toContainEqual(
+      expect.objectContaining({
+        content: [{ type: 'text', text: `answer:\n${JSON.stringify({ answer: 'Demo reply' }, null, 2)}` }],
+      }),
+    )
   } finally {
     await f.host.close()
   }
