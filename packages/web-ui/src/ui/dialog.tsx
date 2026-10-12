@@ -18,6 +18,28 @@ export function Dialog({ className, size = 'md', ...props }: DialogProps) {
       keyboard
       focusable={{ trap: true, focusTriggerAfterClose: false }}
       {...props}
+      wrapProps={{
+        ...props.wrapProps,
+        onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
+          props.wrapProps?.onKeyDown?.(event)
+          if (
+            event.key !== 'Escape' ||
+            event.defaultPrevented ||
+            event.nativeEvent.isComposing ||
+            props.open !== true ||
+            props.keyboard === false
+          )
+            return
+          const target = event.target as Element
+          // Closed popups can retain antd's global Escape stack during their exit motion.
+          // The modal containing keyboard focus owns an unconsumed Escape immediately.
+          if (target.closest('[role="dialog"]') !== event.currentTarget.querySelector('[role="dialog"]'))
+            return
+          event.preventDefault()
+          event.stopPropagation()
+          props.onCancel?.(event)
+        },
+      }}
       {...(reduce ? { transitionName: '', maskTransitionName: '' } : {})}
       className={classes}
       modalRender={(node) => (

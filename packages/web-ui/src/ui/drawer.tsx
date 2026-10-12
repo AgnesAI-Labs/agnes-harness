@@ -34,7 +34,7 @@ export function Drawer({
       open={open}
       placement="right"
       size="min(480px, 100vw)"
-      keyboard
+      keyboard={props.keyboard !== false}
       aria-labelledby={`${id}-title`}
       aria-describedby={description ? `${id}-description` : undefined}
       focusable={{ trap: true, focusTriggerAfterClose: false }}
@@ -55,6 +55,27 @@ export function Drawer({
       onClose={(event) => {
         event.preventDefault()
         if ('key' in event && event.key === 'Escape') onCancel?.(event)
+        onClose()
+      }}
+      onKeyDown={(event) => {
+        props.onKeyDown?.(event)
+        if (
+          event.key !== 'Escape' ||
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          !open ||
+          props.keyboard === false
+        )
+          return
+        const target = event.target as Element
+        // A closing child portal must not delay Escape in the drawer now holding focus.
+        const scope = event.currentTarget.matches('[role="dialog"]')
+          ? event.currentTarget
+          : event.currentTarget.querySelector('[role="dialog"]')
+        if (target.closest('[role="dialog"]') !== scope) return
+        event.preventDefault()
+        event.stopPropagation()
+        onCancel?.(event)
         onClose()
       }}
       drawerRender={(node) => <div className="agh-drawer-frame">{node}</div>}

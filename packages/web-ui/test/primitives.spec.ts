@@ -55,6 +55,7 @@ test.beforeAll(async () => {
       const [selected, select] = useState('')
       const [description, setDescription] = useState(true)
       const [nested, setNested] = useState(false), [notice, setNotice] = useState(false)
+      const [nestedKeyboard, setNestedKeyboard] = useState(true)
       const [refreshed, refresh] = useState(0)
       const native = useRef(null), [locked, lock] = useState(false)
       const choice = useRef(null)
@@ -83,9 +84,10 @@ test.beforeAll(async () => {
         <Drawer open={drawer} title="Details" onClose={() => setDrawer(false)}>
           <Field label="Name"><input /></Field>
           <Button onClick={() => setNested(true)}>Open nested confirmation</Button>
-          <Dialog open={nested} title="Nested confirmation" onCancel={() => setNested(false)} footer={<Button onClick={() => setNested(false)}>Cancel nested confirmation</Button>}>
+          <Dialog open={nested} keyboard={nestedKeyboard} title="Nested confirmation" onCancel={() => setNested(false)} footer={<Button onClick={() => setNested(false)}>Cancel nested confirmation</Button>}>
             <Menu label="Nested actions" trigger={<Button>Nested menu</Button>} items={[{id:'notify', label:'Show notification', onSelect:() => setNotice(true)}]} />
             <IconButton name="info" label="Explain nested action" />
+            <Button onClick={() => setNestedKeyboard(value => !value)}>{nestedKeyboard ? 'Lock nested Escape' : 'Unlock nested Escape'}</Button>
             <Toast open={notice} onDismiss={() => setNotice(false)} duration={0}>Nested notification</Toast>
           </Dialog>
         </Drawer>
@@ -204,6 +206,13 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
   const dialog = page.getByRole('dialog', { name: 'Nested confirmation', exact: true })
   await expect(dialog).toBeVisible()
   const menu = dialog.getByRole('button', { name: 'Nested menu', exact: true })
+  await menu.dispatchEvent('keydown', { key: 'Escape', isComposing: true })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Lock nested Escape', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  await expect(drawer).toBeVisible()
+  await dialog.getByRole('button', { name: 'Unlock nested Escape', exact: true }).click()
   await menu.click()
   await expect(dialog.getByRole('menuitem', { name: 'Show notification', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
