@@ -962,10 +962,11 @@ const clientModules = await startClientModules({
 })
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
-document.addEventListener('agnes:settings-terminal', (event) => {
+const openSettingsTerminal = (event: Event) => {
   settings.close()
   if (workbenchNavigation.open('terminal')) event.preventDefault()
-})
+}
+document.addEventListener('agnes:settings-terminal', openSettingsTerminal)
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
@@ -2330,6 +2331,7 @@ const modelRefresh = createRefreshCoordinator({
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
 window.addEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
 window.addEventListener('pagehide', () => {
+  document.removeEventListener('agnes:settings-terminal', openSettingsTerminal)
   newSessionDialog.dispose()
   unbindDialogSheets()
   unmountIntelligentUi()
