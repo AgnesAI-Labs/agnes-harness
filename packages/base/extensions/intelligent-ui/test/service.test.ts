@@ -360,6 +360,10 @@ describe('preset surface contract and ledger lifecycle', () => {
     for (const name of ['ui_render', 'ui_update']) {
       const tool = tools.find((item) => item.name === name)!
       expect(tool.meta.deferLoading).toBe(true)
+      if (name === 'ui_render') {
+        expect(tool.description).toContain('show/display in the UI')
+        expect(tool.description).toContain('instead of writing HTML and presenting a file')
+      }
       const described = await describe.execute({ name }, ctx)
       const text = described.content[0] as { text: string }
       for (const [kind, shape] of contracts) {

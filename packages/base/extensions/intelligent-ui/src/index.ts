@@ -46,7 +46,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_render',
         description:
-          'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.' +
+          'Show tables, charts and forms in the conversation/workbench UI. For "show/display in the UI", use this instead of writing HTML and presenting a file. Use presets or pinned plugin components; actions map to declared tools. No HTML or executable code.' +
           '\n' +
           UI_DATA_DESCRIPTION,
         parameters: reachableParameters(UiRenderParams),

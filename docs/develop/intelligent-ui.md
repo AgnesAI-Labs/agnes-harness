@@ -14,6 +14,8 @@ By default, a surface displays a conversation summary and a complete workbench v
 
 Phase 1 supports forms, tables, data-only charts, button groups, plain text, status, detail cards, tabs, steps, progress and images. Date and date-time values are form field formats, not a separate component. There is no generated HTML, JavaScript, expression evaluator, remote component loader or arbitrary CSS. External UI dependencies stay in `packages/web-ui`; clients preserve its theme, accessibility, CSP and skin hooks. Labels supplied by business plugins are content; renderer controls and refusal messages have English and Simplified Chinese catalogs, keyboard access, live status announcements and stable test ids.
 
+Requests to show tables, charts or forms in the conversation/workbench UI use `ui_render`; discover it with `tool_search` and load it with `tool_describe` when needed. Requests to create a file use file tools followed by `present` for the saved deliverable. Displaying a UI alone does not require generating HTML. The official tool guidance states this distinction; it does not grant unavailable tools or execution permission.
+
 ## Schema and bindings
 
 The declaration source is [intelligent-ui.json](../../packages/protocol/schema/intelligent-ui.json); [generated types](../../packages/protocol/gen/ts/intelligent-ui.ts) are consumed from `@agnes/protocol/gen/intelligent-ui` or the root type exports. Run only the existing protocol generator when changing declarations; never hand-edit generated types. This schema is separate from `surface.json`, which describes deployed application artifacts.

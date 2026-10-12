@@ -14,6 +14,8 @@
 
 第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本、状态、详情卡、分页、步骤、进度和图像。日期与日期时间是表单字段格式，不是单独的组件。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
 
+要求在会话/工作台界面展示表格、图表或表单时使用 `ui_render`；需要时经 `tool_search` 发现，再用 `tool_describe` 加载。要求创建文件时使用文件工具，再通过 `present` 呈现已保存的交付物。仅展示界面不需要生成 HTML。官方工具指引明确这一区分，不授予未提供的工具或执行权限。
+
 ## Schema 与绑定
 
 声明源为 [intelligent-ui.json](../../packages/protocol/schema/intelligent-ui.json)；[生成类型](../../packages/protocol/gen/ts/intelligent-ui.ts) 从 `@agnes/protocol/gen/intelligent-ui` 或根类型导出使用。修改声明时仅运行现有 protocol 生成器，不手改生成类型。该 Schema 与描述已部署应用产物的 `surface.json` 独立。
