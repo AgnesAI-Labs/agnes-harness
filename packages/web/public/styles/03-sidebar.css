@@ -160,11 +160,6 @@
   .session-menu-trigger {
     width: 1rem;
   }
-  .session-menu-trigger:hover:not(:disabled) {
-    border-color: transparent;
-    color: var(--agnes-text-primary);
-    background: transparent;
-  }
   /* 菜单卡使用 4px 内边距和 20px 圆角；宽度与落点由 positionPopover 设置。
    面板挂在 body 上，必须用 fixed 避开侧栏的 overflow 裁剪。 */
   .session-menu-actions {
