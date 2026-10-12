@@ -656,4 +656,10 @@
       transition: none;
     }
   }
+  .agnes-intelligent-surface :is(p, label, legend) {
+    line-height: 1.6;
+  }
+  .agnes-intelligent-component > h4 {
+    text-wrap: balance;
+  }
 }

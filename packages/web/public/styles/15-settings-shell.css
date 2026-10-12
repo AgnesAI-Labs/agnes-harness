@@ -162,9 +162,11 @@
   .admin-heading h1 {
     margin: 0;
     color: var(--agnes-text-primary);
-    font-size: clamp(1.45rem, 2vw, 1.8rem);
-    letter-spacing: -0.035em;
-    line-height: 1.2;
+    font-size: var(--font-size-2xl);
+    letter-spacing: 0;
+    line-height: var(--line-lg);
+    font-weight: var(--font-weight-semibold);
+    text-wrap: balance;
   }
   .admin-main {
     width: min(var(--admin-content-width), calc(100% - 3rem));

@@ -89,6 +89,8 @@ export function Chart({
                   background: 'var(--agnes-bg-popover)',
                   borderColor: 'var(--agnes-line-primary)',
                   color: 'var(--agnes-text-primary)',
+                  borderRadius: 'var(--radius-control)',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
                 itemStyle={{ color: 'var(--agnes-text-primary)' }}
               />
@@ -114,6 +116,8 @@ export function Chart({
                   background: 'var(--agnes-bg-popover)',
                   borderColor: 'var(--agnes-line-primary)',
                   color: 'var(--agnes-text-primary)',
+                  borderRadius: 'var(--radius-control)',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
                 itemStyle={{ color: 'var(--agnes-text-primary)' }}
               />
