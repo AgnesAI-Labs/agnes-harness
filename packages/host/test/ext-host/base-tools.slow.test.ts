@@ -542,9 +542,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       })
       expect(
         provider.calls[3]?.messages
-          .flatMap((message) => message.content)
-          .filter((block) => block.type === 'text')
-          .map((block) => block.text)
+          .flatMap((message) =>
+            message.content.filter((block) => block.type === 'text').map((block) => block.text),
+          )
           .join('\n'),
       ).toContain('"type":"action-result"')
       expect(
@@ -659,9 +659,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(JSON.stringify(provider.calls[2]?.messages)).toContain('Ada')
       expect(
         provider.calls[2]?.messages
-          .flatMap((message) => message.content)
-          .filter((block) => block.type === 'text')
-          .map((block) => block.text)
+          .flatMap((message) =>
+            message.content.filter((block) => block.type === 'text').map((block) => block.text),
+          )
           .join('\n'),
       ).toContain('"type":"action-result"')
       const facts = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
