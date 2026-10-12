@@ -364,4 +364,9 @@
     flex: 1 0 100%;
     margin-left: 0;
   }
+  @media (max-width: 767px) {
+    .workbench-terminal-output {
+      font-size: max(var(--font-size-md), 16px);
+    }
+  }
 }

@@ -802,8 +802,9 @@
       min-width: var(--control-height-touch);
     }
     .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
-    .agnes-ui-select .ant-select-input {
-      font-size: var(--font-size-md);
+    .agnes-ui-select .ant-select-input,
+    .agnes-ui-textarea {
+      font-size: max(var(--font-size-md), 16px);
     }
     .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
       min-height: var(--control-height-touch);
@@ -839,7 +840,7 @@
     :is(.agnes-ui-field, .form-field, .agnes-settings-toolbar)
       .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
     .agnes-settings-toolbar .agnes-ui-select {
-      font-size: var(--font-size-md);
+      font-size: max(var(--font-size-md), 16px);
     }
     .agnes-ui-select.ant-select,
     .ant-select-item-option {
