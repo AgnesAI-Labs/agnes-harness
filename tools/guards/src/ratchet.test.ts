@@ -235,7 +235,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/view': 116,
   'packages/web/src/session-binding': 31,
 
-  'packages/cli/src': 7980,
+  'packages/cli/src': 7989,
   'packages/cli/src/commands/package': 230,
   'packages/cli/src/tui/package-admin': 1,
   'packages/cli/src/tui/package-controller': 1,

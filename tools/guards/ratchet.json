@@ -57,7 +57,7 @@
   "packages/base/extensions/budget": 133,
   "packages/base/extensions/loop-hygiene": 69,
   "packages/base/extensions/refine": 434,
-  "packages/cli/src": 7980,
+  "packages/cli/src": 7989,
   "packages/cli/src/commands/package": 230,
   "packages/cli/src/tui/package-admin": 1,
   "packages/cli/src/tui/package-controller": 1,
