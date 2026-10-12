@@ -364,3 +364,9 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 `artifact-file` 组件的 `dataKey` 指向 `{name, description, artifact: {sha256, size, mime}}`。只接受会话产物标识，不接受路径或 URL。Web 在对话和工作台均显示文件名、描述、类型、格式化大小及预览、下载入口，复用会话/lane 授权的资源加载器，在卸载时释放资源。HTML 预览沿用已有文档清洗器，不能执行脚本或请求外部资源。不支持预览的类型以及超过现有 1 MiB 预览限制的文件仍可下载（沿用 32 MiB 下载限制）。
 
 `UiSurface.titleKey` 为可选字段，Web 使用 Intelligent UI 语言目录解析；必填 `title` 仍供其他客户端显示。内置交付物使用 `ui.deliverables`。原有组件及持久记录继续有效。
+
+### 动作回执展示
+
+Agent 输入仍保留完整机器回执，包括已提交的值。可选 `InputPresentation` 元数据随同一个幂等输入贯穿 inbox、`UserMessage` 和用户 `UINode`；其 `kind: "ui-action"`、终态 `status`、`operation`、动作 `label` 及有界字段名列表，使 Web 无需解析回执文本即可显示本地化摘要。原始正文继续保留在执行轨迹，模型请求不变。只有后台 system/untrusted 输入承载此展示，普通 prompt RPC 不接受该字段。`AgentInputPort.deliver(key, text, signal, presentation?)` 增加可选第四参数，在服务边界校验形状，原有 actor、lane、取消及投递键授权保持不变。
+
+后台 UI 回执仍是持久待接收输入，但不会进入可编辑的发送队列；接收后在对话中显示本地化摘要。

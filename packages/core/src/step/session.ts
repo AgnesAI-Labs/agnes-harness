@@ -1343,6 +1343,7 @@ export class SessionImpl {
         ...(msg.commandId ? { commandId: msg.commandId } : {}),
         ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
         kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
+        ...(msg.origin === 'system' && msg.presentation ? { presentation: msg.presentation } : {}),
         ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
         trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
         ...(msg.origin ? { origin: msg.origin } : {}),

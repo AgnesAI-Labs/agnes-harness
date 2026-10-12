@@ -107,6 +107,21 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       if (surface?.status === 'open')
         await storeSurface('surface.closed', { ...surface, status: 'closed' }, latest, 'submitted')
     }
+    const latest = await state()
+    const action = latest.surfaces[record.request.surfaceId]?.surface.actions.find(
+      (value) => value.id === record.request.actionId,
+    )
+    const operation =
+      record.invocation?.tool === 'ui_submit' || action?.tool === 'ui_submit' ? 'submit' : 'action'
+    const args = record.invocation?.args
+    const answers = args && typeof args === 'object' && !Array.isArray(args) ? args.answers : undefined
+    const fields =
+      answers && typeof answers === 'object' && !Array.isArray(answers)
+        ? Object.keys(answers)
+            .slice(0, 32)
+            .filter(Boolean)
+            .map((key) => key.slice(0, 128))
+        : []
     const inboxSeq = await input.deliver(
       `ui-result:${receipt.commandId}`,
       'Intelligent UI action result: ' +
@@ -117,6 +132,18 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
             : {}),
         }),
       signal,
+      {
+        kind: 'ui-action',
+        operation,
+        status:
+          receipt.status === 'succeeded'
+            ? 'succeeded'
+            : receipt.status === 'rejected'
+              ? 'rejected'
+              : 'failed',
+        label: action?.label ?? record.request.actionId,
+        fields,
+      },
     )
     await append(
       'action.delivered',

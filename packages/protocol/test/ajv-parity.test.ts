@@ -320,6 +320,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   TurnEnd: SessionGen.TurnEnd,
   StepStart: SessionGen.StepStart,
   StepEnd: SessionGen.StepEnd,
+  InputPresentation: SessionGen.InputPresentation,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
@@ -483,6 +484,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SurfaceAuthCredential: AgnesGen.SurfaceAuthCredential,
 
   BudgetState: AgnesGen.BudgetState,
+  InputPresentation: AgnesGen.InputPresentation,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -1291,6 +1293,20 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { turn: 1, step: 0 }, // boundary: minimum:1
     ],
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
+  },
+  InputPresentation: {
+    valid: {
+      kind: 'ui-action',
+      operation: 'submit',
+      status: 'succeeded',
+      label: 'Submit',
+      fields: ['name', 'email'],
+    },
+    invalid: [
+      { kind: 'ui-action' },
+      { kind: 'ui-action', operation: 'submit', status: 'executing', label: 'Submit', fields: [] },
+    ],
+    note: 'Backend UI action presentation is additive, bounded, and terminal only.',
   },
   UserMessage: {
     valid: userMessageOk,
@@ -2557,6 +2573,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
+  InputPresentation: SESSION_SAMPLES.InputPresentation as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {

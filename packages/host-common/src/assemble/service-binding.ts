@@ -18,7 +18,8 @@ import {
   type ServiceProvider,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import type { Actor, JsonValue } from '@agnes/protocol'
+import { type Actor, type InputPresentation, type JsonValue, validateAgainst } from '@agnes/protocol'
+import { InputPresentation as InputPresentationSchema } from '@agnes/protocol/gen/session-v1'
 import { ProviderLifetime } from './provider-lifetime.js'
 import {
   installProviderRegistry,
@@ -497,13 +498,20 @@ function buildPorts(
     if (!inputFactory) throw closed(kind.kind, 'bind')
     const raw = inputFactory(call, binding, descriptor)
     input = Object.freeze({
-      deliver: (key: string, text: string, signal: AbortSignal) =>
+      deliver: (key: string, text: string, signal: AbortSignal, presentation?: InputPresentation) =>
         guard('deliver', () => {
           if (typeof text !== 'string' || !(signal instanceof AbortSignal)) throw closed(kind.kind, 'deliver')
+          if (presentation !== undefined && !validateAgainst(InputPresentationSchema, presentation).ok)
+            throw closed(kind.kind, 'deliver')
           const finalKey = namespaceKey(kind.kind, call.owner, key, descriptor.dedupeKeys)
           const joined = AbortSignal.any([signal, call.signal, lifetime.signal])
           joined.throwIfAborted()
-          return raw.deliver(finalKey, text, joined)
+          return raw.deliver(
+            finalKey,
+            text,
+            joined,
+            presentation === undefined ? undefined : structuredClone(presentation),
+          )
         }) as Promise<number>,
     })
   }

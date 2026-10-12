@@ -511,6 +511,7 @@ export type {
   HarnessRefine,
   Inbox,
   InboxItem,
+  InputPresentation,
   JsonValue,
   OpState,
   Participant,

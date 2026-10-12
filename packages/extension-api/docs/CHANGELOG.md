@@ -2,6 +2,10 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 1.5.0
+
+Adds an optional typed `InputPresentation` to `AgentInputPort.deliver`. Backend UI actions can retain full machine input while clients render a localized terminal summary. Input metadata does not grant actor, lane or tool authority; the service binding validates it and ordinary prompt RPCs do not accept it.
+
 ## Unreleased
 
 Tool policy/runtime plugins now inject `providers` and register by kind through

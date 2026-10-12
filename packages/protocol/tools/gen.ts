@@ -195,6 +195,7 @@ const TARGETS: Array<{
           'EventEnvelope',
           'ExtensionEventType',
           'BudgetState',
+          'InputPresentation',
           'ArtifactRef',
           'ArtifactJob',
           'Billing',

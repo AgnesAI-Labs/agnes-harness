@@ -5,6 +5,7 @@ import { Image } from 'antd'
 import { useEffect, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { UserMessageReferences } from '../reference-chips.js'
+import { inputPresentationText } from '../user-presentation.js'
 
 /** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
 export const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
@@ -121,7 +122,7 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
       <UserMessageImages node={node} t={t} />
       <UserMessageFiles node={node} />
       <UserMessageReferences node={node} t={t} />
-      <div className="node-body">{value}</div>
+      <div className="node-body">{inputPresentationText(node.presentation, t) ?? value}</div>
     </>
   )
 }

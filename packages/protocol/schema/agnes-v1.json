@@ -2840,6 +2840,7 @@
     "BudgetState": {
       "$ref": "session-v1.json#/$defs/BudgetState"
     },
+    "InputPresentation": { "$ref": "session-v1.json#/$defs/InputPresentation" },
     "ArtifactRef": {
       "$ref": "session-v1.json#/$defs/ArtifactRef"
     },
@@ -3103,6 +3104,7 @@
                 "$ref": "#/$defs/ContentBlock"
               }
             },
+            "presentation": { "$ref": "#/$defs/InputPresentation" },
             "actorLabel": {
               "type": "string",
               "maxLength": 128

@@ -525,6 +525,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       const answer = answerRows.find((event) => JSON.stringify(event.data).includes('submitted'))
       expect(answer).toMatchObject({ origin: 'system', trust: 'untrusted', actor: session.d.actor })
       expect(JSON.stringify(answer?.data)).toContain('B')
+      expect(answer?.data).toMatchObject({
+        presentation: { kind: 'ui-action', operation: 'submit', status: 'succeeded', fields: ['choice'] },
+      })
+      expect(JSON.stringify(provider.calls[3]?.messages)).toContain('Intelligent UI action result:')
       expect(
         (
           await service.read(

@@ -227,7 +227,7 @@ describe('Inbox segment', () => {
     expect(session.op()).toBeNull()
   })
 
-  it('carries the enqueued trust and kind onto the user/message it becomes', async () => {
+  it('carries backend UI presentation with the enqueued trust and kind onto the user/message', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', {
       content: [{ type: 'text', text: 'from a channel' }],
@@ -235,11 +235,39 @@ describe('Inbox segment', () => {
       kind: 'follow_up',
       titleLocale: 'en',
       trust: 'untrusted',
+      origin: 'system',
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Submit',
+        fields: ['name', 'email'],
+      },
     })
+    expect((await session.projectUI()).pendingInputs).toEqual([])
     await session.acceptInput()
     const msg = (await log.scan({ type: 'user/message', limit: 5 }))[0]
     expect(msg).toMatchObject({ trust: 'untrusted', origin: 'system', actor: { id: 'bot' } })
     expect(msg?.data).toMatchObject({ kind: 'follow_up', titleLocale: 'en' })
+    expect(msg?.data).toMatchObject({
+      content: [{ type: 'text', text: 'from a channel' }],
+      presentation: { kind: 'ui-action', fields: ['name', 'email'] },
+    })
+    expect((await session.projectUI()).nodes.find((node) => node.kind === 'user')).toMatchObject({
+      presentation: { kind: 'ui-action', fields: ['name', 'email'] },
+    })
+    await session.enqueue('next-turn', {
+      actor,
+      content: [{ type: 'text', text: 'ordinary prompt' }],
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Spoof',
+        fields: [],
+      },
+    })
+    expect((session.latest('inbox') as { items: unknown[] }).items[0]).not.toHaveProperty('presentation')
     const started = (await log.scan({ type: 'turn/start', limit: 5 }))[0]
     expect(started?.data).toMatchObject({ trigger: 'follow_up' })
   })

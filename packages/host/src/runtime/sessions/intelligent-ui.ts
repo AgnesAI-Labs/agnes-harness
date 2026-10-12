@@ -368,7 +368,7 @@ export function createIntelligentUiBridge(input: {
     },
     input(call) {
       return {
-        async deliver(key, text, signal) {
+        async deliver(key, text, signal, presentation) {
           const ref = call.session
           if (!ref) denied(UNAVAILABLE)
           const session = requireSession(ref.key, ref.lane)
@@ -380,6 +380,7 @@ export function createIntelligentUiBridge(input: {
             actor,
             signal,
             sessionInputTarget(session, 'follow-steer'),
+            presentation,
           )
         },
       }

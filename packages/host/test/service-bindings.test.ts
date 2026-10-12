@@ -599,10 +599,15 @@ describe('service binding gate', () => {
   })
 
   it('namespaces delivery keys and passes the existing exact keys through', async () => {
-    const seen: { key: string; text: string }[] = []
+    const seen: { key: string; text: string; presentation?: unknown }[] = []
     const input = () => ({
-      deliver: (key: string, text: string) => {
-        seen.push({ key, text })
+      deliver: (
+        key: string,
+        text: string,
+        _signal: AbortSignal,
+        presentation?: import('@agnes/protocol').InputPresentation,
+      ) => {
+        seen.push({ key, text, ...(presentation ? { presentation } : {}) })
         return Promise.resolve(7)
       },
     })
@@ -650,9 +655,25 @@ describe('service binding gate', () => {
         Promise.resolve().then(() => namespacedInput.deliver('ok', 'x', aborted.signal)),
       ).rejects.toThrow()
       expect(seen).toHaveLength(before)
-      await exactInput.deliver('ui-result:cmd-1', 'hello', signal)
+      const presentation = {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Submit',
+        fields: ['name'],
+      } as const
+      await exactInput.deliver('ui-result:cmd-1', 'hello', signal, {
+        ...presentation,
+        fields: [...presentation.fields],
+      })
+      await refuse(() =>
+        namespacedInput.deliver('ui-result:invalid', 'hello', signal, {
+          ...presentation,
+          status: 'executing',
+        } as never),
+      )
       await exactInput.deliver('deferred-wake:job:4', 'again', signal)
-      expect(seen.at(-2)).toEqual({ key: 'ui-result:cmd-1', text: 'hello' })
+      expect(seen.at(-2)).toEqual({ key: 'ui-result:cmd-1', text: 'hello', presentation })
       expect(seen.at(-1)).toEqual({ key: 'deferred-wake:job:4', text: 'again' })
     } finally {
       await finish(namespaced.root)

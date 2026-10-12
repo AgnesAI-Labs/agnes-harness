@@ -7,6 +7,7 @@ import {
   type ConversationMessagesProps,
   type ConversationProjectionStore,
   createConversationProjectionStore,
+  projectConversationMessages,
   useConversationRuntime,
 } from '@agnes/web-ui/assistant-ui'
 import { AssistantRuntimeProvider } from '@assistant-ui/react'
@@ -511,3 +512,46 @@ describe('W3b projected message DOM', () => {
     expect(item('waiting')?.textContent).toContain('执行完成')
   })
 })
+
+it.each([
+  ['succeeded', '已提交：name、email'],
+  ['failed', '操作失败：Submit'],
+  ['rejected', '操作未执行：Submit'],
+] as const)(
+  'shows a localized UI receipt summary (%s) while keeping the machine receipt out of the bubble',
+  async (status, summary) => {
+    const node: UINode = {
+      kind: 'user',
+      id: 'receipt',
+      seq: 1,
+      content: [{ type: 'text', text: 'Intelligent UI action result: {"commandId":"machine-only"}' }],
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status,
+        label: 'Submit',
+        fields: ['name', 'email'],
+      },
+    }
+    const store = createConversationProjectionStore({ sessionId: 's', nodes: [node] })
+    await act(async () => root.render(createElement(Harness, { store })))
+    expect(host.textContent).toContain(summary)
+    expect(host.textContent).not.toContain('machine-only')
+    const english = (key: string, vars?: Record<string, string | number>) =>
+      Object.entries(vars ?? {}).reduce(
+        (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
+        webUiLocaleCatalog.en[key] ?? key,
+      )
+    const messages = projectConversationMessages(store.getSnapshot(), english)
+    expect(messages[0]?.content).toBe(
+      status === 'succeeded'
+        ? 'Submitted: name, email'
+        : status === 'failed'
+          ? 'Action failed: Submit'
+          : 'Action declined: Submit',
+    )
+    expect(messages[0]?.metadata.custom.node).toMatchObject({
+      content: [{ type: 'text', text: expect.stringContaining('machine-only') }],
+    })
+  },
+)

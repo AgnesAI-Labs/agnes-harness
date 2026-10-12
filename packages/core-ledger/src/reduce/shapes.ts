@@ -1,5 +1,5 @@
 import type { Seq } from '@agnes/core-common/types'
-import type { Actor, ApprovalVerdict, Billing, ContentBlock } from '@agnes/protocol'
+import type { Actor, ApprovalVerdict, Billing, ContentBlock, InputPresentation } from '@agnes/protocol'
 
 // The payload shapes of the event types protocol validates by envelope only. They are declared here
 // so the reducer and its consumers agree on one reading of each row; the ledger itself still accepts
@@ -48,6 +48,7 @@ export type InboxItem = {
   commandId?: string
   admissionId?: string
   enqueuedAt: string
+  presentation?: InputPresentation
   kind?: 'prompt' | 'steer' | 'follow_up'
   titleLocale?: 'en' | 'zh-CN'
   // Set by whoever enqueued the item, and defaulting to 'trusted' when absent. The accept path

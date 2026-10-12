@@ -243,7 +243,7 @@ function fixture(
         },
       },
       input: {
-        async deliver(key, text, deliverSignal) {
+        async deliver(key, text, deliverSignal, presentation) {
           deliverSignal.throwIfAborted()
           if (failDelivery) throw new Error('delivery interrupted')
           const commandId = key.startsWith('ui-result:') ? key.slice('ui-result:'.length) : ''
@@ -256,7 +256,11 @@ function fixture(
           })
           const deliveredActor = (matched?.data as { record?: { actor?: Actor } } | undefined)?.record?.actor
           if (!deliveredActor) throw new Error('missing action actor')
-          if (!deliveries.has(key)) deliveries.set(key, row('inbox', { key, text, actor: deliveredActor }))
+          if (!deliveries.has(key))
+            deliveries.set(
+              key,
+              row('inbox', { key, text, actor: deliveredActor, ...(presentation ? { presentation } : {}) }),
+            )
           return deliveries.get(key)!
         },
       },
@@ -995,6 +999,14 @@ describe('question collector on the ordinary surface path', () => {
     expect(JSON.parse(payload.text.slice('Intelligent UI action result: '.length)).submitted).toEqual({
       surfaceId: 'questions',
       answers,
+    })
+    expect(delivered.data).toMatchObject({
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        fields: expect.arrayContaining(['single', 'multi', 'text']),
+      },
     })
     expect(payload.actor).toEqual(actor)
     expect(f.deliveries.size).toBe(4) // Contact and question refusal/success, once each.

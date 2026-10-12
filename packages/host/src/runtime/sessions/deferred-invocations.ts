@@ -7,7 +7,7 @@ import {
   type DeferredInvocationLedgerPort,
   type DeferredInvocationsService,
 } from '@agnes/host-providers/assemble/deferred-invocations'
-import type { Actor, EventEnvelope } from '@agnes/protocol'
+import type { Actor, EventEnvelope, InputPresentation } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
 
@@ -38,6 +38,7 @@ export async function enqueueSessionInputOnce(
   actor: Actor,
   signal: AbortSignal,
   target: 'next-turn' | 'next-step' = 'next-turn',
+  presentation?: InputPresentation,
 ): Promise<number> {
   signal.throwIfAborted()
   const rows = await scanAll((q) => session.scan(q), {
@@ -61,6 +62,7 @@ export async function enqueueSessionInputOnce(
     kind: 'follow_up',
     trust: 'untrusted',
     origin: 'system',
+    ...(presentation ? { presentation } : {}),
   })
 }
 
