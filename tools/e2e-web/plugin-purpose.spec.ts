@@ -57,7 +57,9 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(page.getByTestId('plugin-settings-detail')).toBeVisible()
     await expect(page.getByTestId('plugin-config-field/name')).toHaveValue('Support')
     await page.getByTestId('plugin-config-field/name').fill('Unsaved purpose draft')
-    await pluginTab(page, 'details').click()
+    // Overview is clipped after scrolling the phone tab strip; keyboard focus reveals it.
+    await pluginTab(page, 'details').focus()
+    await pluginTab(page, 'details').press('Enter')
     await pluginTab(page, 'config').click()
     await expect(page.getByTestId('plugin-config-field/name')).toHaveValue('Unsaved purpose draft')
   })
