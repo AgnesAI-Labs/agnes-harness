@@ -355,7 +355,7 @@
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
   }
-  .agnes-ui-source-state {
+  .agnes-intelligent-source-state {
     display: grid;
     gap: var(--s8);
     justify-items: start;

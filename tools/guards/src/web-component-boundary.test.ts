@@ -8,11 +8,14 @@ it('rejects DOM writes, intrinsic controls and copied component classes across W
   for (const [source, rule] of [
     ['document.createElement("div")', 'dom'],
     ['host.ownerDocument.createElement("div")', 'dom'],
+    ['owner.createElement("div")', 'dom'],
+    ['doc.createElementNS("namespace", "svg")', 'dom'],
     ['node.innerHTML = html', 'dom'],
     ['<button />', 'intrinsic'],
     ['createElement("input", {})', 'intrinsic'],
     ['<div className="agnes-ui-button agh-btn--danger" />', 'className'],
     ['node.classList.add("primary-button")', 'className'],
+    ['const classes = [\n"agh-table",\n"agnes-ui-button"\n]', 'className'],
   ])
     expect(
       webComponentViolations(source ?? '', 'packages/web/src/new.tsx').some((v) => v.rule === rule),

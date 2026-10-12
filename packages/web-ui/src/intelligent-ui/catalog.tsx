@@ -12,6 +12,7 @@ import { UiArtifactFileData as ArtifactFileSchema } from '@agnes/protocol/gen/in
 import { Component, type ReactNode, useCallback, useId } from 'react'
 import { SettingsState } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
+import { Table } from '../ui/table.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentChart } from './chart.js'
 import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
@@ -268,104 +269,81 @@ function CatalogComponent(
     const format = (value: JsonValue | undefined, kind?: string): string =>
       formatFieldValue(value, kind, locale)
     content = (
-      <div
-        className="agnes-intelligent-table-scroll"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: the wide table scrolls on its own axis.
-        tabIndex={0}
-        role="region"
-        aria-label={component.title ?? surfaceTitle(surface, t)}
-      >
-        <table data-testid={`ui-table-${component.id}`}>
-          {/* Without its own title the table would repeat the surface heading right above it. */}
-          <caption data-repeats-heading={component.title ? undefined : true}>
-            {component.title ?? surfaceTitle(surface, t)}
-          </caption>
-          <thead>
-            <tr>
-              {component.selection !== 'none' && <th scope="col">{t('ui.select', { row: '' })}</th>}
-              {component.columns.map((column) => (
-                <th key={column.key} scope="col" data-numeric={numericKeys.has(column.key) || undefined}>
-                  {columnLabel(column.label, t)}
-                </th>
-              ))}
-              {component.rowActionIds?.length ? <th scope="col">{t('ui.actions')}</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td
-                  className="agnes-intelligent-table-empty"
-                  colSpan={
-                    component.columns.length +
-                    (component.selection !== 'none' ? 1 : 0) +
-                    (component.rowActionIds?.length ? 1 : 0)
-                  }
-                >
-                  <p role="status">{t('ui.tableEmpty')}</p>
-                </td>
-              </tr>
-            )}
-            {rows.map((row) => {
-              const rowId = String(row[component.rowKey])
-              return (
-                <tr key={rowId}>
-                  {component.selection !== 'none' && (
-                    <td>
-                      <input
-                        type={component.selection === 'single' ? 'radio' : 'checkbox'}
-                        name={`${instance}-${component.id}`}
-                        aria-label={t('ui.select', { row: rowId })}
-                        data-testid={`ui-select-${component.id}-${rowId}`}
-                        disabled={disabled}
-                        checked={selection.includes(rowId)}
-                        onChange={(event) =>
-                          props.onSelection(
-                            component.id,
-                            component.selection === 'single'
-                              ? [rowId]
-                              : event.currentTarget.checked
-                                ? [...selection, rowId]
-                                : selection.filter((id) => id !== rowId),
-                          )
-                        }
-                      />
-                    </td>
-                  )}
-                  {component.columns.map((column, i) => {
-                    const Cell = i === 0 ? 'th' : 'td'
-                    const text = format(row[column.key], column.format)
-                    const instant =
-                      column.format === 'date' ? uiInstant(row[column.key], locale, now) : undefined
-                    return (
-                      <Cell
-                        key={column.key}
-                        scope={i === 0 ? 'row' : undefined}
-                        data-numeric={numericKeys.has(column.key) || undefined}
-                      >
-                        {instant ? (
-                          <time className="agnes-intelligent-cell" dateTime={instant.iso} title={instant.iso}>
-                            {t('ui.instant', { time: instant.time, relative: instant.relative })}
-                          </time>
-                        ) : column.format === 'status' && text ? (
-                          <PresetStatus value={text} />
-                        ) : (
-                          <span className="agnes-intelligent-cell" title={text}>
-                            {text}
-                          </span>
-                        )}
-                      </Cell>
-                    )
-                  })}
-                  {component.rowActionIds?.length ? (
-                    <td>{actionButtons(component.rowActionIds, { tableId: component.id, rowId })}</td>
-                  ) : null}
-                </tr>
-              )
+      <Table<Record<string, JsonValue>>
+        caption={component.title ?? surfaceTitle(surface, t)}
+        captionRepeatsHeading={!component.title}
+        testId={`ui-table-${component.id}`}
+        dataSource={rows}
+        rowKey={(row) => String(row[component.rowKey])}
+        empty={<p role="status">{t('ui.tableEmpty')}</p>}
+        {...(component.selection === 'none'
+          ? {}
+          : {
+              rowSelection: {
+                type: component.selection === 'single' ? 'radio' : 'checkbox',
+                columnTitle: t('ui.select', { row: '' }),
+                hideSelectAll: true,
+                preserveSelectedRowKeys: true,
+                selectedRowKeys: selection,
+                getCheckboxProps: (row) => ({
+                  name: `${instance}-${component.id}`,
+                  disabled,
+                  'aria-label': t('ui.select', { row: String(row[component.rowKey]) }),
+                  'data-testid': `ui-select-${component.id}-${String(row[component.rowKey])}`,
+                }),
+                onChange: (keys) => props.onSelection(component.id, keys.map(String)),
+              },
             })}
-          </tbody>
-        </table>
-      </div>
+        columns={[
+          ...component.columns.map((column, i) => ({
+            key: column.key,
+            dataIndex: column.key,
+            title: columnLabel(column.label, t),
+            ...(i === 0 ? { rowScope: 'row' as const } : {}),
+            onCell: () => ({
+              scope: i === 0 ? 'row' : undefined,
+              'data-numeric': numericKeys.has(column.key) || undefined,
+            }),
+            onHeaderCell: () => ({ scope: 'col', 'data-numeric': numericKeys.has(column.key) || undefined }),
+            sorter: (a: Record<string, JsonValue>, b: Record<string, JsonValue>) => {
+              const av = a[column.key],
+                bv = b[column.key]
+              return typeof av === 'number' && typeof bv === 'number'
+                ? av - bv
+                : format(av, column.format).localeCompare(format(bv, column.format), locale, {
+                    numeric: true,
+                  })
+            },
+            render: (value: JsonValue | undefined) => {
+              const text = format(value, column.format)
+              const instant = column.format === 'date' ? uiInstant(value, locale, now) : undefined
+              return instant ? (
+                <time className="agnes-intelligent-cell" dateTime={instant.iso} title={instant.iso}>
+                  {t('ui.instant', { time: instant.time, relative: instant.relative })}
+                </time>
+              ) : column.format === 'status' && text ? (
+                <PresetStatus value={text} />
+              ) : (
+                text
+              )
+            },
+          })),
+          ...(component.rowActionIds?.length
+            ? [
+                {
+                  key: 'actions',
+                  title: t('ui.actions'),
+                  ellipsis: false,
+                  render: (_value: unknown, row: Record<string, JsonValue>) =>
+                    actionButtons(component.rowActionIds ?? [], {
+                      tableId: component.id,
+                      rowId: String(row[component.rowKey]),
+                    }),
+                },
+              ]
+            : []),
+        ]}
+      />
     )
   }
   return (
@@ -400,7 +378,7 @@ function SourceNotice(props: { state: 'loading' | 'error'; code?: string }) {
     return (
       <SettingsState
         tone="loading"
-        className="agnes-ui-source-state"
+        className="agnes-intelligent-source-state"
         data-testid="ui-source-loading"
         aria-busy="true"
       >
@@ -408,7 +386,7 @@ function SourceNotice(props: { state: 'loading' | 'error'; code?: string }) {
       </SettingsState>
     )
   return (
-    <SettingsState tone="error" className="agnes-ui-source-state" data-testid="ui-source-error">
+    <SettingsState tone="error" className="agnes-intelligent-source-state" data-testid="ui-source-error">
       <p>{props.code === 'UI_SOURCE_SHAPE' ? t('ui.sourceShape') : t('ui.sourceError')}</p>
       {props.code ? <p>{props.code}</p> : null}
     </SettingsState>
