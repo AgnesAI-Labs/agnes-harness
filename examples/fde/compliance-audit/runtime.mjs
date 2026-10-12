@@ -6,8 +6,8 @@ import {
   defineLoop,
   defineTool,
   drainDeferredToolInvocations,
-  toolError,
   readOnlyTool,
+  toolError,
 } from '@agnes/plugin-runtime'
 
 /** Host authenticates the notification; this Loop only checks its business contract. */

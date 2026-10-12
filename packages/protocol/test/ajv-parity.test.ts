@@ -4614,11 +4614,15 @@ const TOOLDEF_SAMPLES: Record<string, Sample> = {
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   ToolMeta: {
     valid: {
-      ...toolMetaOk,
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: false,
+      replay: 'safe',
       paths: [{ arg: 'path', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
     },
     invalid: [
-      { ...toolMetaOk, deferLoading: undefined }, // the in-process spelling of "no declaration"; on the wire it is null
+      { ...toolMetaOk, isReadOnly: undefined }, // required safety declarations cannot be omitted
       { ...toolMetaOk, replay: 'retry' }, // enum
       { ...toolMetaOk, requiresApproval: 'sometimes' }, // enum
       { ...toolMetaOk, costHint: { credits: -1 } }, // boundary: one below minimum:0
@@ -4626,7 +4630,7 @@ const TOOLDEF_SAMPLES: Record<string, Sample> = {
       { ...toolMetaOk, paths: [{ arg: 'path', access: 'read', extra: true }] },
       { ...toolMetaOk, extra: 1 }, // additionalProperties:false
     ],
-    note: 'all eight keys are required, so an author cannot leave one to a default nobody wrote down',
+    note: 'safety booleans and replay are required; estimate, discovery and approval fields use defaults',
   },
   ParametersSchema: {
     valid: parametersOk,
@@ -5455,8 +5459,12 @@ const PRESET_DEFS: Record<string, TSchema> = {
 }
 const PRESET_SAMPLES: Record<string, Sample> = {
   CompositionPatch: {
-    valid: { loop: { id: 'default', version: '1.0.0' }, tools: ['read'], toolPolicy: { readOnly: true } },
-    invalid: [{ unknown: true }, { loop: { id: 'default' } }, { tools: ['read', 'read'] }],
+    valid: {
+      loop: { provider: 'default', version: '1.0.0' },
+      tools: ['read'],
+      toolPolicy: { readOnly: true },
+    },
+    invalid: [{ unknown: true }, { loop: { provider: 'default' } }, { tools: ['read', 'read'] }],
     note: 'Preset composition selects closed plugin identities and unique tool names',
   },
   PresetDoc: {

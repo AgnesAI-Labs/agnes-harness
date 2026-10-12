@@ -6,8 +6,9 @@ import {
   defineLoop,
   defineTool,
   drainDeferredToolInvocations,
+  readOnlyTool,
   toolError,
-, readOnlyTool, } from '@agnes/plugin-runtime'
+} from '@agnes/plugin-runtime'
 import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
 export const result = (data) => ({
