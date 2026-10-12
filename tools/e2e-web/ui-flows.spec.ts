@@ -819,7 +819,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await pluginPage.getByTestId('candidate-back').click()
   await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
   await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
-  await expect(pluginPage.getByTestId('candidate-approve')).toBeDisabled()
+  await expect(pluginPage.getByTestId('candidate-approve')).toHaveCount(0)
   await pluginPage.getByTestId('candidate-test').click()
   await page
     .getByRole('dialog', { name: 'Run tests', exact: true })
@@ -833,9 +833,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Published', {
-    timeout: 25_000,
-  })
+  await expect(pluginPage.getByTestId('candidate-review')).toHaveCount(0, { timeout: 25_000 })
+  await expect(pluginPage.getByTestId('candidate-published-link')).toContainText(draft.packageId)
   const provenance = await client.request('_agnes/v1/packages.provenance', {
     profile: 'local-dev',
     id: draft.packageId,
@@ -919,14 +918,22 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .click()
   await expect(skillReview.getByTestId('candidate-state')).toHaveText('Rejected')
   await skillReview.getByTestId('candidate-back').click()
-  await expect(page.locator('#resource-list').getByTestId('candidate-list').locator('li')).toHaveCount(1)
-  await expect(skillRow).toContainText('Rejected')
+  await expect(page.locator('#resource-list').getByTestId('candidate-list').locator('li')).toHaveCount(0)
+  const skillHistory = page.locator('#resource-list').getByTestId('candidate-history')
+  await expect(skillHistory).not.toHaveAttribute('open')
+  await skillHistory.locator('summary').click()
+  await expect(skillHistory.locator('li')).toHaveCount(1)
+  await expect(skillHistory.locator(`li[data-candidate-id="${skill.candidateId}"]`)).toContainText('Rejected')
   await section(page, 'plugins')
-  await pluginPage.getByTestId('candidate-back').click()
-  await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
-  await expect(pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId })).toContainText(
-    'Published',
-  )
+  await expect(pluginPage.getByTestId('candidate-review')).toHaveCount(0)
+  await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(0)
+  const pluginHistory = pluginPage.getByTestId('candidate-history')
+  await expect(pluginHistory).not.toHaveAttribute('open')
+  await pluginHistory.locator('summary').click()
+  await expect(pluginHistory.getByTestId('candidate-open')).toHaveCount(1)
+  await expect(
+    pluginHistory.getByTestId('candidate-open').filter({ hasText: draft.packageId }),
+  ).toContainText('Published')
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === skill.packageId),
   ).toBe(false)
@@ -973,8 +980,13 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
-    await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(2)
-    const rows = pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')
+    await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
+    const history = pluginPage.getByTestId('candidate-history')
+    await expect(history).not.toHaveAttribute('open')
+    await history.locator('summary').click()
+    await expect(history.getByTestId('candidate-open')).toHaveCount(1)
+    const rows = pluginPage.getByTestId('candidate-open')
+    await expect(rows).toHaveCount(2)
     await expect(
       rows
         .filter({ hasText: draft.packageId })
@@ -990,16 +1002,19 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       .locator('#resource-list')
       .getByRole('tab', { name: locale === 'en' ? 'Pending review' : '待审阅', exact: true })
       .click()
+    const skillCandidateHistory = page.locator('#resource-list').getByTestId('candidate-history')
+    await expect(skillCandidateHistory).not.toHaveAttribute('open')
+    await skillCandidateHistory.locator('summary').click()
     await expect(
       page
         .locator('#resource-list')
-        .getByTestId('candidate-list')
+        .getByTestId('candidate-history')
         .locator(`li[data-candidate-id="${skill.candidateId}"]`),
     ).toContainText(locale === 'en' ? 'Skill · New skill' : '技能 · 新技能')
     await expect(
       page
         .locator('#resource-list')
-        .getByTestId('candidate-list')
+        .getByTestId('candidate-history')
         .locator(`li[data-candidate-id="${skill.candidateId}"]`)
         .getByTestId('candidate-origin-time'),
     ).toHaveCount(1)
@@ -1108,9 +1123,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(skillReview.getByTestId('candidate-state')).toHaveText('Published', {
-    timeout: 25_000,
-  })
+  await expect(skillReview).toBeHidden({ timeout: 25_000 })
+  await expect(page.locator('#resource-list').getByTestId('candidate-published')).toBeVisible()
+  await expect(page.locator('#resource-list').getByTestId('candidate-published-link')).toHaveAttribute(
+    'href',
+    /settings=skills/,
+  )
   const skillSession = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
@@ -1132,7 +1150,6 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     body: JSON.stringify({ reviewed, provenance }),
     contentType: 'application/json',
   })
-  await skillReview.getByTestId('candidate-back').click()
   await section(page, 'plugins')
   // Installed provenance opens the retained published candidate, not the pending replacement.
   await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
