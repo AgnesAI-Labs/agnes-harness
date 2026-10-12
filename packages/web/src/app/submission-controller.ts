@@ -196,8 +196,8 @@ export function createSubmissionController(
       context.composerRuntime.resize()
       void submitPlanCommand(cwd, input)
         .then((result) => {
-          context.notice.textContent = result.text
-          context.notice.dataset.kind = ''
+          context.notice.setText(result.text)
+          context.notice.setKind('')
         })
         .catch((error: unknown) => {
           context.showError(
@@ -262,8 +262,8 @@ export function createSubmissionController(
       (context.sessionControls?.sessionId !== session?.id || !context.sessionControls?.value.controls.steer)
     )
       return
-    context.notice.textContent = ''
-    context.notice.dataset.kind = ''
+    context.notice.setText('')
+    context.notice.setKind('')
     const submittedReturns = [...context.recoveredReturns].filter((key) =>
       key.startsWith(`agnes-return:${session?.id}:`),
     )

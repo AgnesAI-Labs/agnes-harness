@@ -1,8 +1,7 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { mountRegion } from '@agnes/web-ui'
+import { createExternalStore, mountRegion, useStoreSelector } from '@agnes/web-ui'
 import { WorkspaceDialog, type WorkspaceDialogState } from '@agnes/web-units'
-import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { FolderIcon, WorkspaceOptions } from './navigation.js'
 
@@ -16,7 +15,7 @@ interface WorkspaceDialogActions {
 
 /** A subscription bridge; the app controller still owns workspace registration and picker requests. */
 export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialogActions) {
-  let state: WorkspaceDialogState = {
+  const initialState: WorkspaceDialogState = {
     open: false,
     path: '',
     error: '',
@@ -28,27 +27,18 @@ export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialo
     pickerBusy: false,
     pickerReady: undefined,
   }
-  const listeners = new Set<() => void>()
-  const snapshot = () => state
-  const subscribe = (listener: () => void) => {
-    listeners.add(listener)
-    return () => {
-      listeners.delete(listener)
-    }
-  }
+  const store = createExternalStore(initialState)
+  const { getSnapshot: snapshot } = store
   const update = (next: Partial<WorkspaceDialogState>) => {
-    state = { ...state, ...next }
-    flushSync(() => {
-      for (const listener of listeners) listener()
-    })
+    flushSync(() => store.set({ ...snapshot(), ...next }))
   }
   const close = () => {
-    if (!state.open) return
+    if (!snapshot().open) return
     update({ open: false })
     actions.restoreFocus()
   }
   function WorkspaceDialogBridge() {
-    const view = useSyncExternalStore(subscribe, snapshot, snapshot)
+    const view = useStoreSelector(store, (value) => value)
     return (
       <WorkspaceDialog
         view={view}
@@ -68,14 +58,14 @@ export function mountNewSessionDialog(host: HTMLElement, actions: WorkspaceDialo
   window.addEventListener('agnes:locale-changed', localeChanged)
   return {
     get open() {
-      return state.open
+      return snapshot().open
     },
     get path() {
-      return state.path
+      return snapshot().path
     },
     update,
     show() {
-      update({ open: true, manual: state.manual || state.pickerReady === false })
+      update({ open: true, manual: snapshot().manual || snapshot().pickerReady === false })
     },
     close,
     dispose() {

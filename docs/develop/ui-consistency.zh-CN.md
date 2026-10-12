@@ -6,6 +6,12 @@
 
 本文规定现有 Web 界面的呈现方式，复用 `@agnes/web-ui` 的公开出口和既有主题，不改变导航、后端决策、表单值或权限。[源码清单与实施顺序](ui-consistency-audit.zh-CN.md) 区分现有能力与待完成工作。
 
+工作台布局由 `AppShell` 渲染。controller 快照和可替换 slot 区域共享一个 React root 与一个 antd `ConfigProvider`。controller 持有的挂载点使用 `mountRegion` / `renderRegion` / `unmountRegion`；这些接口渲染应用内 portal，不创建额外 root。组件直接渲染翻译文案；切换语言必须保留草稿、焦点和 controller 绑定的节点 ID。浮层共享壳容器；从原生 dialog 打开的 popup 留在该 dialog 的顶层中。
+
+`createExternalStore` 保留 controller 的状态归属，默认同步通知以支持受控输入。组件通过 `useStoreSelector` 选择状态，可提供 equality。非输入类 controller 区域可以选择 `notify: 'animation-frame'`：多次写入每帧最多通知一次，命令和测试可用 `flush()` 同步发布。区域 roster 与各区域内容分别持有小 store；对话流式更新继续走 assistant-ui 的 projection/runtime，不经过外壳 store。
+
+每个 controller 区域都有 `RegionErrorBoundary`，异常只在本区域显示本地化重试，并进入脱敏的浏览器诊断日志；`SlotOutlet` 内部的插件边界继续负责插件错误。`--agnes-z-*` 基准层级依次为 dropdown 1000、drawer 1100、modal 1200、tooltip 1300、notification 1400。`getOverlayContainer` 统一提供外壳 outlet 与弹窗内部的 popup 作用域；自定义/Radix portal 使用同一公开策略，使嵌套菜单留在当前焦点范围内。
+
 ## 页面与面板骨架
 
 管理页使用 `SettingsPage`：一个包含本地化标题、简短说明、页面操作的页头；由 `SettingsCard` 或平面的 `SettingsList` / `SettingsRow` 组成的正文；相关表单末尾用 `SettingsToolbar` 放置操作。`SettingsPage` 已提供页头和正文栈；表单页脚通过组合实现，不另建页面框架。设置 hub 已拥有页头，子面板不要重复相同标题。

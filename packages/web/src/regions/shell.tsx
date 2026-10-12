@@ -1,5 +1,5 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { DSH_ROOT_CHILDREN, type EmptyStateRegionMount } from './contracts.js'
 export interface DshShellRegionMount extends EmptyStateRegionMount {}
@@ -34,7 +34,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
   )
   const overlayHost = createRegionHost(document.body, 'div')
   overlayHost.dataset.agnesDshShellOverlay = 'true'
-  const overlayRoot = createAntdRoot(overlayHost)
+  const overlayRoot = createRegionRenderer(overlayHost)
   flushSync(() => {
     overlayRoot.render(
       <SlotsProvider registry={registry}>

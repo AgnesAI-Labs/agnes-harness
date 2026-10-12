@@ -406,11 +406,10 @@ class ResourceAdminPage {
     const heading = document.querySelector<HTMLElement>('#resource-settings-pane h2')
     if (heading) {
       heading.closest<HTMLElement>('.config-heading')?.toggleAttribute('hidden', this.#tab === 'skills')
-      heading.dataset.i18n = `tab.${this.#tab}`
       heading.textContent = this.#t(`tab.${this.#tab}`)
     }
     const addHint = document.querySelector<HTMLElement>(
-      '#resource-settings-pane [data-i18n="shell.embedded.add-description"]',
+      '#resource-settings-pane [data-testid="resource-add-hint"]',
     )
     if (addHint) addHint.hidden = true
     notice.textContent = this.#notice.key

@@ -7,7 +7,7 @@ import {
 } from '@agnes/web-client'
 import { toolCardsLocaleCatalog } from '@agnes/web-foundation/locales/tool-cards'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot, createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer, renderRegion, unmountRegion } from '@agnes/web-ui'
 import type { ClaimResolver } from './boot.js'
 
 /** 与 protocol `kind:'slot'` 节点同形的最小切片。 */
@@ -77,7 +77,7 @@ export function mountSlotCard(options: {
       },
     }
   }
-  const root = createAntdRoot(element)
+  const root = createRegionRenderer(element)
   roots.set(element, { root, node: options.node })
   render(root, context, options.node)
 

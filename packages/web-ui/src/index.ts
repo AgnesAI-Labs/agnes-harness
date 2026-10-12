@@ -3,7 +3,7 @@ export * from './admin-detail.js'
 export * from './admin-dialogs.js'
 export * from './admin-list.js'
 export * from './admin-text.js'
-export type { AntdRoot } from './antd-root.js'
+export type { AntdRoot, RegionRenderer } from './antd-root.js'
 export {
   createAntdRoot,
   createRegionRenderer,
@@ -21,7 +21,12 @@ export * from './diagnostics-dialog.js'
 export { bindAutoDismissDisclosure, bindDismissibleDialog } from './dom/dialog-binding.js'
 export { releaseDialogModal } from './dom/dialog-host.js'
 export { bindDialogSheets } from './dom/dialog-sheets.js'
-export { createExternalStore } from './external-store.js'
+export {
+  createExternalStore,
+  type SnapshotSource,
+  type StoreOptions,
+  useStoreSelector,
+} from './external-store.js'
 export * from './first-run.js'
 export * from './intelligent-ui/index.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
@@ -44,6 +49,7 @@ export { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './loca
 export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 export * from './model-settings.js'
+export { getOverlayContainer, overlayLayers } from './overlay-policy.js'
 export * from './plugin-presentation.js'
 export * from './plugin-purpose.js'
 export {
@@ -61,6 +67,7 @@ export {
 export * from './popover.js'
 export { promptSourceLabel } from './prompt-source.js'
 export * from './provider-config-form.js'
+export { RegionErrorBoundary } from './region-error-boundary.js'
 export {
   createRegionHost,
   mountRegion,

@@ -1,5 +1,5 @@
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import {
   EMPTY_SIDEBAR_STATE,
   Sidebar,
@@ -107,7 +107,7 @@ export function mountSidebarRegion(
       </SlotsProvider>
     ),
   )
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
       <SlotsProvider registry={rootStableRegistry(registry)} locale={locale}>

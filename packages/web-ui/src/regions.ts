@@ -4,7 +4,7 @@ import { type AntdRoot, createRegionRenderer } from './antd-root.js'
 
 export type RegionElement = ReactNode
 
-const roots = new Map<HTMLElement, AntdRoot>()
+const roots = new WeakMap<HTMLElement, AntdRoot>()
 
 /**
  * Mount one replaceable React surface. Host code must use the returned disposer (or
@@ -35,18 +35,7 @@ export function renderRegion(host: HTMLElement, element: RegionElement): void {
   flushSync(() => root.render(element))
 }
 
-/** Create a stable host for a short-lived React surface owned by the caller. */
-export function createRegionHost(
-  parent: HTMLElement,
-  tagName: keyof HTMLElementTagNameMap,
-  className?: string,
-): HTMLElement {
-  const owner = parent.ownerDocument ?? globalThis.document
-  const host = owner.createElement(tagName)
-  if (className) host.className = className
-  parent.append(host)
-  return host
-}
+export { createRegionHost } from './region-host.js'
 
 export function unmountRegion(host: HTMLElement): void {
   roots.get(host)?.unmount()

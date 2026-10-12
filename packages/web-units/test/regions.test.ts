@@ -4,7 +4,7 @@ import type { UINode } from '@agnes/protocol'
 import { act, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Conversation,
   type ConversationChildContainers,
@@ -24,6 +24,7 @@ const englishText: Record<string, string> = {
   'settings-shell.fontScale': 'Font size',
   'shell.install': 'Install from source',
   'button.refresh': 'Refresh Skill catalog',
+  'shell.list.aria': 'Resource catalog',
   // 语言切换的三条文案由 web 包的 locale-catalog 提供，这里补进桩以便断言它确实渲染出来。
   'settings.appearance.language': 'Language',
   'settings.appearance.language.en': 'English',
@@ -336,7 +337,8 @@ describe('independent core web-unit implementations', () => {
     expect(closed).toBe(1)
     expect(terminal).toBe(1)
     expect(new URL(location.href).searchParams.has('settings')).toBe(false)
-    expect(document.querySelector('.agh-toast')).not.toBeNull()
+    await vi.waitFor(() => expect(document.querySelector('.agh-toast')?.textContent).toBeTruthy())
+    expect(document.body.contains(document.querySelector('.agh-toast'))).toBe(true)
     expect(document.querySelector('.agh-toast-host')?.parentElement).toBe(document.body)
   })
 
@@ -350,12 +352,8 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('input[name="agnes-font-scale"][value="normal"]')).toBeInstanceOf(
       HTMLInputElement,
     )
-    expect(host.querySelector('[data-i18n="settings-shell.appearanceTitle"]')?.textContent).toBe(
-      'General settings',
-    )
-    expect(
-      host.querySelector('[data-i18n-aria="settings-shell.fontScale"]')?.getAttribute('aria-label'),
-    ).toBe('Font size')
+    expect(host.querySelector('#appearance-settings-pane h2')?.textContent).toBe('General settings')
+    expect(host.querySelector('[aria-label="Font size"]')?.getAttribute('aria-label')).toBe('Font size')
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
     const english = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')
@@ -363,48 +361,42 @@ describe('independent core web-unit implementations', () => {
     expect(english).toBeInstanceOf(HTMLInputElement)
     expect(chinese).toBeInstanceOf(HTMLInputElement)
     expect(english?.checked).toBe(true)
-    expect(host.querySelector('[data-i18n="settings.appearance.language"]')?.textContent).toBe('Language')
+    expect(host.querySelector('[aria-label="Language"] legend')?.textContent).toBe('Language')
   })
 
-  it('keeps the settings markup markers the origin/main merge dropped', () => {
+  it('renders controller controls and their current translations', () => {
     // 合并 origin/main 时 settings.ts 被整段退回成 main 的版本，分支自己加的标记随之丢失，
     // 而当时没有任何用例覆盖这些元素，回归因此无人发现。这里按元素逐个钉住标记。
     // 面板是单独渲染进各自 slot 的（外壳会把 settings-pane 段落移除），所以按面板渲染。
     const expected: Array<[SettingsPane, string, string, string]> = [
-      ['computer-use', '#computer-use-refresh [data-i18n]', 'data-i18n', 'computerUse.action.refresh'],
-      ['computer-use', '#computer-use-install [data-i18n]', 'data-i18n', 'computerUse.action.install'],
-      ['computer-use', '#computer-use-update [data-i18n]', 'data-i18n', 'computerUse.action.update'],
-      ['computer-use', '#computer-use-restart [data-i18n]', 'data-i18n', 'computerUse.action.restart'],
-      ['computer-use', '#computer-use-doctor-run [data-i18n]', 'data-i18n', 'computerUse.doctor.run'],
+      ['computer-use', '#computer-use-refresh span', 'data-i18n', 'computerUse.action.refresh'],
+      ['computer-use', '#computer-use-install span', 'data-i18n', 'computerUse.action.install'],
+      ['computer-use', '#computer-use-update span', 'data-i18n', 'computerUse.action.update'],
+      ['computer-use', '#computer-use-restart span', 'data-i18n', 'computerUse.action.restart'],
+      ['computer-use', '#computer-use-doctor-run span', 'data-i18n', 'computerUse.doctor.run'],
       [
         'computer-use',
-        '#computer-use-operation-refresh [data-i18n]',
+        '#computer-use-operation-refresh span',
         'data-i18n',
         'computerUse.action.operationRefresh',
       ],
-      [
-        'computer-use',
-        '#computer-use-operation-cancel [data-i18n]',
-        'data-i18n',
-        'computerUse.action.cancel',
-      ],
-      [
-        'computer-use',
-        '#computer-use-permission-grant [data-i18n]',
-        'data-i18n',
-        'computerUse.permissions.grant',
-      ],
-      ['archived', '#archived-search', 'data-i18n-placeholder', 'settings-shell.searchPlaceholder'],
+      ['computer-use', '#computer-use-operation-cancel span', 'data-i18n', 'computerUse.action.cancel'],
+      ['computer-use', '#computer-use-permission-grant span', 'data-i18n', 'computerUse.permissions.grant'],
+      ['archived', '#archived-search', 'placeholder', 'settings-shell.searchPlaceholder'],
     ]
     for (const [pane, selector, attribute, key] of expected) {
       const host = document.createElement('div')
       document.body.append(host)
       const root = createRoot(host)
       roots.push(root)
-      flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane })))
+      flushSync(() =>
+        root.render(createElement(SettingsPaneBuiltin, { pane, translate: (key) => `translated:${key}` })),
+      )
       const element = host.querySelector(selector)
       expect(element, `${selector} 缺失`).toBeTruthy()
-      expect(element?.getAttribute(attribute), `${selector} 少了 ${attribute}="${key}"`).toBe(key)
+      expect(attribute === 'placeholder' ? element?.getAttribute(attribute) : element?.textContent).toBe(
+        `translated:${key}`,
+      )
     }
   })
 
@@ -528,7 +520,7 @@ describe('independent core web-unit implementations', () => {
     expect(stopped).toBe(1)
   })
 
-  it('renders plugin and resource pane templates with stable locale markers', () => {
+  it('renders plugin and resource pane templates with translated controls', () => {
     const host = document.createElement('div')
     document.body.append(host)
     document.documentElement.lang = 'en'
@@ -537,10 +529,11 @@ describe('independent core web-unit implementations', () => {
 
     flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin', translate: enT })))
     expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
-    expect(host.querySelector('#install-source [data-i18n]')?.getAttribute('data-i18n')).toBe('shell.install')
+    expect(host.querySelector('#install-source span')?.textContent).toBe('Install from source')
 
     flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources', translate: enT })))
     expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
-    expect(host.querySelector('#resource-list')?.getAttribute('data-i18n-aria')).toBe('shell.list.aria')
+    expect(host.querySelector('#resource-list')?.getAttribute('aria-label')).toBe('Resource catalog')
+    expect(host.querySelector('[data-i18n]')).toBeNull()
   })
 })

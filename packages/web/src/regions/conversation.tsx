@@ -5,9 +5,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import { Conversation, type ConversationChildContainers, type ConversationHandle } from '@agnes/web-units'
-import { createElement } from 'react'
+import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import {
   CONVERSATION_CHILD_SLOTS,
@@ -18,7 +18,6 @@ import {
   type EmptyStateRegionMount,
 } from './contracts.js'
 import { mountDshShellRegion } from './shell.js'
-
 /** Make the conversation shell a session-scoped replacement boundary before mounting its children. */
 export interface ConversationRegionOptions {
   session?: SessionService
@@ -26,48 +25,21 @@ export interface ConversationRegionOptions {
   onMount?(children: ConversationChildContainers): void
   onUnmount?(): void
 }
-
 export interface ConversationRegionMount extends EmptyStateRegionMount, ConversationHandle {}
-
-export function ConversationSessionHeaderBuiltin({
-  sessionId,
-}: {
-  sessionId?: string
-}): ReturnType<typeof createElement> {
+export function ConversationSessionHeaderBuiltin({ sessionId }: { sessionId?: string }): ReactElement {
   const owner = { sessionId: sessionId ?? '' }
-  return createElement(
-    'header',
-    { className: 'conversation-session-header', 'data-agnes-conversation-header': true },
-    createElement(SlotOutlet, {
-      name: 'conversation.session.header.lineage',
-      props: { owner },
-      hideWhenEmpty: true,
-    }),
-    createElement(SlotOutlet, {
-      name: 'conversation.session.header.actions',
-      props: { owner },
-      hideWhenEmpty: true,
-    }),
-    createElement(SlotOutlet, {
-      name: 'conversation.session.header.utilities',
-      props: { owner },
-      hideWhenEmpty: true,
-    }),
-    createElement(SlotOutlet, {
-      name: 'conversation.session.header.corner',
-      props: { owner },
-      hideWhenEmpty: true,
-    }),
+  return (
+    <header className={'conversation-session-header'} data-agnes-conversation-header={true}>
+      <SlotOutlet name={'conversation.session.header.lineage'} props={{ owner }} hideWhenEmpty={true} />
+      <SlotOutlet name={'conversation.session.header.actions'} props={{ owner }} hideWhenEmpty={true} />
+      <SlotOutlet name={'conversation.session.header.utilities'} props={{ owner }} hideWhenEmpty={true} />
+      <SlotOutlet name={'conversation.session.header.corner'} props={{ owner }} hideWhenEmpty={true} />
+    </header>
   )
 }
-
-export function ConversationSessionBuiltin(): ReturnType<typeof createElement> {
-  return createElement('span', {
-    hidden: true,
-    'data-agnes-conversation-session': true,
-  })
+export function ConversationSessionBuiltin(): ReactElement {
+  return <span hidden={true} data-agnes-conversation-session={true} />
 }
-
 export function mountConversationRegion(
   registry: SlotRegistry,
   container: HTMLElement,
@@ -84,25 +56,23 @@ export function mountConversationRegion(
       priority: 1,
       children: CONVERSATION_DSH_CHILDREN,
     },
-    () =>
-      createElement(Conversation, {
-        ref: handle,
-        ...(options.onMount ? { onMount: options.onMount } : {}),
-        ...(options.onUnmount ? { onUnmount: options.onUnmount } : {}),
-        ...(options.locale
+    () => (
+      <Conversation
+        ref={handle}
+        {...(options.onMount ? { onMount: options.onMount } : {})}
+        {...(options.onUnmount ? { onUnmount: options.onUnmount } : {})}
+        {...(options.locale
           ? {
               translate: (key: string, vars?: Record<string, string | number>) =>
                 options.locale?.t(key, vars) ?? key,
             }
-          : {}),
-        slots: {
-          session: createElement(SlotOutlet, { name: 'conversation.session', hideWhenEmpty: true }),
-          sessionHeader: createElement(SlotOutlet, {
-            name: 'conversation.session.header',
-            hideWhenEmpty: true,
-          }),
-        },
-      }),
+          : {})}
+        slots={{
+          session: <SlotOutlet name={'conversation.session'} hideWhenEmpty={true} />,
+          sessionHeader: <SlotOutlet name={'conversation.session.header'} hideWhenEmpty={true} />,
+        }}
+      />
+    ),
   )
   const removeSessionBuiltin = registry.register(
     {
@@ -112,7 +82,7 @@ export function mountConversationRegion(
       priority: 1,
       children: DSH_CONVERSATION_SESSION_CHILDREN,
     },
-    () => createElement(ConversationSessionBuiltin),
+    () => <ConversationSessionBuiltin />,
   )
   const removeBuiltin = registry.register(
     {
@@ -127,7 +97,7 @@ export function mountConversationRegion(
         [CONVERSATION_CHILD_SLOTS.feedback]: { kind: 'list', scope: 'session-maybe' },
       },
     },
-    () => createElement(SlotOutlet, { name: 'main', entryKey: 'default', hideWhenEmpty: true }),
+    () => <SlotOutlet name={'main'} entryKey={'default'} hideWhenEmpty={true} />,
   )
   const removeHeaderBuiltin = registry.register(
     {
@@ -137,20 +107,17 @@ export function mountConversationRegion(
       priority: 1,
       children: CONVERSATION_HEADER_DSH_CHILDREN,
     },
-    ({ sessionId }: { sessionId?: string }) =>
-      createElement(ConversationSessionHeaderBuiltin, {
-        ...(sessionId === undefined ? {} : { sessionId }),
-      }),
+    ({ sessionId }: { sessionId?: string }) => (
+      <ConversationSessionHeaderBuiltin {...(sessionId === undefined ? {} : { sessionId })} />
+    ),
   )
   container.replaceChildren()
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry, ...(options.session ? { session: options.session } : {}) },
-        createElement(SlotOutlet, { name: CONVERSATION_SLOT }),
-      ),
+      <SlotsProvider registry={registry} {...(options.session ? { session: options.session } : {})}>
+        <SlotOutlet name={CONVERSATION_SLOT} />
+      </SlotsProvider>,
     )
   })
   let disposed = false

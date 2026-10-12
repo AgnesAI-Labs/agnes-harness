@@ -10,7 +10,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-conversation/document-preview'
-import { createAntdRoot, EmptyState, Icon } from '@agnes/web-ui'
+import { createRegionRenderer, EmptyState, Icon } from '@agnes/web-ui'
 import { DocumentPreview } from '@agnes/web-ui/assistant-ui'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -325,7 +325,7 @@ export function mountRightbarRegion(
       ),
     )
   }
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   const watchedSlots = [
     'rightbar',
     'rightbar.session',

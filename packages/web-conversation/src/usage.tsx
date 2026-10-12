@@ -1,10 +1,9 @@
 import type { UsageView } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
-import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
 import { Fragment } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
 
 export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
 
@@ -49,7 +48,7 @@ export function createUsagePanel(
   parent: HTMLElement,
   t?: (key: string, vars?: LocaleVars) => string,
 ): UsagePanelUpdater {
-  const root = createRoot(parent)
+  const root = createRegionRenderer(parent)
   let disposed = false
   const update = ((usage, connected) => {
     if (disposed) return

@@ -16,7 +16,7 @@
     "./document-preview": "./src/document-preview.tsx",
     "./goal-card": "./src/goal-card.tsx",
     "./live-projection": "./src/live-projection.ts",
-    "./markdown": "./src/markdown.ts",
+    "./markdown": "./src/markdown.tsx",
     "./plan-mode": "./src/plan-mode.ts",
     "./presentation": "./src/presentation.ts",
     "./tool-icon": "./src/tool-icon.ts",

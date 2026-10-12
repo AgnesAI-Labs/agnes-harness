@@ -1,5 +1,14 @@
 @import "./layers.css";
 @import "./components.css";
+@layer tokens {
+  :root {
+    --agnes-z-dropdown: 1000;
+    --agnes-z-drawer: 1100;
+    --agnes-z-modal: 1200;
+    --agnes-z-tooltip: 1300;
+    --agnes-z-notification: 1400;
+  }
+}
 @layer ui {
   /* ═══════════════════════════════════════════════════════════════════════
    Web UI 组件层 · 主题桥：--agnes-* → --ant-*
@@ -945,7 +954,7 @@
     top: 1rem;
     right: 1rem;
     max-width: min(42rem, calc(100vw - 2rem));
-    z-index: 900;
+    z-index: var(--agnes-z-notification);
   }
   /* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
   .agnes-first-run-layer .ant-modal-mask {

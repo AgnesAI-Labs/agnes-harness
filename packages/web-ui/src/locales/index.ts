@@ -22,6 +22,8 @@ import { modelSettingsLocaleCatalog } from './model-settings.js'
 
 const primitiveCatalog: LocaleCatalog = {
   en: {
+    'ui.regionError': 'This region failed',
+    'ui.retry': 'Retry',
     'ui.close': 'Close',
     'ui.cancel': 'Cancel',
     'ui.confirm': 'Confirm',
@@ -40,6 +42,8 @@ const primitiveCatalog: LocaleCatalog = {
     'settings.selectPicker.ariaJoin': '{label}: {value}',
   },
   'zh-CN': {
+    'ui.regionError': '该区域出错',
+    'ui.retry': '重试',
     'ui.close': '关闭',
     'ui.cancel': '取消',
     'ui.confirm': '确认',

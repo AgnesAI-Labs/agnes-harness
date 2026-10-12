@@ -2,12 +2,7 @@ import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import {
-  bindDialogSheets,
-  createCatalogTranslator,
-  createSettingsButton,
-  materializeSettingsControls,
-} from '@agnes/web-ui'
+import { bindDialogSheets, createCatalogTranslator, materializeSettingsControls } from '@agnes/web-ui'
 import { settingsRoute } from '@agnes/web-units'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -74,6 +69,7 @@ import {
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
+import { appNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
@@ -100,8 +96,8 @@ import { unmountWorkbench } from './workbench/dock.js'
 
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
+installBrowserLogCapture()
 const unmountAppShell = mountAppShell()
-window.addEventListener('pagehide', unmountAppShell, { once: true })
 
 const unbindDialogSheets = bindDialogSheets(document)
 
@@ -685,7 +681,6 @@ const sessionController = createSessionController(appSessionContext)
 const turnController = createTurnController(appSessionContext)
 
 materializeSettingsControls(document)
-installBrowserLogCapture()
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
@@ -696,7 +691,7 @@ const button = (id: string) => element(id, 'button')
 const composerDraftKey: string = 'agnes-web-composer-draft'
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
-const notice = element('notice', 'p')
+const notice = appNotice
 const conversation = element('conversation-shell', 'div')
 const goalHost = element('session-goal-host', 'div')
 const wsUrl = element('agnes-config', 'meta').dataset.ws
@@ -727,30 +722,14 @@ window.addEventListener('pagehide', stopJobsSessions, { once: true })
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
-const reconnectNotice = element('reconnect-notice', 'p')
 const reconnect = createReconnectController({
   probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   reload: () => location.reload(),
   onPhase: renderReconnect,
 })
 function renderReconnect(phase: ReconnectPhase): void {
-  reconnectNotice.hidden = phase === 'idle'
-  if (phase === 'idle') {
-    reconnectNotice.replaceChildren()
-    return
-  }
-  if (phase !== 'stalled') {
-    setConnection('reconnecting')
-    reconnectNotice.textContent =
-      phase === 'waiting' ? t('app.reconnect.waiting') : t('app.reconnect.reloading')
-    return
-  }
-  setConnection('closed')
-  const retry = createSettingsButton(document)
-  retry.type = 'button'
-  retry.textContent = t('app.reconnect.retry')
-  retry.addEventListener('click', () => reconnect.retry())
-  reconnectNotice.replaceChildren(t('app.reconnect.stalled'), retry)
+  setReconnectNotice(phase, () => reconnect.retry())
+  if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
 // 客户端模块底座（WC8）：Cordis 根 + 五个宿主服务 + workbench.panel 挂载点。
 // 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
@@ -1333,10 +1312,10 @@ function showError(error: unknown): void {
   const message = errorMessage(error)
   if (sessionRecovery) {
     renderSessionRecovery(message)
-    notice.dataset.kind = 'error'
+    notice.setKind('error')
   } else {
-    notice.textContent = message
-    notice.dataset.kind = 'error'
+    notice.setText(message)
+    notice.setKind('error')
   }
   if (newSessionDialog.open) newSessionDialog.update({ error: message })
   const data =
@@ -1344,23 +1323,18 @@ function showError(error: unknown): void {
       ? (error.data as { code?: unknown; modelRoute?: unknown })
       : undefined
   if (data?.code === 'CONFIG_CREDENTIAL_REJECTED') {
-    const fix = createSettingsButton(document)
-    fix.type = 'button'
-    fix.dataset.testid = 'credential-repair'
-    fix.textContent = t('session.error.openAccount')
-    fix.onclick = () => {
+    notice.repair(() => {
       settingsRegion.open('model')
       run(() => settings.openAccount(typeof data.modelRoute === 'string' ? data.modelRoute : undefined))
-    }
-    notice.append(document.createTextNode(' '), fix)
+    })
   }
 }
 function run(op: () => Promise<void>): void {
   newSessionDialog.update({ error: '' })
   if (sessionRecovery) renderSessionRecovery()
   else {
-    notice.textContent = ''
-    notice.dataset.kind = ''
+    notice.setText('')
+    notice.setKind('')
   }
   void op().catch(showError)
 }
@@ -1382,45 +1356,25 @@ function recoveryDisabled(): boolean {
 }
 function renderSessionRecovery(message = ''): void {
   if (!sessionRecovery) return
-  // Keep the controls mounted across refresh errors, so keyboard focus is not discarded.
-  if (!notice.querySelector('[data-recovery-message]')) {
-    notice.textContent = ''
-    const description = document.createElement('span')
-    description.dataset.recoveryMessage = ''
-    const retry = createSettingsButton(document)
-    retry.dataset.recoveryAction = 'retry'
-    retry.type = 'button'
-    retry.textContent = t('app.recovery.retry')
-    retry.addEventListener('click', () => {
+  notice.recover({
+    message: sessionRecovery.message,
+    error: message,
+    disabled: recoveryDisabled(),
+    retry() {
       if (recoveryDisabled() || !sessionRecovery) return
       const id = sessionRecovery.id
       run(() => open(id))
-    })
-    const create = createSettingsButton(document)
-    create.dataset.recoveryAction = 'create'
-    create.type = 'button'
-    create.textContent = t('app.recovery.create')
-    create.addEventListener('click', () => {
-      if (recoveryDisabled()) return
-      run(() => beginNewDraft())
-    })
-    const secondary = document.createElement('span')
-    secondary.dataset.recoveryError = ''
-    notice.append(description, retry, document.createTextNode(' '), create, secondary)
-  }
-  notice.dataset.kind = 'session-recovery'
-  const description = notice.querySelector<HTMLElement>('[data-recovery-message]')
-  const secondary = notice.querySelector<HTMLElement>('[data-recovery-error]')
-  if (description) description.textContent = t('app.recovery.hint', { message: sessionRecovery.message })
-  if (secondary) secondary.textContent = message ? ` ${message}` : ''
-  for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
-    control.disabled = recoveryDisabled()
+    },
+    create() {
+      if (!recoveryDisabled()) run(() => beginNewDraft())
+    },
+  })
 }
 function clearSessionRecovery(): void {
   if (!sessionRecovery) return
   sessionRecovery = undefined
-  notice.textContent = ''
-  notice.dataset.kind = ''
+  notice.setText('')
+  notice.setKind('')
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
@@ -1678,8 +1632,8 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
     }
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
-      notice.textContent = t('app.notice.oldSessionClosing')
-      notice.dataset.kind = 'warning'
+      notice.setText(t('app.notice.oldSessionClosing'))
+      notice.setKind('warning')
     }
   } catch (error) {
     cleanupError = error
@@ -1771,8 +1725,8 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     draftPreset = usePreset ? preset : undefined
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent = t('app.permission.draftNotice', { mode: permissionLabel(mode) })
-    notice.dataset.kind = ''
+    notice.setText(t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
+    notice.setKind('')
     renderControls()
     return true
   }
@@ -1802,11 +1756,12 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     sessionYoloEnabled = requestedYolo
     permissionMode = mode
     rememberWebComposer({ permission: mode })
-    notice.textContent =
+    notice.setText(
       mode === 'full'
         ? t('app.permission.notice.full')
-        : t('app.permission.notice.mode', { mode: permissionLabel(mode) })
-    notice.dataset.kind = ''
+        : t('app.permission.notice.mode', { mode: permissionLabel(mode) }),
+    )
+    notice.setKind('')
     return true
   } catch (error) {
     if (current === session && selection === epoch && !sessionPending) showError(error)
@@ -1883,8 +1838,8 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.textContent = t('app.notice.newSessionModel')
-    notice.dataset.kind = ''
+    notice.setText(t('app.notice.newSessionModel'))
+    notice.setKind('')
     renderControls()
     return true
   }
@@ -1905,8 +1860,8 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
-    notice.textContent = t('app.notice.modelSaved')
-    notice.dataset.kind = ''
+    notice.setText(t('app.notice.modelSaved'))
+    notice.setKind('')
     live?.refresh()
     return true
   } catch (error) {
@@ -1921,7 +1876,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
 }
 async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   firstRun.updated(saved)
-  notice.dataset.kind = ''
+  notice.setKind('')
   accountProvider = saved.provider
   accountLabels = new Map(
     (saved.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
@@ -1933,14 +1888,14 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
       entry.route === (saved.provider?.route ?? saved.provider?.id) && entry.id === saved.provider?.model,
   )
   if (!saved.configured && !savedModels.length) {
-    notice.textContent = t('app.model.noAccounts')
+    notice.setText(t('app.model.noAccounts'))
     return
   }
   if (saved.effect === 'restart-required' || !published) {
-    notice.textContent = t('app.model.savedNotEffective')
+    notice.setText(t('app.model.savedNotEffective'))
     return
   }
-  notice.textContent = firstRun.active ? '' : t('app.model.savedNotice')
+  notice.setText(firstRun.active ? '' : t('app.model.savedNotice'))
 }
 addEventListener('focus', () => {
   if (connected)
@@ -1955,6 +1910,7 @@ const appearance = bindAppearance({
   root: document.documentElement,
   storage: appearanceStorage,
   locale: {
+    rendered: true,
     current: () => readLocalePreference(appearanceStorage),
     select: (value) => {
       writeLocalePreference(appearanceStorage, value)
@@ -2277,8 +2233,8 @@ client.on('closed', () => {
   const message = intentionalClose ? t('app.connection.closedIntentional') : t('app.connection.lost')
   if (sessionRecovery) renderSessionRecovery(message)
   else {
-    notice.textContent = message
-    notice.dataset.kind = 'error'
+    notice.setText(message)
+    notice.setKind('error')
   }
   if (!intentionalClose) reconnect.start()
 })
@@ -2289,7 +2245,7 @@ client.on('gap', (payload) => {
   if (!forCurrent(payload)) return
   const message = t('app.gap.partial')
   if (sessionRecovery) renderSessionRecovery(message)
-  else notice.textContent = message
+  else notice.setText(message)
   void live?.resync().catch(showError)
 })
 client.on('generationChanged', (payload) => {
@@ -2363,6 +2319,7 @@ window.addEventListener('pagehide', () => {
   firstRun.dispose()
   const dockHost = dockControlsHost
   if (dockHost) unmountWorkbench(dockHost)
+  unmountAppShell()
   modelRefresh.stop()
   window.removeEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
   intentionalClose = true
@@ -2412,7 +2369,7 @@ run(async () => {
   if (selection !== startupSelection) return
   if (models.status === 'fulfilled' && !configured && snapshot.accounts?.length) {
     renderControls()
-    notice.textContent = t('app.firstRun.configure')
+    notice.setText(t('app.firstRun.configure'))
     await settings.open()
   }
   const guided =
@@ -2459,7 +2416,7 @@ run(async () => {
       : await client.session.list({ q: { prefix: selected }, limit: 100 })
     if (candidates.items.some((item) => item.sessionId === selected)) await open(selected)
     else {
-      notice.textContent = t('app.session.notFound')
+      notice.setText(t('app.session.notFound'))
       renderControls()
     }
   } else {

@@ -1,7 +1,7 @@
 import { getBrowserLog } from '@agnes/web-foundation/browser-log'
 import {
-  createAntdRoot,
   createRegionHost,
+  createRegionRenderer,
   type DiagnosticsDialogSnapshot,
   DiagnosticsDialogView,
   type DiagnosticsInclude,
@@ -70,7 +70,7 @@ export async function saveZip(
   if (!picker) {
     const url = URL.createObjectURL(blob)
     const host = createRegionHost(win.document.body, 'span')
-    const root = createAntdRoot(host)
+    const root = createRegionRenderer(host)
     let link: HTMLAnchorElement | null = null
     // Commit before clicking so older Firefox sees an attached download anchor.
     try {
@@ -126,7 +126,7 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
   const collect = deps.collect ?? collectDiagnostics
   const save = deps.save ?? saveZip
   const host = createRegionHost(document.body, 'div')
-  const root = createAntdRoot(host)
+  const root = createRegionRenderer(host)
   let dialog: HTMLDialogElement
   let snapshot: DiagnosticsDialogSnapshot = {
     step: 'menu',

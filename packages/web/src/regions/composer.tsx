@@ -1,6 +1,6 @@
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createUsagePanel } from '@agnes/web-conversation/usage'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
 import {
   Composer,
@@ -155,7 +155,7 @@ export function mountComposerRegion(
     () => <SlotOutlet name="conversation.composer.bar" />,
   )
   const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
       <SlotsProvider registry={rootStableRegistry(registry)}>

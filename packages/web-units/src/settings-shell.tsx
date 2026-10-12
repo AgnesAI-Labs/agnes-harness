@@ -59,11 +59,7 @@ function SettingsRegistryNavigation({
     const key = settingsGroup(first.group)
     return (
       <Fragment key={key}>
-        {key === 'extensions' && (
-          <p className="settings-nav-label" data-i18n="settings-shell.extensions">
-            {t('settings-shell.extensions')}
-          </p>
-        )}
+        {key === 'extensions' && <p className="settings-nav-label">{t('settings-shell.extensions')}</p>}
         {(key === 'extensions' ? group : [first]).map((entry) => (
           <Button
             key={entry.id}
@@ -79,10 +75,8 @@ function SettingsRegistryNavigation({
             data-settings-group={key}
           >
             <NavigationIcon name={entry.icon} />
-            <span data-i18n={key === 'extensions' ? entry.titleKey : entry.groupTitleKey}>
-              {t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}
-            </span>
-            {key === 'extensions' && <small data-i18n={entry.groupTitleKey}>{t(entry.groupTitleKey)}</small>}
+            <span>{t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}</span>
+            {key === 'extensions' && <small>{t(entry.groupTitleKey)}</small>}
           </Button>
         ))}
       </Fragment>
@@ -93,37 +87,26 @@ function SettingsRegistryNavigation({
       <Field
         className="settings-navigation-search"
         htmlFor="settings-search"
-        label={
-          <span className="visually-hidden" data-i18n="settings-shell.findSettings">
-            {t('settings-shell.findSettings')}
-          </span>
-        }
+        label={<span className="visually-hidden">{t('settings-shell.findSettings')}</span>}
       >
         <SettingsInput
           id="settings-search"
           type="search"
           autoComplete="off"
           data-testid="settings-search"
-          data-i18n-placeholder="settings-shell.findSettings"
           placeholder={t('settings-shell.findSettings')}
         />
       </Field>
-      <nav
-        className="settings-nav-group"
-        data-i18n-aria="settings-shell.railAria"
-        aria-label={t('settings-shell.railAria')}
-      >
+      <nav className="settings-nav-group" aria-label={t('settings-shell.railAria')}>
         <div id="settings-everyday">
-          <p className="settings-nav-label" data-i18n="settings-shell.basicLabel">
-            {t('settings-shell.basicLabel')}
-          </p>
+          <p className="settings-nav-label">{t('settings-shell.basicLabel')}</p>
           <SettingsDshHost name="settings.trigger" />
           <SettingsDshHost name="settings.onboarding" />
           <SettingsDshHost name="settings.action" />
           {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
         </div>
         <details id="settings-advanced" data-testid="settings-advanced">
-          <summary data-i18n="settings-shell.advanced">{t('settings-shell.advanced')}</summary>
+          <summary>{t('settings-shell.advanced')}</summary>
           {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
         </details>
         <div id="settings-navigation-reserve" hidden>
@@ -143,13 +126,7 @@ function SettingsRegistryNavigation({
           )}
         </div>
       </nav>
-      <p
-        id="settings-search-empty"
-        className="agnes-settings-state"
-        role="status"
-        data-i18n="settings-shell.noSettings"
-        hidden
-      >
+      <p id="settings-search-empty" className="agnes-settings-state" role="status" hidden>
         {t('settings-shell.noSettings')}
       </p>
     </>
@@ -178,7 +155,6 @@ function SettingsSectionTabs({
       className="agnes-settings-section-tabs"
       role="tablist"
       hidden={!activeGroup}
-      data-i18n-aria={selectedEntry?.groupTitleKey}
       aria-label={selectedEntry ? t(selectedEntry.groupTitleKey) : undefined}
     >
       {groups.flat().map((entry) => {
@@ -200,7 +176,7 @@ function SettingsSectionTabs({
             aria-selected={visible ? entry.id === selected : undefined}
             tabIndex={entry.id === selected ? 0 : -1}
           >
-            <span data-i18n={entry.titleKey}>{t(entry.titleKey)}</span>
+            <span>{t(entry.titleKey)}</span>
           </Button>
         )
       })}
@@ -223,20 +199,12 @@ export function SettingsShell({
           data-testid="settings-navigation"
           className="settings-rail"
           aria-label={t('settings-shell.railAria')}
-          data-i18n-aria="settings-shell.railAria"
         >
           <div className="settings-rail-heading">
             <div>
-              <p className="settings-rail-title" data-i18n="settings-shell.railTitle">
-                {t('settings-shell.railTitle')}
-              </p>
+              <p className="settings-rail-title">{t('settings-shell.railTitle')}</p>
             </div>
-            <Button
-              id="config-close"
-              appearance="ghost"
-              aria-label={t('settings-shell.close')}
-              data-i18n-aria="settings-shell.close"
-            >
+            <Button id="config-close" appearance="ghost" aria-label={t('settings-shell.close')}>
               <Icon name="x" />
             </Button>
             <SettingsDshHost name="settings.close" />
@@ -250,7 +218,7 @@ export function SettingsShell({
         {store && (
           <>
             <Button id="settings-back" appearance="ghost" data-testid="settings-back">
-              <span data-i18n="settings-shell.back">{t('settings-shell.back')}</span>
+              <span>{t('settings-shell.back')}</span>
             </Button>
             <SettingsSectionTabs store={store} translate={translate} />
           </>
@@ -285,21 +253,15 @@ export function SettingsLegacyRail({
       data-testid="settings-navigation"
       className="settings-rail"
       aria-label={text('settings-shell.railAria', '设置分类')}
-      data-i18n-aria="settings-shell.railAria"
     >
       <div className="settings-rail-heading">
         <div>
-          <p className="eyebrow" data-i18n="settings-shell.workbenchBrand">
-            {text('settings-shell.workbenchBrand', 'Agnes Workbench')}
-          </p>
-          <p className="settings-rail-title" data-i18n="settings-shell.railTitle">
-            {text('settings-shell.railTitle', '设置')}
-          </p>
+          <p className="eyebrow">{text('settings-shell.workbenchBrand', 'Agnes Workbench')}</p>
+          <p className="settings-rail-title">{text('settings-shell.railTitle', '设置')}</p>
         </div>
         <Button
           id="config-close"
           aria-label={text('settings-shell.close', '关闭设置')}
-          data-i18n-aria="settings-shell.close"
           htmlType="button"
           appearance="ghost"
         >
@@ -310,9 +272,7 @@ export function SettingsLegacyRail({
         {slots && <SettingsDshHost name="settings.close" />}
       </div>
       <div className="settings-nav-group">
-        <p className="settings-nav-label" data-i18n="settings-shell.basicLabel">
-          {text('settings-shell.basicLabel', '基础设置')}
-        </p>
+        <p className="settings-nav-label">{text('settings-shell.basicLabel', '基础设置')}</p>
         {slots && (
           <>
             <SettingsDshHost name="settings.trigger" />
@@ -331,20 +291,19 @@ export function SettingsLegacyRail({
             <path d="M7 8h10M7 12h10M7 16h6" />
             <rect x="3.5" y="4" width="17" height="16" rx="3" />
           </svg>
-          <span data-i18n="settings-shell.modelNav">{text('settings-shell.modelNav', '模型与账户')}</span>
+          <span>{text('settings-shell.modelNav', '模型与账户')}</span>
         </Button>
         <Button id="plugin-management" className="settings-nav-item" htmlType="button" appearance="ghost">
           <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3" />
           </svg>
-          <span data-i18n="settings-shell.pluginNav">{text('settings-shell.pluginNav', '插件管理')}</span>
+          <span>{text('settings-shell.pluginNav', '插件管理')}</span>
         </Button>
         <div
           className="settings-nav-tabs"
           role="tablist"
           aria-orientation="vertical"
           aria-label={text('settings-shell.resourceTabsAria', '资源类型')}
-          data-i18n-aria="settings-shell.resourceTabsAria"
         >
           <Button
             id="skills-tab"
@@ -358,7 +317,7 @@ export function SettingsLegacyRail({
             <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z" />
             </svg>
-            <span data-i18n="settings-shell.skillsNav">{text('settings-shell.skillsNav', '技能')}</span>
+            <span>{text('settings-shell.skillsNav', '技能')}</span>
           </Button>
           <Button
             id="mcp-tab"
@@ -373,16 +332,14 @@ export function SettingsLegacyRail({
             <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 3h6v4h4v6h-4v8H9v-8H5V7h4Z" />
             </svg>
-            <span data-i18n="settings-shell.mcpNav">{text('settings-shell.mcpNav', 'MCP')}</span>
+            <span>{text('settings-shell.mcpNav', 'MCP')}</span>
           </Button>
         </div>
         <Button id="archived-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
           <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M4 7.5l1.5-3h13l1.5 3" />
           </svg>
-          <span data-i18n="settings-shell.archivedNav">
-            {text('settings-shell.archivedNav', '已归档会话')}
-          </span>
+          <span>{text('settings-shell.archivedNav', '已归档会话')}</span>
         </Button>
         <Button
           id="computer-use-management"
@@ -394,16 +351,14 @@ export function SettingsLegacyRail({
             <rect x="3.5" y="4" width="17" height="13" rx="2" />
             <path d="M8 21h8M12 17v4" />
           </svg>
-          <span data-i18n="settings-shell.computerUseNav">
-            {text('settings-shell.computerUseNav', 'Computer Use')}
-          </span>
+          <span>{text('settings-shell.computerUseNav', 'Computer Use')}</span>
         </Button>
         <Button id="appearance-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
           <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="8" />
             <path d="M12 4a8 8 0 0 1 0 16Z" />
           </svg>
-          <span data-i18n="settings-shell.appearanceNav">{text('settings-shell.appearanceNav', '通用')}</span>
+          <span>{text('settings-shell.appearanceNav', '通用')}</span>
         </Button>
       </div>
     </aside>

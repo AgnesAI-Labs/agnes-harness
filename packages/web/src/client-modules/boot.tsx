@@ -1,6 +1,6 @@
 /**
  * 客户端模块子系统启动（WC8）：浏览器里新建一棵 Cordis Context 树，挂五个宿主服务，
- * 在具名挂载点开 React root。宿主现有命令式 DOM 不重写（N6）——服务只是包装宿主既有状态。
+ * 在具名挂载点注册应用内 portal。服务与 controller 保持原有状态归属。
  *
  * 第一段前端轨没有真实名册源（P1a），reconciler 处于 idle：不加载任何模块（fail-closed）。
  */
@@ -25,11 +25,9 @@ import {
 import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import {
   applyDocumentLocale,
-  applyLocaleText,
   isUiLocale,
   LOCALE_STORAGE_KEY,
   readLocalePreference,
-  syncLocaleRadios,
   type UiLocale,
 } from '@agnes/web-foundation/locale-preference'
 import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '@agnes/web-foundation/locales/computer-use'
@@ -44,11 +42,16 @@ import {
   THEME_STORAGE_KEY,
 } from '@agnes/web-foundation/theme'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@agnes/web-ui'
+import {
+  createRegionHost,
+  createRegionRenderer,
+  WEB_UI_LOCALE_NAMESPACE,
+  webUiLocaleCatalog,
+} from '@agnes/web-ui'
 import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
-import { createElement } from 'react'
+
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -77,7 +80,6 @@ import {
 } from '../region-slots.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
-
 export interface ClientModulesRuntime {
   ctx: Context
   registry: SlotRegistry
@@ -109,10 +111,8 @@ export interface ClientModulesRuntime {
   /** 挂载点容器卸载（页面卸载时浏览器回收；提供显式路径便于测试）。 */
   dispose(): Promise<void>
 }
-
 /** 认领解析器：fill.extId 是否命中某注册项归属包（WC9 按包认领）。真源 = 名册 extIds（P1a）。 */
 export type ClaimResolver = (entry: SlotEntry, extId: string) => boolean
-
 export async function startClientModules(options: {
   /** Raw, host-owned SDK client. `clientModule()` exposes a narrower facade to each module. */
   agnes: HostAgnesClient
@@ -128,7 +128,12 @@ export async function startClientModules(options: {
   emptyStateContainer?: HTMLElement | undefined
   /** 迁移中的侧栏地标；外壳仍由静态 layout/CSS 所有。 */
   sidebarContainer?: HTMLElement | undefined
-  sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> } | undefined
+  sidebar?:
+    | {
+        state?: SidebarState
+        actions?: Partial<SidebarActions>
+      }
+    | undefined
   transcriptContainer?: HTMLElement | undefined
   transcript?: {
     nodeHost?: 'react'
@@ -153,7 +158,6 @@ export async function startClientModules(options: {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry)
   const builtinUnits = new BuiltinWebUnitRegistry()
-
   const pref = readThemePreference(safeThemeStorage())
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
   new AgnesClientService(ctx, options.agnes, options.clientServiceCaller, options.clientEffectCaller)
@@ -171,10 +175,12 @@ export async function startClientModules(options: {
   locale.register('@agnes/web-trace', traceCatalog)
   locale.register(SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
-
-  const registry = (ctx as unknown as { slots: SlotRegistry }).slots
+  const registry = (
+    ctx as unknown as {
+      slots: SlotRegistry
+    }
+  ).slots
   const dshShell: DshShellRegionMount = mountDshShellRegion(registry)
-
   // 主题：监听既有外观系统的三个变化入口（不改宿主内部：storage/system + 显式事件）。
   prefersDark.addEventListener('change', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
@@ -190,8 +196,6 @@ export async function startClientModules(options: {
   const applyLocale = (next: UiLocale): void => {
     applyDocumentLocale(document.documentElement, next)
     locale.setLocale(next)
-    syncLocaleRadios(document, next)
-    applyLocaleText(document, (key) => locale.t(key))
   }
   window.addEventListener('storage', (event) => {
     if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
@@ -200,25 +204,21 @@ export async function startClientModules(options: {
     const next = (event as CustomEvent<unknown>).detail
     if (isUiLocale(next)) applyLocale(next)
   })
-
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
   const panelRoots: AntdRoot[] = []
   const panelContainer = options.panelContainer
   if (panelContainer) {
-    const host = document.createElement('div')
+    const host = createRegionHost(panelContainer, 'div')
     host.setAttribute('data-agnes-slot-mount', 'workbench.panel')
-    panelContainer.appendChild(host)
-    const root = createAntdRoot(host)
+
+    const root = createRegionRenderer(host)
     panelRoots.push(root)
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry, session, locale, resources },
-        createElement(SlotOutlet, { name: 'workbench.panel', hideWhenEmpty: true }),
-      ),
+      <SlotsProvider registry={registry} session={session} locale={locale} resources={resources}>
+        <SlotOutlet name={'workbench.panel'} hideWhenEmpty={true} />
+      </SlotsProvider>,
     )
   }
-
   // Parent first: the conversation component owns child mount skeletons, then child regions claim
   // those containers only while the built-in parent is mounted.
   const transcriptDelegate = { current: null as TranscriptRegionMount | null }
@@ -262,13 +262,11 @@ export async function startClientModules(options: {
         ['@agnes/web-conversation-feedback', CONVERSATION_CHILD_SLOTS.feedback, children.feedback],
       ] as const
       for (const [packageId, slot, container] of childUnits) {
-        const root = createAntdRoot(container)
+        const root = createRegionRenderer(container)
         root.render(
-          createElement(
-            SlotsProvider,
-            { registry, session, locale, resources },
-            createElement(SlotOutlet, { name: slot as never, hideWhenEmpty: true }),
-          ),
+          <SlotsProvider registry={registry} session={session} locale={locale} resources={resources}>
+            <SlotOutlet name={slot as never} hideWhenEmpty={true} />
+          </SlotsProvider>,
         )
         builtinUnits.mount(packageId, () => root.unmount())
       }
@@ -350,7 +348,6 @@ export async function startClientModules(options: {
   // The sidebar keeps its existing document-level navigation binding; let the component-owned
   // topbar commit its toggle button before that root discovers the shared control.
   if (topbar) await topbar.ready
-
   const sidebar = options.sidebarContainer
     ? mountSidebarRegion(registry, options.sidebarContainer, options.sidebar, locale)
     : undefined
@@ -383,14 +380,12 @@ export async function startClientModules(options: {
         },
       } satisfies TranscriptRegionMount)
     : transcript
-
   const reconciler = createReconciler({
     ctx,
     locale,
     source: options.rosterSource ?? { list: async () => ({ revision: '', modules: [], statuses: [] }) },
     removeOwner: (packageId) => registry.removeOwner(packageId),
   })
-
   return {
     ctx,
     registry,
@@ -424,7 +419,6 @@ export async function startClientModules(options: {
     },
   }
 }
-
 /** 默认认领：无名册 = 一律未认领（占位）。 */
 export const unclaimed: ClaimResolver = () => false
 export type { AgnesClient }

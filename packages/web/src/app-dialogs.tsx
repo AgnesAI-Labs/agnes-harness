@@ -1,11 +1,28 @@
-import { tr as t } from '@agnes/web-foundation/locale-bridge'
-import { Button, renderRegion, SettingsInput, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
+import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
+import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
+import {
+  Button,
+  createCatalogTranslator,
+  renderRegion,
+  SettingsInput,
+  SettingsSelect,
+  SettingsTextArea,
+  useDocumentLanguage,
+} from '@agnes/web-ui'
+
+const shellCatalog = {
+  en: { ...indexShellLocaleCatalog.en, ...resourceAdminShellLocaleCatalog.en },
+  'zh-CN': { ...indexShellLocaleCatalog['zh-CN'], ...resourceAdminShellLocaleCatalog['zh-CN'] },
+}
+const useDialogText = () =>
+  createCatalogTranslator(shellCatalog, useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en')
 
 const NPM_LABEL = 'npm'
 const X_API_KEY_LABEL = 'x-api-key'
 const X_API_TOKEN_LABEL = 'x-api-token'
 
 function SourceDialogScaffold() {
+  const t = useDialogText()
   return (
     <form id="source-form" className="plugin-dialog-form">
       <div className="dialog-heading">
@@ -49,6 +66,7 @@ function SourceDialogScaffold() {
 }
 
 function PluginConfirmScaffold() {
+  const t = useDialogText()
   return (
     <div className="plugin-dialog-form">
       <div className="dialog-heading">
@@ -72,6 +90,7 @@ function PluginConfirmScaffold() {
 }
 
 function McpDialogScaffold() {
+  const t = useDialogText()
   return (
     <form id="mcp-form" className="plugin-dialog-form">
       <div className="dialog-heading">
@@ -240,6 +259,7 @@ function McpDialogScaffold() {
 }
 
 function AdminConfirmScaffold() {
+  const t = useDialogText()
   return (
     <div className="plugin-dialog-form">
       <div className="dialog-heading">

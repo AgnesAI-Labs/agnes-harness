@@ -63,7 +63,7 @@
     "packages/web-ui/src/plugin-schema-fields.tsx": {
       "intrinsic": 1
     },
-    "packages/web-ui/src/regions.ts": {
+    "packages/web-ui/src/region-host.ts": {
       "dom": 1
     },
     "packages/web-ui/src/resource-detail.tsx": {
@@ -97,12 +97,6 @@
     "packages/web/public/resources.html": {
       "intrinsic": 12,
       "className": 23
-    },
-    "packages/web/src/app.ts": {
-      "dom": 2
-    },
-    "packages/web/src/client-modules/boot.ts": {
-      "dom": 1
     },
     "packages/web/src/client-modules/reconcile/styles.ts": {
       "dom": 1

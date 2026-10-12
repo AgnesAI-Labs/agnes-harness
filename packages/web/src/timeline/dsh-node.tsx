@@ -1,6 +1,6 @@
 import type { UINode } from '@agnes/protocol'
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import type { ReactElement } from 'react'
 import { useLayoutEffect, useSyncExternalStore } from 'react'
 import type { DshNodeMount, Entry, TimelineRendererOptions } from './contracts.js'
@@ -38,8 +38,8 @@ export function mountDshNode(
   host.dataset.agnesDshSlot = projection.slotName
   const childHost = createRegionHost(native, 'div')
   childHost.dataset.agnesDshChildren = projection.slotName
-  const root = createAntdRoot(host)
-  const childRoot = createAntdRoot(childHost)
+  const root = createRegionRenderer(host)
+  const childRoot = createRegionRenderer(childHost)
 
   // 流式期间每个 delta 都会走到 update()。没有任何插件认领本节点或其子槽位时，
   // 两遍 root.render 是无产出的 reconcile——原生内容才是显示者。此时跳过 React，

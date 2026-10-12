@@ -1,5 +1,5 @@
 import type { UITurn } from '@agnes/protocol'
-import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import { ConversationTurnActions, type ConversationTurnFeedback } from '@agnes/web-ui/assistant-ui'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../locales/index.js'
@@ -53,7 +53,7 @@ export function createConversationMessageActions(
   const element = createRegionHost(document.body, 'div')
   element.remove()
   element.style.display = 'contents'
-  const root = createAntdRoot(element)
+  const root = createRegionRenderer(element)
   const feedbackRef: { current: ConversationTurnFeedback | null } = { current: null }
   let disposed = false
   let stopDismiss: (() => void) | undefined

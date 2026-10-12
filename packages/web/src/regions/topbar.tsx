@@ -1,5 +1,5 @@
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import { Topbar, type TopbarConnectionState, type TopbarHandle } from '@agnes/web-units'
 import { flushSync } from 'react-dom'
 import { type EmptyStateRegionMount, rootStableRegistry, TOPBAR_SLOT } from './contracts.js'
@@ -43,7 +43,7 @@ export function mountTopbarRegion(
     () => <Topbar ref={setHandle} translate={(key, vars) => locale.t(key, vars)} />,
   )
   container.replaceChildren()
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
       <SlotsProvider registry={rootStableRegistry(registry)}>

@@ -1,7 +1,7 @@
 import type { LocaleVars } from '@agnes/web-client'
+import { createRegionRenderer } from '@agnes/web-ui'
 import { DocumentPreview, type DocumentPreviewInput, documentResourceUrl } from '@agnes/web-ui/assistant-ui'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
 
 export type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-ui/assistant-ui'
 export { sanitizeDocumentHtml } from '@agnes/web-ui/assistant-ui'
@@ -17,7 +17,7 @@ export function createDocumentPreview(
   initial: DocumentPreviewInput,
   t: (key: string, vars?: LocaleVars) => string = (key) => key,
 ): DocumentPreviewRenderer {
-  const root = createRoot(element)
+  const root = createRegionRenderer(element)
   let disposed = false
   const apply = (input: DocumentPreviewInput): void => {
     if (disposed) return

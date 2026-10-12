@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { createAntdRoot } from './antd-root.js'
+import { createRegionRenderer } from './antd-root.js'
 import { SettingsSelect } from './settings-layout.js'
 
 export type SettingsSelectOption = { label: string; value: string }
@@ -80,7 +80,7 @@ export function SettingsOptionSelect({ id }: { id: string }) {
 
 /** Render options in the static settings fixture used by non-React hosts and controller tests. */
 export function mountSettingsSelectOptions(select: HTMLSelectElement): () => void {
-  const root = createAntdRoot(select)
+  const root = createRegionRenderer(select)
   function FixtureOptions() {
     const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
     useLayoutEffect(() => {

@@ -115,27 +115,14 @@ function client(
 }
 
 describe('settings controller', () => {
-  it('keeps locale markers on account form labels and hints in the static settings markup', () => {
+  it('renders translated account labels and hints without static locale markers', () => {
     installDom()
-    expect(
-      fixtureWindow.document.querySelector('#config-account-name')?.getAttribute('data-i18n-placeholder'),
-    ).toBe('settings-shell.accountNamePlaceholder')
-    expect(
-      fixtureWindow.document
-        .querySelector('#config-provider')
-        ?.previousElementSibling?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.providerLabel')
-    expect(
-      fixtureWindow.document
-        .querySelector('#config-thinking')
-        ?.previousElementSibling?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.defaultThinkingLabel')
-    expect(
-      fixtureWindow.document.querySelector('#config-context-window')?.getAttribute('data-i18n-placeholder'),
-    ).toBe('settings-shell.contextBudgetPlaceholder')
-    expect(
-      fixtureWindow.document.getElementById('config-model-settings-hint')?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.modelSettingsHint')
+    expect(node('config-account-name').getAttribute('placeholder')).toBe('例如：工作账户、本地模型')
+    expect(node('config-provider').previousElementSibling?.textContent).toBe('Provider')
+    expect(node('config-thinking').previousElementSibling?.textContent).toBe('默认思考强度')
+    expect(node('config-context-window').getAttribute('placeholder')).toBe('自动（模型目录默认值）')
+    expect(node('config-model-settings-hint').textContent).toContain('新会话继承这些默认值')
+    expect(fixtureWindow.document.querySelector('[data-i18n]')).toBeNull()
   })
 
   it('shows loading instead of the empty account copy while configuration is pending', async () => {

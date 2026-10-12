@@ -9,7 +9,7 @@ import {
 import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import { createDocumentLocaleSource, materializeSettingsControls } from '@agnes/web-ui'
 import { SettingsPaneBuiltin } from '@agnes/web-units'
-import { createElement } from 'react'
+import { createElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -102,29 +102,35 @@ it('updates the plugin admin static shell when the document locale changes', () 
 })
 
 it('translates mounted plugin and resource settings panes with their owning catalogs', () => {
+  document.documentElement.lang = 'zh-CN'
+  const locale = createDocumentLocaleSource({
+    plugin: pluginAdminShellLocaleCatalog,
+    resources: resourceAdminShellLocaleCatalog,
+  })
+  function Pane({ pane }: { pane: 'plugin' | 'resources' }) {
+    useSyncExternalStore(locale.source.subscribe, locale.source.getVersion, locale.source.getVersion)
+    return createElement(SettingsPaneBuiltin, { pane, translate: locale.source.bind(pane) })
+  }
   const pluginHost = document.createElement('div')
   const resourceHost = document.createElement('div')
   document.body.append(pluginHost, resourceHost)
   const pluginRoot = createRoot(pluginHost)
   const resourceRoot = createRoot(resourceHost)
   flushSync(() => {
-    pluginRoot.render(createElement(SettingsPaneBuiltin, { pane: 'plugin' }))
-    resourceRoot.render(createElement(SettingsPaneBuiltin, { pane: 'resources' }))
+    pluginRoot.render(createElement(Pane, { pane: 'plugin' }))
+    resourceRoot.render(createElement(Pane, { pane: 'resources' }))
   })
-  document.documentElement.lang = 'zh-CN'
-  const locale = createDocumentLocaleSource({
-    plugin: pluginAdminShellLocaleCatalog,
-    resources: resourceAdminShellLocaleCatalog,
-  })
-
   expect(pluginHost.querySelector('#install-source')?.textContent).toBe('从来源安装')
   expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('刷新技能目录')
-
-  document.documentElement.lang = 'en'
-  window.dispatchEvent(new Event('agnes:locale-changed'))
+  const refresh = resourceHost.querySelector('#skill-refresh')
+  flushSync(() => {
+    document.documentElement.lang = 'en'
+    window.dispatchEvent(new Event('agnes:locale-changed'))
+  })
   expect(pluginHost.querySelector('#install-source')?.textContent).toBe('Install from source')
   expect(resourceHost.querySelector('#skill-refresh')?.textContent).toBe('Refresh skills catalog')
-
+  expect(resourceHost.querySelector('#skill-refresh')).toBe(refresh)
+  expect(document.querySelector('[data-i18n]')).toBeNull()
   locale.dispose()
   pluginRoot.unmount()
   resourceRoot.unmount()

@@ -1,13 +1,13 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { SessionService } from '@agnes/web-client'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 
 /** This root belongs to one persisted assistant node and retires with the timeline entry. */
 export function mountMessageFeedback(element: HTMLElement, session: SessionService | undefined) {
   const host = createRegionHost(element, 'div')
-  const root = createAntdRoot(host)
+  const root = createRegionRenderer(host)
   let previous = ''
   return {
     update(node: UINode, turns: readonly UITurn[] | undefined) {

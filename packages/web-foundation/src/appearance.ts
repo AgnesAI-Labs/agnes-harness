@@ -28,6 +28,7 @@ const FONT_SCALE_INPUT = 'input[name="agnes-font-scale"]'
 const LOCALE_INPUT = 'input[name="agnes-locale"]'
 
 export type AppearanceLocale = {
+  rendered?: boolean
   current(): UiLocale
   /** 写入偏好并切换语言。文案回填由本模块在调用之后完成。 */
   select(locale: UiLocale): void
@@ -59,7 +60,7 @@ export function bindAppearance(options: {
     for (const input of fontScaleInputs) input.checked = input.value === scale
     if (options.locale) {
       syncLocaleRadios(options.scope, options.locale.current())
-      applyLocaleText(options.scope, options.locale.text)
+      if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
     }
   }
 
@@ -86,7 +87,7 @@ export function bindAppearance(options: {
     input.addEventListener('change', () => {
       if (!input.checked || !isUiLocale(input.value) || !options.locale) return
       options.locale.select(input.value)
-      applyLocaleText(options.scope, options.locale.text)
+      if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
     })
   }
 

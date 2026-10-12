@@ -1,3 +1,5 @@
+import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
+import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import {
   dshSlotSpec,
   type LocaleService,
@@ -6,7 +8,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createCatalogTranslator, createRegionRenderer } from '@agnes/web-ui'
 import {
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
@@ -58,8 +60,22 @@ export function mountSettingsPaneRegion(
     registry.declare(name, spec, 'web-shell')
   }
   const handle = { current: null as SettingsRegionHandle | null }
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   const shellOptions = locale ? { ...options, translate: (key: string) => locale.t(key) } : options
+  const paneText = (pane: SettingsPane, key: string): string => {
+    if (!locale) return key
+    const catalog =
+      pane === 'plugin'
+        ? pluginAdminShellLocaleCatalog
+        : pane === 'resources'
+          ? resourceAdminShellLocaleCatalog
+          : undefined
+    const value = catalog
+      ? createCatalogTranslator(catalog, locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en')(key)
+      : key
+    return value === key ? locale.t(key) : value
+  }
+
   const renderSettingsShell = (): void => {
     flushSync(() => root.render(<SettingsBuiltin ref={handle} options={shellOptions} />))
   }
@@ -68,7 +84,7 @@ export function mountSettingsPaneRegion(
   const dshPaneSlots = new Map<SettingsPane, string[]>()
   const mountDshOutlet = (name: string, host: HTMLElement, pane?: SettingsPane): void => {
     if (dshRoots.has(name)) throw new Error(`settings DSH slot is mounted twice: ${name}`)
-    const dshRoot = createAntdRoot(host)
+    const dshRoot = createRegionRenderer(host)
     dshRoots.set(name, dshRoot)
     if (pane) dshPaneSlots.set(pane, [...(dshPaneSlots.get(pane) ?? []), name])
     flushSync(() => {
@@ -89,7 +105,7 @@ export function mountSettingsPaneRegion(
   for (const pane of Object.keys(PANE_IDS) as SettingsPane[]) {
     const slotHost = container.querySelector<HTMLElement>(`#${settingsPaneSlotHostId(pane)}`)
     if (!slotHost) throw new Error(`settings shell is missing ${settingsPaneSlotHostId(pane)}`)
-    const paneRoot = createAntdRoot(slotHost)
+    const paneRoot = createRegionRenderer(slotHost)
     paneRoots.set(pane, paneRoot)
     const remove = registry.register(
       {
@@ -102,7 +118,7 @@ export function mountSettingsPaneRegion(
         <SettingsPaneBuiltin
           pane={pane}
           computerUse={options.computerUse}
-          {...(locale ? { translate: (key: string) => locale.t(key) } : {})}
+          {...(locale ? { translate: (key: string) => paneText(pane, key) } : {})}
         />
       ),
     )

@@ -1,5 +1,5 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import type { TracePanelOptions } from '@agnes/web-units'
 import { Trace, type TraceHandle } from '@agnes/web-units'
 import { flushSync } from 'react-dom'
@@ -17,7 +17,7 @@ export function mountTraceRegion(
     { name: TRACE_SLOT as string, id: 'builtin-trace', owner: '@agnes/web-trace', priority: 0 },
     () => <Trace ref={handle} root={container} options={options} />,
   )
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
       <SlotsProvider registry={registry}>

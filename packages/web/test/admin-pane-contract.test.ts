@@ -1,7 +1,8 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { appNotice } from '../src/app-notices.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 /**
@@ -81,7 +82,7 @@ it('embedded resource pane and resources.html carry the same surface ids', async
 it('guides MCP setup through chat and hides the manual creation control', async () => {
   const runtime = await mountRenderedIndex()
   const pane = document.getElementById('resource-settings-pane') as HTMLElement
-  expect(pane.querySelector('.config-heading')?.textContent).toContain('在聊天中说“帮我接入这个 MCP”')
+  expect(pane.querySelector('.config-heading')?.textContent).toContain('ask Agnes to connect it')
   expect(pane.querySelector<HTMLButtonElement>('#mcp-create')?.hidden).toBe(true)
   await runtime.dispose()
   resetWebDom()
@@ -165,6 +166,59 @@ it('exposes native tab and live status semantics for the rendered workbench', as
     HTMLButtonElement,
   )
   expect(document.querySelector('#connection[role="status"][aria-live="polite"]')).not.toBeNull()
+  const chat = document.getElementById('view-chat')
+  const trace = document.getElementById('view-trace') as HTMLButtonElement
+  const input = document.getElementById('prompt') as HTMLTextAreaElement
+  trace.click()
+  runtime.composer?.setDraft('keep this draft')
+  trace.focus()
+  runtime.locale.setLocale('zh-CN')
+  document.documentElement.lang = 'zh-CN'
+  await vi.waitFor(() => expect(document.querySelector('.skip-link')?.textContent).toBe('跳至主要内容'))
+  expect(document.getElementById('view-chat')).toBe(chat)
+  expect(document.getElementById('view-trace')).toBe(trace)
+  expect(trace.getAttribute('aria-selected')).toBe('true')
+  expect(document.getElementById('prompt')).toBe(input)
+  expect(input.value).toBe('keep this draft')
+  expect(document.activeElement).toBe(trace)
+  expect(document.querySelector('[data-i18n], [data-i18n-aria], [data-i18n-placeholder]')).toBeNull()
+
+  await runtime.dispose()
+  resetWebDom()
+})
+
+it('updates recovery notices without replacing focused controls and refuses disabled actions', async () => {
+  const runtime = await mountRenderedIndex()
+  const retryAction = vi.fn()
+  const createAction = vi.fn()
+  const recovery = {
+    message: 'unavailable session',
+    error: '',
+    disabled: false,
+    retry: retryAction,
+    create: createAction,
+  }
+  appNotice.recover(recovery)
+  await vi.waitFor(() => expect(document.querySelector('[data-recovery-action="retry"]')).not.toBeNull())
+  const retry = document.querySelector<HTMLButtonElement>(
+    '[data-recovery-action="retry"]',
+  ) as HTMLButtonElement
+  retry.focus()
+  appNotice.recover({ ...recovery, error: 'read failed' })
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-recovery-error]')?.textContent).toContain('read failed'),
+  )
+  expect(document.querySelector('[data-recovery-action="retry"]')).toBe(retry)
+  expect(document.activeElement).toBe(retry)
+  retry.click()
+  expect(retryAction).toHaveBeenCalledOnce()
+  appNotice.disableRecovery(true)
+  await vi.waitFor(() => expect(retry.disabled).toBe(true))
+  retry.click()
+  expect(retryAction).toHaveBeenCalledOnce()
+  expect(document.querySelector('#notice[role="alert"]')).not.toBeNull()
+  appNotice.setText('')
+  appNotice.setKind('')
   await runtime.dispose()
   resetWebDom()
 })

@@ -112,8 +112,8 @@ export function createSessionController(
       context.stopEvents = undefined
       context.live = undefined
       if (!stopped) {
-        context.notice.textContent = context.t('app.notice.oldSessionClosing')
-        context.notice.dataset.kind = 'warning'
+        context.notice.setText(context.t('app.notice.oldSessionClosing'))
+        context.notice.setKind('warning')
       }
       await previous?.detach()
       if (epoch !== context.selection) return
@@ -352,8 +352,8 @@ export function createSessionController(
       throw new Error(context.t('app.fork.notIdle'))
     const forked = await context.client.session.fork(parent.id, turn.endSeq)
     await open(forked.id, { created: forked })
-    context.notice.textContent = context.t('app.fork.created')
-    context.notice.dataset.kind = ''
+    context.notice.setText(context.t('app.fork.created'))
+    context.notice.setKind('')
     context.composerRuntime.focus()
   }
 

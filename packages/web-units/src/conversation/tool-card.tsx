@@ -1,5 +1,5 @@
 import type { UINode } from '@agnes/protocol'
-import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
 import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/assistant-ui'
 import type { ElementType, ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -46,7 +46,7 @@ export function createConversationToolCard(
   // Give React a host that moves intact, so it never loses children from its own root.
   const host = createRegionHost(element, 'div')
   host.style.display = 'contents'
-  const root = createAntdRoot(host)
+  const root = createRegionRenderer(host)
   let disposed = false
   let iconName = node.name
   let icon = reactIcon(options.icon(iconName))

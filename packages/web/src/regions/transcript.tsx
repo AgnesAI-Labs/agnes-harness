@@ -6,18 +6,15 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import { Transcript, type TranscriptHandle } from '@agnes/web-units'
-import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { createTimelineRenderer } from '../timeline.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'
 import { type EmptyStateRegionMount, TRANSCRIPT_DEPENDENCIES, TRANSCRIPT_SLOT } from './contracts.js'
-
 /** Render the transcript component behind a session-scoped, replaceable SlotOutlet. */
 export interface TranscriptRegionMount extends EmptyStateRegionMount, TranscriptHandle {}
-
 export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
@@ -56,34 +53,36 @@ export function mountTranscriptRegion(
       },
     },
     () =>
-      options.nodeHost === 'react'
-        ? createElement(TimelineNodeHost, {
-            ref: handle,
-            registry,
-            ...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {}),
-            ...(options.claim ? { claim: options.claim } : {}),
-            ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
-            ...(options.onFork ? { onFork: options.onFork } : {}),
-            ...(options.session ? { session: options.session } : {}),
-            ...(options.locale ? { locale: options.locale } : {}),
-            ...(options.resources ? { resources: options.resources } : {}),
-          })
-        : createElement(Transcript, {
-            ref: handle,
-            dependencies: {
-              ...TRANSCRIPT_DEPENDENCIES,
-              createRenderer(rendererOptions) {
-                return createTimelineRenderer({
-                  ...rendererOptions,
-                  registry,
-                  ...(options.session ? { session: options.session } : {}),
-                  ...(options.locale ? { locale: options.locale } : {}),
-                  ...(options.resources ? { resources: options.resources } : {}),
-                })
-              },
+      options.nodeHost === 'react' ? (
+        <TimelineNodeHost
+          ref={handle}
+          registry={registry}
+          {...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {})}
+          {...(options.claim ? { claim: options.claim } : {})}
+          {...(options.newContentButton ? { newContentButton: options.newContentButton } : {})}
+          {...(options.onFork ? { onFork: options.onFork } : {})}
+          {...(options.session ? { session: options.session } : {})}
+          {...(options.locale ? { locale: options.locale } : {})}
+          {...(options.resources ? { resources: options.resources } : {})}
+        />
+      ) : (
+        <Transcript
+          ref={handle}
+          dependencies={{
+            ...TRANSCRIPT_DEPENDENCIES,
+            createRenderer(rendererOptions) {
+              return createTimelineRenderer({
+                ...rendererOptions,
+                registry,
+                ...(options.session ? { session: options.session } : {}),
+                ...(options.locale ? { locale: options.locale } : {}),
+                ...(options.resources ? { resources: options.resources } : {}),
+              })
             },
-            ...options,
-          }),
+          }}
+          {...options}
+        />
+      ),
   )
   const removeViewBuiltin = registry.register(
     {
@@ -92,7 +91,7 @@ export function mountTranscriptRegion(
       owner: '@agnes/web-transcript',
       priority: 0,
     },
-    () => createElement(SlotOutlet, { name: TRANSCRIPT_SLOT }),
+    () => <SlotOutlet name={TRANSCRIPT_SLOT} />,
   )
   // These are child declarations of the two keyed transcript parents. The
   // declaration-only entries keep the parent/child lifecycle tied to this
@@ -129,22 +128,17 @@ export function mountTranscriptRegion(
     () => null,
   )
   container.replaceChildren()
-  const root = createAntdRoot(container)
+  const root = createRegionRenderer(container)
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        {
-          registry,
-          ...(options.session ? { session: options.session } : {}),
-          ...(options.locale ? { locale: options.locale } : {}),
-          ...(options.resources ? { resources: options.resources } : {}),
-        },
-        createElement(SlotOutlet, {
-          name: 'conversation.view',
-          fallback: createElement(SlotOutlet, { name: TRANSCRIPT_SLOT }),
-        }),
-      ),
+      <SlotsProvider
+        registry={registry}
+        {...(options.session ? { session: options.session } : {})}
+        {...(options.locale ? { locale: options.locale } : {})}
+        {...(options.resources ? { resources: options.resources } : {})}
+      >
+        <SlotOutlet name={'conversation.view'} fallback={<SlotOutlet name={TRANSCRIPT_SLOT} />} />
+      </SlotsProvider>,
     )
   })
   let disposed = false

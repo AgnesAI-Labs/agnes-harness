@@ -134,8 +134,7 @@ export function createComposerController(
       { busy, loading: context.sessionPending, sending: context.sending },
       context.t,
     )
-    for (const control of context.notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
-      control.disabled = context.recoveryDisabled()
+    context.notice.disableRecovery(context.recoveryDisabled())
     const canStartDraft = context.draftingNew && context.selectedWorkspace?.available === true
     const permissionUnknown =
       context.current !== undefined &&
