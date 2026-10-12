@@ -4,6 +4,12 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## 1.6.0
 
+Removed from the unpublished protocol `0.1.0` ledger contract: `approval/asked`,
+`approval/decided`, `ApprovalAsked` and `ApprovalDecided`. Every human approval domain uses
+`decision/state`; old ledgers are intentionally unsupported. Guardian machine facts retain
+`approval/guardian-decided` with their complete tool-definition and policy binding.
+The legacy Core ticket callback was removed; clients answer decision handles and revisions.
+
 Adds `DecisionReviewPort`, extending the public DecisionPort with `review(spec, options)` for
 one-shot operation candidates. Core handles approval delivery, verified human responses and
 consumption. Detached or unavailable delivery withdraws the candidate; it cannot be approved

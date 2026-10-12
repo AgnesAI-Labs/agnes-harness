@@ -18,20 +18,6 @@ const event = (type: string, data: unknown) => ({
 })
 
 describe('v3 approval protocol', () => {
-  it('accepts allowed-permanent with explicit scope and grant id', () => {
-    expect(
-      validateEvent(
-        event('approval/decided', {
-          requestId: 'r1',
-          verdict: 'allowed-permanent',
-          via: 'sync',
-          scope: 'cua:click:background',
-          grantId: 'grant-r1',
-        }),
-      ).ok,
-    ).toBe(true)
-  })
-
   it('validates a durable grant with actor org and policy version bindings', () => {
     expect(
       validateAgainst(ApprovalGrant, {

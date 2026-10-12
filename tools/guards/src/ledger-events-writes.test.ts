@@ -75,3 +75,28 @@ describe('ledger events are append-only apart from whole-session deletion', () =
     expect(forbiddenEventWrites(text)).toEqual(expected)
   })
 })
+
+/** Retired names are forbidden in product source, including aliased or object-form writers. */
+export function retiredApprovalEvents(text: string): string[] {
+  return [...text.matchAll(/["'`]approval\/(?:asked|decided)["'`]/gu)].map((match) => match[0])
+}
+
+describe('human decisions have one ledger authority', () => {
+  it('product source cannot introduce retired approval events', () => {
+    const files = listSourceFiles(join(root, 'packages')).filter(
+      (file) => file.split(sep).includes('src') && !isTestFile(file),
+    )
+    expect(files.length).toBeGreaterThan(100)
+    const offenders = files.flatMap((file) =>
+      retiredApprovalEvents(readFileSync(file, 'utf8')).map((event) => `${relative(root, file)}: ${event}`),
+    )
+    expect(offenders, offenders.join('\n')).toEqual([])
+  })
+  it.each([
+    ["session.ev('approval/asked', request)", ["'approval/asked'"]],
+    ['{ type: "approval/decided", data: answer }', ['"approval/decided"']],
+    ["const type = 'approval/asked'; append(type, data)", ["'approval/asked'"]],
+    ["session.ev('decision/state', snapshot)", []],
+    ["session.ev('approval/guardian-decided', fact)", []],
+  ])('recognizes %s', (source, expected) => expect(retiredApprovalEvents(source)).toEqual(expected))
+})

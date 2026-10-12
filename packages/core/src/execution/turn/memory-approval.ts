@@ -1,7 +1,7 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
 import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
-import { requestDomainDecision } from '../../step/domain-decision.js'
+import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
 /** A file candidate has its own one-shot binding; full access and session grants cannot approve it. */
@@ -50,8 +50,19 @@ export async function approveMemoryFile(
       context: proposal.diff,
     },
     signal,
-  ).catch((error) => {
-    if (signal.aborted) return undefined
+  ).catch(async (error) => {
+    if (signal.aborted) {
+      const pending = [...session.state.registers.decisionStates.values()].find(
+        ({ value }) => value.request.owner === 'core/memory' && value.request.operationId === operationId,
+      )?.value
+      if (pending)
+        await session.decisions.withdraw(
+          pending.handle,
+          domainDecisionSource(session, 'memory', operationId),
+          'stopped',
+        )
+      return undefined
+    }
     throw error
   })
   if (!decision) return { status: 'unanswered', reason: 'stopped' }

@@ -1,6 +1,7 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { DecisionSnapshot } from '@agnes/extension-api'
+import type { DecisionSnapshot, ToolMeta } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { approveMemoryFile } from '../src/execution/turn/memory-approval.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -73,6 +74,55 @@ const answer = (
   )
 
 describe('durable tool decisions', () => {
+  it('withdraws a memory candidate when its delivery signal is cancelled', async () => {
+    const controller = new AbortController()
+    const h = await openSession({
+      provider: fakeProvider([]),
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            controller.abort('stopped')
+            return { ticket: 'detached-memory', expiresAt: request.deadline }
+          },
+        },
+      }),
+    })
+    try {
+      const tool: { name: string; meta: ToolMeta } = shellTool()
+      expect(
+        await approveMemoryFile(
+          h.session,
+          {
+            path: 'MEMORY.md',
+            baseHash: 'a'.repeat(64),
+            newHash: 'b'.repeat(64),
+            diff: 'synthetic change',
+            source: { sessionKey: h.session.key, turn: 1, toolUseId: 'write-memory' },
+          },
+          { name: tool.name, meta: tool.meta },
+          0,
+          controller.signal,
+        ),
+      ).toEqual({ status: 'unanswered', reason: 'stopped' })
+      const [decision] = await h.session.decisions.list()
+      expect(decision?.result).toMatchObject({ reason: 'stopped', code: 'stopped' })
+      expect(decision?.consumption).toBeNull()
+      if (!decision) throw new Error('missing memory decision')
+      await expect(
+        h.session.decideApproval({
+          command: {
+            handle: decision.handle,
+            revision: decision.revision,
+            commandId: 'late-memory',
+            response: { option: 'allowed-once', value: null },
+          },
+          context: { actor, category: 'human', authorize() {} },
+        }),
+      ).rejects.toThrow('NOT_PENDING')
+    } finally {
+      await h.session.close()
+    }
+  })
   it('persists before delivery, re-offers the original ID/deadline, and never makes no-handler an answer', async () => {
     const h = await parked()
     try {

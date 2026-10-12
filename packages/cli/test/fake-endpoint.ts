@@ -1,5 +1,6 @@
 import { type HarnessMeta, setHarnessMeta } from '@agnes/protocol'
 import type { JsonRpcMessage, JsonRpcNotification, RpcEndpoint } from '@agnes/sdk'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 
 type Handler = (params: unknown, ep: FakeEndpoint) => unknown | Promise<unknown>
 
@@ -288,16 +289,10 @@ export function scriptedEndpoint(
         if (opts.parkedTicket !== undefined)
           ep.pushEvent(
             FAKE_SESSION_ID,
-            // A full row: protocol validates approval/asked data now, and the sdk drops a row it
-            // cannot validate, which would take the ticket with it.
-            ev('approval/asked', {
-              requestId: 'req-1',
-              kind: 'tool',
-              risk: 'destructive',
-              summary: 'rm -rf /tmp/x',
-              bindingHash: 'b'.repeat(64),
-              pending: { ticket: opts.parkedTicket, expiresAt: new Date(0).toISOString() },
-            }),
+            {
+              ...ev('decision/state', pendingDecision(opts.parkedTicket, { sessionId: FAKE_SESSION_ID })),
+              register: 'decision/state',
+            },
             meta('event'),
           )
         const end = ev('turn/end', {

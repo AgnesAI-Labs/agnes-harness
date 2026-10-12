@@ -235,9 +235,14 @@ it('answers a real verifier pending through the same native command without chan
       data: { code: 'APPROVAL_REJECTED' },
     })
     const backend = host.kernel.get(session.id)!
-    expect(backend.state.registers.decisionStates.size).toBe(0)
-    expect(backend.state.decisions.get(node.decisionRef.id)?.answeredBy).toEqual(REQUESTER)
-    expect(backend.state.decisions.get(node.decisionRef.id)?.answerCommand).toEqual(receipt)
+    expect(backend.state.registers.decisionStates.size).toBe(1)
+    expect(backend.state.registers.decisionStates.get(node.decisionRef.id)?.value.result).toMatchObject({
+      reason: 'answered',
+      answeredBy: REQUESTER,
+    })
+    expect(backend.state.registers.decisionStates.get(node.decisionRef.id)?.value.answerCommand).toEqual(
+      receipt,
+    )
   } finally {
     await client.close()
     await host.close()

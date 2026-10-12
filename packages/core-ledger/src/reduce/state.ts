@@ -1,16 +1,7 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { DecisionSnapshot, SessionStart } from '@agnes/protocol'
 import { ChunkedMap } from './chunked-map.js'
-import type {
-  ApprovalAsked,
-  ApprovalDecided,
-  ArtifactJob,
-  BudgetState,
-  EffectIntent,
-  HarnessEntry,
-  Inbox,
-  PlanItems,
-} from './shapes.js'
+import type { ArtifactJob, BudgetState, EffectIntent, HarnessEntry, Inbox, PlanItems } from './shapes.js'
 
 export type RegisterCell<T> = { seq: Seq; value: T }
 
@@ -60,8 +51,6 @@ export type LedgerState = {
   lastTurn: ReadonlyMap<string, number>
   lastStep: ReadonlyMap<string, number>
   pendingEffects: ReadonlyMap<string, Omit<EffectNode, 'children'>>
-  pendingApprovals: ReadonlyMap<string, ApprovalAsked & { seq: Seq; lane: string }>
-  decisions: ChunkedMap<string, ApprovalDecided & { seq: Seq; lane: string; askedSeq?: Seq }>
   resumedRequests: ReadonlySet<string>
   taint: ReadonlyMap<string, boolean>
   toolCalls: ChunkedMap<string, { seq: Seq; name: string; turn: number; step: number; lane: string }>
@@ -91,8 +80,6 @@ export function initialState(): LedgerState {
     lastTurn: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
-    pendingApprovals: new Map(),
-    decisions: ChunkedMap.empty(),
     resumedRequests: new Set(),
     taint: new Map(),
     toolCalls: ChunkedMap.empty(),

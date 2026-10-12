@@ -9,8 +9,6 @@ export type EncodedLedgerState = Omit<
   | 'lastTurn'
   | 'lastStep'
   | 'pendingEffects'
-  | 'pendingApprovals'
-  | 'decisions'
   | 'resumedRequests'
   | 'taint'
   | 'toolCalls'
@@ -27,10 +25,6 @@ export type EncodedLedgerState = Omit<
   pendingEffects: Array<
     [string, LedgerState['pendingEffects'] extends ReadonlyMap<string, infer V> ? V : never]
   >
-  pendingApprovals: Array<
-    [string, LedgerState['pendingApprovals'] extends ReadonlyMap<string, infer V> ? V : never]
-  >
-  decisions: Array<[string, LedgerState['decisions'] extends ReadonlyMap<string, infer V> ? V : never]>
   resumedRequests: string[]
   taint: Array<[string, boolean]>
   toolCalls: Array<[string, LedgerState['toolCalls'] extends ReadonlyMap<string, infer V> ? V : never]>
@@ -53,8 +47,6 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     lastTurn: [...state.lastTurn],
     lastStep: [...state.lastStep],
     pendingEffects: [...state.pendingEffects],
-    pendingApprovals: [...state.pendingApprovals],
-    decisions: [...state.decisions],
     resumedRequests: [...state.resumedRequests],
     taint: [...state.taint],
     toolCalls: [...state.toolCalls],

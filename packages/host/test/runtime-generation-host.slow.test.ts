@@ -25,6 +25,7 @@ import {
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
 import { expect, it, vi } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
 import { createTestHost } from '../testkit/index.js'
@@ -450,23 +451,14 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     )
     expect(store.session('idle-incompatible-loop')?.generationId).toBe(firstId)
     await required(host.releaseSessionGeneration)('idle-incompatible-loop')
-    const approval = {
-      requestId: 'approval',
-      kind: 'tool',
-      summary: 'fixture',
-      risk: 'always',
-      bindingHash: '',
-    }
+    const approval = pendingDecision('approval')
     const blocking: [string, (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[]][] = [
-      ['pending-approval', [{ type: 'approval/asked', data: approval }]],
+      ['pending-decision', [{ type: 'decision/state', register: 'decision/state', data: approval }]],
       [
-        'parked-continuation',
+        'pending-decision',
         [
-          { type: 'approval/asked', data: approval },
-          {
-            type: 'approval/decided',
-            data: { requestId: 'approval', verdict: 'allowed-once', via: 'callback' },
-          },
+          { type: 'decision/state', register: 'decision/state', data: approval },
+          { type: 'decision/state', register: 'decision/state', data: answeredDecision(approval, 2) },
         ],
       ],
       [
@@ -567,8 +559,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ],
       ],
     ]
-    for (const [reason, facts] of blocking) {
-      const key = `migration-${reason}`
+    for (const [caseIndex, [reason, facts]] of blocking.entries()) {
+      const key = `migration-${reason}-${caseIndex}`
       store.pin(key, required(firstId))
       const storage = host.kernel.o.storage
       const log = await SessionLogImpl.open({
@@ -581,10 +573,13 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       })
       const events: EventInput[] = facts.map((fact) => ({
         type: fact.type,
+        ...(fact.register ? { register: fact.register } : {}),
         data:
           reason === 'unfinished-deferred-invocation'
             ? { invocation: { id: 'invocation', sessionKey: key }, state: 'queued' }
-            : fact.data,
+            : fact.type === 'decision/state'
+              ? { ...fact.data, handle: { ...fact.data.handle, sessionId: key } }
+              : fact.data,
         actor: resumed.d.actor,
         origin: fact.origin ?? 'system',
         trust: fact.trust ?? 'trusted',

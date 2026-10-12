@@ -146,32 +146,4 @@ describe('durable session approval grants', () => {
       expect(h.executed()).toBe(1)
     },
   )
-  it('refuses to restore a historical grant with an invalid argument binding', async () => {
-    const h = await initial('sync', 'allowed-once')
-    const call = [...h.session.state.toolCalls.keys()][0]
-    if (!call) throw new Error('missing call')
-    await h.log.append([
-      h.session.ev('approval/asked', {
-        requestId: 'bad-grant',
-        kind: 'tool',
-        toolUseId: call,
-        risk: 'always',
-        summary: 'fixture',
-        bindingHash: '0'.repeat(64),
-      }),
-      h.session.ev('approval/decided', { requestId: 'bad-grant', verdict: 'allowed-session', via: 'sync' }),
-    ])
-    await h.session.close()
-    await expect(
-      openSession({
-        storage: h.storage,
-        clock: h.clock,
-        registry: h.registry,
-        seams: h.seams,
-        provider: fakeProvider([]),
-      }),
-    ).rejects.toThrow('reset-required')
-    expect(h.asks()).toBe(1)
-    expect(h.executed()).toBe(1)
-  })
 })

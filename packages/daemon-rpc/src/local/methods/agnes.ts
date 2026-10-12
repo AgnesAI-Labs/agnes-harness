@@ -136,12 +136,19 @@ export function indexApprovalTicket(
   event: EventEnvelope,
   cwd?: string,
 ): boolean {
-  if (event.type !== 'approval/asked') return false
-  const pending = (event.data as { pending?: { ticket?: unknown; expiresAt?: unknown } } | null)?.pending
-  if (typeof pending?.ticket !== 'string' || typeof pending.expiresAt !== 'string') return false
-  const expiresAt = Date.parse(pending.expiresAt)
+  if (event.type !== 'decision/state') return false
+  const value = event.data as import('@agnes/protocol').DecisionSnapshot
+  if (
+    value.handle.sessionId !== sessionKey ||
+    value.result ||
+    value.invalidation ||
+    value.consumption ||
+    !value.request.expiresAt
+  )
+    return false
+  const expiresAt = Date.parse(value.request.expiresAt)
   if (!Number.isFinite(expiresAt)) return false
-  tickets.put(pending.ticket, sessionKey, expiresAt, cwd)
+  tickets.put(value.handle.id, sessionKey, expiresAt, cwd)
   return true
 }
 

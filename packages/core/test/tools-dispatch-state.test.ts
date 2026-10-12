@@ -187,7 +187,7 @@ describe('durable tool dispatch state', () => {
         ).toMatchObject({ outcome: 'error' })
         expect(opened.session.pendingEffects()).toHaveLength(0)
         await opened.session.resume()
-        expect(await opened.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
+        expect(await opened.log.scan({ type: 'decision/state', limit: 100 })).toHaveLength(0)
       } finally {
         await opened.session.close()
       }
@@ -309,7 +309,10 @@ describe('durable tool dispatch state', () => {
         expect(
           rows.filter(
             (row) =>
-              row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'unknown-outcome',
+              row.type === 'decision/state' &&
+              (row.data as { revision: number; request: { spec: { purpose: string } } }).revision === 1 &&
+              (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+                'unknown-outcome',
           ),
         ).toHaveLength(safe ? 0 : 1)
         const intent = rows.find(
@@ -377,14 +380,20 @@ describe('durable tool dispatch state', () => {
         expect(
           (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
         ).toMatchObject({ outcome: 'unknown' })
-        const requests = (await opened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
-          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        const requests = (await opened.log.scan({ type: 'decision/state', limit: 100 })).filter(
+          (row) =>
+            (row.data as { revision: number; request: { spec: { purpose: string } } }).revision === 1 &&
+            (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+              'unknown-outcome',
         )
         expect(requests).toHaveLength(1)
         await opened.session.resume()
         expect(
-          (await opened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
-            (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+          (await opened.log.scan({ type: 'decision/state', limit: 100 })).filter(
+            (row) =>
+              (row.data as { revision: number; request: { spec: { purpose: string } } }).revision === 1 &&
+              (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+                'unknown-outcome',
           ),
         ).toEqual(requests)
         expect(executions).toBe(1)
@@ -413,11 +422,18 @@ describe('durable tool dispatch state', () => {
           await reopened.session.resume()
           expect((await reopened.session.runToolsPhase()).reason).toBe('parked')
           expect(
-            (await reopened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
-              (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+            (await reopened.log.scan({ type: 'decision/state', limit: 100 })).filter(
+              (row) =>
+                (row.data as { revision: number; request: { spec: { purpose: string } } }).revision === 1 &&
+                (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+                  'unknown-outcome',
             ),
           ).toEqual(requests)
-          expect([...reopened.session.state.pendingApprovals.values()]).toHaveLength(1)
+          expect(
+            (await reopened.session.decisions.list()).filter(
+              (value) => value.request.spec.purpose === 'unknown-outcome' && !value.result,
+            ),
+          ).toHaveLength(1)
           expect(executions).toBe(1)
         } finally {
           await reopened.session.close()
@@ -890,8 +906,11 @@ describe('durable tool dispatch state', () => {
       expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
       expect(dispatches).toBe(mode === 'responded' ? 1 : 0)
       expect(
-        (await reopened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
-          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        (await reopened.log.scan({ type: 'decision/state', limit: 100 })).filter(
+          (row) =>
+            (row.data as { revision: number; request: { spec: { purpose: string } } }).revision === 1 &&
+            (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+              'unknown-outcome',
         ),
       ).toHaveLength(1)
       expect(preflights).toBe(1)

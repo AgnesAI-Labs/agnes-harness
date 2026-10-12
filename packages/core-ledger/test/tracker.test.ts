@@ -14,6 +14,7 @@ import {
   StateTracker,
   verifyRegisters,
 } from '../src/reduce/tracker.js'
+import { answeredDecision, pendingDecision } from '../testkit/decision.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const noTimers = { setTimeout: () => 0, clearTimeout: () => undefined }
@@ -455,19 +456,15 @@ describe('StateTracker', () => {
       },
       {
         ...base,
-        type: 'approval/asked',
-        data: {
-          requestId: 'resume',
-          kind: 'tool',
-          summary: 'resume',
-          risk: 'always',
-          bindingHash: 'a'.repeat(64),
-        },
+        type: 'decision/state',
+        register: 'decision/state',
+        data: pendingDecision('resume', { owner: 'core/gate' }),
       },
       {
         ...base,
-        type: 'approval/decided',
-        data: { requestId: 'resume', verdict: 'allowed-once', via: 'callback' },
+        type: 'decision/state',
+        register: 'decision/state',
+        data: answeredDecision(pendingDecision('resume', { owner: 'core/gate' }), 3),
       },
       {
         ...base,
@@ -496,14 +493,9 @@ describe('StateTracker', () => {
       },
       {
         ...base,
-        type: 'approval/asked',
-        data: {
-          requestId: 'pending',
-          kind: 'tool',
-          summary: 'pending',
-          risk: 'always',
-          bindingHash: 'b'.repeat(64),
-        },
+        type: 'decision/state',
+        register: 'decision/state',
+        data: pendingDecision('pending'),
       },
       {
         ...base,
@@ -569,8 +561,10 @@ describe('StateTracker', () => {
     const coldState = first.tracker.state
     expect([...coldState.resumedRequests]).toEqual(['resume'])
     expect(coldState.pendingEffects.size).toBe(1)
-    expect(coldState.pendingApprovals.size).toBe(1)
-    expect(coldState.registers.decisionStates.size).toBe(0)
+    expect(
+      [...coldState.registers.decisionStates.values()].filter((cell) => !cell.value.result),
+    ).toHaveLength(1)
+    expect(coldState.registers.decisionStates.size).toBe(2)
     expect(
       Object.entries(coldState.registers)
         .filter(([name]) => name !== 'decisionStates')

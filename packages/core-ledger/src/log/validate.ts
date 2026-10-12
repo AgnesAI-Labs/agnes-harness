@@ -10,8 +10,6 @@ import { isEventType, validateEvent } from '@agnes/protocol'
 /** The only three event types the model ever sees, and therefore the only ones a surfaceOp may edit. */
 export const MODEL_VISIBLE = ['user/message', 'assistant/message', 'tool/result'] as const
 
-const DECIDED_VIA = new Set(['sync', 'callback', 'timeout', 'guardian'])
-
 /**
  * Turns a batch of caller input into ledger rows and rejects the whole batch if any row is invalid,
  * so a failed append leaves nothing behind. Defaults are filled first (`lane`, `v`, `ts`, `id`); the
@@ -51,9 +49,6 @@ export function prepareEvents(
         e.trust !== 'trusted')
     )
       throw new CoreError('E_ENVELOPE', 'decision/state is a Core-owned register')
-    const d = e.data as Record<string, unknown> | null
-    if (e.type === 'approval/decided' && !DECIDED_VIA.has(String(d?.via)))
-      throw new CoreError('E_ENVELOPE', 'approval/decided.via out of set')
     // Self-improvement rows may only be written by the Refine operation, which says so by passing
     // refineCaller; nothing else in the process is allowed to rewrite the harness from the ledger.
     if (e.type === 'harness/refine' && !ctx.refineCaller)

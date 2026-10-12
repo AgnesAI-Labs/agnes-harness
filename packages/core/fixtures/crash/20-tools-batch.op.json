@@ -1,0 +1,54 @@
+[
+  {
+    "register": "op.state",
+    "key": "main",
+    "seq": 16,
+    "data": {
+      "meta": {
+        "turn": 1,
+        "lane": "main",
+        "acceptedAt": "2025-09-07T00:00:00.000Z",
+        "triggerSeq": 4,
+        "presetName": "standard",
+        "profileHash": null,
+        "depthLimit": 2
+      },
+      "control": {
+        "status": "running"
+      },
+      "step": 1,
+      "latestAssistantSeq": 13,
+      "taint": false,
+      "phase": {
+        "kind": "tools",
+        "batch": {
+          "assistantSeq": 13,
+          "calls": [
+            {
+              "ordinal": 0,
+              "toolUseId": "t0-00000000000000000000000000000016",
+              "name": "do_batch",
+              "argsSeq": 14,
+              "replay": "safe",
+              "status": "planned",
+              "resolvedPolicy": {
+                "isReadOnly": true,
+                "isDestructive": false,
+                "isPresentational": false,
+                "isConcurrencySafe": true,
+                "isOpenWorld": false,
+                "replay": "safe",
+                "requiresApproval": "never",
+                "approvalScopes": [],
+                "policyVersion": "static-v1"
+              },
+              "policyHash": "98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8",
+              "definitionFingerprint": "a5240d83b5a172c1997c4c48e64921a65eaf3922385eceddf8803d227e1309f5",
+              "executionDomain": "workspace"
+            }
+          ]
+        }
+      }
+    }
+  }
+]

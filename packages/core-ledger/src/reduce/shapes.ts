@@ -1,5 +1,5 @@
 import type { Seq } from '@agnes/core-common/types'
-import type { Actor, ApprovalVerdict, Billing, ContentBlock, InputPresentation } from '@agnes/protocol'
+import type { Actor, Billing, ContentBlock, InputPresentation } from '@agnes/protocol'
 
 // The payload shapes of the event types protocol validates by envelope only. They are declared here
 // so the reducer and its consumers agree on one reading of each row; the ledger itself still accepts
@@ -88,34 +88,6 @@ export type EffectSettled = {
   effectId: string
   outcome: 'ok' | 'error' | 'aborted' | 'unknown'
   durationMs?: number
-}
-
-export type ApprovalAsked = {
-  approval?: import('@agnes/extension-api').ApprovalConstraints
-  requestId: string
-  kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
-  toolUseId?: string
-  summary: string
-  risk: 'destructive' | 'always' | 'budget' | 'unknown'
-  bindingHash: string
-  scope?: string
-  policyVersion?: string
-  policyBinding?: import('@agnes/protocol/gen/session-v1').ApprovalAsked['policyBinding']
-  profileHash?: string
-  options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
-  deadline?: string
-  pending?: { ticket: string; expiresAt: string }
-}
-export type ApprovalDecided = {
-  answerCommand?: import('@agnes/protocol').DecisionCommandReceipt
-  requestId: string
-  verdict: ApprovalVerdict
-  via: 'sync' | 'callback' | 'timeout' | 'guardian'
-  scope?: string
-  grantId?: string
-  answeredBy?: Actor
-  ticket?: string
-  reason?: string
 }
 
 export type TokenCounts = {

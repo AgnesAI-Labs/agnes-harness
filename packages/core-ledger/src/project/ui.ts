@@ -2,8 +2,6 @@ import type { Conflict, ContextBreakdownDiag } from '@agnes/core-common/context-
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
 import {
-  type ApprovalAsked,
-  type ApprovalDecided,
   type ArtifactJob,
   type AssistantMessage,
   type AssistantOutput,
@@ -226,7 +224,6 @@ export class UIProjectionCell {
   private readonly tools = new Map<string, ToolNode>()
   private readonly approvals = new Map<string, ApprovalNode>()
   private readonly plans = new Map<string, string>()
-  private readonly approvalTools = new Map<string, string>()
   private readonly effectTools = new Map<string, string>()
   private readonly assistantEffects = new Map<string, AssistantNode>()
   // What each running inference has said so far by count, and which ones kept their text when cut.
@@ -906,72 +903,6 @@ export class UIProjectionCell {
                 : result?.reason === 'answered' && result.response.option !== 'rejected'
                   ? 'planned'
                   : 'failed'
-          changed.add(tool.id)
-        }
-        break
-      }
-      case 'approval/asked': {
-        const asked = data as ApprovalAsked
-        const options = asked.options?.map((option) => {
-          if (option === 'allowed-once') return 'allow_once' as const
-          if (option === 'allowed-session') return 'allow_always' as const
-          if (option === 'allowed-permanent') return 'allow_permanent' as const
-          return 'reject_once' as const
-        }) ?? ['allow_once', 'allow_always', 'reject_once']
-        const node: ApprovalNode = {
-          kind: 'approval',
-          id,
-          seq,
-          state: 'pending',
-          summary: asked.summary,
-          risk: asked.risk,
-          options,
-          requestSeq: seq,
-          ...(asked.pending
-            ? {
-                ticket: asked.pending.ticket,
-                expiresAt: asked.pending.expiresAt,
-                ...(asked.kind !== 'tool'
-                  ? { decisionRef: { id: asked.requestId, sessionId: this.sessionKey, revision: seq } }
-                  : {}),
-              }
-            : {}),
-        }
-        this.approvals.set(asked.requestId, node)
-        this.pushNode(node)
-        changed.add(id)
-        if (asked.toolUseId) {
-          this.approvalTools.set(asked.requestId, asked.toolUseId)
-          const tool = this.tools.get(asked.toolUseId)
-          if (tool) {
-            tool.status = 'awaiting_approval'
-            changed.add(tool.id)
-          }
-        }
-        break
-      }
-      case 'approval/decided': {
-        const decided = data as ApprovalDecided
-        const node = this.approvals.get(decided.requestId)
-        if (node) {
-          node.state = decided.via === 'timeout' ? 'expired' : 'decided'
-          node.decision = {
-            verdict: decided.verdict,
-            via: decided.via,
-            ...(decided.answeredBy ? { byLabel: clip(decided.answeredBy.id, 128) } : {}),
-            // A ledger written before reasons existed has none; the card then says nothing about why.
-            ...(decided.reason ? { reason: clip(decided.reason, 128) } : {}),
-          }
-          changed.add(node.id)
-        }
-        const toolId = this.approvalTools.get(decided.requestId)
-        const tool = toolId ? this.tools.get(toolId) : undefined
-        if (tool) {
-          tool.status = decided.verdict.startsWith('allowed')
-            ? 'planned'
-            : decided.verdict === 'cancelled'
-              ? 'cancelled'
-              : 'failed'
           changed.add(tool.id)
         }
         break

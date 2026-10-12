@@ -291,8 +291,10 @@ export class HostedSessions {
     const { session } = hosted
     if (hosted.inflight > 0 || hosted.aborts.size > 0 || this.options.channel.hasPending(key)) return false
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
+    for (const { value } of session.state.registers.decisionStates.values())
+      if (!value.consumption && !value.invalidation && (!value.result || value.result.reason === 'answered'))
+        return false
     if (((session.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length ?? 0) > 0) return false
-    if (session.state.pendingApprovals.size > 0) return false
     // A child still open keeps its parent open; children hibernate first.
     for (const other of this.options.host.kernel.sessions.values())
       if (other !== session && other.d.log.parent?.key === key) return false

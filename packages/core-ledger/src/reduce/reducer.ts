@@ -5,8 +5,6 @@ import { contextAnchorOf } from './anchor.js'
 import { ChunkedMap } from './chunked-map.js'
 import { reduceDecision } from './decision.js'
 import type {
-  ApprovalAsked,
-  ApprovalDecided,
   ArtifactJob,
   BudgetState,
   CostLedger,
@@ -17,14 +15,7 @@ import type {
 } from './shapes.js'
 import { initialState, type LedgerState, type RegisterCell } from './state.js'
 
-type Tables =
-  | 'openTurn'
-  | 'openStep'
-  | 'lastTurn'
-  | 'lastStep'
-  | 'pendingEffects'
-  | 'pendingApprovals'
-  | 'taint'
+type Tables = 'openTurn' | 'openStep' | 'lastTurn' | 'lastStep' | 'pendingEffects' | 'taint'
 type Registers = LedgerState['registers']
 type Writable<T> = T extends ReadonlyMap<infer K, infer V> ? Map<K, V> : never
 
@@ -186,10 +177,8 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         reset('openStep')
         reset('lastStep')
         reset('pendingEffects')
-        reset('pendingApprovals')
         reset('resumedRequests')
         reset('taint')
-        s.decisions = ChunkedMap.empty()
         s.toolCalls = ChunkedMap.empty()
         s.creditsUsed = 0
         if (start.delegation?.kind === 'spawn') s.lastLedgerTokens = null
@@ -224,23 +213,13 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
               throw new CoreError('E_RELATION', 'approval decision already consumed')
             resumed().add(requestId as string)
           }
-        } else {
-          const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
-          if (
-            d?.trigger !== 'approval-resume' ||
-            !decision ||
-            decision.via === 'sync' ||
-            decision.lane !== lane
-          )
-            throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
-              seq: e.seq,
-              lane,
-            })
-          if (s.resumedRequests.has(requestId as string))
-            throw new CoreError('E_RELATION', 'approval decision already consumed', { seq: e.seq, lane })
-          resumed().add(requestId as string)
-        }
+        } else
+          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
+            seq: e.seq,
+            lane,
+          })
       }
+
       table('openTurn').set(lane, { turn: Number(d?.turn), startSeq: e.seq, trigger: String(d?.trigger) })
       table('lastTurn').set(lane, Number(d?.turn))
       table('taint').set(lane, e.origin === 'system' && e.trust === 'trusted' && d?.inputTainted === true)
@@ -323,26 +302,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'effect/settled':
       remove('pendingEffects', lifecycleId(d, 'effectId', e.type, e.seq))
       break
-    case 'approval/asked': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalAsked
-      table('pendingApprovals').set(requestId, { ...a, requestId, seq: e.seq, lane })
-      break
-    }
-    case 'approval/decided': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalDecided
-      const askedSeq = s.pendingApprovals.get(requestId)?.seq
-      remove('pendingApprovals', requestId)
-      s.decisions = s.decisions.set(requestId, {
-        ...a,
-        requestId,
-        seq: e.seq,
-        lane,
-        ...(askedSeq === undefined ? {} : { askedSeq }),
-      })
-      break
-    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)

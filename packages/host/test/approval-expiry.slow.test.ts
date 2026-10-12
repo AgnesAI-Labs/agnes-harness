@@ -5,10 +5,16 @@ import { fileURLToPath } from 'node:url'
 import { approvalDeadlineMs, initialState, type LedgerState } from '@agnes/core'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { startApprovalExpiry } from '../src/runtime/approval/expiry.js'
 import { createTestHost } from '../testkit/index.js'
 
-type PendingApproval = LedgerState['pendingApprovals'] extends ReadonlyMap<string, infer V> ? V : never
+type DecisionCell =
+  LedgerState['registers']['decisionStates'] extends ReadonlyMap<string, infer V> ? V : never
+const decisionCell = (id: string, seq: number, expiresAt: string, lane = 'main'): DecisionCell => {
+  const value = pendingDecision(id, { sessionId: 'agnes:test', lane })
+  return { seq, value: { ...value, request: { ...value.request, expiresAt } } }
+}
 
 const toolCall = (command: string): InferenceEvent[] => [
   {
@@ -107,18 +113,9 @@ describe('Host approval expiry lifecycle', () => {
       },
     }
     // A writable stand-in for the session's pending approvals, which the fold never changes in place.
-    const pendingApprovals = new Map<string, PendingApproval>()
-    const state = { ...initialState(), pendingApprovals }
-    pendingApprovals.set('request', {
-      requestId: 'request',
-      kind: 'tool',
-      summary: 'test',
-      risk: 'always',
-      bindingHash: '0'.repeat(64),
-      pending: { ticket: 'ticket', expiresAt: new Date(now + 10).toISOString() },
-      seq: 1,
-      lane: 'main',
-    })
+    const decisionStates = new Map<string, DecisionCell>()
+    const state = { ...initialState(), registers: { ...initialState().registers, decisionStates } }
+    decisionStates.set('request', decisionCell('request', 1, new Date(now + 10).toISOString()))
     let calls = 0
     let active = 0
     let maximumActive = 0
@@ -155,7 +152,7 @@ describe('Host approval expiry lifecycle', () => {
             throw new Error('storage unavailable')
           }
           if (calls === 3) {
-            pendingApprovals.clear()
+            decisionStates.clear()
             return 1
           }
           if (calls === 4) await closingWrite
@@ -196,16 +193,7 @@ describe('Host approval expiry lifecycle', () => {
     expect(maximumActive).toBe(1)
     // Nothing is pending any more, so nothing is scheduled until a new approval is asked.
     expect(queued).toHaveLength(0)
-    pendingApprovals.set('again', {
-      requestId: 'again',
-      kind: 'tool',
-      summary: 'test',
-      risk: 'always',
-      bindingHash: '0'.repeat(64),
-      pending: { ticket: 'again', expiresAt: new Date(now + 10).toISOString() },
-      seq: 2,
-      lane: 'main',
-    })
+    decisionStates.set('again', decisionCell('again', 2, new Date(now + 10).toISOString()))
     asked?.()
     const next = queued.shift()
     if (!next) throw new Error('missing wake-up for the new approval')
@@ -222,7 +210,7 @@ describe('Host approval expiry lifecycle', () => {
     await closing
     expect(queued).toHaveLength(0)
 
-    pendingApprovals.clear()
+    decisionStates.clear()
     const idleController = await startApprovalExpiry({ ...session, expireApprovals: async () => 0 })
     expect(queued).toHaveLength(0)
     await idleController.close()
@@ -327,8 +315,8 @@ describe('approval expiry wakes only for a pending deadline', () => {
     }
     const observers = new Set<{ types: readonly string[]; notify: () => void }>()
     // A writable stand-in for the session's pending approvals, which the fold never changes in place.
-    const pendingApprovals = new Map<string, PendingApproval>()
-    const state = { ...initialState(), pendingApprovals }
+    const decisionStates = new Map<string, DecisionCell>()
+    const state = { ...initialState(), registers: { ...initialState().registers, decisionStates } }
     let calls = 0
     const session = {
       key: 'agnes:test',
@@ -351,17 +339,8 @@ describe('approval expiry wakes only for a pending deadline', () => {
       },
     } as unknown as Parameters<typeof startApprovalExpiry>[0]
     const ask = (expiresAt: string, lane = 'main') => {
-      pendingApprovals.set(`request:${expiresAt}`, {
-        requestId: `request:${expiresAt}`,
-        kind: 'tool',
-        summary: 'test',
-        risk: 'always',
-        bindingHash: '0'.repeat(64),
-        pending: { ticket: `ticket:${expiresAt}`, expiresAt },
-        seq: 1,
-        lane,
-      })
-      for (const o of observers) if (o.types.includes('approval/asked')) o.notify()
+      decisionStates.set(`request:${expiresAt}`, decisionCell(`request:${expiresAt}`, 1, expiresAt, lane))
+      for (const o of observers) if (o.types.includes('decision/state')) o.notify()
     }
     return { session, queued, observers, ask, calls: () => calls }
   }

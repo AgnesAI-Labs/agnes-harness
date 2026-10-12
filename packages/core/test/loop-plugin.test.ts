@@ -837,9 +837,9 @@ it.each(['deny', 'quote'] as const)(
       expect(outcome.reason, JSON.stringify(outcome)).toBe('budget')
       expect((k.o.provider as ReturnType<typeof fakeProvider>).requests).toEqual([])
       expect(await session.scan({ type: 'effect/intent', limit: 20 })).toEqual([])
-      expect(await session.scan({ type: 'approval/asked', limit: 20 })).toHaveLength(
-        onExceed === 'quote' ? 1 : 0,
-      )
+      expect(
+        (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'budget'),
+      ).toHaveLength(onExceed === 'quote' ? 1 : 0)
     } finally {
       await k.close()
     }

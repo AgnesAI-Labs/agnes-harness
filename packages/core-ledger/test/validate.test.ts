@@ -64,25 +64,9 @@ describe('prepareEvents', () => {
     }
   })
 
-  it('rejects approval/decided with bad via and harness/refine from a non-refine caller', () => {
-    expect(() =>
-      prepareEvents(
-        [
-          {
-            ...base,
-            type: 'approval/decided',
-            data: { requestId: 'a', verdict: 'allowed-once', via: 'guardian' },
-          },
-        ],
-        ctx,
-      ),
-    ).not.toThrow()
-    expect(() =>
-      prepareEvents(
-        [{ ...base, type: 'approval/decided', data: { requestId: 'a', verdict: 'rejected', via: 'magic' } }],
-        ctx,
-      ),
-    ).toThrow(/E_ENVELOPE/)
+  it('rejects retired approvals and harness/refine from a non-refine caller', () => {
+    for (const type of ['approval/asked', 'approval/decided'])
+      expect(() => prepareEvents([{ ...base, type, data: {} }], ctx)).toThrow('E_UNKNOWN_EVENT')
     const refine = (): EventInput => ({
       ...base,
       type: 'harness/refine',

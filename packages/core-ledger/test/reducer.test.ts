@@ -7,6 +7,7 @@ import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
 import { foldEvents, initialState, reduce } from '../src/reduce/reducer.js'
 import { effectTree, type LedgerState } from '../src/reduce/state.js'
+import { answeredDecision, pendingDecision } from '../testkit/decision.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 let seq = 0
@@ -128,13 +129,9 @@ describe('reducer', () => {
     )
     s = reduce(
       s,
-      ev('approval/asked', {
-        requestId: 'a1',
-        kind: 'tool',
-        toolUseId: 't1',
-        summary: 'rm',
-        risk: 'destructive',
-        bindingHash: 'h',
+      ev('decision/state', pendingDecision('a1', { operationId: 't1' }), {
+        register: 'decision/state',
+        origin: 'system',
       }),
     )
     s = reduce(
@@ -168,8 +165,8 @@ describe('reducer', () => {
     expect(s.lastStep.get('main')).toBe(1)
     expect([...s.pendingEffects.keys()]).toEqual(['e1', 'e2'])
     expect(s.pendingEffects.get('e1')?.intentSeq).toBe(3)
-    expect(s.pendingApprovals.get('a1')?.toolUseId).toBe('t1')
-    expect(s.pendingApprovals.get('a1')?.lane).toBe('main')
+    expect(s.registers.decisionStates.get('a1')?.value.request.operationId).toBe('t1')
+    expect(s.registers.decisionStates.get('a1')?.value.request.lane).toBe('main')
     expect(s.taint.get('main')).toBe(true)
     expect(s.creditsUsed).toBe(2.5)
     const contextAnchor = s.lastLedgerTokens
@@ -219,12 +216,20 @@ describe('reducer', () => {
     s = reduce(s, ev('x/core/compaction-end', {}, { ignorable: true }))
     expect(s.lastLedgerTokens).toMatchObject({ total: 321 })
     s = reduce(s, ev('effect/settled', { effectId: 'e2', outcome: 'ok' }))
-    s = reduce(s, ev('approval/decided', { requestId: 'a1', verdict: 'allowed-once', via: 'sync' }))
+    s = reduce(
+      s,
+      ev('decision/state', answeredDecision(pendingDecision('a1', { operationId: 't1' }), seq + 1), {
+        register: 'decision/state',
+        origin: 'system',
+      }),
+    )
     s = reduce(s, ev('step/end', { turn: 1, step: 1 }))
     s = reduce(s, ev('turn/end', { reason: 'completed', lastAssistantSeq: null }))
     expect([...s.pendingEffects.keys()]).toEqual(['e1'])
-    expect(s.pendingApprovals.size).toBe(0)
-    expect(s.decisions.get('a1')?.verdict).toBe('allowed-once')
+    expect(s.registers.decisionStates.get('a1')?.value.result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'allowed-once' },
+    })
     expect(s.openTurn.size).toBe(0)
     expect(s.openStep.size).toBe(0)
     // turn/end clears lastStep so the next turn numbers its steps from 1; lastTurn survives it so
@@ -441,15 +446,14 @@ describe('reducer', () => {
     ]
     const was = tables(s1)
     const now = tables(s2)
-    expect(was).toHaveLength(16)
+    expect(was).toHaveLength(14)
     expect(now.map(([n]) => n)).toEqual(was.map(([n]) => n))
     for (const [i, [name, table]] of was.entries()) {
       if (name === 'openStep' || name === 'lastStep') expect(now[i]?.[1], name).not.toBe(table)
       else expect(now[i]?.[1], `${name} is shared`).toBe(table)
     }
-    // The two tables that grow for the whole session are chunked from the first state on.
+    // Tool calls grow for the whole session and are chunked from the first state on.
     expect(s0.toolCalls).toBeInstanceOf(ChunkedMap)
-    expect(s0.decisions).toBeInstanceOf(ChunkedMap)
   })
 
   it('a rejected batch leaves no trace in the state it was simulated against', () => {
@@ -494,8 +498,6 @@ describe('reducer', () => {
     const cases: [string, string, Record<string, unknown>][] = [
       ['effect/intent', 'effectId', { kind: 'tool', replay: 'safe' }],
       ['effect/settled', 'effectId', { outcome: 'ok' }],
-      ['approval/asked', 'requestId', { kind: 'tool', summary: 's', risk: 'always', bindingHash: 'h' }],
-      ['approval/decided', 'requestId', { verdict: 'allowed-once', via: 'sync' }],
     ]
     for (const [type, field, rest] of cases)
       for (const bad of [{}, { [field]: undefined }, { [field]: '' }, { [field]: 7 }, 'nope', null, []]) {
@@ -527,11 +529,14 @@ describe('reducer', () => {
     expect([...open.pendingEffects.keys()]).toEqual(['e1'])
     seq = 0
     const approved = foldEvents([
-      ev('approval/asked', { requestId: 'r1', kind: 'tool', summary: 's', risk: 'always', bindingHash: 'h' }),
-      ev('approval/decided', { requestId: 'r1', verdict: 'allowed-once', via: 'sync' }),
+      ev('decision/state', pendingDecision('r1'), { register: 'decision/state', origin: 'system' }),
+      ev('decision/state', answeredDecision(pendingDecision('r1'), seq + 1), {
+        register: 'decision/state',
+        origin: 'system',
+      }),
     ])
-    expect(approved.pendingApprovals.size).toBe(0)
-    expect([...approved.decisions.keys()]).toEqual(['r1'])
+    expect(approved.registers.decisionStates.get('r1')?.value.result?.reason).toBe('answered')
+    expect([...approved.registers.decisionStates.keys()]).toEqual(['r1'])
   })
 
   it('tracks a media effect as an auxiliary never-replay effect', () => {
@@ -551,13 +556,20 @@ describe('reducer', () => {
     seq = 0
     const start = { resolvedProfileHash: null, preset: 'standard', agnesVersion: '0.0.1' }
     const ask = (requestId: string) =>
-      ev('approval/asked', { requestId, kind: 'tool', summary: 's', risk: 'always', bindingHash: 'h' })
+      ev(
+        'decision/state',
+        pendingDecision(requestId, { owner: requestId === 'r0' ? 'core/gate' : 'core/tool-permission' }),
+        { register: 'decision/state', origin: 'system' },
+      )
     const parent = foldEvents([
       ev('session/start', { key: 'parent', ...start }),
       ev('turn/start', { turn: 1, trigger: 'prompt' }),
       ev('step/start', { turn: 1, step: 1 }),
       ask('r0'),
-      ev('approval/decided', { requestId: 'r0', verdict: 'allowed-once', via: 'callback' }),
+      ev('decision/state', answeredDecision(pendingDecision('r0', { owner: 'core/gate' }), seq + 1), {
+        register: 'decision/state',
+        origin: 'system',
+      }),
       ev('step/end', { turn: 1, step: 1 }),
       ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
       ev('turn/start', {
@@ -577,7 +589,11 @@ describe('reducer', () => {
     // The boundary falls inside the parent's open step, with every one of these tables holding an entry.
     expect([...parent.openStep.keys()]).toEqual(['main'])
     expect([...parent.pendingEffects.keys()]).toEqual(['e1'])
-    expect([...parent.pendingApprovals.keys()]).toEqual(['r1'])
+    expect(
+      [...parent.registers.decisionStates.values()]
+        .filter((cell) => !cell.value.result)
+        .map((cell) => cell.value.handle.id),
+    ).toEqual(['r1'])
     expect([...parent.resumedRequests]).toEqual(['r0'])
     const child = reduce(
       parent,
@@ -586,9 +602,8 @@ describe('reducer', () => {
     expect(child.openTurn.size).toBe(0)
     expect(child.openStep.size).toBe(0)
     expect(child.pendingEffects.size).toBe(0)
-    expect(child.pendingApprovals.size).toBe(0)
+    expect(child.registers.decisionStates.size).toBe(0)
     expect(child.resumedRequests.size).toBe(0)
-    expect(child.decisions.size).toBe(0)
     expect(parent.openStep.size).toBe(1)
   })
 })

@@ -700,10 +700,11 @@ describe('v3 approval modes and grants', () => {
     })
     await original.session.runToolsPhase()
     const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
-    expect(events.filter((row) => row.type === 'approval/asked')).toHaveLength(1)
-    expect(events.find((row) => row.type === 'approval/decided')?.data).toMatchObject({
-      verdict: scenario.guard === 'reject' ? 'rejected' : 'allowed-once',
-      via: 'guardian',
+    expect(events.filter((row) => row.type === 'approval/guardian-decided')).toHaveLength(1)
+    expect(events.find((row) => row.type === 'approval/guardian-decided')?.data).toMatchObject({
+      decision: scenario.guard,
+      definitionFingerprint: expect.any(String),
+      policyBinding: expect.any(String),
     })
     const boundary = events.find(
       (row) =>

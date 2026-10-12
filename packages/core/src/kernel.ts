@@ -393,7 +393,7 @@ export class Kernel {
     }
     // A cached session is handed back only to a caller asking for the session it already is. The
     // key alone is not that question: `actor` is what `runtime.authorize` decides against and what
-    // every `approval/asked` is derived from, so returning the cached instance to a second caller
+    // every decision request is derived from, so returning the cached instance to a second caller
     // silently runs that caller's work as the first caller's principal. The same holds one field
     // over for the writer lease, the working directory, the lane and the preset — a mismatch is a
     // deployment error, and it fails closed rather than resolving in the first caller's favour.

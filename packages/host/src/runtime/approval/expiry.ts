@@ -31,15 +31,6 @@ export type ApprovalExpiryOptions = {
 function nextWakeMs(session: ExpirableSession): number | undefined {
   const now = session.d.clock()
   let earliest: number | undefined
-  for (const approval of session.state.pendingApprovals.values()) {
-    if (approval.lane !== session.lane) continue
-    const expiresAt = approval.pending?.expiresAt
-    if (typeof expiresAt !== 'string') continue
-    // Read exactly as core reads it: a deadline core cannot parse is one it already treats as due.
-    const at = approvalDeadlineMs(expiresAt)
-    if (Number.isNaN(at)) return MIN_WAKE_MS
-    if (earliest === undefined || at < earliest) earliest = at
-  }
   for (const { value } of session.state.registers.decisionStates.values()) {
     if (
       value.request.lane !== session.lane ||
@@ -128,9 +119,7 @@ export async function startApprovalExpiry(
   // This first call is awaited by Host.createSession. A reopened session therefore settles
   // already-expired persisted approvals before its handle is handed to a caller. A storage failure
   // is propagated for startup cleanup; later failures are reported and retried by the timer.
-  const unobserve = session.d.log.observeCommitted(['approval/asked', 'decision/state'], () =>
-    schedule(false),
-  )
+  const unobserve = session.d.log.observeCommitted(['decision/state'], () => schedule(false))
   try {
     await run()
   } catch (error) {

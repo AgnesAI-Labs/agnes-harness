@@ -397,18 +397,6 @@ describe('result line helpers', () => {
     })
   })
 
-  const asked = (seq: number, pending?: { ticket: string }) =>
-    ({
-      seq,
-      ts: 't',
-      id: `01J6ZM2Q3R4S5T6V7W8X9Y0${String(seq).padStart(3, '0')}`,
-      type: 'approval/asked',
-      data: { kind: 'budget', ...(pending ? { pending: { ...pending, expiresAt: 'x' } } : {}) },
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      origin: 'system',
-      trust: 'trusted',
-    }) as never
-
   const decision = (
     seq: number,
     id: string,
@@ -428,9 +416,6 @@ describe('result line helpers', () => {
     }) as never
 
   it('reports pending durable decisions and domain tickets without reviving closed requests', () => {
-    expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2, { ticket: 'new' })])).toBe('new')
-    expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2)])).toBe('old')
-    expect(findParkedTicket([asked(1)])).toBeUndefined()
     expect(findParkedTicket([])).toBeUndefined()
     expect(findParkedTicket([decision(1, 'old'), decision(2, 'current')])).toBe('current')
     expect(

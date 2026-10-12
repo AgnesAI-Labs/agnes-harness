@@ -4,6 +4,7 @@ import type { ApprovalVerdict, UINode } from '@agnes/protocol'
 import { validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { UITimeline } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { SessionImpl } from '../src/step/session.js'
 import { fakeProvider, sentFor, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
@@ -331,14 +332,8 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
     event('user/message', { content: [{ type: 'text', text: 'do it' }] }),
     event('turn/start', { turn: 1, trigger: 'prompt' }),
     event('tool/call', { toolUseId: 'tool-1', name: 'shell', args: {}, ordinal: 0 }),
-    event('approval/asked', {
-      requestId: 'approval-1',
-      kind: 'tool',
-      summary: 'run',
-      risk: 'always',
-      bindingHash: 'a'.repeat(64),
-      options: ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'],
-      pending: { ticket: 'ticket-1', expiresAt: '2026-09-13T00:10:00.000Z' },
+    event('decision/state', pendingDecision('approval-1', { operationId: 'tool-1' }), {
+      register: 'decision/state',
     }),
     event('turn/end', {
       reason: 'parked',
@@ -346,7 +341,9 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
       error: { code: 'APPROVAL_PENDING', message: 'Waiting for approval' },
     }),
     event('turn/start', { turn: 1, trigger: 'prompt' }, { lane: 'side' }),
-    event('approval/decided', { requestId: 'approval-1', verdict: 'allowed-once', via: 'callback' }),
+    event('decision/state', answeredDecision(pendingDecision('approval-1', { operationId: 'tool-1' }), 7), {
+      register: 'decision/state',
+    }),
     event('turn/start', {
       turn: 2,
       trigger: 'approval-resume',
@@ -378,12 +375,7 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
   ]
 
   const timeline = await projectUI(events, { sessionKey: 'approval-chain', lane: 'main' })
-  expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual([
-    'allow_once',
-    'allow_always',
-    'allow_permanent',
-    'reject_once',
-  ])
+  expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual(['allow_once', 'allow_always', 'reject_once'])
   expect(timeline.turns).toHaveLength(1)
   expect(timeline.turns?.[0]?.error).toBeUndefined()
   expect(timeline.turns[0]).toMatchObject({

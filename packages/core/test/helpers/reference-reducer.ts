@@ -7,8 +7,6 @@
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
 import { isRegisterTombstone, registerKey } from '@agnes/core-ledger/log/storage'
 import type {
-  ApprovalAsked,
-  ApprovalDecided,
   ArtifactJob,
   BudgetState,
   CostLedger,
@@ -41,8 +39,6 @@ export type LedgerState = {
   lastTurn: Map<string, number>
   lastStep: Map<string, number>
   pendingEffects: Map<string, Omit<EffectNode, 'children'>>
-  pendingApprovals: Map<string, ApprovalAsked & { seq: Seq; lane: string }>
-  decisions: Map<string, ApprovalDecided & { seq: Seq; lane: string; askedSeq?: Seq }>
   resumedRequests: Set<string>
   taint: Map<string, boolean>
   toolCalls: Map<string, { seq: Seq; name: string; turn: number; step: number; lane: string }>
@@ -76,8 +72,6 @@ function cloneMaps(s: LedgerState): LedgerState {
     lastTurn: new Map(s.lastTurn),
     lastStep: new Map(s.lastStep),
     pendingEffects: new Map(s.pendingEffects),
-    pendingApprovals: new Map(s.pendingApprovals),
-    decisions: new Map(s.decisions),
     resumedRequests: new Set(s.resumedRequests),
     taint: new Map(s.taint),
     toolCalls: new Map(s.toolCalls),
@@ -179,8 +173,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.openStep.clear()
         s.lastStep.clear()
         s.pendingEffects.clear()
-        s.pendingApprovals.clear()
-        s.decisions.clear()
         s.resumedRequests.clear()
         s.taint.clear()
         s.toolCalls.clear()
@@ -195,20 +187,15 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (s.openTurn.has(lane)) throw new CoreError('E_RELATION', 'turn already open', { seq: e.seq, lane })
       const requestId = (d?.continues as { requestId?: unknown } | undefined)?.requestId
       if (requestId !== undefined) {
-        const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
-        if (
-          d?.trigger !== 'approval-resume' ||
-          !decision ||
-          decision.via === 'sync' ||
-          decision.lane !== lane
-        )
-          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
-            seq: e.seq,
-            lane,
-          })
-        if (s.resumedRequests.has(requestId as string))
-          throw new CoreError('E_RELATION', 'approval decision already consumed', { seq: e.seq, lane })
-        s.resumedRequests.add(requestId as string)
+        const value =
+          typeof requestId === 'string' ? s.registers.decisionStates.get(requestId)?.value : undefined
+        if (d?.trigger !== 'approval-resume' || !value || value.request.lane !== lane || value.consumption)
+          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane')
+        if (value.request.owner === 'core/gate') {
+          if (s.resumedRequests.has(requestId as string))
+            throw new CoreError('E_RELATION', 'approval decision already consumed')
+          s.resumedRequests.add(requestId as string)
+        }
       }
       s.openTurn.set(lane, { turn: Number(d?.turn), startSeq: e.seq, trigger: String(d?.trigger) })
       s.lastTurn.set(lane, Number(d?.turn))
@@ -292,26 +279,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'effect/settled':
       s.pendingEffects.delete(lifecycleId(d, 'effectId', e.type, e.seq))
       break
-    case 'approval/asked': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalAsked
-      s.pendingApprovals.set(requestId, { ...a, requestId, seq: e.seq, lane })
-      break
-    }
-    case 'approval/decided': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalDecided
-      const askedSeq = s.pendingApprovals.get(requestId)?.seq
-      s.pendingApprovals.delete(requestId)
-      s.decisions.set(requestId, {
-        ...a,
-        requestId,
-        seq: e.seq,
-        lane,
-        ...(askedSeq === undefined ? {} : { askedSeq }),
-      })
-      break
-    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)
@@ -387,8 +354,6 @@ export function initialState(): LedgerState {
     lastTurn: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
-    pendingApprovals: new Map(),
-    decisions: new Map(),
     resumedRequests: new Set(),
     taint: new Map(),
     toolCalls: new Map(),
