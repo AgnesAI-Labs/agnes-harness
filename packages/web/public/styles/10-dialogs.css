@@ -77,7 +77,7 @@ dialog::backdrop {
 #new-session-form h2 {
   margin: 0;
   color: var(--agnes-text-primary);
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   font-weight: 500;
   line-height: 1.5rem;
 }

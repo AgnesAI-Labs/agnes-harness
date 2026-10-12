@@ -74,7 +74,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--agnes-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   line-height: 1.25rem;
   text-overflow: ellipsis;
@@ -145,7 +145,7 @@
 .turn-process-body .node-label,
 .turn-process-body .tool-name {
   color: var(--agnes-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   letter-spacing: 0;
   line-height: 1.5rem;
@@ -153,7 +153,7 @@
 }
 .turn-process-body .tool-status {
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 400;
   line-height: 1.5rem;
 }
@@ -174,7 +174,7 @@
 /* 元信息（用量这类）：更小、更弱，与步骤正文区分开。 */
 .turn-process-body .timeline-node.cost {
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.125rem;
 }
 /* 标签不参与收缩：否则长数值会把「用量」挤成一列两个字。 */
@@ -185,7 +185,7 @@
 .turn-process-body .cost .node-label,
 .turn-process-body .cost .node-body {
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 400;
   line-height: 1.125rem;
 }
@@ -198,7 +198,7 @@
   padding: 0.125rem 0.375rem;
   border-radius: 0.5rem;
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.125rem;
 }
 /* 行内详情：0fr → 1fr 的栅格行过渡，展开与收起两个方向都有动画；
@@ -271,7 +271,7 @@
   border-radius: 28px;
   color: var(--agnes-text-tertiary);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 400;
   line-height: 1.5rem;
   cursor: pointer;
@@ -324,7 +324,7 @@
   color: var(--agnes-text-tertiary);
   background: var(--agnes-bg-page);
   box-shadow: var(--shadow-elevation-prominent);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.125rem;
 }
 .turn-usage-grid dt,
@@ -377,7 +377,7 @@
   border-radius: var(--radius-lg);
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-card);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   line-height: 1.375rem;
   white-space: pre-wrap;
 }
@@ -420,7 +420,7 @@
   border-radius: 1.5rem;
   color: var(--agnes-text-secondary);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
 }
 .composer-workspace:hover:not(:disabled),
@@ -455,7 +455,7 @@
   border-radius: 1.5rem;
   color: var(--agnes-text-secondary);
   background: transparent;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
 }
 .composer-permission:hover:not(:disabled) {
@@ -503,7 +503,7 @@
 }
 .permission-picker-check {
   color: var(--agnes-text-emphasis);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   line-height: 1.25rem;
 }
 .permission-picker-copy {
@@ -514,12 +514,12 @@
 }
 .permission-picker-label {
   color: var(--agnes-text-emphasis);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 .permission-picker-hint {
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.3;
 }
 #cancel {
@@ -527,7 +527,7 @@
   padding: 0 0.75rem;
   border-color: transparent;
   border-radius: var(--radius-full);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 500;
 }
 #session-usage {
@@ -590,7 +590,7 @@
   color: var(--agnes-text-secondary);
   background: var(--agnes-bg-page);
   box-shadow: var(--shadow-elevation-prominent);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   line-height: 1.25rem;
   cursor: default;
 }
@@ -603,14 +603,14 @@
 .usage-popover-title {
   margin: 0;
   color: var(--agnes-text-tertiary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 400;
   white-space: nowrap;
 }
 .usage-context-value {
   margin: 0;
   color: var(--agnes-text-primary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -618,7 +618,7 @@
   margin: 0 0 0 auto;
   overflow: hidden;
   color: var(--agnes-text-primary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
