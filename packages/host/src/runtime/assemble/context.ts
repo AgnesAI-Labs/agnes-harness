@@ -19,6 +19,7 @@ import { RuntimeMutationGate } from '@agnes/host-providers/runtime-mutation-gate
 import { Rollback } from '../lifecycle/lifecycle.js'
 import type { Assembled } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
+import type { SessionCapabilitiesFn } from './capabilities.js'
 
 /**
  * A value that exists only once a later stage has built it, read by closures an earlier stage
@@ -46,7 +47,7 @@ export type LiveBindings = Readonly<{
   pluginTree: Late<HostPluginTreeBase>
   seams: Late<SeamImplementations>
   extensionRows: Late<Assembled['extensionRows']>
-  sessionCapabilities: Late<Assembled['sessionCapabilities']>
+  sessionCapabilities: Late<SessionCapabilitiesFn>
 }>
 
 /** Synchronous coordination objects with no I/O; one set per assembly. */
@@ -129,7 +130,7 @@ export function createAssemblyContext(profile: ResolvedProfile, deps: AssembleDe
       pluginTree: new Late<HostPluginTreeBase>('plugin tree'),
       seams: new Late<SeamImplementations>('seams'),
       extensionRows: new Late<Assembled['extensionRows']>('extension rows'),
-      sessionCapabilities: new Late<Assembled['sessionCapabilities']>('session capabilities'),
+      sessionCapabilities: new Late<SessionCapabilitiesFn>('session capabilities'),
     }),
     step: 'packages',
     done: (next) => {

@@ -78,9 +78,9 @@ describe('host boundaries', () => {
           `${f}: ${pkg}`,
         ).toContain(pkg)
   })
-  it('Kernel.create appears only in assemble.ts', () => {
+  it('Kernel.create appears only in the kernel assembly stage', () => {
     const callers = files.filter((f) => /\bKernel\s*\.\s*create\s*\(/.test(read(f)))
-    expect(callers.map((f) => modulePath(f))).toEqual(['host/runtime/assemble/assemble.ts'])
+    expect(callers.map((f) => modulePath(f))).toEqual(['host/runtime/assemble/kernel-stage.ts'])
   })
   // The writer lease setting belongs to the kernel; extension leases are bound to their row and
   // must not start reading it again. Comments are stripped so prose naming the key does not count.
@@ -94,12 +94,12 @@ describe('host boundaries', () => {
           .filter(([, count]) => count !== 0),
       )
     expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({
-      'host/runtime/assemble/assemble.ts': 2,
+      'host/runtime/assemble/kernel-stage.ts': 2,
       'host-common/profile-policy.ts': 1,
     })
-    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host/runtime/assemble/assemble.ts': 1 })
+    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host/runtime/assemble/kernel-stage.ts': 1 })
     // One expression reads the key, and what it reads becomes the kernel's leaseTtlMs.
-    const wiring = uncommented(read(join(src, 'runtime', 'assemble', 'assemble.ts'))).match(
+    const wiring = uncommented(read(join(src, 'runtime', 'assemble', 'kernel-stage.ts'))).match(
       /\.limits\['lease\.ttl_ms'\]\s*!==\s*undefined\s*\?\s*\{\s*leaseTtlMs:\s*[\w.]+\.limits\['lease\.ttl_ms'\]\s*\}/g,
     )
     expect(wiring).toHaveLength(1)

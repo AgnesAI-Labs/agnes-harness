@@ -1,33 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { ToolRegistry } from '@agnes/core'
-import {
-  DEFAULT_LOOP,
-  type HookPort,
-  Kernel,
-  type Operation,
-  platformFacts,
-  type SessionImpl,
-} from '@agnes/core'
-import {
-  type ExtensionManifest,
-  type LeaseView,
-  type MemorySession,
-  memoryKind,
-  type ResourceEntry,
-  systemPromptKind,
-} from '@agnes/extension-api'
-import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
-import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
+import { type Kernel, platformFacts, type SessionImpl } from '@agnes/core'
+import type { ExtensionManifest, ResourceEntry } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
-import { resolvePreset } from '@agnes/host-common/presets/resolve'
-import {
-  assertCompositionCompatible,
-  type CompositionPatch,
-  type ResolvedComposition,
-  resolveComposition,
-} from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { businessLimit } from '@agnes/host-common/profile-policy'
 import {
@@ -40,7 +16,7 @@ import {
   MIGRATED_EXTENSION_IDS,
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
-import type { OperationDeps, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { type BuiltinRowHandle, createBuiltinRowHost } from '@agnes/host-extensions/ext-host/builtin-row-host'
 import { createExtensionFactorySelector } from '@agnes/host-extensions/ext-host/extension-isolation-selector'
 import { mergeExtensionStatus } from '@agnes/host-extensions/ext-host/extension-status-book'
@@ -49,82 +25,45 @@ import {
   type ExtensionSpec,
   type ExtensionStatus,
 } from '@agnes/host-extensions/ext-host/index'
-import { leaseFor, ROW_BOUND_LEASE_TTL_MS } from '@agnes/host-extensions/ext-host/lease'
 import { readAuthorManifest, readBundledExtensionDirs } from '@agnes/host-extensions/ext-host/manifest'
 import { preflightEmbeddedExtension, preflightExtension } from '@agnes/host-extensions/ext-host/preflight'
 import { serviceContext } from '@agnes/host-extensions/ext-host/service-context'
 import { serviceInvoker } from '@agnes/host-extensions/ext-host/service-invocation'
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
-import { ExtensionSessions } from '@agnes/host-extensions/ext-host/session-bindings'
-import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
-import { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
-import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fetch/index'
-import {
-  composeSecrets,
-  createSecretsEnv,
-  createSecretsFile,
-} from '@agnes/host-infrastructure/adapters/secrets'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
-import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
-import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
-import { sandboxProviderCatalog } from '@agnes/host-providers/adapters/sandbox-providers'
-import { assembleCompaction } from '@agnes/host-providers/assemble/compaction'
 import { compactionEngineCatalog } from '@agnes/host-providers/assemble/compaction-engines'
-import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
-import { modelRuntime } from '@agnes/host-providers/assemble/model-runtime'
-import {
-  buildProvider,
-  readCreditsPerUsd,
-  unresolvedProviderAssembly,
-} from '@agnes/host-providers/assemble/provider'
-import {
-  applyProviderSelections,
-  selectConfiguredProviders,
-} from '@agnes/host-providers/assemble/provider-selection'
-import {
-  materializeRoutes,
-  pinPresetRoutes,
-  sweepAwsDestination,
-  verifyRoutes,
-} from '@agnes/host-providers/assemble/routes'
 import { skillRowRevision, withSkillRows } from '@agnes/host-providers/assemble/skill-row'
 import {
   generationRegistries,
   prepareGenerationOwnerReplacement,
 } from '@agnes/host-providers/runtime-generation-view'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { correlatedLogger } from '@agnes/observability'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
-import type { RouteTable } from '@agnes/protocol'
-import { createNetFetch, lazyPackageTables, toSeamAdapters } from '../adapters/index.js'
 import { mountComputerUse } from '../computer-use/index.js'
 import { compositionSkills, compositionTools } from '../profile/composition-visibility.js'
-import {
-  capabilityClientCatalog,
-  capabilityEnabled,
-  capabilityToolCatalog,
-  resolveSessionCapabilities,
-} from '../profile/session-capabilities.js'
-import { startObservabilityFeed } from '../services/observability-feed.js'
-import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
 import type { Assembled } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { buildBootRows } from './boot-rows.js'
+import { createCapabilities } from './capabilities.js'
 import { childAgentCatalog } from './child-agents.js'
-import { createAssemblyContext, duplicateContribution, failAssembly } from './context.js'
+import { createAssemblyContext, failAssembly } from './context.js'
+import { createEcosystemContexts } from './ecosystem-context.js'
+import { startKernelHooks } from './kernel-hooks.js'
+import { createKernel, type ExtensionLeases } from './kernel-stage.js'
+import { buildOperations } from './operations.js'
 import { bindSeams } from './package-seams.js'
 import { loadPackages } from './packages.js'
 import { resolvePresetCatalog } from './presets.js'
 import { openProcessServices } from './process-services.js'
+import { assembleProvider } from './provider-stage.js'
 import { createRowHosts } from './row-hosts.js'
 import { mountRuntimeTarget } from './runtime-target.js'
 import { openSeamContexts } from './seam-contexts.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 import { createSkillState } from './skills.js'
-import { trustedHookCommands } from './trusted-hooks.js'
 import { createWorkspaceRuntimeFactory } from './workspace-runtime.js'
 
 /**
@@ -216,7 +155,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
     const skillState = createSkillState(ctx, proc)
     const { owners: skillOwners } = skillState
-    let kernel!: Kernel
     const bootRows = buildBootRows(ctx, pkgs, presetCatalog, seamContexts)
     const {
       builtSeams,
@@ -265,604 +203,47 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       rollback,
     })
     say('seams.assembled', { seams: ctx.profile.seams, fsDigest: adapters.fs.fence().digest })
-    let privacyTrajectory: SeamInitContext['privacyTrajectory']
-    const hookCommands =
-      adapters.platform.os === 'win32'
-        ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
-        : undefined
-    const buildEcosystemContext = (
-      owner: string,
-      extensionId: string,
-      resources: Readonly<{ skillResources?: SkillRuntimeInput }> = deps,
-      liveResources?: readonly string[],
-    ): SeamInitContext => {
-      const skills = resources.skillResources
-        ? bindSkillRuntimeToWorkspace(resources.skillResources, workspaceInvocationFor, publicationDispatch)
-        : undefined
-      return {
-        ...baseContext(owner),
-        sandbox: seams.sandbox,
-        ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
-          ? { searchProvider: deps.searchProvider }
-          : {}),
-        ...(owner === '@agnes/base' && extensionId === 'agnes/hooks-runner' && hookCommands
-          ? { trustedHookCommands: hookCommands }
-          : {}),
-        ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
-        ...(owner === '@agnes/base' && extensionId === 'agnes/mcp-search'
-          ? { skillDiscovery: skillState.discovery }
-          : {}),
-        ...(owner === '@agnes/base' && extensionId === 'agnes/privacy' && privacyTrajectory
-          ? { privacyTrajectory }
-          : {}),
-        ...(owner === '@agnes/base' && extensionId === 'agnes/schedule'
-          ? { scheduleTables: lazyPackageTables(adapters.storage, '@agnes/daemon') }
-          : {}),
-        ...computerUse.extensionContext(owner, extensionId),
-      }
-    }
-    const ecosystemContext = (owner: string, extensionId: string): SeamInitContext =>
-      buildEcosystemContext(owner, extensionId)
+    const ecosystem = createEcosystemContexts(ctx, proc, seamContexts, skillState, computerUse)
+    const { buildEcosystemContext, ecosystemContext, privacyTrajectory } = ecosystem
     done('provider')
 
-    // Validate explicit kind selections before fitting operation instances.
-    selectConfiguredProviders(pluginTree.root, providerSelections)
-    // 6 provider - route table first, environment second, credentials third.
-    let routes: RouteTable | undefined
-    try {
-      routes = materializeRoutes(defaultPreset.view, ctx.profile)
-    } catch (error) {
-      if (
-        !(error instanceof HostError) ||
-        error.detail?.reason !== 'no-routes' ||
-        !(deps.allowUnresolvedProvider || process.env.AGNES_WORKER_KIND === 'session')
-      )
-        throw error
-    }
-    const swept = sweepAwsDestination(env, ctx.profile)
-    say('provider.env_swept', { removed: swept.removed, set: Object.keys(swept.set) })
-    const requestTraces = new RequestTraceStore(
-      ctx.profile.dataDir,
-      ctx.profile.name,
-      undefined,
-      Date.now,
-      (sessionKey) => ({ generationId: deps.sessionGeneration?.(sessionKey) ?? null }),
-    )
-    rollback.push('request-traces', requestTraces.start())
-    const factory = deps.providerFactory ? { providerFactory: deps.providerFactory } : {}
-    let {
-      provider,
-      contractStore,
-      preconfiguredRoutes,
-      dispose: disposeProvider,
-    } = routes
-      ? await buildProvider(ctx.profile, routes, {
-          secrets,
-          clock,
-          log: deps.log,
-          trace: requestTraces,
-          modelAdapters: pluginTree.root.modelAdapters,
-          creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
-          ...factory,
-        })
-      : unresolvedProviderAssembly()
-    rollback.push('model-adapters', () => disposeProvider())
-    const contractForModel = bindModelContracts(
-      provider.registry?.models() ??
-        (ctx.profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
-      contractStore,
-    )
-    // createProvider sealed the registry on its way out, so both of these are readable now and
-    // neither would have been before: the fingerprint identifies a reading that can no longer move,
-    // and a catalogue refresh after this point cannot change what it names.
-    let providerFingerprint: string | null = null
-    if (provider.registry && routes) {
-      verifyRoutes(routes, provider.registry)
-      providerFingerprint = provider.registry.fingerprint()
-    }
-    const models = modelRuntime({ provider, contractForModel, dispose: disposeProvider }, (error) => {
-      say('provider.dispose_failed', { message: error instanceof Error ? error.message : String(error) })
-    })
-    disposeProvider = () => models.dispose()
-    const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
-      next = applyProviderSelections(next)
-      const nextRoutes = next.provider.routes?.length
-        ? materializeRoutes(defaultPreset.view, next)
-        : undefined
-      const nextSecrets =
-        next.adapters.secrets.kind === 'file'
-          ? composeSecrets(
-              createSecretsFile({
-                dir: resolveFileSecretsDirectory({
-                  path: next.adapters.secrets.path,
-                  dataDir: next.dataDir,
-                }),
-              }),
-              createSecretsEnv(),
-            )
-          : next.adapters.secrets.kind === 'env'
-            ? createSecretsEnv()
-            : undefined
-      if (!nextSecrets) throw new HostError('E_SEAM_INIT', 'unsupported model credential store')
-      const built = nextRoutes
-        ? await buildProvider(next, nextRoutes, {
-            secrets: (ref) => nextSecrets.resolve(ref),
-            clock,
-            log: deps.log,
-            trace: requestTraces,
-            modelAdapters: pluginTree.root.modelAdapters,
-            creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
-            ...factory,
-          })
-        : unresolvedProviderAssembly()
-      let nextContracts: typeof contractForModel
-      try {
-        if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)
-        nextContracts = bindModelContracts(
-          built.provider.registry?.models() ?? built.provider.models(),
-          built.contractStore,
-        )
-      } catch (error) {
-        await built.dispose().catch((cleanupError) => {
-          say('provider.dispose_failed', { message: String(cleanupError) })
-        })
-        throw error
-      }
-      // Publish atomically; old requests keep their image until counting/inference finishes.
-      models.publish({ provider: built.provider, contractForModel: nextContracts, dispose: built.dispose })
-      provider = built.provider
-      preconfiguredRoutes = built.preconfiguredRoutes
-      routes = nextRoutes
-      providerFingerprint = built.provider.registry?.fingerprint() ?? null
-      ctx.profile = next
-    }
-    const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
-    // The credit rate goes on the audit row, null included. An assembly that priced nothing is the
-    // one whose ledger reads in dollars, and that has to be legible afterwards from the record the
-    // deployment keeps, not only from a warning on a log nobody kept.
-    const creditsPerUsd =
-      readCreditsPerUsd(ctx.profile, businessLimit(hotPolicy, 'cost.credits_per_usd')) ?? null
-    say('provider.assembled', {
-      routes: Object.fromEntries(named),
-      fingerprint: providerFingerprint,
-      creditsPerUsd,
-      creditUnit: creditsPerUsd === null ? 'usd' : 'credit',
-    })
-    // The view the sessions run on carries the resolved route and model, not the sentinel: see
-    // pinPresetRoutes for what core would otherwise record in request/header.
-    const view = routes ? pinPresetRoutes(defaultPreset.view, routes) : defaultPreset.view
+    const providerStage = await assembleProvider(ctx, proc, presetCatalog, pluginTree)
+    const { models, view, applyModelProfile } = providerStage
     done('operations')
 
-    // 7 operations + runtimes - the factory tables are called here, with the dependencies an
-    // Operation cannot construct for itself (ERRATA B4).
-    const hostAdapters = toSeamAdapters(adapters, { owner: '@agnes/host' })
-    const opDeps: OperationDeps = {
-      log: deps.log,
-      signal: ac.signal,
-      adapters: hostAdapters,
-      secrets,
-      ext: {},
-      profile: seamProfile,
-    }
-    const operations: Operation[] = []
-    const runtimes: Assembled['runtimes'] = {}
-    for (const m of modules.values()) {
-      for (const [name, make] of Object.entries(m.operations ?? {})) {
-        const op = make(opDeps)
-        if (!op || typeof op.run !== 'function')
-          refuse('E_EXT_LOAD', `${m.id}: operations.${name} returned no Operation`, {
-            id: m.id,
-            operation: name,
-          })
-        operations.push(op)
-      }
-      for (const [n, f] of Object.entries(m.runtimes ?? {}))
-        runtimes[n as keyof Assembled['runtimes']] =
-          n in runtimes ? duplicateContribution(m.id, 'runtime', n) : f
-    }
+    const { operations, runtimes } = buildOperations(ctx, pkgs, proc, seamContexts)
     done('kernel')
 
-    // 8 kernel - the repository's single Kernel.create call site
-    let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
-    const observabilityLease = leaseFor(
-      {
-        id: 'agnes/observability',
-        version: '1.0.0',
-        apiRange: '^2.0.0',
-        entry: './observability',
-        capabilities: { hooks: ['session_start', 'shutdown', 'subagent_start', 'subagent_end'] },
-      },
-      { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: Date.now() },
-    )
-    rollback.push('observability-lease', () => observabilityLease.revoke('host closed'))
-    const compositionLease = ctx.profile.composition
-      ? leaseFor(
-          {
-            id: 'agnes/composition',
-            version: '0.1.0',
-            apiRange: '^2.0.0',
-            entry: './composition',
-            capabilities: { hooks: ['tool_call'] },
-          },
-          { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: Date.now() },
-        )
-      : undefined
-    const extensionSessions = new ExtensionSessions<HookPort>()
-    const compaction =
-      ctx.profile.composition?.compaction === null
-        ? undefined
-        : await assembleCompaction(pluginTree.root.compactionEngines, ctx.profile.compaction)
-    const selectedLoop = providerSelections.loop
-    const loopFactory = selectedLoop
-      ? pluginTree.root.loops.resolve({
-          id: selectedLoop.provider,
-          version: selectedLoop.version ?? pluginTree.root.providers.select('loop', selectedLoop).version,
-        })
-      : undefined
-    const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
-    if (loop) ctx.profile = { ...ctx.profile, loop }
-    const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
-    pluginTree.root.providers.select(
-      'loop',
-      { provider: effectiveLoop.id, version: effectiveLoop.version },
-      loop ? 'profile' : 'preset',
-    )
-    pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
-    if (
-      view.approval.policy ||
-      pluginTree.root.providers
-        .catalog()
-        .some((entry) => entry.kind === 'tool-policy' && entry.id === 'default')
-    )
-      pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
-    const promptSelection = view.model.systemPrompt?.provider
-      ? { provider: view.model.systemPrompt.provider.id, version: view.model.systemPrompt.provider.version }
-      : { provider: 'agnes.system-prompt', version: '1.0.0' }
-    const systemPromptProvider = pluginTree.root.providers
-      .catalog()
-      .some((entry) => entry.kind === 'system-prompt')
-      ? (selection?: { id: string; version: string }) =>
-          pluginTree.root.providers.resolve(
-            systemPromptKind,
-            selection ? { provider: selection.id, version: selection.version } : promptSelection,
-          )
-      : undefined
-    if (
-      systemPromptProvider &&
-      pluginTree.root.providers
-        .catalog()
-        .some((entry) => entry.kind === 'system-prompt' && entry.id === promptSelection.provider)
-    )
-      pluginTree.root.providers.select('system-prompt', promptSelection, 'preset')
-    const memory = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
-      const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
-      if (
-        !providerSelections.memory &&
-        !pluginTree.root.providers.catalog().some((entry) => entry.kind === 'memory')
-      )
-        return undefined
-      return pluginTree.root.providers.resolve(memoryKind, selection).open({
-        home: dirname(dirname(deps.profileDir)),
-        workspaceRoot,
-        sessionKey,
-      })
-    }
-    const toolProviderCatalog = (kind: 'tool-runtime' | 'tool-policy') =>
-      Object.freeze(
-        pluginTree.root.providers
-          .catalog()
-          .filter((entry) => entry.kind === kind)
-          .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
-      )
-    kernel = Kernel.create({
-      ...(systemPromptProvider
-        ? {
-            systemPrompt: {
-              config: async () => ({
-                ...view.model.systemPrompt,
-                ...(await new SystemPromptSettingsStore(ctx.profile.dataDir, ctx.profile.name).read()),
-              }),
-              resolve: systemPromptProvider,
-            },
-          }
-        : {}),
-      loopChildren: (parent) => {
-        const generation = deps.sessionGeneration?.(parent.sessionKey)
-        return pluginTree.root.childAgents.forSession({
-          ...parent,
-          ...(generation === undefined ? {} : { generation }),
-        })
-      },
-      storage: adapters.storage,
-      ...(loop ? { loop } : {}),
-      loops: {
-        resolve: (selection) => pluginTree.root.loops.resolve(selection),
-        catalog: () => pluginTree.root.loops.catalog(),
-      },
-      toolRuntimes: {
-        register: (source, provider) => pluginTree.root.providers.register('tool-runtime', source, provider),
-        resolve: (id) => pluginTree.root.providers.resolve('tool-runtime', id),
-        catalog: () => toolProviderCatalog('tool-runtime'),
-      },
-      toolPolicies: {
-        register: (source, policy) => pluginTree.root.providers.register('tool-policy', source, policy),
-        resolve: (id) => pluginTree.root.providers.resolve('tool-policy', id),
-        catalog: () => toolProviderCatalog('tool-policy'),
-      },
-      loopEvents: {
-        on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
-        dispatch: (event, payload, context) => pluginTree.root.loopEvents.dispatch(event, payload, context),
-      },
-      seams,
-      provider: models.provider,
-      withModelSnapshot: (operation) => models.run(operation),
+    const extensionLeases: ExtensionLeases = {}
+    const kernelStage = await createKernel(ctx, {
+      proc,
+      presets: presetCatalog,
+      providerStage,
       operations,
-      currentRuntime: deps.currentRuntime ?? {
-        current: (sessionKey) =>
-          runtimeTargetPublisher.current().value.sessionScopes.get(sessionKey)?.runtime,
-      },
-      sessionOverlay: {
-        apply: (sessionKey, overlay) => bindRuntimeSession(sessionKey, overlay.preset),
-      },
-      contract: { contract_id: null, parser_version: '1' },
-      contractForModel: models.contractForModel,
-      preset: view,
-      fsOps: {
-        ...adapters.fs,
-        read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
-      },
-      memoryFor: ({ key, workspaceRoot }) => memory(workspaceRoot, key),
-      netFetch: deps.netFetch ?? createNetFetch(),
-      publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
-      approvalMode: ctx.profile.approvals.mode,
-      toolPolicySettings: async (basePolicy, signal) =>
-        pluginTree.root.providers.resolve('tool-policy', basePolicy).settings?.(
-          {
-            policy: basePolicy,
-            dataDir: ctx.profile.dataDir,
-            profile: ctx.profile.name,
-            approvalMode: ctx.profile.approvals.mode,
-          },
-          signal,
-        ) ?? {},
-      ...(computerUse.hostToolDispatch ? { hostToolDispatch: computerUse.hostToolDispatch } : {}),
-      ...(ctx.profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
-      ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),
-      clock,
-      agnesVersion: deps.agnesVersion ?? '0.0.0',
-      hookLeaseFor: (source) =>
-        source === 'agnes/observability'
-          ? observabilityLease.view()
-          : source === 'agnes/composition'
-            ? compositionLease?.view()
-            : extensionLeaseFor?.(source),
-      retainSessionRefIdentity: (sessionRef) => extensionSessions.owns(sessionRef),
-      ...(deps.requestMedia !== undefined ? { requestMedia: deps.requestMedia } : {}),
-      ...(deps.requestMedia !== undefined
-        ? { imageInputTokenFallback: createProductionImageInputTokenFallback() }
-        : {}),
-      ...(skillState.promptPreloader ? { runtimePromptPreloader: skillState.promptPreloader } : {}),
-      workspacePublication: publicationDispatch,
-      // A spawned child's run is its own turn: activation waits for it, and one started while an
-      // activation holds the gate queues behind it.
-      detachedChildRun: async (run) => (await activationBarrier.enqueue('turn').start()).run(run),
-      hooksFactory: extensionSessions.factory(
-        (session) =>
-          Object.freeze({
-            key: session.key,
-            lane: session.lane,
-            workspaceRoot: session.workspaceRoot,
-            telemetryConsent: readTelemetryConsent(
-              resolvePreset(session.preset.name, presets, { limits: ctx.profile.limits }).doc,
-            ),
-            telemetryConsentPendingAudit: profileConsent !== undefined,
-          }),
-        (session, sessionRef, engine) =>
-          createSessionHookPort(
-            session,
-            engine,
-            () => session.currentResources().snapshot(),
-            sessionRef.telemetryConsent,
-            sessionRef,
-            publicationDispatch,
-            (resources) => {
-              discoveredResources.set(session, resources)
-              const capabilities = sessionCapabilities(session.key, undefined, { session, resources })
-              return resources.filter((entry) =>
-                entry.kind === 'mcp'
-                  ? capabilityEnabled(capabilities.mcp, entry.id)
-                  : entry.kind === 'skill'
-                    ? capabilityEnabled(capabilities.skills, entry.id)
-                    : true,
-              )
-            },
-          ),
-      ),
-      ...(compaction ? { compaction } : {}),
-      ...(ctx.profile.limits['lease.ttl_ms'] !== undefined
-        ? { leaseTtlMs: ctx.profile.limits['lease.ttl_ms'] }
-        : {}),
-      // `children` is omitted on purpose: core's default factory refuses with a message saying
-      // subagents are assembled later, which is more informative than a host-side stub.
+      runtimeTarget,
+      skillState,
+      computerUse,
+      discoveredResources,
+      extensionLeases,
     })
-    ctx.live.kernel.set(kernel)
-    rollback.push('kernel', () => kernel.close())
-    const compositionForPreset = (name?: string, session?: CompositionPatch): ResolvedComposition =>
-      resolveComposition(ctx.profile, {
-        ...(name ? { preset: resolvePreset(name, presets, { limits: ctx.profile.limits }).doc } : {}),
-        ...(session ? { session } : {}),
-        rows: builtOrdinary.rows.map((row) => ({
-          id: row.id,
-          packageId: compositionOwners.get(row.id)!,
-          enabled: !row.disabled,
-        })),
-        catalog: {
-          loops: kernel.loops.catalog(),
-          modelAdapters: modelAdapterCatalog(pluginTree.root),
-          compactionEngines: compactionEngineCatalog(pluginTree.root),
-          sandboxProviders: sandboxProviderCatalog(pluginTree.root),
-          persistenceProviders: [
-            { id: 'sqlite' },
-            ...[...modules.values()].flatMap((module) =>
-              module.persistenceProvider ? [{ id: module.persistenceProvider.id }] : [],
-            ),
-          ],
-        },
-      })
-    const sessionCapabilities = (
-      sessionKey: string,
-      tools: ToolRegistry = rawSessionRuntime(sessionKey).tools,
-      call?: {
-        name?: string
-        readOnly?: boolean
-        mcpServer?: string
-        session?: SessionImpl
-        resources?: readonly ResourceEntry[]
-      },
-    ): ReturnType<typeof resolveSessionCapabilities> => {
-      const session = call?.session ?? kernel.get(sessionKey)
-      const registered = session?.currentResources().snapshot() ?? kernel.resources.snapshot()
-      const resources = [
-        ...new Map(
-          [
-            ...registered.map(({ entry }) => entry),
-            ...(call?.resources ?? (session ? discoveredResources.get(session) : undefined) ?? []),
-          ].map((entry) => [entry.id, entry]),
-        ).values(),
-      ]
-      return resolveSessionCapabilities({
-        profile: ctx.profile,
-        composition:
-          deps.compositionPin ??
-          (ctx.profile.composition
-            ? compositionForPreset(session?.preset.name)
-            : resolveComposition(ctx.profile, {
-                preset: resolvePreset(session?.preset.name ?? ctx.profile.presets.default, presets, {
-                  limits: ctx.profile.limits,
-                }).doc,
-              })),
-        ...(session
-          ? {
-              presetView: session.preset,
-              routes: {
-                ...Object.fromEntries(
-                  Object.entries(session.preset.model.route).map(([slot, route]) => [
-                    slot,
-                    { route, model: session.preset.model.id[slot] ?? route },
-                  ]),
-                ),
-                primary: {
-                  route: session.preset.model.route.primary!,
-                  model: session.preset.model.id.primary ?? session.preset.model.route.primary!,
-                },
-              },
-              pin: {
-                legacy: !ctx.profile.composition,
-                loop: session.loop,
-                generationId: deps.sessionGeneration?.(sessionKey),
-              },
-            }
-          : { presetView: view }),
-        installed: {
-          plugins: extensionRows
-            .current()
-            .map((row) => ({ id: row.id, enabled: !row.disabled, packageId: compositionOwners.get(row.id) })),
-          tools: capabilityToolCatalog(tools).map((tool) =>
-            call?.name === tool.name ? { ...tool, readOnly: tool.readOnly && call.readOnly === true } : tool,
-          ),
-          modelAdapters: modelAdapterCatalog(pluginTree.root).map((entry) => entry.id),
-          childEngines: childAgentCatalog(pluginTree.root).map((entry) => entry.id),
-          uiModules: capabilityClientCatalog(activeRuntimeSources),
-        },
-        ...(session ? { computerUseAllowed: session.computerUseAllowed() } : {}),
-        ...(pluginTree.root.childAgents.allowlist(sessionKey)
-          ? { childAllowlist: pluginTree.root.childAgents.allowlist(sessionKey)! }
-          : {}),
-        ...(call?.mcpServer ? { resourceRequest: { kind: 'mcp', id: call.mcpServer } as const } : {}),
-        live: {
-          models: session?.d.provider.models() ?? [],
-          mcp: resources
-            .filter((entry) => entry.kind === 'mcp')
-            .map((entry) => ({ id: entry.id, name: entry.name })),
-          skills: [
-            ...new Map(
-              [
-                ...(skillState.available?.list() ?? []).map((skill) => ({
-                  id: skill.resourceId,
-                  name: skill.name,
-                  packageId: skillOwners.get(skill.resourceId),
-                })),
-                ...resources
-                  .filter((entry) => entry.kind === 'skill')
-                  .map((entry) => ({ id: entry.id, name: entry.name, packageId: skillOwners.get(entry.id) })),
-              ].map((entry) => [entry.id, entry]),
-            ).values(),
-          ],
-        },
-      })
-    }
-    ctx.live.sessionCapabilities.set(sessionCapabilities)
-    const home = deps.homeDir ?? dirname(dirname(deps.profileDir))
-    const observabilityHost = extensionServices.current
-    const observabilityFeed = observabilityHost
-      ? await startObservabilityFeed({
-          providers: pluginTree.root.providers,
-          host: observabilityHost,
-          home,
-          kernel,
-          profileHash: ctx.profile.hash,
-          dataDir,
-          profileDir: deps.profileDir,
-          ...(ctx.profile.adapters.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
-          ...(deps.sessionGeneration ? { sessionGeneration: deps.sessionGeneration } : {}),
-        })
-      : undefined
-    const observability = observabilityFeed?.observability
-    const observeSession = observabilityFeed?.observeSession ?? (() => () => undefined)
-    if (observabilityFeed?.stop) rollback.push('observability-hooks', observabilityFeed.stop)
-    if (ctx.profile.composition) {
-      assertCompositionCompatible(compositionForPreset(), compositionForPreset(ctx.profile.presets.default))
-      const stopPolicy = kernel.hooks.on(
-        'tool_call',
-        (payload, context) => {
-          const session = kernel.sessions.get(context.session.key)
-          if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
-          const args =
-            payload.args && typeof payload.args === 'object' && !Array.isArray(payload.args)
-              ? payload.args
-              : {}
-          const mcpServer =
-            ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].includes(
-              payload.name,
-            ) && typeof args.server === 'string'
-              ? args.server
-              : undefined
-          const capabilities = sessionCapabilities(session.key, undefined, {
-            name: payload.name,
-            readOnly: payload.meta.isReadOnly === true,
-            ...(mcpServer ? { mcpServer } : {}),
-          })
-          return capabilityEnabled(capabilities.tools, payload.name) &&
-            capabilities.resourceRequest?.enabled !== false
-            ? { allow: true }
-            : { allow: false, reason: 'Tool denied by the selected composition policy.' }
-        },
-        { source: 'agnes/composition', trust: 'builtin', hookRank: 0 },
-      )
-      rollback.push('composition-policy', () => {
-        stopPolicy()
-        compositionLease?.revoke('host closed')
-      })
-    }
-    privacyTrajectory = createTrajectoryLifecycle(
-      {
-        ...deps,
-        env,
-        resolve: (ref) => extensionSessions.resolve(ref),
-      },
-      workspaceInvocationFor,
-      publicationDispatch,
-    )
+    const { kernel, extensionSessions, compositionLease, systemPromptProvider, memory } = kernelStage
+    const capabilities = createCapabilities(ctx, {
+      pkgs,
+      presets: presetCatalog,
+      bootRows,
+      providerStage,
+      runtimeTarget,
+      skillState,
+      discoveredResources,
+    })
+    const { compositionForPreset, sessionCapabilities } = capabilities
+    const { observability, observeSession } = await startKernelHooks(ctx, {
+      kernel,
+      kernelStage,
+      capabilities,
+      ecosystem,
+      runtimeTarget,
+    })
     done('extensions')
 
     // 9 extensions - what the enabled packages bundle. One that fails to load is one extension the
@@ -977,7 +358,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       log: deps.log,
       audit: say,
     })
-    extensionLeaseFor = (source) =>
+    extensionLeases.current = (source) =>
       managed.leaseFor(source) ?? rowExtensions.leaseFor(source) ?? builtinRows.leaseFor(source)
     // Factored out so a reload can build its own selector against a
     // `contextFor` bound to fresh resources instead of boot-time `deps`, reusing every other option
@@ -1563,16 +944,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       kernel,
       seams,
       get provider() {
-        return provider
+        return providerStage.provider
       },
       get providerFingerprint() {
-        return providerFingerprint
+        return providerStage.providerFingerprint
       },
       get routes() {
-        return routes
+        return providerStage.routes
       },
       get preconfiguredRoutes() {
-        return preconfiguredRoutes
+        return providerStage.preconfiguredRoutes
       },
       observeSession,
       ...(observability ? { observability } : {}),
