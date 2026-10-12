@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SEAM_KIND_TOKENS } from '@agnes/extension-api/seams'
 import { createLoader } from '@agnes/host'
 import { observabilityKind } from '@agnes/observability/contract'
 import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
@@ -28,6 +29,7 @@ const kinds = {
   gitWorktreeKind,
   deferredProducerKind,
   deferredQueueKind,
+  ...SEAM_KIND_TOKENS,
 }
 try {
   for (const name of ['@agnes/host', '@agnes/host/feedback-contract']) {
@@ -46,6 +48,7 @@ try {
     '@agnes/intelligent-ui-contract',
     '@agnes/git-worktree-contract',
     '@agnes/plugin-runtime',
+    '@agnes/extension-api',
   ]) {
     const directory = join(root, 'node_modules', name)
     mkdirSync(directory, { recursive: true })
@@ -57,6 +60,7 @@ try {
           '.': './index.js',
           './contract': './index.js',
           './deferred-contract': './index.js',
+          './seams': './index.js',
         },
       }),
     )
@@ -70,6 +74,8 @@ try {
     export { intelligentUiKind, uiDataSourceKind } from '@agnes/intelligent-ui-contract'
     export { gitWorktreeKind } from '@agnes/git-worktree-contract'
     export { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
+    import { SEAM_KIND_TOKENS } from '@agnes/extension-api/seams'
+    export const { approval, principals, billing, checkpoint, artifacts, verifier, repair } = SEAM_KIND_TOKENS
     export { observabilityKind as runtimeKind } from ${JSON.stringify(fileURLToPath(new URL('../../../observability/src/index.ts', import.meta.url)))}
   `,
   )

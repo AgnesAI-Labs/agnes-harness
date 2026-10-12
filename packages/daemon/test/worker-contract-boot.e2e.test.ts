@@ -109,6 +109,13 @@ it('shares every service-kind token with loader-loaded plugins in a fresh proces
     'gitWorktreeKind',
     'deferredProducerKind',
     'deferredQueueKind',
+    'approval',
+    'principals',
+    'billing',
+    'checkpoint',
+    'artifacts',
+    'verifier',
+    'repair',
   ])
 }, 30_000)
 
