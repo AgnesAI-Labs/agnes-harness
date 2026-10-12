@@ -188,7 +188,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       {
         export: 'defaultLoopPlugin',
         id: 'loop:agnes.default',
-        inject: ['loops'],
+        inject: ['providers'],
         runtime: 'in-process',
         default: true,
         apiRange: '^2.0.0',
@@ -196,7 +196,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       {
         export: 'codexChildAgentsPlugin',
         id: 'child-agent:codex',
-        inject: ['childAgents'],
+        inject: ['providers'],
         runtime: 'in-process',
         default: false,
         apiRange: '^2.0.0',
@@ -204,7 +204,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       {
         export: 'claudeCodeChildAgentsPlugin',
         id: 'child-agent:claude-code',
-        inject: ['childAgents'],
+        inject: ['providers'],
         runtime: 'in-process',
         default: false,
         apiRange: '^2.0.0',
@@ -212,7 +212,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
       {
         export: 'sdkChildAgentsPlugin',
         id: 'child-agent:sdk',
-        inject: ['childAgents'],
+        inject: ['providers'],
         runtime: 'in-process',
         default: false,
         apiRange: '^2.0.0',
