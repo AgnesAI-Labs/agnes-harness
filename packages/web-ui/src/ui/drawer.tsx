@@ -2,7 +2,7 @@ import { Drawer as AntDrawer, type DrawerProps as AntDrawerProps } from 'antd'
 import { type ReactNode, useId } from 'react'
 import { fallbackT } from '../locales/index.js'
 import { IconButton } from './icon-button.js'
-import { useOverlayFocus } from './overlay.js'
+import { useEscapeCompositionLock, useOverlayFocus } from './overlay.js'
 
 export type DrawerProps = Omit<AntDrawerProps, 'title' | 'onClose'> & {
   onCancel?: AntDrawerProps['onClose']
@@ -28,6 +28,7 @@ export function Drawer({
 }: DrawerProps) {
   const id = useId()
   useOverlayFocus(open)
+  const compositionLocked = useEscapeCompositionLock()
   return (
     <AntDrawer
       {...props}
@@ -62,7 +63,7 @@ export function Drawer({
         if (
           event.key !== 'Escape' ||
           event.defaultPrevented ||
-          event.nativeEvent.isComposing ||
+          compositionLocked(event.nativeEvent) ||
           !open ||
           props.keyboard === false
         )

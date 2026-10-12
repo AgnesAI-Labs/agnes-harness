@@ -1,5 +1,5 @@
 import { Modal as AntModal, type ModalProps as AntModalProps } from 'antd'
-import { useOverlayFocus, useReducedMotion } from './overlay.js'
+import { useEscapeCompositionLock, useOverlayFocus, useReducedMotion } from './overlay.js'
 import { SheetHandle } from './sheet-handle.js'
 
 export type DialogProps = AntModalProps & { size?: 'sm' | 'md' | 'lg' }
@@ -7,6 +7,7 @@ export type DialogProps = AntModalProps & { size?: 'sm' | 'md' | 'lg' }
 export function Dialog({ className, size = 'md', ...props }: DialogProps) {
   useOverlayFocus(props.open === true)
   const reduce = useReducedMotion()
+  const compositionLocked = useEscapeCompositionLock()
   const classes = ['agnes-ui-dialog', 'agh-dialog', `agh-dialog--${size}`, className]
     .filter(Boolean)
     .join(' ')
@@ -25,7 +26,7 @@ export function Dialog({ className, size = 'md', ...props }: DialogProps) {
           if (
             event.key !== 'Escape' ||
             event.defaultPrevented ||
-            event.nativeEvent.isComposing ||
+            compositionLocked(event.nativeEvent) ||
             props.open !== true ||
             props.keyboard === false
           )

@@ -81,10 +81,10 @@ test.beforeAll(async () => {
             <footer><Button onClick={() => lock(value => !value)}>{locked ? 'Unlock' : 'Lock'}</Button></footer>
           </section>
         </dialog>
-        <Drawer open={drawer} title="Details" onClose={() => setDrawer(false)}>
+        <Drawer open={drawer} title="Details" onClose={() => { setDrawer(false); select('Drawer closed') }}>
           <Field label="Name"><input /></Field>
           <Button onClick={() => setNested(true)}>Open nested confirmation</Button>
-          <Dialog open={nested} keyboard={nestedKeyboard} title="Nested confirmation" onCancel={() => setNested(false)} footer={<Button onClick={() => setNested(false)}>Cancel nested confirmation</Button>}>
+          <Dialog open={nested} keyboard={nestedKeyboard} title="Nested confirmation" onCancel={() => { setNested(false); select('Nested canceled') }} footer={<Button onClick={() => setNested(false)}>Cancel nested confirmation</Button>}>
             <Menu label="Nested actions" trigger={<Button>Nested menu</Button>} items={[{id:'notify', label:'Show notification', onSelect:() => setNotice(true)}]} />
             <IconButton name="info" label="Explain nested action" />
             <Button onClick={() => setNestedKeyboard(value => !value)}>{nestedKeyboard ? 'Lock nested Escape' : 'Unlock nested Escape'}</Button>
@@ -215,6 +215,11 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
   await expect(drawer).toBeVisible()
   await expect(drawer).toHaveCSS('width', '480px')
   await expect(drawer.getByRole('textbox', { name: 'Name' })).toBeVisible()
+  await drawer.getByRole('textbox', { name: 'Name' }).dispatchEvent('compositionend')
+  await drawer
+    .getByRole('textbox', { name: 'Name' })
+    .dispatchEvent('keydown', { key: 'Escape', isComposing: false })
+  await expect(page.getByRole('status')).toHaveText('')
   const nestedTrigger = drawer.getByRole('button', { name: 'Open nested confirmation', exact: true })
   await nestedTrigger.click()
   const dialog = page.getByRole('dialog', { name: 'Nested confirmation', exact: true })
@@ -222,6 +227,9 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
   const menu = dialog.getByRole('button', { name: 'Nested menu', exact: true })
   await menu.dispatchEvent('keydown', { key: 'Escape', isComposing: true })
   await expect(dialog).toBeVisible()
+  await menu.dispatchEvent('compositionend')
+  await menu.dispatchEvent('keydown', { key: 'Escape', isComposing: false })
+  await expect(page.getByRole('status')).toHaveText('')
   await dialog.getByRole('button', { name: 'Lock nested Escape', exact: true }).click()
   await page.keyboard.press('Escape')
   await expect(dialog).toBeVisible()

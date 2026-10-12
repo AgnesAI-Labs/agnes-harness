@@ -1,5 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+let compositionEndedAt = 0
+let compositionListeners = 0
+const recordCompositionEnd = () => {
+  compositionEndedAt = Date.now()
+}
+
+/** Keep antd's 200ms post-IME Escape protection when handling Escape inside a modal. */
+export function useEscapeCompositionLock() {
+  useEffect(() => {
+    if (compositionListeners++ === 0) window.addEventListener('compositionend', recordCompositionEnd)
+    return () => {
+      if (--compositionListeners === 0) window.removeEventListener('compositionend', recordCompositionEnd)
+    }
+  }, [])
+  return (event: KeyboardEvent) => event.isComposing || Date.now() - compositionEndedAt < 200
+}
+
 /** Modal surfaces trap focus through antd; anchored surfaces return to their trigger on dismissal. */
 export function useOverlayFocus(open: boolean, restoreOnClose = true) {
   // Capture before antd's child layout effects move focus into an initially open surface.
