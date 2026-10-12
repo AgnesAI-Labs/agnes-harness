@@ -1,7 +1,7 @@
 import type { ResponseMeta, ToolCall } from '@agnes/protocol'
 import type { Api, AssistantMessageEvent, Model } from '@earendil-works/pi-ai'
 import type { WireEvent } from '../../adapter.js'
-import { classifyPiError } from './errors.js'
+import { classifyPiError, type PiTransportFailure } from './errors.js'
 
 /**
  * One pi event, as zero or more outward events. Twelve kinds arrive and six leave: the bracketing
@@ -17,6 +17,7 @@ export function translateEvent(
   model: Model<Api>,
   nextOrdinal: () => number,
   wire: ResponseMeta = {},
+  transportFailure?: PiTransportFailure,
 ): WireEvent[] {
   switch (ev.type) {
     case 'start':
@@ -71,7 +72,7 @@ export function translateEvent(
       // The window comes from the model this request actually went to. Passing nothing here left one
       // arm of the classification with a single supplier - a test - and unreachable for a user: an
       // overflow the provider did not spell out is only visible against the declared window.
-      const c = classifyPiError(ev.error, model.contextWindow)
+      const c = classifyPiError(ev.error, model.contextWindow, transportFailure)
       return [
         {
           type: 'error',

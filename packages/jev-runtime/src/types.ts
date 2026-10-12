@@ -203,6 +203,17 @@ export interface LanguageInput {
   /** Committed records for deterministic language projection; adapters must not embed this graph in a request snapshot. */
   readonly records: readonly RuntimeRecord[]
   readonly inputCursor: string | null
+  /** Unexecuted schema-rejected proposal. Parameters may change arguments, never its call shape. */
+  readonly argumentRepair?: {
+    readonly root: RecordId
+    readonly requested: RecordId
+    readonly attempt: number
+    readonly calls: readonly {
+      readonly name: string
+      readonly arguments: Readonly<Record<string, JsonValue>>
+    }[]
+    readonly error: { readonly code: string; readonly message: string }
+  }
   /** Failed request whose output format this independently recorded attempt corrects. */
   readonly repair?: {
     readonly requested: RecordId
@@ -427,7 +438,9 @@ export type RuntimeRecord = RecordBase &
         readonly operation: string
         readonly candidateId?: CandidateId
         readonly confidence?: number
-        readonly source?: 'jev' | 'llm_arbitration'
+        readonly source?: 'jev' | 'llm_arbitration' | 'llm_parameters'
+        /** Root rejected model request whose call shape this argument-only repair preserves. */
+        readonly argumentRepair?: RecordId
         readonly escalation?: string
         /** Index in a multi-call language proposal; absent on legacy single-call decisions. */
         readonly callIndex?: number

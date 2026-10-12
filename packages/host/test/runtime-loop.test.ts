@@ -253,7 +253,7 @@ it('appends changed Jev runtime facts without rewriting the language prefix or r
         },
         tools: { complete: expect.any(String) },
       })
-      expect(request.messages.filter((message) => message.role === 'system')).toHaveLength(1)
+      expect(request.messages.filter((message) => message.role === 'system')).toHaveLength(3)
       const previous = provider.requests[index - 1]
       if (previous) {
         expect(request.system).toBe(previous.system)
@@ -299,9 +299,7 @@ it('appends changed Jev runtime facts without rewriting the language prefix or r
       expect(state.environment.runtimeContext).not.toHaveProperty('environment.sessionKey')
       expect(state.environment.runtimeContext).not.toHaveProperty('environment.model')
       expect(JSON.stringify(state.history)).not.toContain('[runtime context]')
-      expect(JSON.stringify(state)).toContain(
-        'You do not claim a task is done until the evidence for it exists in this session.',
-      )
+      expect(JSON.stringify(state)).toContain('Claim completion only when recorded results support it.')
       expect(record.call.pricing).toMatchObject({
         route: 'jev',
         model: 'jev-latest',
@@ -932,181 +930,238 @@ it('keeps captured unresolved effects parked when recovering a cancelled turn', 
   }
 })
 
-it.each(['preflight-refusal', 'partial-write', 'closed-turn', 'closed-cancel', 'shell-exit'] as const)(
-  'continues the real Jev Host task after a builtin operation failure: %s',
-  async (mode) => {
-    const workspace = await mkdtemp(join(tmpdir(), 'agnes-jev-file-recovery-'))
-    await writeFile(join(workspace, 'target.ts'), 'old')
-    const provider = fakeProvider(
-      mode === 'shell-exit'
+it.each([
+  'preflight-refusal',
+  'partial-write',
+  'closed-turn',
+  'closed-cancel',
+  'shell-exit',
+  'shell-masked-exit',
+] as const)('continues the real Jev Host task after a builtin operation failure: %s', async (mode) => {
+  const workspace = await mkdtemp(join(tmpdir(), 'agnes-jev-file-recovery-'))
+  await writeFile(join(workspace, 'target.ts'), 'old')
+  const shellMode = mode === 'shell-exit' || mode === 'shell-masked-exit'
+  const decisionStates: JsonValue[] = []
+  const jev = { ...respondingJev(() => {}, 0.8), config: { escalateBelow: 0.9 } }
+  const invoke = jev.decision.transport.invoke
+  jev.decision.transport.invoke = async (input, options) => {
+    decisionStates.push(input.state)
+    return invoke(input, options)
+  }
+  const provider = fakeProvider(
+    shellMode
+      ? [
+          toolTurn('shell', {
+            command: mode === 'shell-masked-exit' ? 'check-tool || echo "No matches found"' : 'exit 1',
+          }),
+          toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
+          textTurn('Finished after correcting the failed command.'),
+        ]
+      : mode !== 'preflight-refusal'
         ? [
-            toolTurn('shell', { command: 'exit 1' }),
-            toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
-            textTurn('Finished after correcting the failed command.'),
+            toolTurn('write', { path: 'target.ts', content: 'intended' }),
+            toolTurn('read', { path: 'target.ts' }),
+            toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'par', newText: 'fixed' }] }),
+            textTurn('Finished after inspecting and repairing the current file.'),
           ]
-        : mode !== 'preflight-refusal'
-          ? [
-              toolTurn('write', { path: 'target.ts', content: 'intended' }),
-              toolTurn('read', { path: 'target.ts' }),
-              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'par', newText: 'fixed' }] }),
-              textTurn('Finished after inspecting and repairing the current file.'),
-            ]
-          : [
-              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'missing', newText: 'fixed' }] }),
-              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
-              textTurn('Finished after correcting the refused edit.'),
-            ],
-    )
-    const { host } = await createTestHost({
-      dataDir: workspace,
-      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
-      provider,
-      disableSessionTitle: true,
-      approval: async () => 'allowed-once',
-      ...(mode === 'shell-exit'
-        ? {
-            seams: {
-              sandbox: {
-                exec: async () => ({
-                  code: 1,
-                  stdout: 'compile failed',
-                  stderr: '',
-                  truncated: false,
-                  timedOut: false,
-                }),
-              },
+        : [
+            toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'missing', newText: 'fixed' }] }),
+            toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
+            textTurn('Finished after correcting the refused edit.'),
+          ],
+  )
+  const { host } = await createTestHost({
+    dataDir: workspace,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
+    provider,
+    disableSessionTitle: true,
+    approval: async () => 'allowed-once',
+    ...(shellMode
+      ? {
+          seams: {
+            sandbox: {
+              exec: async () => ({
+                code: mode === 'shell-masked-exit' ? 0 : 1,
+                stdout: mode === 'shell-masked-exit' ? 'No matches found' : 'compile failed',
+                stderr: mode === 'shell-masked-exit' ? 'sh: 1: check-tool: not found' : '',
+                truncated: false,
+                timedOut: false,
+              }),
             },
-          }
-        : {}),
-      jev: { ...respondingJev(() => {}, 0.8), config: { escalateBelow: 0.9 } },
-    })
-    try {
-      const session = await host.createSession({ cwd: workspace, runtime: 'jevloop' })
-      let fileFailed = false
-      let paused = false
-      if (mode.startsWith('closed-')) {
-        const hooks = session.hooks
-        const beforeStep = hooks.beforeStep.bind(hooks)
-        const beforeStepWithPause: typeof hooks.beforeStep = async (input) => {
-          if (fileFailed && !paused) {
-            paused = true
-            return { block: true, reason: 'synthetic recovery pause' }
-          }
-          return beforeStep(input)
-        }
-        const port = new Proxy(hooks, {
-          get(target, key) {
-            if (key === 'beforeStep') return beforeStepWithPause
-            const value = Reflect.get(target, key, target)
-            return typeof value === 'function' ? value.bind(target) : value
           },
-        })
-        Object.defineProperty(session, 'hooks', { configurable: true, get: () => port })
-      }
-      if (mode !== 'preflight-refusal' && mode !== 'shell-exit') {
-        const port = session.d.workspaceInvocation
-        if (!port) throw new Error('Missing workspace invocation')
-        let fail = true
-        session.d.workspaceInvocation = {
-          run: (invoke) =>
-            port.run(async (view) => {
-              const fs = view.fs()
-              return invoke({
-                ...view,
-                fs: () => ({
-                  ...fs,
-                  async write(path, bytes) {
-                    if (fail) {
-                      fail = false
-                      fileFailed = true
-                      await fs.write(path, new TextEncoder().encode('par'))
-                      throw new Error('synthetic partial write')
-                    }
-                    return fs.write(path, bytes)
-                  },
-                }),
-              })
-            }),
         }
+      : {}),
+    jev,
+  })
+  try {
+    const session = await host.createSession({ cwd: workspace, runtime: 'jevloop' })
+    let fileFailed = false
+    let paused = false
+    if (mode.startsWith('closed-')) {
+      const hooks = session.hooks
+      const beforeStep = hooks.beforeStep.bind(hooks)
+      const beforeStepWithPause: typeof hooks.beforeStep = async (input) => {
+        if (fileFailed && !paused) {
+          paused = true
+          return { block: true, reason: 'synthetic recovery pause' }
+        }
+        return beforeStep(input)
       }
-      await session.enqueue('next-turn', {
-        actor,
-        content: [{ type: 'text', text: 'Repair target.ts so it contains fixed.' }],
+      const port = new Proxy(hooks, {
+        get(target, key) {
+          if (key === 'beforeStep') return beforeStepWithPause
+          const value = Reflect.get(target, key, target)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
       })
-      if (mode.startsWith('closed-')) {
-        const first = await session.run({ until: 'turn-end', signal: new AbortController().signal })
-        expect(first.reason, JSON.stringify({ fileFailed, paused })).toBe('blocked')
-        expect(session.state.openTurn.has(session.lane)).toBe(false)
-      }
-      if (mode === 'closed-cancel') {
-        const count = provider.requests.length
-        expect((await session.abort(actor)).seq).not.toBeNull()
-        const key = session.key
-        await session.close()
-        const reopened = await host.createSession({ key, cwd: workspace })
-        expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-          'blocked',
-        )
-        expect(provider.requests).toHaveLength(count)
-        expect(await reopened.scan({ type: 'turn/start', limit: 100 })).toHaveLength(1)
-        const records = (
-          await scanAll((query) => reopened.scan(query), { type: 'runtime/record', toSeq: reopened.lastSeq })
-        ).map((row) => runtimeRecord(row.data))
-        expect(records.some((record) => record.kind === 'action.resolved')).toBe(false)
-        await reopened.close()
-        return
-      }
-      const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
-      const records = (
-        await scanAll((query) => session.scan(query), { type: 'runtime/record', toSeq: session.lastSeq })
-      ).map((row) => runtimeRecord(row.data))
-      expect(result.reason, JSON.stringify(records.findLast((record) => record.kind === 'run.stopped'))).toBe(
-        'completed',
-      )
-      expect(await readFile(join(workspace, 'target.ts'), 'utf8')).toBe('fixed')
-      const actions = records.filter((record) => record.kind === 'action.settled')
-      expect(actions[0]).toMatchObject({
-        effect:
-          mode === 'shell-exit' ? 'acknowledged' : mode !== 'preflight-refusal' ? 'unknown' : 'not_applied',
-      })
-      const resolutions = records.filter((record) => record.kind === 'action.resolved')
-      expect(resolutions).toHaveLength(mode !== 'preflight-refusal' && mode !== 'shell-exit' ? 1 : 0)
-      if (mode !== 'preflight-refusal' && mode !== 'shell-exit') {
-        expect(resolutions[0]).toMatchObject({
-          resolution: 'reconciled_state',
-          actor: 'host:effect-recovery',
-        })
-        expect(
-          provider.requests[1]?.tools.some((tool) => ['write', 'edit', 'shell'].includes(tool.name)),
-        ).toBe(false)
-        expect(
-          records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'write'),
-        ).toHaveLength(1)
-      }
-      if (mode === 'shell-exit') {
-        expect(actions[0]).toMatchObject({ outcome: { kind: 'error' } })
-        expect(
-          records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'shell'),
-        ).toHaveLength(1)
-        expect(
-          records.some((record) => record.kind === 'action.settled' && record.effect === 'unknown'),
-        ).toBe(false)
-      }
-      if (mode === 'closed-turn') {
-        const bindings = await session.scan({ type: 'x/host/jev-loop/turn-decision', limit: 100 })
-        expect(bindings.at(-1)?.data).toMatchObject({ turn: 2, runtimeTurn: 1 })
-        expect(new Set(records.map((record) => record.turn))).toEqual(
-          new Set([`${session.key}:${session.lane}:1`]),
-        )
-        expect(await session.scan({ type: 'user/message', limit: 100 })).toHaveLength(1)
-      }
-      await session.close()
-    } finally {
-      await host.close()
-      await rm(workspace, { recursive: true, force: true })
+      Object.defineProperty(session, 'hooks', { configurable: true, get: () => port })
     }
-  },
-)
+    if (mode !== 'preflight-refusal' && !shellMode) {
+      const port = session.d.workspaceInvocation
+      if (!port) throw new Error('Missing workspace invocation')
+      let fail = true
+      session.d.workspaceInvocation = {
+        run: (invoke) =>
+          port.run(async (view) => {
+            const fs = view.fs()
+            return invoke({
+              ...view,
+              fs: () => ({
+                ...fs,
+                async write(path, bytes) {
+                  if (fail) {
+                    fail = false
+                    fileFailed = true
+                    await fs.write(path, new TextEncoder().encode('par'))
+                    throw new Error('synthetic partial write')
+                  }
+                  return fs.write(path, bytes)
+                },
+              }),
+            })
+          }),
+      }
+    }
+    await session.enqueue('next-turn', {
+      actor,
+      content: [{ type: 'text', text: 'Repair target.ts so it contains fixed.' }],
+    })
+    if (mode.startsWith('closed-')) {
+      const first = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(first.reason, JSON.stringify({ fileFailed, paused })).toBe('blocked')
+      expect(session.state.openTurn.has(session.lane)).toBe(false)
+    }
+    if (mode === 'closed-cancel') {
+      const count = provider.requests.length
+      expect((await session.abort(actor)).seq).not.toBeNull()
+      const key = session.key
+      await session.close()
+      const reopened = await host.createSession({ key, cwd: workspace })
+      expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'blocked',
+      )
+      expect(provider.requests).toHaveLength(count)
+      expect(await reopened.scan({ type: 'turn/start', limit: 100 })).toHaveLength(1)
+      const records = (
+        await scanAll((query) => reopened.scan(query), { type: 'runtime/record', toSeq: reopened.lastSeq })
+      ).map((row) => runtimeRecord(row.data))
+      expect(records.some((record) => record.kind === 'action.resolved')).toBe(false)
+      await reopened.close()
+      return
+    }
+    const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const records = (
+      await scanAll((query) => session.scan(query), { type: 'runtime/record', toSeq: session.lastSeq })
+    ).map((row) => runtimeRecord(row.data))
+    expect(result.reason, JSON.stringify(records.findLast((record) => record.kind === 'run.stopped'))).toBe(
+      'completed',
+    )
+    expect(await readFile(join(workspace, 'target.ts'), 'utf8')).toBe('fixed')
+    const actions = records.filter((record) => record.kind === 'action.settled')
+    expect(actions[0]).toMatchObject({
+      effect: shellMode ? 'acknowledged' : mode !== 'preflight-refusal' ? 'unknown' : 'not_applied',
+    })
+    const resolutions = records.filter((record) => record.kind === 'action.resolved')
+    expect(resolutions).toHaveLength(mode !== 'preflight-refusal' && !shellMode ? 1 : 0)
+    if (mode !== 'preflight-refusal' && !shellMode) {
+      expect(resolutions[0]).toMatchObject({
+        resolution: 'reconciled_state',
+        actor: 'host:effect-recovery',
+      })
+      expect(provider.requests[1]?.tools.some((tool) => ['write', 'edit', 'shell'].includes(tool.name))).toBe(
+        false,
+      )
+      expect(
+        records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'write'),
+      ).toHaveLength(1)
+    }
+    if (shellMode) {
+      expect(actions[0]).toMatchObject({
+        outcome: { kind: mode === 'shell-masked-exit' ? 'success' : 'error' },
+      })
+      expect(
+        records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'shell'),
+      ).toHaveLength(1)
+      expect(records.some((record) => record.kind === 'action.settled' && record.effect === 'unknown')).toBe(
+        false,
+      )
+      if (mode === 'shell-masked-exit') {
+        const fact = actions[0]?.outcome.value
+        if (!fact || typeof fact !== 'object' || Array.isArray(fact)) throw new Error('Missing process fact')
+        expect(fact).toMatchObject({
+          process: { exitCode: 0, stdout: 'No matches found', stderr: 'sh: 1: check-tool: not found' },
+          interpretation: { executionCompleted: true, verification: 'not_assessed' },
+          coverage: { complete: true },
+        })
+        const lastState = decisionStates.at(-1) as {
+          history: { since_current_request: { operation?: string; result?: { data?: JsonValue } }[] }
+        }
+        expect(
+          lastState.history.since_current_request.find((entry) => entry.operation === 'shell')?.result?.data,
+        ).toMatchObject(fact)
+        const results =
+          provider.requests[1]?.messages.filter((message) => message.role === 'tool_result') ?? []
+        expect(
+          results.some((message) =>
+            message.content.some(
+              (block) =>
+                block.type === 'text' &&
+                block.text.includes('"verification":"not_assessed"') &&
+                block.text.includes('sh: 1: check-tool: not found'),
+            ),
+          ),
+        ).toBe(true)
+        expect(await session.scan({ type: 'tool/result', limit: 100 })).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              data: expect.objectContaining({
+                isError: false,
+                content: [
+                  {
+                    type: 'text',
+                    text: 'No matches found\n[stderr]\nsh: 1: check-tool: not found\n[exit 0]',
+                  },
+                ],
+              }),
+            }),
+          ]),
+        )
+      }
+    }
+    if (mode === 'closed-turn') {
+      const bindings = await session.scan({ type: 'x/host/jev-loop/turn-decision', limit: 100 })
+      expect(bindings.at(-1)?.data).toMatchObject({ turn: 2, runtimeTurn: 1 })
+      expect(new Set(records.map((record) => record.turn))).toEqual(
+        new Set([`${session.key}:${session.lane}:1`]),
+      )
+      expect(await session.scan({ type: 'user/message', limit: 100 })).toHaveLength(1)
+    }
+    await session.close()
+  } finally {
+    await host.close()
+    await rm(workspace, { recursive: true, force: true })
+  }
+})
 
 it('offers persisted root facts, phase-bound tools and nested write verification through the real Host', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-loop-root-candidates-'))

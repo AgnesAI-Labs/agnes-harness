@@ -97,6 +97,7 @@ export function createLanguageBackend(host: LanguageHost): LanguageBackend {
             ? { mediaRefs: durableJson(context.toolImages), mediaCodec: 'agnes-verified-tool-images-v1' }
             : {}),
           ...(input.repair === undefined ? {} : { repair: input.repair }),
+          ...(input.argumentRepair === undefined ? {} : { argumentRepair: input.argumentRepair }),
         }),
       })
       pending.set(call, { request, ...(prepared ? { prepared } : {}) })

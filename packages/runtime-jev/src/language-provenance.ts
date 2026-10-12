@@ -2,6 +2,11 @@ import type { FrozenIntent, ModelSettlement, PreparedModelCall, RuntimeRecord } 
 import type { ToolCall } from '@agnes/protocol'
 import { stableJson } from './language-projection.js'
 
+const object = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+
 /** Only a causally linked native arbitration or parameter-batch call owns an assistant tool turn. */
 export function nativeAuthoredCall(
   decision: Extract<RuntimeRecord, { kind: 'decision.selected' }> | undefined,
@@ -9,9 +14,20 @@ export function nativeAuthoredCall(
   settlement: ModelSettlement | undefined,
   intent: FrozenIntent,
 ): ToolCall | undefined {
+  const repair = object(object(request?.input)?.argumentRepair)
+  const argumentRepair =
+    decision?.source === 'llm_parameters' &&
+    request?.purpose === 'parameters' &&
+    decision.argumentRepair !== undefined &&
+    repair?.root === decision.argumentRepair &&
+    Array.isArray(repair.calls) &&
+    decision.callIndex !== undefined
   if (
+    decision === undefined ||
+    request === undefined ||
     !(
       (decision?.source === 'llm_arbitration' && request?.purpose === 'arbitration') ||
+      argumentRepair ||
       (decision?.source === 'jev' &&
         decision.parameterDecision !== undefined &&
         decision.callIndex !== undefined &&
@@ -34,6 +50,16 @@ export function nativeAuthoredCall(
       event !== null && typeof event === 'object' && !Array.isArray(event) && event.type === 'toolcall_end',
   )
   const index = decision.callIndex === undefined ? (calls.length === 1 ? 0 : undefined) : decision.callIndex
+  if (
+    argumentRepair &&
+    (!Array.isArray(repair?.calls) ||
+      repair.calls.length !== calls.length ||
+      repair.calls.some((proposal, position) => {
+        const event = object(calls[position])
+        return object(proposal)?.name !== object(event?.call)?.name
+      }))
+  )
+    return undefined
   if (
     calls.length > 32 ||
     index === undefined ||

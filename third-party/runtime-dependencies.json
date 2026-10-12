@@ -222,9 +222,9 @@
       "version": "8.10.2",
       "license": "MIT",
       "source": "https://github.com/nodejs/undici",
-      "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
-      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": ["packages/host"]
+      "purpose": "Provides explicit HTTP dispatch for bounded public retrieval and model inference.",
+      "rationale": "Keeps Host retrieval policy and per-request AI streaming deadlines explicit while retaining the selected dispatcher and connection pool.",
+      "consumers": ["packages/host", "packages/ai"]
     },
     {
       "name": "ws",

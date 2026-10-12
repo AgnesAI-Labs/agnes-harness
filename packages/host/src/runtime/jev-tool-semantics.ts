@@ -484,7 +484,10 @@ export function createJevToolSemantics(options: JevToolSemanticsOptions): JevToo
     },
     observations(tool, outcome) {
       const fact = facts(tool, outcome.value)
-      if (!fact || outcome.kind !== 'success') return []
+      if (!fact) return []
+      if (tool.name === 'shell' && tool.revision === foregroundShellRevision)
+        return [{ kind: 'agnes.process', source: tool.name, data: fact, coverage: fact.coverage ?? {} }]
+      if (outcome.kind !== 'success') return []
       return [
         {
           kind: 'agnes.filesystem',

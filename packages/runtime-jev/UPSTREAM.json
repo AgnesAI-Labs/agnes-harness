@@ -26,6 +26,7 @@
     }
   ],
   "adaptations": [
+    "Language requests include bounded Host-provided shell process facts alongside original output and share verification and command-status guidance across language stages without changing tool locks or model scheduling.",
     "Language decoder uses a local strict JSON snapshot helper.",
     "Language history recognizes Agnes provider snapshots and projects Agnes RequestMessage values.",
     "New request adapters use Agnes Provider and a separate Jev transport.",
@@ -34,7 +35,9 @@
     "Jev preparation renders exact source/scope/text rule groups as labeled text in the recorded wire input; unknown shapes, Laya, ledger facts and language inputs remain unchanged.",
     "Jev preparation maps exact skill name/description entries to names and unchanged descriptions only when uniqueness and order are preserved; catalog metadata and internal resource/candidate projections stay unchanged.",
     "Jev preparation removes repeated operation references from recognized conditional operation and binding question templates; names, ordering, descriptions, full arguments, fallback semantics and internal manifests remain unchanged. Laya and unknown question shapes pass through.",
+    "Language requests use a stable system-role execution/evidence prefix and current-request system-role binding/answer controls; historical controls remain excluded and model-authored repair text retains user-role evidence authority.",
     "Language projection keeps ordinary execution constraints at a fixed prefix, excludes historical request controls, anchors unadmitted-proposal feedback chronologically and preserves verified successful single-call commentary without reasoning or batch backfill; internal provenance, permissions and step-level takeover remain unchanged.",
-    "Decode bounded parameter batches for runtime tool-lock and read-only admission; request-tail instructions allow independent calls only for a locked read-only tool. Explicit parameter-batch provenance preserves verified native tool-use identities without changing historical single-call authorship."
+    "Decode bounded parameter batches for runtime tool-lock and read-only admission; request-tail instructions allow independent calls only for a locked read-only tool. Explicit parameter-batch provenance preserves verified native tool-use identities without changing historical single-call authorship.",
+    "Argument-repair requests persist the rejected proposal as user-role evidence, constrain only parameter calls to argument changes with fixed count/order/names, and retain full arbitration choices after repair exhaustion. Verified llm_parameters selections bind native authorship to the original repair root and response call index; unexecuted proposals remain non-execution evidence."
   ]
 }

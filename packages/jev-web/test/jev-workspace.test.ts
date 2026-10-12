@@ -136,18 +136,20 @@ it('counts dispatch-linked direct decisions, not successful tools, proposals, pr
   expect(jevDirectCount(direct.map((event) => ({ ...event, trust: 'untrusted' })))).toBe(0)
   expect(jevDirectCount(direct.map((event) => ({ ...event, origin: 'llm' })))).toBe(0)
   expect(jevDirectCount(direct.filter((event) => event.seq !== 29 && event.seq !== 54))).toBe(0)
-  expect(
-    jevDirectCount(
-      direct.map((event) => {
-        if (event.seq !== 18 && event.seq !== 41) return event
-        const data = event.data as { record: Record<string, unknown> }
-        return {
-          ...event,
-          data: { ...data, record: { ...data.record, source: 'llm_arbitration' } },
-        } as EventEnvelope
-      }),
-    ),
-  ).toBe(0)
+  for (const source of ['llm_arbitration', 'llm_parameters']) {
+    expect(
+      jevDirectCount(
+        direct.map((event) => {
+          if (event.seq !== 18 && event.seq !== 41) return event
+          const data = event.data as { record: Record<string, unknown> }
+          return {
+            ...event,
+            data: { ...data, record: { ...data.record, source } },
+          } as EventEnvelope
+        }),
+      ),
+    ).toBe(0)
+  }
   // Dispatch failures still count; host tool/result and runtime settlement content are irrelevant.
   expect(
     jevDirectCount(

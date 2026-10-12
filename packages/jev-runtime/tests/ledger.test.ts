@@ -264,6 +264,163 @@ describe('incremental ledger replay', () => {
     },
   )
 
+  it.each(['single', 'batch'] as const)(
+    'binds repaired parameter decisions to the preserved %s proposal and explicit call index',
+    (shape) => {
+      const replay = createLedgerReplay()
+      const root = {
+        ...request,
+        id: rid('schema-root'),
+        call: { ...request.call, purpose: 'arbitration' as const },
+      }
+      const calls = [
+        { kind: 'call', name: 'native', arguments: { invalid: true } },
+        ...(shape === 'batch' ? [{ kind: 'call', name: 'other', arguments: { invalid: true } }] : []),
+      ]
+      replay.append(root)
+      const original: RuntimeRecord = {
+        ...settlement,
+        id: rid('schema-original'),
+        requested: root.id,
+        settlement: { output: shape === 'single' ? calls[0]! : { kind: 'calls', calls } },
+      }
+      replay.append(original)
+      replay.append({
+        version: 1,
+        id: rid('schema-rejected'),
+        turn,
+        step,
+        kind: 'resource.observed',
+        resource: {
+          kind: 'jev.argument-repair.v1',
+          phase: 'rejected',
+          root: root.id,
+          requested: root.id,
+          error: { code: 'INVALID_PARAMETERS', message: 'Required field missing' },
+        },
+      })
+      replay.append({
+        version: 1,
+        id: rid('repair-opportunity'),
+        turn,
+        step,
+        kind: 'resource.observed',
+        resource: {
+          kind: 'jev.argument-repair.v1',
+          phase: 'requested',
+          root: root.id,
+          requested: root.id,
+          attempt: 1,
+        },
+      })
+      const repairPrefix = [...replay.state.records]
+      const correction = {
+        root: root.id,
+        requested: root.id,
+        attempt: 1,
+        calls: calls.map(({ name, arguments: args }) => ({ name, arguments: args })),
+        error: { code: 'INVALID_PARAMETERS', message: 'Required field missing' },
+      }
+      const repaired: RuntimeRecord & { kind: 'model.requested' } = {
+        ...request,
+        id: rid('repair-request'),
+        call: {
+          ...request.call,
+          purpose: 'parameters',
+          input: { argumentRepair: correction },
+        },
+      }
+      replay.append(repaired)
+      const fixed = calls.map((call) => ({ ...call, arguments: { fixed: true } }))
+      const repairedSettlement: RuntimeRecord = {
+        ...settlement,
+        id: rid('repair-settled'),
+        requested: repaired.id,
+        settlement: { output: shape === 'single' ? fixed[0]! : { kind: 'calls', calls: fixed } },
+      }
+      replay.append(repairedSettlement)
+      const acceptance: RuntimeRecord = {
+        version: 1,
+        id: rid('repair-accepted'),
+        turn,
+        step,
+        kind: 'resource.observed',
+        resource: {
+          kind: 'jev.argument-repair.v1',
+          phase: 'accepted',
+          root: root.id,
+          requested: repaired.id,
+        },
+      }
+      const beforeAcceptance = [...replay.state.records]
+      for (const invalid of [
+        { ...acceptance, id: rid('wrong-turn-acceptance'), turn: brandString<TurnId>('another-turn') },
+        { ...acceptance, id: rid('wrong-step-acceptance'), step: brandString<StepId>('another-step') },
+      ]) {
+        expect(() => replay.append(invalid)).toThrow()
+        expect(replay.state.records).toEqual(beforeAcceptance)
+      }
+      for (const invalidSettlement of [
+        { error: { code: 'MODEL_FAILURE', message: 'No complete response', retryable: false } },
+        { output: { kind: 'answer', content: [{ kind: 'text', text: 'Cannot repair' }] } },
+        { output: { kind: 'calls', calls: fixed.map((call) => ({ ...call, name: 'changed-tool' })) } },
+      ]) {
+        const invalid = createLedgerReplay()
+        for (const record of repairPrefix) invalid.append(record)
+        invalid.append(repaired)
+        invalid.append({ ...repairedSettlement, settlement: invalidSettlement })
+        expect(() => invalid.append(acceptance)).toThrow()
+      }
+      const wrongAttempt = createLedgerReplay()
+      for (const record of repairPrefix) wrongAttempt.append(record)
+      wrongAttempt.append({
+        ...repaired,
+        call: { ...repaired.call, input: { argumentRepair: { ...correction, attempt: 2 } } },
+      })
+      wrongAttempt.append(repairedSettlement)
+      const beforeWrongAttemptAcceptance = [...wrongAttempt.state.records]
+      expect(() => wrongAttempt.append(acceptance)).toThrow()
+      expect(wrongAttempt.state.records).toEqual(beforeWrongAttemptAcceptance)
+      replay.append(acceptance)
+      const decision: Extract<RuntimeRecord, { kind: 'decision.selected' }> = {
+        version: 1,
+        id: rid('repair-selection'),
+        turn,
+        step,
+        attempt,
+        kind: 'decision.selected',
+        requested: repaired.id,
+        phase: 'UNSPECIFIED',
+        operation: 'native',
+        source: 'llm_parameters',
+        argumentRepair: root.id,
+        callIndex: 0,
+      }
+      const prefix = [...replay.state.records]
+      const { callIndex: _callIndex, ...withoutCallIndex } = decision
+      for (const [index, invalid] of [
+        withoutCallIndex,
+        { ...decision, callIndex: -1 },
+        { ...decision, callIndex: fixed.length },
+        { ...decision, confidence: 0.99 },
+        { ...decision, argumentRepair: rid('missing-root') },
+        { ...decision, operation: 'other-tool' },
+        { ...decision, source: 'llm_arbitration' as const },
+      ].entries()) {
+        expect(() => replay.append({ ...invalid, id: rid(`invalid-repair-${index}`) })).toThrow()
+        expect(replay.state.records).toEqual(prefix)
+      }
+      replay.append(decision)
+      expect(() => replay.append({ ...decision, id: rid('duplicate-repair-selection') })).toThrow()
+      if (shape === 'batch')
+        replay.append({ ...decision, id: rid('repair-second-selection'), operation: 'other', callIndex: 1 })
+      expect(replay.state.records).toContainEqual(original)
+      const rows = replay.state.records.filter((r) => r.kind === 'decision.selected')
+      expect(rows.map((r) => r.callIndex)).toEqual(shape === 'single' ? [0] : [0, 1])
+      expect(rows.every((r) => r.argumentRepair === root.id && r.confidence === undefined)).toBe(true)
+    },
+  )
+
   it('refuses broken causality without publishing the rejected record', () => {
     const replay = createLedgerReplay()
     replay.append(request)

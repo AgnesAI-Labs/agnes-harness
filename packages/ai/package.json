@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@earendil-works/pi-ai": "0.87.1"
+    "@earendil-works/pi-ai": "0.87.1",
+    "undici": "8.10.2"
   },
   "devDependencies": {
     "@sinclair/typebox": "0.34.33"

@@ -47,6 +47,7 @@ import {
   promptProjectionChanged,
   systemPromptFact,
 } from './jev-prompt-facts.js'
+import { JEV_PROMPT_PROFILE, jevPromptProfile } from './jev-prompt-profile.js'
 import { claimJevRecoveryTurn } from './jev-recovery-turn.js'
 import { jevRuntimeContextPolicy, runtimeContextFact } from './jev-runtime-facts.js'
 import { jevSkillCandidateCatalog } from './jev-skill-facts.js'
@@ -234,7 +235,11 @@ export async function openJevLoop(session: SessionImpl, options: JevLoopOptions)
   const companions = createJevToolSemantics({ session, ledger })
   const childFactory = session.d.children
   const environment = createJevEnvironment({
-    facts: () => ({ cwd: session.d.cwd, toolMountPolicy: JEV_TOOL_MOUNT.id }),
+    facts: () => ({
+      cwd: session.d.cwd,
+      toolMountPolicy: JEV_TOOL_MOUNT.id,
+      promptProfile: JEV_PROMPT_PROFILE,
+    }),
     ...(childFactory instanceof KernelChildren
       ? {
           childFactoryRuntimeSupport: {
@@ -451,7 +456,7 @@ export async function openJevLoop(session: SessionImpl, options: JevLoopOptions)
     const transformed = await session.hooks.context(merged.sections)
     // A disabled skill loader cannot satisfy the built-in catalog's usage instructions. Keep
     // workspace/user instructions intact; omit only the Host-owned discovery section.
-    const sections = transformed.sections.filter(
+    const sections = jevPromptProfile(transformed.sections).filter(
       (section) => section.source !== 'agnes/skills' || section.id !== 'skills',
     )
     skillCandidateCatalog = jevSkillCandidateCatalog(sections)

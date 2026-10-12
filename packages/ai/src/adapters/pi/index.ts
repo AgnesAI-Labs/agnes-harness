@@ -10,6 +10,8 @@ import type {
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
+import { type PiTransportFailure, piTransportFailure } from './errors.js'
+import { inferenceFetch } from './fetch.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
@@ -518,12 +520,12 @@ export class PiAdapter extends WireAdapter {
     // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
     // metadata of the attempt that replaced it.
     const fetchBody =
-      (wire: ResponseMeta): typeof globalThis.fetch =>
+      (wire: ResponseMeta, requestFetch: typeof globalThis.fetch): typeof globalThis.fetch =>
       async (input, init) => {
         const request = new Request(input, init)
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        const response = await (this.fetchImpl ?? globalThis.fetch)(request)
+        const response = await requestFetch(request)
         Object.assign(wire, responseMeta(response))
         return response
       }
@@ -557,6 +559,10 @@ export class PiAdapter extends WireAdapter {
         const nextOrdinal = () => ordinal++
         let emitted = false
         const wire: ResponseMeta = {}
+        let transportFailure: PiTransportFailure | undefined
+        const requestFetch = inferenceFetch(this.fetchImpl, (error) => {
+          transportFailure = piTransportFailure(error) ?? transportFailure
+        })
         let retryAfter: number | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
@@ -612,7 +618,7 @@ export class PiAdapter extends WireAdapter {
           ...(decl.api === 'openai-codex-responses' && this.resolveCredential
             ? { transport: 'sse' as const }
             : {}),
-          ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
+          ...(observable.has(decl.api) ? { fetch: fetchBody(wire, requestFetch) } : {}),
         })[Symbol.asyncIterator]()
         try {
           for (;;) {
@@ -620,7 +626,7 @@ export class PiAdapter extends WireAdapter {
             // and a loop waiting on it could not notice its own deadline passing.
             const next = await Promise.race([it.next(), stopped])
             if (next === ABORTED || next.done) break
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire, transportFailure)) {
               // HTTP headers and pi's start markers contain no model output.
               if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
                 firstSeen = true

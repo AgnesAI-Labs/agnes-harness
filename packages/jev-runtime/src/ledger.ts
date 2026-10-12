@@ -1,5 +1,6 @@
 /** Pure validation and replay of the portable append-only record stream. */
 
+import { pendingArgumentRepair, proposedArguments } from './argument-repair.js'
 import { InvalidDecisionToolSnapshot, readDecisionToolSnapshot } from './decision-tools.js'
 import type {
   ArtifactRef,
@@ -232,20 +233,28 @@ export function assertRuntimeRecord(value: unknown): asserts value is RuntimeRec
         !nonempty(value.operation) ||
         !nonempty(value.phase) ||
         !oneOf(value.phase, ['INSPECT', 'ACT', 'VERIFY', 'RESPOND', 'UNSPECIFIED']) ||
-        (value.source !== undefined && !oneOf(value.source, ['jev', 'llm_arbitration'])) ||
+        (value.source !== undefined && !oneOf(value.source, ['jev', 'llm_arbitration', 'llm_parameters'])) ||
         (value.callIndex !== undefined &&
-          ((value.source !== 'llm_arbitration' && !nonempty(value.parameterDecision)) ||
+          ((value.source !== 'llm_arbitration' &&
+            value.source !== 'llm_parameters' &&
+            !nonempty(value.parameterDecision)) ||
             !Number.isSafeInteger(value.callIndex) ||
             Number(value.callIndex) < 0 ||
             Number(value.callIndex) >= 32)) ||
-        (value.source === 'llm_arbitration' && value.confidence !== undefined) ||
+        ((value.source === 'llm_arbitration' || value.source === 'llm_parameters') &&
+          value.confidence !== undefined) ||
         (value.source !== 'llm_arbitration' &&
+          value.source !== 'llm_parameters' &&
           (typeof value.confidence !== 'number' ||
             !Number.isFinite(value.confidence) ||
             value.confidence < 0 ||
             value.confidence > 1)) ||
         (value.parameterDecision !== undefined &&
           (!nonempty(value.parameterDecision) || value.source !== 'jev' || value.callIndex === undefined)) ||
+        (value.source === 'llm_parameters' &&
+          (!nonempty(value.argumentRepair) || value.callIndex === undefined)) ||
+        (value.argumentRepair !== undefined &&
+          (value.source !== 'llm_parameters' || !nonempty(value.argumentRepair))) ||
         (value.candidateId !== undefined && !nonempty(value.candidateId))
       )
         break
@@ -336,6 +345,7 @@ export function createLedgerReplay(): {
   const records: RuntimeRecord[] = []
   const ids = new Set<RecordId>()
   const requests = new Map<RecordId, RuntimeRecord & { kind: 'model.requested' }>()
+  const argumentRepairs = new Map<RecordId, RecordId>()
   const modelSettlements = new Map<RecordId, ModelSettlement>()
   const selected = new Map<RecordId, Extract<RuntimeRecord, { kind: 'decision.selected' }>>()
   const batchSelections = new Set<string>()
@@ -377,7 +387,9 @@ export function createLedgerReplay(): {
           const proposal =
             object(output) && output.kind === 'calls' && Array.isArray(output.calls)
               ? output.calls[record.callIndex]
-              : undefined
+              : record.source === 'llm_parameters' && record.callIndex === 0
+                ? output
+                : undefined
           const key = JSON.stringify([record.requested, record.callIndex])
           const parameterSelection =
             record.parameterDecision === undefined ? undefined : selected.get(record.parameterDecision)
@@ -390,20 +402,41 @@ export function createLedgerReplay(): {
             parameterSelection.phase === record.phase &&
             parameterSelection.turn === record.turn &&
             parameterSelection.step === record.step
+          let parameterRepair = false
+          if (record.source === 'llm_parameters' && record.argumentRepair !== undefined) {
+            const root = requests.get(record.argumentRepair)
+            const input = request?.call.input
+            const repair = object(input) ? input.argumentRepair : undefined
+            try {
+              const originalCalls = proposedArguments(modelSettlements.get(record.argumentRepair)?.output)
+              const repairedCalls = proposedArguments(output)
+              parameterRepair =
+                request?.call.purpose === 'parameters' &&
+                root?.turn === record.turn &&
+                argumentRepairs.get(record.requested) === record.argumentRepair &&
+                object(repair) &&
+                repair.root === record.argumentRepair &&
+                originalCalls.length === repairedCalls.length &&
+                originalCalls.every((call, index) => call.name === repairedCalls[index]?.name)
+            } catch {
+              parameterRepair = false
+            }
+          }
           if (
             !(
               (request?.call.purpose === 'arbitration' &&
                 record.source === 'llm_arbitration' &&
                 record.parameterDecision === undefined) ||
-              parameterBatch
+              parameterBatch ||
+              parameterRepair
             ) ||
             settlement?.error ||
             !object(proposal) ||
             proposal.kind !== 'call' ||
             proposal.name !== record.operation ||
-            request.turn !== record.turn ||
-            request.step !== record.step ||
-            request.attempt !== record.attempt ||
+            request?.turn !== record.turn ||
+            request?.step !== record.step ||
+            request?.attempt !== record.attempt ||
             batchSelections.has(key)
           )
             throw new InvalidLedger('Batch decision has no unique matching proposal')
@@ -505,8 +538,48 @@ export function createLedgerReplay(): {
         lastStop = record
         break
       case 'environment.observed':
-      case 'input.admitted':
+        break
       case 'resource.observed':
+        if (
+          object(record.resource) &&
+          record.resource.kind === 'jev.argument-repair.v1' &&
+          record.resource.phase === 'accepted'
+        ) {
+          const { root, requested } = record.resource
+          const request = typeof requested === 'string' ? requests.get(requested as RecordId) : undefined
+          const repair = object(request?.call.input) ? request.call.input.argumentRepair : undefined
+          const pending = pendingArgumentRepair(records, record.turn)
+          if (
+            typeof root !== 'string' ||
+            typeof requested !== 'string' ||
+            requests.get(root as RecordId)?.turn !== record.turn ||
+            request?.call.purpose !== 'parameters' ||
+            request.turn !== record.turn ||
+            request.step !== record.step ||
+            !modelSettlements.has(request.id) ||
+            modelSettlements.get(request.id)?.error !== undefined ||
+            !object(repair) ||
+            pending?.root !== root ||
+            pending.attempt < 1 ||
+            repair.root !== root ||
+            repair.requested !== pending.requested ||
+            repair.attempt !== pending.attempt
+          )
+            throw new InvalidLedger('Argument repair acceptance has no matching model requests')
+          try {
+            const calls = proposedArguments(modelSettlements.get(request.id)?.output)
+            if (
+              calls.length !== pending.calls.length ||
+              calls.some((call, index) => call.name !== pending.calls[index]?.name)
+            )
+              throw new Error('Changed argument repair call shape')
+          } catch {
+            throw new InvalidLedger('Argument repair acceptance requires a matching complete proposal')
+          }
+          argumentRepairs.set(requested as RecordId, root as RecordId)
+        }
+        break
+      case 'input.admitted':
         break
     }
     records.push(record)

@@ -138,6 +138,17 @@ Two properties are worth remembering while experimenting: stages on different mo
 prompt-cache namespaces (each cold stage pays its own full-prefix reads), and stages still on a
 shared preset slot move together when that slot is switched.
 
+The JevLoop `agnes-jev-general-prompt-v1` view condenses built-in identity, environment and working
+rules into coherent actions, suitable verification, evidence scope and unresolved work. It contains
+no benchmark-specific requirements. Rewriting requires exact source/id, full template digests and
+bounded environment fields; custom, unknown and workspace instructions pass through. Native's
+templates are unchanged. Environment model facts describe session defaults, not the current stage.
+Parameter requests only bind the selected action and may decline when evidence is missing;
+arbitration may still call tools, and shared evidence rules apply if it returns a final answer.
+This does not enable a new completion gate. The new prefix may cause one cache migration; historical
+request snapshots remain intact and old stage controls are not replayed. Stage controls require
+ordered system-message transport support under the existing compatibility checks.
+
 JevLoop mounts only `read`, `ls`, `grep`, `edit`, `write` and `shell` under the Host-owned
 `agnes-jev-basic-tools-v1` policy. Other installed tools are disabled for this runtime and are not
 registered in its session tool table. Jev and every language stage use that same mounted catalog;
@@ -160,6 +171,18 @@ failures, or an enabled response-review gate can trigger LLM takeover of the cur
 decision. This request includes the complete mounted JevLoop tool catalog and does not lock the original
 operation: the LLM can select another tool, propose 1–32 complete calls in order, or return a final
 answer. The Host still validates and prepares each call under the existing authorization rules.
+Schema validation rejects an authored proposal before any execution. The runtime then gives the
+parameter model the exact rejected calls and validation error for up to three correction requests.
+Correction preserves call count, order and tool names; only arguments may change. Every complete
+proposal is validated before execution. A successful correction executes through the normal Host
+barriers; three unsuccessful corrections go directly to the arbitration model, which may replan,
+choose other calls or answer. No extra final-answer gate follows that decision. Each correction is
+recorded under `jev.argument-repair.v1` and consumes the existing model budget. Its counter survives
+reopening, including an interrupted correction request. A new user input supersedes the old repair
+chain. Permissions, execution failures and uncertain effects retain their existing recovery paths.
+Accepted corrections use `llm_parameters` with a root request reference and native call index;
+unexecuted proposals remain proposals and never count as successful checks.
+
 If the batch does not complete the turn, the next step returns to Jev. In contrast, `parameters`
 locks the selected operation: it permits 1–32 independent complete calls to that same read-only
 tool, but still requires exactly one call for a mutation or unknown effect class. Every proposed
@@ -176,8 +199,18 @@ overlap, while runtime settlements are committed in proposal order. A refusal, f
 cancellation, conclusion or unknown effect stops the remaining batch; already-dispatched siblings
 are drained and settled, never silently discarded or rolled back. A persistence failure invalidates
 the writer but still drains started work; recovery never automatically executes an unadmitted tail.
-Scheduling revision 5 is recorded in `run.opened.runtimeVersion`. Older records remain readable;
-uncompleted turns of an older scheduling revision cannot resume as revision 5.
+Scheduling revision 6 is recorded in `run.opened.runtimeVersion`. Older records remain readable;
+uncompleted turns of an older scheduling revision cannot resume as revision 6.
+
+For Pi protocols that use the supplied HTTP fetch path, each inference request disables the HTTP
+library's headers/body idle timers and retains the Host's first-output and total deadlines plus
+caller cancellation. The request reuses the selected dispatcher and connection pool; other
+requests' policies and global dispatcher configuration remain unchanged. Recognized transport
+codes and cause names are captured before SDK normalization and recorded through an allowlist;
+raw exception text, URLs and credentials are not recorded. A missing stream finish reason and a
+provider `network_error` finish reason remain distinct sanitized diagnoses. Partial model output
+still prevents automatic retries. Custom fetch implementations own their transport behavior and
+must honor the request signal; SDK protocols outside the fetch path retain their vendor transport.
 
 For providers that support durable preparation, new language calls use `agnes-language-v2`.
 Before `model.requested` is committed, the provider binds the effective route, model capabilities,
@@ -196,10 +229,22 @@ runs before publication and on recovery. Later LLM history preserves the origina
 block order. DeepSeek Completions also restores its plain `reasoning_content` field; opaque
 provider signatures are not synthesized. Snapshot-less legacy records remain readable; contradictory snapshots are refused.
 
-Parameter completion, LLM takeover and final-answer requests retain the same complete mounted JevLoop tool catalog.
-Language requests use a fixed user-role prefix for ordinary tool execution constraints and directory
-freshness semantics. LLM takeover receives normal agent context without a takeover instruction;
-parameter locks, answer-only instructions and format repair belong only to the current request tail.
+Ordinary parameter completion, LLM takeover and final-answer requests retain the same complete mounted JevLoop tool catalog.
+Argument-correction requests offer only the mounted tools named in the rejected proposal.
+Language requests use a fixed system-role prefix for ordinary execution constraints, final-answer
+evidence requirements and directory freshness semantics. LLM takeover receives normal agent context without a takeover instruction;
+binding and answer-only controls are current-request system messages at the tail; repair error details
+remain user-role evidence. These controls apply only to the current request.
+
+The JevLoop coding prompt profile (`agnes-jev-general-prompt-v3`) preserves the request's supported
+inputs and conditional success behavior: required handling cannot be replaced with errors, skips or
+a narrower input domain. Policies apply within their stated scope; output restrictions alone do not
+imply input or execution restrictions. Required security and invalid-input refusals remain. For implementation
+changes, verification may exercise stated conditions using small independent examples derived from
+the visible request when its scope permits; verification experiments stay separate from original
+task data and policies. The same Host declaration reaches Jev rules and every language stage.
+This does not add response-review gates, tool calls or model calls. Native templates and custom
+workspace instructions remain unchanged; the profile rewrites only exact bundled template hashes.
 Historical `requestNote` values remain in their original durable snapshots but are not replayed into
 new conversation messages. Internal request, settlement and decision links still validate authorship.
 Directory-entry versions are opaque freshness tokens, not content hashes: content claims require
@@ -537,6 +582,17 @@ definitions retain ordinary catalog fallback. Shell remains available, with dedi
 preferred for equivalent operations. Management and helper tools remain installed for Native but
 are not mounted under the current JevLoop policy. Their adapter contracts remain available if a
 future Host policy explicitly enables them; package installation alone does not enable them here.
+
+For verified builtin foreground shell calls, JevLoop records stdout and stderr separately alongside
+the exit code, timeout, signal and output coverage. Each channel has a bounded head/tail excerpt with
+an explicit truncation flag; original tool text and output artifact references remain available.
+Both Jev and language requests receive these structured execution facts. Execution completion,
+accepted calls and exit zero do not constitute a verification verdict: `verification: not_assessed`
+requires interpreting whether the check actually ran and covered the claimed scope. Warnings and
+expected negative probe results are not automatically failures. Missing dependencies, execution
+errors and incomplete coverage require another supported check or an explicit unverified limitation;
+success fallbacks must not hide failed checks. These facts do not add a response-review gate or change
+Native tool behavior, permissions, effect recovery or model-call scheduling.
 
 Complete candidates use persisted objective evidence. Initial file reads from directory/search
 results bind only the path; text paging is retained for known text and version-checked continuations.

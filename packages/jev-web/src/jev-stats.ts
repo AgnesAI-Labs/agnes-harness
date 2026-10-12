@@ -33,7 +33,8 @@ export function jevDirectCount(events: readonly EventEnvelope[]): number {
     }
     switch (record.kind) {
       case 'decision.selected':
-        if (record.source !== 'llm_arbitration') scope.requests.set(record.requested, record.id)
+        if (record.source !== 'llm_arbitration' && record.source !== 'llm_parameters')
+          scope.requests.set(record.requested, record.id)
         break
       case 'resource.observed': {
         const route = record.resource

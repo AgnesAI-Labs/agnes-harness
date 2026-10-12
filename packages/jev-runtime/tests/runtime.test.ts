@@ -214,6 +214,7 @@ function fixture<C>(
               history: model.history,
               tools: model.tools ?? null,
               locked: model.lockedOperation ?? null,
+              ...(model.argumentRepair ? { argumentRepair: model.argumentRepair } : {}),
               ...(model.repair ? { repair: model.repair } : {}),
               ...(model.recovery ? { recovery: model.recovery } : {}),
             }),
@@ -745,7 +746,7 @@ describe('operation gates and parameter routes', () => {
     expect(entries.slice(0, legacy.length)).toEqual(legacy)
     expect(
       entries.flatMap((entry) => (entry.payload.kind === 'run.opened' ? [entry.payload.runtimeVersion] : [])),
-    ).toEqual(['5'])
+    ).toEqual(['6'])
   })
 
   it('consumes the shared tool binding across purposes while ignoring an invalid unused operation', async () => {
@@ -1491,8 +1492,8 @@ describe('durable response review', () => {
         return gateAnswer(call, { respond: true })
       },
       onLanguage(call) {
-        expect(call.purpose).toBe('arbitration')
-        arbitrations++
+        if (call.purpose === 'arbitration') arbitrations++
+        else expect((call.input as { argumentRepair?: JsonValue }).argumentRepair).toBeDefined()
         return { output: authoredCall(call, { invalid: true }) }
       },
       onExecute() {
@@ -3648,79 +3649,342 @@ describe('recorded recovery and progress', () => {
     expect(records.some((record) => record.kind === 'action.intended')).toBe(false)
   })
 
-  it('recovers a schema-invalid authored call but keeps an untyped host denial terminal', async () => {
-    const { ledger } = ledgerA()
-    let decisions = 0
-    const base = fixture(ledger, {
-      onInvoke(call) {
-        return decisions++ === 0
-          ? { output: decision((call.input as { questions: JsonValue }).questions) }
-          : respond(call)
-      },
-      onLanguage(call) {
-        return {
-          output:
-            call.purpose === 'arbitration'
-              ? { kind: 'answer' }
-              : call.purpose === 'answer'
-                ? { kind: 'answer', content: [{ kind: 'text', text: 'Cannot call this tool' }] }
-                : authoredCall(call, { invalid: true }),
-        }
-      },
-    })
-    const ports: RuntimePorts<number> = {
-      ...base,
-      environment: {
-        ...base.environment,
-        async validate(definition, args, preconditions) {
-          if (typeof args === 'object' && args !== null && !Array.isArray(args) && args.invalid === true) {
-            throw new InvalidAuthoredArguments('Required field missing')
-          }
-          return base.environment.validate(definition, args, preconditions)
+  it.each([1, 3])(
+    'repairs schema-invalid arguments on Flash attempt %i but keeps host denial terminal',
+    async (acceptedAttempt) => {
+      const { ledger } = ledgerA()
+      let decisions = 0
+      const base = fixture(ledger, {
+        onInvoke(call) {
+          return decisions++ === 0
+            ? { output: decision((call.input as { questions: JsonValue }).questions) }
+            : respond(call)
         },
-      },
-    }
-    const runtime = await openJevRuntime(ports, config)
-    expect((await runtime.run(turn, [input])).status).toBe('completed')
-    const records = (await ledger.read()).map((entry) => entry.record)
-    expect(
-      records.some(
-        (record) =>
-          record.kind === 'resource.observed' &&
-          typeof record.resource === 'object' &&
-          record.resource !== null &&
-          !Array.isArray(record.resource) &&
-          record.resource.code === 'INVALID_PARAMETERS',
-      ),
-    ).toBe(true)
-    expect(records.some((record) => record.kind === 'action.intended')).toBe(false)
-
-    const other = ledgerA()
-    const denied = fixture(other.ledger)
-    const terminal = await openJevRuntime(
-      {
-        ...denied,
+        onLanguage(call) {
+          const repair = (call.input as { argumentRepair?: LanguageInput['argumentRepair'] }).argumentRepair
+          return {
+            output:
+              call.purpose === 'arbitration'
+                ? { kind: 'answer' }
+                : call.purpose === 'answer'
+                  ? { kind: 'answer', content: [{ kind: 'text', text: 'Cannot call this tool' }] }
+                  : authoredCall(
+                      call,
+                      repair?.attempt === acceptedAttempt ? { fixed: true } : { invalid: true },
+                    ),
+          }
+        },
+      })
+      const ports: RuntimePorts<number> = {
+        ...base,
         environment: {
-          ...denied.environment,
-          async validate() {
-            throw new Error('permission denied')
+          ...base.environment,
+          async validate(definition, args, preconditions) {
+            if (typeof args === 'object' && args !== null && !Array.isArray(args) && args.invalid === true) {
+              throw new InvalidAuthoredArguments('Required field missing')
+            }
+            return base.environment.validate(definition, args, preconditions)
           },
         },
-      },
-      config,
-    )
-    expect((await terminal.run(turn, [input])).status).toBe('failed')
-    expect(
-      (await other.ledger.read()).some(
-        (entry) =>
-          entry.record.kind === 'resource.observed' &&
-          typeof entry.record.resource === 'object' &&
-          entry.record.resource !== null &&
-          !Array.isArray(entry.record.resource) &&
-          entry.record.resource.kind === 'jev.runtime.feedback.v1',
-      ),
-    ).toBe(false)
-  })
+      }
+      const runtime = await openJevRuntime(ports, { ...config, maxRepeatedFailures: 1 })
+      expect((await runtime.run(turn, [input])).status).toBe('completed')
+      const records = (await ledger.read()).map((entry) => entry.record)
+      expect(
+        records.some(
+          (record) =>
+            record.kind === 'resource.observed' &&
+            typeof record.resource === 'object' &&
+            record.resource !== null &&
+            !Array.isArray(record.resource) &&
+            record.resource.kind === 'jev.argument-repair.v1' &&
+            record.resource.phase === 'rejected',
+        ),
+      ).toBe(true)
+      const requests = records.filter((record) => record.kind === 'model.requested')
+      expect(requests.map((record) => record.call.purpose)).toEqual([
+        'decision',
+        ...Array(acceptedAttempt + 1).fill('parameters'),
+      ])
+      const root = requests[1]!
+      const repaired = requests.at(-1)!
+      expect(
+        resources(records, 'jev.argument-repair.v1')
+          .filter((marker) => marker.phase === 'requested')
+          .map((marker) => marker.attempt),
+      ).toEqual(Array.from({ length: acceptedAttempt }, (_, index) => index + 1))
+      expect(
+        records.find((record) => record.kind === 'model.settled' && record.requested === root.id),
+      ).toMatchObject({
+        settlement: { output: { kind: 'call', name: tool.name, arguments: { invalid: true } } },
+      })
+      for (const request of requests.slice(2)) {
+        expect(request.call.input).toMatchObject({
+          argumentRepair: { root: root.id, calls: [{ name: tool.name }] },
+        })
+      }
+      expect(
+        records
+          .filter((record) => record.kind === 'action.intended')
+          .map((record) => record.intent.arguments),
+      ).toEqual([{ fixed: true }])
+      expect(
+        records.filter((record) => record.kind === 'decision.selected' && record.requested === repaired.id),
+      ).toMatchObject([
+        { source: 'llm_parameters', argumentRepair: root.id, callIndex: 0, operation: tool.name },
+      ])
+
+      const other = ledgerA()
+      const denied = fixture(other.ledger)
+      const terminal = await openJevRuntime(
+        {
+          ...denied,
+          environment: {
+            ...denied.environment,
+            async validate() {
+              throw new Error('permission denied')
+            },
+          },
+        },
+        config,
+      )
+      expect((await terminal.run(turn, [input])).status).toBe('failed')
+      expect(
+        (await other.ledger.read()).some(
+          (entry) =>
+            entry.record.kind === 'resource.observed' &&
+            typeof entry.record.resource === 'object' &&
+            entry.record.resource !== null &&
+            !Array.isArray(entry.record.resource) &&
+            entry.record.resource.kind === 'jev.runtime.feedback.v1',
+        ),
+      ).toBe(false)
+    },
+  )
+
+  it.each(['schema', 'format'] as const)(
+    'exhausts exactly three Flash argument repairs then accepts the same-step arbitration answer: %s',
+    async (failure) => {
+      const { ledger } = ledgerA()
+      const purposes: string[] = []
+      const ports = fixture(ledger, {
+        onLanguage(call) {
+          purposes.push(call.purpose)
+          const repair = (call.input as { argumentRepair?: LanguageInput['argumentRepair'] }).argumentRepair
+          if (call.purpose === 'arbitration')
+            return {
+              output: { kind: 'answer', content: [{ kind: 'text', text: 'A valid arbitration answer' }] },
+            }
+          if (repair && failure === 'format') return invalidHelper
+          return { output: authoredCall(call, { invalid: true }) }
+        },
+        onExecute() {
+          throw new Error('Rejected arguments dispatched')
+        },
+      })
+      ports.environment.validate = async () => {
+        throw new InvalidAuthoredArguments('Required field missing')
+      }
+      const runtime = await openJevRuntime(ports, { ...config, maxRepeatedFailures: 1, maxModelAttempts: 9 })
+      expect((await runtime.run(turn, [input])).status).toBe('completed')
+      const records = (await ledger.read()).map((entry) => entry.record)
+      expect(records.filter((r) => r.kind === 'model.requested').map((r) => r.call.purpose)).toEqual([
+        'decision',
+        'parameters',
+        'parameters',
+        'parameters',
+        'parameters',
+        'arbitration',
+      ])
+      expect(purposes).toEqual(['parameters', 'parameters', 'parameters', 'parameters', 'arbitration'])
+      expect(new Set(records.filter((r) => r.kind === 'model.requested').map((r) => r.step)).size).toBe(1)
+      expect(records.some((r) => r.kind === 'action.intended')).toBe(false)
+      const markers = resources(records, 'jev.argument-repair.v1')
+      expect(markers.filter((r) => r.phase === 'requested').map((r) => r.attempt)).toEqual([1, 2, 3])
+      expect(markers.at(-1)).toMatchObject({ phase: 'arbitrated' })
+      expect(records.filter((r) => r.kind === 'model.settled').at(-1)).toMatchObject({
+        settlement: {
+          output: { kind: 'answer', content: [{ kind: 'text', text: 'A valid arbitration answer' }] },
+        },
+      })
+    },
+  )
+
+  it.each(['accepted', 'tool', 'count', 'order', 'unknown', 'cancel'] as const)(
+    'preflights a mixed-tool batch completely and preserves its argument-repair shape: %s',
+    async (mode) => {
+      const { ledger } = ledgerA()
+      const read = { ...tool, name: 'inspect', effectClass: 'read_only' as const }
+      const original: JsonValue = {
+        kind: 'calls',
+        calls: [
+          { kind: 'call', name: tool.name, arguments: { index: 0 } },
+          { kind: 'call', name: read.name, arguments: { index: 1, invalid: true } },
+        ],
+      }
+      const executed: string[] = []
+      let arbitrations = 0
+      let runtime: Awaited<ReturnType<typeof openJevRuntime<number>>>
+      const ports = fixture(ledger, {
+        confidence: 0.2,
+        onLanguage(call) {
+          if (call.purpose === 'arbitration')
+            return arbitrations++ === 0
+              ? { output: original }
+              : {
+                  output: {
+                    kind: 'answer',
+                    content: [{ kind: 'text', text: 'No admissible repaired batch' }],
+                  },
+                }
+          const repair = (
+            call.input as unknown as { argumentRepair: NonNullable<LanguageInput['argumentRepair']> }
+          ).argumentRepair
+          expect(executed).toEqual([])
+          expect(repair.calls.map((entry) => entry.name)).toEqual([tool.name, read.name])
+          expect((call.input as { locked: JsonValue }).locked).toBeNull()
+          const calls = repair.calls.map((entry, index) => ({
+            kind: 'call',
+            name: entry.name,
+            arguments: { index, fixed: true },
+          }))
+          if (mode === 'tool') calls[1]!.name = tool.name
+          if (mode === 'count') calls.pop()
+          if (mode === 'order') calls.reverse()
+          return { output: { kind: 'calls', calls } }
+        },
+      })
+      ports.environment.catalog = async () => [read, tool]
+      ports.environment.validate = async (_tool, args) => {
+        if (args === null || typeof args !== 'object' || Array.isArray(args))
+          throw new InvalidAuthoredArguments('object required')
+        if (args.invalid) {
+          expect(executed).toEqual([])
+          throw new InvalidAuthoredArguments('bad second call')
+        }
+        return args
+      }
+      ports.environment.execute = async (intent) => {
+        executed.push(intent.tool)
+        if (mode === 'cancel') runtime.cancel()
+        return {
+          ...outcome,
+          effect: mode === 'unknown' ? 'unknown' : 'acknowledged',
+          directive: { conclude: mode === 'accepted' && executed.length === 2, additions: [] },
+        }
+      }
+      runtime = await openJevRuntime(ports, {
+        ...config,
+        maxSteps: 1,
+        maxRepeatedFailures: 1,
+        maxModelAttempts: 9,
+      })
+      const result = await runtime.run(turn, [input])
+      expect(result.status).toBe(
+        mode === 'unknown' ? 'blocked' : mode === 'cancel' ? 'cancelled' : 'completed',
+      )
+      expect(executed).toEqual(
+        mode === 'accepted'
+          ? [tool.name, read.name]
+          : mode === 'unknown' || mode === 'cancel'
+            ? [tool.name]
+            : [],
+      )
+      const records = (await ledger.read()).map((entry) => entry.record)
+      const markers = resources(records, 'jev.argument-repair.v1')
+      expect(markers.filter((m) => m.phase === 'requested').map((m) => m.attempt)).toEqual(
+        mode === 'tool' || mode === 'count' || mode === 'order' ? [1, 2, 3] : [1],
+      )
+      const root = records.find((r) => r.kind === 'model.requested' && r.call.purpose === 'arbitration')!
+      expect(records.find((r) => r.kind === 'model.settled' && r.requested === root.id)).toMatchObject({
+        settlement: { output: original },
+      })
+      const repaired = records.filter(
+        (r): r is Extract<RuntimeRecord, { kind: 'decision.selected' }> =>
+          r.kind === 'decision.selected' && r.source === 'llm_parameters',
+      )
+      expect(repaired.map((r) => r.callIndex)).toEqual(
+        mode === 'accepted' ? [0, 1] : mode === 'unknown' || mode === 'cancel' ? [0] : [],
+      )
+      expect(repaired.every((r) => r.argumentRepair === root.id)).toBe(true)
+      if (mode === 'unknown' || mode === 'cancel') {
+        await runtime.close()
+        const reopened = await openJevRuntime(ports, {
+          ...config,
+          maxSteps: 1,
+          maxRepeatedFailures: 1,
+          maxModelAttempts: 9,
+        })
+        await reopened.run(turn, [])
+        expect(executed).toEqual([tool.name])
+        await reopened.close()
+      }
+    },
+  )
+
+  it.each([1, 3])(
+    'retains consumed argument-repair opportunity %i across a commit crash',
+    async (crashAttempt) => {
+      const { ledger } = ledgerA()
+      let crash = true
+      const crashing: RuntimeLedger<number> = {
+        ...ledger,
+        async commit(record) {
+          const cursor = await ledger.commit(record)
+          const marker = record.kind === 'resource.observed' ? record.resource : null
+          if (
+            crash &&
+            marker &&
+            typeof marker === 'object' &&
+            !Array.isArray(marker) &&
+            marker.kind === 'jev.argument-repair.v1' &&
+            marker.phase === 'requested' &&
+            marker.attempt === crashAttempt
+          ) {
+            crash = false
+            throw new Error('crash after consumed repair opportunity')
+          }
+          return cursor
+        },
+      }
+      const languages: number[] = []
+      const make = (storage: RuntimeLedger<number>) => {
+        const ports = fixture(storage, {
+          onLanguage(call) {
+            if (call.purpose === 'arbitration')
+              return {
+                output: { kind: 'answer', content: [{ kind: 'text', text: 'Recovered via arbitration' }] },
+              }
+            const repair = (call.input as { argumentRepair?: LanguageInput['argumentRepair'] }).argumentRepair
+            if (repair) languages.push(repair.attempt)
+            return { output: authoredCall(call, { invalid: true }) }
+          },
+        })
+        ports.environment.validate = async () => {
+          throw new InvalidAuthoredArguments('missing required argument')
+        }
+        return ports
+      }
+      const budget = { ...config, maxRepeatedFailures: 1, maxModelAttempts: 9 }
+      const first = await openJevRuntime(make(crashing), budget)
+      await expect(first.run(turn, [input])).rejects.toThrow('crash after consumed repair opportunity')
+      await first.close()
+      const resumed = await openJevRuntime(make(ledger), budget)
+      expect((await resumed.run(turn, [])).status).toBe('completed')
+      const records = (await ledger.read()).map((entry) => entry.record)
+      expect(
+        resources(records, 'jev.argument-repair.v1')
+          .filter((r) => r.phase === 'requested')
+          .map((r) => r.attempt),
+      ).toEqual([1, 2, 3])
+      expect(languages).toEqual(crashAttempt === 1 ? [2, 3] : [1, 2])
+      expect(
+        records.filter((r) => r.kind === 'model.requested' && r.call.purpose === 'decision'),
+      ).toHaveLength(1)
+      expect(records.some((r) => r.kind === 'action.dispatching')).toBe(false)
+      await resumed.close()
+    },
+  )
 
   it('bounds sustained invalid Jev selections before LLM arbitration can own every step', async () => {
     const { ledger } = ledgerA()
@@ -5060,11 +5324,15 @@ describe('recorded recovery and progress', () => {
   it('stops a candidate generator at its per-tool limit before validating offered bindings', async () => {
     const { ledger } = ledgerA()
     let yielded = 0
-    let validated = 0
+    const validated: JsonValue[] = []
+    const executed: Readonly<Record<string, JsonValue>>[] = []
     const base = fixture(ledger, {
       onInvoke(call) {
-        expect(validated).toBe(1)
+        expect(validated).toEqual([{ index: 0 }])
         return { output: decision((call.input as { questions: JsonValue }).questions) }
+      },
+      onExecute(intent) {
+        executed.push(intent.arguments)
       },
     })
     const ports: RuntimePorts<number> = {
@@ -5073,7 +5341,7 @@ describe('recorded recovery and progress', () => {
       environment: {
         ...base.environment,
         async validate(definition, args, preconditions) {
-          validated++
+          validated.push(structuredClone(args))
           return base.environment.validate(definition, args, preconditions)
         },
       },
@@ -5104,7 +5372,12 @@ describe('recorded recovery and progress', () => {
       (await (await openJevRuntime(ports, { ...config, maxCandidates: 1 })).run(turn, [input])).status,
     ).toBe('completed')
     expect(yielded).toBe(2)
-    expect(validated).toBe(3)
+    expect(
+      validated.filter(
+        (args) => args !== null && typeof args === 'object' && !Array.isArray(args) && 'index' in args,
+      ),
+    ).toEqual([{ index: 0 }])
+    expect(executed).toEqual([{ exact: true }])
     expect(
       (await ledger.read()).some(
         (entry) =>

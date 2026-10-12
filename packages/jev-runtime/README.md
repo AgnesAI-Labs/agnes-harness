@@ -8,8 +8,8 @@ The exact imported working-tree bytes and local adaptations are recorded in
 `run`, `cancel`, `close` and `resolveUnknown`. The host supplies the ledger,
 model transports, tool catalog and execution, artifacts, decision context,
 identifiers and lifecycle. Core source has no filesystem, network, Node or
-Cordis dependency. Runtime versions and persisted record formats are unchanged
-from the imported baseline.
+Cordis dependency. Historical record formats remain readable; Agnes scheduling revisions are recorded in
+`run.opened.runtimeVersion` and unfinished turns require the same scheduling revision.
 
 The adapter owns exclusive writing, persistence guarantees, input admission,
 permissions and sandbox enforcement. A recorded dispatch is not evidence of
@@ -42,3 +42,9 @@ failure, cancellation, unknown effect, new input or conclusion abandons the rema
 Recovery never auto-dispatches its tail, and durably concluded actions retain completion.
 One step may contain several actions; progress retains all observed outcomes without charging
 multiple step-budget units. This is an intentional extension beyond the upstream single-call rule.
+
+Schema-rejected authored proposals receive up to three recorded argument-only corrections before
+arbitration. Correction requests keep the original call shape and do not execute unchecked calls.
+`jev.argument-repair.v1` records consumed attempts across reopen, and accepted `llm_parameters`
+selections bind each corrected call to its root request. Arbitration retains ordinary action/answer
+authority; permission errors, unknown effects and interrupted executed batches are not schema repair.

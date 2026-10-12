@@ -160,8 +160,9 @@ describe('reviewed operation profiles', () => {
     expect(profile('skill_helper_import').result).toContain('selection_required')
     expect(profile('harness_propose').constraints.join(' ')).toContain('queued does not establish')
     // A caller cannot mutate a returned profile and weaken subsequent guidance.
+    const shellConstraints = [...profile('shell').constraints]
     Reflect.set(profile('shell').constraints, 'length', 0)
-    expect(profile('shell').constraints).toHaveLength(2)
+    expect(profile('shell').constraints).toEqual(shellConstraints)
   })
   it('exposes reviewed profiles and schema-valid observed candidates through the Host companion', async () => {
     const tools = await definitions()
@@ -237,7 +238,7 @@ describe('reviewed operation profiles', () => {
       expect(candidates, tool.name).toHaveLength(1)
       expect(validateAgainst(tool.parameters, candidates[0]?.arguments).ok, tool.name).toBe(true)
       expect(candidates[0]?.arguments).toEqual(
-        tool === skill ? { name: 'review' } : { childKey: 'child-1', wait: false },
+        tool === skill ? { name: 'review' } : { childKey: 'child-1', wait: true },
       )
       expect([
         ...companions.semantics.candidates({ ...view, revision: 'replacement' }, [], epoch, context),

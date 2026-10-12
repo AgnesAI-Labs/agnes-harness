@@ -4,6 +4,26 @@ import type { FrozenIntent, JsonValue } from '@agnes/jev-runtime'
 
 const CODEC = 'agnes-host-builtin-foreground-exec-v1'
 const observed = new WeakMap<object, { intentDigest: string; disposition: 'acknowledged' | 'unknown' }>()
+const encoder = new TextEncoder()
+
+/** Bound each channel independently so stdout cannot crowd stderr out of the model view. */
+function streamExcerpt(text: string): { text: string; truncated: boolean } {
+  const limit = 1024
+  if (encoder.encode(JSON.stringify(text)).length <= limit) return { text, truncated: false }
+  const points = Array.from(text)
+  const excerpt = (count: number) => {
+    const tail = Math.floor(count / 4)
+    return `${points.slice(0, count - tail).join('')}\n[excerpt omitted]\n${tail ? points.slice(-tail).join('') : ''}`
+  }
+  let low = 0
+  let high = Math.min(points.length, limit)
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    if (encoder.encode(JSON.stringify(excerpt(middle))).length <= limit) low = middle
+    else high = middle - 1
+  }
+  return { text: excerpt(low), truncated: true }
+}
 
 /** Only the private observer's exact metadata object can attest process completion. */
 export function observedBuiltinProcessDisposition(
@@ -29,6 +49,7 @@ export async function observeBuiltinProcess(
   let timedOut: boolean | null = null
   let signal: string | null = null
   let terminatedNormally = false
+  let process: Record<string, JsonValue> | undefined
   const scoped: ToolContext = {
     ...context,
     async exec(argv, options) {
@@ -58,6 +79,27 @@ export async function observeBuiltinProcess(
         argv[0] === '$SHELL' &&
         argv[1] === intent.arguments.command &&
         options?.cwd === (intent.arguments.cwd ?? context.cwd)
+      if (
+        foreground &&
+        execCalls === 1 &&
+        argv.length === 2 &&
+        argv[0] === '$SHELL' &&
+        argv[1] === intent.arguments.command &&
+        options?.cwd === (intent.arguments.cwd ?? context.cwd)
+      ) {
+        const stdout = streamExcerpt(receipt.stdout)
+        const stderr = streamExcerpt(receipt.stderr)
+        process = {
+          exitCode: code,
+          timedOut,
+          signal,
+          stdout: stdout.text,
+          stderr: stderr.text,
+          outputTruncated: typeof receipt.truncated === 'boolean' ? receipt.truncated : null,
+          stdoutExcerptTruncated: stdout.truncated,
+          stderrExcerptTruncated: stderr.truncated,
+        }
+      }
       return receipt
     },
   }
@@ -84,5 +126,25 @@ export async function observeBuiltinProcess(
     }),
   })
   observed.set(meta, { intentDigest, disposition })
-  return { result, meta }
+  return {
+    result:
+      process === undefined || execCalls !== 1 || 'deferred' in result
+        ? result
+        : {
+            ...result,
+            structured: {
+              codec: 'agnes-host-tool-fact-v1',
+              tool: 'shell',
+              process,
+              interpretation: { executionCompleted: true, verification: 'not_assessed' },
+              coverage: {
+                complete:
+                  process.outputTruncated === false &&
+                  process.stdoutExcerptTruncated === false &&
+                  process.stderrExcerptTruncated === false,
+              },
+            },
+          },
+    meta,
+  }
 }

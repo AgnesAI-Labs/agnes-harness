@@ -1,3 +1,5 @@
+// JEV-GENERAL-PROMPT: exact-template Host profile and bounded environment facts;
+// generic stage/evidence rules, Native templates preserved; structured shell execution facts and stage-wide verification guidance; exact Host count 52934, no headroom.
 // JEV-TOOL-MOUNT: reviewed six-tool session registry, live owner replacement and attestation;
 // Native registry unchanged; exact Host source count 52821, no headroom or exclusions.
 // JEV-FOREGROUND-EXIT: reviewed Host-owned normal-exit receipts for builtin shell,
@@ -233,7 +235,8 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // remeasured against the resolved tree with this guard's own countLines() implementation.
 const INITIAL_CEILING: Record<string, number> = {
   'packages/jev-trace/src': 734,
-  'packages/jev-runtime/src': 5192,
+  // JEV-ARGUMENT-REPAIR: durable three-attempt schema correction and causal selection replay; exact count, no spare.
+  'packages/jev-runtime/src': 5554,
   // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
   // shared tree (concurrent laya-config work included), no spare.
   'packages/runtime-comparison/src': 1594,
@@ -244,7 +247,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // JEV-STAGE-MODELS 2026-10-09: per-purpose LanguageHost selection/sampling; 1355 -> 1358 mine, then
   // re-measured 1433 after the concurrent laya-config model/provenance work landed in the same tree.
   // JEV-LANGUAGE-PROJECTION: independently reviewed stable prefix/provenance; exact count, no spare.
-  'packages/runtime-jev/src': 1450,
+  // JEV-ARGUMENT-REPAIR: full rejected-call evidence, argument-only lock and native repair provenance; exact count, no spare.
+  'packages/runtime-jev/src': 1528,
   // JEV-STAGE-MODELS 2026-10-09: decisionBackends mutable to match the regenerated protocol type.
   'packages/runtime-api/src': 210,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
@@ -1062,7 +1066,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 4138 -> 4393, exact; no exclusions or spare.
-  'packages/ai/src': 4393,
+  // PI-HTTP-DEADLINES: per-request idle policy and allowlisted transport-cause capture; exact count, no spare.
+  'packages/ai/src': 4503,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -2648,7 +2653,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // CUSTOM-PRICE-REFRESH: existing-account metadata refresh adds exact +26; no spare.
   // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
   // shared tree (concurrent laya-config work included), no spare.
-  'packages/host/src': 52821,
+  'packages/host/src': 52934,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

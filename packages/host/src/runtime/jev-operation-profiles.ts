@@ -32,10 +32,13 @@ const guidance: Record<string, Guidance> = {
     selection: 'Run commands, builds, tests or process operations in the session shell.',
     phases: ['INSPECT', 'ACT', 'VERIFY'],
     inputs: 'command; optional cwd, timeoutMs and background',
-    result: 'Captured output and exit status, an output artifact, or background job submission.',
+    result:
+      'Captured stdout, stderr and process exit status with coverage, an output artifact, or background job submission. These are execution facts, not a verification verdict.',
     constraints: [
       'Prefer read/find/grep/ls/write/edit for their dedicated file operations.',
       'A submitted background job is not completion; verify its actual result. Output truncation limits evidence.',
+      'Exit zero does not establish that a check ran or passed. Interpret stderr; warnings and expected probe failures are not automatically errors.',
+      'Distinguish expected negative results from execution errors. Do not hide a failed check with an unconditional success fallback; use available tools to recheck or report the unverified scope.',
     ],
   },
   skill_read: {

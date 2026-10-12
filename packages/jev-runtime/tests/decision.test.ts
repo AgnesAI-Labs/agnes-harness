@@ -385,6 +385,11 @@ describe('shared tool catalog and conditional questions', () => {
       'state.rules',
       'state.operations',
       'do not assume another answer',
+      'execution or exit code 0 does not establish that a check passed',
+      'Missing check tools, unexecuted checks, incomplete or clipped coverage',
+      'Stderr alone is not failure',
+      'negative results can be expected when the check ran correctly',
+      'do not use an unconditional success fallback',
     ])
       expect(DECISION_GUIDANCE).toContain(required)
     for (const value of Object.values(surface.questions)) {

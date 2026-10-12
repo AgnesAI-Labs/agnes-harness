@@ -3,6 +3,54 @@ import { type AssistantMessage, isContextOverflow } from '@earendil-works/pi-ai'
 
 export type Classified = { code: AiErrorCode; message: string; retryable: boolean; retryAfterMs?: number }
 
+/** Optional transport facts; only exact known codes and names may reach the stored diagnosis. */
+export type PiTransportFailure = { code?: string; name?: string }
+
+const TRANSPORT_CODES = new Map<string, AiErrorCode>([
+  ...['UND_ERR_BODY_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT'].map(
+    (code): [string, AiErrorCode] => [code, 'TIMEOUT'],
+  ),
+  ...[
+    'UND_ERR_SOCKET',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'ECONNABORTED',
+    'EPIPE',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ENETUNREACH',
+    'EHOSTUNREACH',
+  ].map((code): [string, AiErrorCode] => [code, 'TRANSPORT']),
+])
+const TRANSPORT_NAMES = new Map<string, AiErrorCode>([
+  ['BodyTimeoutError', 'TIMEOUT'],
+  ['HeadersTimeoutError', 'TIMEOUT'],
+  ['ConnectTimeoutError', 'TIMEOUT'],
+  ['APIConnectionTimeoutError', 'TIMEOUT'],
+  ['SocketError', 'TRANSPORT'],
+  ['APIConnectionError', 'TRANSPORT'],
+])
+
+/** Keep bounded, allowlisted facts before a provider SDK discards the original cause chain. */
+export function piTransportFailure(error: unknown): PiTransportFailure | undefined {
+  const seen = new Set<object>()
+  const result: PiTransportFailure = {}
+  let current = error
+  for (let depth = 0; depth < 8 && current !== null && typeof current === 'object'; depth++) {
+    if (seen.has(current)) break
+    seen.add(current)
+    try {
+      const cause = current as { code?: unknown; name?: unknown; cause?: unknown }
+      if (typeof cause.code === 'string' && TRANSPORT_CODES.has(cause.code)) result.code = cause.code
+      if (typeof cause.name === 'string' && TRANSPORT_NAMES.has(cause.name)) result.name = cause.name
+      current = cause.cause
+    } catch {
+      break
+    }
+  }
+  return result.code || result.name ? result : undefined
+}
+
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
  * authentication failure that also mentions a 500 is an authentication failure, and reading it the
@@ -32,19 +80,42 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
  * what separates an overflow a provider spelled out - which the patterns catch on their own - from
  * one it never mentioned, where the only signal is that the input filled the declared window.
  */
-export function classifyPiError(msg: AssistantMessage, contextWindow?: number): Classified {
+export function classifyPiError(
+  msg: AssistantMessage,
+  contextWindow?: number,
+  transportFailure?: PiTransportFailure,
+): Classified {
   if (msg.stopReason === 'aborted') return { code: 'ABORTED', message: 'aborted', retryable: false }
   const text = msg.errorMessage ?? ''
-  if (isContextOverflow(msg, contextWindow))
-    return { code: 'OVERFLOW', message: redact(text), retryable: false }
+  const transportCode =
+    typeof transportFailure?.code === 'string' && TRANSPORT_CODES.has(transportFailure.code)
+      ? transportFailure.code
+      : undefined
+  const cause =
+    typeof transportFailure?.name === 'string' && TRANSPORT_NAMES.has(transportFailure.name)
+      ? transportFailure.name
+      : undefined
+  const message = [
+    redact(text),
+    ...(transportCode ? [`transportCode=${transportCode}`] : []),
+    ...(cause ? [`cause=${cause}`] : []),
+  ].join(' ')
+  if (isContextOverflow(msg, contextWindow)) return { code: 'OVERFLOW', message, retryable: false }
   for (const [re, code, retryable] of TABLE) {
     if (re.test(text)) {
-      const c: Classified = { code, message: redact(text), retryable }
+      const c: Classified = { code, message, retryable }
       if (code === 'RATE_LIMIT') c.retryAfterMs = retryAfterMs(text)
       return c
     }
   }
-  return { code: 'TRANSPORT', message: redact(text), retryable: false }
+  if (/^(?:Error: )?Provider finish_reason: network_error$/.test(text.trim()))
+    return { code: 'TRANSPORT', message: `${message} reason=provider_network_error`, retryable: true }
+  if (/^(?:Error: )?Stream ended without finish_reason$/.test(text.trim()))
+    return { code: 'TRANSPORT', message: `${message} reason=stream_incomplete`, retryable: true }
+  const code =
+    (transportCode ? TRANSPORT_CODES.get(transportCode) : undefined) ??
+    (cause ? TRANSPORT_NAMES.get(cause) : undefined)
+  return { code: code ?? 'TRANSPORT', message, retryable: code !== undefined }
 }
 
 /** What the far end asked us to wait, when it said; a second otherwise. */

@@ -1,6 +1,6 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
-import { classifyPiError } from '../src/adapters/pi/errors.js'
+import { classifyPiError, type PiTransportFailure, piTransportFailure } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
@@ -44,6 +44,10 @@ describe('classifyPiError', () => {
     ['503 Service Unavailable', 'TRANSPORT', true, undefined],
     ['ECONNRESET', 'TRANSPORT', true, undefined],
     ['weird failure', 'TRANSPORT', false, undefined],
+    ['Provider finish_reason: network_error', 'TRANSPORT', true, undefined],
+    ['Stream ended without finish_reason', 'TRANSPORT', true, undefined],
+    ['Error: Stream ended without finish_reason', 'TRANSPORT', true, undefined],
+    ['Provider finish_reason: unknown', 'TRANSPORT', false, undefined],
   ] as const)('%s -> %s', (text, code, retryable, retryAfterMs) => {
     const c = classifyPiError(msg(text))
     expect(c.code).toBe(code)
@@ -52,6 +56,96 @@ describe('classifyPiError', () => {
     // The provider's own words are never forwarded; a key quoted back in an error message would
     // otherwise land in an event that is stored and displayed.
     expect(c.message).not.toContain('sk-abc')
+  })
+
+  it.each([
+    ['UND_ERR_BODY_TIMEOUT', 'BodyTimeoutError', 'TIMEOUT'],
+    ['UND_ERR_HEADERS_TIMEOUT', 'HeadersTimeoutError', 'TIMEOUT'],
+    ['UND_ERR_CONNECT_TIMEOUT', 'ConnectTimeoutError', 'TIMEOUT'],
+    ['ETIMEDOUT', undefined, 'TIMEOUT'],
+    ['UND_ERR_SOCKET', 'SocketError', 'TRANSPORT'],
+    ['ECONNRESET', undefined, 'TRANSPORT'],
+    ['ENOTFOUND', undefined, 'TRANSPORT'],
+    [undefined, 'APIConnectionTimeoutError', 'TIMEOUT'],
+    [undefined, 'APIConnectionError', 'TRANSPORT'],
+  ] as const)('keeps safe transport facts for %s / %s', (transportCode, name, code) => {
+    const c = classifyPiError(msg('socket failed: https://private.invalid sk-secret'), undefined, {
+      ...(transportCode ? { code: transportCode } : {}),
+      ...(name ? { name } : {}),
+    })
+    expect(c).toEqual({
+      code,
+      retryable: true,
+      message: [
+        'status=?',
+        ...(transportCode ? [`transportCode=${transportCode}`] : []),
+        ...(name ? [`cause=${name}`] : []),
+      ].join(' '),
+    })
+  })
+
+  it.each([
+    ['401 unauthorized', 'error', 'AUTH'],
+    ['402 insufficient credit', 'error', 'QUOTA'],
+    ['Unexpected token in JSON', 'error', 'FORMAT'],
+    ["This model's maximum context length is 8192 tokens", 'error', 'OVERFLOW'],
+    ['401 unauthorized', 'aborted', 'ABORTED'],
+  ] as const)('preserves %s / %s priority over a transport cause', (text, stopReason, code) => {
+    const c = classifyPiError(msg(text, stopReason), 8192, {
+      code: 'UND_ERR_BODY_TIMEOUT',
+      name: 'BodyTimeoutError',
+    })
+    expect(c).toMatchObject({ code, retryable: false })
+    if (code === 'ABORTED') expect(c.message).toBe('aborted')
+  })
+
+  it.each([
+    { code: 'UND_ERR_BODY_TIMEOUT sk-secret', name: 'BodyTimeoutError https://private.invalid' },
+    { code: '__proto__', name: 'constructor' },
+    { code: 'UNKNOWN', name: 'TypeError' },
+  ] satisfies PiTransportFailure[])('discards unknown transport facts: %j', (failure) => {
+    expect(classifyPiError(msg('unclassified failure sk-secret'), undefined, failure)).toEqual({
+      code: 'TRANSPORT',
+      retryable: false,
+      message: 'status=?',
+    })
+  })
+
+  it.each([
+    ['Provider finish_reason: network_error', 'provider_network_error'],
+    ['Stream ended without finish_reason', 'stream_incomplete'],
+  ])('retains a safe SDK terminal reason for %s', (text, reason) => {
+    expect(classifyPiError(msg(text))).toEqual({
+      code: 'TRANSPORT',
+      retryable: true,
+      message: `status=? reason=${reason}`,
+    })
+    expect(classifyPiError(msg(`${text} sk-secret`))).toEqual({
+      code: 'TRANSPORT',
+      retryable: false,
+      message: 'status=?',
+    })
+  })
+
+  it('extracts only bounded known cause facts, including cyclic or hostile error objects', () => {
+    const cause = Object.assign(new Error('https://private.invalid token=sk-secret'), {
+      name: 'BodyTimeoutError',
+      code: 'UND_ERR_BODY_TIMEOUT',
+    })
+    expect(piTransportFailure(new TypeError('terminated', { cause }))).toEqual({
+      code: 'UND_ERR_BODY_TIMEOUT',
+      name: 'BodyTimeoutError',
+    })
+    const cyclic = { code: 'sk-secret', name: 'private-secret', cause: {} as unknown }
+    cyclic.cause = cyclic
+    expect(piTransportFailure(cyclic)).toBeUndefined()
+    expect(
+      piTransportFailure({
+        get code() {
+          throw new Error('sk-secret')
+        },
+      }),
+    ).toBeUndefined()
   })
 
   it('maps context overflow and abort', () => {

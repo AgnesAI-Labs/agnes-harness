@@ -2,6 +2,12 @@
 
 import { AcceptedAnswers } from './accepted-answers.js'
 import {
+  type ArgumentRepair,
+  MAX_ARGUMENT_REPAIRS,
+  pendingArgumentRepair,
+  proposedArguments,
+} from './argument-repair.js'
+import {
   candidateSourcesVisible,
   isCandidateDiagnostic,
   validCandidateEvidence,
@@ -53,7 +59,7 @@ import type {
   TurnId,
 } from './types.js'
 
-const VERSION = '5'
+const VERSION = '6'
 const MAX_CONCURRENT_READS = 4
 
 /** A selected operation or durable prefix cannot safely continue. */
@@ -925,15 +931,201 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         }
       }
     }
+    type AuthoredResult = Awaited<ReturnType<typeof helper>> & {
+      parsed: ReturnType<typeof parseProposal>
+      argumentRepair?: RecordId
+    }
+    class InvalidProposal extends Error {
+      constructor(
+        readonly result: Awaited<ReturnType<typeof helper>>,
+        message: string,
+      ) {
+        super(message)
+      }
+    }
+    const preflightProposal = async (
+      result: Awaited<ReturnType<typeof helper>>,
+      locked?: string,
+    ): Promise<ReturnType<typeof parseProposal>> => {
+      let parsed: ReturnType<typeof parseProposal>
+      try {
+        parsed = parseProposal(result.settlement.output, tools, locked)
+      } catch (error) {
+        if (!(error instanceof RuntimeFault)) throw error
+        throw new InvalidProposal(result, error.message)
+      }
+      const calls = parsed.kind === 'calls' ? parsed.calls : parsed.kind === 'call' ? [parsed] : []
+      for (const call of calls) await ports.environment.validate(call.tool, call.arguments)
+      return parsed
+    }
+    const repairRecord = async (resource: JsonValue): Promise<void> => {
+      await write('resource.observed', turn, { resource }, step)
+    }
+    const rejectArguments = async (
+      result: Awaited<ReturnType<typeof helper>>,
+      error: Error,
+      previous?: ArgumentRepair,
+      proposal: RecordId = result.request.id,
+    ): Promise<ArgumentRepair> => {
+      await repairRecord({
+        kind: 'jev.argument-repair.v1',
+        phase: 'rejected',
+        root: previous?.root ?? result.request.id,
+        requested: result.request.id,
+        proposal,
+        error: { code: 'INVALID_TOOL_ARGUMENTS', message: error.message },
+      })
+      const pending = pendingArgumentRepair(records, turn)
+      if (!pending) throw new RuntimeFault('Argument rejection has no pending repair')
+      return pending
+    }
+    const correctArguments = async (initial: ArgumentRepair): Promise<AuthoredResult> => {
+      let pending = initial
+      const proposal = records.findLast(
+        (record): record is Extract<RuntimeRecord, { kind: 'resource.observed' }> =>
+          record.kind === 'resource.observed' &&
+          record.resource !== null &&
+          typeof record.resource === 'object' &&
+          !Array.isArray(record.resource) &&
+          record.resource.kind === 'jev.argument-repair.v1' &&
+          record.resource.phase === 'rejected' &&
+          record.resource.root === pending.root,
+      )?.resource
+      let proposalId =
+        proposal !== null && typeof proposal === 'object' && !Array.isArray(proposal)
+          ? ((proposal.proposal as RecordId | undefined) ?? pending.requested)
+          : pending.requested
+      for (;;) {
+        while (pending.attempt < MAX_ARGUMENT_REPAIRS) {
+          await repairRecord({
+            kind: 'jev.argument-repair.v1',
+            phase: 'requested',
+            root: pending.root,
+            requested: pending.requested,
+            attempt: pending.attempt + 1,
+          })
+          const next = pendingArgumentRepair(records, turn)
+          if (!next) throw new RuntimeFault('Argument repair request has no pending rejection')
+          pending = next
+          const attempt = attemptNumber()
+          const result = {
+            ...(await model(
+              'parameters',
+              {
+                purpose: 'parameters',
+                state: stateInput,
+                tools,
+                history,
+                records: [...records],
+                inputCursor,
+                argumentRepair: pending,
+              },
+              turn,
+              step,
+              attempt,
+            )),
+            attempt,
+          }
+          const error = result.settlement.error
+          if (
+            error &&
+            (!error.retryable || !['LANGUAGE_INVALID_JSON', 'LANGUAGE_TOOL_CALL'].includes(error.code))
+          )
+            languageFailure('parameters', error)
+          try {
+            if (error) throw new RuntimeFault(error.message)
+            const calls = proposedArguments(result.settlement.output)
+            if (
+              calls.length !== pending.calls.length ||
+              calls.some((call, index) => call.name !== pending.calls[index]?.name)
+            )
+              throw new RuntimeFault('Argument repair must preserve call count, order and tool names')
+            proposalId = result.request.id
+            const parsed = await preflightProposal(result)
+            if (parsed.kind !== 'call' && parsed.kind !== 'calls')
+              throw new RuntimeFault('Argument repair requires tool calls')
+            await repairRecord({
+              kind: 'jev.argument-repair.v1',
+              phase: 'accepted',
+              root: pending.root,
+              requested: result.request.id,
+            })
+            return { ...result, parsed, argumentRepair: pending.root }
+          } catch (error) {
+            if (
+              !(error instanceof RuntimeFault) &&
+              !(error instanceof InvalidProposal) &&
+              !(error instanceof InvalidAuthoredArguments)
+            ) {
+              // A malformed proposal is a repair refusal; untyped Host errors remain terminal.
+              try {
+                proposedArguments(result.settlement.output)
+              } catch {
+                pending = await rejectArguments(
+                  result,
+                  new RuntimeFault('Argument repair requires a complete tool proposal'),
+                  pending,
+                  proposalId,
+                )
+                continue
+              }
+              throw error
+            }
+            pending = await rejectArguments(result, error, pending, proposalId)
+          }
+        }
+        const result = await helper({
+          purpose: 'arbitration',
+          state: stateInput,
+          tools,
+          history,
+          records: [...records],
+          inputCursor,
+          argumentRepair: pending,
+          ...(recovery ? { recovery: { intentIds: [...state.unresolved] } } : {}),
+        })
+        await repairRecord({
+          kind: 'jev.argument-repair.v1',
+          phase: 'arbitrated',
+          root: pending.root,
+          requested: result.request.id,
+        })
+        try {
+          return { ...result, parsed: await preflightProposal(result) }
+        } catch (error) {
+          if (!(error instanceof InvalidAuthoredArguments)) throw error
+          pending = await rejectArguments(result, error)
+          proposalId = result.request.id
+        }
+      }
+    }
+    const authoredProposal = async (
+      input: LanguageInput & { purpose: 'parameters' | 'arbitration' },
+      locked?: string,
+    ): Promise<AuthoredResult> => {
+      const pending = pendingArgumentRepair(records, turn)
+      if (pending) return correctArguments(pending)
+      const result = await helper(input)
+      try {
+        return { ...result, parsed: await preflightProposal(result, locked) }
+      } catch (error) {
+        if (!(error instanceof InvalidAuthoredArguments)) throw error
+        return correctArguments(await rejectArguments(result, error))
+      }
+    }
+    const pendingRepair = pendingArgumentRepair(records, turn)
     const decisionInput: DecisionInput = {
       purpose: 'decision',
       state: projection.state,
       questions: surface.questions,
       inputCursor,
     }
-    const decisionAttempt = recovery || replan ? (id('inspection') as AttemptId) : attemptNumber()
+    const decisionAttempt =
+      recovery || replan || pendingRepair ? (id('inspection') as AttemptId) : attemptNumber()
     const decided =
-      recovery || replan ? undefined : await model('decision', decisionInput, turn, step, decisionAttempt)
+      recovery || replan || pendingRepair
+        ? undefined
+        : await model('decision', decisionInput, turn, step, decisionAttempt)
     if (decided?.settlement.error)
       throw new RuntimeFault(`Decision backend failed: ${decided.settlement.error.code}`)
     let selected: ReturnType<typeof parseDecision> | undefined
@@ -945,7 +1137,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       if (!(error instanceof InvalidDecision)) throw error
       invalidDecision = error.message
     }
-    if (!recovery && !replan && selected === undefined && decided) {
+    if (!recovery && !replan && !pendingRepair && selected === undefined && decided) {
       await feedback(
         turn,
         step,
@@ -962,7 +1154,15 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       selected?.kind === 'tool' ? tools.find((item) => item.name === selected.operation) : undefined
     const reasons = selected
       ? [...operationGateReasons(selected, selectedTool, config, recoverable)]
-      : [recovery ? 'unresolved_effect' : replan ? 'effect_reconciled_replan' : 'invalid_decision']
+      : [
+          recovery
+            ? 'unresolved_effect'
+            : pendingRepair
+              ? 'argument_repair'
+              : replan
+                ? 'effect_reconciled_replan'
+                : 'invalid_decision',
+        ]
     const describeObservation = ports.decisionContext.describeObservation?.bind(ports.decisionContext)
     const checkpoint =
       !recovery && config.responseReviewMode === 'review'
@@ -1043,6 +1243,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           requested: RecordId
           attempt: AttemptId
           parameterDecision?: Extract<RuntimeRecord, { kind: 'decision.selected' }>
+          argumentRepair?: RecordId
         }
       | undefined
     let batchInterrupted = false
@@ -1062,6 +1263,77 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           },
         },
         step,
+      )
+    }
+    const adoptAuthored = async (
+      result: AuthoredResult,
+      original?: Extract<RuntimeRecord, { kind: 'decision.selected' }>,
+    ): Promise<typeof chosen | undefined> => {
+      let parsed = result.parsed
+      const { request, attempt, argumentRepair } = result
+      if (parsed.kind === 'cannot_bind') {
+        await feedback(
+          turn,
+          step,
+          attempt,
+          request.id,
+          'BINDING_DECLINED',
+          request.call.purpose === 'parameters' ? 'parameters' : 'arbitration',
+          selected?.operation ?? null,
+          parsed.reason,
+        )
+        return undefined
+      }
+      const parameterDecision =
+        request.call.purpose === 'parameters' && !argumentRepair ? original : undefined
+      if (parsed.kind === 'calls') {
+        batch = {
+          calls: parsed.calls,
+          requested: request.id,
+          attempt,
+          ...(parameterDecision ? { parameterDecision } : {}),
+          ...(argumentRepair ? { argumentRepair } : {}),
+        }
+        parsed = parsed.calls[0]!
+      }
+      if (!parameterDecision) {
+        if (parsed.kind === 'answer' && parsed.content !== undefined) {
+          await acceptReview('allow_response')
+          reviewed = false
+        }
+        decisionRecord = await write(
+          'decision.selected',
+          turn,
+          {
+            requested: request.id,
+            phase: parsed.kind === 'answer' ? 'RESPOND' : 'UNSPECIFIED',
+            operation: parsed.kind === 'answer' ? 'RESPOND' : parsed.tool.name,
+            source: argumentRepair ? 'llm_parameters' : 'llm_arbitration',
+            ...(batch || argumentRepair ? { callIndex: 0 } : {}),
+            ...(argumentRepair ? { argumentRepair } : {}),
+            ...(escalation ? { escalation } : {}),
+          },
+          step,
+          attempt,
+        )
+      }
+      return parsed.kind === 'call'
+        ? { ...parsed, authoredRequest: request.id, authoredAttempt: attempt }
+        : parsed
+    }
+    const proposalFeedback = async (error: unknown): Promise<void> => {
+      if (!(error instanceof InvalidProposal)) throw error
+      const result = error.result
+      const stage = result.request.call.purpose === 'parameters' ? 'parameters' : 'arbitration'
+      await feedback(
+        turn,
+        step,
+        result.attempt,
+        result.request.id,
+        stage === 'parameters' ? 'INVALID_PARAMETERS' : 'INVALID_ARBITRATION',
+        stage,
+        selected?.operation ?? null,
+        error.message,
       )
     }
     if (escalation) {
@@ -1109,67 +1381,23 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         records: [...records],
         inputCursor,
       }
-      const { request, settlement, attempt } = await helper(input)
-      let parsed: ReturnType<typeof parseProposal>
+      let result: AuthoredResult
       try {
-        parsed = parseProposal(settlement.output, tools)
-        if (recovery && parsed.kind === 'answer')
-          throw new RuntimeFault('Uncertain effects require read-only inspection, not a final answer')
-        // Validate the complete proposal before allowing even the first side effect.
-        if (parsed.kind === 'calls')
-          for (const call of parsed.calls) await ports.environment.validate(call.tool, call.arguments)
+        result = await authoredProposal(input)
+        if (recovery && result.parsed.kind === 'answer')
+          throw new InvalidProposal(
+            result,
+            'Uncertain effects require read-only inspection, not a final answer',
+          )
       } catch (error) {
-        if (!(error instanceof RuntimeFault) && !(error instanceof InvalidAuthoredArguments)) throw error
-        await feedback(
-          turn,
-          step,
-          attempt,
-          request.id,
-          'INVALID_ARBITRATION',
-          'arbitration',
-          selected?.operation ?? null,
-          error.message,
-        )
+        await proposalFeedback(error)
         return 'no_progress'
       }
-      if (parsed.kind === 'calls') {
-        batch = { calls: parsed.calls, requested: request.id, attempt }
-        parsed = parsed.calls[0]!
-      }
-      if (parsed.kind === 'cannot_bind') {
-        await feedback(
-          turn,
-          step,
-          attempt,
-          request.id,
-          'BINDING_DECLINED',
-          'arbitration',
-          selected?.operation ?? null,
-          parsed.reason,
-        )
-        return 'no_progress'
-      }
-      if (parsed.kind === 'answer' && reviewState?.accepted === 'continue_call') return 'review_stalled'
-      chosen =
-        parsed.kind === 'call' ? { ...parsed, authoredRequest: request.id, authoredAttempt: attempt } : parsed
-      if (parsed.kind === 'answer' && parsed.content !== undefined) {
-        await acceptReview('allow_response')
-        reviewed = false
-      }
-      decisionRecord = await write(
-        'decision.selected',
-        turn,
-        {
-          requested: request.id,
-          phase: parsed.kind === 'answer' ? 'RESPOND' : 'UNSPECIFIED',
-          operation: parsed.kind === 'answer' ? 'RESPOND' : parsed.tool.name,
-          source: 'llm_arbitration',
-          ...(batch === undefined ? {} : { callIndex: 0 }),
-          escalation,
-        },
-        step,
-        attempt,
-      )
+      if (result.parsed.kind === 'answer' && reviewState?.accepted === 'continue_call')
+        return 'review_stalled'
+      const adopted = await adoptAuthored(result)
+      if (!adopted) return 'no_progress'
+      chosen = adopted
     } else if (selected?.kind === 'respond') {
       chosen = { kind: 'answer' }
     } else if (selectedTool && selected && decided) {
@@ -1222,50 +1450,19 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           records: [...records],
           inputCursor,
         }
-        const result = await helper(input)
-        let parsed: ReturnType<typeof parseProposal>
+        let result: AuthoredResult
         try {
-          parsed = parseProposal(result.settlement.output, tools, selectedTool.name)
-          if (parsed.kind === 'calls')
-            for (const call of parsed.calls) await ports.environment.validate(call.tool, call.arguments)
+          result = await authoredProposal(input, selectedTool.name)
         } catch (error) {
-          if (!(error instanceof RuntimeFault) && !(error instanceof InvalidAuthoredArguments)) throw error
-          await feedback(
-            turn,
-            step,
-            result.attempt,
-            result.request.id,
-            'INVALID_PARAMETERS',
-            'parameters',
-            selectedTool.name,
-            error.message,
-          )
+          await proposalFeedback(error)
           return 'no_progress'
         }
-        if (parsed.kind === 'calls') {
-          if (decisionRecord?.kind !== 'decision.selected') throw new RuntimeFault('Missing parameter lock')
-          batch = {
-            calls: parsed.calls,
-            requested: result.request.id,
-            attempt: result.attempt,
-            parameterDecision: decisionRecord,
-          }
-          parsed = parsed.calls[0]!
-        }
-        if (parsed.kind !== 'call') {
-          await feedback(
-            turn,
-            step,
-            result.attempt,
-            result.request.id,
-            'BINDING_DECLINED',
-            'parameters',
-            selectedTool.name,
-            parsed.kind === 'cannot_bind' ? parsed.reason : 'Parameter helper did not return a call',
-          )
-          return 'no_progress'
-        }
-        chosen = { ...parsed, authoredRequest: result.request.id, authoredAttempt: result.attempt }
+        if (result.parsed.kind === 'answer' && reviewState?.accepted === 'continue_call')
+          return 'review_stalled'
+        if (decisionRecord?.kind !== 'decision.selected') throw new RuntimeFault('Missing parameter lock')
+        const adopted = await adoptAuthored(result, decisionRecord)
+        if (!adopted) return 'no_progress'
+        chosen = adopted
       }
     } else throw new RuntimeFault('Selected operation has no current tool')
 
@@ -1525,7 +1722,8 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           requested: batch.requested,
           phase: original?.phase ?? 'UNSPECIFIED',
           operation: call.tool.name,
-          source: original ? 'jev' : 'llm_arbitration',
+          source: original ? 'jev' : batch.argumentRepair ? 'llm_parameters' : 'llm_arbitration',
+          ...(batch.argumentRepair ? { argumentRepair: batch.argumentRepair } : {}),
           ...(original ? { parameterDecision: original.id, confidence: original.confidence } : {}),
           callIndex: index,
           ...(escalation === undefined ? {} : { escalation }),

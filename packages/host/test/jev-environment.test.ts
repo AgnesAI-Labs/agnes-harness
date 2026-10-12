@@ -217,6 +217,10 @@ describe('Jev Host execution environment', () => {
   it.each([
     'nonzero',
     'zero',
+    'masked-zero',
+    'warning-zero',
+    'large-output',
+    'upstream-truncated',
     'timeout',
     'signal',
     'cancel',
@@ -235,16 +239,37 @@ describe('Jev Host execution environment', () => {
     async (mode) => {
       const controller = new AbortController()
       let execCalls = 0
+      const successful = [
+        'zero',
+        'masked-zero',
+        'warning-zero',
+        'large-output',
+        'upstream-truncated',
+      ].includes(mode)
+      const stdout =
+        mode === 'large-output'
+          ? '文🙂\\'.repeat(1000)
+          : mode === 'masked-zero'
+            ? 'No matches found'
+            : 'synthetic compiler output'
+      const stderr =
+        mode === 'masked-zero'
+          ? 'sh: 1: check-tool: not found'
+          : mode === 'warning-zero'
+            ? 'warning: optional diagnostics unavailable'
+            : mode === 'large-output'
+              ? `${'文🙂\\'.repeat(1000)}diagnostic at end`
+              : ''
       const seams = fakeSeams({
         sandbox: {
           exec: async () => {
             execCalls++
             if (mode === 'cancel') controller.abort(new Error('caller stopped'))
             return {
-              code: mode === 'zero' ? 0 : 1,
-              stdout: 'synthetic compiler output',
-              stderr: '',
-              truncated: false,
+              code: successful ? 0 : 1,
+              stdout,
+              stderr,
+              truncated: mode === 'upstream-truncated',
               ...(mode === 'missing-attestation' ? {} : { timedOut: mode === 'timeout' }),
               ...(mode === 'signal' ? { signal: 'SIGTERM' } : {}),
             }
@@ -334,9 +359,42 @@ describe('Jev Host execution environment', () => {
         }
         expect(await h.environment.prepare(h.intent, controller.signal)).toEqual({ kind: 'ready' })
         const outcome = await h.dispatch(controller.signal)
-        const normal = mode === 'nonzero' || mode === 'zero'
-        expect(outcome.effect).toBe(normal ? 'acknowledged' : 'unknown')
-        expect(outcome.kind).toBe(mode === 'zero' ? 'success' : mode === 'cancel' ? 'cancelled' : 'error')
+        const normal = mode === 'nonzero' || successful
+        expect(outcome.effect, JSON.stringify(outcome).slice(0, 2200)).toBe(
+          normal ? 'acknowledged' : 'unknown',
+        )
+        expect(outcome.kind).toBe(successful ? 'success' : mode === 'cancel' ? 'cancelled' : 'error')
+        if (normal) {
+          expect(outcome.value).toMatchObject({
+            codec: 'agnes-host-tool-fact-v1',
+            tool: 'shell',
+            process: {
+              exitCode: successful ? 0 : 1,
+              timedOut: false,
+              signal: null,
+              outputTruncated: mode === 'upstream-truncated',
+              stdoutExcerptTruncated: mode === 'large-output',
+              stderrExcerptTruncated: mode === 'large-output',
+            },
+            interpretation: { executionCompleted: true, verification: 'not_assessed' },
+            coverage: { complete: !['large-output', 'upstream-truncated'].includes(mode) },
+          })
+          const process = (outcome.value as { process: { stdout: string; stderr: string } }).process
+          if (mode === 'large-output') {
+            for (const channel of [process.stdout, process.stderr]) {
+              expect(new TextEncoder().encode(JSON.stringify(channel)).length).toBeLessThanOrEqual(1024)
+              expect(channel).not.toMatch(
+                /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u,
+              )
+            }
+            expect(process.stderr).toContain('diagnostic at end')
+          } else expect(process).toMatchObject({ stdout, stderr })
+          const observations = createJevToolSemantics({
+            session: h.session,
+            ledger: h.ledger,
+          }).semantics.observations(h.tool, outcome, h.intent)
+          expect(observations).toMatchObject([{ kind: 'agnes.process', data: outcome.value }])
+        }
         if (mode === 'nonzero') {
           expect(outcome.effectEvidence).toMatchObject({
             phase: 'responded',
