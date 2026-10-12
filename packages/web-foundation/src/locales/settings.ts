@@ -297,7 +297,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.saved.newSessions': '已保存；对新会话生效，已有会话保持原配置。',
     'settings.provider.subscriptionSuffix': ' · 订阅登录',
     'settings.oauth.methodLabel': '认证方式',
-    'settings.provider.label': '提供商',
+    'settings.provider.label': '服务商',
     'settings.model.thinkingLabel': '默认思考强度',
     'settings.modelPicker.default': '默认模型',
     'settings.appearance.skinListFailed': '皮肤清单读取失败。',
