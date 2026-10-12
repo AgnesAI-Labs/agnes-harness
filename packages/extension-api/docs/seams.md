@@ -2,6 +2,8 @@
 
 <!-- Handwritten contract reference; not managed by gen-docs. -->
 
+> 提供与选择方式已统一：七个 seam 是 provider 种类，用 `ctx.providers.register` 注册、用 `seams.<kind>: { provider, version? }` 选择，见 [Seam](../../../docs/extend/seams.zh-CN.md)。下文的「换实现」列沿用旧称（ledger 现为 billing，harness 已不是 seam），只讨论扩展代码能否在运行时调到它们。
+
 本文回答一个访问控制问题：**只用公开 `@agnes/extension-api` 的扩展，在运行时能亲手调哪些插座。**
 它不回答「插座由谁实现」——那是 `profile.seams.<name>` 选包的事，见 spec §1.3。
 

@@ -54,42 +54,9 @@ const fakeSkillRuntimeInput = (hexChar: string): SkillRuntimeInput => {
   }
 }
 
-// Every shipped template (templates/local-dev.yaml, templates/enterprise.yaml) routes almost every
-// seam to @agnes/base, the same package that bundles agnes/skills. managed-host's
-// own E_SEAM_IMMUTABLE guard (see managed-host.ts's `mutable()`, tested in
-// managed-host.test.ts: "protects the owning seam package even when its extension id differs")
-// refuses to revoke *any* extension owned by a package that supplies a seam, deliberately and by
-// package identity - not only the seam factory itself. Task 3 found this was a real conflict with
-// reloading agnes/mcp-client (retired in MCP rows step 4) and agnes/skills in a default deployment
-// (see task-3-report.md); Task 3b resolved it with a narrow allowlist naming exactly those extension
-// ids (see task-3b-report.md and the "reloads agnes/skills end-to-end under the real default
-// template" test below, which exercises the real unmodified template). The two tests immediately below still use this
-// seam-rerouted fixture on purpose: they isolate the reload *plumbing* question (manifest re-lookup,
-// spec reconstruction, fresh ecosystemContext, sequential revoke-then-load genuinely swapping the
-// registered set rather than appending to it) from the seam-immutability allowlist question, so a
-// regression in either one fails a different, more specific test.
-const SEAM_NAMES = [
-  'approval',
-  'checkpoint',
-  'billing',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-] as const
-
-/**
- * Reroutes every seam from @agnes/base to @agnes/code, so agnes/skills (bundled by @agnes/base)
- * is not seam-protected in this fixture.
- */
-const seamsOnCode = (
-  dataDir: string,
-): Pick<Parameters<typeof createTestHost>[0], 'profileInputs' | 'packages'> => {
-  const seamsImpl = fakeSeams({})
+/** Moves the local probe from @agnes/base to @agnes/code, so agnes/skills (bundled by @agnes/base) stays reloadable. */
+const seamsOnCode = (dataDir: string): Pick<Parameters<typeof createTestHost>[0], 'packages'> => {
   return {
-    profileInputs: {
-      user: { name: 'local-dev', seams: Object.fromEntries(SEAM_NAMES.map((n) => [n, '@agnes/code'])) },
-    },
     packages: {
       // One builtin package supplies the local probe; moving it keeps @agnes/base reloadable.
       '@agnes/base': { sandboxWorkspaceProbe: undefined } as never,
@@ -101,7 +68,6 @@ const seamsOnCode = (
           degraded: false,
           confine: ({ argv }) => argv,
         }),
-        seams: Object.fromEntries(SEAM_NAMES.map((n) => [n, async () => seamsImpl[n]])),
       },
     },
   }
