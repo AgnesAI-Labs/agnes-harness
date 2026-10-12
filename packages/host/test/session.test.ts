@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { stampFor } from '@agnes/ai/testkit'
 import { testFsPolicy } from '@agnes/core/testkit'
 import type { ToolContext } from '@agnes/extension-api'
+import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -465,19 +466,14 @@ describe('createSession', () => {
     expect(seen).toHaveLength(1)
     await host.close()
   })
-  it('refuses a billing override and accepts another per-session seam', async () => {
+  it.each(PINNED_SEAM_KINDS)('refuses a per-session %s object before opening', async (kind) => {
     const dataDir = tmp()
     const { host } = await createTestHost({ dataDir })
     const e = await refusal(
-      host.createSession({ cwd: dataDir, seams: { billing: {} } as unknown as Record<string, never> }),
+      host.createSession({ cwd: dataDir, seams: { [kind]: {} } as unknown as Record<string, never> }),
     )
     expect(e.code).toBe('E_SEAM_IMMUTABLE')
-    expect(e.detail.seam).toBe('billing')
-    const s = await host.createSession({
-      cwd: dataDir,
-      seams: { approval: { ask: async () => 'rejected' } },
-    })
-    expect(s.key).toBeDefined()
+    expect(e.detail.seam).toBe(kind)
     await host.close()
   })
 })

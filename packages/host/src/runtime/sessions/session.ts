@@ -9,6 +9,7 @@ import {
   type SessionWorkspaceLifecycle,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
+import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
@@ -39,6 +40,8 @@ import { replaySwitchesOnOpen, validateModelSwitch } from './session-switch.js'
  */
 export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 
+type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
+
 export type CreateSessionOptions = {
   loop?: LoopSelection
   key?: string
@@ -50,7 +53,8 @@ export type CreateSessionOptions = {
   credential?: unknown
   writerRunId?: string
   lane?: string
-  seams?: Partial<Omit<SeamImplementations, 'ledger'>>
+  /** Pinned seams are chosen by registered provider and repin only; a session cannot bring its own object. */
+  seams?: Partial<Omit<SeamImplementations, PinnedSeamKind>>
   /** Creates a durable immutable-prefix child through Core's existing fork primitive. */
   parent?: { key: string; boundarySeq: Seq }
   /** See core's SessionOptions: a new session opens without `session_start`. In-process only (import). */
@@ -398,9 +402,10 @@ export async function createSession(
   }
 
   // 4 key and per-session overrides
-  if (opts.seams && 'billing' in opts.seams)
-    throw new HostError('E_SEAM_IMMUTABLE', 'the billing seam cannot be overridden per session', {
-      detail: { seam: 'billing' },
+  const pinned = PINNED_SEAM_KINDS.find((kind) => opts.seams && kind in opts.seams)
+  if (pinned)
+    throw new HostError('E_SEAM_IMMUTABLE', `the ${pinned} seam cannot be overridden per session`, {
+      detail: { seam: pinned },
     })
   const key = opts.key ?? sessionKey(profile, actor, cwd)
   if (opts.binding && opts.binding.sessionKey !== key)
