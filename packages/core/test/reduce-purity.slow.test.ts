@@ -59,21 +59,21 @@ describe('a fold step never changes the state it was given', () => {
         const next = reduce(prev, row)
         expect(encode(prev), `row ${row.seq} (${row.type})`).toBe(before)
         // A table is either shared untouched or replaced by a copy; which one, the encoding above
-        // already proves safe. The chunked tables stay chunked whatever the row.
+        // already proves safe. The tool-call table stays chunked whatever the row.
         for (const [name, table] of tables(prev))
           expect(table, `${name} at row ${row.seq}`).toBe(was.get(name))
         expect(next.toolCalls).toBeInstanceOf(ChunkedMap)
-        expect(next.decisions).toBeInstanceOf(ChunkedMap)
         prev = next
       }
     },
     60_000,
   )
 
-  it('starts and forks with chunked growing tables', () => {
+  it('starts and forks with empty decision registers and chunked tool-call tables', () => {
     expect(initialState().toolCalls).toBeInstanceOf(ChunkedMap)
-    expect(initialState().decisions).toBeInstanceOf(ChunkedMap)
+    expect(initialState().registers.decisionStates.size).toBe(0)
     const state = foldEvents(toolHeavyLedger({ calls: 30 }))
+    const before = encode(state)
     const [first] = toolHeavyLedger({ calls: 1 })
     const forked = reduce(state, {
       ...(first as Event),
@@ -88,8 +88,10 @@ describe('a fold step never changes the state it was given', () => {
     } as Event)
     expect(forked.toolCalls).toBeInstanceOf(ChunkedMap)
     expect(forked.toolCalls.size).toBe(0)
-    expect(forked.decisions).toBeInstanceOf(ChunkedMap)
+    expect(forked.registers.decisionStates.size).toBe(0)
+    expect(state.registers.decisionStates.size).toBeGreaterThan(0)
     expect(state.toolCalls.size).toBe(30)
+    expect(encode(state)).toBe(before)
   })
 })
 
@@ -97,8 +99,10 @@ describe('the relation check simulates a batch without touching the live state',
   it('leaves the tracker state as it was, whether the batch passes or is refused', () => {
     const tracker = new StateTracker()
     const all = [...toolHeavyLedger({ calls: 1001 })]
-    const head = all.filter((row) => row.seq <= 19_000)
-    const rest = all.filter((row) => row.seq > 19_000)
+    const boundary = all.findIndex((row, index) => index > all.length / 2 && row.type === 'turn/start')
+    expect(boundary).toBeGreaterThan(0)
+    const head = all.slice(0, boundary)
+    const rest = all.slice(boundary)
     tracker.apply(head)
     const state = tracker.state
     const before = encode(state)

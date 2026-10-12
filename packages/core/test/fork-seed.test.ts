@@ -188,7 +188,6 @@ describe('the parent keeps a fork point', () => {
 
   it('at the trigger of a verifier continuation', async () => {
     let checks = 0
-    let receipt: { requestId: string; bindingHash: string; expiresAt: string } | null = null
     const seams = fakeSeams({
       verifier: {
         verify: async () =>
@@ -196,27 +195,38 @@ describe('the parent keeps a fork point', () => {
       },
       repair: { decide: async () => 'park' },
       approval: {
-        ask: async (req) => {
-          receipt = {
-            requestId: req.requestId,
-            bindingHash: req.bindingHash,
-            expiresAt: '2099-01-01T00:00:00Z',
-          }
-          return { ticket: 'review', expiresAt: receipt.expiresAt }
-        },
-        resume: async () => receipt,
+        ask: async (req) => ({ ticket: 'review', expiresAt: req.deadline }),
       },
     })
     const h = await openSession({ seams, provider: fakeProvider([textTurn('first'), textTurn('second')]) })
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const signal = new AbortController().signal
     expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
-    await h.session.resumeApproval('review', 'allowed-once', { ...actor, id: 'reviewer' })
+    const [decision] = (await h.session.decisions.list()).filter(
+      (value) => value.request.owner === 'core/gate',
+    )
+    if (!decision) throw new Error('missing verifier decision')
+    await h.session.decideApproval({
+      command: {
+        handle: decision.handle,
+        revision: decision.revision,
+        commandId: 'review',
+        response: { option: 'allowed-once', value: null },
+      },
+      context: { actor: { ...actor, id: 'reviewer' }, category: 'human', authorize() {} },
+    })
     await h.session.step()
-    // The continuation's turn/start is its trigger and the head; one more row moves the head past it.
-    expect(h.log.lastSeq).toBe(triggerOf(h))
+    // Consumption commits beside turn/start; the fork point stays at the continuation's trigger.
+    const c = triggerOf(h)
+    expect((await h.log.scan({ fromSeq: c, toSeq: c }))[0]).toMatchObject({
+      type: 'turn/start',
+      data: { trigger: 'approval-resume', continues: { requestId: decision.handle.id } },
+    })
+    expect(h.log.lastSeq).toBeGreaterThan(c)
+    await expectTriggerAt(h, c)
     await h.session.diag('contribute-conflict', {})
-    await expectTriggerAt(h, triggerOf(h))
+    expect(triggerOf(h)).toBe(c)
+    await expectTriggerAt(h, c)
     await h.session.close()
   })
 

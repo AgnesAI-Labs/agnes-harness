@@ -322,8 +322,8 @@ describe('worker command dispatch against a real host+session', () => {
  * must route through `Host.validatePresetSwitch`/`validateModelSwitch` before ever calling
  * `HostSession.setPreset`/`setModel` - the plan's own illustrative sample called a `host.presetView`
  * method that `@agnes/host`'s real `Host` interface does not have (packages/host/src/runtime/lifecycle/host.ts has no
- * such member) - and `decideApproval` must resolve through `HostSession.resumeApproval`, since core's
- * `SessionImpl` has no method literally named `decideApproval` (packages/core/src/step/session.ts).
+ * such member). `decideApproval` forwards the authenticated human command to the session's decision
+ * authority through `HostSession.decideApproval`.
  * A fake proves the *call shape* handleCommand makes without needing a real assembled preset table.
  */
 describe('handleCommand dispatch against the real Host/HostSession shapes', () => {
