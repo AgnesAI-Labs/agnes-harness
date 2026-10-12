@@ -2,6 +2,10 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 3.1.0
+
+Adds optional `ToolPolicyDecision.allowedBy`. The command-table floor sets it to `command-policy` when a rule allows a call the selected policy asked about, so the policy's own `review` (for example an `escalate` fallback) is kept as an observation beside the final `allow` instead of being rewritten.
+
 ## 3.0.0
 
 ### Removed

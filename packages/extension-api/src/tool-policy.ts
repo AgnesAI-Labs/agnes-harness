@@ -39,6 +39,12 @@ export type ToolPolicyDecision = {
   effect: 'allow' | 'ask' | 'deny'
   reason: string
   review?: ToolReviewFact
+  /**
+   * Set when a deployment rule, not the selected policy, produced an `allow` for a call the policy
+   * would have asked about. `review` then stays the policy's own observation, so its `escalate`
+   * decision may accompany this `allow`.
+   */
+  allowedBy?: 'command-policy'
   approval?: ApprovalConstraints
 }
 

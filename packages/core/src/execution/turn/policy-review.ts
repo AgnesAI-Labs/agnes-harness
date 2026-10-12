@@ -223,7 +223,10 @@ export async function decideToolPolicy(
   if (permission.review) {
     if (
       !validateAgainst(ToolReviewFact, permission.review).ok ||
-      permission.effect !== (permission.review.decision === 'escalate' ? 'ask' : permission.review.decision)
+      !(permission.allowedBy === 'command-policy' && permission.effect === 'allow'
+        ? permission.review.decision !== 'deny'
+        : permission.effect ===
+          (permission.review.decision === 'escalate' ? 'ask' : permission.review.decision))
     )
       throw new Error('Invalid policy review fact')
     await s.transition(
@@ -238,6 +241,7 @@ export async function decideToolPolicy(
             argsHash: sha256Hex(canonicalJson(input.call.args)),
             ...(modelResponse ? { modelResponse } : {}),
             effect: permission.effect,
+            ...(permission.allowedBy ? { allowedBy: permission.allowedBy } : {}),
             reason: permission.reason,
             review: permission.review,
           },

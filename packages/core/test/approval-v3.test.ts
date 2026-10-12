@@ -6,6 +6,7 @@ import type { ToolContext, ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@ag
 import type { ApprovalGrant, DecisionSnapshot, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
+import { withCommandFloorRegistry } from '../src/command-table/floor.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { permanentGrantId } from '../src/step/approval-grants.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -952,6 +953,59 @@ describe('v3 approval modes and grants', () => {
     await reopen(modelReviewing('model-review'), 'model-review', sameProvider)
     expect(executions).toBe(2)
     expect(sameProvider.requests.filter((request) => request.model === 'scripted-cheap')).toHaveLength(0)
+  })
+
+  it('keeps an escalating review as an observation when the command table allows the call', async () => {
+    let asks = 0,
+      executions = 0
+    const registry = new ToolPolicyRegistry()
+    registry.register('test', {
+      id: 'escalating',
+      version: '1',
+      decide: (input) => ({
+        effect: 'ask',
+        reason: 'Reviewer unavailable; human approval required',
+        review: {
+          model: 'fast',
+          promptHash: 'a'.repeat(64),
+          argsHash: sha256Hex(canonicalJson(input.call.args)),
+          scopeHash: 'b'.repeat(64),
+          costSource: 'unavailable',
+          decision: 'escalate',
+          risk: 'medium',
+          reason: 'Reviewer unavailable; human approval required',
+          latencyMs: 0,
+          cost: 0,
+          source: 'fallback',
+        },
+      }),
+    })
+    const opened = await atTools({
+      scopes: ['tool:write'],
+      toolPolicies: withCommandFloorRegistry(registry, [
+        { tool: 'scoped_write', argv: '.*', action: 'allow' },
+      ]),
+      toolPolicySettings: async () => ({ policy: 'escalating' }),
+      seams: fakeSeams({
+        approval: {
+          ask: async () => {
+            asks++
+            return { verdict: 'rejected' as const, answeredBy: actor }
+          },
+        },
+      }),
+      execute: async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'done' }] }
+      },
+    })
+    await opened.session.runToolsPhase()
+    expect({ asks, executions }).toEqual({ asks: 0, executions: 1 })
+    expect((await opened.log.scan({ type: 'x/approval/review', limit: 10 })).at(-1)?.data).toMatchObject({
+      effect: 'allow',
+      allowedBy: 'command-policy',
+      review: { decision: 'escalate', source: 'fallback' },
+    })
   })
 
   it('off mode bypasses asks but never overrides an authorization deny', async () => {

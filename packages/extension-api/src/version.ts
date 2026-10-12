@@ -1,1 +1,1 @@
-export const API_VERSION = '3.0.0' as const
+export const API_VERSION = '3.1.0' as const

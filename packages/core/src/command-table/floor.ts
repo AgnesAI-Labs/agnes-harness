@@ -37,6 +37,7 @@ export function withCommandFloor(policy: ToolPolicy, rules: readonly PolicyRule[
       return {
         effect: 'allow',
         reason: 'Allowed by the command policy',
+        allowedBy: 'command-policy',
         ...(decision.review ? { review: decision.review } : {}),
       }
     },
