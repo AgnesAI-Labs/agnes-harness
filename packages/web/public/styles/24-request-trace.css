@@ -182,7 +182,7 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-app-content);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--agnes-ui-input-font-size);
     line-height: 1.5;
   }
   .workbench-terminal-available {
@@ -363,10 +363,5 @@
   .workbench-terminal-toolbar > span {
     flex: 1 0 100%;
     margin-left: 0;
-  }
-  @media (max-width: 767px) {
-    .workbench-terminal-output {
-      font-size: max(var(--font-size-md), 16px);
-    }
   }
 }

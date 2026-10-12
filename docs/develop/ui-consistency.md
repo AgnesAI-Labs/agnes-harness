@@ -117,6 +117,9 @@ plus `.agh-tag` (`data-tone="warn|bad|info"`), `.agh-meta`, `.agh-count`,
 The Web theme bridge includes these rules. Static buttons can use the same classes.
 `.primary-button`, `.secondary-button` and `.icon-button` are internal aliases;
 new business code must use the public components/contracts and semantic colors.
+The internal `--agnes-ui-input-font-size` role keeps explicit picker, archive and
+terminal input variants at the desktop scale and at least 16px on phones, even
+when the user selects a small font scale.
 The presentation guard permits only the recorded legacy baseline until those pages
 migrate. Do not add new allowances for page styling.
 

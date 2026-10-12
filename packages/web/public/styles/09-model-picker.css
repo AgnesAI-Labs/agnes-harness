@@ -259,7 +259,7 @@
     margin: var(--s4) var(--s8) 0;
     padding: var(--s4) var(--s8);
     border-radius: 0.625rem;
-    font-size: var(--font-size-sm);
+    font-size: var(--agnes-ui-input-font-size);
   }
   .model-picker-budget[aria-invalid="true"] {
     border-color: var(--agnes-status-danger-text);

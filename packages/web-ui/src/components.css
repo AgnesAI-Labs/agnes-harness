@@ -2,6 +2,10 @@
 @import "./native.css";
 
 @layer ui {
+  :root {
+    --agnes-ui-input-font-size: var(--font-size-sm);
+  }
+
   /* Public component contracts and native aliases share one declaration source. */
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button) {
     position: relative;
@@ -789,6 +793,9 @@
     }
   }
   @media (max-width: 767px) {
+    :root {
+      --agnes-ui-input-font-size: max(var(--font-size-md), 16px);
+    }
     /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */
     :is(
         .agnes-settings-checkbox,
@@ -804,7 +811,7 @@
     .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
     .agnes-ui-select .ant-select-input,
     .agnes-ui-textarea {
-      font-size: max(var(--font-size-md), 16px);
+      font-size: var(--agnes-ui-input-font-size);
     }
     .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
       min-height: var(--control-height-touch);
@@ -840,7 +847,7 @@
     :is(.agnes-ui-field, .form-field, .agnes-settings-toolbar)
       .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
     .agnes-settings-toolbar .agnes-ui-select {
-      font-size: max(var(--font-size-md), 16px);
+      font-size: var(--agnes-ui-input-font-size);
     }
     .agnes-ui-select.ant-select,
     .ant-select-item-option {
