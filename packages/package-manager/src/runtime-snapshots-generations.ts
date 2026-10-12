@@ -29,6 +29,7 @@ import {
 import { hashDirectory } from './sources.js'
 
 const OWNER_FILE = 'owner.pid'
+const ADOPTERS_DIR = 'adopters'
 const UNOWNED_GRACE_MS = 10 * 60_000
 
 function writeAtomically(path: string, bytes: string): void {
@@ -88,6 +89,7 @@ export type SessionGenerationPin = Readonly<{
 export class RuntimeGenerationSnapshotStore {
   readonly root: string
   readonly #created = new Set<string>()
+  readonly #token = randomUUID()
   constructor(profileDirectory: string) {
     this.root = join(profileDirectory, '.runtime-generations')
   }
@@ -140,6 +142,7 @@ export class RuntimeGenerationSnapshotStore {
         }),
       )
       this.#created.add(id)
+      this.#adopt(id)
       return this.read(id)
     } catch (error) {
       rmSync(directory, { recursive: true, force: true })
@@ -408,6 +411,54 @@ export class RuntimeGenerationSnapshotStore {
     rmSync(this.pinPath(sessionKey), { force: true })
   }
 
+  /**
+   * Registers this store as a holder of the generation. A holder is a worker that may accept sessions
+   * on it without a durable pin, so no other worker's collection may remove it while that process lives.
+   */
+  #adopt(id: string): void {
+    const directory = join(this.directory(id), ADOPTERS_DIR)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    writeFileSync(join(directory, this.#token), String(process.pid), { mode: 0o600, flush: true })
+  }
+
+  #release(id: string): void {
+    rmSync(join(this.directory(id), ADOPTERS_DIR, this.#token), { force: true })
+  }
+
+  /** Whether a different store (worker) still holds the generation; an unreadable record counts while young. */
+  #heldByOther(id: string): boolean {
+    const directory = join(this.directory(id), ADOPTERS_DIR)
+    let names: string[]
+    try {
+      names = readdirSync(directory)
+    } catch {
+      return false
+    }
+    return names.some((name) => {
+      if (name === this.#token) return false
+      const path = join(directory, name)
+      let pid: number
+      try {
+        pid = Number(readFileSync(path, 'utf8'))
+      } catch {
+        return false
+      }
+      if (!Number.isSafeInteger(pid) || pid <= 0) {
+        try {
+          return Date.now() - statSync(path).mtimeMs < UNOWNED_GRACE_MS
+        } catch {
+          return false
+        }
+      }
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+      }
+    })
+  }
+
   /** Unreadable owner metadata counts as live until the directory is old enough that no creator can still be writing it. */
   private ownerMayBeLive(id: string): boolean {
     const directory = this.directory(id),
@@ -490,7 +541,9 @@ export class RuntimeGenerationSnapshotStore {
         JSON.stringify(snapshot.seams ?? null) !== JSON.stringify(expected.seams ?? null)
       )
         return undefined
-      return snapshot
+      // Register before trusting the head, then confirm the record survived a concurrent collection.
+      this.#adopt(id)
+      return this.read(id)
     } catch {
       return undefined
     }
@@ -512,7 +565,9 @@ export class RuntimeGenerationSnapshotStore {
     if (this.#unreadablePins > 0) return []
     for (const id of readdirSync(this.root)) {
       // Another workspace worker may still be accepting sessions on its own snapshot.
-      if (!/^[a-f0-9-]{36}$/.test(id) || keep.has(id) || referenced.has(id)) continue
+      if (!/^[a-f0-9-]{36}$/.test(id) || keep.has(id)) continue
+      this.#release(id)
+      if (referenced.has(id) || this.#heldByOther(id)) continue
       if (!this.#created.has(id) && !retired.has(id) && this.ownerMayBeLive(id)) continue
       rmSync(this.directory(id), { recursive: true, force: true })
       removed.push(id)

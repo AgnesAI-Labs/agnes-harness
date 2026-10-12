@@ -114,11 +114,52 @@ describe('durable composition head', () => {
         ownerPid: deadPid(),
       }),
     )
+    const adopters = join(store.root, snapshot.id, 'adopters')
+    for (const name of readdirSync(adopters)) writeFileSync(join(adopters, name), String(deadPid()))
     expect(other.collect(new Set())).toEqual([])
     const next = create(store, 'c')
     store.setHead('composition-a', next.id)
     expect(other.collect(new Set())).toEqual([snapshot.id])
     writeFileSync(join(store.root, 'heads', readdirSync(join(store.root, 'heads'))[0]!), '{')
     expect(other.reusableHead('composition-a', expected('c'))).toBeUndefined()
+  })
+
+  it('keeps a reused head generation for its adopter after the creator publishes a newer head and closes', () => {
+    const { store } = fixture()
+    const home = join(store.root, '..')
+    const adopter = new RuntimeGenerationSnapshotStore(home)
+    const shared = create(store, 'a')
+    store.setHead('composition-a', shared.id)
+    expect(adopter.reusableHead('composition-a', expected('a'))?.id).toBe(shared.id)
+    const newer = create(store, 'c')
+    store.setHead('composition-a', newer.id)
+    // The creator closes with nothing of its own to keep; the adopter has no session pin yet.
+    expect(store.collect(new Set())).toEqual([])
+    expect(adopter.pin('session-a', shared.id).generationId).toBe(shared.id)
+    adopter.releaseSession('session-a')
+    expect(adopter.collect(new Set([shared.id]))).toEqual([])
+    // Once the creator is gone and the adopter lets go, the generation is reclaimed.
+    writeFileSync(join(store.root, shared.id, 'owner.pid'), String(deadPid()))
+    writeFileSync(
+      join(store.root, shared.id, 'generation.json'),
+      JSON.stringify({
+        ...JSON.parse(readFileSync(join(store.root, shared.id, 'generation.json'), 'utf8')),
+        ownerPid: deadPid(),
+      }),
+    )
+    expect(adopter.collect(new Set())).toEqual([shared.id])
+  })
+
+  it('ignores an adopter whose process is gone', () => {
+    const { store } = fixture()
+    const adopter = new RuntimeGenerationSnapshotStore(join(store.root, '..'))
+    const shared = create(store, 'a')
+    store.setHead('composition-a', shared.id)
+    expect(adopter.reusableHead('composition-a', expected('a'))?.id).toBe(shared.id)
+    const newer = create(store, 'c')
+    store.setHead('composition-a', newer.id)
+    const adopters = join(store.root, shared.id, 'adopters')
+    for (const name of readdirSync(adopters)) writeFileSync(join(adopters, name), String(deadPid()))
+    expect(store.collect(new Set())).toEqual([shared.id])
   })
 })
