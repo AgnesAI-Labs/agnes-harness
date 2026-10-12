@@ -51,6 +51,7 @@ const entry = (
   sourcePackage: `pkg/${id}`,
   capabilities: [],
   restartRequired: scope === 'process',
+  authority: 'open',
   scope,
   active,
   selectedFor: active ? ['default'] : [],
