@@ -287,3 +287,31 @@
     min-height: var(--s32);
   }
 }
+
+/* Workbench panels: an idle panel explains itself quietly instead of showing a grey slab. */
+.workbench-panel-content .agnes-settings-state[data-tone="empty"] {
+  margin: var(--s12);
+  padding: var(--s24) var(--s16);
+  border: 1px dashed var(--agnes-line-emphasis);
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  text-align: center;
+}
+/* Until a file is picked the tree owns the panel; the preview shrinks to its one-line prompt. */
+.workbench-files:not(.workbench-files-previewing) .workbench-file-preview {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.workbench-panel-tabs > .agnes-ui-button {
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.workbench-header-actions {
+  gap: var(--s2);
+}
+.workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-selected);
+}

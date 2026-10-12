@@ -351,3 +351,17 @@
 .workbench-changes-footer dd {
   margin: 0;
 }
+
+/* Shell picker and "New terminal" share one row; the detach note sits under them, left-aligned,
+   instead of floating at the right edge of a wrapped row. */
+.workbench-terminal-toolbar > .ant-select {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+.workbench-terminal-toolbar > .agh-btn {
+  flex: 0 0 auto;
+}
+.workbench-terminal-toolbar > span {
+  flex: 1 0 100%;
+  margin-left: 0;
+}
