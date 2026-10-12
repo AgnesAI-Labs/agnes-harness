@@ -8,12 +8,12 @@ import { describe, expect, it } from 'vitest'
 // 侧栏在窄屏是「点按钮开抽屉」还是「折叠成 rail」，由 JS 的媒体查询决定；侧栏是不是
 // 覆盖层，由 CSS 的媒体查询决定。两边断点必须一致：不一致时中间那段宽度里 JS 走桌面
 // 折叠分支、CSS 已经把侧栏移出视口，按钮点下去没有任何可见反应。
-const sidebarSource = readFileSync(resolve(__dirname, '../../web-units/src/sidebar.ts'), 'utf8')
+const sidebarSource = readFileSync(resolve(__dirname, '../../web-units/src/sidebar.tsx'), 'utf8')
 const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
 
 function narrowBreakpoint(): number {
   const match = /matchMedia\('\(max-width:\s*(\d+)px\)'\)/.exec(sidebarSource)
-  if (!match) throw new Error('未找到 sidebar.ts 里的窄屏媒体查询')
+  if (!match) throw new Error('未找到 sidebar.tsx 里的窄屏媒体查询')
   return Number(match[1])
 }
 
