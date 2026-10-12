@@ -6,7 +6,6 @@ import {
   type CompactionPlan,
   type Enforcement,
   type Operation,
-  type RemoteTransport,
   type SandboxExecBackend,
   type SandboxSeam,
   type SandboxWorkspaceBackend,
@@ -24,6 +23,7 @@ import {
   type Logger,
   type PersistenceProvider,
   ProviderError,
+  type SandboxProvider,
 } from '@agnes/extension-api'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
 import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
@@ -43,7 +43,7 @@ import type { PackageSnapshotCandidateRef } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport, type VerifiedRowEntry } from '@agnes/plugin-runtime/host'
 import { checkProvidedExternals, PluginModuleError } from '@agnes/plugin-runtime/provided-externals'
 import type { JsonValue } from '@agnes/protocol'
-import type { SandboxHostServices, SeamAdapters } from '../contracts/adapters.js'
+import type { SeamAdapters } from '../contracts/adapters.js'
 import type {
   BuildCompactionPlan,
   IsolatedEcosystemFactory,
@@ -146,6 +146,9 @@ export async function loadRuntimePackage(
   return Object.freeze({ source, module })
 }
 
+/** `sandbox` is chosen as a provider and `platform` belongs to the Host: a package cannot export either as a seam factory. */
+const PACKAGE_SEAM_NAMES = SEAM_NAMES.filter((name) => name !== 'sandbox' && name !== 'platform')
+
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -160,7 +163,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
  * it wrong rather than at the seam that later came up empty three steps away.
  */
 const FACTORY_EXPORTS = [
-  { name: 'seams', code: 'E_SEAM_EXPORT_MISSING', field: 'seam', keys: SEAM_NAMES, nonEmpty: true },
+  { name: 'seams', code: 'E_SEAM_EXPORT_MISSING', field: 'seam', keys: PACKAGE_SEAM_NAMES, nonEmpty: true },
   { name: 'operations', code: 'E_EXT_LOAD', field: 'operation', keys: null, nonEmpty: false },
   { name: 'runtimes', code: 'E_EXT_LOAD', field: 'language', keys: RUNTIME_LANGUAGES, nonEmpty: false },
   { name: 'ecosystem', code: 'E_EXT_LOAD', field: 'extension', keys: null, nonEmpty: false },
@@ -248,12 +251,20 @@ export function readNamedExports(
         bad(`.${k} must be a preset document with a name`, { reason: 'no-name', preset: k })
     out.presets = mod.presets as Record<string, PresetDoc>
   }
-  if (mod.openTransport !== undefined) {
-    if (typeof mod.openTransport !== 'function')
-      throw new HostError('E_EXT_LOAD', `${id}: openTransport export must be a function`, {
-        detail: { id, reason: 'not-a-function' },
+  if (mod.sandboxProvider !== undefined) {
+    const provider = mod.sandboxProvider as Partial<SandboxProvider> | null
+    if (
+      typeof provider !== 'object' ||
+      provider === null ||
+      typeof provider.id !== 'string' ||
+      typeof provider.version !== 'string' ||
+      typeof provider.create !== 'function' ||
+      (provider.openTransport !== undefined && typeof provider.openTransport !== 'function')
+    )
+      throw new HostError('E_EXT_LOAD', `${id}: sandboxProvider export is invalid`, {
+        detail: { id, reason: 'sandbox-provider' },
       })
-    out.openTransport = mod.openTransport as NonNullable<PackageModule['openTransport']>
+    out.sandboxProvider = provider as SandboxProvider
   }
   if (mod.sandboxWorkspaceProbe !== undefined) {
     if (typeof mod.sandboxWorkspaceProbe !== 'function')

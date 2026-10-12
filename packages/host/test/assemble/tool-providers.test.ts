@@ -51,6 +51,7 @@ it('assembles the bundled default policy row before opening a real Host session'
         'git-worktree',
         'persistence',
         'sandbox',
+        'platform',
         'tool-runtime',
         'tool-policy',
         'child-agent',

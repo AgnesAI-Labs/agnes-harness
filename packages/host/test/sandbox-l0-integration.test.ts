@@ -83,7 +83,6 @@ const SEAM_KEYS = [
   'approval',
   'checkpoint',
   'billing',
-  'sandbox',
   'verifier',
   'repair',
   'artifacts',
@@ -142,7 +141,6 @@ async function assembleWithSandbox(opts: {
   extraAllow?: string[]
   /** Built against the fixture's dataDir, since configured denies often name paths under it. */
   configuredDeny?: (dataDir: string) => string[]
-  sandboxFactory?: SeamFactory
   shellRequest?: string
   hooksDeployment?: 'workspace' | 'data' | 'no-grant' | 'wrong-digest' | 'wrong-source' | 'wrong-root'
   workspace?: string
@@ -182,10 +180,6 @@ async function assembleWithSandbox(opts: {
       }
   }
   const fakes = fakeSeams()
-  const sandboxFactory =
-    opts.sandboxFactory ??
-    (baseSeams as { sandbox?: SeamFactory }).sandbox ??
-    ((() => Promise.reject(new Error('no sandbox seam delivered'))) as SeamFactory)
   const mods: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
@@ -203,13 +197,15 @@ async function assembleWithSandbox(opts: {
             ],
           }
         : {}),
-      seams: {
-        ...Object.fromEntries(SEAM_KEYS.filter((n) => n !== 'sandbox').map((n) => [n, async () => fakes[n]])),
-        sandbox: async (context) => {
-          init = context
-          return sandboxFactory(context)
-        },
-      },
+      seams: Object.fromEntries(
+        SEAM_KEYS.map((n) => [
+          n,
+          async (context: SeamInitContext) => {
+            init ??= context
+            return fakes[n]
+          },
+        ]),
+      ),
       operations: {},
       presets: {
         base: {
@@ -552,35 +548,6 @@ describe('no backend: process creation default-denies, and the marker proves not
   it('sandbox.required: true with no backend refuses the workspace runtime before publication', async () => {
     const err = await assembleWithSandbox({ sandboxPreset: { required: true } }).catch((e: unknown) => e)
     expect(code(err)).toBe('E_SANDBOX_WORKSPACE')
-  })
-
-  it('the probe exec a sandbox factory is handed is revoked the moment the factory returns', async () => {
-    let probe: ((argv: string[], opts: { cwd: string }) => Promise<unknown>) | undefined
-    let probeDuringInit: unknown
-    let workspace = ''
-    const wrapping: SeamFactory = async (ctx) => {
-      probe = ctx.sandboxHost?.probeExec
-      workspace = ctx.profile.workspaceRoot
-      if (!probe) throw new Error('sandbox factory was not handed a probe exec')
-      // Inside the init window the probe works: backend detection is what it exists for.
-      probeDuringInit = await probe([process.execPath, '-e', ''], { cwd: workspace }).then(
-        () => 'ran',
-        (e: unknown) => e,
-      )
-      const factory = (baseSeams as { sandbox?: SeamFactory }).sandbox
-      if (!factory) throw new Error('no sandbox seam delivered')
-      return factory(ctx)
-    }
-    const f = await assembleWithSandbox({ sandboxFactory: wrapping })
-    try {
-      expect(probeDuringInit).toBe('ran')
-      const after = await (probe as NonNullable<typeof probe>)([process.execPath, '-e', ''], {
-        cwd: workspace,
-      }).catch((e: unknown) => e)
-      expect(code(after) ?? (after as Error).message).toMatch(/probe|E_SEAM_INIT/)
-    } finally {
-      await f.a.rollback.unwind()
-    }
   })
 })
 

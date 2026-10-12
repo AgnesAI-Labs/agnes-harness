@@ -1,13 +1,12 @@
 import { homedir } from 'node:os'
 import type { SeamImplementations, SeamName } from '@agnes/core'
 import type { SeamInitContext, SeamProfileView } from '@agnes/host-extensions/assemble/packages'
-import { sandboxHostServices, toSeamAdapters } from '../adapters/index.js'
+import { toSeamAdapters } from '../adapters/index.js'
 import { inspectComputerUseArtifacts } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
-import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
-import { initStaticSeams } from './seams.js'
+import { createStaticSeams } from './seams.js'
 
 /** What a seam factory is handed to initialise, and the two seams that are initialised before any row mounts. */
 export type SeamContexts = Readonly<{
@@ -19,14 +18,12 @@ export type SeamContexts = Readonly<{
 }>
 
 /** Step `seams`, first half: the seam init context and the static `sandbox` and `platform` seams. */
-export async function openSeamContexts(
+export function openSeamContexts(
   ctx: AssemblyContext,
-  pkgs: PackageSet,
   proc: ProcessServices,
   presets: PresetCatalog,
-): Promise<SeamContexts> {
-  const { deps, dataDir, workspaceRoot, rollback, clock } = ctx
-  const { modules } = pkgs
+): SeamContexts {
+  const { deps, dataDir, workspaceRoot, clock } = ctx
   const { adapters, secrets, nativePlatform } = proc
   const seamProfile: SeamProfileView = {
     name: ctx.profile.name,
@@ -58,17 +55,17 @@ export async function openSeamContexts(
       ...baseContext(owner),
       ...retention.contextFor(owner, seamName),
     }
-    // Only the sandbox factory is handed the path-policy canonicalizer and a probe exec, and the
-    // probe dies with the factory. Every other seam gets the plain context - and the
-    // policy-bound exec inside it.
-    if (seamName !== 'sandbox') return { context, cleanup: () => undefined }
-    const { services, revoke } = sandboxHostServices(adapters)
-    return { context: { ...context, sandboxHost: services }, cleanup: revoke }
+    return { context, cleanup: () => undefined }
   }
-  const staticSeams = await initStaticSeams(ctx.profile, modules, contextFor, {
-    timeoutMs: deps.seamTimeoutMs ?? 30_000,
-    platform: adapters.platform,
-    rollback,
-  })
+  const staticSeams = createStaticSeams(adapters.platform, deps.sandboxSeam)
+  // A remote deployment states its posture once, before any workspace is fitted: capability
+  // answers read "remote host boundary", and the exec gate lets a remote command past its fourth
+  // check. 'none' would deadlock it and 'l1' would claim local isolation nobody measured.
+  // `onUnavailable` stays 'deny': a remote deployment never falls back to unconfined local
+  // execution, and the dead-channel decision belongs to the remote runner.
+  if (adapters.transport) {
+    adapters.reportSandboxBackend({ name: 'remote', enforcement: { level: 'none', scope: [] } })
+    adapters.declareExecGate({ backend: 'remote', onUnavailable: 'deny' })
+  }
   return { seamProfile, baseContext, contextFor, retention, staticSeams }
 }

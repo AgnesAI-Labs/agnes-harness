@@ -1,6 +1,5 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { SEAM_NAMES, type SeamName } from '@agnes/core'
 import { readSandboxStartupConfig } from '@agnes/host-common/profile/sandbox-startup'
 import { type ApprovalMode, type ApprovalProfile, validateCommandHooksPolicy } from '@agnes/protocol'
 import { HostError, type Layer } from '../errors.js'
@@ -11,15 +10,18 @@ import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './co
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
 import { readModelAdapterSelection, readProviderSelection } from './provider-selection.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
-import type {
-  PackageRef,
-  ProfileInputs,
-  ReconcilePolicy,
-  ResolvedPackage,
-  ResolvedProfile,
-  ResolveEnv,
-  RouteDecl,
-  RuntimeProfileManifest,
+import {
+  type PackageRef,
+  PROFILE_SEAM_NAMES,
+  type ProfileInputs,
+  type ProfileSeamName,
+  REMOVED_SEAM_KEYS,
+  type ReconcilePolicy,
+  type ResolvedPackage,
+  type ResolvedProfile,
+  type ResolveEnv,
+  type RouteDecl,
+  type RuntimeProfileManifest,
 } from './types.js'
 
 type Draft = { manifest: RuntimeProfileManifest; chain: string[] }
@@ -533,8 +535,13 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       ...(st.provides ? { provides: [...st.provides] } : {}),
     })
   }
-  const seams = {} as Record<SeamName, string>
-  for (const name of SEAM_NAMES) {
+  for (const [key, fix] of Object.entries(REMOVED_SEAM_KEYS))
+    if (m.seams && Object.hasOwn(m.seams, key))
+      throw new HostError('E_PROFILE_FRAGMENT_KEY', `seams.${key} was removed; ${fix}`, {
+        detail: { field: `seams.${key}` },
+      })
+  const seams = {} as Record<ProfileSeamName, string>
+  for (const name of PROFILE_SEAM_NAMES) {
     const pkg = m.seams?.[name]
     if (!pkg)
       throw new HostError('E_SEAM_MISSING', `seam ${name} has no implementation package`, {

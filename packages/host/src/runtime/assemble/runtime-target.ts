@@ -6,6 +6,7 @@ import { HostError } from '@agnes/host-common/errors'
 import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
+import { installHostPlatform } from '@agnes/host-providers/adapters/platform-provider'
 import { installSandboxProviders } from '@agnes/host-providers/adapters/sandbox-providers'
 import { installCompactionEngines } from '@agnes/host-providers/assemble/compaction-engines'
 import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
@@ -49,6 +50,7 @@ import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { RowHosts } from './row-hosts.js'
 import type { SkillState } from './skills.js'
+import { sandboxBackendPackages } from './workspace-runtime.js'
 
 export type RuntimeTargetHost = Readonly<{
   publisher: RuntimeTargetPublisher<HostRuntimeTargetResources, IsolatedSessionOverlay>
@@ -214,6 +216,11 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
             '@agnes/host',
             createLocalSandboxProvider(proc.adapters.exec, proc.adapters.platform.os),
           )
+          // Providers a package exports as `sandboxProvider` are registered under that package; the
+          // Host read them before the tree existed because a remote one opens its channel then.
+          for (const [packageId, mod] of pkgs.modules)
+            if (mod.sandboxProvider) root.providers.register('sandbox', packageId, mod.sandboxProvider)
+          installHostPlatform(root, proc.adapters.platform.os)
           proc.sandboxProviderSlot.registry = sandboxProviders
         },
         ...(deps.skillContribution ? { skillContribution: deps.skillContribution } : {}),
@@ -221,7 +228,10 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           const backend = proc.sandboxProviderSlot.registry
             ?.catalog()
             .find((entry) => entry.id === ctx.profile.sandbox?.provider)
-          if (backend) deps.onGenerationBasePackages?.([backend.sourcePackage])
+          deps.onGenerationBasePackages?.([
+            ...sandboxBackendPackages(ctx.profile, pkgs.modules),
+            ...(backend ? [backend.sourcePackage] : []),
+          ])
           ctx.live.kernel.peek()?.invalidateSeams()
         },
       }

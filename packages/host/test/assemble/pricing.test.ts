@@ -51,7 +51,6 @@ const SEAM_KEYS = [
   'approval',
   'checkpoint',
   'billing',
-  'sandbox',
   'verifier',
   'repair',
   'artifacts',
@@ -63,17 +62,7 @@ function modules(): Record<string, PackageModule> {
   const result: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
-      seams: Object.fromEntries(
-        SEAM_KEYS.map((n) => [
-          n,
-          n === 'sandbox'
-            ? async (ctx: { profile: { workspaceRoot: string } }) => ({
-                ...seams.sandbox,
-                fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
-              })
-            : async () => seams[n],
-        ]),
-      ),
+      seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
       operations: {},
       presets: { base: { name: 'base' } },
     },

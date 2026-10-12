@@ -1,13 +1,13 @@
-import type { Prompter, SandboxHostServices, SeamAdapters } from '@agnes/host-extensions/contracts/adapters'
+import type { Prompter, SeamAdapters } from '@agnes/host-extensions/contracts/adapters'
 
-export type { Prompter, SandboxHostServices, SeamAdapters } from '@agnes/host-extensions/contracts/adapters'
+export type { Prompter, SeamAdapters } from '@agnes/host-extensions/contracts/adapters'
 
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { isAbsolute, join, posix, resolve } from 'node:path'
 import type { ApprovalAnswer, ApprovalRequest, FsPolicy, FsRule, Verdict } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
-import type { PersistenceMetadataNamespace, PersistenceProvider } from '@agnes/extension-api'
+import type { PersistenceMetadataNamespace, PersistenceProvider, SandboxProvider } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { assertSessionTreeStorePath } from '@agnes/host-common/session-tree-schema'
@@ -57,6 +57,7 @@ import type { TableStore } from '@agnes/host-infrastructure/adapters/storage-sql
 import {
   createSandboxDispatchExec,
   type SandboxProviderSlot,
+  sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { RemoteWorkspacePool } from '@agnes/sandbox-remote'
@@ -162,6 +163,29 @@ function remoteWorkspaceConfig(config: Record<string, unknown>): {
   }
 }
 
+/**
+ * The package that supplies the selected sandbox provider when that provider runs commands on
+ * another machine. Only the selected provider's channel is opened; an unselected package that
+ * exports one is left alone.
+ */
+export function remoteSandboxModule(
+  profile: Pick<ResolvedProfile, 'sandbox'>,
+  modules: ReadonlyMap<string, PackageModule> | undefined,
+):
+  | { packageId: string; provider: SandboxProvider & Required<Pick<SandboxProvider, 'openTransport'>> }
+  | undefined {
+  const id = sandboxProviderIdFrom(profile)
+  for (const [packageId, mod] of modules ?? []) {
+    const provider = mod.sandboxProvider
+    if (provider?.id === id && provider.openTransport)
+      return {
+        packageId,
+        provider: provider as SandboxProvider & Required<Pick<SandboxProvider, 'openTransport'>>,
+      }
+  }
+  return undefined
+}
+
 function assertTransport(value: unknown): asserts value is RemoteTransport {
   for (const method of ['exec', 'upload', 'download', 'alive', 'close'])
     if (
@@ -232,13 +256,12 @@ export async function openAdapters(
     }
     const signal = opts.signal ?? new AbortController().signal
     signal.throwIfAborted()
-    const openTransport = opts.modules?.get(profile.seams.sandbox)?.openTransport
-    if (openTransport !== undefined) {
-      const config = profile.packages.find((p) => p.id === profile.seams.sandbox && p.enabled)?.config
-      if (!config || typeof openTransport !== 'function')
-        throw new HostError('E_SEAM_INIT', 'selected transport requires package config and a function export')
+    const remote = remoteSandboxModule(profile, opts.modules)
+    if (remote !== undefined) {
+      const config = profile.packages.find((p) => p.id === remote.packageId && p.enabled)?.config
+      if (!config) throw new HostError('E_SEAM_INIT', 'a remote sandbox provider requires package config')
       const workspace = remoteWorkspaceConfig(config)
-      const opened: unknown = await openTransport(config, {
+      const opened: unknown = await remote.provider.openTransport(config, {
         secret: (ref) => secrets.resolve(ref),
         dataDir: opts.dataDir,
         signal,
@@ -539,34 +562,6 @@ export function toSeamAdapters(b: AdapterBundle, opts: { owner: string; prompter
       ...(b.storage.sqlite ? { sql: lazyPackageTables(b.storage, opts.owner) } : {}),
     },
     ...(opts.prompter ? { prompter: opts.prompter } : {}),
-  }
-}
-
-export function sandboxHostServices(b: AdapterBundle): {
-  services: SandboxHostServices
-  revoke(): void
-} {
-  const probe = b.createProbeExec()
-  const powerShell = b.powerShell
-  return {
-    services: {
-      ...(powerShell ? { shellCommand: (command: string) => powerShellCommand(powerShell, command) } : {}),
-      ...(b.transport ? { transport: b.transport } : {}),
-      pathPolicy: {
-        canonicalize: (path, opts) => {
-          if (typeof path !== 'string' || path.length === 0 || path.includes('\0'))
-            throw new HostError('E_SEAM_INIT', 'the sandbox policy names an unusable path', {
-              detail: { seam: 'sandbox', reason: 'unusable-path' },
-            })
-          return b.fs.canonicalize(path, opts)
-        },
-      },
-      probeExec: probe.run,
-      declareExecGate: (state) => b.declareExecGate(state),
-      reportBackend: (report) => b.reportSandboxBackend(report),
-      binding: () => b.fsBinding(),
-    },
-    revoke: () => probe.revoke(),
   }
 }
 

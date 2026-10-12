@@ -70,7 +70,6 @@ const SEAM_NAMES = [
   'approval',
   'checkpoint',
   'billing',
-  'sandbox',
   'verifier',
   'repair',
   'artifacts',
@@ -79,41 +78,19 @@ const SEAM_NAMES = [
 
 /**
  * Reroutes every seam from @agnes/base to @agnes/code, so agnes/skills (bundled by @agnes/base)
- * is not seam-protected in this fixture. The sandbox fake must still report the real workspace root
- * or assemble()'s `adapters.bindFsPolicy` refuses the whole host at startup (matching the same fix
- * createTestHost applies to its own default @agnes/base sandbox fake).
+ * is not seam-protected in this fixture.
  */
 const seamsOnCode = (
   dataDir: string,
 ): Pick<Parameters<typeof createTestHost>[0], 'profileInputs' | 'packages'> => {
   const seamsImpl = fakeSeams({})
-  const testExec = seamsImpl.sandbox.exec.bind(seamsImpl.sandbox)
-  const forWorkspace: NonNullable<typeof seamsImpl.sandbox.forWorkspace> = async (workspace) => ({
-    forWorkspace,
-    exec: testExec,
-    confine: async (argv) => [...argv],
-    fsPolicy: () => workspace.policy,
-    enforcement: () => ({ level: 'full', scope: ['file', 'network', 'process'] }),
-  })
-  seamsImpl.sandbox = {
-    ...seamsImpl.sandbox,
-    forWorkspace,
-    fsPolicy: () => {
-      const policy = testFsPolicy('/workspace')
-      const workspaceRoot = realpathSync.native(dataDir)
-      const rules = policy.rules.map((rule) => ({
-        ...rule,
-        path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),
-      }))
-      const content = { ...policy, workspaceRoot, rules }
-      return { ...content, digest: createHash('sha256').update(JSON.stringify(content)).digest('hex') }
-    },
-  }
   return {
     profileInputs: {
       user: { name: 'local-dev', seams: Object.fromEntries(SEAM_NAMES.map((n) => [n, '@agnes/code'])) },
     },
     packages: {
+      // One builtin package supplies the local probe; moving it keeps @agnes/base reloadable.
+      '@agnes/base': { sandboxWorkspaceProbe: undefined } as never,
       '@agnes/code': {
         sandboxWorkspaceProbe: async () => ({
           name: 'bwrap',
@@ -390,7 +367,10 @@ describe('Host.reloadEcosystemExtension', () => {
       disableSessionTitle: true,
       skillResources: fakeSkillRuntimeInput('a'),
       ...seams,
-      packages: { ...seams.packages, '@agnes/base': { embeddedExtensions: [skillsManifest] } },
+      packages: {
+        ...seams.packages,
+        '@agnes/base': { embeddedExtensions: [skillsManifest], sandboxWorkspaceProbe: undefined } as never,
+      },
     })
     try {
       expect(host.extensions().find((s) => s.id === 'agnes/skills')).toMatchObject({ loaded: true })

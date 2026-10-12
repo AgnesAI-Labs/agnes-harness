@@ -358,22 +358,26 @@ export function sandboxProviderCatalog(root: Context): readonly SandboxProviderC
 
 /**
  * Select the profile's provider the first time a workspace is fitted.
- * Remote execution keeps the remote runner. A missing provider is not replaced
- * with the local one.
+ * `remoteProvider` is the provider whose channel the Host opened, when the deployment is remote:
+ * the Host's own remote runner carries the commands, so no instance is created and any other
+ * provider is refused. A missing provider is not replaced with the local one.
  */
 export async function bindStartupSandboxProvider(
   slot: SandboxProviderSlot,
   config: { sandbox?: { provider?: string; options?: Readonly<Record<string, string>> } } | undefined,
   workspaceRoot: string,
-  remote: boolean,
+  remoteProvider: string | undefined,
 ): Promise<string> {
   const id = sandboxProviderIdFrom(config)
-  if (remote && id !== LOCAL_SANDBOX_PROVIDER_ID)
-    throw new ProviderError(
-      'E_PROVIDER_INCOMPATIBLE',
-      'a remote workspace cannot select another sandbox provider',
-      { kind: 'sandbox', provider: id, operation: 'select' },
-    )
+  if (remoteProvider !== undefined) {
+    if (id !== remoteProvider)
+      throw new ProviderError(
+        'E_PROVIDER_INCOMPATIBLE',
+        'a remote workspace cannot select another sandbox provider',
+        { kind: 'sandbox', provider: id, operation: 'select' },
+      )
+    return id
+  }
   if (!slot.registry) {
     if (id !== LOCAL_SANDBOX_PROVIDER_ID)
       throw new ProviderError('E_PROVIDER_UNKNOWN', `sandbox provider is not registered: ${id}`, {

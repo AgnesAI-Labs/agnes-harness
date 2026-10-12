@@ -74,10 +74,17 @@ describe('readNamedExports', () => {
     expect(fail(() => readNamedExports('acme/bad', entry, { seams: [] })).detail.reason).toBe('not-an-object')
   })
   it('accepts every real seam name, so the key check is not a hardcoded shortlist', () => {
-    const seams = Object.fromEntries(SEAM_NAMES.map((n) => [n, async () => ({})]))
+    const names = SEAM_NAMES.filter((n) => n !== 'sandbox' && n !== 'platform')
+    const seams = Object.fromEntries(names.map((n) => [n, async () => ({})]))
     expect(Object.keys(readNamedExports('acme/all', entry, { seams }).seams ?? {}).sort()).toEqual(
-      [...SEAM_NAMES].sort(),
+      [...names].sort(),
     )
+  })
+  it('refuses a seams export that names sandbox or platform: those are not package seams', () => {
+    for (const key of ['sandbox', 'platform'])
+      expect(fail(() => readNamedExports('acme/s', entry, { seams: { [key]: async () => ({}) } })).code).toBe(
+        'E_SEAM_EXPORT_MISSING',
+      )
   })
   it('rejects operations that is an array rather than a factory table (ERRATA B4)', () => {
     expect(fail(() => readNamedExports('acme/bad', entry, { operations: [] })).code).toBe('E_EXT_LOAD')

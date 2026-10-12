@@ -167,14 +167,17 @@ describe('sandbox providers', () => {
 
   it('refuses a configured provider when nothing has registered one', async () => {
     await expect(
-      bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, false),
+      bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, undefined),
     ).rejects.toThrow(/not registered/)
-    await expect(bindStartupSandboxProvider({}, undefined, cwd, false)).resolves.toBe(
+    await expect(bindStartupSandboxProvider({}, undefined, cwd, undefined)).resolves.toBe(
       LOCAL_SANDBOX_PROVIDER_ID,
     )
     await expect(
-      bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, true),
+      bindStartupSandboxProvider({}, { sandbox: { provider: 'docker' } }, cwd, 'remote-test'),
     ).rejects.toThrow(/remote workspace/)
+    await expect(
+      bindStartupSandboxProvider({}, { sandbox: { provider: 'remote-test' } }, cwd, 'remote-test'),
+    ).resolves.toBe('remote-test')
   })
 
   it('does not fall back to the local spawner when the selected provider is unavailable', async () => {
@@ -191,7 +194,7 @@ describe('sandbox providers', () => {
     const root = new Context()
     slot.registry = installSandboxProviders(root)
     root.providers.register('sandbox', '@agnes/host', box('box', false))
-    const id = await bindStartupSandboxProvider(slot, { sandbox: { provider: 'box' } }, cwd, false)
+    const id = await bindStartupSandboxProvider(slot, { sandbox: { provider: 'box' } }, cwd, undefined)
     expect(id).toBe('box')
     const dispatch = createSandboxDispatchExec(wrapped, slot)
     await expect(dispatch.run(['echo', 'hi'], { cwd })).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
@@ -245,7 +248,7 @@ describe('sandbox providers', () => {
       slot,
       { sandbox: { provider: 'box', options: { image: 'test' } } },
       cwd,
-      false,
+      undefined,
     )
     const dispatch = createSandboxDispatchExec(
       {

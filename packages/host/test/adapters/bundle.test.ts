@@ -4,13 +4,14 @@ import { join } from 'node:path'
 import { isHostError } from '@agnes/host-common/errors'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import {
   createPrivateDirectorySync,
   createPrivateFileSync,
   windowsProcessStartTimeSync,
 } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/runtime/adapters/index.js'
+import { openAdapters, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 import { runTestNode } from './test-node.js'
 
 const env: ResolveEnv = {
@@ -96,10 +97,11 @@ describe('openAdapters', () => {
         expect(toSeamAdapters(b, { owner: '@agnes/base' }).shell?.description).toContain(
           b.powerShell?.version,
         )
-        const { services, revoke } = sandboxHostServices(b)
-        revoke()
-        const command = services.shellCommand?.('[Console]::Out.Write([Console]::In.ReadToEnd()); exit 2')
-        if (!command) throw new Error('missing selected Shell command')
+        if (!b.powerShell) throw new Error('missing selected Shell')
+        const command = powerShellCommand(
+          b.powerShell,
+          '[Console]::Out.Write([Console]::In.ReadToEnd()); exit 2',
+        )
         const policy = b.fs.fence()
         b.bindFsPolicy(policy)
         const opts = {

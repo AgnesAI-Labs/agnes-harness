@@ -40,6 +40,7 @@
     "./codex-login": "./src/codex-login.ts",
     "./configuration": "./src/configuration.ts",
     "./sandbox-readiness-manager": "./src/sandbox-readiness-manager.ts",
+    "./sandbox-seam": "./src/sandbox-seam.ts",
     "./session-workspace-runtime": "./src/session-workspace-runtime.ts",
     "./workspace-hook-loader": "./src/workspace-hook-loader.ts",
     "./workspace-invocation-resolver": "./src/workspace-invocation-resolver.ts",

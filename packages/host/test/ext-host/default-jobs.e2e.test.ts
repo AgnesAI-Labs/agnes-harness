@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
-import { seams as baseSeams } from '@agnes/base'
+import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import type { InferenceEvent, ToolCall } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
@@ -38,7 +38,7 @@ it.skipIf(process.platform === 'win32')(
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
       provider,
       disableSessionTitle: true,
-      packages: { '@agnes/base': { seams: { sandbox: baseSeams.sandbox } } },
+      sandboxSeam: createSandboxSeam(),
       serviceAuthority: {
         resolve: async () => ({
           source: 'web',

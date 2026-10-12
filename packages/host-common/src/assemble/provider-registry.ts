@@ -92,6 +92,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
         capabilities: Object.freeze([...capabilities]),
         restartRequired: this.definition.restartRequired,
         scope: this.definition.scope,
+        authority: this.definition.authority,
       }),
     }
     const mount = () => {
@@ -307,6 +308,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     provider: ProviderIdentity,
   ): () => Promise<void> {
     const registry = this.lookup(kind, 'register')
+    this.refuseHostKind(registry, 'register', provider.id)
     registry.validate(sourcePackage, provider)
     const register = this.registrars.get(registry.definition.kind)!
     return register(this.ctx, sourcePackage, provider)
@@ -315,6 +317,19 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
   resolve(kind: string | { readonly kind: string }, selection: string | ProviderSelection): ProviderIdentity {
     return this.lookup(kind, 'resolve').resolve(selection)
+  }
+  /** The author path and configuration cannot touch a kind the Host owns; Host code holds the registry itself. */
+  private refuseHostKind(
+    registry: ProviderRegistry<ProviderIdentity>,
+    operation: 'register' | 'select',
+    provider: string,
+  ): void {
+    if (registry.definition.authority !== 'host') return
+    throw new ProviderError(
+      'E_PROVIDER_INVALID',
+      `${registry.definition.kind} is host-owned: it cannot be ${operation === 'register' ? 'registered by a package' : 'selected'}`,
+      { kind: registry.definition.kind, provider, operation },
+    )
   }
   private lookup(
     kind: string | { readonly kind: string },
@@ -358,6 +373,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   }
   select(kind: string, selection: string | ProviderSelection, scope = 'profile'): ProviderIdentity {
     const registry = this.lookup(kind, 'select')
+    this.refuseHostKind(registry, 'select', typeof selection === 'string' ? selection : selection.provider)
     return registry.select(scope, selection)
   }
   /** Replaced when a new tree is published. The extension facade is the granted author path. */

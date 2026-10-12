@@ -17,6 +17,7 @@ import type { PackageSet } from './packages.js'
 import type { ProcessServices } from './process-services.js'
 import type { RowHosts } from './row-hosts.js'
 import type { RuntimeTargetHost } from './runtime-target.js'
+import { sandboxBackendPackages } from './workspace-runtime.js'
 
 /**
  * A raw module import, distinct from `PackageLoader`: `createManagedExtHost` evaluates an
@@ -139,11 +140,11 @@ export function createExtensionHost(
     shutdown: dispatchExtensionShutdown,
     loader: deps.extensionLoader ?? nativeExtensionImport,
     ceiling: ctx.profile.policy.capabilityCeiling,
-    seamPackages: new Set([ctx.profile.seams.sandbox, ctx.profile.seams.platform]),
-    // Resource extensions keep their existing independent reload path. Only the two static seam
-    // owners above are immutable now; the eight ordinary Cordis seams can update in place.
-    // mutable() (ext-host/managed-host.ts:214-221) refuses by PACKAGE, and the shipped local-dev
-    // template puts @agnes/base in `seams.sandbox` (templates/local-dev.yaml:11), so without this
+    seamPackages: new Set(sandboxBackendPackages(ctx.profile, modules)),
+    // Resource extensions keep their existing independent reload path. Only the sandbox backend
+    // packages above are immutable now; the ordinary Cordis seams can update in place.
+    // mutable() (ext-host/managed-host.ts:214-221) refuses by PACKAGE, and @agnes/base supplies
+    // the local sandbox probe, so without this
     // every @agnes/base extension is unrevokable and an ext: row can never unmount. Opening it per
     // ID keeps the protection for every sibling that is not on this list. The list is derived from
     // the constant, not from the rows actually built, so it also names ids that ended up on the

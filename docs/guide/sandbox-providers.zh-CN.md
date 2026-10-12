@@ -19,7 +19,11 @@ sandbox:
 
 这个选择在进程的整个生命周期内保持不变。`catalog()` 给每条记录标上 `restartRequired: true`。修改 profile 不会搬走已经在跑的命令，也不会改换当前进程的目标。要换 id，需要重新启动进程。
 
-远程工作区不能再选择另一个提供者，远程运行器保持原样。
+`sandbox: { provider }` 是选择沙箱的唯一写法。`seams.sandbox` 已删除，`seams.platform` 同样：平台后端归宿主所有，在提供者目录里显示为 `platform`，authority 为 `host`，任何包都不能注册或选择它。
+
+## 远程提供者
+
+命令在另一台机器上运行的提供者，从自己的包里导出 `sandboxProvider`。用 `@agnes/sandbox-remote` 的 `defineRemoteSandboxProvider({ id, version, openTransport })` 构造，然后用 `sandbox: { provider: <id> }` 选中，通道设置写在该包的配置里（`rootTemplate`、`keepOnClose`、`providerTtlMs`，以及 `openTransport` 自己读取的内容）。宿主在启动时打开一次通道，并在其上运行自己的执行门、文件策略和工作区围栏，所以提供者实例本身从不承载命令。只有被选中的远程提供者才会打开通道。远程工作区不能再选择另一个提供者。
 
 ## 能力
 

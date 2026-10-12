@@ -3,7 +3,6 @@ import type {
   CompactionPlan,
   Enforcement,
   Operation,
-  RemoteTransport,
   SandboxExecBackend,
   SandboxSeam,
   SandboxWorkspaceBackend,
@@ -18,6 +17,7 @@ import type {
   HookInvocationSnapshot,
   Logger,
   PersistenceProvider,
+  SandboxProvider,
 } from '@agnes/extension-api'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -27,7 +27,7 @@ import type { AgnesPluginManifestEntry, RuntimePluginSnapshot } from '@agnes/pac
 import type { PackageSnapshotCandidateRef, VerifiedRowEntry } from '@agnes/plugin-runtime/host'
 import type { JsonValue } from '@agnes/protocol'
 import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
-import type { SandboxHostServices, SeamAdapters } from './adapters.js'
+import type { SeamAdapters } from './adapters.js'
 
 // Seven profile fields, spelled the way the seam packages consume them. The sandbox seam derives
 // ~/.ssh from homeDir, every seam reads its own keys out of preset, and checkpoint and budget stamp
@@ -82,8 +82,6 @@ export type SeamInitContext = {
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
-  /** Present only in the context handed to the sandbox factory; other seams never see it. */
-  sandboxHost?: SandboxHostServices
   /** Daemon job tables, supplied only to agnes/schedule. */
   scheduleTables?: {
     table(name: string): {
@@ -174,16 +172,16 @@ export type IsolatedEcosystemPreparation = {
 }
 export type IsolatedEcosystemFactory = (ctx: SeamInitContext) => Promise<IsolatedEcosystemPreparation>
 
+/** `sandbox` is selected as a provider and `platform` is Host-owned; neither is a package-exported factory. */
+export type PackageSeamName = Exclude<SeamName, 'sandbox' | 'platform'>
+
 export type PackageModule = {
-  /** Opens a channel only when this package is selected as the sandbox seam. */
-  openTransport?: (
-    config: Record<string, JsonValue>,
-    ctx: {
-      secret(ref: string): string
-      dataDir: string
-      signal: AbortSignal
-    },
-  ) => Promise<RemoteTransport>
+  /**
+   * A sandbox provider this package supplies. The Host reads it before the tree exists, because a
+   * provider with `openTransport` must open its channel during adapter assembly, then registers it
+   * in the `sandbox` catalog under this package.
+   */
+  sandboxProvider?: SandboxProvider
   /** Package-owned backend compiler; Host supplies and retains the only raw probe capability. */
   sandboxWorkspaceProbe?: SandboxWorkspaceProbeFactory
   id: string
@@ -195,7 +193,7 @@ export type PackageModule = {
     candidate?: Readonly<PackageSnapshotCandidateRef>
     snapshotDigest?: string
   }>[]
-  seams?: Partial<Record<SeamName, SeamFactory>>
+  seams?: Partial<Record<PackageSeamName, SeamFactory>>
   operations?: OperationTable
   presets?: Record<string, PresetDoc>
   runtimes?: Partial<Record<RuntimeLanguage, RuntimeFactory>>

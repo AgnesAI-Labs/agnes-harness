@@ -8,8 +8,9 @@
 ## 两组插座
 
 11 个插座全部已落地、全部在被内核调用；除 `platform` 外，其余 10 个全部可经 `profile.seams.*` 换实现。
-`platform` 是唯一例外：它固定是 `@agnes/host` 自带后端，profile 里 `seams.platform` 点名任何其它包都会被
-**静默忽略**——既不报错也不生效（`host/src/assemble/seams.ts`，见下表第 9 行）。「开放 / 不开放」是另一个
+`sandbox` 与 `platform` 不再经 `profile.seams` 选择：`sandbox` 用顶层 `sandbox: { provider }` 选 `sandbox` 提供者，
+Host 自己构造外壳；`platform` 是宿主专属（authority `host`），目录里只读展示，任何包都不能注册或选择；
+`seams.sandbox` / `seams.platform` 写入即配置错误（见下表第 1、9 行）。「开放 / 不开放」是另一个
 维度，与「换不换实现」无关：**第三方扩展代码在运行时有没有函数能调到它。**
 
 | | 换实现（包提供 + profile 点名，装配期，§1.3） | 运行时被扩展代码调（§4 放行表） |

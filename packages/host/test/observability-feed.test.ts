@@ -41,6 +41,7 @@ function catalogEntry(
     capabilities: [],
     restartRequired: true,
     scope: 'process',
+    authority: 'open',
     active,
     selectedFor: active ? ['profile'] : [],
   }

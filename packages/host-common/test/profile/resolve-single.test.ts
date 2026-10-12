@@ -50,7 +50,8 @@ describe('resolveProfile (single layer)', () => {
     expect(p.chain).toEqual(['builtin:local-dev'])
     expect(p.packages.map((x) => x.id)).toEqual(['@agnes/ai', '@agnes/base', '@agnes/code'])
     expect(p.seams.approval).toBe('@agnes/base')
-    expect(p.seams.platform).toBe('@agnes/host')
+    expect(p.seams).not.toHaveProperty('platform')
+    expect(p.seams).not.toHaveProperty('sandbox')
     expect(p.presets).toEqual({
       default: 'workspace-write',
       allowed: ['standard', 'read-only', 'workspace-write', 'full-access', 'minimal', 'ptc'],

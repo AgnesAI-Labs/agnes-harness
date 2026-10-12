@@ -20,6 +20,7 @@ import { buildOrdinaryRows, type OrdinaryPluginLayers } from '@agnes/host-provid
 import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, DYNAMIC_SEAM_NAMES } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
+import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import { closeHost } from '../../src/runtime/lifecycle/lifecycle.js'
@@ -56,7 +57,6 @@ const SEAM_KEYS = [
   'approval',
   'checkpoint',
   'billing',
-  'sandbox',
   'verifier',
   'repair',
   'artifacts',
@@ -99,17 +99,7 @@ function baseModule(over: Partial<PackageModule> = {}): PackageModule {
     // The sandbox fake answers for the workspace it is actually fitted into, the way any real
     // seam must: the assembly binds whatever fsPolicy() returns onto the workspace FsOps, and a
     // policy naming another root is refused.
-    seams: Object.fromEntries(
-      SEAM_KEYS.map((n) => [
-        n,
-        n === 'sandbox'
-          ? async (ctx: { profile: { workspaceRoot: string } }) => ({
-              ...seams.sandbox,
-              fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
-            })
-          : async () => seams[n],
-      ]),
-    ),
+    seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
     operations: {},
     presets: { base: { name: 'base' } },
     ...over,
@@ -760,8 +750,6 @@ describe('assemble', () => {
 
   it('builds the default local workspace runtime factory with a fitted per-session seam', async () => {
     const modules = allModules()
-    const originalSandboxFactory = modules['@agnes/base'].seams?.sandbox
-    if (!originalSandboxFactory) throw new Error('missing test sandbox factory')
     modules['@agnes/base'] = {
       ...modules['@agnes/base'],
       sandboxWorkspaceProbe: async () => ({
@@ -771,32 +759,6 @@ describe('assemble', () => {
         degraded: true,
         confine: ({ argv }) => argv,
       }),
-      seams: {
-        ...modules['@agnes/base'].seams,
-        sandbox: async (ctx) => {
-          const template = (await originalSandboxFactory(ctx)) as SandboxSeam
-          return {
-            ...template,
-            forWorkspace: async (workspace: SeamWorkspace): Promise<SandboxSeam> => ({
-              ...template,
-              forWorkspace: async () => {
-                throw new Error('workspace seam is already fitted')
-              },
-              fsPolicy: () => workspace.policy,
-              enforcement: () => workspace.enforcement,
-              confine: async (argv) => {
-                const backend = await workspace.readiness.ready()
-                return [...(await backend.confine({ argv, cwd: workspace.root }))]
-              },
-              exec: (argv, options) =>
-                workspace.exec(argv, {
-                  ...options,
-                  sandbox: { policyDigest: workspace.policy.digest, backend: workspace.execBackend },
-                }),
-            }),
-          }
-        },
-      },
     }
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'agnes-asm-workspace-'))
     dirs.push(workspaceRoot)
@@ -893,6 +855,11 @@ describe('assemble', () => {
     seams.principals = async () => ({ ...originalPrincipals, authorize })
     const profile = await profileFor()
     const assemblyDeps = deps({ '@agnes/base': module, '@agnes/code': codeModule, '@agnes/ai': aiModule })
+    // The Kernel opens a session on the unbound static seam here, so it must answer for the workspace.
+    assemblyDeps.sandboxSeam = {
+      ...fakeSeams().sandbox,
+      fsPolicy: () => testFsPolicy(realpathSync.native(assemblyDeps.workspaceRoot)),
+    }
     const a = await assemble(profile, assemblyDeps)
     try {
       const stable = a.seams.approval
@@ -1582,41 +1549,20 @@ describe('assemble', () => {
         return { code: 0, stdout, stderr: '', truncated: false }
       },
     }
-    const originalSandbox = baseModule().seams?.sandbox
-    if (!originalSandbox) throw new Error('missing fixture sandbox')
     m[vendor] = {
       id: vendor,
-      openTransport: async (config, ctx) => {
-        order.push('open')
-        expect(order.slice(0, -1).sort()).toEqual(Object.keys(m).sort())
-        expect(config.opaque).toEqual({ value: 42 })
-        expect(typeof ctx.secret).toBe('function')
-        expect(ctx.signal).toBeInstanceOf(AbortSignal)
-        return t
-      },
-      seams: {
-        sandbox: async (ctx) => {
-          const seam = (await originalSandbox(ctx)) as ReturnType<typeof fakeSeams>['sandbox']
-          expect(ctx.sandboxHost?.transport).toBe(t)
-          ctx.sandboxHost?.declareExecGate({ backend: 'remote', onUnavailable: 'deny' })
-          return {
-            ...seam,
-            forWorkspace: async (workspace: SeamWorkspace): Promise<SandboxSeam> => ({
-              ...seam,
-              forWorkspace: async () => {
-                throw new Error('already fitted')
-              },
-              exec: (argv, opts) =>
-                workspace.exec(argv, {
-                  ...opts,
-                  sandbox: { backend: 'remote', policyDigest: workspace.policy.digest },
-                }),
-              fsPolicy: () => workspace.policy,
-              enforcement: () => workspace.enforcement,
-            }),
-          }
+      sandboxProvider: defineRemoteSandboxProvider({
+        id: 'vendor-remote',
+        version: '1.0.0',
+        openTransport: async (config, ctx) => {
+          order.push('open')
+          expect(order.slice(0, -1).sort()).toEqual(Object.keys(m).sort())
+          expect(config.opaque).toEqual({ value: 42 })
+          expect(typeof ctx.secret).toBe('function')
+          expect(ctx.signal).toBeInstanceOf(AbortSignal)
+          return t
         },
-      },
+      }),
     }
     d.loader = {
       importPackage: async (id) => {
@@ -1638,7 +1584,7 @@ describe('assemble', () => {
         user: {
           name: 'p',
           provider: { package: '@agnes/ai', routes: [ROUTE] },
-          seams: { sandbox: vendor },
+          sandbox: { provider: 'vendor-remote' },
           packages: [
             {
               id: vendor,

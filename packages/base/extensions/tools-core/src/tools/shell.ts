@@ -1,17 +1,11 @@
-import type { ToolResult } from '@agnes/extension-api'
+import { SHELL_SENTINEL, type ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { guardedResult } from '../guards/output.js'
 import { ShellParams } from './schemas.js'
 
-// First element of the argv this tool hands to `ctx.exec`. It is a placeholder, not a program: the
-// deployment's sandbox implementation replaces it with the interpreter it has chosen. Keeping the
-// choice out of here is what lets the parameter schema, and therefore its hash, stay identical
-// everywhere agnes runs. The session job launcher uses executable POSIX argv before confinement.
-// The command line itself stays untouched — one argv element,
-// exactly as the model wrote it, so what the policy layer inspects is what runs.
-export const SHELL_SENTINEL = '$SHELL'
+export { SHELL_SENTINEL }
 
 // Used only when the host states no default, so an older host keeps the default it always had.
 const DEFAULT_FOREGROUND_MS = 120_000

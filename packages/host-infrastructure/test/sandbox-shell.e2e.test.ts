@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { expect, it } from 'vitest'
-import { expandShell } from '../src/sandbox-shell.js'
+import { expandShell } from '../src/sandbox-seam.js'
 
 it.runIf(process.platform !== 'win32')(
   'runs the expanded argv with a real POSIX shell and observes command output',

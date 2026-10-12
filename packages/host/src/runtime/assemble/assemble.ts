@@ -77,7 +77,7 @@ async function openFoundation(ctx: AssemblyContext): Promise<Foundation> {
 
 async function mountTree(ctx: AssemblyContext, { pkgs, proc, presets }: Foundation) {
   ctx.done('seams')
-  const seamContexts = await openSeamContexts(ctx, pkgs, proc, presets)
+  const seamContexts = openSeamContexts(ctx, proc, presets)
   const workspaceRuntime = createWorkspaceRuntimeFactory(ctx, pkgs, proc, presets, seamContexts)
   const skillState = createSkillState(ctx, proc)
   const bootRows = buildBootRows(ctx, pkgs, presets, seamContexts)

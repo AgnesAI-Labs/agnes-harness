@@ -92,26 +92,6 @@ export type SandboxBackendReport = Readonly<{
   enforcement: Enforcement
 }>
 
-/**
- * The services only the sandbox factory is ever handed. `pathPolicy.canonicalize` is the host's
- * own filesystem canonicalizer - the same path flavor, case semantics and deepest-existing-parent
- * walk the FsOps fence runs - narrowed to producing a canonical name; it executes and authorizes
- * nothing. `probeExec` is a raw spawner whose lifetime ends when the factory returns; it exists so
- * backend detection never requires keeping a raw exec in the seam. `declareExecGate` is how the
- * seam states its process-isolation posture, and `binding` is how it learns whether the host has
- * actually bound the policy it compiled - enforcement() may not claim what this says has not
- * happened.
- */
-export type SandboxHostServices = {
-  shellCommand?: (command: string) => string[]
-  pathPolicy: { canonicalize(path: string, opts?: { base?: string }): Promise<string> }
-
-  probeExec: HostExec
-  declareExecGate(state: SandboxGateState): void
-  reportBackend(report: SandboxBackendReport): void
-  binding(): { policyDigest: string | null }
-}
-
 /** The way to put a question to whoever is connected. The deadline travels on the signal. */
 export type Prompter = {
   ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer>
@@ -187,10 +167,6 @@ export type SeamInitContext = {
   computerUseOptions?: ComputerUseToolOptions
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
-  /** Present only in the context handed to the sandbox factory. A seam that is not sandbox never
-   * sees it, and a sandbox seam initialised without it must refuse: the host cannot bind what it
-   * cannot canonicalize. */
-  sandboxHost?: SandboxHostServices
   /** Daemon job tables, supplied only to agnes/schedule. */
   scheduleTables?: { table(name: string): TableHandle }
 }

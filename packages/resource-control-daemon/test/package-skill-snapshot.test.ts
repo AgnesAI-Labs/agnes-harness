@@ -27,12 +27,10 @@ function prepare(root: string, dataDir: string = root) {
       approval: '@agnes/base',
       checkpoint: '@agnes/base',
       billing: '@agnes/base',
-      sandbox: '@agnes/base',
       verifier: '@agnes/base',
       repair: '@agnes/base',
       artifacts: '@agnes/base',
       principals: '@agnes/base',
-      platform: '@agnes/base',
     },
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })

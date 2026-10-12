@@ -1,13 +1,32 @@
 import type { Enforcement, SandboxSeam, SeamWorkspace } from '@agnes/core'
-import type { SandboxExecutionPolicy } from '@agnes/extension-api'
-import { expandShell } from '../../../src/sandbox-shell.js'
-import type { SeamFactory } from '../../../src/seam-init.js'
+import { SHELL_SENTINEL, type SandboxExecutionPolicy } from '@agnes/extension-api'
 
 const fault = (code: string, message: string): Error & { code: string } =>
   Object.assign(new Error(`${code}: ${message}`), { code })
 
-const unavailable = (): never => {
+const unbound = (): never => {
   throw fault('E_WORKSPACE_REQUIRED', 'sandbox seam is not bound to a workspace')
+}
+
+/** Expansion is argument construction only. It provides no OS isolation. */
+export function expandShell(
+  argv: string[],
+  dialect: 'posix' | 'powershell',
+  shellCommand?: (command: string) => string[],
+): string[] {
+  if (
+    !Array.isArray(argv) ||
+    argv.length === 0 ||
+    !argv[0] ||
+    argv.some((arg) => typeof arg !== 'string' || arg.includes('\0')) ||
+    (dialect !== 'posix' && dialect !== 'powershell')
+  )
+    throw new Error('invalid sandbox command')
+  if (argv[0] !== SHELL_SENTINEL) return [...argv]
+  // Never silently discard arguments or turn a missing command into successful empty execution.
+  if (argv.length !== 2 || !argv[1]) throw new Error('invalid sandbox shell command')
+  if (dialect === 'powershell' && shellCommand) return shellCommand(argv[1])
+  return dialect === 'posix' ? ['sh', '-c', argv[1]] : ['pwsh', '-NoProfile', '-Command', argv[1]]
 }
 
 function assertWorkspace(workspace: SeamWorkspace): void {
@@ -31,12 +50,41 @@ function assertWorkspace(workspace: SeamWorkspace): void {
     throw fault('E_SANDBOX_WORKSPACE', 'Host supplied an invalid bound workspace')
 }
 
-async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
-  assertWorkspace(workspace)
+/**
+ * A remote workspace runs every command on the other machine through the Host's gate. The binding
+ * stamped on a request is checked against what the Host bound, and the gate authorizes `cwd`
+ * against that policy over the remote fence before anything is shipped. `confine` is a refusal,
+ * not a degraded local wrapper: a caller that spawns its own process would spawn on this machine,
+ * which is a different destination, not a weaker form of running remotely.
+ */
+async function bindRemote(workspace: SeamWorkspace): Promise<SandboxSeam> {
+  if (workspace.binding().policyDigest !== workspace.policy.digest)
+    throw fault('E_SANDBOX_WORKSPACE', 'the remote workspace is not bound to its Host policy')
+  await workspace.readiness.ready(workspace.signal)
+  const bound: SandboxSeam = {
+    forWorkspace: bindWorkspace,
+    exec: (cmd, opts) =>
+      workspace.exec(cmd, {
+        ...opts,
+        sandbox: { policyDigest: workspace.policy.digest, backend: 'remote' },
+      }),
+    confine: async () => {
+      throw new Error(
+        'confine() is unavailable under a remote sandbox: use exec(), which runs on the remote host',
+      )
+    },
+    fsPolicy: () => workspace.policy,
+    enforcement: () => ({ level: workspace.enforcement.level, scope: [...workspace.enforcement.scope] }),
+  }
+  return Object.freeze(bound)
+}
+
+async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
   const backend = await workspace.readiness.ready(workspace.signal)
   const policy = workspace.policy
-  const forWorkspace = (next: SeamWorkspace): Promise<SandboxSeam> => bindWorkspace(next)
   const providerId = workspace.providerId
+  // An external provider owns the process; wrapping the argv in the host OS sandbox and then
+  // handing it to the provider would fake both.
   const external = providerId !== undefined && providerId !== 'local'
   const deny = Object.freeze(policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path))
   // The Host supplies the authoritative write domain after binding the selected preset.
@@ -55,7 +103,7 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
     requiredEnforcement: workspace.enforcement,
   })
   const bound: SandboxSeam = {
-    forWorkspace,
+    forWorkspace: bindWorkspace,
     async openProcess(request) {
       if (!workspace.openProcess)
         throw fault('SANDBOX_UNAVAILABLE', 'interactive process backend is unavailable')
@@ -83,8 +131,6 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
     },
     async exec(cmd, opts) {
       const raw = expandShell(cmd, workspace.shell, workspace.shellCommand)
-      // The selected provider owns the process. Wrapping the argv in the host
-      // OS sandbox and then handing that argv to the provider would fake both.
       if (external && providerId !== undefined) {
         return workspace.exec([...raw], {
           ...opts,
@@ -118,24 +164,29 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
     enforcement(): Enforcement {
       if (workspace.binding().policyDigest !== policy.digest) return { level: 'none', scope: [] }
       if (external) return workspace.enforcement
-      return {
-        level: workspace.enforcement.level,
-        scope: [...workspace.enforcement.scope],
-      }
+      return { level: workspace.enforcement.level, scope: [...workspace.enforcement.scope] }
     },
   }
   return Object.freeze(bound)
 }
 
+async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
+  assertWorkspace(workspace)
+  return workspace.execBackend === 'remote' ? bindRemote(workspace) : bindLocal(workspace)
+}
+
 /**
- * Package-level sandbox factory. Host supplies the policy and root-bound readiness only when it
- * constructs a session workspace; this object has no raw probe and cannot compile another policy.
+ * The Host-built sandbox seam. It has no behavior of its own until the Host fits it to one
+ * authorized workspace: the policy, the readiness posture and the execution path all arrive on
+ * `SeamWorkspace`, and the selected `sandbox` provider (or the Host's remote channel) is what
+ * actually runs the process. Before fitting it refuses every operation and reports no enforcement.
  */
-export const sandboxSeam: SeamFactory<SandboxSeam> = async () =>
-  Object.freeze<SandboxSeam>({
-    forWorkspace: (workspace: SeamWorkspace) => bindWorkspace(workspace),
-    exec: async () => unavailable(),
-    confine: async () => unavailable(),
-    fsPolicy: unavailable,
+export function createSandboxSeam(): SandboxSeam {
+  return Object.freeze<SandboxSeam>({
+    forWorkspace: bindWorkspace,
+    exec: async () => unbound(),
+    confine: async () => unbound(),
+    fsPolicy: unbound,
     enforcement: (): Enforcement => ({ level: 'none', scope: [] }),
   })
+}

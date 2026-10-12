@@ -1,4 +1,6 @@
+import type { JsonValue } from '@agnes/protocol'
 import type { SandboxEnforcement } from './common.js'
+import type { RemoteTransport } from './remote-transport.js'
 
 /** Operating systems a provider can actually run on. */
 export type SandboxPlatform = 'darwin' | 'linux' | 'win32'
@@ -99,6 +101,14 @@ export type SandboxProviderConfig = Readonly<{
   options?: Readonly<Record<string, string>>
 }>
 
+/** What the Host hands a remote provider when it opens the channel. The Host owns the result. */
+export type SandboxTransportContext = Readonly<{
+  /** Resolves a secret reference the deployment configured; the provider never sees the store. */
+  secret(ref: string): string
+  dataDir: string
+  signal: AbortSignal
+}>
+
 /**
  * A replaceable sandbox backend. Register it through a plugin that injects
  * `providers`. The host picks one id at startup. Changing the id needs
@@ -114,6 +124,16 @@ export interface SandboxProvider {
     config: SandboxProviderConfig,
     signal?: AbortSignal,
   ): SandboxProviderInstance | Promise<SandboxProviderInstance>
+  /**
+   * Present only on a provider whose commands run on another machine. The Host opens the channel
+   * once, early in assembly, from the package config of the package that exports this provider,
+   * and keeps it: the Host's own exec gate, file policy and workspace fence run over it, so
+   * `create` is not what carries commands for such a provider.
+   */
+  openTransport?(
+    config: Readonly<Record<string, JsonValue>>,
+    ctx: SandboxTransportContext,
+  ): Promise<RemoteTransport>
   cleanup?(): void | Promise<void>
 }
 
@@ -125,6 +145,13 @@ export type SandboxProviderCatalogEntry = Readonly<{
   /** The running process keeps the provider it selected at startup. */
   restartRequired: true
 }>
+
+/**
+ * First element of the argv a tool hands to `exec`. It is a placeholder, not a program: the sandbox
+ * shell replaces it with the interpreter the deployment chose, so the tool's schema stays identical
+ * everywhere. The command line stays one argv element, exactly as the model wrote it.
+ */
+export const SHELL_SENTINEL = '$SHELL'
 
 /** Built-in host sandbox. Seatbelt, bubblewrap, or the current Windows posture. */
 export const LOCAL_SANDBOX_PROVIDER_ID = 'local'

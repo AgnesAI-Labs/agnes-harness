@@ -1,4 +1,4 @@
-import type { SeamName } from '@agnes/core'
+import { SEAM_NAMES, type SeamName } from '@agnes/core'
 import type {
   ApprovalProfile,
   CommandHooksPolicy,
@@ -18,6 +18,21 @@ import type {
 } from './composition.js'
 
 /** `^[a-z][a-z0-9.-]{0,63}$` in the profile schema; kept as a string alias here. */
+/**
+ * `sandbox` is selected as a provider (`sandbox: { provider }`) and `platform` is owned by the Host;
+ * neither is chosen under `seams`.
+ */
+export const PROFILE_SEAM_NAMES = SEAM_NAMES.filter(
+  (name): name is ProfileSeamName => name !== 'sandbox' && name !== 'platform',
+)
+export type ProfileSeamName = Exclude<SeamName, 'sandbox' | 'platform'>
+
+/** Keys that used to name a package under `seams`, with what to write instead. */
+export const REMOVED_SEAM_KEYS = Object.freeze({
+  sandbox: 'select the sandbox with the top-level `sandbox: { provider }`',
+  platform: 'platform is owned by the Host and cannot be selected; delete the key',
+} as const)
+
 export type Capability = string
 export type PackageRef = {
   config?: Record<string, JsonValue>
@@ -131,7 +146,7 @@ export type RuntimeProfileManifest = {
   schemaVersion?: number
   extends?: string
   packages?: PackageRef[]
-  seams?: Partial<Record<SeamName, string>>
+  seams?: Partial<Record<ProfileSeamName, string>>
   provider?: ProviderConfig
   adapters?: AdaptersConfig
   transports?: Transport[]
@@ -241,7 +256,7 @@ export type ResolvedProfile = Readonly<{
   loop?: LoopSelection
   chain: string[]
   packages: ResolvedPackage[]
-  seams: Record<SeamName, string>
+  seams: Record<ProfileSeamName, string>
   provider: { package: string; adapters: string[] } & Pick<ProviderConfig, 'routes' | 'catalog' | 'contract'>
   adapters: {
     storage: string

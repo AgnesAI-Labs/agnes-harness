@@ -8,7 +8,6 @@ import { repairPolicy, verifierT0 } from '../extensions/loop-hygiene/src/seam.js
 import { principalsLocal } from '../extensions/principals-local/src/seam.js'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { sandboxSeam } from '../extensions/sandbox/src/seam.js'
 import { packageStorage } from './package-metadata.js'
 import type { SeamInitContext } from './seam-init.js'
 
@@ -226,7 +225,6 @@ export type {
   SandboxBackendReport,
   SandboxExecBinding,
   SandboxGateState,
-  SandboxHostServices,
   SeamAdaptersView,
   SeamFactory,
   SeamInitContext,
@@ -248,7 +246,6 @@ export const seams = {
   billing: budgetBilling,
   verifier: verifierT0,
   repair: repairPolicy,
-  sandbox: sandboxSeam,
 } as const
 
 /** Host operation factories consume the same durable queue as the fitted harness and tool. */

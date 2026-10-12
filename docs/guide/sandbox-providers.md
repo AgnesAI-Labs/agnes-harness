@@ -19,7 +19,11 @@ sandbox:
 
 The choice is fixed for the life of the process. `catalog()` marks every entry `restartRequired: true`. Editing the profile does not move a command that is already running, and it does not retarget the running process. Start the process again to select a different id.
 
-A remote workspace cannot select another provider. The remote runner stays in place.
+`sandbox: { provider }` is the only way to choose a sandbox. `seams.sandbox` was removed, and `seams.platform` too: the platform backend belongs to the Host. It is listed in the provider catalog as `platform` with authority `host`, and no package can register or select it.
+
+## Remote providers
+
+A provider whose commands run on another machine exports a `sandboxProvider` from its package. Build it with `defineRemoteSandboxProvider({ id, version, openTransport })` from `@agnes/sandbox-remote`, then select it with `sandbox: { provider: <id> }` and put the channel settings in that package's config (`rootTemplate`, `keepOnClose`, `providerTtlMs`, plus whatever `openTransport` reads). The Host opens the channel once at startup and runs its own exec gate, file policy and workspace fence over it, so the provider instance never carries a command itself. Only the selected remote provider's channel is opened. A remote workspace cannot select another provider.
 
 ## Capabilities
 

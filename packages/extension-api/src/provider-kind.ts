@@ -58,8 +58,16 @@ export interface ProviderSelection {
   version?: string
 }
 
+/**
+ * Who may register and select providers of a kind. `open`: any enabled package. `host`: the Host
+ * registers the one implementation at process start; packages cannot register or select it, and
+ * the catalog shows it read-only.
+ */
+export type ProviderAuthority = 'open' | 'host'
+
 export interface ProviderKind<T extends ProviderIdentity> {
   readonly kind: string
+  readonly authority: ProviderAuthority
   readonly restartRequired: boolean
   readonly scope: ProviderLifecycleScope
   /** Invariant token: use the exact token installed by the kind service. */
@@ -70,7 +78,8 @@ export interface ProviderKind<T extends ProviderIdentity> {
 }
 
 export function defineProviderKind<T extends ProviderIdentity>(
-  definition: Omit<ProviderKind<T>, 'restartRequired' | 'scope' | typeof providerType> & {
+  definition: Omit<ProviderKind<T>, 'authority' | 'restartRequired' | 'scope' | typeof providerType> & {
+    authority?: ProviderAuthority
     scope?: ProviderLifecycleScope /** @deprecated Derived from scope. */
     restartRequired?: boolean
   },
@@ -86,8 +95,15 @@ export function defineProviderKind<T extends ProviderIdentity>(
     definition.scope ?? PROVIDER_LIFECYCLE_SCOPES[definition.kind as keyof KindMap] ?? 'generation'
   if (!['session', 'generation', 'workspace', 'process'].includes(scope))
     throw new TypeError('Invalid provider lifecycle scope')
+  if (
+    definition.authority !== undefined &&
+    definition.authority !== 'open' &&
+    definition.authority !== 'host'
+  )
+    throw new TypeError('Invalid provider authority')
   return Object.freeze({
     ...definition,
+    authority: definition.authority ?? 'open',
     scope,
     restartRequired: providerRestartRequired(scope),
     [providerType]: (value: T) => value,
@@ -101,6 +117,7 @@ export interface ProviderCatalogEntry extends ProviderIdentity {
   readonly capabilities: readonly string[]
   readonly restartRequired: boolean
   readonly scope: ProviderLifecycleScope
+  readonly authority: ProviderAuthority
   readonly active: boolean
   readonly selectedFor: readonly string[]
 }

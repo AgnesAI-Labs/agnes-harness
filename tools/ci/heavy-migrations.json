@@ -319,7 +319,7 @@
     "reason": "大 ledger / opt-in 性能预算",
     "evidence": "Static audit; not executed in this development window."
   },
-  "packages/base/test/sandbox-shell.e2e.test.ts": {
+  "packages/host-infrastructure/test/sandbox-shell.e2e.test.ts": {
     "previous": "packages/base/test/sandbox-shell.test.ts",
     "reason": "1 个真实 POSIX shell case 迁入 e2e，3 个 argv 注册留 fast",
     "evidence": "Static audit; not executed in this development window."

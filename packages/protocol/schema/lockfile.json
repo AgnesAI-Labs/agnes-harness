@@ -613,17 +613,7 @@
         "seams": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "approval",
-            "checkpoint",
-            "billing",
-            "sandbox",
-            "verifier",
-            "repair",
-            "artifacts",
-            "principals",
-            "platform"
-          ],
+          "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
             "approval": {
               "type": "string"
@@ -632,9 +622,6 @@
               "type": "string"
             },
             "billing": {
-              "type": "string"
-            },
-            "sandbox": {
               "type": "string"
             },
             "verifier": {
@@ -647,9 +634,6 @@
               "type": "string"
             },
             "principals": {
-              "type": "string"
-            },
-            "platform": {
               "type": "string"
             }
           }

@@ -4,9 +4,11 @@ import type { Enforcement, SandboxExecBackend } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { privateStateRoots } from '@agnes/host-common/paths'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { commandHookInvocationSnapshot } from '@agnes/host-common/profile-policy'
 import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
+import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
 import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
@@ -27,6 +29,7 @@ import {
   LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
+import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
@@ -48,8 +51,7 @@ function createReadinessManager(
   const { deps, rollback } = ctx
   const { modules } = pkgs
   const { adapters, sandboxProviderSlot } = proc
-  const sandboxPackage = modules.get(ctx.profile.seams.sandbox)
-  const workspaceProbe = sandboxPackage?.sandboxWorkspaceProbe
+  const workspaceProbe = localSandboxProbe(ctx.profile, modules)
   const rawProbe = adapters.createProbeExec()
   rollback.push('workspace-sandbox-probe', () => rawProbe.revoke())
   const readinessManager = new SandboxReadinessManager(async (key) => {
@@ -71,7 +73,7 @@ function createReadinessManager(
       })
     const providerId = sandboxProviderIdFrom(ctx.profile)
     if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
-      await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, false)
+      await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, undefined)
       const selected = sandboxProviderSlot.selected
       if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
       const capabilities = selected.capabilities
@@ -128,6 +130,45 @@ function createReadinessManager(
   })
   rollback.push('workspace-sandbox-readiness', () => readinessManager.revoke())
   return readinessManager
+}
+
+/**
+ * The OS-confinement probe of the local sandbox. Only a builtin package may supply it: the posture
+ * it reports (backend, enforcement, the argv rewrite) is what the Host trusts as local isolation.
+ */
+export function localSandboxProbe(
+  profile: Pick<ResolvedProfile, 'packages'>,
+  modules: ReadonlyMap<string, PackageModule>,
+): PackageModule['sandboxWorkspaceProbe'] {
+  const suppliers = [...modules].filter(
+    ([id, mod]) =>
+      mod.sandboxWorkspaceProbe !== undefined &&
+      profile.packages.some((pkg) => pkg.id === id && pkg.trust === 'builtin'),
+  )
+  if (suppliers.length > 1)
+    throw new HostError('E_EXT_LOAD', 'more than one builtin package exports sandboxWorkspaceProbe', {
+      detail: { packages: suppliers.map(([id]) => id) },
+    })
+  return suppliers[0]?.[1].sandboxWorkspaceProbe
+}
+
+/**
+ * Packages whose code is the process's sandbox backend: the builtin that supplies the local probe
+ * and the package that exports the selected sandbox provider. Their code cannot change live.
+ */
+export function sandboxBackendPackages(
+  profile: Pick<ResolvedProfile, 'packages' | 'sandbox'>,
+  modules: ReadonlyMap<string, PackageModule>,
+): readonly string[] {
+  const selected = sandboxProviderIdFrom(profile)
+  return [...modules]
+    .filter(
+      ([id, mod]) =>
+        mod.sandboxProvider?.id === selected ||
+        (mod.sandboxWorkspaceProbe !== undefined &&
+          profile.packages.some((pkg) => pkg.id === id && pkg.trust === 'builtin')),
+    )
+    .map(([id]) => id)
 }
 
 export type WorkspaceRuntimeFactory = Readonly<{
@@ -213,7 +254,7 @@ export function createWorkspaceRuntimeFactory(
       bindReadiness: ({ workspace, plan }) =>
         readinessManager.bind(
           {
-            backendId: ctx.profile.seams.sandbox,
+            backendId: sandboxProviderIdFrom(ctx.profile),
             canonicalRoot: workspace.root,
             staticConfigHash: plan.staticConfigHash,
             caseSensitive: plan.semantics.caseSensitive,
@@ -254,7 +295,7 @@ export function createWorkspaceRuntimeFactory(
           sandboxProviderSlot,
           ctx.profile,
           runtime.root,
-          adapters.transport !== undefined,
+          remoteSandboxModule(ctx.profile, pkgs.modules)?.provider.id,
         )
         const powerShell = adapters.powerShell
         const shellCommand = powerShell

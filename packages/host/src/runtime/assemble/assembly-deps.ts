@@ -1,4 +1,4 @@
-import type { KernelOptions, Provider } from '@agnes/core'
+import type { KernelOptions, Provider, SandboxSeam } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
 import type { TrajectoryAssemblyOptions } from '@agnes/host-artifacts/trajectory-contract'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -40,6 +40,8 @@ export type AssembleDeps = HostPaths &
     searchProvider?: import('@agnes/extension-api').SearchProvider
     publicFetch?: KernelOptions['publicFetch']
     seamTimeoutMs?: number
+    /** Test override for the Host-built sandbox shell, so fixtures do not spawn real commands. */
+    sandboxSeam?: SandboxSeam
     platform?: PlatformBackend
     /** Trusted Node runtime for Windows process brokers when the host runs inside SEA. */
     windowsNodeExecutable?: string

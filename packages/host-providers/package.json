@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./adapters/platform-provider": "./src/adapters/platform-provider.ts",
     "./adapters/sandbox-providers": "./src/adapters/sandbox-providers.ts",
     "./assemble/compaction-engines": "./src/assemble/compaction-engines.ts",
     "./assemble/compaction": "./src/assemble/compaction.ts",

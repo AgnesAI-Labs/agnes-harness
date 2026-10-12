@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
-import { seams as baseSeams } from '@agnes/base'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import type { InferenceEvent, JsonValue, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { HostSession } from '../../src/runtime/lifecycle/host.js'
@@ -81,7 +81,7 @@ async function workspaceHost(provider: Provider) {
     packageDirs: { '@agnes/base': baseDir },
     provider,
     disableSessionTitle: true,
-    packages: { '@agnes/base': { seams: { sandbox: baseSeams.sandbox } } },
+    sandboxSeam: createSandboxSeam(),
   })
   // The shape a shared worker opens: an authenticated binding and a stable key, no cwd override.
   const binding = host.acceptWorkspaceBinding(

@@ -2,6 +2,20 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 2.2.0
+
+### Added
+
+- `SandboxProvider.openTransport?(config, ctx)` and `SandboxTransportContext`: a provider whose commands run on another machine hands the Host its channel opener. The Host opens the channel once during assembly from the config of the package that exports the provider, and runs its own exec gate and workspace fence over it. `@agnes/sandbox-remote` exports `defineRemoteSandboxProvider` to build one.
+- `ProviderKind.authority` (`'open' | 'host'`, default `open`), `ProviderAuthority`, and `ProviderCatalogEntry.authority`. A `host` kind has one Host-registered implementation: packages cannot register or select it, and the catalog shows it read-only. The first such kind is `platform`.
+- Protocol: `RuntimeAdminSnapshot.providers[].authority` (optional).
+
+### Removed
+
+- `profile.seams.sandbox` and `profile.seams.platform` (and the `sandbox` / `platform` keys of the package `seams` export table). Select the sandbox with top-level `sandbox: { provider }`; `platform` is Host-owned. Writing either key is a configuration error that names the replacement. `ResolvedProfile.seams` and the profile schema lose both keys.
+- The `openTransport` package export, replaced by `SandboxProvider.openTransport` on an exported `sandboxProvider`.
+- `SandboxHostServices` and the `sandboxHost` field of the seam init context; the Host builds the sandbox seam itself.
+
 ## 2.1.0
 
 ### Removed
@@ -20,6 +34,7 @@ API additions require a minor version; removals or semantic changes require a ma
   methods `billingRecord` / `billingProjected`). `seams.ledger` is not accepted.
 - `harness` is no longer a seam: profiles do not select it and the kernel does not require it.
   The refine extension keeps its own queue-backed intake.
+
 
 ## 2.0.0
 

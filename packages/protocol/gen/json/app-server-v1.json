@@ -29343,6 +29343,18 @@
                     "type": "string"
                   }
                 ]
+              },
+              "authority": {
+                "anyOf": [
+                  {
+                    "const": "open",
+                    "type": "string"
+                  },
+                  {
+                    "const": "host",
+                    "type": "string"
+                  }
+                ]
               }
             },
             "required": [

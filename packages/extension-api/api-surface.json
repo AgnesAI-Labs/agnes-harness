@@ -1,5 +1,5 @@
 {
-  "apiVersion": "2.1.0",
+  "apiVersion": "2.2.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
@@ -28,6 +28,7 @@
     "ProviderError",
     "RESOLVED_TOOL_CALL_POLICY_KEYS",
     "RESOURCE_KINDS",
+    "SHELL_SENTINEL",
     "SLOT_NAMES",
     "SLOT_PAYLOAD_MAX_BYTES",
     "SLOT_TABLE",

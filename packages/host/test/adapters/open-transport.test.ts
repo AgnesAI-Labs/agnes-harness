@@ -2,14 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RemoteTransport } from '@agnes/core'
+import type { SandboxProvider } from '@agnes/extension-api'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
-import {
-  createJitiPackageLoader,
-  type PackageModule,
-  readNamedExports,
-} from '@agnes/host-extensions/assemble/packages'
+import { createJitiPackageLoader, readNamedExports } from '@agnes/host-extensions/assemble/packages'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openAdapters } from '../../src/runtime/adapters/index.js'
 
@@ -45,7 +43,7 @@ const setup = async (over: { config?: typeof config; vault?: boolean } = {}) => 
       builtinPackages: ['@agnes/base', '@agnes/code', '@agnes/ai', vendor],
       user: {
         name: 'p',
-        seams: { sandbox: vendor },
+        sandbox: { provider: vendorProvider },
         packages: [{ id: vendor, source: 'test', config: over.config ?? config }],
         adapters: { secrets: { kind: over.vault ? 'vault' : 'env' } },
       },
@@ -54,8 +52,17 @@ const setup = async (over: { config?: typeof config; vault?: boolean } = {}) => 
   )
   return { p, opts: { dataDir, workspaceRoot: dataDir } }
 }
-const modules = (openTransport: NonNullable<PackageModule['openTransport']>) =>
-  new Map([[vendor, { id: vendor, openTransport }]])
+const vendorProvider = 'vendor-remote'
+const modules = (openTransport: NonNullable<SandboxProvider['openTransport']>) =>
+  new Map([
+    [
+      vendor,
+      {
+        id: vendor,
+        sandboxProvider: defineRemoteSandboxProvider({ id: vendorProvider, version: '1.0.0', openTransport }),
+      },
+    ],
+  ])
 const binding = (sessionKey = 'session-a') =>
   new WorkspaceBindingAuthority().accept(
     { version: 1, sessionKey, workspaceId: 'a'.repeat(64), revision: 1, canonicalRoot: '/source' },
@@ -64,12 +71,19 @@ const binding = (sessionKey = 'session-a') =>
 
 describe('B1 generic transport opening', () => {
   it('validates a bare function export', () => {
-    expect(() => readNamedExports(vendor, 'test', { openTransport: {} })).toThrow(/openTransport/)
+    expect(() =>
+      readNamedExports(vendor, 'test', {
+        sandboxProvider: { id: vendorProvider, version: '1.0.0', create() {}, openTransport: {} },
+      }),
+    ).toThrow(/sandboxProvider/)
   })
   it('rejects a malformed export through the real jiti package loader', async () => {
     const { opts } = await setup()
     writeFileSync(join(opts.dataDir, 'package.json'), JSON.stringify({ name: vendor, main: './index.ts' }))
-    writeFileSync(join(opts.dataDir, 'index.ts'), 'export const openTransport = {}')
+    writeFileSync(
+      join(opts.dataDir, 'index.ts'),
+      'export const sandboxProvider = { id: "x", version: "1.0.0", create() {}, openTransport: {} }',
+    )
     await expect(
       createJitiPackageLoader(
         createLoader({ cacheDir: opts.dataDir, hostRoot: process.cwd(), agnesVersion: '1' }),

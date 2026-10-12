@@ -102,7 +102,6 @@ const SEAM_KEYS = [
   'approval',
   'checkpoint',
   'billing',
-  'sandbox',
   'verifier',
   'repair',
   'artifacts',
@@ -155,6 +154,8 @@ export type TestHostOptions = {
   seams?: Parameters<typeof fakeSeams>[0]
   /** Real factories for seams whose adapter integration the fixture exercises. */
   seamFactories?: Partial<NonNullable<PackageModule['seams']>>
+  /** Replaces the fake sandbox shell, e.g. with the production `createSandboxSeam()`. */
+  sandboxSeam?: SandboxSeam
   /**
    * The model this host runs on. A function is handed the resolved profile and the pair host
    * resolved for the model layer - its logger and the deployment's credit rate - which is the only
@@ -392,6 +393,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     loader,
     log,
     platform: o.platform ?? fakePlatform(o.platformCaps ?? {}),
+    sandboxSeam: o.sandboxSeam ?? seamsImpl.sandbox,
     agnesVersion: '0.1.0',
     env: o.env ?? { ...process.env },
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),

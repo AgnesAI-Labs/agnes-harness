@@ -15,13 +15,7 @@ export function overlayLivePluginConfig(
 ): readonly Readonly<PluginRow>[] {
   const live = new Map(
     current.tree.rows
-      .filter(
-        (row) =>
-          row.configReload === 'live' &&
-          row.id !== 'seam:sandbox' &&
-          row.id !== 'seam:platform' &&
-          !row.id.startsWith('adapter:'),
-      )
+      .filter((row) => row.configReload === 'live' && !row.id.startsWith('adapter:'))
       .map((row) => [row.id, row]),
   )
   return rows.map((row) => {

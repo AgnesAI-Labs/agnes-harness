@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { expandShell } from '../src/sandbox-shell.js'
+import { expandShell } from '../src/sandbox-seam.js'
 
 it('expands each dialect while preserving the complete command as one argument', () => {
   const command = `printf '%s' 'a b;中文'\nprintf done`

@@ -65,6 +65,7 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
     capabilities: ['compute'],
     restartRequired: false,
     scope: 'generation',
+    authority: 'open',
     active: true,
     selectedFor: ['profile'],
   })

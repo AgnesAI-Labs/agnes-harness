@@ -167,7 +167,7 @@
     "@agnes/web-conversation"
   ],
   "@agnes/guards": [],
-  "@agnes/sandbox-remote": ["@agnes/core"],
+  "@agnes/sandbox-remote": ["@agnes/core", "@agnes/extension-api"],
   "@agnes/package-manager": [
     "@agnes/protocol",
     "@agnes/extension-api",

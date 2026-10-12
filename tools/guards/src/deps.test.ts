@@ -100,9 +100,8 @@ const LAYER: Record<string, number> = {
 
   '@agnes/ai': 3,
   '@agnes/model-adapters': 4,
-  // A seam-only package (RA16): implements SandboxSeam against a transport handed to it by the
-  // host adapter layer, without depending on host or base. Same layer as ai/sdk - one above core,
-  // the only thing it depends on.
+  // The remote sandbox provider and workspace pool (RA16): runs against a transport the host
+  // adapter layer opens, without depending on host or base. Same layer as ai/sdk - one above core.
   '@agnes/sandbox-remote': 3,
   '@agnes/base': 4,
   '@agnes/code': 5,

@@ -164,9 +164,10 @@ export interface SeamWorkspace {
   readonly binding: () => Readonly<{ policyDigest: string | null }>
 }
 
+/** The Host-built shell around the selected `sandbox` provider; not an author contract. */
 export interface SandboxSeam {
   openProcess?: NonNullable<import('@agnes/extension-api').ToolContext['sandbox']['openProcess']>
-  /** Fit this package-level seam factory to one Host-authorized workspace. */
+  /** Fit this shell to one Host-authorized workspace. */
   forWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam>
   exec(
     cmd: string[],

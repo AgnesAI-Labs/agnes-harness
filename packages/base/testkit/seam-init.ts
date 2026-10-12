@@ -6,7 +6,6 @@ import type {
   Prompter,
   SandboxBackendReport,
   SandboxGateState,
-  SandboxHostServices,
   SeamInitContext,
   TableHandle,
 } from '../src/seam-init.js'
@@ -42,16 +41,6 @@ export type FakeSeamInit = SeamInitContext & {
   mem: Map<string, Uint8Array>
   /** The dataDir file contents, keyed by absolute path. */
   data: Map<string, Uint8Array>
-  /** The knobs behind the fake sandbox host services: what the seam declared, and what the fake
-   * host has bound. `setBound` is the fake of the host's policy binding: enforcement() honesty is
-   * tested by moving it. */
-  sandboxState: {
-    execGate: SandboxGateState | null
-    boundDigest: string | null
-    setBound(digest: string | null): void
-    probeCalls: string[][]
-    backendReports: SandboxBackendReport[]
-  }
 }
 
 export type FakeSeamInitOpts = {
@@ -171,55 +160,6 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
   const tables = new Map<string, MemTable>()
   const execCalls: string[][] = []
   const execOpts: Array<Record<string, unknown>> = []
-  // The fake sandbox host services. The canonicalizer is lexical - the Map has no symlinks, so it
-  // resolves `.`/`..`, refuses NUL, empty and root-escaping spellings, and says nothing about
-  // realpath; the host integration tests are where the real canonicalizer is held to the policy.
-  const lexCanonicalize = (path: string, opts?: { base?: string }): string => {
-    if (typeof path !== 'string' || path.length === 0 || path.includes('\0'))
-      throw Object.assign(new Error('E_FS_DENIED: unusable path'), { code: 'E_FS_DENIED' })
-    const abs = path.startsWith('/') ? path : `${opts?.base ?? workspaceRoot}/${path}`
-    const parts: string[] = []
-    for (const seg of abs.split('/')) {
-      if (seg === '' || seg === '.') continue
-      if (seg === '..') {
-        if (parts.length === 0)
-          throw Object.assign(new Error('E_FS_DENIED: escapes the volume root'), { code: 'E_FS_DENIED' })
-        parts.pop()
-      } else parts.push(seg)
-    }
-    return `/${parts.join('/')}`
-  }
-  const sandboxState: FakeSeamInit['sandboxState'] = {
-    execGate: null,
-    boundDigest: null,
-    setBound(digest) {
-      this.boundDigest = digest
-    },
-    probeCalls: [],
-    backendReports: [],
-  }
-  const sandboxServices: SandboxHostServices = {
-    pathPolicy: { canonicalize: async (path, opts) => lexCanonicalize(path, opts) },
-    async probeExec(argv, execOptions) {
-      void execOptions
-      sandboxState.probeCalls.push(argv)
-      return {
-        code: 0,
-        stdout: '',
-        stderr: '',
-        truncated: false,
-        timedOut: false,
-        ...opts.exec?.(argv),
-      }
-    },
-    declareExecGate(state) {
-      sandboxState.execGate = state
-    },
-    reportBackend(report) {
-      sandboxState.backendReports.push(report)
-    },
-    binding: () => ({ policyDigest: sandboxState.boundDigest }),
-  }
   const platform: PlatformSeam = {
     shell: () => 'posix',
     fs: () => ({ caseSensitive: true, pathSep: '/' }),
@@ -267,12 +207,10 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
     },
     log: { debug() {}, info() {}, warn() {}, error() {} },
     signal: new AbortController().signal,
-    sandboxHost: sandboxServices,
     tables,
     execCalls,
     execOpts,
     mem,
     data,
-    sandboxState,
   }
 }

@@ -1324,6 +1324,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
 
   packages/sdk:
     dependencies:

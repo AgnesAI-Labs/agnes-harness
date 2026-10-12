@@ -29,21 +29,3 @@ export type SeamAdapters = {
   }
   prompter?: Prompter
 }
-
-/**
- * The services only the sandbox factory is ever handed, built over one bundle. The canonicalizer
- * is the FsOps fence's own - same walk, same flavor, same case semantics - narrowed to producing a
- * name. The probe exec is raw and ends with the factory; `revoke` is the assembly's to call the
- * moment the factory settles.
- */
-export type SandboxHostServices = {
-  shellCommand?: (command: string) => string[]
-  pathPolicy: { canonicalize(path: string, opts?: { base?: string }): Promise<string> }
-
-  probeExec: ExecAdapter['run']
-  declareExecGate(state: ExecGateState): void
-  reportBackend(report: SandboxBackendReport): void
-  binding(): { policyDigest: string | null }
-  /** Present only under a remote deployment; the seam does not open it, it receives it live. */
-  transport?: RemoteTransport
-}

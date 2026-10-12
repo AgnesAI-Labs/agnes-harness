@@ -134,13 +134,9 @@ export async function createRuntimeGenerationHost(
       ? configuredIdle
       : 60_000
   let collector: ReturnType<typeof setTimeout> | undefined
-  for (const id of [
-    profile.seams.sandbox,
-    profile.seams.platform,
-    ...profile.packages
-      .filter((pkg) => Object.values(profile.adapters).includes(pkg.id))
-      .map((pkg) => pkg.id),
-  ].filter((id): id is string => typeof id === 'string'))
+  for (const id of profile.packages
+    .filter((pkg) => Object.values(profile.adapters).includes(pkg.id))
+    .map((pkg) => pkg.id))
     basePackages.add(id)
   // Mutable model routes and credential stores follow applyModelProfile. Deployment identity
   // still pins backend and plugin registries, including their loop/adapter selections.
@@ -151,9 +147,7 @@ export async function createRuntimeGenerationHost(
         JSON.stringify({
           adapters: fixedAdapters,
           persistence: profile.persistence,
-          sandbox: profile.seams.sandbox,
           sandboxProvider: profile.sandbox,
-          platform: profile.seams.platform,
           composition: profile.composition,
           bundlePresets: profile.bundlePresets,
           agnesVersion: options.agnesVersion,
@@ -684,7 +678,7 @@ export async function createRuntimeGenerationHost(
       return head.host.ordinaryConvergence()
     // Backend facets are process configuration. A package generation cannot replace them live.
     for (const row of [...oldTarget.tree.rows, ...target.tree.rows])
-      if (row.id === 'seam:sandbox' || row.id === 'seam:platform' || row.id.startsWith('adapter:')) {
+      if (row.id.startsWith('adapter:')) {
         if (
           JSON.stringify(oldTarget.tree.rows.find((old) => old.id === row.id)) !==
           JSON.stringify(target.tree.rows.find((next) => next.id === row.id))

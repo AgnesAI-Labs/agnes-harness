@@ -106,6 +106,8 @@ export const RuntimeAdminSnapshot = Type.Object(
               Type.Literal('process'),
             ]),
           ),
+          /** `host`: the Host registered the one implementation; packages cannot register or select it. */
+          authority: Type.Optional(Type.Union([Type.Literal('open'), Type.Literal('host')])),
         },
         { additionalProperties: false },
       ),
