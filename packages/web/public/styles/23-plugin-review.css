@@ -142,9 +142,14 @@
   .plugin-candidates .candidate-file[open] summary::before {
     content: "⌄";
   }
-  .plugin-candidates .candidate-file summary > span:first-child {
+  .plugin-candidates .candidate-file summary > code {
     min-width: 0;
     flex: 1;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .plugin-candidates .candidate-file summary > .agnes-ui-badge {
+    flex: none;
   }
   .plugin-candidates .candidate-file pre {
     margin: 0;
