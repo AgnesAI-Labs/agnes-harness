@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs'
-import { readOnlyTool, writeTool } from '@agnes/plugin-runtime'
+import {
+  workflowChecked as checked,
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  readOnlyTool,
+  workflowText as text,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { checked, makeBundle, modelText, text, tool, value } from './runtime.mjs'
 
 const runbook = JSON.parse(readFileSync(new URL('./fixtures/runbook.json', import.meta.url)))
 export const tools = [
@@ -123,4 +131,22 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({ name: 'ops-runbook', tools, stages })
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.ops-runbook',
+  version: '5.0.0',
+  source: '@agnes-fde/ops-runbook',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/ops-runbook',
+  },
+  skills: [
+    {
+      name: 'ops-runbook',
+      description: 'Business playbook for ops-runbook',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+  name: 'ops-runbook',
+  tools,
+  stages,
+})

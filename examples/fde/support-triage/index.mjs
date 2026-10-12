@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { writeTool } from '@agnes/plugin-runtime'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { isDemo, makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const tickets = JSON.parse(readFileSync(new URL('./fixtures/tickets.json', import.meta.url)))
 const object = (fields) => Type.Object(fields, { additionalProperties: false })
@@ -62,9 +67,10 @@ const stages = [
         signal,
       )
       return {
-        draft: (await isDemo(ctx))
-          ? 'We received your outage report and escalated it to incident response. We will share the next verified update.'
-          : suggestion,
+        draft:
+          (await ctx.turn.view())?.model.id === 'demo-model'
+            ? 'We received your outage report and escalated it to incident response. We will share the next verified update.'
+            : suggestion,
       }
     },
   },
@@ -84,4 +90,22 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({ name: 'support-triage', tools, stages })
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.support-triage',
+  version: '5.0.0',
+  source: '@agnes-fde/support-triage',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/support-triage',
+  },
+  skills: [
+    {
+      name: 'support-triage',
+      description: 'Business playbook for support-triage',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+  name: 'support-triage',
+  tools,
+  stages,
+})

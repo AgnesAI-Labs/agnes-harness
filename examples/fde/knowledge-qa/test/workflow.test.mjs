@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
+import { workflowResult as result } from '@agnes/plugin-runtime'
 import { test } from 'vitest'
 import { main, tools } from '../index.mjs'
-import { result } from '../runtime.mjs'
 import { runWorkflow } from './harness.mjs'
 
 test('local document QA preserves exact evidence and citations; no source refuses without inference', async () => {

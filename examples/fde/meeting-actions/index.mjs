@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { writeTool } from '@agnes/plugin-runtime'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const transcript = readFileSync(new URL('./fixtures/transcript.txt', import.meta.url), 'utf8')
 const action = Type.Object({
@@ -106,4 +111,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({ name: 'meeting-actions', tools, stages })
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.meeting-actions',
+  version: '5.0.0',
+  source: '@agnes-fde/meeting-actions',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/meeting-actions',
+    markdown: (state) => state.data.exported?.markdown,
+  },
+  skills: [
+    {
+      name: 'meeting-actions',
+      description: 'Business playbook for meeting-actions',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+  name: 'meeting-actions',
+  tools,
+  stages,
+})

@@ -10,7 +10,7 @@ CTRL-1 引用 access-review.md 第 3 行，状态 evidenced。CTRL-2 的 restore
 
 ## 包含组件
 
-- Loop：`fde.compliance-audit`，支持带版本 checkpoint 与取消；每个独立 tarball 包含 `runtime.mjs`。
+- Loop：`fde.compliance-audit`，支持带版本 checkpoint 与取消；Loop 使用官方 `defineWorkflowLoop` 作者 helper。
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.compliance-audit`，拒绝写入，包括全访问会话。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。

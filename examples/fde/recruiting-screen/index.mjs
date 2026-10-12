@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { writeTool } from '@agnes/plugin-runtime'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'))
 const evidence = Type.Object({ skill: Type.String(), quote: Type.String() })
@@ -120,7 +125,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.recruiting-screen',
+  version: '5.0.0',
+  source: '@agnes-fde/recruiting-screen',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/recruiting-screen',
+    markdown: (state) => state.data.report?.markdown,
+  },
+  skills: [
+    {
+      name: 'recruiting-screen',
+      description: 'Business playbook for recruiting-screen',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'recruiting-screen',
   tools,
   stages,

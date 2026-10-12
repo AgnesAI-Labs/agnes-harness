@@ -193,11 +193,10 @@ export async function runWorkflow(
     context,
     config,
     services: {
-      loops: registry(loops),
       providers: {
         register(kind, source, provider) {
-          assert.equal(kind, 'tool-policy')
-          return registry(policies).register(source, provider)
+          assert.ok(['loop', 'tool-policy'].includes(kind))
+          return registry(kind === 'loop' ? loops : policies).register(source, provider)
         },
         resolve(kind, id) {
           assert.equal(kind, 'tool-policy')

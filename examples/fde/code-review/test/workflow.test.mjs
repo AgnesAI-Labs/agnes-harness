@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { driveLoop } from '@agnes/host/author-testkit'
+import { workflowValue as value } from '@agnes/plugin-runtime'
 import { test } from 'vitest'
 import { factory, main, policy, tools } from '../index.mjs'
-import { value } from '../runtime.mjs'
 import { runWorkflow } from './harness.mjs'
 
 test('review DAG joins independent checks with exact added-line evidence', async () => {

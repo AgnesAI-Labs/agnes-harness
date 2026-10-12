@@ -10,7 +10,7 @@ The input is the actual query. The refund fixture cites refunds.md paragraph 2 a
 
 ## What ships
 
-- Loop: `fde.knowledge-qa`, a staged workflow with versioned checkpoints and cancellation. Each independent tarball includes `runtime.mjs`.
+- Loop: `fde.knowledge-qa`, a staged workflow with versioned checkpoints and cancellation. The Loop uses the official `defineWorkflowLoop` author helper.
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.knowledge-qa`, denying writes even in full-access sessions.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.

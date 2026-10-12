@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const contract = readFileSync(new URL('./fixtures/contract.txt', import.meta.url), 'utf8')
 const clause = Type.Object({ id: Type.String(), text: Type.String() }, { additionalProperties: false })
@@ -80,7 +85,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.contract-review',
+  version: '5.0.0',
+  source: '@agnes-fde/contract-review',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/contract-review',
+    markdown: (state) => state.data.report?.markdown,
+  },
+  skills: [
+    {
+      name: 'contract-review',
+      description: 'Business playbook for contract-review',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'contract-review',
   tools,
   stages,

@@ -19,7 +19,7 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs",
+    "build": "node --check index.mjs",
     "test": "vitest run test/workflow.e2e.test.mjs --maxWorkers=1"
   },
   "dependencies": {
@@ -82,7 +82,7 @@
       "crm-assistant": {
         "profile": {
           "loop": {
-            "version": "4.0.0",
+            "version": "5.0.0",
             "provider": "fde.crm-assistant"
           },
           "skills": [
@@ -93,9 +93,6 @@
           "crm-assistant": {
             "name": "crm-assistant",
             "extends": "standard",
-            "approval": {
-              "policy": "fde.crm-assistant"
-            },
             "model": {
               "route": {
                 "primary": {
@@ -103,6 +100,9 @@
                   "model": "demo-model"
                 }
               }
+            },
+            "tool-policy": {
+              "provider": "fde.crm-assistant"
             }
           }
         }

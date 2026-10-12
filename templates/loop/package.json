@@ -34,7 +34,9 @@
         "apiRange": "^2.0.0",
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
-          "providers"
+          "tools",
+          "providers",
+          "skills"
         ]
       }
     ],

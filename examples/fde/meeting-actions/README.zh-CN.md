@@ -10,7 +10,7 @@
 
 ## 包含组件
 
-- Loop：`fde.meeting-actions`，支持带版本 checkpoint 与取消；每个独立 tarball 包含 `runtime.mjs`。
+- Loop：`fde.meeting-actions`，支持带版本 checkpoint 与取消；Loop 使用官方 `defineWorkflowLoop` 作者 helper。
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.meeting-actions`，每次决定或发送动作均要求人工审批。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。

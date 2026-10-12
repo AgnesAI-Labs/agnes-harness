@@ -145,7 +145,9 @@ Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest p
 
 ## Writing an Agent Loop
 
-An Agent Loop owns scheduling and checkpoint state. Export a `LoopFactory` with `id`, `version`, `capabilities`, a versioned `codec`, `create(ctx)` and `resume(ctx, checkpoint)`. Its driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`. Register it during plugin apply with `ctx.providers.register('loop', 'your-package', factory)` from `@agnes/extension-api`; declare the exported plugin in `agnes.plugins` with `inject: ["loops"]`. Registrations belong to the plugin fiber and disappear on unload. `kernel.loops.catalog()` exposes installed identities, capabilities and verified source packages.
+For a fixed business workflow, start with [`defineWorkflowLoop`](../extend/workflow-loops.md) and the [Loop template](../../templates/loop/). It owns staged checkpoints, confirmation and approval continuation. The lower-level factory contract below is for custom scheduling.
+
+An Agent Loop owns scheduling and checkpoint state. Export a `LoopFactory` with `id`, `version`, `capabilities`, a versioned `codec`, `create(ctx)` and `resume(ctx, checkpoint)`. Its driver implements `step(signal)`, `cancel()`, `dispose()` and `checkpoint()`. Register it during plugin apply with `ctx.providers.register('loop', 'your-package', factory)` from `@agnes/extension-api`; declare the exported plugin in `agnes.plugins` with `inject: ["providers"]`. Registrations belong to the plugin fiber and disappear on unload. `kernel.loops.catalog()` exposes installed identities, capabilities and verified source packages.
 
 Every step returns an explicit `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`; `phase` is optional display text. `until: 'turn-end'` stops at the first ended turn. `until: 'idle'` continues after completed turns, stopping when input is exhausted or a turn parks or ends for another reason. The production runner and `driveLoop` testkit use the same rule. End a turn with `ctx.events.finish(reason)` before returning its outcome.
 

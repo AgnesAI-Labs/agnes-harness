@@ -4,9 +4,6 @@
     "finance-reconcile": {
       "name": "finance-reconcile",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.finance-reconcile"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.finance-reconcile"
       }
     }
   }

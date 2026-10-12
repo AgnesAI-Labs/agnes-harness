@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const diff = readFileSync(new URL('./fixtures/change.patch', import.meta.url), 'utf8')
 const finding = Type.Object({
@@ -119,7 +124,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.code-review',
+  version: '5.0.0',
+  source: '@agnes-fde/code-review',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/code-review',
+    markdown: (state) => state.data.report?.markdown,
+  },
+  skills: [
+    {
+      name: 'code-review',
+      description: 'Business playbook for code-review',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'code-review',
   tools,
   stages,

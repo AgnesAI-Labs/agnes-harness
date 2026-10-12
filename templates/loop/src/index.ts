@@ -1,73 +1,20 @@
-import {
-  type LoopCheckpoint,
-  type LoopContext,
-  type LoopDriver,
-  loopCheckpointCodec,
-  type ProviderPluginContext,
-} from '@agnes/extension-api'
-import { type Context, defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
+import { defineWorkflowLoop, workflowModelText } from '@agnes/plugin-runtime'
 
-const codec = loopCheckpointCodec(1, (state) => {
-  if (!state || typeof state !== 'object' || Array.isArray(state) || typeof state.done !== 'boolean')
-    throw new TypeError('Invalid loop checkpoint')
-  return { done: state.done }
-})
-
-function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
-  let state = saved ? codec.decode(saved) : { done: false }
-  const lifetime = new AbortController()
-  return {
-    async step(signal) {
-      const active = AbortSignal.any([signal, lifetime.signal])
-      active.throwIfAborted()
-      if (state.done) return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
-      const input = await ctx.input.accept()
-      if (!input) return { outcome: 'idle', phase: 'idle' }
-      const request = await ctx.prepareRequest({
-        system: 'Answer the user briefly.',
-        tools: [],
-        invocationId: 'answer:' + input.id,
-      })
-      const reply = await ctx.model.complete(request, active)
-      const failure = reply.find((event) => event.type === 'error')
-      if (failure?.type === 'error') throw new Error(failure.message)
-      active.throwIfAborted()
-      const text = reply.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')
-      await ctx.events.assistant(
-        {
-          content: [{ type: 'text', text }],
-          stopReason: 'end_turn',
-        },
-        codec.encode({ done: true }),
-      )
-      state = { done: true }
-      await ctx.checkpoints.write(codec.encode(state))
-      await ctx.events.finish('completed')
-      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
-    },
-    cancel() {
-      lifetime.abort()
-    },
-    dispose() {
-      lifetime.abort()
-    },
-    checkpoint: () => codec.encode(state),
-  }
-}
-
-// A deliberately small one-turn loop, independent of the default product loop.
-export const loop = defineLoop({
+// Add business stages, tools, confirmation and deliverables to this definition.
+const workflow = defineWorkflowLoop({
   id: '__PACKAGE_NAME__',
+  source: '__PACKAGE_NAME__',
+  name: '__PACKAGE_NAME__',
   version: '0.1.0',
-  capabilities: ['model'],
-  codec,
-  create: (ctx: LoopContext) => driver(ctx),
-  resume: (ctx: LoopContext, checkpoint: LoopCheckpoint) => driver(ctx, checkpoint),
+  stages: [
+    {
+      name: 'answer',
+      async run(ctx, state, signal) {
+        return { answer: await workflowModelText(ctx, 'Answer the user briefly.', state.input, signal) }
+      },
+    },
+  ],
 })
 
-export const main = defineAgnesPlugin({
-  inject: ['providers'],
-  apply(ctx: Context & ProviderPluginContext) {
-    ctx.providers.register('loop', '__PACKAGE_NAME__', loop)
-  },
-})
+export const main = workflow.main
+export const loop = workflow.factory

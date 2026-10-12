@@ -10,7 +10,7 @@ fixtures/repo contains the pre-change synthetic source tree; change.patch is its
 
 ## What ships
 
-- Loop: `fde.code-review`, a staged workflow with versioned checkpoints and cancellation. Each independent tarball includes `runtime.mjs`.
+- Loop: `fde.code-review`, a staged workflow with versioned checkpoints and cancellation. The Loop uses the official `defineWorkflowLoop` author helper.
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.code-review`, denying business-source writes even in full-access sessions.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.

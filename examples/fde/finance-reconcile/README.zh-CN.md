@@ -10,7 +10,7 @@ TX-1 匹配；TX-2 相差 5000 分；银行独有 TX-3 为 7525 分；账簿独�
 
 ## 包含组件
 
-- Loop：`fde.finance-reconcile`，支持带版本 checkpoint 与取消；每个独立 tarball 包含 `runtime.mjs`。
+- Loop：`fde.finance-reconcile`，支持带版本 checkpoint 与取消；Loop 使用官方 `defineWorkflowLoop` 作者 helper。
 - Tools：夹具连接器和转换，由 `main` 通过公开作者工具包注册。
 - Policy：`fde.finance-reconcile`，每次决定或发送动作均要求人工审批。
 - Skills：随包 `skills/playbook/SKILL.md` 注册并加入模型请求。
@@ -59,7 +59,7 @@ loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契
 
 官方 `write` 在 `fde-output/finance-reconcile/<run-hash>/` 生成报告，`present` 将最终结果复制为会话制品，使用标准打开／下载卡。策略仅允许此受限路径的报告写入，已读／过期版本保护继续生效。输出相对于会话工作区，manifest 声明相应读写范围。
 
-Loop **4.0.0** 使用 checkpoint codec **4** 保存业务依据、SC1 输入和已处理交易 ID。升级后新建会话，旧 codec 被拒绝。工具 dispatch 前，业务校验核对已提交建议、精确金额、唯一 ID 和已处理行。模型选择来自预设 primary 路由。已编写真实隔离 Host、原审批路径、UI 插件与脚本模型的测试；本开发窗口按规则未运行。
+Loop **5.0.0** 使用官方工作流 checkpoint codec **1** 保存业务依据、结构化系统输入和已处理交易 ID。升级后新建会话，旧 codec 被拒绝。工具 dispatch 前，业务校验核对已提交建议、精确金额、唯一 ID 和已处理行。模型选择来自预设 primary 路由。已编写真实隔离 Host、原审批路径、UI 插件与脚本模型的测试；进程和发行验证独立于开发 fast 检查执行。
 
 在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续 UI 确认或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
 

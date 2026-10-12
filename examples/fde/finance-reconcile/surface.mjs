@@ -146,8 +146,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
 }
 
 /** Host authenticates the receipt; match only this workflow's business action. */
-export async function actionOutcome(_ctx, state, _signal) {
-  const input = state.stageInput
+export function actionOutcome(input, surface) {
   if (
     input?.origin !== 'system' ||
     input.system?.source !== 'agnes/intelligent-ui' ||
@@ -155,9 +154,10 @@ export async function actionOutcome(_ctx, state, _signal) {
   )
     return null
   const notice = input.system.data
+  if (!notice || typeof notice !== 'object' || Array.isArray(notice)) return null
   if (
-    notice.surfaceId !== state.data.surface.id ||
-    notice.revision !== state.data.surface.revision ||
+    notice.surfaceId !== surface.id ||
+    notice.revision !== surface.revision ||
     notice.actionId !== 'approve' ||
     notice.invocation?.tool !== 'fde_finance_approve' ||
     !['succeeded', 'failed'].includes(notice.status)

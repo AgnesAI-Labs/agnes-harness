@@ -10,7 +10,7 @@ The rubric weights API integration (4), incident analysis (3) and technical writ
 
 ## What ships
 
-- Loop: `fde.recruiting-screen`, a staged workflow with versioned checkpoints and cancellation. Each independent tarball includes `runtime.mjs`.
+- Loop: `fde.recruiting-screen`, a staged workflow with versioned checkpoints and cancellation. The Loop uses the official `defineWorkflowLoop` author helper.
 - Tools: fixture connectors and transformations registered by `main` through the public author kit.
 - Policy: `fde.recruiting-screen`, requiring human approval for every decision/send action.
 - Skills: packaged `skills/playbook/SKILL.md`, registered and included in model requests.

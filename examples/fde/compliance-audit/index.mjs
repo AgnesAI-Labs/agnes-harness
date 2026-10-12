@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 const checklist = JSON.parse(readFileSync(new URL('./fixtures/checklist.json', import.meta.url), 'utf8'))
 const check = Type.Object({
@@ -96,7 +101,23 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.compliance-audit',
+  version: '5.0.0',
+  source: '@agnes-fde/compliance-audit',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/compliance-audit',
+    markdown: (state) => state.data.report?.markdown,
+  },
+  skills: [
+    {
+      name: 'compliance-audit',
+      description: 'Business playbook for compliance-audit',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'compliance-audit',
   tools,
   stages,

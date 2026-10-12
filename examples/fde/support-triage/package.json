@@ -18,7 +18,7 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs",
+    "build": "node --check index.mjs",
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
@@ -78,7 +78,7 @@
       "support-triage": {
         "profile": {
           "loop": {
-            "version": "4.0.0",
+            "version": "5.0.0",
             "provider": "fde.support-triage"
           },
           "skills": [
@@ -89,9 +89,6 @@
           "support-triage": {
             "name": "support-triage",
             "extends": "standard",
-            "approval": {
-              "policy": "fde.support-triage"
-            },
             "model": {
               "route": {
                 "primary": {
@@ -99,6 +96,9 @@
                   "model": "demo-model"
                 }
               }
+            },
+            "tool-policy": {
+              "provider": "fde.support-triage"
             }
           }
         }

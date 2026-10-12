@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto'
-import { writeTool } from '@agnes/plugin-runtime'
+import { readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { fixtureConnector } from './mcp-client.mjs'
-import { isDemo, makeBundle, modelText, tool, value } from './runtime.mjs'
 
 function createTools(connector) {
   return [
@@ -44,9 +50,10 @@ const stages = [
         signal,
       )
       return {
-        note: (await isDemo(ctx))
-          ? 'Renewal at risk: 3 open tickets. Account team should coordinate support follow-up before renewal.'
-          : suggestion,
+        note:
+          (await ctx.turn.view())?.model.id === 'demo-model'
+            ? 'Renewal at risk: 3 open tickets. Account team should coordinate support follow-up before renewal.'
+            : suggestion,
       }
     },
   },
@@ -73,13 +80,31 @@ const stages = [
     },
   },
 ]
-const bundle = makeBundle({ name: 'crm-assistant', tools, stages })
+const workflowOptions = {
+  id: 'fde.crm-assistant',
+  version: '5.0.0',
+  source: '@agnes-fde/crm-assistant',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/crm-assistant',
+  },
+  skills: [
+    {
+      name: 'crm-assistant',
+      description: 'Business playbook for crm-assistant',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+  name: 'crm-assistant',
+  stages,
+}
+const bundle = defineWorkflowLoop({ ...workflowOptions, tools })
 export const { factory, createFactory, policy } = bundle
 export const main = {
   ...bundle.main,
   apply(ctx, config) {
     const connector = fixtureConnector(new URL('./mcp/server.mjs', import.meta.url))
     ctx.effect(() => () => connector.close())
-    makeBundle({ name: 'crm-assistant', tools: createTools(connector), stages }).main.apply(ctx, config)
+    defineWorkflowLoop({ ...workflowOptions, tools: createTools(connector) }).main.apply(ctx, config)
   },
 }

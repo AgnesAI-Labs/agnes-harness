@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
-[工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md)
+[工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md) · [业务工作流](workflow-loops.zh-CN.md)
 
 选择负责目标行为的最小模板。五个[模板](../../templates/)都是独立包，提供构建与测试脚本，只通过公开包出口导入。SDK 目前仍为源码预览；入门指南提供正式包发布前的本地 SDK 连接方式。
 
@@ -14,7 +14,7 @@
 | 工具与面板 | [tool-with-panel](../../templates/tool-with-panel/) | 相同工具与独立浏览器侧栏插槽 |
 | MCP 与 Skills | [mcp-skills](../../templates/mcp-skills/) | MCP 定义与通过 Skills 服务注册的包内 Skill |
 | 模型适配器 | [model-adapter](../../templates/model-adapter/) | 通过 `ctx.providers.register` 注册的结构化适配器 |
-| 循环 | [loop](../../templates/loop/) | 独立单轮驱动、checkpoint codec 与 `loops` 注册 |
+| 循环 | [loop](../../templates/loop/) | 官方分阶段业务工作流、确认与 checkpoint 恢复 |
 | 压缩引擎 | [sliding-window](../../examples/compaction/sliding-window/) | 通过 `ctx.providers.register` 替换上下文；参阅[压缩引擎](compaction-engines.zh-CN.md) |
 | 子代理 | [ACP 子代理](../../examples/child-agents/acp/) | 通过 `childAgents` 使用可继续的子代理；参阅[子代理提供者](child-agents.zh-CN.md) |
 | 持久化 | [JSONL](../../examples/persistence/) | 无 SQL 的完整 Host 持久化；参见[持久化提供器](persistence.zh-CN.md) |
@@ -31,11 +31,12 @@ MCP 包不会自动启动、安装或信任外部服务器。修改定义、启�
 - `defineTool(def)` 支持输入 schema 形式，也支持 `result: TypeBoxSchema`，推导并校验成功结果的 `structured`。
 - `toolError(message)` 表达预期业务失败；错误可省略 `structured`。
 - `toolCancelled(signal)` 抛出取消原因。取消和意外故障仍通过异常表达。
+- `defineWorkflowLoop(options)` 负责分阶段业务工作流恢复；从[完整示例](workflow-loops.zh-CN.md)开始。
 - `defineLoop(factory)` 和 `defineModelAdapter(adapter)` 保留符合公开合同的声明。
 
 `defineTool` 仅从 `@agnes/plugin-runtime` 导入，同时支持仅输入 schema 和可选结果 schema。
 
-工具插件注入 `extension`，回调使用 `Context`。循环和适配器回调分别使用 `ProviderPluginContext`、`ProviderPluginContext` 并声明对应注入。这些类型描述所需服务；类型声明不会安装服务。
+工具插件注入 `tools`，回调使用 `Context`。循环和适配器回调分别使用 `ProviderPluginContext`、`ProviderPluginContext` 并声明对应注入。这些类型描述所需服务；类型声明不会安装服务。
 
 注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。
 

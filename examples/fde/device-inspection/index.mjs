@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto'
-import { writeTool } from '@agnes/plugin-runtime'
+import { readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+  writeTool,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { fixtureConnector } from './mcp-client.mjs'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 
 function createTools(connector) {
   return [
@@ -109,13 +115,31 @@ const stages = [
     },
   },
 ]
-const bundle = makeBundle({ name: 'device-inspection', tools, stages })
+const workflowOptions = {
+  id: 'fde.device-inspection',
+  version: '5.0.0',
+  source: '@agnes-fde/device-inspection',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/device-inspection',
+  },
+  skills: [
+    {
+      name: 'device-inspection',
+      description: 'Business playbook for device-inspection',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+  name: 'device-inspection',
+  stages,
+}
+const bundle = defineWorkflowLoop({ ...workflowOptions, tools })
 export const { factory, createFactory, policy } = bundle
 export const main = {
   ...bundle.main,
   apply(ctx, config) {
     const connector = fixtureConnector(new URL('./mcp/server.mjs', import.meta.url))
     ctx.effect(() => () => connector.close())
-    makeBundle({ name: 'device-inspection', tools: createTools(connector), stages }).main.apply(ctx, config)
+    defineWorkflowLoop({ ...workflowOptions, tools: createTools(connector) }).main.apply(ctx, config)
   },
 }

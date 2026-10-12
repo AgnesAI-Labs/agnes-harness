@@ -20,7 +20,7 @@
 | 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
 | 添加浏览器面板或 UI 资产 | `@agnes/web-client` | 类型 `ClientContext`、`ClientModule`；`workbenchPanels` | 作者面，仅浏览器。导出 `apply(ctx, config)`，通过 `ctx.slots` 或 `workbenchPanels` 注册，在客户端描述文件声明 entry/styles/slots。简单 JS 侧栏无需导入 SDK；见[前端模块](../develop/frontend.zh-CN.md)和[工作台面板](workbench-panels.zh-CN.md)。 |
 | 描述客户端资产 manifest | `@agnes/extension-api` | 类型 `ExtensionManifest` | 描述文件 `client` 部分的作者合同。`agnes.clientDescriptors` 将描述文件绑定到后端 row；路径必须位于包内。 |
-| 定义 Agent Loop | `@agnes/plugin-runtime` | `defineLoop`、`defineAgnesPlugin` | 作者面。注入 `providers`，通过 `ctx.providers.register('loop', packageName, loop)` 注册。 |
+| 定义 Agent Loop | `@agnes/plugin-runtime` | `defineWorkflowLoop`、`defineLoop`、`defineAgnesPlugin` | 作者面。注入 `providers`，通过 `ctx.providers.register('loop', packageName, loop)` 注册。 |
 | 实现 Loop 步骤与 checkpoint | `@agnes/extension-api` | `loopCheckpointCodec`；类型 `LoopFactory`、`LoopContext`、`LoopDriver`、`LoopCheckpoint`、`ProviderPluginContext` | 作者合同；见 [Loop 模板](../../templates/loop/src/index.ts)。使用受控模型/工具端口和传入的取消信号。 |
 | 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin` | 作者面。注入 `providers`，调用 `ctx.providers.register('model-adapter', packageName, adapter)`。 |
 | 实现适配器配置和流式输出 | `@agnes/extension-api` | 类型 `ModelAdapter`、`ModelAdapterConfig`、`ModelAdapterInstance`、`ModelAdapterEvent`、`ProviderPluginContext` | 作者合同；见[适配器模板](../../templates/model-adapter/src/index.ts)。 |

@@ -105,3 +105,5 @@ node "$AGH_SOURCE/agnes.mjs" daemon stop
 # Press Ctrl-C in the web terminal.
 rm -rf "$AGH_HOME" "$AGH_WORKSPACE"
 ```
+
+For a staged business agent, scaffold `--template loop` and start from [`defineWorkflowLoop`](workflow-loops.md). Write business stages; the official helper owns confirmation, checkpoints and approval continuation.

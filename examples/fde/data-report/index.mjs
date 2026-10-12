@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs'
+import {
+  defineWorkflowLoop,
+  workflowModelText as modelText,
+  workflowTool as tool,
+  workflowValue as value,
+} from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { makeBundle, modelText, tool, value } from './runtime.mjs'
 export function parseCsv(text) {
   // Deliberately bounded dialect: no quoted/multiline fields. Reject rather than misread them.
   if (text.length > 65536 || text.includes('"')) throw new Error('Expected unquoted fixture CSV under 64 KiB')
@@ -115,7 +120,24 @@ const stages = [
     },
   },
 ]
-export const { main, factory, createFactory, policy } = makeBundle({
+export const { main, factory, createFactory, policy } = defineWorkflowLoop({
+  id: 'fde.data-report',
+  version: '5.0.0',
+  source: '@agnes-fde/data-report',
+  confirm: 'surface',
+  deliverables: {
+    directory: 'fde-output/data-report',
+    markdown: (state) => state.data.report?.markdown,
+    html: (state) => state.data.report?.html,
+  },
+  skills: [
+    {
+      name: 'data-report',
+      description: 'Business playbook for data-report',
+      body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
+    },
+  ],
+
   name: 'data-report',
   tools,
   stages,

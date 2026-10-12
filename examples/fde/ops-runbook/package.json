@@ -18,7 +18,7 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs",
+    "build": "node --check index.mjs",
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
@@ -79,7 +79,7 @@
       "ops-runbook": {
         "profile": {
           "loop": {
-            "version": "4.0.0",
+            "version": "5.0.0",
             "provider": "fde.ops-runbook"
           },
           "skills": [
@@ -93,9 +93,6 @@
           "ops-runbook": {
             "name": "ops-runbook",
             "extends": "standard",
-            "approval": {
-              "policy": "fde.ops-runbook"
-            },
             "model": {
               "route": {
                 "primary": {
@@ -103,6 +100,9 @@
                   "model": "demo-model"
                 }
               }
+            },
+            "tool-policy": {
+              "provider": "fde.ops-runbook"
             }
           }
         }

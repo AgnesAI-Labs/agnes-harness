@@ -13,12 +13,8 @@ test('scripted model, checkpoint resume and unsupported codec', async () => {
       ],
     ],
   })
-  assert.deepEqual(result.events, [
-    {
-      type: 'assistant/message',
-      data: { content: [{ type: 'text', text: 'Hello!' }], stopReason: 'end_turn' },
-    },
-  ])
+  assert.equal(result.finished[0], 'completed')
+  assert.equal(result.checkpoint.state.data.answer, 'Hello!')
   assert.equal(result.remainingReplies, 0)
   const resumed = await driveLoop(loop, { checkpoint: result.checkpoint })
   assert.equal(resumed.requests.length, 0)

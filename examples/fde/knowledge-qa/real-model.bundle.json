@@ -4,9 +4,6 @@
     "knowledge-qa": {
       "name": "knowledge-qa",
       "extends": "standard",
-      "approval": {
-        "policy": "fde.knowledge-qa"
-      },
       "model": {
         "route": {
           "primary": {
@@ -14,6 +11,9 @@
             "model": "customer-model"
           }
         }
+      },
+      "tool-policy": {
+        "provider": "fde.knowledge-qa"
       }
     }
   }
