@@ -16,9 +16,10 @@ afterEach(() => {
 
 /** Rule body by selector, so the assertions stay about declarations instead of line numbers. */
 function ruleBody(css: string, selector: string): string {
-  const start = css.indexOf(`\n${selector} {`)
-  expect(start, `missing rule ${selector}`).toBeGreaterThan(-1)
-  return css.slice(start, css.indexOf('}', start))
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`^\\s*${escaped} \\{([^}]*)\\}`, 'm').exec(css)
+  expect(match, `missing rule ${selector}`).not.toBeNull()
+  return match?.[1] ?? ''
 }
 
 it('both hosts share one scroll model: documents fixed, list scrolls, detail scrolls only in the middle', async () => {

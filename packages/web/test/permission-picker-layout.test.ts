@@ -7,9 +7,10 @@ const packageDirectory = process.cwd().endsWith('/packages/web')
   : resolve(process.cwd(), 'packages/web')
 
 function ruleBody(css: string, selector: string): string {
-  const start = css.indexOf(`\n${selector} {`)
-  expect(start, `missing rule ${selector}`).toBeGreaterThan(-1)
-  return css.slice(start, css.indexOf('}', start))
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`^\\s*${escaped} \\{([^}]*)\\}`, 'm').exec(css)
+  expect(match, `missing rule ${selector}`).not.toBeNull()
+  return match?.[1] ?? ''
 }
 
 it('lets permission options scroll inside the viewport-clamped popover', async () => {
