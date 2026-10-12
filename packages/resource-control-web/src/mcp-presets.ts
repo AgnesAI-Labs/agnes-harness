@@ -60,6 +60,8 @@ export function mountMcpPresets(input: {
     description.hidden = false
     select.value = MCP_PRESETS[0].id
     apply()
+    // Filling the form hides the method choice that held initial focus; start on the preset instead.
+    input.form.querySelector<HTMLElement>('#mcp-preset-trigger')?.focus()
   })
   select.addEventListener('change', apply)
   return {

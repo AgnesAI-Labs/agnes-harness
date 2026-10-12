@@ -898,6 +898,7 @@ it('prefills a Playwright preset without writes and requires save and enable con
   byId<HTMLDialogElement>('resource-detail').close()
   byId('mcp-add-preset').click()
   expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(true)
+  expect(document.activeElement?.id).toBe('mcp-preset-trigger')
   expect(byId<HTMLInputElement>('mcp-id').value).toBe('playwright')
   expect(byId<HTMLInputElement>('mcp-name').value).toBe('Playwright MCP')
   expect(byId<HTMLInputElement>('mcp-executable').value).toBe('npx')
