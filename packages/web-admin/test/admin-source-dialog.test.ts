@@ -83,7 +83,11 @@ function submit(type: string, ref: string): void {
   setNativeValue(sourceType(), type)
   setNativeValue(sourceRef(), ref)
   // happy-dom 的 requestSubmit 触达不了 React 的委托 submit；提交走显式按钮回调。
-  document.querySelector<HTMLButtonElement>('#source-dialog .dialog-actions .primary-button')?.click()
+  const button = document.querySelector<HTMLButtonElement>(
+    '#source-form .dialog-actions button:not(#source-cancel)',
+  )
+  if (!button) throw new Error('Missing source check action')
+  button.click()
 }
 
 afterEach(() => {

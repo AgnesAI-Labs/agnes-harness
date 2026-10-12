@@ -191,7 +191,14 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
   expect(h.doc.querySelectorAll('.config-account-status')).toHaveLength(1)
   expect(h.doc.querySelector('button[aria-label="personal 的操作"]')).not.toBeNull()
   h.input('config-api-key').value = 'unsaved-secret'
-  await h.click('.config-account:nth-child(2) .config-account-select')
+  const personal = [...h.doc.querySelectorAll('.config-account-select')].find(
+    (button) => button.textContent === 'personal',
+  )
+  if (!personal) throw new Error('Missing personal account action')
+  ;(personal as unknown as HTMLButtonElement).click()
+  expect(h.doc.querySelector('.config-account[data-selected=true] .config-account-select')?.textContent).toBe(
+    'personal',
+  )
   expect((h.doc.getElementById('account-dialog') as unknown as HTMLDialogElement).open).toBe(true)
   expect(h.doc.getElementById('config-detail-title')?.textContent).toBe('账户详情')
   expect(h.doc.getElementById('config-account-context')?.textContent).toBe('编辑连接与默认模型')
