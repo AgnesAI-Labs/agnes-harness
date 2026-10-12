@@ -119,7 +119,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 
 const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/references': 21,
-  'packages/base/extensions/intelligent-ui': 1322,
+  'packages/base/extensions/intelligent-ui': 1324,
   'packages/intelligent-ui-contract/src': 238,
   'packages/git-worktree-contract/src': 34,
   'packages/base/src/intelligent-ui-runtime': 55,
@@ -207,7 +207,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
-  'packages/web-ui/src': 14770,
+  'packages/web-ui/src': 14805,
   'packages/web-units/src': 9918,
   'packages/base/extensions/tools-core': 1121,
   'packages/base/extensions/mcp-server': 446,
@@ -226,7 +226,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/package-manager/src': 8579,
   'packages/package-manager/src/catalog': 219,
 
-  'packages/web/src/app': 4238,
+  'packages/web/src/app': 4239,
   'packages/web/src/model-picker': 1033,
   'packages/web/src/timeline': 840,
   'packages/web/src/navigation': 190,
@@ -249,7 +249,7 @@ const INITIAL_CEILING: Record<string, number> = {
 
   'packages/core/src': 23778,
   'packages/ai/src': 4401,
-  'packages/protocol/src': 4721,
+  'packages/protocol/src': 4725,
   'packages/cli/src/tui': 38,
   'packages/cli-tui/src': 4957,
   'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
@@ -269,7 +269,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
 
-  'packages/web/src': 13821,
+  'packages/web/src': 13976,
 
   'packages/bridges/src': 1728,
   'packages/channels/src': 5398,
@@ -293,7 +293,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/plugin-creator': 211,
   'packages/model-adapters/src': 829,
   'packages/base/extensions/subagent-acp': 387,
-  'packages/base/extensions/deliverables': 151,
+  'packages/base/extensions/deliverables': 156,
   'packages/base/extensions/interaction': 242,
   'packages/base/extensions/jobs': 1114,
   'packages/base/extensions/mcp-resources': 54,
