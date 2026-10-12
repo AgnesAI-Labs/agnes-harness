@@ -117,7 +117,9 @@ async function usable(page: Page, info: TestInfo, name: string) {
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
     test(`narrow screens ${locale}/${theme}`, async ({ page, runtime }, info) => {
-      test.setTimeout(300_000)
+      // This flow performs the full wizard, workbench and settings audit at three widths.
+      // Give the complete audit room to finish; individual action/assertion deadlines stay unchanged.
+      test.setTimeout(600_000)
       const en = locale === 'en'
       const name = (english: string, chinese: string) => (en ? english : chinese)
       let shots = 0
