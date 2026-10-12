@@ -7,10 +7,10 @@ import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
 } from '../../registry/tool-policy.js'
-import { domainDecisionSource } from '../../step/domain-decision.js'
+import { domainDecisionEvents, domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier } from '../../step/verifier-continuation.js'
-import { TOOL_DECISION_OWNER } from './tool-decision.js'
+import { TOOL_DECISION_OWNER, toolDecisionSource } from './tool-decision.js'
 
 export async function approvalContinuation(
   s: SessionImpl,
@@ -240,6 +240,19 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
             authz: { decisionId: 'n/a' },
           },
           { sourceEventSeqs: [call.seq] },
+        ),
+      )
+    // A refusal is final: the answered decision ends with it, after the continuation that read it.
+    if (snapshot.result?.reason === 'answered' && !allowed)
+      events.push(
+        ...domainDecisionEvents(
+          s,
+          snapshot,
+          toolDecisionSource(s, {
+            name: original.name,
+            toolUseId,
+            definitionFingerprint: original.definitionFingerprint,
+          }),
         ),
       )
     await s.transition(events, (cur, seq) => {

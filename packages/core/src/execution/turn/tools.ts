@@ -33,6 +33,7 @@ import {
   sessionGrantKey,
 } from '../../step/approval-grants.js'
 import { finishAborted } from '../../step/control.js'
+import type { DecisionSource } from '../../step/decisions.js'
 import { deferredEffectId } from '../../step/deferred.js'
 import { modelAllowsTool, modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
@@ -42,7 +43,12 @@ import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
-import { deliverToolDecision, requestToolDecision, toolDecisionSource } from './tool-decision.js'
+import {
+  deliverToolDecision,
+  requestToolDecision,
+  settledDecisionEvents,
+  toolDecisionSource,
+} from './tool-decision.js'
 import { discloseTool } from './tool-disclosure.js'
 import { unknownOutcomeRows, unrecordedParkEvents } from './unknown-outcome.js'
 
@@ -292,6 +298,7 @@ export async function refuse(
   code: string,
   message: string,
   decisionId = 'n/a',
+  settled?: { handles: readonly DecisionHandle[]; source: DecisionSource },
 ): Promise<ToolResult> {
   const result = dispatchErrorResult(code, message)
   const callSeq = s.state.toolCalls.get(toolUseId)?.seq
@@ -309,6 +316,7 @@ export async function refuse(
         },
         callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
       ),
+      ...(settled ? settledDecisionEvents(s, settled.handles, settled.source) : []),
     ],
     (cur) => updateCall(cur, toolUseId, { status: 'completed' }),
   )
@@ -375,6 +383,14 @@ export async function approveAndExecute(
   let decisionId = 'n/a'
   let approvalProof: import('@agnes/extension-api').ToolContext['approval']
   const approvalRefs: DecisionHandle[] = []
+  /** A refusal ends the answered decisions it was built on; nothing will execute against them. */
+  const settled = () => {
+    try {
+      return { handles: approvalRefs, source: toolDecisionSource(s, call) }
+    } catch {
+      return undefined
+    }
+  }
   const sessionActivations: string[] = []
   const grantChecks: (() => Promise<void>)[] = []
   let recheckPermission: (() => Promise<void>) | undefined
@@ -695,6 +711,7 @@ export async function approveAndExecute(
               'APPROVAL_GRANT_UNAVAILABLE',
               'permanent approval requires a resolved profile hash',
               decisionId,
+              settled(),
             ),
           }
         const alreadyStored = durableGrants.some((grant) => grant.grantId === recorded.grantId)
@@ -734,6 +751,7 @@ export async function approveAndExecute(
               'APPROVAL_GRANT_UNAVAILABLE',
               'permanent approval could not be stored',
               decisionId,
+              settled(),
             ),
           }
         }
@@ -777,6 +795,7 @@ export async function approveAndExecute(
                 'APPROVAL_STATE_INVALID',
                 'human approval proof missing',
                 decisionId,
+                settled(),
               ),
             }
           approvalProof = {
@@ -795,6 +814,7 @@ export async function approveAndExecute(
             'APPROVAL_REJECTED',
             `approval ${recorded.verdict}`,
             decisionId,
+            settled(),
           ),
         }
       }
@@ -877,7 +897,9 @@ export async function approveAndExecute(
           await transitionChildState(storage, s.key, 'running')
           await s.append([delivery.park])
           const refusal = approvalRefusal('rejected', 'subagent_scope', s.preset.approval.timeoutMs)
-          return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
+          return {
+            result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId, settled()),
+          }
         }
         return { result: errorResult('parked'), park: delivery.park }
       }
@@ -892,7 +914,7 @@ export async function approveAndExecute(
           reason === 'stopped' ? 'stopped' : 'deadline',
           s.preset.approval.timeoutMs,
         )
-        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
+        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId, settled()) }
       }
       const answer = snapshot.result
       const verdict = answer.response.option
@@ -920,6 +942,7 @@ export async function approveAndExecute(
               'APPROVAL_STATE_INVALID',
               'permanent approval ledger binding is missing',
               decisionId,
+              settled(),
             ),
           }
         const stored = await s.d.runtime.approvalPutGrant(
@@ -956,6 +979,7 @@ export async function approveAndExecute(
               'APPROVAL_GRANT_UNAVAILABLE',
               'permanent approval could not be stored',
               decisionId,
+              settled(),
             ),
           }
         }
@@ -984,7 +1008,7 @@ export async function approveAndExecute(
           reason,
           s.preset.approval.timeoutMs,
         )
-        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId) }
+        return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId, settled()) }
       }
     }
   }
@@ -996,6 +1020,7 @@ export async function approveAndExecute(
         'SANDBOX_UNAVAILABLE',
         'sandbox enforcement is none and the preset denies',
         decisionId,
+        settled(),
       ),
     }
   try {
@@ -1029,6 +1054,7 @@ export async function approveAndExecute(
         'HOST_DISPATCH_UNAVAILABLE',
         'host-computer-use dispatch is unavailable',
         decisionId,
+        settled(),
       ),
     }
   }
@@ -1053,7 +1079,14 @@ export async function approveAndExecute(
     if (parent.aborted) {
       await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
       return {
-        result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId),
+        result: await refuse(
+          s,
+          call.toolUseId,
+          'CANCELLED',
+          'cancelled before dispatch',
+          decisionId,
+          settled(),
+        ),
       }
     }
     const started = s.effects.start({

@@ -1,14 +1,17 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
-import type { DecisionSnapshot } from '@agnes/extension-api'
+import type { DecisionHandle, DecisionSnapshot } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
 import type { DecisionSource } from '../../step/decisions.js'
 import type { SessionImpl } from '../../step/session.js'
 import type { PlannedCall } from './tools.js'
 
 export const TOOL_DECISION_OWNER = 'core/tool-permission'
-export function toolDecisionSource(s: SessionImpl, call: PlannedCall): DecisionSource {
+export function toolDecisionSource(
+  s: SessionImpl,
+  call: Pick<PlannedCall, 'name' | 'toolUseId' | 'definitionFingerprint'>,
+): DecisionSource {
   const def = s.currentTools().resolve(call.name)
   if (!def || def.definitionFingerprint !== call.definitionFingerprint)
     throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
@@ -80,3 +83,25 @@ export async function requestToolDecision(
 }
 
 export { deliverDecision as deliverToolDecision } from '../../step/decision-delivery.js'
+
+/**
+ * Consumption and its checkpoint for decisions that were answered but will never back an effect,
+ * for the caller to append beside the call's refusal. Decisions already consumed, invalidated or
+ * past their deadline are left to their own terminal state.
+ */
+export function settledDecisionEvents(
+  s: SessionImpl,
+  handles: readonly DecisionHandle[],
+  source: DecisionSource,
+) {
+  return handles.flatMap((handle) => {
+    try {
+      return [
+        ...s.decisions.consumptionEvents([handle], source, null),
+        s.ev('x/core/decision-checkpoint', { handle, operationId: source.operationId }, { ignorable: true }),
+      ]
+    } catch {
+      return []
+    }
+  })
+}

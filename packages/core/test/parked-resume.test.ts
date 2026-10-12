@@ -98,9 +98,7 @@ describe('single-tool parked continuation', () => {
       expect(result?.data).toMatchObject({ isError: verdict !== 'allowed-once' })
       const text = JSON.stringify(h.provider.requests[1]?.messages)
       expect(text).toContain(verdict === 'allowed-once' ? 'ran:' : 'the user rejected this action')
-      expect((await h.session.decisions.list()).filter((item) => item.consumption)).toHaveLength(
-        verdict === 'allowed-once' ? 1 : 0,
-      )
+      expect((await h.session.decisions.list()).filter((item) => item.consumption)).toHaveLength(1)
       expect(h.session.pendingEffects()).toEqual([])
       const seq = h.log.lastSeq
       await run(h)

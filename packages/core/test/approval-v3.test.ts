@@ -1008,6 +1008,39 @@ describe('v3 approval modes and grants', () => {
     })
   })
 
+  it('ends every answered decision of a call a human rejected', async () => {
+    let executions = 0
+    const verdicts = ['allowed-once', 'rejected'] as const
+    let asked = 0
+    const opened = await atTools({
+      scopes: ['tool:write', 'tool:other'],
+      seams: fakeSeams({
+        approval: {
+          ask: async () => ({ verdict: verdicts[asked++]!, answeredBy: actor }),
+        },
+      }),
+      execute: async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'done' }] }
+      },
+    })
+    await opened.session.runToolsPhase()
+    expect({ asked, executions }).toEqual({ asked: 2, executions: 0 })
+    expect((await opened.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+      code: 'APPROVAL_REJECTED',
+    })
+    const latest = new Map<string, { consumption: unknown; result: { response?: { option?: string } } }>()
+    for (const row of await opened.log.scan({ type: 'decision/state', limit: 50 })) {
+      const value = row.data as { handle: { id: string }; consumption: unknown; result: never }
+      latest.set(value.handle.id, value)
+    }
+    expect([...latest.values()].map((value) => value.result.response?.option)).toEqual([
+      'allowed-once',
+      'rejected',
+    ])
+    expect([...latest.values()].every((value) => value.consumption !== null)).toBe(true)
+  })
+
   it('off mode bypasses asks but never overrides an authorization deny', async () => {
     let asks = 0
     const opened = await atTools({
