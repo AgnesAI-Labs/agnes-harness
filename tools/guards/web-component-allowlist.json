@@ -50,10 +50,6 @@
     "packages/web-conversation/src/workbench/artifact-download.tsx": {
       "dom": 1
     },
-    "packages/web-ui/src/admin-dialogs.tsx": {
-      "intrinsic": 6,
-      "className": 4
-    },
     "packages/web-ui/src/conversation/document-preview-policy.ts": {
       "dom": 3
     },
@@ -135,11 +131,6 @@
     "packages/web-units/src/diagnostics-viewer.ts": {
       "dom": 4,
       "intrinsic": 2
-    },
-    "packages/web-units/src/settings.ts": {
-      "dom": 23,
-      "intrinsic": 33,
-      "className": 72
     },
     "packages/web-units/src/trace.ts": {
       "intrinsic": 14
