@@ -1,5 +1,5 @@
 import { Context } from '@agnes/cordis'
-import { ProviderError, type SandboxProvider } from '@agnes/extension-api'
+import { ProviderError, type SandboxProvider, sandboxKind } from '@agnes/extension-api'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { checkTemplateShape } from '@agnes/host-common/profile/templates'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
@@ -66,7 +66,7 @@ describe('sandbox provider resolution', () => {
   it('registers a package-exported provider in the sandbox catalog and keeps selection restart-bound', async () => {
     const root = new Context()
     const registry = installSandboxProviders(root)
-    root.providers.register('sandbox', 'acme', remote)
+    root.providers.register(sandboxKind, 'acme', remote)
     expect(root.providers.catalog().find((entry) => entry.id === 'acme-remote')).toMatchObject({
       kind: 'sandbox',
       sourcePackage: 'acme',
@@ -74,7 +74,7 @@ describe('sandbox provider resolution', () => {
       authority: 'open',
     })
     const other: SandboxProvider = { ...remote, id: 'other-remote' }
-    root.providers.register('sandbox', 'acme', other)
+    root.providers.register(sandboxKind, 'acme', other)
     await registry.select('acme-remote')
     await expect(registry.select('other-remote')).rejects.toThrow(/requires a restart/)
   })

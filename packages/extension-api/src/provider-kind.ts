@@ -167,7 +167,7 @@ export interface ProviderRegistrationPort extends ProvidersCatalogPort {
   register<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     sourcePackage: string,
-    provider: T,
+    provider: NoInfer<T>,
   ): () => Promise<void>
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
   /** Binds the admitted callback. A host without a binder fails closed. */

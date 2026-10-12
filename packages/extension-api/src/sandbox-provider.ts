@@ -186,3 +186,12 @@ export function validSandboxCapabilities(capabilities: SandboxCapabilities | und
   if (capabilities.platform.some((platform) => !SANDBOX_PLATFORMS.includes(platform))) return false
   return capabilities.fsWrite.every((scope) => typeof scope?.path === 'string' && scope.path.length > 0)
 }
+
+/** Catalog atoms for a capability report: network, writable roots and platforms. */
+export function sandboxCapabilityNames(capabilities: SandboxCapabilities): string[] {
+  const names: string[] = []
+  if (capabilities.network) names.push('network')
+  for (const scope of capabilities.fsWrite) names.push(`fsWrite:${scope.path}`)
+  for (const platform of capabilities.platform) names.push(`platform:${platform}`)
+  return names
+}

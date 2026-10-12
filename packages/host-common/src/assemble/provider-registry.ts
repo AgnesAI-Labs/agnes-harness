@@ -296,7 +296,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   register<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     sourcePackage: string,
-    provider: T,
+    provider: NoInfer<T>,
   ): () => Promise<void>
   register(
     kind: ProviderKind<ProviderIdentity>,

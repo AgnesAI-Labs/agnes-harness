@@ -1,4 +1,4 @@
-import { loopCheckpointCodec } from '@agnes/extension-api'
+import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 
 const SOURCE = '@agnes-example/plan-execute-loop'
 const ID = 'example.plan-execute'
@@ -324,6 +324,6 @@ export function createPlanExecuteLoop() {
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register('loop', SOURCE, createPlanExecuteLoop())
+    ctx.providers.register(loopKind, SOURCE, createPlanExecuteLoop())
   },
 }

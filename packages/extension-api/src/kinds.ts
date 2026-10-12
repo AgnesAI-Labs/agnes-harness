@@ -8,6 +8,7 @@ import type { ReferenceResolver } from './reference-resolver.js'
 import {
   SANDBOX_PROVIDER_ID_PATTERN,
   type SandboxProvider,
+  sandboxCapabilityNames,
   validSandboxCapabilities,
 } from './sandbox-provider.js'
 import type { ToolPolicy } from './tool-policy.js'
@@ -105,11 +106,7 @@ export const sandboxKind = defineKind<SandboxProvider>({
     )
       throw new TypeError('invalid sandbox provider registration')
   },
-  capabilities: (provider) => [
-    ...(provider.capabilities.network ? ['network'] : []),
-    ...provider.capabilities.fsWrite.map((scope) => `fsWrite:${scope.path}`),
-    ...provider.capabilities.platform.map((platform) => `platform:${platform}`),
-  ],
+  capabilities: (provider) => sandboxCapabilityNames(provider.capabilities),
 })
 
 export const toolRuntimeKind = defineKind<ToolRuntimeProvider>({

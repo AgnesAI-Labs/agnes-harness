@@ -221,7 +221,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           // Providers a package exports as `sandboxProvider` are registered under that package; the
           // Host read them before the tree existed because a remote one opens its channel then.
           for (const [packageId, mod] of pkgs.modules)
-            if (mod.sandboxProvider) root.providers.register('sandbox', packageId, mod.sandboxProvider)
+            if (mod.sandboxProvider) root.providers.register(sandboxKind, packageId, mod.sandboxProvider)
           installHostPlatform(root, proc.adapters.platform.os)
           proc.sandboxProviderSlot.registry = sandboxProviders
         },
