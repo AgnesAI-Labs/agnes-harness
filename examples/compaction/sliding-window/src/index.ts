@@ -1,4 +1,9 @@
-import type { CompactionEngine, CompactionNode, ProviderPluginContext } from '@agnes/extension-api'
+import {
+  type CompactionEngine,
+  type CompactionNode,
+  compactionKind,
+  type ProviderPluginContext,
+} from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 
 /** A lossy, deterministic engine. All retained context and fixed system sections stay untouched. */
@@ -52,7 +57,7 @@ export const main = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext, config: { keepTurns?: number }) {
     ctx.providers.register(
-      'compaction',
+      compactionKind,
       '@agnes-example/compaction-sliding-window',
       slidingWindow(config.keepTurns ?? 4),
     )
