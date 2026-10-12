@@ -9,7 +9,8 @@ export async function unknownOutcomeRows(
   toolUseId: string,
   name: string,
 ): Promise<EventInput[]> {
-  const stopped = () => s.ac.signal.aborted || s.decisions.scopeRevoked
+  const stopped = () =>
+    s.op()?.control.status === 'cancel_requested' || s.ac.signal.aborted || s.decisions.scopeRevoked
   const stoppedRows = async () => {
     const value = [...s.state.registers.decisionStates.values()].find(
       ({ value }) =>

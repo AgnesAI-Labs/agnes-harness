@@ -808,6 +808,14 @@ describe('tools phase', () => {
       expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
       expect(result.content[0]?.text).toMatch(/5 ms limit.*aborted/s)
       expect(settled).toMatchObject({ outcome: 'unknown' })
+      expect(
+        (await s.session.decisions.list()).filter(
+          (value) => value.request.spec.purpose === 'unknown-outcome',
+        ),
+      ).toEqual([])
+      expect((await s.log.scan({ type: 'x/core/unknown-outcome', limit: 5 }))[0]?.data).toMatchObject({
+        waitEndedBy: 'stopped',
+      })
     })
 
     it('is still recorded as cancelled, at once, for a read-only call', async () => {
