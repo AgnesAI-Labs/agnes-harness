@@ -7,9 +7,10 @@ import {
   type DeferredInvocationLedgerPort,
   type DeferredInvocationsService,
 } from '@agnes/host-providers/assemble/deferred-invocations'
-import type { Actor, EventEnvelope, InputPresentation } from '@agnes/protocol'
+import type { Actor, EventEnvelope } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
+import { enqueueSystemInput } from './system-input.js'
 
 const boundQueues = new WeakMap<HostSession, DeferredInvocationsService>()
 const registries = new WeakMap<Context, DeferredInvocationsService>()
@@ -28,42 +29,6 @@ function deferredInvocationsFor(root: Context): DeferredInvocationsService {
 /** The generation service that bound this session. Unloading a producer does not drop the queue. */
 export function deferredQueueFor(session: HostSession): DeferredInvocationsService | undefined {
   return boundQueues.get(session)
-}
-
-/** Normal SC1 input dedupe includes historical inbox facts, including already-claimed items. */
-export async function enqueueSessionInputOnce(
-  session: HostSession,
-  key: string,
-  text: string,
-  actor: Actor,
-  signal: AbortSignal,
-  target: 'next-turn' | 'next-step' = 'next-turn',
-  presentation?: InputPresentation,
-): Promise<number> {
-  signal.throwIfAborted()
-  const rows = await scanAll((q) => session.scan(q), {
-    type: 'inbox',
-    lane: session.lane,
-    toSeq: session.lastSeq,
-  })
-  for (const row of rows) {
-    const data = row.data as { items?: { commandId?: string }[] }
-    if (
-      row.origin === 'system' &&
-      row.trust === 'trusted' &&
-      data.items?.some((item) => item.commandId === key)
-    )
-      return row.seq
-  }
-  return session.enqueue(target, {
-    content: [{ type: 'text', text }],
-    actor,
-    commandId: key,
-    kind: 'follow_up',
-    trust: 'untrusted',
-    origin: 'system',
-    ...(presentation ? { presentation } : {}),
-  })
 }
 
 export function bindDeferredInvocations(a: Assembled, session: HostSession): () => void {
@@ -149,10 +114,15 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
     },
     async wake(id, actor, signal) {
       if (session.op()) return
-      await enqueueSessionInputOnce(
+      await enqueueSystemInput(
         session,
         `deferred-wake:${id}:${session.lastTurnNumber()}`,
-        `A deferred tool invocation is queued (${id}). Execute only its durable backend binding.`,
+        {
+          source: 'agnes/deferred-invocations',
+          type: 'invocation-queued',
+          data: { invocationId: id },
+          summary: 'A deferred tool invocation is queued. Execute only its durable backend binding.',
+        },
         actor,
         signal,
       )

@@ -2838,7 +2838,7 @@
     "BudgetState": {
       "$ref": "session-v1.json#/$defs/BudgetState"
     },
-    "InputPresentation": { "$ref": "session-v1.json#/$defs/InputPresentation" },
+    "SystemInput": { "$ref": "session-v1.json#/$defs/SystemInput" },
     "ArtifactRef": {
       "$ref": "session-v1.json#/$defs/ArtifactRef"
     },
@@ -3091,7 +3091,8 @@
                 "$ref": "#/$defs/ContentBlock"
               }
             },
-            "presentation": { "$ref": "#/$defs/InputPresentation" },
+            "origin": { "enum": ["principal", "system"] },
+            "system": { "$ref": "#/$defs/SystemInput" },
             "actorLabel": {
               "type": "string",
               "maxLength": 128

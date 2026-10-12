@@ -6,8 +6,8 @@ import {
   type OwnerLedgerSource,
 } from '@agnes/host-common/assemble/owner-ledger'
 import type { ServiceDelivery } from '@agnes/host-common/assemble/service-binding'
-import type { Actor, InputPresentation, JsonValue } from '@agnes/protocol'
-import { enqueueSessionInputOnce } from '../sessions/deferred-invocations.js'
+import type { Actor, JsonValue, SystemInput } from '@agnes/protocol'
+import { enqueueSystemInput } from '../sessions/system-input.js'
 
 /** The session fields the shared ports read. HostSession satisfies this at the call site. */
 export interface SessionLedgerSession {
@@ -29,14 +29,8 @@ export interface SessionLedgerSession {
   op(): unknown
   enqueue(
     target: 'next-turn' | 'next-step',
-    message: {
-      content: { type: 'text'; text: string }[]
-      actor: Actor
-      commandId: string
-      kind: 'follow_up'
-      trust: 'untrusted'
-      origin: 'system'
-    },
+    message: import('@agnes/core').EnqueueMsg,
+    options?: { dedupeByCommandId?: boolean },
   ): Promise<number>
 }
 
@@ -88,16 +82,15 @@ export function createSessionAgentInput(
   session: SessionLedgerSession,
   actor: Actor,
   delivery: ServiceDelivery,
-): (key: string, text: string, signal: AbortSignal, presentation?: InputPresentation) => Promise<number> {
-  return (key, text, signal, presentation) =>
-    enqueueSessionInputOnce(
-      // enqueue reads scan, lane, lastSeq, and enqueue. The rest of HostSession stays on the caller.
-      session as never,
+  source: string,
+): (key: string, input: Omit<SystemInput, 'source'>, signal: AbortSignal) => Promise<number> {
+  return (key, input, signal) =>
+    enqueueSystemInput(
+      session,
       key,
-      text,
+      { ...input, source },
       actor,
       signal,
       sessionInputTarget(session, delivery),
-      presentation,
     )
 }

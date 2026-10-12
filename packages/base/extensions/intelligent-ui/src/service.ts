@@ -122,28 +122,37 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
             .filter(Boolean)
             .map((key) => key.slice(0, 128))
         : []
+    const deferred = record.invocation ? await cap.queue.read(record.invocation.id, signal) : null
     const inboxSeq = await input.deliver(
       `ui-result:${receipt.commandId}`,
-      'Intelligent UI action result: ' +
-        JSON.stringify({
+      {
+        type: 'action-result',
+        summary: `UI ${operation} ${receipt.status}: ${action?.label ?? record.request.actionId}`,
+        data: json({
           ...receipt,
+          ...(record.invocation
+            ? { invocation: deferred?.invocation ?? { ...record.invocation, sourceSeq: record.receivedSeq } }
+            : {}),
+          ...(deferred?.result ? { result: deferred.result } : {}),
+          ...(deferred?.error ? { error: deferred.error } : {}),
           ...(record.invocation?.tool === 'ui_submit' && receipt.status === 'succeeded'
             ? { submitted: record.invocation.args }
             : {}),
         }),
-      signal,
-      {
-        kind: 'ui-action',
-        operation,
-        status:
-          receipt.status === 'succeeded'
-            ? 'succeeded'
-            : receipt.status === 'rejected'
-              ? 'rejected'
-              : 'failed',
-        label: action?.label ?? record.request.actionId,
-        fields,
+        presentation: {
+          kind: 'ui-action',
+          operation,
+          status:
+            receipt.status === 'succeeded'
+              ? 'succeeded'
+              : receipt.status === 'rejected'
+                ? 'rejected'
+                : 'failed',
+          label: action?.label ?? record.request.actionId,
+          fields,
+        },
       },
+      signal,
     )
     await append(
       'action.delivered',

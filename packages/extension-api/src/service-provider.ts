@@ -1,4 +1,4 @@
-import type { EventEnvelope, InputPresentation, JsonValue } from '@agnes/protocol'
+import type { EventEnvelope, JsonValue, SystemInput } from '@agnes/protocol'
 import type { Seq, SessionRef } from './common.js'
 import type { DecisionPort } from './decisions.js'
 import type { ProjectionReader } from './projections.js'
@@ -38,9 +38,9 @@ export interface OwnerLedgerPort {
   appendOwn(name: string, data: JsonValue, sourceSeq?: Seq): Promise<Seq>
 }
 
-/** Actor, lane, target, and trust come from the admitted call, not from arguments. */
+/** Host stamps source, actor, lane, target and trust from the admitted call. */
 export interface AgentInputPort {
-  deliver(key: string, text: string, signal: AbortSignal, presentation?: InputPresentation): Promise<Seq>
+  deliver(key: string, input: Omit<SystemInput, 'source'>, signal: AbortSignal): Promise<Seq>
 }
 
 export type ServicePortName = 'ledger' | 'input' | 'projections' | 'decisions'

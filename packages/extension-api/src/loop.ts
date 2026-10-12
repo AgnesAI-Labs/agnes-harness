@@ -121,6 +121,9 @@ export interface LoopInput {
   trust: 'trusted' | 'untrusted'
   actor: Actor
   content: readonly ContentBlock[]
+  origin?: 'principal' | 'system'
+  /** Host-authenticated source; data remains untrusted for model policy. */
+  system?: import('@agnes/protocol').SystemInput
 }
 export interface LoopTurnView {
   readonly turnId: number

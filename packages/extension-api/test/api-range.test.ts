@@ -82,5 +82,6 @@ describe('stable API subset boundary cases', () => {
   it('exercises checkApiRange default version through both acceptance and rejection', () => {
     expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^2.0' })).not.toThrow()
     expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^3.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^1.0' })).toThrow(/E_API_RANGE/)
   })
 })

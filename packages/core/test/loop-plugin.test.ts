@@ -660,9 +660,19 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
         dispose() {},
         async step() {
           const first = await ctx.input.claim('next-turn')
+          expect(first).toMatchObject({
+            origin: 'system',
+            system: { source: 'agnes/child-agent', type: 'completed', data: { childId: 'child-1' } },
+          })
           expect(await ctx.input.claim('next-turn')).toEqual(first)
           const steer = await ctx.input.claim('next-step')
-          expect(steer).toMatchObject({ turnId: first?.turnId, trust: 'untrusted', kind: 'steer' })
+          expect(steer).toMatchObject({
+            turnId: first?.turnId,
+            trust: 'untrusted',
+            kind: 'steer',
+            origin: 'system',
+            system: { data: { invocationId: 'invocation-1' } },
+          })
           const view = await ctx.turn.view()
           expect(view?.history.at(-1)?.trust).toBe('untrusted')
           expect(view?.tools[0]).toMatchObject({ name: 'read', parameters: { type: 'object' } })
@@ -685,11 +695,28 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
   k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
   try {
     const session = await k.session('view', { ...options, loop: viewLoop })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'first' }],
+      actor,
+      origin: 'system',
+      system: {
+        source: 'agnes/child-agent',
+        type: 'completed',
+        summary: 'Child completed',
+        data: { childId: 'child-1' },
+      },
+    })
     await session.enqueue('next-step', {
       content: [{ type: 'text', text: 'steer' }],
       actor,
       trust: 'untrusted',
+      origin: 'system',
+      system: {
+        source: 'agnes/deferred-invocations',
+        type: 'invocation-queued',
+        summary: 'Queued',
+        data: { invocationId: 'invocation-1' },
+      },
     })
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',

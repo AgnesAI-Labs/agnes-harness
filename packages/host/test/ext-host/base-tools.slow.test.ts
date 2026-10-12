@@ -534,9 +534,19 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(answer).toMatchObject({ origin: 'system', trust: 'untrusted', actor: session.d.actor })
       expect(JSON.stringify(answer?.data)).toContain('B')
       expect(answer?.data).toMatchObject({
-        presentation: { kind: 'ui-action', operation: 'submit', status: 'succeeded', fields: ['choice'] },
+        system: {
+          source: 'agnes/intelligent-ui',
+          type: 'action-result',
+          presentation: { kind: 'ui-action', operation: 'submit', status: 'succeeded', fields: ['choice'] },
+        },
       })
-      expect(JSON.stringify(provider.calls[3]?.messages)).toContain('Intelligent UI action result:')
+      expect(
+        provider.calls[3]?.messages
+          .flatMap((message) => message.content)
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n'),
+      ).toContain('"type":"action-result"')
       expect(
         (
           await service.read(
@@ -647,7 +657,13 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         provider.calls.every((request) => !request.tools.some((tool) => tool.name === 'ui_submit')),
       ).toBe(true)
       expect(JSON.stringify(provider.calls[2]?.messages)).toContain('Ada')
-      expect(JSON.stringify(provider.calls[2]?.messages)).toContain('Intelligent UI action result:')
+      expect(
+        provider.calls[2]?.messages
+          .flatMap((message) => message.content)
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n'),
+      ).toContain('"type":"action-result"')
       const facts = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
       expect(facts.map((row) => (row.data as { name: string }).name)).toEqual(['ui_render', 'ui_submit'])
     } finally {

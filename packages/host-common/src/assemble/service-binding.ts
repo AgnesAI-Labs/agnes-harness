@@ -18,8 +18,8 @@ import {
   type ServiceProvider,
 } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { type Actor, type InputPresentation, type JsonValue, validateAgainst } from '@agnes/protocol'
-import { InputPresentation as InputPresentationSchema } from '@agnes/protocol/gen/session-v1'
+import { type Actor, type JsonValue, type SystemInput, validateAgainst } from '@agnes/protocol'
+import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
 import { ProviderLifetime } from './provider-lifetime.js'
 import {
   installProviderRegistry,
@@ -498,20 +498,16 @@ function buildPorts(
     if (!inputFactory) throw closed(kind.kind, 'bind')
     const raw = inputFactory(call, binding, descriptor)
     input = Object.freeze({
-      deliver: (key: string, text: string, signal: AbortSignal, presentation?: InputPresentation) =>
+      deliver: (key: string, input: Omit<SystemInput, 'source'>, signal: AbortSignal) =>
         guard('deliver', () => {
-          if (typeof text !== 'string' || !(signal instanceof AbortSignal)) throw closed(kind.kind, 'deliver')
-          if (presentation !== undefined && !validateAgainst(InputPresentationSchema, presentation).ok)
+          if (!(signal instanceof AbortSignal) || !input || typeof input !== 'object' || 'source' in input)
             throw closed(kind.kind, 'deliver')
+          const system = { ...structuredClone(input), source: call.owner }
+          if (!validateAgainst(SystemInputSchema, system).ok) throw closed(kind.kind, 'deliver')
           const finalKey = namespaceKey(kind.kind, call.owner, key, descriptor.dedupeKeys)
           const joined = AbortSignal.any([signal, call.signal, lifetime.signal])
           joined.throwIfAborted()
-          return raw.deliver(
-            finalKey,
-            text,
-            joined,
-            presentation === undefined ? undefined : structuredClone(presentation),
-          )
+          return raw.deliver(finalKey, system, joined)
         }) as Promise<number>,
     })
   }

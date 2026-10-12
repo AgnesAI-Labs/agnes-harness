@@ -3,7 +3,7 @@ import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { ToolDef } from '@agnes/extension-api'
-import type { RequestHeader, ThinkingLevel } from '@agnes/protocol'
+import type { RequestHeader, SystemInput, ThinkingLevel } from '@agnes/protocol'
 import { uploadedAttachment } from '@agnes/protocol'
 import type { RequestMediaHashMaterial } from '../orchestrator/request-media.js'
 import {
@@ -625,7 +625,16 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
   } else if (node.kind === 'user') {
     const content: RequestMessage['content'] = []
     let fileIndex = 0
-    for (const b of blocksOf(d.content)) {
+    const system = node.event.origin === 'system' ? (d.system as SystemInput | undefined) : undefined
+    const blocks = system
+      ? [
+          {
+            type: 'text',
+            text: `${system.summary}\n${JSON.stringify({ source: system.source, type: system.type, data: system.data })}`,
+          },
+        ]
+      : blocksOf(d.content)
+    for (const b of blocks) {
       if (b.type === 'text')
         content.push({ type: 'text', text: wrap(String(b.text), b.reference !== undefined) })
       else if (b.type === 'image') content.push(imageBlock(b))

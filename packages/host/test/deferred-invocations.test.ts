@@ -16,6 +16,7 @@ import {
   DeferredInvocationsService,
   ownerDeferredQueue,
 } from '@agnes/host-providers/assemble/deferred-invocations'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { defineAgnesPlugin, drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
@@ -990,9 +991,28 @@ it.each(['allowed-once', 'rejected'] as const)(
   async (verdict) => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-deferred-decision-'))
     const executions: string[] = []
+    const notifications = new Map<string, import('@agnes/protocol').SystemInput>()
+    const observe = (ctx: LoopContext): LoopContext =>
+      Object.assign(Object.create(ctx), {
+        input: {
+          ...ctx.input,
+          async claim(target: 'next-turn' | 'next-step') {
+            const input = await ctx.input.claim(target)
+            if (input?.origin === 'system' && input.system) notifications.set(input.id, input.system)
+            return input
+          },
+        },
+      })
+    const loop: LoopFactory = {
+      ...defaultLoopFactory,
+      id: 'fixture.notifications',
+      create: (ctx) => defaultLoopFactory.create(observe(ctx)),
+      resume: (ctx, saved) => defaultLoopFactory.resume(observe(ctx), saved),
+    }
     const plugin = defineAgnesPlugin({
-      inject: ['tools'],
+      inject: ['tools', 'providers'],
       apply(ctx) {
+        ctx.providers.register('loop', 'fixture/deferred-review', loop)
         ctx.tools.register({
           ...fixtureTool('review_commit'),
           meta: { ...fixtureTool('review_commit').meta, requiresApproval: 'always' },
@@ -1031,7 +1051,11 @@ it.each(['allowed-once', 'rejected'] as const)(
         version: '1.0.0',
         type: 'module',
         exports: './index.mjs',
-        agnes: { plugins: [{ export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools'] }] },
+        agnes: {
+          plugins: [
+            { export: 'main', apiRange: '^2.0.0', default: true, inject: ['tools', 'providers'] },
+          ],
+        },
       }),
     )
     const source: RuntimePluginSnapshot = {
@@ -1077,7 +1101,11 @@ it.each(['allowed-once', 'rejected'] as const)(
         ),
       },
       profileInputs: {
-        user: { name: 'local-dev', packages: [{ id: packageId, source: `file:${directory}` }] },
+        user: {
+          name: 'local-dev',
+          packages: [{ id: packageId, source: `file:${directory}` }],
+          loop: { id: loop.id, version: loop.version },
+        },
       },
       runtimePluginSnapshots: [source],
       runtimePluginCatalogue: [source],
@@ -1113,7 +1141,13 @@ it.each(['allowed-once', 'rejected'] as const)(
     try {
       let session = await host.createSession({ key: 'deferred-review', cwd: root })
       await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'Review' }] })
-      await session.run({ until: 'turn-end', signal })
+      const rendered = await session.run({ until: 'turn-end', signal })
+      const history = await session.scan({ toSeq: session.lastSeq, type: ['tool/result', 'x/core/failure'] })
+      expect(rendered, JSON.stringify({ rendered, history })).toMatchObject({ reason: 'completed' })
+      const shown = await session.intelligentUi!.read({ sessionId: session.key }, signal)
+      expect(shown.surfaces, JSON.stringify(history)).toContainEqual(
+        expect.objectContaining({ status: 'open', surface: expect.objectContaining({ id: surface.id }) }),
+      )
       const action = {
         sessionId: session.key,
         surfaceId: surface.id,
@@ -1169,6 +1203,23 @@ it.each(['allowed-once', 'rejected'] as const)(
       await session.intelligentUi!.action(action, session.d.actor, signal)
       await session.run({ until: 'turn-end', signal })
       expect(executions).toEqual(verdict === 'allowed-once' ? ['committed'] : [])
+      const results = [...notifications.values()].filter((input) => input.type === 'action-result')
+      expect(results).toHaveLength(1)
+      expect(results[0]).toMatchObject({
+        source: 'agnes/intelligent-ui',
+        data: {
+          commandId: 'commit-once',
+          status: verdict === 'allowed-once' ? 'succeeded' : 'rejected',
+          invocation: { tool: 'review_commit' },
+        },
+      })
+      expect([...notifications.values()]).toContainEqual(
+        expect.objectContaining({
+          source: 'agnes/deferred-invocations',
+          type: 'invocation-queued',
+          data: { invocationId: pending.invocationId },
+        }),
+      )
       const calls = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
       expect(calls.filter((row) => (row.data as { name: string }).name === 'review_commit')).toHaveLength(1)
       expect(await session.decisions.list()).toHaveLength(1)

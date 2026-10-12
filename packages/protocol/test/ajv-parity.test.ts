@@ -320,7 +320,8 @@ const SESSION_DEFS: Record<string, TSchema> = {
   TurnEnd: SessionGen.TurnEnd,
   StepStart: SessionGen.StepStart,
   StepEnd: SessionGen.StepEnd,
-  InputPresentation: SessionGen.InputPresentation,
+  SystemInputPresentation: SessionGen.SystemInputPresentation,
+  SystemInput: SessionGen.SystemInput,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
@@ -482,7 +483,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SurfaceAuthCredential: AgnesGen.SurfaceAuthCredential,
 
   BudgetState: AgnesGen.BudgetState,
-  InputPresentation: AgnesGen.InputPresentation,
+  SystemInput: AgnesGen.SystemInput,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -1292,7 +1293,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
   },
-  InputPresentation: {
+  SystemInputPresentation: {
     valid: {
       kind: 'ui-action',
       operation: 'submit',
@@ -1305,6 +1306,22 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { kind: 'ui-action', operation: 'submit', status: 'executing', label: 'Submit', fields: [] },
     ],
     note: 'Backend UI action presentation is additive, bounded, and terminal only.',
+  },
+  SystemInput: {
+    valid: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Submitted',
+      data: { answers: { name: 'Fixture' } },
+    },
+    invalid: [
+      { source: 'agnes/intelligent-ui', type: 'action-result', data: {} },
+      { source: '', type: 'action-result', summary: 'Submitted', data: {} },
+      { source: 'owner', type: '', summary: 'Submitted', data: {} },
+      { source: 'owner', type: 'result', summary: rep(2049), data: {} },
+      { source: 'owner', type: 'result', summary: 'Done', data: {}, actor: {} },
+    ],
+    note: 'One bounded platform notification owns machine data and presentation.',
   },
   UserMessage: {
     valid: userMessageOk,
@@ -2546,7 +2563,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
-  InputPresentation: SESSION_SAMPLES.InputPresentation as Sample,
+  SystemInput: SESSION_SAMPLES.SystemInput as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {

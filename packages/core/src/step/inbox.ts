@@ -1,12 +1,12 @@
 import type { EventInput } from '@agnes/core-common/types'
 import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
-import type { Actor, ContentBlock, InputPresentation } from '@agnes/protocol'
+import type { Actor, ContentBlock, SystemInput } from '@agnes/protocol'
 
 export type EnqueueMsg = {
   /** Atomic admission for a continuation: refuse when another input is already pending. */
   ifEmpty?: boolean
   content: ContentBlock[]
-  presentation?: InputPresentation
+  system?: SystemInput
   actor: Actor
   commandId?: string
   admissionId?: string
@@ -47,7 +47,7 @@ export function inputMessageEvents(item: InboxItem, lane: string): EventInput[] 
     data: {
       content,
       kind: item.kind ?? 'prompt',
-      ...(origin === 'system' && item.presentation ? { presentation: item.presentation } : {}),
+      ...(origin === 'system' && item.system ? { system: item.system } : {}),
       ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
     },
   })

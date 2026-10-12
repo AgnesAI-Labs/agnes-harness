@@ -199,7 +199,7 @@ describe('human Loop controls', () => {
     await session.step()
     await session.enqueue('next-step', { content: content('return this'), actor })
     await session.enqueue('next-step', {
-      content: content('Intelligent UI action result: succeeded'),
+      content: content('UI action succeeded'),
       actor,
       kind: 'follow_up',
       trust: 'untrusted',
@@ -213,7 +213,7 @@ describe('human Loop controls', () => {
       expect.objectContaining({
         target: 'next-turn',
         kind: 'follow_up',
-        content: content('Intelligent UI action result: succeeded'),
+        content: content('UI action succeeded'),
       }),
     ])
     expect(await facts(log)).toContainEqual(
@@ -227,9 +227,7 @@ describe('human Loop controls', () => {
     await run(session)
     expect((await session.controls.state()).pending).toEqual([])
     const messages = await log.scan({ type: 'user/message', limit: 100 })
-    expect(
-      messages.filter((row) => JSON.stringify(row.data).includes('Intelligent UI action result: succeeded')),
-    ).toHaveLength(1)
+    expect(messages.filter((row) => JSON.stringify(row.data).includes('UI action succeeded'))).toHaveLength(1)
     await session.close()
   })
 
