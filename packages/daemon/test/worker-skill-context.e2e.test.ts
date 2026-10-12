@@ -18,8 +18,8 @@ const roots: string[] = []
 // Pin the complete model-visible schema, including official interaction, delivery, jobs,
 // MCP resources, plugin authoring, workflows, PTYs, history, reminders, goals, child-model
 // discovery and bounded questions.
-// Includes eager UI display schemas and explicit file/question/UI routing descriptions.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '66a392a604fb8ca1893866a0b0ab76c065ca89c9f74b7240d3afecfba7a30000'
+// Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'ef7d959d9773fdb02e002d863b2dc175f41fc5da1d9f2ced17b236c97c2b400b'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
