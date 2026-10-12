@@ -64,9 +64,9 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | 面板 / `request-trace` | 所属页 / 注册面板 | `packages/web-units/src/trace-request.tsx` | Button; SettingsCode | 列表/表格/元数据需统一呈现；间距、字段或专用内容需视觉复核，保留行为 |
 | 面板 / `transcript` | 所属页 / 注册面板 | `packages/web-units/src/transcript.ts` | React DOM | 标题/骨架/动作位置需统一；空态、加载、错误或状态反馈需统一 |
 | 面板 / `computer-use-session` | 所属页 / 注册面板 | `packages/web-conversation/src/computer-use-pane.tsx` | Button; shared screen region | 间距、字段或专用内容需视觉复核，保留行为；空态、加载、错误或状态反馈需统一 |
-| 面板 / `composer` | 所属页 / 注册面板 | `packages/web-units/src/composer.ts` | React textarea; native actions; ReferencePicker | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件 |
-| 面板 / `child-controls` | 所属页 / 注册面板 | `packages/web-units/src/composer/child-controls.ts` | React input/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
-| 面板 / `queue-editor` | 所属页 / 注册面板 | `packages/web-units/src/composer/queue-editor.ts` | React textarea/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
+| 面板 / `composer` | 所属页 / 注册面板 | `packages/web-units/src/composer.tsx` | Composer; SettingsTextArea/SettingsInput/Button; ReferencePicker | 已使用 JSX 与共享控件；保留文件选择器和键盘语义，待视觉复核 |
+| 面板 / `child-controls` | 所属页 / 注册面板 | `packages/web-units/src/composer/child-controls.tsx` | React input/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
+| 面板 / `queue-editor` | 所属页 / 注册面板 | `packages/web-units/src/composer/queue-editor.tsx` | React textarea/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
 | 面板 / `sidebar` | 所属页 / 注册面板 | `packages/web-units/src/sidebar.ts` | React DOM | 手写动作/选择呈现需复用共享组件；标题/骨架/动作位置需统一 |
 | 面板 / `topbar` | 所属页 / 注册面板 | `packages/web-units/src/topbar.ts` | React DOM | 手写动作/选择呈现需复用共享组件；标题/骨架/动作位置需统一 |
 | 面板 / `plugin-config` | 所属页 / 注册面板 | `packages/web-admin/src/admin/plugins/config-tab.tsx` | Dialog; PluginConfigPanel | 标题/骨架/动作位置需统一；对话框正文/页脚需统一 |
@@ -94,7 +94,7 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | 对话框族 / `generic-confirm` | existing confirmation calls | `packages/web-ui/src/confirm.ts` | shared confirm factory | 对话框正文/页脚需统一 |
 | 卡片族 / `message` | 会话 / 所属面板 | `packages/web-ui/src/conversation/messages.tsx` | ConversationMessages; message variants | 间距、字段或专用内容需视觉复核，保留行为 |
 | 卡片族 / `tool` | 会话 / 所属面板 | `packages/web-ui/src/conversation/messages/tool-card.tsx` | ConversationToolCard; ConversationCardLayout | 间距、字段或专用内容需视觉复核，保留行为 |
-| 卡片族 / `approval` | 会话 / 所属面板 | `packages/web-units/src/approval.ts` | React DOM; Approval actions | 手写动作/选择呈现需复用共享组件；空态、加载、错误或状态反馈需统一 |
+| 卡片族 / `approval` | 会话 / 所属面板 | `packages/web-units/src/approval.tsx` | Approval; Button actions | 已使用 JSX 与共享控件；保留审批身份、拒绝状态和焦点恢复 |
 | 卡片族 / `goal` | 会话 / 所属面板 | `packages/web-conversation/src/goal-card.tsx` | ConversationCardLayout; Button; Badge | 间距、字段或专用内容需视觉复核，保留行为 |
 | 卡片族 / `workflow` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |
 | 卡片族 / `question` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/form-fields.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |

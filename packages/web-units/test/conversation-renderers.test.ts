@@ -5,6 +5,7 @@ import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createConversationAttachmentsRenderer,
+  createConversationFeedback,
   createConversationMessageActions,
   createConversationToolCard,
   webUnitsLocaleCatalog,
@@ -200,7 +201,11 @@ describe('conversation leaf renderers', () => {
     vi.useFakeTimers()
     const first = createConversationMessageActions({ t: zhT })
     const second = createConversationMessageActions({ t: zhT })
-    document.body.append(first.element, second.element)
+    const standalone = createConversationFeedback()
+    document.body.append(first.element, second.element, standalone.element)
+    standalone.report('standalone', 1600)
+    expect(standalone.element.getAttribute('role')).toBe('status')
+    expect(standalone.element.textContent).toBe('standalone')
     const state = { turn: completedTurn(), finalText: 'answer', settled: true }
     first.update(state)
     second.update(state)
@@ -212,6 +217,11 @@ describe('conversation leaf renderers', () => {
     await vi.runAllTimersAsync()
     expect(first.element.querySelector('.turn-feedback')?.textContent).toBe('')
     expect(second.element.querySelector('.turn-feedback')?.textContent).toBe('')
+    expect(standalone.element.textContent).toBe('')
+    standalone.report('dispose clears this', 1600)
+    standalone.dispose()
+    standalone.dispose()
+    expect(standalone.element.textContent).toBe('')
 
     first.feedback.report('only first', 1600)
     expect(first.feedback.element.textContent).toBe('only first')
@@ -274,5 +284,6 @@ describe('conversation leaf renderers', () => {
     attachments.clear()
     expect(attachments.element.hidden).toBe(true)
     expect(attachments.element.childElementCount).toBe(0)
+    attachments.dispose()
   })
 })

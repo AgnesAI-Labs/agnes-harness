@@ -31,17 +31,8 @@
     "packages/web-conversation/src/computer-use.ts": {
       "dom": 1
     },
-    "packages/web-conversation/src/document-preview.ts": {
-      "dom": 6
-    },
     "packages/web-conversation/src/tool-icon.ts": {
       "dom": 2
-    },
-    "packages/web-conversation/src/turns.ts": {
-      "dom": 19
-    },
-    "packages/web-conversation/src/usage.ts": {
-      "dom": 5
     },
     "packages/web-conversation/src/workbench/artifact-download.tsx": {
       "dom": 1
@@ -51,12 +42,6 @@
     },
     "packages/web-ui/src/conversation/markdown.tsx": {
       "intrinsic": 2
-    },
-    "packages/web-ui/src/conversation/messages/tool-card.tsx": {
-      "intrinsic": 1
-    },
-    "packages/web-ui/src/conversation/turn-actions.tsx": {
-      "intrinsic": 4
     },
     "packages/web-ui/src/dom/dialog-sheets.ts": {
       "dom": 2,
@@ -94,21 +79,6 @@
       "intrinsic": 4,
       "className": 1
     },
-    "packages/web-units/src/conversation.ts": {
-      "intrinsic": 1
-    },
-    "packages/web-units/src/conversation/attachments.ts": {
-      "dom": 1
-    },
-    "packages/web-units/src/conversation/feedback.ts": {
-      "dom": 1
-    },
-    "packages/web-units/src/conversation/message-actions.ts": {
-      "dom": 1
-    },
-    "packages/web-units/src/conversation/tool-card.ts": {
-      "dom": 1
-    },
     "packages/web/public/admin.html": {
       "intrinsic": 14,
       "className": 9
@@ -130,26 +100,11 @@
     "packages/web/src/client-modules/reconcile/styles.ts": {
       "dom": 1
     },
-    "packages/web/src/client-modules/timeline-slot.ts": {
-      "dom": 1
-    },
     "packages/web/src/intelligent-ui/artifact-file.tsx": {
-      "dom": 1
-    },
-    "packages/web/src/message-feedback.ts": {
       "dom": 1
     },
     "packages/web/src/timeline-node-host.tsx": {
       "intrinsic": 1
-    },
-    "packages/web/src/timeline.ts": {
-      "dom": 1
-    },
-    "packages/web/src/timeline/dsh-node.ts": {
-      "dom": 3
-    },
-    "packages/web/src/timeline/native-entry.ts": {
-      "dom": 9
     }
   }
 }

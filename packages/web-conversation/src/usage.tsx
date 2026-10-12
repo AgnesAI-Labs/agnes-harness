@@ -1,43 +1,43 @@
 import type { UsageView } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
+import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
-import { createElement } from 'react'
+import { Fragment } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 
 export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
 
-type Rows = Array<[string, string]>
-
-function fillRows(list: HTMLDListElement, rows: Rows): void {
-  list.replaceChildren(
-    ...rows.flatMap(([name, value]) => {
-      const term = document.createElement('dt')
-      const detail = document.createElement('dd')
-      term.textContent = name
-      detail.textContent = value
-      return [term, detail]
-    }),
-  )
-}
-
-/** Keeps the native disclosure and its focus/expanded state through incremental updates. */
+/** Keeps the disclosure and its focus/expanded state through incremental updates. */
 export function createCostDetails(
   parent: HTMLElement,
   t: (key: string, vars?: LocaleVars) => string,
-): (node: CostNode) => void {
-  const details = document.createElement('details')
-  details.className = 'usage-disclosure call-usage'
-  const summary = document.createElement('summary')
-  summary.setAttribute('aria-label', t('cost.callDetailsAria'))
-  const list = document.createElement('dl')
-  list.className = 'usage-grid'
-  details.append(summary, list)
-  parent.append(details)
-  return (node) => {
-    summary.textContent = costSummary(node, t)
-    fillRows(list, costDetails(node, t))
+): ((node: CostNode) => void) & { dispose(): void } {
+  const host = createRegionHost(parent, 'div', 'conversation-content-host')
+  let disposed = false
+  const update = ((node: CostNode) => {
+    if (disposed) return
+    renderRegion(
+      host,
+      <details className="usage-disclosure call-usage">
+        <summary aria-label={t('cost.callDetailsAria')}>{costSummary(node, t)}</summary>
+        <dl className="usage-grid">
+          {costDetails(node, t).map(([name, value]) => (
+            <Fragment key={name}>
+              <dt>{name}</dt>
+              <dd>{value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </details>,
+    )
+  }) as ((node: CostNode) => void) & { dispose(): void }
+  update.dispose = () => {
+    if (disposed) return
+    disposed = true
+    queueMicrotask(() => unmountRegion(host))
   }
+  return update
 }
 
 export type UsagePanelUpdater = ((usage: UsageView | undefined, connected: boolean) => void) & {
@@ -54,7 +54,9 @@ export function createUsagePanel(
   const update = ((usage, connected) => {
     if (disposed) return
     parent.hidden = !usage
-    flushSync(() => root.render(createElement(ConversationUsage, { usage, connected, ...(t ? { t } : {}) })))
+    flushSync(() =>
+      root.render(<ConversationUsage usage={usage} connected={connected} {...(t ? { t } : {})} />),
+    )
   }) as UsagePanelUpdater
   update.dispose = () => {
     if (disposed) return

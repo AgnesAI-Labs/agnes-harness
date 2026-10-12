@@ -9,6 +9,8 @@ import {
   useState,
 } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
+import { createSettingsControl } from '../settings-control-templates.js'
+import { Button } from '../ui/button.js'
 import { ConversationCost } from './cost.js'
 
 export interface ConversationTurnFeedback {
@@ -29,6 +31,8 @@ export interface ConversationTurnActionsProps {
   bindAutoDismiss?: (element: HTMLDetailsElement) => void
   feedbackRef?: Ref<ConversationTurnFeedback>
 }
+
+const ACTION_BUTTON = { htmlType: 'button', appearance: 'ghost', size: 'small' } as const
 
 const durationLabel = (ms: number | undefined, t: Translate): string | undefined => {
   if (ms === undefined) return undefined
@@ -78,7 +82,7 @@ function legacyCopy(text: string, doc: Document): boolean {
   const ranges = selection
     ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
     : []
-  const textarea = doc.createElement('textarea')
+  const textarea = createSettingsControl(doc, 'textarea')
   textarea.value = text
   textarea.readOnly = true
   textarea.setAttribute('aria-hidden', 'true')
@@ -275,29 +279,23 @@ export function ConversationTurnActions({
       t('turnactions.rows.cache'),
       `${totals.cacheRead.toLocaleString()} / ${totals.cacheWrite.toLocaleString()}`,
     ],
-    ...(cost
-      ? [
-          [
-            t('turnactions.rows.cost'),
-            `$${(cost.usdMicros / 1e6).toFixed(6)} · ${sourceLabel(cost.source, t)}${cost.subscription ? t('turnactions.subscription') : ''}${billingComplete ? '' : t('turnactions.billingPartial')}`,
-          ] as [string, string],
-        ]
-      : []),
-    ...(credits
-      ? [
-          [
-            t('turnactions.rows.credits'),
-            `${credits.amount.toFixed(8).replace(/\.?0+$/, '')} credits · ${sourceLabel(credits.source, t)}${credits.complete ? '' : t('turnactions.creditsPartial')}`,
-          ] as [string, string],
-        ]
-      : []),
-    ...(duration ? [[t('turnactions.rows.duration'), duration] as [string, string]] : []),
   ]
+  if (cost)
+    rows.push([
+      t('turnactions.rows.cost'),
+      `$${(cost.usdMicros / 1e6).toFixed(6)} · ${sourceLabel(cost.source, t)}${cost.subscription ? t('turnactions.subscription') : ''}${billingComplete ? '' : t('turnactions.billingPartial')}`,
+    ])
+  if (credits)
+    rows.push([
+      t('turnactions.rows.credits'),
+      `${credits.amount.toFixed(8).replace(/\.?0+$/, '')} credits · ${sourceLabel(credits.source, t)}${credits.complete ? '' : t('turnactions.creditsPartial')}`,
+    ])
+  if (duration) rows.push([t('turnactions.rows.duration'), duration])
 
   return (
     <footer ref={footer} className="turn-footer" hidden={!settled}>
-      <button
-        type="button"
+      <Button
+        {...ACTION_BUTTON}
         className="turn-action"
         aria-label={t('turnactions.copy')}
         title={t('turnactions.copy')}
@@ -311,9 +309,9 @@ export function ConversationTurnActions({
             'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2',
           ]}
         />
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        {...ACTION_BUTTON}
         className="turn-action"
         aria-label={t('turnactions.fork')}
         title={t('turnactions.fork')}
@@ -322,9 +320,9 @@ export function ConversationTurnActions({
         onClick={fork}
       >
         <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        {...ACTION_BUTTON}
         className="turn-action"
         data-testid="turn-view-trace"
         aria-label={t('turnactions.trace')}
@@ -337,7 +335,7 @@ export function ConversationTurnActions({
         }
       >
         <Icon paths={['M4 4h16v16H4Z', 'M8 8h8M8 12h8M8 16h5']} />
-      </button>
+      </Button>
       <details
         ref={details}
         className="turn-usage"

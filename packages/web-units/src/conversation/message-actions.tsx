@@ -1,8 +1,7 @@
 import type { UITurn } from '@agnes/protocol'
+import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
 import { ConversationTurnActions, type ConversationTurnFeedback } from '@agnes/web-ui/assistant-ui'
-import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
 import type { Translate } from '../locales/index.js'
 import type { ConversationFeedback } from './feedback.js'
 
@@ -51,9 +50,10 @@ const initialTurn: UITurn = {
 export function createConversationMessageActions(
   options: ConversationMessageActionOptions = {},
 ): ConversationMessageActions {
-  const element = document.createElement('div')
+  const element = createRegionHost(document.body, 'div')
+  element.remove()
   element.style.display = 'contents'
-  const root = createRoot(element)
+  const root = createAntdRoot(element)
   const feedbackRef: { current: ConversationTurnFeedback | null } = { current: null }
   let disposed = false
   let stopDismiss: (() => void) | undefined
@@ -69,16 +69,16 @@ export function createConversationMessageActions(
   const render = ({ turn, finalText, settled, localeTag }: ConversationMessageActionState) =>
     flushSync(() =>
       root.render(
-        createElement(ConversationTurnActions, {
-          turn,
-          finalText,
-          settled,
-          ...(options.t ? { t: options.t } : {}),
-          ...(localeTag ? { localeTag } : {}),
-          ...(options.onFork ? { onFork: options.onFork } : {}),
-          bindAutoDismiss,
-          feedbackRef,
-        }),
+        <ConversationTurnActions
+          turn={turn}
+          finalText={finalText}
+          settled={settled}
+          {...(options.t ? { t: options.t } : {})}
+          {...(localeTag ? { localeTag } : {})}
+          {...(options.onFork ? { onFork: options.onFork } : {})}
+          bindAutoDismiss={bindAutoDismiss}
+          feedbackRef={feedbackRef}
+        />,
       ),
     )
   render({ turn: initialTurn, finalText: '', settled: false })

@@ -1,6 +1,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
+import { Button } from '../../ui/button.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import { fallbackT, type ToolNode } from './context.js'
@@ -92,8 +93,10 @@ export function ConversationToolCard({
           <span className="tool-name">{interaction?.name ?? node.name}</span>
           <span className="tool-status">{outcome.label}</span>
         </div>
-        <button
-          type="button"
+        <Button
+          htmlType="button"
+          appearance="ghost"
+          size="small"
           className="tool-detail"
           data-testid="tool-detail-toggle"
           aria-expanded={expanded}
@@ -104,7 +107,7 @@ export function ConversationToolCard({
           }}
         >
           {expanded ? t('tool.detail.collapse') : t('tool.detail.expand')}
-        </button>
+        </Button>
       </div>
       <div className="tool-summary" hidden={!meaningful}>
         {meaningful ? summary : ''}

@@ -31,8 +31,6 @@ export type UserNode = Extract<UINode, { kind: 'user' }>
 
 export type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
-export type TextRef = { element: HTMLElement; node: Text; value: string }
-
 export type Entry = {
   messageFeedback?: ReturnType<typeof mountMessageFeedback>
 

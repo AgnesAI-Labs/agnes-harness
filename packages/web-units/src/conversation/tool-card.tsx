@@ -1,8 +1,8 @@
 import type { UINode } from '@agnes/protocol'
+import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
 import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/assistant-ui'
-import { createElement, type ReactNode } from 'react'
+import type { ElementType, ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
 import type { Translate } from '../locales/index.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -19,19 +19,21 @@ export interface ConversationToolCardOptions {
 }
 
 /** Copy an existing icon into a React-owned tree without adopting its DOM nodes. */
-function reactIcon(element: Element): ReactNode {
-  const properties: Record<string, string> = {}
+function reactIcon(element: Element, key?: number): ReactNode {
+  const properties: Record<string, string | number> = {}
+  if (key !== undefined) properties.key = key
   for (const attribute of element.attributes) {
     if (/^on/i.test(attribute.name) || /^(?:style|href|xlink:href)$/i.test(attribute.name)) continue
     const name = attribute.name === 'class' ? 'className' : attribute.name
     properties[name] = attribute.value
   }
-  const children = Array.from(element.childNodes, (child) => {
+  const children = Array.from(element.childNodes, (child, index) => {
     if (child.nodeType === 3) return child.textContent
-    if (child.nodeType === 1) return reactIcon(child as Element)
+    if (child.nodeType === 1) return reactIcon(child as Element, index)
     return null
   })
-  return createElement(element.localName, properties, ...children)
+  const Tag = element.localName as ElementType
+  return <Tag {...properties}>{children}</Tag>
 }
 
 /** Synchronous compatibility bridge; the shared React component owns the visible card. */
@@ -42,10 +44,9 @@ export function createConversationToolCard(
 ): ConversationToolCard {
   // The legacy DSH adapter moves the article's children into its native fallback container.
   // Give React a host that moves intact, so it never loses children from its own root.
-  const host = element.ownerDocument.createElement('div')
+  const host = createRegionHost(element, 'div')
   host.style.display = 'contents'
-  element.append(host)
-  const root = createRoot(host)
+  const root = createAntdRoot(host)
   let disposed = false
   let iconName = node.name
   let icon = reactIcon(options.icon(iconName))
@@ -65,14 +66,14 @@ export function createConversationToolCard(
     )
     flushSync(() =>
       root.render(
-        createElement(ReactToolCard, {
-          node: next,
-          icon,
-          t: options.translate,
-          onExpandedChange: (expanded: boolean) => {
+        <ReactToolCard
+          node={next}
+          icon={icon}
+          t={options.translate}
+          onExpandedChange={(expanded: boolean) => {
             element.dataset.expanded = String(expanded)
-          },
-        }),
+          }}
+        />,
       ),
     )
   }

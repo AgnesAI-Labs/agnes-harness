@@ -1,7 +1,8 @@
 import type { UINode } from '@agnes/protocol'
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
-import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
+import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
+import type { ReactElement } from 'react'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
 import type { DshNodeMount, Entry, TimelineRendererOptions } from './contracts.js'
 
 // 与 NativeDshChildren 的子槽位清单保持一致（那边带 entryKey，这里只关心名字），
@@ -27,17 +28,16 @@ export function mountDshNode(
   const projection = dshProjection(node)
   if (!registry || !projection || !registry.spec(projection.slotName)) return undefined
 
-  const native = document.createElement('div')
+  const native = createRegionHost(entry.element, 'div')
+  native.remove()
   native.dataset.agnesTimelineNative = '1'
   while (entry.element.firstChild) native.append(entry.element.firstChild)
   entry.element.append(native)
 
-  const host = document.createElement('div')
+  const host = createRegionHost(entry.element, 'div')
   host.dataset.agnesDshSlot = projection.slotName
-  entry.element.append(host)
-  const childHost = document.createElement('div')
+  const childHost = createRegionHost(native, 'div')
   childHost.dataset.agnesDshChildren = projection.slotName
-  native.append(childHost)
   const root = createAntdRoot(host)
   const childRoot = createAntdRoot(childHost)
 
@@ -66,39 +66,33 @@ export function mountDshNode(
     host.dataset.agnesDshSlot = nextProjection.slotName
     childHost.dataset.agnesDshChildren = nextProjection.slotName
     childRoot.render(
-      createElement(
-        SlotsProvider,
-        {
-          registry,
-          ...(options.session ? { session: options.session } : {}),
-          ...(options.locale ? { locale: options.locale } : {}),
-          ...(options.resources ? { resources: options.resources } : {}),
-        },
-        createElement(NativeDshChildren, {
-          projection: nextProjection,
-        }),
-      ),
+      <SlotsProvider
+        registry={registry}
+        {...(options.session ? { session: options.session } : {})}
+        {...(options.locale ? { locale: options.locale } : {})}
+        {...(options.resources ? { resources: options.resources } : {})}
+      >
+        <NativeDshChildren projection={nextProjection} />
+      </SlotsProvider>,
     )
     root.render(
-      createElement(
-        SlotsProvider,
-        {
-          registry,
-          ...(options.session ? { session: options.session } : {}),
-          ...(options.locale ? { locale: options.locale } : {}),
-          ...(options.resources ? { resources: options.resources } : {}),
-        },
-        createElement(ChatNodeOutlet, {
-          registry,
-          slotName: nextProjection.slotName,
-          entryKey: nextProjection.entryKey,
-          props: nextProjection.props,
-          onActive(active: boolean) {
+      <SlotsProvider
+        registry={registry}
+        {...(options.session ? { session: options.session } : {})}
+        {...(options.locale ? { locale: options.locale } : {})}
+        {...(options.resources ? { resources: options.resources } : {})}
+      >
+        <ChatNodeOutlet
+          registry={registry}
+          slotName={nextProjection.slotName}
+          entryKey={nextProjection.entryKey}
+          props={nextProjection.props}
+          onActive={(active: boolean) => {
             native.hidden = active
             host.hidden = !active
-          },
-        }),
-      ),
+          }}
+        />
+      </SlotsProvider>,
     )
   }
   const sync = (): void => {
@@ -137,8 +131,8 @@ export function NativeDshChildren({
   projection,
 }: {
   projection: ReturnType<typeof dshProjection>
-}): ReturnType<typeof createElement> {
-  if (!projection) return createElement('div')
+}): ReactElement {
+  if (!projection) return <div />
   const props = projection.props
   const owner = props.owner
   const isAssistant =
@@ -156,18 +150,18 @@ export function NativeDshChildren({
           { name: 'conversation.message.images' as const },
           { name: 'conversation.trajectory.images' as const },
         ]
-  return createElement(
-    'div',
-    { 'data-agnes-dsh-child-outlets': projection.slotName },
-    ...slots.map((slot) =>
-      createElement(SlotOutlet, {
-        key: slot.name,
-        name: slot.name,
-        ...(slot.entryKey === undefined ? {} : { entryKey: slot.entryKey }),
-        props,
-        hideWhenEmpty: true,
-      }),
-    ),
+  return (
+    <div data-agnes-dsh-child-outlets={projection.slotName}>
+      {slots.map((slot) => (
+        <SlotOutlet
+          key={slot.name}
+          name={slot.name}
+          {...(slot.entryKey === undefined ? {} : { entryKey: slot.entryKey })}
+          props={props}
+          hideWhenEmpty={true}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -209,7 +203,7 @@ export function ChatNodeOutlet({
   entryKey: string
   props: Record<string, unknown>
   onActive(active: boolean): void
-}): ReturnType<typeof createElement> {
+}): ReactElement {
   const version = useSyncExternalStore(
     (listener) => registry.subscribeBatched(slotName, listener),
     () => registry.getVersion(slotName),
@@ -219,10 +213,5 @@ export function ChatNodeOutlet({
   useLayoutEffect(() => {
     onActive(active)
   }, [active, onActive])
-  return createElement(SlotOutlet, {
-    name: slotName,
-    entryKey,
-    props,
-    hideWhenEmpty: true,
-  })
+  return <SlotOutlet name={slotName} entryKey={entryKey} props={props} hideWhenEmpty={true} />
 }

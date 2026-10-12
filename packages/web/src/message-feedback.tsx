@@ -1,14 +1,12 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { SessionService } from '@agnes/web-client'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
-import { createElement } from 'react'
 
 /** This root belongs to one persisted assistant node and retires with the timeline entry. */
 export function mountMessageFeedback(element: HTMLElement, session: SessionService | undefined) {
-  const host = document.createElement('div')
-  element.append(host)
+  const host = createRegionHost(element, 'div')
   const root = createAntdRoot(host)
   let previous = ''
   return {
@@ -28,23 +26,23 @@ export function mountMessageFeedback(element: HTMLElement, session: SessionServi
       if (key === previous) return
       previous = key
       root.render(
-        ready
-          ? createElement(MessageFeedback, {
-              key,
-              sessionId,
-              target: { messageSeq: node.seq, turn: turn.turn },
-              openEvidence(candidateId) {
-                if (
-                  !factChainLinks.open({
-                    sessionId,
-                    laneId: 'main',
-                    anchor: { kind: 'authoring', candidateId },
-                  })
-                )
-                  workbenchNavigation.open('facts')
-              },
-            })
-          : null,
+        ready ? (
+          <MessageFeedback
+            key={key}
+            sessionId={sessionId}
+            target={{ messageSeq: node.seq, turn: turn.turn }}
+            openEvidence={(candidateId) => {
+              if (
+                !factChainLinks.open({
+                  sessionId,
+                  laneId: 'main',
+                  anchor: { kind: 'authoring', candidateId },
+                })
+              )
+                workbenchNavigation.open('facts')
+            }}
+          />
+        ) : null,
       )
     },
     dispose() {

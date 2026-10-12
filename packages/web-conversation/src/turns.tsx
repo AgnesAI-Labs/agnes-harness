@@ -1,4 +1,5 @@
 import type { UINode, UITurn } from '@agnes/protocol'
+import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { type ConversationMessageActions, createConversationMessageActions } from '@agnes/web-units'
 import type { Translate } from './presentation.js'
 
@@ -17,6 +18,7 @@ type TurnEntry = {
   final: HTMLElement
   actions: ConversationMessageActions
   refreshStatus?: () => void
+  dispose(): void
 }
 
 type RenderedNode = { element: HTMLElement; thinking?: HTMLDetailsElement }
@@ -40,90 +42,66 @@ const durationLabel = (duration: number | undefined, t: Translate): string | und
   })
 }
 
-function processChevron(): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('class', 'icon process-chevron')
-  svg.setAttribute('viewBox', '0 0 24 24')
-  svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  path.setAttribute('d', 'm6 9 6 6 6-6')
-  svg.append(path)
-  return svg
-}
-
+/** React owns the shell; the projector only moves stable node hosts between empty outlets. */
 function makeTurnEntry(onFork: ((turn: UITurn) => Promise<void>) | undefined, t: Translate): TurnEntry {
-  const element = document.createElement('section')
-  element.className = 'conversation-turn'
-  const user = document.createElement('div')
-  user.className = 'turn-user'
-  const response = document.createElement('div')
-  response.className = 'turn-response'
-  const process = document.createElement('details')
-  process.className = 'turn-process'
-  // 身份行保持独立，等待首段内容或折叠过程时也不消失。
-  const processSummary = document.createElement('summary')
-  const identity = document.createElement('span')
-  identity.className = 'process-identity'
-  const avatar = document.createElement('span')
-  avatar.className = 'process-avatar'
-  const avatarMark = document.createElement('span')
-  avatarMark.className = 'agnes-mark process-avatar-mark'
-  avatarMark.setAttribute('aria-hidden', 'true')
-  avatar.append(avatarMark)
-  const name = document.createElement('span')
-  name.className = 'process-name'
-  name.textContent = t('brand.harness')
-  identity.append(avatar, name)
-  const status = document.createElement('p')
-  status.className = 'turn-status'
-  status.setAttribute('data-agnes-dynamic', 'turn-process')
-  const row = document.createElement('span')
-  row.className = 'process-row'
-  const processLabel = document.createElement('span')
-  processLabel.className = 'process-label'
-  // The rendered label contains elapsed time (startedAt while running, daemon duration on finish).
-  // It is intentionally marked
-  // as dynamic so browser parity capture can mask the volatile number without hiding the whole
-  // process card or weakening its text/ARIA assertions.
-  processLabel.setAttribute('data-agnes-dynamic', 'turn-process')
-  const chevron = processChevron()
-  row.append(processLabel, chevron)
-  processSummary.append(row)
-  const processBody = document.createElement('div')
-  processBody.className = 'turn-process-body'
-  process.append(processSummary, processBody)
-  const error = document.createElement('p')
-  error.className = 'turn-error'
-  error.setAttribute('role', 'alert')
-  error.hidden = true
-  const attention = document.createElement('div')
-  attention.className = 'turn-attention'
-  const final = document.createElement('div')
-  final.className = 'turn-final'
-  const actions = createConversationMessageActions({
-    ...(onFork ? { onFork } : {}),
-    t,
-  })
-  response.append(identity, status, process, error, attention, final, actions.element)
-  element.append(user, response)
+  const element = createRegionHost(document.body, 'section', 'conversation-turn')
+  element.remove()
+  renderRegion(
+    element,
+    <>
+      <div className="turn-user" />
+      <div className="turn-response">
+        <span className="process-identity">
+          <span className="process-avatar">
+            <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
+          </span>
+          <span className="process-name">{t('brand.harness')}</span>
+        </span>
+        <p className="turn-status" data-agnes-dynamic="turn-process" />
+        <details className="turn-process">
+          <summary>
+            <span className="process-row">
+              <span className="process-label" data-agnes-dynamic="turn-process" />
+              <svg className="icon process-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </span>
+          </summary>
+          <div className="turn-process-body" />
+        </details>
+        <p className="turn-error" role="alert" hidden />
+        <div className="turn-attention" />
+        <div className="turn-final" />
+      </div>
+    </>,
+  )
+  const find = <T extends HTMLElement>(selector: string): T => {
+    const node = element.querySelector<T>(selector)
+    if (!node) throw new Error(`missing turn shell ${selector}`)
+    return node
+  }
+  const actions = createConversationMessageActions({ ...(onFork ? { onFork } : {}), t })
+  find('.turn-response').append(actions.element)
   const entry: TurnEntry = {
     element,
-    user,
-    status,
-    error,
-    process,
-    processSummary,
-    processLabel,
-    processBody,
-    attention,
-    final,
+    user: find('.turn-user'),
+    status: find('.turn-status'),
+    error: find('.turn-error'),
+    process: find('.turn-process'),
+    processSummary: find('summary'),
+    processLabel: find('.process-label'),
+    processBody: find('.turn-process-body'),
+    attention: find('.turn-attention'),
+    final: find('.turn-final'),
     actions,
+    dispose() {
+      actions.dispose()
+      queueMicrotask(() => unmountRegion(element))
+    },
   }
-  // 过程块**不**注册「点外部关闭」：
-  // 点旁边空白把运行中的过程块收起、下一帧渲染又被撑回，既闪烁又误伤面过宽。
-  // 它的开关只认 summary 点击（偏好记在 processPreference），其余区域一律不管。
-  processSummary.addEventListener('click', () => {
-    entry.processPreference = !process.open
+  // The process disclosure only follows its summary; outside clicks never reset its preference.
+  entry.processSummary.addEventListener('click', () => {
+    entry.processPreference = !entry.process.open
   })
   return entry
 }
@@ -142,8 +120,8 @@ export function createTurnProjector(options: {
     if (clock !== undefined) clearInterval(clock)
     clock = undefined
   }
-  const orphan = document.createElement('section')
-  orphan.className = 'timeline-unassigned'
+  const orphan = createRegionHost(options.transcript, 'section', 'timeline-unassigned')
+  orphan.remove()
   const place = (parent: HTMLElement, children: HTMLElement[]) => {
     for (const [index, child] of children.entries())
       if (parent.children[index] !== child) parent.insertBefore(child, parent.children[index] ?? null)
@@ -161,7 +139,7 @@ export function createTurnProjector(options: {
       if (!turns?.length) {
         stopClock()
         for (const shell of turnEntries.values()) {
-          shell.actions.dispose()
+          shell.dispose()
           shell.element.remove()
         }
         turnEntries.clear()
@@ -285,7 +263,7 @@ export function createTurnProjector(options: {
       }
       for (const [id, shell] of turnEntries) {
         if (turnIds.has(id)) continue
-        shell.actions.dispose()
+        shell.dispose()
         shell.element.remove()
         turnEntries.delete(id)
         changed = true
@@ -313,7 +291,7 @@ export function createTurnProjector(options: {
     reset() {
       stopClock()
       ticking.clear()
-      for (const shell of turnEntries.values()) shell.actions.dispose()
+      for (const shell of turnEntries.values()) shell.dispose()
       turnEntries.clear()
       orphan.remove()
     },

@@ -70,7 +70,7 @@ All host-provided labels, help, empty states and errors have en and zh-CN entrie
 
 ## Documented native exceptions and acceptance
 
-Outside web-ui, retain only the hidden file input in `packages/web-units/src/composer.ts` for the browser upload chooser (`attachment-file-input`), with its existing accessibility and upload lifecycle. Within web-ui, the temporary textarea in `conversation/turn-actions.tsx` is a platform clipboard fallback, removed in `finally`; it is not an editable product field. Native controls encapsulated by the shared library remain implementation details, including accessible checkbox/radio semantics.
+The composer uses `SettingsInput` for its hidden browser file chooser (`attachment-file-input`), retaining its native upload and accessibility contract. Approval, queue, turn and tool actions use `Button`. The turn-action clipboard fallback uses the shared control factory and removes its temporary textarea in `finally`. Native controls inside shared primitives remain implementation details.
 
 Static HTML/template shells must not retain duplicate editable controls after migration. Fixed forms declare `template[data-agnes-control]`; web-ui's `materializeSettingsControls` creates shared token-styled native equivalents before controller binding, preserving IDs, options, validation and host node ownership. Remove obsolete fallback form markup or move it into shared React content, preserving DOM IDs, selectors, public hooks and controller lifetimes. Hidden duplicates are not accepted exceptions.
 

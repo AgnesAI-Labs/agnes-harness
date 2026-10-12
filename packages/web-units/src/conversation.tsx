@@ -1,5 +1,5 @@
+import { Button } from '@agnes/web-ui'
 import {
-  createElement,
   type ForwardedRef,
   forwardRef,
   type ReactNode,
@@ -98,64 +98,44 @@ export const Conversation = forwardRef<ConversationHandle, ConversationProps>(fu
     return onUnmount
   }, [onMount, onUnmount])
 
-  return createElement(
-    'div',
-    {
-      className: 'conversation-region-root',
-      'data-agnes-region-owner': 'builtin',
-      'data-agnes-region-unit': 'conversation',
-    },
-    createElement(
-      'div',
-      { style: { display: 'contents' }, 'data-agnes-conversation-dsh': 'session' },
-      slots?.sessionHeader,
-      slots?.session,
-    ),
-    createElement('section', {
-      ref: transcript,
-      id: 'transcript',
-      'data-agnes-region': 'transcript',
-      'aria-label': t('conversation.transcriptAria'),
-      tabIndex: -1,
-    }),
-    createElement('section', {
-      ref: emptyState,
-      id: 'empty-state',
-      'data-agnes-region': 'empty-state',
-      'aria-labelledby': 'empty-state-title',
-      hidden: true,
-    }),
-    createElement(
-      'button',
-      { ref: newContentButton, id: 'new-content', className: 'new-content', type: 'button', hidden: true },
-      createElement(
-        'svg',
-        { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-        createElement('path', { d: NEW_CONTENT_ICON_PATH }),
-      ),
-      createElement('span', null, t('conversation.newContent')),
-    ),
-    // These outlet hosts are intentionally display-contents: card renderers own the existing
-    // timeline layout, while independently replaceable units get stable child mount points.
-    createElement('div', {
-      ref: messageActions,
-      style: { display: 'contents' },
-      'data-agnes-conversation-slot': 'message-actions',
-    }),
-    createElement('div', {
-      ref: attachments,
-      style: { display: 'contents' },
-      'data-agnes-conversation-slot': 'attachments',
-    }),
-    createElement('div', {
-      ref: toolCard,
-      style: { display: 'contents' },
-      'data-agnes-conversation-slot': 'tool-card',
-    }),
-    createElement('div', {
-      ref: feedback,
-      style: { display: 'contents' },
-      'data-agnes-conversation-slot': 'feedback',
-    }),
+  return (
+    <div
+      className="conversation-region-root"
+      data-agnes-region-owner="builtin"
+      data-agnes-region-unit="conversation"
+    >
+      <div style={{ display: 'contents' }} data-agnes-conversation-dsh="session">
+        {slots?.sessionHeader}
+        {slots?.session}
+      </div>
+      <section
+        ref={transcript}
+        id="transcript"
+        data-agnes-region="transcript"
+        aria-label={t('conversation.transcriptAria')}
+        tabIndex={-1}
+      />
+      <section
+        ref={emptyState}
+        id="empty-state"
+        data-agnes-region="empty-state"
+        aria-labelledby="empty-state-title"
+        hidden={true}
+      />
+      <Button ref={newContentButton} id="new-content" className="new-content" htmlType="button" hidden={true}>
+        <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden={true}>
+          <path d={NEW_CONTENT_ICON_PATH} />
+        </svg>
+        <span>{t('conversation.newContent')}</span>
+      </Button>
+      <div
+        ref={messageActions}
+        style={{ display: 'contents' }}
+        data-agnes-conversation-slot="message-actions"
+      />
+      <div ref={attachments} style={{ display: 'contents' }} data-agnes-conversation-slot="attachments" />
+      <div ref={toolCard} style={{ display: 'contents' }} data-agnes-conversation-slot="tool-card" />
+      <div ref={feedback} style={{ display: 'contents' }} data-agnes-conversation-slot="feedback" />
+    </div>
   )
 })

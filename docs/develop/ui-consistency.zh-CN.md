@@ -70,7 +70,7 @@
 
 ## 原生例外与验收
 
-web-ui 之外只保留 `packages/web-units/src/composer.ts` 中用于浏览器上传选择器的隐藏文件输入（`attachment-file-input`），保留既有可访问属性与上传生命周期。web-ui 内 `conversation/turn-actions.tsx` 临时 textarea 是平台剪贴板回退，在 finally 中移除，不是用户编辑字段。共享库内部的原生控件属于实现细节，包括可访问的 checkbox/radio 语义。
+输入框的隐藏浏览器文件选择器（`attachment-file-input`）使用 `SettingsInput`，保留原有上传与无障碍合同。审批、队列、回合与工具动作使用 `Button`。回合动作的剪贴板回退通过共享控件工厂创建临时 textarea，在 `finally` 中移除。共享原语内部的原生控件仍属于实现细节。
 
 迁移后静态 HTML/模板壳不得保留重复的编辑控件。固定表单用 `template[data-agnes-control]` 声明，在控制器绑定前由 web-ui 的 `materializeSettingsControls` 创建统一 token 的原生等价控件；ID、选项、校验和宿主节点所有权不变。删除过时回退表单或移到共享 React 内容，保留 DOM ID、选择器、公共钩子和控制器生命周期。隐藏的重复控件不算例外。
 

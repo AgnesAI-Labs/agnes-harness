@@ -64,9 +64,9 @@ Codes: **C** raw/native controls; **B** hand-rolled actions/choice presentation;
 | panel / `request-trace` | owning page / registered panel | `packages/web-units/src/trace-request.tsx` | Button; SettingsCode | L/S: request metrics and code sections use custom trace layout |
 | panel / `transcript` | owning page / registered panel | `packages/web-units/src/transcript.ts` | React DOM | H/E: separate transcript details/metadata presentation |
 | panel / `computer-use-session` | owning page / registered panel | `packages/web-conversation/src/computer-use-pane.tsx` | Button; shared screen region | S/E: preserve image aspect/control state; inspect permission/loading states |
-| panel / `composer` | owning page / registered panel | `packages/web-units/src/composer.ts` | React textarea; native actions; ReferencePicker | C/B: raw prompt textarea and button family; hidden file chooser exception |
-| panel / `child-controls` | owning page / registered panel | `packages/web-units/src/composer/child-controls.ts` | React input/Button | C/S: child instruction input; keep session command handlers |
-| panel / `queue-editor` | owning page / registered panel | `packages/web-units/src/composer/queue-editor.ts` | React textarea/Button | C/S: queued draft textarea; keep ref/selection/update behavior |
+| panel / `composer` | owning page / registered panel | `packages/web-units/src/composer.tsx` | Composer; SettingsTextArea/SettingsInput/Button; ReferencePicker | S: JSX and shared controls; retain native chooser and keyboard semantics; visual verification pending |
+| panel / `child-controls` | owning page / registered panel | `packages/web-units/src/composer/child-controls.tsx` | React input/Button | C/S: child instruction input; keep session command handlers |
+| panel / `queue-editor` | owning page / registered panel | `packages/web-units/src/composer/queue-editor.tsx` | React textarea/Button | C/S: queued draft textarea; keep ref/selection/update behavior |
 | panel / `sidebar` | owning page / registered panel | `packages/web-units/src/sidebar.ts` | React DOM | B/H: custom new/settings/history actions and navigation rows |
 | panel / `topbar` | owning page / registered panel | `packages/web-units/src/topbar.ts` | React DOM | B/H: action buttons and metadata spacing |
 | panel / `plugin-config` | owning page / registered panel | `packages/web-admin/src/admin/plugins/config-tab.tsx` | Dialog; PluginConfigPanel | H/D: custom detail heading/scroll body inside Dialog; same footer rhythm needed |
@@ -94,7 +94,7 @@ Codes: **C** raw/native controls; **B** hand-rolled actions/choice presentation;
 | dialog / `generic-confirm` | existing confirmation calls | `packages/web-ui/src/confirm.ts` | shared confirm factory | D: standardize action spacing while keeping caller outcome and dismissal |
 | card / `message` | conversation / owning panel | `packages/web-ui/src/conversation/messages.tsx` | ConversationMessages; message variants | S: message actions/metadata use conversation scale; preserve streaming behavior |
 | card / `tool` | conversation / owning panel | `packages/web-ui/src/conversation/messages/tool-card.tsx` | ConversationToolCard; ConversationCardLayout | S: already shared card; retain single detail action and raw results |
-| card / `approval` | conversation / owning panel | `packages/web-units/src/approval.ts` | React DOM; Approval actions | B/E: native action buttons; preserve authorization identity and refusal state |
+| card / `approval` | conversation / owning panel | `packages/web-units/src/approval.tsx` | Approval; Button actions | S/E: JSX and shared controls; preserve authorization identity, refusal state and focus return |
 | card / `goal` | conversation / owning panel | `packages/web-conversation/src/goal-card.tsx` | ConversationCardLayout; Button; Badge | S: shared card exists; keep goals/backend state unchanged |
 | card / `workflow` | conversation / workbench | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |
 | card / `question` | conversation / workbench | `packages/web-ui/src/intelligent-ui/form-fields.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |

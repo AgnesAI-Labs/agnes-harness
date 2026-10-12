@@ -2,7 +2,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { createTurnProjector } from '@agnes/web-conversation/turns'
-import { createSettingsButton } from '@agnes/web-ui'
+import { Button, createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { mountMessageFeedback } from './message-feedback.js'
 import type { Entry, TimelineMeta, TimelineRenderer, TimelineRendererOptions } from './timeline/contracts.js'
 import { mountDshNode } from './timeline/dsh-node.js'
@@ -57,13 +57,9 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     return value
   }
   // "Load earlier" sits above the content, outside the node container the entries own.
-  const earlier = document.createElement('div')
-  earlier.className = 'transcript-earlier'
+  const earlier = createRegionHost(options.transcript, 'div', 'transcript-earlier')
+  earlier.remove()
   earlier.hidden = true
-  const earlierButton = createSettingsButton(document)
-  earlierButton.type = 'button'
-  earlierButton.textContent = t('timeline.loadEarlier')
-  earlier.append(earlierButton)
   if (options.transcript.parentElement && scrollContainer !== options.transcript)
     options.transcript.before(earlier)
   let meta: TimelineMeta | undefined
@@ -75,7 +71,14 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     loadingEarlier = true
     meta.loadEarlier()
   }
-  earlierButton.addEventListener('click', loadEarlier)
+  const renderEarlier = () =>
+    renderRegion(
+      earlier,
+      <Button htmlType="button" onClick={loadEarlier}>
+        {t('timeline.loadEarlier')}
+      </Button>,
+    )
+  renderEarlier()
   const sentinel =
     typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((seen) => {
@@ -92,7 +95,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
     meta = nextMeta
     loadingEarlier = false
     earlier.hidden = !nextMeta?.hasEarlier
-    earlierButton.textContent = t('timeline.loadEarlier')
+    renderEarlier()
     const visibleNodes = nodes.filter(isConversationNode)
     const savedSelection = saveTranscriptSelection(options.transcript)
     // Earlier nodes inserted above keep the reader where they were, measured from the bottom.
@@ -232,6 +235,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
       unsubscribeLocale?.()
       scrollContainer.removeEventListener('scroll', onScroll)
       sentinel?.disconnect()
+      unmountRegion(earlier)
       earlier.remove()
     },
     pinToBottom: scrollToBottom,
