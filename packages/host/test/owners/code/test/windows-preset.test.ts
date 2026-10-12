@@ -56,7 +56,10 @@ describe('standard-windows command floor and approval delivery', () => {
     'approves contained edits under %s',
     async (root) => {
       const seam = await approvalPolicy(fakeSeamInit({ workspaceRoot: root, preset }))
-      const floor = withCommandFloor(defaultToolPolicy, readCommandRules(preset.approval?.command_policy))
+      const approval = preset.approval
+      if (!approval || typeof approval !== 'object' || !('command_policy' in approval))
+        throw new Error('Windows preset must declare a command policy')
+      const floor = withCommandFloor(defaultToolPolicy, readCommandRules(approval.command_policy))
       const decide = (path: string) => {
         const req = request(path)
         const input: ToolPolicyInput = {
@@ -64,7 +67,7 @@ describe('standard-windows command floor and approval delivery', () => {
           workspaceRoot: root,
           cwd: root,
           actor: req.actor,
-          call: { id: req.toolUseId, name: 'edit', args: { path, edits: [] } },
+          call: { id: 't', name: 'edit', args: { path, edits: [] } },
           policy: {
             isReadOnly: false,
             isDestructive: true,
