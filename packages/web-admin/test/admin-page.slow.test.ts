@@ -1327,7 +1327,9 @@ it('release-all batches more than 64 orphaned pins into multiple pins/release ca
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toBe(
+      String(pluginAdminLocaleCatalog.en['confirm.release.all']).replace('{count}', String(orphans.length)),
+    ),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1383,7 +1385,9 @@ it('keeps an earlier successfully-released batch reflected in the UI when a late
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toBe(
+      String(pluginAdminLocaleCatalog.en['confirm.release.all']).replace('{count}', String(orphans.length)),
+    ),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1432,7 +1436,9 @@ it('removes nothing and surfaces the error when the first batch call fails outri
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toBe(
+      String(pluginAdminLocaleCatalog.en['confirm.release.all']).replace('{count}', String(orphans.length)),
+    ),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
@@ -1487,13 +1493,15 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
 
   document.getElementById('orphan-pins-release-all')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Release all orphan pins'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toBe(
+      String(pluginAdminLocaleCatalog.en['confirm.release.all']).replace('{count}', String(orphans.length)),
+    ),
   )
   document.getElementById('plugin-confirm-action')?.click()
 
   await vi.waitFor(() =>
     expect(document.getElementById('orphan-pins-status')?.textContent).toContain(
-      '2 pin(s) are no longer orphaned',
+      String(pluginAdminLocaleCatalog.en['notice.pin-skipped']).replace('{count}', '2'),
     ),
   )
 })
