@@ -627,6 +627,14 @@
       padding-inline: var(--s16);
     }
   }
+  @media (max-width: 767px) {
+    .agnes-intelligent-chip > :not(.agnes-intelligent-chip-main):has(.agh-btn--icon) {
+      padding-inline: var(--s8);
+    }
+    .agnes-intelligent-chip .agnes-intelligent-chip-main:not(:disabled) {
+      min-height: var(--control-height-touch);
+    }
+  }
   @media (max-width: 540px) {
     .agnes-intelligent-dock {
       flex-wrap: wrap;
