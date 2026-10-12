@@ -48,11 +48,13 @@ test.beforeAll(async () => {
     import { Drawer } from './src/ui/drawer.js'
     import { Dialog } from './src/ui/dialog.js'
     import { Field } from './src/ui/field.js'
+    import { Toast } from './src/overlay-toast.js'
     import { createSelectPicker } from './src/select-picker.js'
     function Fixture() {
       const [drawer, setDrawer] = useState(false), [dialog, setDialog] = useState(false)
       const [selected, select] = useState('')
       const [description, setDescription] = useState(true)
+      const [nested, setNested] = useState(false), [notice, setNotice] = useState(false)
       const [refreshed, refresh] = useState(0)
       const native = useRef(null), [locked, lock] = useState(false)
       const choice = useRef(null)
@@ -78,7 +80,15 @@ test.beforeAll(async () => {
             <footer><Button onClick={() => lock(value => !value)}>{locked ? 'Unlock' : 'Lock'}</Button></footer>
           </section>
         </dialog>
-        <Drawer open={drawer} title="Details" onClose={() => setDrawer(false)}><Field label="Name"><input /></Field></Drawer>
+        <Drawer open={drawer} title="Details" onClose={() => setDrawer(false)}>
+          <Field label="Name"><input /></Field>
+          <Button onClick={() => setNested(true)}>Open nested confirmation</Button>
+          <Dialog open={nested} title="Nested confirmation" onCancel={() => setNested(false)} footer={<Button onClick={() => setNested(false)}>Cancel nested confirmation</Button>}>
+            <Menu label="Nested actions" trigger={<Button>Nested menu</Button>} items={[{id:'notify', label:'Show notification', onSelect:() => setNotice(true)}]} />
+            <IconButton name="info" label="Explain nested action" />
+            <Toast open={notice} onDismiss={() => setNotice(false)} duration={0}>Nested notification</Toast>
+          </Dialog>
+        </Drawer>
         <Dialog open={dialog} title="Confirm changes" size="sm" onCancel={() => setDialog(false)} footer={<Button onClick={() => setDialog(false)}>Cancel</Button>}>
           <p>Review your changes.</p><Field label="Name" error="Enter a name"><input /></Field>
         </Dialog>
@@ -178,15 +188,55 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   expect(scan.violations).toEqual([])
 })
 test('native drawer is modal, closes on Escape and restores focus', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
   const trigger = page.getByRole('button', { name: 'Open details' })
   await trigger.click()
   const drawer = page.getByRole('dialog', { name: 'Details' })
   await expect(drawer).toBeVisible()
   await expect(drawer).toHaveCSS('width', '480px')
   await expect(drawer.getByRole('textbox', { name: 'Name' })).toBeVisible()
+  const nestedTrigger = drawer.getByRole('button', { name: 'Open nested confirmation', exact: true })
+  await nestedTrigger.click()
+  const dialog = page.getByRole('dialog', { name: 'Nested confirmation', exact: true })
+  await expect(dialog).toBeVisible()
+  const menu = dialog.getByRole('button', { name: 'Nested menu', exact: true })
+  await menu.click()
+  await expect(dialog.getByRole('menuitem', { name: 'Show notification', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu', { name: 'Nested actions', exact: true })).toBeHidden()
+  await expect(menu).toBeFocused()
+  await expect(dialog).toBeVisible()
+  await expect(drawer).toBeVisible()
+  await menu.click()
+  await expect(dialog.getByRole('menuitem', { name: 'Show notification', exact: true })).toBeFocused()
+  await dialog.getByRole('menuitem', { name: 'Show notification', exact: true }).click()
+  const notice = dialog.getByRole('status').filter({ hasText: 'Nested notification' })
+  await expect(notice).toBeVisible()
+  await dialog.getByRole('button', { name: 'Explain nested action', exact: true }).focus()
+  await expect(dialog.getByRole('tooltip').filter({ hasText: 'Explain nested action' })).toBeVisible()
+  await settled(page)
+  const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  expect(scan.violations).toEqual([])
+  // Open the menu again while the notification remains in the same modal scope.
+  await menu.focus()
+  await menu.click()
+  await page.keyboard.press('Escape')
+  await expect(notice).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await expect(menu).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(notice).toBeHidden()
+  await expect(drawer).toBeVisible()
+  await expect(nestedTrigger).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(drawer).toBeHidden()
   await expect(trigger).toBeFocused()
+  expect(errors).toEqual([])
 })
 test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })

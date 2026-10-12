@@ -907,6 +907,10 @@
     min-width: 180px;
     background: var(--agnes-bg-popover);
   }
+  /* Modal wrappers ignore pointers; popups portaled inside their focus scope remain interactive. */
+  .ant-modal :is(.agh-menu-popup, .agnes-ui-popover, .ant-select-dropdown) {
+    pointer-events: auto;
+  }
   .agh-menu-popup .agh-menu-item {
     display: flex;
     align-items: center;
