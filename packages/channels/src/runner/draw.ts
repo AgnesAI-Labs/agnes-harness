@@ -1,9 +1,9 @@
-import { escapeReviewText } from '../degrade.js'
-import { decisionKey } from '../decision.js'
 import { createHash } from 'node:crypto'
 import type { AcpPermissionKind, ChannelCapabilities, UINode, UiSurfaceRecord } from '@agnes/protocol'
 import { surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Block, CardBlock, ChannelMessage } from '../adapter.js'
+import { decisionKey } from '../decision.js'
+import { escapeReviewText } from '../degrade.js'
 
 // UINode's approval options are Agnes' own vocabulary (it has a 'allow_permanent' entry for the
 // durable-grant flow, core/src/project/ui.ts:1018-1023); the channel card only understands ACP's

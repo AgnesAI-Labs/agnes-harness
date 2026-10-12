@@ -1,4 +1,3 @@
-import { answerToolDecision } from './helpers/decision.js'
 import { bindChildAgentSession, inProcessChildAgentProvider } from '@agnes/core'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
@@ -14,6 +13,7 @@ import { createReactLoop, type ReactConfig } from '../../../examples/loops/react
 import { Kernel } from '../src/kernel.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { defaultLoops } from '../testkit/loops.js'
+import { answerToolDecision } from './helpers/decision.js'
 import { fakeProvider, type Script, sent, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import {

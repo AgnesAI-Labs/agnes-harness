@@ -28,19 +28,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "decisionKey",
-            "verdict",
-            "approverCredential"
-          ],
+          "required": ["decisionKey", "verdict", "approverCredential"],
           "properties": {
             "verdict": {
-              "enum": [
-                "allowed-once",
-                "allowed-session",
-                "allowed-permanent",
-                "rejected"
-              ]
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
             },
             "approverCredential": {
               "$ref": "#/$defs/Credential"
@@ -54,23 +45,14 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "requestSeq",
-            "verdict",
-            "approverCredential"
-          ],
+          "required": ["requestSeq", "verdict", "approverCredential"],
           "properties": {
             "requestSeq": {
               "type": "integer",
               "minimum": 1
             },
             "verdict": {
-              "enum": [
-                "allowed-once",
-                "allowed-session",
-                "allowed-permanent",
-                "rejected"
-              ]
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
             },
             "approverCredential": {
               "$ref": "#/$defs/Credential"
@@ -80,24 +62,14 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "decisionKey",
-            "requestSeq",
-            "verdict",
-            "approverCredential"
-          ],
+          "required": ["decisionKey", "requestSeq", "verdict", "approverCredential"],
           "properties": {
             "requestSeq": {
               "type": "integer",
               "minimum": 1
             },
             "verdict": {
-              "enum": [
-                "allowed-once",
-                "allowed-session",
-                "allowed-permanent",
-                "rejected"
-              ]
+              "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
             },
             "approverCredential": {
               "$ref": "#/$defs/Credential"

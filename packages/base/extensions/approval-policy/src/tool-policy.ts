@@ -1,4 +1,4 @@
-import { defaultToolPolicy, type ToolPolicy, type ProviderPluginContext } from '@agnes/extension-api'
+import { defaultToolPolicy, type ProviderPluginContext, type ToolPolicy } from '@agnes/extension-api'
 import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
 import { createAutoReviewPolicy } from './auto-review.js'

@@ -1,6 +1,6 @@
-import { decisionRef } from './decision.js'
 import type { ChannelCapabilities } from '@agnes/protocol'
 import type { ApprovalBlock, Block, CardBlock, ChannelMessage, TableBlock } from './adapter.js'
+import { decisionRef } from './decision.js'
 
 export type DegradedCap = 'edit' | 'card' | 'attachment' | 'thread'
 export type MarkdownFeature = 'bold' | 'code' | 'list' | 'link'

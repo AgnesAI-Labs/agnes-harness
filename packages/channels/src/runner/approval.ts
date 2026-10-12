@@ -1,4 +1,3 @@
-import { decisionKey as encodeDecisionKey, decisionRef } from '../decision.js'
 import { createHash } from 'node:crypto'
 import { type AcpPermissionKind, AGNES_ERRORS, fromAcpOptionKind } from '@agnes/protocol'
 import {
@@ -16,9 +15,10 @@ import {
   type MessageRef,
   whitelistCredential,
 } from '../adapter.js'
+import { decisionRef, decisionKey as encodeDecisionKey } from '../decision.js'
 import { escapeReviewText, escapeText } from '../degrade.js'
-import { chunkText } from './throttle.js'
 import type { RunnerConfig } from './config.js'
+import { chunkText } from './throttle.js'
 
 type Log = {
   warn(message: string, meta?: Record<string, unknown>): void

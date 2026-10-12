@@ -1,4 +1,3 @@
-import { answerToolDecision } from '../test/helpers/decision.js'
 // Records, commit by commit, what a set of scripted sessions writes: the batch of rows, the
 // program-counter value each batch carries, every register cell after the commit and the UI
 // summary of the running operation. The checked-in recordings under `fixtures/op-state-golden/`
@@ -16,6 +15,7 @@ import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { CompactionPort } from '../src/step/session.js'
+import { answerToolDecision } from '../test/helpers/decision.js'
 import {
   fakeProvider,
   type Script,

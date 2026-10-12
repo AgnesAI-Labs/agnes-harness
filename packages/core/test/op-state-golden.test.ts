@@ -1,5 +1,5 @@
-import type { DecisionSnapshot } from '@agnes/protocol'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { opMarkProblems } from '../testkit/op-mark-checks.js'
 import {
@@ -39,12 +39,10 @@ describe('program-counter transitions match the recorded reference (MemoryStorag
         response: { option: 'allowed-once' },
       })
       const consume = recorded.find((commit) =>
-        commit.events.some(
-          (item) => {
-            const row = item as { type: string; data: unknown }
-            return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
-          },
-        ),
+        commit.events.some((item) => {
+          const row = item as { type: string; data: unknown }
+          return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
+        }),
       )
       expect(consume?.events).toEqual(
         expect.arrayContaining([

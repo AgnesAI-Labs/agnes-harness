@@ -1,4 +1,3 @@
-import type { DecisionSnapshot } from '@agnes/protocol'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +14,7 @@ import {
   TRANSITION_SCENARIOS,
   withMintedIdsInOrder,
 } from '@agnes/core/testkit'
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
@@ -45,12 +45,10 @@ describe('program-counter transitions match the recorded reference (SQLite)', ()
           response: { option: 'allowed-once' },
         })
         const consume = recorded.find((commit) =>
-          commit.events.some(
-            (item) => {
-              const row = item as { type: string; data: unknown }
-              return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
-            },
-          ),
+          commit.events.some((item) => {
+            const row = item as { type: string; data: unknown }
+            return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
+          }),
         )
         expect(consume?.events).toEqual(
           expect.arrayContaining([

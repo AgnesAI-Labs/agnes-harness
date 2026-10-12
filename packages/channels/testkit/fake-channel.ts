@@ -1,4 +1,3 @@
-import { decisionKey } from '../src/decision.js'
 import type {
   AcpPermissionKind,
   ApprovalAction,
@@ -22,6 +21,7 @@ import {
   sessionKeyFor,
   whitelistCredential,
 } from '../src/adapter.js'
+import { decisionKey } from '../src/decision.js'
 
 // Same drop as runner/draw.ts's toAcpOptions: UINode's approval options can include Agnes' own
 // 'allow_permanent' (durable-grant) entry, which has no ACP PermissionOptionKind counterpart and no

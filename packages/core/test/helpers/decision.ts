@@ -1,4 +1,4 @@
-import type { ApprovalVerdict, Actor } from '@agnes/protocol'
+import type { Actor, ApprovalVerdict } from '@agnes/protocol'
 import type { SessionImpl } from '../../src/step/session.js'
 
 /** Answer the original durable tool gate through the authenticated backend command. */

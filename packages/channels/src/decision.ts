@@ -1,4 +1,5 @@
 import type { UINode } from '@agnes/protocol'
+
 type Ref = NonNullable<Extract<UINode, { kind: 'approval' }>['decisionRef']>
 export function decisionKey(ref: Ref): string {
   return [ref.sessionId, ref.id, String(ref.revision)].map(encodeURIComponent).join('/')
