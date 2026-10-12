@@ -8,6 +8,7 @@ import { ToolRegistry } from '@agnes/core'
 import { compactionKind, loopKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import {
   CompositionSessionStore,
@@ -40,7 +41,13 @@ import {
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
 import { createTestHost } from '../../testkit/index.js'
-import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
+import {
+  pluginHost,
+  pluginRow,
+  pluginSourceWith,
+  scratch,
+  targetOf,
+} from '../assemble/plugin-extension-fixture.js'
 
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
@@ -81,10 +88,11 @@ ${
       const entry = join(source.snapshot.directory, 'index.js')
       writeFileSync(
         entry,
-        readFileSync(entry, 'utf8').replace(
-          "inject: ['hooks', 'eventLog', 'self', 'tools']",
-          "inject: ['hooks', 'eventLog', 'self', 'tools', 'providers']",
-        ),
+        "import { loopKind } from '@agnes/extension-api'\n" +
+          readFileSync(entry, 'utf8').replace(
+            "inject: ['hooks', 'eventLog', 'self', 'tools']",
+            "inject: ['hooks', 'eventLog', 'self', 'tools', 'providers']",
+          ),
       )
     }
     writeFileSync(file, JSON.stringify(manifest))
@@ -99,6 +107,7 @@ ${
   const options = {
     script: [],
     disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
     // A live deployment starts with no bundles, then receives both through publication.
     runtimePluginSources: async () => sources,
   }
@@ -508,6 +517,21 @@ it('restores and migrates pinned preset and bundle compositions after a cold reo
     )
     expect(host.sessionCapabilities?.(resumed.key).codePin.generationId).toBe(generation)
     await resumed.close()
+    // Restart reuses the durable composition head; only a real publication needs migration.
+    expect(await host.migrateSessionGeneration?.(resumed.key)).toMatchObject({
+      generationId: generation,
+      changed: false,
+    })
+    const rows = host.extensionRows.current()
+    expect(rows.some((row) => row.id === 'ext:agnes/refine')).toBe(true)
+    expect(
+      await host.applyRuntimeTarget(
+        buildCompleteRuntimeTarget({
+          rows: rows.filter((row) => row.id !== 'ext:agnes/refine'),
+          resources: host.runtimeTargetSnapshot!().resource.resources,
+        }).target,
+      ),
+    ).toMatchObject({ ok: true })
     const migration = await host.migrateSessionGeneration?.(resumed.key)
     expect(migration?.changed).toBe(true)
     expect(bindings.read(resumed.key)?.tree.preset).toBe('reader')
