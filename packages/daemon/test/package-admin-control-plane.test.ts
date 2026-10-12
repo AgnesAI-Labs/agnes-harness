@@ -391,7 +391,7 @@ it('installs an actual local package, returns a durable idempotent receipt, and 
   await expect(
     status.call('_agnes/v1/sessions.migrate', { ...params, sessionId: 'open' }, authority),
   ).rejects.toMatchObject({ data: { reason: 'E_GENERATION_SESSION_OPEN' } })
-  expect(migrate).toHaveBeenCalledWith(profile, 'closed', authority.principalId)
+  expect(migrate).toHaveBeenCalledWith(profile, 'closed', authority.principalId, undefined)
 
   expect(await status.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
     generations,
