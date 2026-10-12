@@ -853,6 +853,13 @@ button {
   margin-top: var(--s24);
   padding-top: var(--s16);
   border-top: 1px solid var(--agnes-line-primary);
+  /* The embedded account form outgrows the dialog; Skip and Continue stay in view while it scrolls. */
+  position: sticky;
+  /* Covers the scrollport's own 4px focus-ring inset so no text shows beneath the row. */
+  bottom: calc(-1 * var(--s4));
+  z-index: 1;
+  padding-bottom: var(--s4);
+  background: var(--agnes-bg-popover);
 }
 @media (max-width: 600px) {
   /* Step names need the row: upcoming steps keep their number, the current one keeps its name. */
