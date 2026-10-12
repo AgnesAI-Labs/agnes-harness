@@ -61,6 +61,15 @@ it('preserves picker selectors, workspace availability, manual entry and localiz
   })
   controller.show()
   expect(dialog().open).toBe(true)
+  const modal = document.querySelector('[role=dialog]')
+  const title = document.getElementById(modal?.getAttribute('aria-labelledby') ?? '')
+  const accessibleText = (node: Node): string => {
+    if (node instanceof HTMLElement && node.getAttribute('aria-hidden') === 'true') return ''
+    return node.nodeType === Node.TEXT_NODE
+      ? (node.textContent ?? '')
+      : [...node.childNodes].map(accessibleText).join('')
+  }
+  expect(title && accessibleText(title)).toBe(enT('index-shell.pickWorkspaceTitle'))
   expect(document.querySelector('[data-testid=workspace-manual-toggle]')?.textContent).toBe(
     enT('index-shell.manualPath'),
   )

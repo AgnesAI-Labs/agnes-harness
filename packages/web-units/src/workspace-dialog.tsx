@@ -66,7 +66,9 @@ export function WorkspaceDialog({
         }}
         title={
           <div>
-            <p className="dialog-kicker">{t('index-shell.newSessionKicker')}</p>
+            <p className="dialog-kicker" aria-hidden="true">
+              {t('index-shell.newSessionKicker')}
+            </p>
             <h2 id="new-session-title">{t('index-shell.pickWorkspaceTitle')}</h2>
           </div>
         }

@@ -101,6 +101,7 @@ export function createSessionActions(options: {
       >
         <Dialog
           open={opened}
+          width={480}
           focusable={{ focusTriggerAfterClose: false }}
           forceRender
           footer={null}
