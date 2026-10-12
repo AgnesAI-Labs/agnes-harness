@@ -37,7 +37,8 @@ const en = {
   'diagnostics.viewer.notIncluded': 'Not included',
   'diagnostics.viewer.included': 'Included',
   'diagnostics.viewer.excluded': 'Not included',
-  'diagnostics.viewer.events': 'The full event ledger is events.jsonl ({count} records, through event #{seq})',
+  'diagnostics.viewer.events':
+    'The full event ledger is events.jsonl ({count} records, through event #{seq})',
   'diagnostics.viewer.duration.running': 'In progress',
   'diagnostics.viewer.duration.ms': '{n} ms',
   'diagnostics.viewer.duration.seconds': '{n} s',

@@ -63,7 +63,13 @@ export function ChildControlRow({
       .then(() => {
         if (action === 'continue') setText('')
       })
-      .catch((error: unknown) => setError(t('composer.child.controlFailed', { detail: error instanceof Error ? error.message : String(error) })))
+      .catch((error: unknown) =>
+        setError(
+          t('composer.child.controlFailed', {
+            detail: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      )
       .finally(() => setPending(false))
   }
   return createElement(
