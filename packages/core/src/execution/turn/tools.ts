@@ -1969,11 +1969,14 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
   // uncertain results already committed their reconciliation asks with the effect settlement.
   // because a turn left open around an unanswered question is a turn no resume can tell apart from
   // a crash — and a second member writing its own would be writing into a turn already closed.
-  const pendingReconciliation = [...s.state.pendingApprovals.values()].some(
-    (asked) =>
-      asked.lane === s.lane &&
-      asked.kind === 'unknown-outcome' &&
-      batch.calls.some((call) => call.toolUseId === asked.toolUseId),
+  const pendingReconciliation = [...s.state.registers.decisionStates.values()].some(
+    ({ value }) =>
+      value.request.lane === s.lane &&
+      value.request.spec.purpose === 'unknown-outcome' &&
+      !value.result &&
+      !value.invalidation &&
+      !value.consumption &&
+      batch.calls.some((call) => call.toolUseId === value.request.operationId),
   )
   if (parks.length || pendingReconciliation) {
     const cur = s.op() as OpStateObj

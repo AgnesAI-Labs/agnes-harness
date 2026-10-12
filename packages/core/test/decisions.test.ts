@@ -160,11 +160,11 @@ describe('session decision authority', () => {
             (row) => (row.data as { kind?: string })?.kind === 'tool',
           ),
         ).toHaveLength(1)
-        const reconciliations = (await second.log.scan({ type: 'approval/asked', limit: 20 })).filter(
-          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        const reconciliations = (await second.session.decisions.list()).filter(
+          (value) => value.request.spec.purpose === 'unknown-outcome',
         )
         expect(reconciliations).toHaveLength(1)
-        expect(reconciliations[0]?.data).toMatchObject({ pending: { ticket: 'reconcile-original' } })
+        expect(reconciliations[0]).toMatchObject({ result: null, consumption: null })
         expect((await second.log.scan({ type: 'effect/settled', limit: 20 })).at(-1)?.data).toMatchObject({
           outcome: 'unknown',
         })
@@ -179,8 +179,8 @@ describe('session decision authority', () => {
         try {
           await third.session.resume()
           expect(
-            (await third.log.scan({ type: 'approval/asked', limit: 20 })).filter(
-              (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+            (await third.session.decisions.list()).filter(
+              (value) => value.request.spec.purpose === 'unknown-outcome',
             ),
           ).toEqual(reconciliations)
           expect(executions).toBe(1)

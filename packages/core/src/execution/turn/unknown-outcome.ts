@@ -1,6 +1,6 @@
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
-import { decidedFields, isPending } from '@agnes/core-effects/effects/approval-answer'
+import { requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
 /** Shared human reconciliation, before the unknown result and settlement commit together. */
@@ -45,7 +45,11 @@ export async function unknownOutcomeRows(
         ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
       }
     : asked
-  const answer = await s.askApprovalAnswer(
+  const decision = await requestDomainDecision(
+    s,
+    'unknown-outcome',
+    toolUseId,
+    { toolUseId, name, turn: op.meta.turn, step: op.step, risk: finalAsked.risk },
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -57,20 +61,19 @@ export async function unknownOutcomeRows(
     },
     s.ac.signal,
   )
-  const rows = isPending(answer)
-    ? [s.ev('approval/asked', { ...finalAsked, pending: answer })]
-    : [
-        s.ev('approval/asked', finalAsked),
-        s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' }),
-      ]
-  return rows
+  return [
+    s.ev('x/core/unknown-outcome', { handle: decision.snapshot.handle, toolUseId }, { ignorable: true }),
+    ...(decision.park ? [decision.park] : []),
+  ]
 }
 
-/** Pending reconciliation was already recorded atomically with its uncertain result. */
+/** Delivery markers can already be recorded beside an uncertain result. */
 export function unrecordedParkEvents(s: SessionImpl, events: EventInput[]): EventInput[] {
-  return events.filter((event) => {
-    if (event.type !== 'approval/asked') return true
-    const requestId = (event.data as { requestId: string }).requestId
-    return !s.state.pendingApprovals.has(requestId) && !s.state.decisions.get(requestId)?.askedSeq
-  })
+  return events.filter(
+    (event) =>
+      event.type !== 'x/core/unknown-outcome' &&
+      (event.type !== 'x/core/decision-delivery' ||
+        s.state.registers.decisionStates.get((event.data as { handle: { id: string } }).handle.id)?.value
+          .request.spec.purpose !== 'unknown-outcome'),
+  )
 }

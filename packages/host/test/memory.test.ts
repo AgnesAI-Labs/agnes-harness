@@ -177,11 +177,13 @@ it.each([
         expect((await memory.readFile('MEMORY.md')).content).toBe(
           initialAnswer === 'cas-conflict' ? 'Human concurrent revision' : 'Prefer short answers.',
         )
-        const rows = await rejected.session.scan({ type: ['approval/asked', 'effect/settled'], limit: 100 })
+        const rows = await rejected.session.scan({ type: ['decision/state', 'effect/settled'], limit: 100 })
         expect(
           rows.some(
             (row) =>
-              row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'unknown-outcome',
+              row.type === 'decision/state' &&
+              (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
+                'unknown-outcome',
           ),
         ).toBe(true)
         expect(
@@ -198,8 +200,8 @@ it.each([
         structured: { effect: 'none' },
       })
       expect(
-        (await rejected.session.scan({ type: 'approval/asked', limit: 10 })).some(
-          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        (await rejected.session.decisions.list()).some(
+          (value) => value.request.spec.purpose === 'unknown-outcome',
         ),
       ).toBe(false)
       expect(

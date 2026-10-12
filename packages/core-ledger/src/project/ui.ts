@@ -841,7 +841,11 @@ export class UIProjectionCell {
       }
       case 'decision/state': {
         const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
-        if (value.request.owner !== 'core/tool-permission' || value.request.sourcePackage !== '@agnes/core')
+        if (
+          !value.request.spec.options.every((option) =>
+            ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option),
+          )
+        )
           break
         const old = this.approvals.get(value.handle.id)
         const result = value.result
@@ -893,7 +897,7 @@ export class UIProjectionCell {
         else this.pushNode(node)
         changed.add(node.id)
         const tool = this.tools.get(value.request.operationId)
-        if (tool && !value.consumption) {
+        if (tool && value.request.owner === 'core/tool-permission' && !value.consumption) {
           tool.status =
             node.state === 'pending'
               ? 'awaiting_approval'
@@ -1103,7 +1107,9 @@ export class UIProjectionCell {
       .find(
         (value) =>
           value.request.lane === this.lane &&
-          value.request.owner === 'core/tool-permission' &&
+          ['core/tool-permission', 'core/unknown-outcome', 'core/gate', 'core/budget'].includes(
+            value.request.owner,
+          ) &&
           value.request.sourcePackage === '@agnes/core' &&
           (!value.result || value.result.reason === 'answered') &&
           !value.invalidation &&

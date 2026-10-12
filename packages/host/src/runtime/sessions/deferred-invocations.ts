@@ -94,13 +94,7 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
       return seqs[0]
     },
     async outcome(id) {
-      const rows = await read([
-        'x/core/loop-effect',
-        'tool/call',
-        'tool/result',
-        'x/core/tool-response',
-        'approval/asked',
-      ])
+      const rows = await read(['x/core/loop-effect', 'tool/call', 'tool/result', 'x/core/tool-response'])
       const link = [...rows]
         .reverse()
         .find(
@@ -115,24 +109,16 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
       const matches = (row: { data: unknown }) => (row.data as { toolUseId?: string }).toolUseId === toolUseId
       const call = rows.find((row) => row.type === 'tool/call' && matches(row))
       // Tool permission uses Core's decision register; never infer a human ticket from delivery facts.
-      const decision = [...session.state.registers.decisionStates.values()].find(
-        ({ value }) =>
-          value.request.owner === 'core/tool-permission' &&
-          value.request.sourcePackage === '@agnes/core' &&
-          value.request.operationId === toolUseId &&
-          value.request.lane === session.lane,
-      )?.value
-      // Unknown-outcome reconciliation retains its separate domain approval receipt.
-      const approval = [...rows]
+      const decision = [...session.state.registers.decisionStates.values()]
         .reverse()
         .find(
-          (row) =>
-            row.type === 'approval/asked' &&
-            matches(row) &&
-            (row.data as { kind?: string }).kind === 'unknown-outcome',
-        )
-      const approvalId =
-        (approval?.data as { requestId: string } | undefined)?.requestId ?? decision?.handle.id
+          ({ value }) =>
+            ['core/tool-permission', 'core/unknown-outcome'].includes(value.request.owner) &&
+            value.request.sourcePackage === '@agnes/core' &&
+            value.request.operationId === toolUseId &&
+            value.request.lane === session.lane,
+        )?.value
+      const approvalId = decision?.handle.id
       const result = [...rows].reverse().find((row) => row.type === 'tool/result' && matches(row))
       const response = [...rows]
         .reverse()

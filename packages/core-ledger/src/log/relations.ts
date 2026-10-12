@@ -75,7 +75,13 @@ export function checkRelations(
           (row) =>
             row.lane === e.lane &&
             (consumption.effectId === null
-              ? row.type === 'x/core/loop-checkpoint'
+              ? row.type === 'x/core/loop-checkpoint' ||
+                (row.type === 'x/core/decision-checkpoint' &&
+                  row.origin === 'system' &&
+                  row.trust === 'trusted' &&
+                  (row.data as { handle?: { id?: string }; operationId?: string }).handle?.id ===
+                    previous?.handle.id &&
+                  (row.data as { operationId?: string }).operationId === previous?.request.operationId)
               : row.type === 'effect/intent' &&
                 (row.data as { effectId?: string })?.effectId === consumption.effectId),
         )
