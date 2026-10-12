@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
   inCssLayer,
   readMarkdownThemeCss,
@@ -287,6 +288,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
     },
     ...vendorOptions,
+    plugins: [scrollbarCsp],
     external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
     banner: {
       js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",

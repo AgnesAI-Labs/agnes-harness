@@ -234,7 +234,7 @@ function Fixture() {
   }
   return (
     <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
-      <div id="fixture-controls">
+      <div id="fixture-controls" className="session-tabs-bar">
         {dockReady && (
           <Dock
             context={{
@@ -244,48 +244,50 @@ function Fixture() {
           />
         )}
       </div>
-      <IntelligentInline binding={binding} />
-      <section id="approval">
-        {pending && (
-          <Approval
-            key={pending.commandId}
-            initialView={{
-              key: pending.approvalId!,
-              title: language === 'en' ? 'Tool permission' : '工具权限审批',
-              summary: 'fde_finance_approve · simulated only',
-              impact: 'The original ticket is preserved across reload.',
-              preview: JSON.stringify(
-                state.requests.find((item) => item.commandId === pending.commandId)?.input ?? {},
-              ),
-              disabled: false,
-              actions: [
-                {
-                  id: 'allow',
-                  label: language === 'en' ? 'Allow once' : '仅允许这次',
-                  onSelect: () => decide(true),
-                },
-                { id: 'deny', label: language === 'en' ? 'Deny' : '拒绝', onSelect: () => decide(false) },
-              ],
-            }}
-          />
+      <div className="conversation-shell">
+        <IntelligentInline binding={binding} />
+        <section id="approval">
+          {pending && (
+            <Approval
+              key={pending.commandId}
+              initialView={{
+                key: pending.approvalId!,
+                title: language === 'en' ? 'Tool permission' : '工具权限审批',
+                summary: 'fde_finance_approve · simulated only',
+                impact: 'The original ticket is preserved across reload.',
+                preview: JSON.stringify(
+                  state.requests.find((item) => item.commandId === pending.commandId)?.input ?? {},
+                ),
+                disabled: false,
+                actions: [
+                  {
+                    id: 'allow',
+                    label: language === 'en' ? 'Allow once' : '仅允许这次',
+                    onSelect: () => decide(true),
+                  },
+                  { id: 'deny', label: language === 'en' ? 'Deny' : '拒绝', onSelect: () => decide(false) },
+                ],
+              }}
+            />
+          )}
+        </section>
+        <button
+          data-testid="fixture-change-data"
+          type="button"
+          onClick={() => {
+            const next = financeRecord(state.page.surfaces[0]!.surface.revision + 1)
+            next.updatedSeq = ++state.page.lastSeq
+            state.page.surfaces = [next]
+            save()
+          }}
+        >
+          Simulate concurrent revision without event delivery
+        </button>
+        <p data-testid="fixture-command-count">{state.requests.length}</p>
+        {sourceMode && (
+          <p data-testid="fixture-source-hashes">{JSON.stringify(state.requests.at(-1)?.sources ?? {})}</p>
         )}
-      </section>
-      <button
-        data-testid="fixture-change-data"
-        type="button"
-        onClick={() => {
-          const next = financeRecord(state.page.surfaces[0]!.surface.revision + 1)
-          next.updatedSeq = ++state.page.lastSeq
-          state.page.surfaces = [next]
-          save()
-        }}
-      >
-        Simulate concurrent revision without event delivery
-      </button>
-      <p data-testid="fixture-command-count">{state.requests.length}</p>
-      {sourceMode && (
-        <p data-testid="fixture-source-hashes">{JSON.stringify(state.requests.at(-1)?.sources ?? {})}</p>
-      )}
+      </div>
       <aside id="workbench-right" hidden>
         <div id="workbench-right-content" />
       </aside>

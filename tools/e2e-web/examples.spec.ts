@@ -62,7 +62,11 @@ for (const [locale, example, loop] of [
     await start.click()
     await expect(page.getByTestId('composer-agent')).toBeVisible()
     await page.waitForTimeout(1000)
-    if (await page.locator('#new-session[open]').count()) {
+    if (
+      await page
+        .getByRole('dialog', { name: locale === 'en' ? 'Choose a workspace' : '选择工作区', exact: true })
+        .isVisible()
+    ) {
       const workspace = process.env.AGH_UI_WORKSPACE
       if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for the isolated home')
       await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {

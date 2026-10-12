@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { Context, FiberState } from '@agnes/cordis'
 import { createPluginTestHost } from '@agnes/host/author-testkit'
 import { main } from '../dist/index.js'
 
@@ -24,7 +25,14 @@ test('configured tool validates inputs, returns deterministic results and unregi
   assert.equal(host.tools.size, 0)
 })
 
-test('missing extension service and invalid config report useful author errors', async () => {
-  assert.throws(() => main.apply({}), /Missing required service: extension/)
+test('missing tool service prevents activation and invalid config reports useful author errors', async () => {
+  const root = new Context()
+  const fiber = root.plugin(main)
+  try {
+    assert.equal(fiber.state, FiberState.PENDING)
+  } finally {
+    await fiber.dispose()
+    await root.fiber.dispose()
+  }
   await assert.rejects(createPluginTestHost(main, { config: { prefix: 42 } }), /prefix must be a string/)
 })

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { uiComponentFrame } from '../../packages/web-server/src/ui-component-frame.ts'
-import { readWebStyleSource, readWebUiStyleSource } from '../web-style-source.mjs'
+import { inCssLayer, readWebStyleSource, readWebUiStyleSource } from '../web-style-source.mjs'
 
 // Explicit offline renderer acceptance fixture; invoked only by the Web spec.
 const require = createRequire(resolve('packages/web/package.json'))
@@ -52,7 +52,7 @@ const server = createServer(async (request, response) => {
     response
       .writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' })
       .end(
-        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/antd.css"></head><body><div id="fixture-root"></div><script type="module" src="/fixture.js"></script></body></html>',
+        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/antd.css"><style>body { display:block; } #fixture-root { height:100dvh; min-width:0; }</style></head><body><div id="fixture-root"></div><script type="module" src="/fixture.js"></script></body></html>',
       )
     return
   }
@@ -68,7 +68,13 @@ const server = createServer(async (request, response) => {
   try {
     response
       .writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-store' })
-      .end(path === '/tokens.css' ? readWebUiStyleSource(asset[0]) : await readFile(asset[0]))
+      .end(
+        path === '/tokens.css'
+          ? readWebUiStyleSource(asset[0])
+          : path === '/antd.css'
+            ? inCssLayer(await readFile(asset[0], 'utf8'), 'vendor')
+            : await readFile(asset[0]),
+      )
   } catch {
     response.writeHead(500).end('Fixture asset unavailable')
   }

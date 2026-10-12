@@ -5,7 +5,6 @@ import {
   defineLoop,
   defineModelAdapter,
   defineTool,
-  type ProviderPluginContext,
   readOnlyTool,
 } from '@agnes/plugin-runtime'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
@@ -135,13 +134,13 @@ export const factory = defineLoop({
 })
 export const loopPlugin = defineAgnesPlugin({
   inject: ['providers'],
-  apply(ctx: ProviderPluginContext) {
+  apply(ctx: Context) {
     ctx.providers.register('loop', '@community/dag-loop-adapter', factory)
   },
 })
 export const adapterPlugin = defineAgnesPlugin({
   inject: ['providers'],
-  apply(ctx: ProviderPluginContext) {
+  apply(ctx: Context) {
     ctx.providers.register('model-adapter', '@community/dag-loop-adapter', adapter)
   },
 })

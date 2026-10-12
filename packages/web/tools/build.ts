@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
 import {
   inCssLayer,
   readMarkdownThemeCss,
@@ -116,6 +117,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
       },
       ...vendorOptions,
+      plugins: [scrollbarCsp],
       external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
       // html-react-parser's ESM wrapper enters CJS and calls require('react'). Bind exactly that
       // call to the import-map singleton in every generated vendor chunk; reject other requires.

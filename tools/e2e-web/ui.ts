@@ -82,14 +82,12 @@ export async function closeSettings(page: Page, locale = 'en') {
 
 export async function chooseWorkspace(page: Page, runtime: Runtime, locale = 'en') {
   const skip = page.getByTestId('first-run-skip')
-  await expect
-    .poll(async () => (await skip.isVisible()) || (await page.locator('#new-session[open]').isVisible()))
-    .toBe(true)
-  if (await skip.isVisible()) await skip.click()
   const workspace = page.getByRole('dialog', {
     name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
     exact: true,
   })
+  await expect.poll(async () => (await skip.isVisible()) || (await workspace.isVisible())).toBe(true)
+  if (await skip.isVisible()) await skip.click()
   await expect(workspace).toBeVisible()
   await workspace.getByTestId('workspace-manual-toggle').click()
   await workspace.getByRole('textbox').fill(runtime.workspace)

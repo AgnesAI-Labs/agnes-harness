@@ -462,7 +462,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
       .fill('hot-tool-plugin')
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
-    const chip = page.getByRole('note', { name: new RegExp(locale === 'en' ? '^Updating' : '^更新中') })
+    const chip = page.getByRole('note', { name: new RegExp(locale === 'en' ? '^In use' : '^正在使用') })
     await chip.focus()
     await expect(
       page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'The update is ready' : '新版本已就绪' }),
@@ -588,7 +588,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   const session = await current(page, runtime)
   expect(await session.capabilities()).toMatchObject({
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { value: { id: 'fde.knowledge-qa', version: '4.0.0' } },
+    loop: { value: { id: 'fde.knowledge-qa', version: '5.0.0' } },
   })
   expect(JSON.stringify(await toolResult(session, 'present'))).toContain('report.md')
   expect(JSON.stringify(await toolResult(session, 'write'))).toContain('fde-output/knowledge-qa/')
@@ -616,7 +616,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   const restored = await current(page, runtime)
   expect(await restored.capabilities()).toMatchObject({
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { value: { id: 'fde.knowledge-qa', version: '4.0.0' } },
+    loop: { value: { id: 'fde.knowledge-qa', version: '5.0.0' } },
   })
   await turn(page, 'Who reviews refund requests?')
   expect(JSON.stringify(await toolResult(restored, 'present'))).toContain('report.md')

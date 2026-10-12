@@ -36,7 +36,7 @@ Import these from `@agnes/plugin-runtime`:
 
 Import `defineTool` only from `@agnes/plugin-runtime`. It accepts input-only tools and optional result schemas.
 
-A tool plugin injects `tools`; use `Context` for its callback. Loop and adapter callbacks use `ProviderPluginContext` and `ProviderPluginContext` with corresponding injections. These types describe required services; a type declaration does not install a service.
+A tool plugin injects `tools`; Loop and adapter plugins inject `providers`. Use `Context` from `@agnes/plugin-runtime` for these Cordis callbacks; it includes the provider service contract. `ProviderPluginContext` alone describes that service without the Cordis context. Type declarations do not install services.
 
 Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior.
 

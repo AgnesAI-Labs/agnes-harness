@@ -86,7 +86,12 @@ for (const locale of ['en', 'zh-CN']) {
         await quality('setup-ready')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toBeHidden()
-        await expect(page.locator('#new-session[open]')).toHaveCount(0)
+        await expect(
+          page.getByRole('dialog', {
+            name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+            exact: true,
+          }),
+        ).toBeHidden()
         const diagnostics = await client.request('_agnes/v1/doctor.run', {})
         expect(diagnostics.checks.find((check) => check.id === 'accounts')?.probed).toBe(false)
         if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok')
