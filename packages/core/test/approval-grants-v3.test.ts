@@ -10,7 +10,7 @@ import { actor } from './helpers/open-session.js'
 
 const grant: ApprovalGrant = {
   grantId: 'grant-1',
-  profileHash: `sha256-${'a'.repeat(64)}`,
+  policyDigest: `sha256-${'a'.repeat(64)}`,
   actorId: actor.id,
   actorOrg: actor.org,
   toolId: 'computer_use',
@@ -43,7 +43,7 @@ describe('v3 approval grants', () => {
   it('matches permanent grants on every security binding and rejects revoked grants', () => {
     const binding = {
       actor,
-      profileHash: grant.profileHash,
+      policyDigest: grant.policyDigest,
       toolId: grant.toolId,
       scope: grant.scope,
       policyVersion: grant.policyVersion,
@@ -54,7 +54,7 @@ describe('v3 approval grants', () => {
     expect(permanentGrantMatches({ ...grant, revokedAt: grant.createdAt }, binding)).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, actor: { ...actor, id: 'other' } })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, actor: { ...actor, org: 'other' } })).toBe(false)
-    expect(permanentGrantMatches(grant, { ...binding, profileHash: `sha256-${'b'.repeat(64)}` })).toBe(false)
+    expect(permanentGrantMatches(grant, { ...binding, policyDigest: `sha256-${'b'.repeat(64)}` })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, toolId: 'other' })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, scope: 'cua:click:foreground' })).toBe(false)
     expect(permanentGrantMatches(grant, { ...binding, policyVersion: 'cua-v2' })).toBe(false)

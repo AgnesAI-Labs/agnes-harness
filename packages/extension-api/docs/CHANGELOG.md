@@ -30,6 +30,10 @@ API additions require a minor version; removals or semantic changes require a ma
 - `ProviderKind.authority` (`'open' | 'host'`, default `open`), `ProviderAuthority`, and `ProviderCatalogEntry.authority`. A `host` kind has one Host-registered implementation: packages cannot register or select it, and the catalog shows it read-only. The first such kind is `platform`.
 - Protocol: `RuntimeAdminSnapshot.providers[].authority` (optional).
 
+### Changed
+
+- Permanent approval grants bind to `policyDigest`, a digest of the profile fields that decide authorization (approvals, policy, computer use, seams, presets, sandbox, isolation, command hooks, fixed adapters), instead of the whole resolved-profile `profileHash`. Switching the model route or credential account no longer orphans grants. Protocol `ApprovalGrant` and `ApprovalGrantRecord` carry `policyDigest` in place of `profileHash`; the grant store schema version is 3 and an older store reports `reset-required`.
+
 ### Removed
 
 - `profile.seams.sandbox` and `profile.seams.platform` (and the `sandbox` / `platform` keys of the package `seams` export table). Select the sandbox with top-level `sandbox: { provider }`; `platform` is Host-owned. Writing either key is a configuration error that names the replacement. `ResolvedProfile.seams` and the profile schema lose both keys.

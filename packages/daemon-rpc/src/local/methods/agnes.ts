@@ -88,6 +88,7 @@ export type AgnesContext = LocalContext & {
   configuration?: boolean
   sessionServices?: SessionJobServices
   profileHashForSession?: (key: string) => Promise<string | null>
+  policyDigestForSession?: (key: string) => Promise<string | null>
   limits: Limits
   journal: CommandJournal
   claims: ClaimStore
@@ -486,7 +487,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     name: 'approval-grants',
     methods: ['_agnes/v1/approvalGrants.list', '_agnes/v1/approvalGrants.revoke'],
     guidance: 'manage fully-bound permanent grants; actor and profile come from server authority',
-    when: (x) => !!x.profileHashForSession && !!x.resolveActor,
+    when: (x) => !!x.policyDigestForSession && !!x.resolveActor,
   },
   {
     name: 'participant',
@@ -651,15 +652,15 @@ export function registerAgnes(
   }
   const approvalGrantBinding = async (method: string, params: GrantBindingParams, c: CallContext) => {
     requireOwner(method, params.sessionId, c)
-    if (!cx.profileHashForSession || !cx.resolveActor)
+    if (!cx.policyDigestForSession || !cx.resolveActor)
       throw rpcError('CAPABILITY_DENIED', {
         method,
         sessionId: params.sessionId,
         reason: 'session profile authority unavailable',
       })
-    let profileHash: string | null
+    let policyDigest: string | null
     try {
-      profileHash = await cx.profileHashForSession(params.sessionId)
+      policyDigest = await cx.policyDigestForSession(params.sessionId)
     } catch {
       throw rpcError('CAPABILITY_DENIED', {
         method,
@@ -667,7 +668,7 @@ export function registerAgnes(
         reason: 'session profile authority unavailable',
       })
     }
-    if (!profileHash || !/^sha256-[a-f0-9]{64}$/.test(profileHash))
+    if (!policyDigest || !/^sha256-[a-f0-9]{64}$/.test(policyDigest))
       throw rpcError('CAPABILITY_DENIED', {
         method,
         sessionId: params.sessionId,
@@ -684,7 +685,7 @@ export function registerAgnes(
       })
     }
     return {
-      profileHash,
+      policyDigest,
       actorId: actor.id,
       actorOrg: actor.org,
       toolId: params.toolId,

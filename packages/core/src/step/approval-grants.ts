@@ -8,7 +8,7 @@ import type { SessionImpl } from './session.js'
 
 export type ApprovalGrantBinding = {
   actor: Pick<Actor, 'id' | 'org'>
-  profileHash: string
+  policyDigest: string
   toolId: string
   scope: string
   policyVersion: string
@@ -33,7 +33,7 @@ export function approvalScopesForCall(toolId: string, scopes: readonly string[])
 export function permanentGrantMatches(grant: ApprovalGrant, binding: ApprovalGrantBinding): boolean {
   return (
     grant.revokedAt === undefined &&
-    grant.profileHash === binding.profileHash &&
+    grant.policyDigest === binding.policyDigest &&
     grant.actorId === binding.actor.id &&
     grant.actorOrg === binding.actor.org &&
     grant.toolId === binding.toolId &&
@@ -163,7 +163,7 @@ export function newPermanentGrant(
   if (!input.issuer || input.issuer.role === 'agent') throw new Error('DECISION_GRANT_ISSUER_INVALID')
   return {
     grantId: input.grantId,
-    profileHash: input.profileHash,
+    policyDigest: input.policyDigest,
     actorId: input.actor.id,
     actorOrg: input.actor.org,
     toolId: input.toolId,

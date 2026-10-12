@@ -12,6 +12,7 @@ import {
 import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
+import { policyDigest } from '@agnes/host-common/profile/policy-digest'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import type { FencedFs } from '@agnes/host-infrastructure/adapters/fs'
@@ -439,6 +440,7 @@ export async function createSession(
     actor,
     preset: view,
     resolvedProfileHash: profile.hash,
+    policyDigest: policyDigest(profile),
     cwd,
     writerRunId: opts.writerRunId ?? randomUUID(),
     ...(opts.parent ? { parent: opts.parent } : {}),

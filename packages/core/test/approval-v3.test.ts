@@ -98,6 +98,7 @@ async function atTools(o: {
     ...(o.toolPolicies ? { toolPolicies: o.toolPolicies } : {}),
     ...(o.toolPolicySettings ? { toolPolicySettings: o.toolPolicySettings } : {}),
     resolvedProfileHash: o.profile === undefined ? profileHash : o.profile,
+    policyDigest: o.profile === undefined ? profileHash : o.profile,
   })
   await opened.session.enqueue('next-turn', o.input ?? { actor, content: [{ type: 'text', text: 'go' }] })
   await opened.session.acceptInput()
@@ -378,7 +379,7 @@ describe('v3 approval modes and grants', () => {
       list: async (query: import('@agnes/core-effects/effects/seams').ApprovalGrantQuery) =>
         grants.filter(
           (grant) =>
-            grant.profileHash === query.profileHash &&
+            grant.policyDigest === query.policyDigest &&
             grant.actorId === query.actorId &&
             grant.actorOrg === query.actorOrg &&
             grant.toolId === query.toolId &&
@@ -415,7 +416,7 @@ describe('v3 approval modes and grants', () => {
     expect(asks).toBe(2)
     expect(grants).toEqual([
       expect.objectContaining({
-        profileHash,
+        policyDigest: profileHash,
         actorId: actor.id,
         actorOrg: actor.org,
         toolId: 'scoped_write',
@@ -515,7 +516,9 @@ describe('v3 approval modes and grants', () => {
         key: 'k',
         writerRunId: `permanent-reopen-${alreadyStored}`,
         approvalMode: 'manual',
-        resolvedProfileHash: profileHash,
+        // The model route changed between the crash and the reopen; the whole-profile hash moved, authorization did not.
+        resolvedProfileHash: `sha256-${'c'.repeat(64)}`,
+        policyDigest: profileHash,
         approvalGrants: {
           list: async () => grants,
           put: async (grant) => {

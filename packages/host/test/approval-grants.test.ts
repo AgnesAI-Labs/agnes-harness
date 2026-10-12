@@ -23,9 +23,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-const profileHash = `sha256-${'a'.repeat(64)}`
+const policyDigest = `sha256-${'a'.repeat(64)}`
 const query: ApprovalGrantBinding = {
-  profileHash,
+  policyDigest,
   actorId: 'actor-1',
   actorOrg: 'org-1',
   toolId: 'computer',
@@ -43,14 +43,14 @@ const grant: ApprovalGrant = {
 }
 const GRANTS_DDL =
   'CREATE TABLE approval_grants (' +
-  'grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
+  'grant_id TEXT PRIMARY KEY, policy_digest TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
   'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, ' +
   'source_decision_id TEXT NOT NULL, issuer TEXT NOT NULL, definition_fingerprint TEXT NOT NULL, policy_binding TEXT NOT NULL)'
 const META_DDL =
   'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
 const INDEX_DDL =
   'CREATE INDEX approval_grants_binding ON approval_grants ' +
-  '(profile_hash, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
+  '(policy_digest, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
 
 function open(root: string) {
   const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
@@ -86,7 +86,7 @@ describe('Host approval grant store', () => {
       for (const changed of [
         { actorId: 'actor-2' },
         { actorOrg: 'org-2' },
-        { profileHash: `sha256-${'b'.repeat(64)}` },
+        { policyDigest: `sha256-${'b'.repeat(64)}` },
         { toolId: 'other-tool' },
         { scope: 'cua:type:foreground' },
         { policyVersion: 'v2' },
@@ -133,7 +133,7 @@ describe('Host approval grant store', () => {
     const missingTables = missingStorage.tables('@agnes/host')
     missingTables
       .table('approval_grants')
-      .exec('CREATE TABLE approval_grants (grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL)')
+      .exec('CREATE TABLE approval_grants (grant_id TEXT PRIMARY KEY, policy_digest TEXT NOT NULL)')
     expect(() => createApprovalGrantStore(missingTables).list(query)).toThrow(/reset-required/)
     missingStorage.close()
 
@@ -166,7 +166,7 @@ describe('Host approval grant store', () => {
     malformed.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
     malformed.exec(
       'CREATE TABLE approval_grants (' +
-        'grant_id TEXT, profile_hash TEXT, actor_id TEXT, actor_org TEXT, tool_id TEXT, scope TEXT, ' +
+        'grant_id TEXT, policy_digest TEXT, actor_id TEXT, actor_org TEXT, tool_id TEXT, scope TEXT, ' +
         'policy_version TEXT, created_at TEXT, revoked_at TEXT)',
     )
     malformed.exec(INDEX_DDL)

@@ -6,12 +6,12 @@ import type {
 } from '@agnes/extension-api'
 import { type ApprovalGrant, isDateTime, validateActor } from '@agnes/protocol'
 
-const PROFILE_HASH = /^sha256-[a-f0-9]{64}$/
-const STORE_VERSION = 2
-const BINDING_KEYS = new Set(['profileHash', 'actorId', 'actorOrg', 'toolId', 'scope', 'policyVersion'])
+const POLICY_DIGEST = /^sha256-[a-f0-9]{64}$/
+const STORE_VERSION = 3
+const BINDING_KEYS = new Set(['policyDigest', 'actorId', 'actorOrg', 'toolId', 'scope', 'policyVersion'])
 const GRANT_KEYS = new Set([
   'grantId',
-  'profileHash',
+  'policyDigest',
   'actorId',
   'actorOrg',
   'toolId',
@@ -29,15 +29,15 @@ const META_DDL =
   'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
 const GRANTS_DDL =
   'CREATE TABLE approval_grants (' +
-  'grant_id TEXT PRIMARY KEY, profile_hash TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
+  'grant_id TEXT PRIMARY KEY, policy_digest TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
   'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, source_decision_id TEXT NOT NULL, issuer TEXT NOT NULL, definition_fingerprint TEXT NOT NULL, policy_binding TEXT NOT NULL)'
 const BINDING_INDEX_DDL =
   'CREATE INDEX approval_grants_binding ON approval_grants ' +
-  '(profile_hash, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
+  '(policy_digest, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
 
 type GrantRow = {
   grant_id: string
-  profile_hash: string
+  policy_digest: string
   actor_id: string
   actor_org: string
   tool_id: string
@@ -108,10 +108,10 @@ function binding(input: unknown): ApprovalGrantBinding {
   )
     throw new TypeError('invalid approval grant binding fields')
   const value = input as Record<string, unknown>
-  const profileHash = text(value.profileHash, 'profileHash', 71)
-  if (!PROFILE_HASH.test(profileHash)) throw new TypeError('invalid approval grant profileHash')
+  const policyDigest = text(value.policyDigest, 'policyDigest', 71)
+  if (!POLICY_DIGEST.test(policyDigest)) throw new TypeError('invalid approval grant policyDigest')
   return {
-    profileHash,
+    policyDigest,
     actorId: text(value.actorId, 'actorId', 256),
     actorOrg: text(value.actorOrg, 'actorOrg', 256),
     toolId: text(value.toolId, 'toolId', 128),
@@ -132,7 +132,7 @@ function checked(input: unknown): ApprovalGrant {
   const grant = input as Record<string, unknown>
   const grantId = text(grant.grantId, 'grantId', 128)
   const bound = binding({
-    profileHash: grant.profileHash,
+    policyDigest: grant.policyDigest,
     actorId: grant.actorId,
     actorOrg: grant.actorOrg,
     toolId: grant.toolId,
@@ -160,7 +160,7 @@ function checked(input: unknown): ApprovalGrant {
 function fromRow(row: GrantRow): ApprovalGrant {
   return checked({
     grantId: row.grant_id,
-    profileHash: row.profile_hash,
+    policyDigest: row.policy_digest,
     actorId: row.actor_id,
     actorOrg: row.actor_org,
     toolId: row.tool_id,
@@ -177,13 +177,13 @@ function fromRow(row: GrantRow): ApprovalGrant {
 
 const selectById = (table: TableHandle, grantId: string): GrantRow | undefined =>
   table.get<GrantRow>(
-    'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE grant_id = ?',
+    'SELECT grant_id, policy_digest, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE grant_id = ?',
     [grantId],
   )
 
 const sameGrant = (left: ApprovalGrant, right: ApprovalGrant): boolean =>
   left.grantId === right.grantId &&
-  left.profileHash === right.profileHash &&
+  left.policyDigest === right.policyDigest &&
   left.actorId === right.actorId &&
   left.actorOrg === right.actorOrg &&
   left.toolId === right.toolId &&
@@ -197,7 +197,7 @@ const sameGrant = (left: ApprovalGrant, right: ApprovalGrant): boolean =>
   left.revokedAt === right.revokedAt
 
 const matches = (grant: ApprovalGrant, query: ApprovalGrantBinding): boolean =>
-  grant.profileHash === query.profileHash &&
+  grant.policyDigest === query.policyDigest &&
   grant.actorId === query.actorId &&
   grant.actorOrg === query.actorOrg &&
   grant.toolId === query.toolId &&
@@ -276,7 +276,7 @@ function validateRows(table: TableHandle): void {
   let rows: GrantRow[]
   try {
     rows = table.all<GrantRow>(
-      'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants ORDER BY grant_id',
+      'SELECT grant_id, policy_digest, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants ORDER BY grant_id',
     )
   } catch (cause) {
     throw new Error('reset-required: unreadable approval grant rows', { cause })
@@ -377,8 +377,8 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
       const query = binding(input)
       return table()
         .all<GrantRow>(
-          'SELECT grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE profile_hash = ? AND actor_id = ? AND actor_org = ? AND tool_id = ? AND scope = ? AND policy_version = ? AND revoked_at IS NULL ORDER BY created_at, grant_id',
-          [query.profileHash, query.actorId, query.actorOrg, query.toolId, query.scope, query.policyVersion],
+          'SELECT grant_id, policy_digest, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE policy_digest = ? AND actor_id = ? AND actor_org = ? AND tool_id = ? AND scope = ? AND policy_version = ? AND revoked_at IS NULL ORDER BY created_at, grant_id',
+          [query.policyDigest, query.actorId, query.actorOrg, query.toolId, query.scope, query.policyVersion],
         )
         .map(fromRow)
     },
@@ -393,10 +393,10 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
           return
         }
         table().run(
-          'INSERT INTO approval_grants (grant_id, profile_hash, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
+          'INSERT INTO approval_grants (grant_id, policy_digest, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
           [
             grant.grantId,
-            grant.profileHash,
+            grant.policyDigest,
             grant.actorId,
             grant.actorOrg,
             grant.toolId,

@@ -608,12 +608,12 @@ export async function approveAndExecute(
         definitionFingerprint: call.definitionFingerprint,
         policyBinding,
       })
-      const profileHash = s.d.resolvedProfileHash
+      const policyDigest = s.d.policyDigest ?? null
       const durableBinding =
-        profileHash !== null && /^sha256-[a-f0-9]{64}$/.test(profileHash)
+        policyDigest !== null && /^sha256-[a-f0-9]{64}$/.test(policyDigest)
           ? {
               actor: s.d.actor,
-              profileHash,
+              policyDigest,
               toolId: call.name,
               scope,
               policyVersion: policy.policyVersion,
@@ -626,7 +626,7 @@ export async function approveAndExecute(
           ? (
               await s.d.runtime.approvalGrants(
                 {
-                  profileHash: durableBinding.profileHash,
+                  policyDigest: durableBinding.policyDigest,
                   actorId: durableBinding.actor.id,
                   actorOrg: durableBinding.actor.org,
                   toolId: durableBinding.toolId,
@@ -642,7 +642,7 @@ export async function approveAndExecute(
         grantChecks.push(async () => {
           const current = await s.d.runtime.approvalGrants(
             {
-              profileHash: durableBinding.profileHash,
+              policyDigest: durableBinding.policyDigest,
               actorId: durableBinding.actor.id,
               actorOrg: durableBinding.actor.org,
               toolId: call.name,
@@ -822,7 +822,6 @@ export async function approveAndExecute(
         scope,
         policyVersion: policy.policyVersion,
         policyBinding,
-        ...(durableBinding ? { profileHash: durableBinding.profileHash } : {}),
         options,
         ...(permission.approval ? { approval: permission.approval } : {}),
         deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),

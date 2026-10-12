@@ -466,6 +466,7 @@ export type SessionDeps = {
   clock: Clock
   actor: Actor
   resolvedProfileHash: string | null
+  policyDigest?: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
   cwd: string

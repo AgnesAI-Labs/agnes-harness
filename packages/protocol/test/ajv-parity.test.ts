@@ -1821,7 +1821,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
   ApprovalGrant: {
     valid: {
       grantId: 'g1',
-      profileHash: `sha256-${rep64}`,
+      policyDigest: `sha256-${rep64}`,
       actorId: 'u',
       actorOrg: 'o',
       toolId: 'computer_use',
@@ -1837,7 +1837,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { grantId: 'g1' },
       {
         grantId: 'g1',
-        profileHash: rep64,
+        policyDigest: rep64,
         actorId: 'u',
         actorOrg: 'o',
         toolId: 'computer_use',
@@ -3417,7 +3417,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   ApprovalGrantRecord: {
     valid: {
       grantId: 'grant-1',
-      profileHash: `sha256-${rep64}`,
+      policyDigest: `sha256-${rep64}`,
       actorId: 'local',
       actorOrg: 'local',
       toolId: 'computer_use',
@@ -3432,7 +3432,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       {
         grantId: 'grant-1',
-        profileHash: rep64,
+        policyDigest: rep64,
         actorId: 'local',
         actorOrg: 'local',
         toolId: 'computer_use',
@@ -3446,7 +3446,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       },
       {
         grantId: 'grant-1',
-        profileHash: `sha256-${rep64}`,
+        policyDigest: `sha256-${rep64}`,
         actorId: 'local',
         actorOrg: 'local',
         toolId: 'computer_use',

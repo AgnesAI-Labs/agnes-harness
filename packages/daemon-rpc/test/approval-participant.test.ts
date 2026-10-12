@@ -316,11 +316,11 @@ describe('permanent approval grant RPC', () => {
         }),
       ).resolves.toEqual({ jsonrpc: '2.0', id: 3, result: { grants: [] } })
       const session = opened.host.kernel.get(created.result.sessionId)
-      const profileHash = session?.d.resolvedProfileHash
-      if (!session || !profileHash) throw new Error('missing session profile binding')
+      const policyDigest = session?.d.policyDigest
+      if (!session || !policyDigest) throw new Error('missing session profile binding')
       const grant = {
         grantId: 'grant-1',
-        profileHash,
+        policyDigest,
         actorId: session.d.actor.id,
         actorOrg: session.d.actor.org,
         toolId: binding.toolId,
@@ -356,7 +356,7 @@ describe('permanent approval grant RPC', () => {
           jsonrpc: '2.0',
           id: 6,
           method: '_agnes/v1/approvalGrants.list',
-          params: { ...binding, profileHash },
+          params: { ...binding, policyDigest },
         }),
       ).resolves.toMatchObject({ error: { code: -32602, data: { code: 'UNKNOWN_KEY' } } })
       await expect(

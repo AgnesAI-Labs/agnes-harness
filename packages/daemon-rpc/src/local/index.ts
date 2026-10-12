@@ -433,6 +433,7 @@ export function createLocalEndpoint(
       },
       configuration: opts.configuration !== undefined,
       profileHashForSession: async (key: string) => registry.require(key).session.d.resolvedProfileHash,
+      policyDigestForSession: async (key: string) => registry.require(key).session.d.policyDigest ?? null,
       limits: { ...DEFAULT_LIMITS, ...opts.limits },
       journal,
       claims: opts.claims ?? new MemoryClaims(),

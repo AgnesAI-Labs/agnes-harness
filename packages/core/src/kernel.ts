@@ -179,6 +179,8 @@ export type SessionOptions = {
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
+  /** The authorization-relevant part of the profile; durable approval grants bind to it, not to the whole hash. */
+  policyDigest?: string | null
   seams?: Partial<SeamImplementations>
   cwd: string
   writerRunId: string
@@ -631,6 +633,7 @@ export class Kernel {
         clock: this.clock,
         actor: so.actor,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.policyDigest ? { policyDigest: so.policyDigest } : {}),
         ...(so.imported ? { imported: so.imported } : {}),
         cwd: so.cwd,
         netFetch: this.o.netFetch,

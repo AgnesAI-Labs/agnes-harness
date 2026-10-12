@@ -1708,7 +1708,7 @@
       "additionalProperties": false,
       "required": [
         "grantId",
-        "profileHash",
+        "policyDigest",
         "actorId",
         "actorOrg",
         "toolId",
@@ -1722,7 +1722,7 @@
       ],
       "properties": {
         "grantId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "profileHash": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
+        "policyDigest": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
         "actorId": { "type": "string", "minLength": 1, "maxLength": 256 },
         "actorOrg": { "type": "string", "minLength": 1, "maxLength": 256 },
         "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },

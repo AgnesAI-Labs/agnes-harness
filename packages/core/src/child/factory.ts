@@ -584,6 +584,7 @@ export class KernelChildren implements ChildrenFactory {
       ...(filter ? { toolFilter: filter } : {}),
       actor: parent.d.actor,
       resolvedProfileHash: parent.d.resolvedProfileHash,
+      ...(parent.d.policyDigest ? { policyDigest: parent.d.policyDigest } : {}),
       preset: childPreset,
       parent: {
         key: parent.key,

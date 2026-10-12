@@ -44,7 +44,7 @@ export type ApprovalRequest = {
   approval?: ApprovalConstraints
 }
 export type ApprovalGrantQuery = {
-  profileHash: string
+  policyDigest: string
   actorId: string
   actorOrg: string
   toolId: string

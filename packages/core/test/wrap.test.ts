@@ -216,7 +216,7 @@ describe('SeamRuntime', () => {
       rt.approvalPutGrant(
         {
           grantId: 'g',
-          profileHash: `sha256-${'a'.repeat(64)}`,
+          policyDigest: `sha256-${'a'.repeat(64)}`,
           actorId: 'u',
           actorOrg: 'local',
           toolId: 'computer_use',
@@ -237,7 +237,7 @@ describe('SeamRuntime', () => {
   it('lists and stores durable approval grants through the bounded host port', async () => {
     const grant = {
       grantId: 'g',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'u',
       actorOrg: 'local',
       toolId: 'computer_use',
@@ -255,7 +255,7 @@ describe('SeamRuntime', () => {
       approvalGrants: { list: async () => [grant], put: async () => undefined },
     })
     const query = {
-      profileHash: grant.profileHash,
+      policyDigest: grant.policyDigest,
       actorId: grant.actorId,
       actorOrg: grant.actorOrg,
       toolId: grant.toolId,
@@ -344,7 +344,7 @@ describe('SeamRuntime', () => {
   it('routes approval and checkpoint operations only through the workspace invocation', async () => {
     const grant = {
       grantId: 'g',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'u',
       actorOrg: 'local',
       toolId: 'shell',
@@ -390,7 +390,7 @@ describe('SeamRuntime', () => {
     await expect(
       rt.approvalGrants(
         {
-          profileHash: grant.profileHash,
+          policyDigest: grant.policyDigest,
           actorId: grant.actorId,
           actorOrg: grant.actorOrg,
           toolId: grant.toolId,

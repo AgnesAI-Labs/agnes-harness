@@ -33,6 +33,7 @@
     "./profile/demo": "./src/profile/demo.ts",
     "./profile/isolation": "./src/profile/isolation.ts",
     "./profile/model-compatibility": "./src/profile/model-compatibility.ts",
+    "./profile/policy-digest": "./src/profile/policy-digest.ts",
     "./profile/resolve": "./src/profile/resolve.ts",
     "./profile/sandbox-startup": "./src/profile/sandbox-startup.ts",
     "./profile/templates": "./src/profile/templates.ts",

@@ -37,6 +37,7 @@ async function parked(profileHash: string | null = null) {
     seams,
     clock: () => now,
     resolvedProfileHash: profileHash,
+    policyDigest: profileHash,
     provider: fakeProvider([toolTurn('shell', { command: 'synthetic' }), textTurn('done')]),
   })
   await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'run' }] })

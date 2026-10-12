@@ -22,7 +22,7 @@ describe('v3 approval protocol', () => {
     expect(
       validateAgainst(ApprovalGrant, {
         grantId: 'g1',
-        profileHash: `sha256-${'a'.repeat(64)}`,
+        policyDigest: `sha256-${'a'.repeat(64)}`,
         actorId: 'u',
         actorOrg: 'o',
         toolId: 'computer_use',
