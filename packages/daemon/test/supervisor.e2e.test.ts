@@ -82,7 +82,7 @@ function buildProfile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
     dataDir,
-    seams: { principals: '@agnes/base' },
+    seams: { principals: { provider: 'local' } },
     approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
     presets: { default: 'standard', allowed: ['standard'] },
