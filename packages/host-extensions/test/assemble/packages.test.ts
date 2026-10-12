@@ -26,7 +26,11 @@ const fail = (fn: () => unknown): { code: string; detail: Record<string, unknown
 describe('readNamedExports', () => {
   it('ignores a `seams` export: a seam is a registered provider, not a factory', () => {
     expect(
-      (readNamedExports('acme/seams', entry, { seams: { approval: async () => ({}) } }) as { seams?: unknown }).seams,
+      (
+        readNamedExports('acme/seams', entry, { seams: { approval: async () => ({}) } }) as {
+          seams?: unknown
+        }
+      ).seams,
     ).toBeUndefined()
   })
   it('reads operations/presets/runtimes/ecosystem/compaction policy and records the entry', () => {

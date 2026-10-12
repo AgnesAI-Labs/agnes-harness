@@ -1,5 +1,5 @@
 import type { Enforcement, SandboxSeam, SeamWorkspace } from '@agnes/core'
-import { SHELL_SENTINEL, type SandboxExecutionPolicy } from '@agnes/extension-api'
+import { type SandboxExecutionPolicy, SHELL_SENTINEL } from '@agnes/extension-api'
 
 const fault = (code: string, message: string): Error & { code: string } =>
   Object.assign(new Error(`${code}: ${message}`), { code })

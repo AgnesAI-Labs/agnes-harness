@@ -64,7 +64,10 @@ export function createMutableSeamImplementations<T extends DynamicSeams & Static
     releases.get(name)?.()
     releases.delete(name)
     provided.delete(name)
-    if (value === undefined) return changed()
+    if (value === undefined) {
+      changed()
+      return
+    }
     if (!value || typeof value !== 'object') {
       throw new TypeError(`seam:${name} must provide an object`)
     }

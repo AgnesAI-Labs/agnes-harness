@@ -297,7 +297,11 @@ export function createSessionController(
         }
         context.sessionPending = false
         // A session that cannot continue here stays readable from its record.
-        if (!options.created && !options.preserveSending && (await context.readOnlyController.show(id, error, epoch)))
+        if (
+          !options.created &&
+          !options.preserveSending &&
+          (await context.readOnlyController.show(id, error, epoch))
+        )
           return
         context.render()
         if (!options.created && !options.preserveSending) {
