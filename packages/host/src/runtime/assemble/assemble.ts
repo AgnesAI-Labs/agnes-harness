@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8,13 +8,10 @@ import {
   DEFAULT_LOOP,
   type Enforcement,
   type HookPort,
-  hasChildControl,
   Kernel,
   noopHooks,
   type Operation,
-  type PresetView,
   platformFacts,
-  recoverCreatingChildAttempts,
   type SandboxExecBackend,
   type SeamImplementations,
   type SeamName,
@@ -26,22 +23,15 @@ import {
   type LeaseView,
   type MemorySession,
   memoryKind,
-  ProviderError,
   type ResourceEntry,
   type SystemPromptProvider,
   systemPromptKind,
 } from '@agnes/extension-api'
-import {
-  type ComputerUseArtifactGcRuntime,
-  createComputerUseArtifactGcRuntime,
-} from '@agnes/host-artifacts/computer-use-artifact-gc'
-import { createPrivateArtifactStore } from '@agnes/host-artifacts/private-artifact-store'
 import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/request-media-runtime'
 import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
-import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
-import { ownStateRoots, privateStateRoots } from '@agnes/host-common/paths'
-import { mergeValue } from '@agnes/host-common/presets/merge'
+import { HostError } from '@agnes/host-common/errors'
+import { privateStateRoots } from '@agnes/host-common/paths'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import {
@@ -50,7 +40,6 @@ import {
   type ResolvedComposition,
   resolveComposition,
 } from '@agnes/host-common/profile/composition'
-import { withAssemblyIsolation } from '@agnes/host-common/profile/isolation'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import {
   bindApprovalTicket,
@@ -63,43 +52,6 @@ import { PublicationGate } from '@agnes/host-common/publication-gate'
 import { HostQuietState } from '@agnes/host-common/quiet-state'
 import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
-import fixedComputerUseDriverLock from '@agnes/host-computer-use/computer-use/computer-use-driver-lock.json' with {
-  type: 'json',
-}
-import {
-  evaluateFixedComputerUsePlatformAdmission,
-  inspectComputerUseDriverLock,
-} from '@agnes/host-computer-use/computer-use/driver-lock'
-import { createComputerUseDriverOperationRuntime } from '@agnes/host-computer-use/computer-use/driver-operation-runtime'
-import { createComputerUseHostDispatchPort } from '@agnes/host-computer-use/computer-use/host-dispatch'
-import { createLazyComputerUseRuntime } from '@agnes/host-computer-use/computer-use/lazy-runtime'
-import { createLinuxComputerUseBackendProvider } from '@agnes/host-computer-use/computer-use/linux-driver-backend'
-import {
-  doctorLockedLinuxComputerUseDriver,
-  installOrUpdateLockedLinuxComputerUseDriver,
-} from '@agnes/host-computer-use/computer-use/linux-driver-install'
-import {
-  createHostLockedPackageMutationRuntime,
-  type HostLockedPackageMutationRuntime,
-} from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
-import {
-  createMacOSComputerUseBackendProvider,
-  grantMacOSComputerUsePermissions,
-  probeMacOSComputerUsePermissions,
-} from '@agnes/host-computer-use/computer-use/macos-driver-backend'
-import {
-  doctorLockedMacOSComputerUseDriver,
-  installOrUpdateLockedMacOSComputerUseDriver,
-} from '@agnes/host-computer-use/computer-use/macos-driver-install'
-import type { HostComputerUseStatusSource } from '@agnes/host-computer-use/computer-use/status'
-import {
-  type ComputerUseBackendProvider,
-  createWindowsComputerUseBackendProvider,
-} from '@agnes/host-computer-use/computer-use/windows-driver-backend'
-import {
-  doctorLockedWindowsComputerUseDriver,
-  installOrUpdateLockedWindowsComputerUseDriver,
-} from '@agnes/host-computer-use/computer-use/windows-driver-install'
 import {
   buildExtensionRow,
   composeExtensionRowTarget,
@@ -107,27 +59,18 @@ import {
   EXT_ROW_EXTENSION_IDS,
   EXT_ROW_MOUNT_REVISION,
   type ExtRowLoader,
-  extensionRowGrantFor,
   MIGRATED_EXTENSION_IDS,
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
 import type {
-  LoadedRuntimePackage,
   OperationDeps,
-  PackageModule,
-  RuntimeFactory,
   SeamInitContext,
   SeamProfileView,
   SkillRuntimeDiscovery,
 } from '@agnes/host-extensions/assemble/packages'
-import { loadRuntimePackage } from '@agnes/host-extensions/assemble/packages'
 import type { HostBuiltinRowClaim, HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
-import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import { type BuiltinRowHandle, createBuiltinRowHost } from '@agnes/host-extensions/ext-host/builtin-row-host'
-import {
-  createExtensionFactorySelector,
-  validateExtensionIsolation,
-} from '@agnes/host-extensions/ext-host/extension-isolation-selector'
+import { createExtensionFactorySelector } from '@agnes/host-extensions/ext-host/extension-isolation-selector'
 import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
 import {
   createExtensionOrder,
@@ -154,7 +97,6 @@ import {
 import { safeSkillReadRoots } from '@agnes/host-extensions/resources/skill-read-roots'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
-import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import { createPublicFetch } from '@agnes/host-infrastructure/adapters/public-fetch/index'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
@@ -166,7 +108,6 @@ import {
 import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
-import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
@@ -178,7 +119,6 @@ import {
 } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 import { WorkspaceHookLoader } from '@agnes/host-infrastructure/workspace-hook-loader'
-import type { WorkspaceInvocationResolver } from '@agnes/host-infrastructure/workspace-invocation-resolver'
 import {
   openWorkspaceSeamContexts,
   type WorkspaceSeamContexts,
@@ -187,7 +127,6 @@ import {
   bindStartupSandboxProvider,
   installSandboxProviders,
   LOCAL_SANDBOX_PROVIDER_ID,
-  type SandboxProviderSlot,
   sandboxProviderCatalog,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
@@ -199,7 +138,6 @@ import {
 } from '@agnes/host-providers/assemble/compaction-engines'
 import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
 import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
-import { isolationInventory } from '@agnes/host-providers/assemble/isolation-inventory'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { installLoops } from '@agnes/host-providers/assemble/loops'
 import {
@@ -216,10 +154,8 @@ import {
   unresolvedProviderAssembly,
 } from '@agnes/host-providers/assemble/provider'
 import {
-  applyProviderPreset,
   applyProviderSelections,
   providerConfigurationScopes,
-  readProviderSelections,
   selectConfiguredProviders,
 } from '@agnes/host-providers/assemble/provider-selection'
 import { installReferenceResolvers } from '@agnes/host-providers/assemble/reference-resolvers'
@@ -254,33 +190,17 @@ import {
   type HostRuntimeTargetResources,
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
 import { correlatedLogger } from '@agnes/observability'
-import {
-  developmentPluginRows,
-  type RuntimePluginSnapshot,
-  readPluginCapabilities,
-} from '@agnes/package-manager'
+import { developmentPluginRows, readPluginCapabilities } from '@agnes/package-manager'
 import {
   createMutableSeamImplementations,
   type EntryRow,
   type RuntimeConvergenceReport,
   type RuntimeTarget,
 } from '@agnes/plugin-runtime/host'
-import type { ComputerUseDoctorParams, RouteTable } from '@agnes/protocol'
-import { privateArtifactDeleteAvailable } from '@agnes/system-node'
-import type { AdapterBundle } from '../adapters/index.js'
-import {
-  createNetFetch,
-  lazyPackageTables,
-  openAdapters,
-  sandboxHostServices,
-  toSeamAdapters,
-} from '../adapters/index.js'
-import {
-  type ApprovalGrantManagement,
-  createApprovalGrantControlPlane,
-  migrateApprovalGrants,
-} from '../approval/grants.js'
-import { Rollback } from '../lifecycle/lifecycle.js'
+import type { RouteTable } from '@agnes/protocol'
+import { createNetFetch, lazyPackageTables, sandboxHostServices, toSeamAdapters } from '../adapters/index.js'
+import { createApprovalGrantControlPlane, migrateApprovalGrants } from '../approval/grants.js'
+import { inspectComputerUseArtifacts, mountComputerUse } from '../computer-use/index.js'
 import {
   compositionSkillOwners,
   compositionSkills,
@@ -291,22 +211,20 @@ import {
   capabilityEnabled,
   capabilityToolCatalog,
   resolveSessionCapabilities,
-  type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
 import { installGitWorktreeService } from '../services/git-worktrees.js'
 import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
 import { rememberDeferredInvocations } from '../sessions/deferred-invocations.js'
 import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
-import {
-  applyTelemetryConsent,
-  createSessionHookPort,
-  readProfileTelemetryConsent,
-  readTelemetryConsent,
-} from '../sessions/session-hooks.js'
+import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
+import type { Assembled, OrdinaryReconciliationLifecycle } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
-import { prepareRuntimeSelection } from './runtime-prepare.js'
+import { createAssemblyContext, duplicateContribution, failAssembly } from './context.js'
+import { loadPackages } from './packages.js'
+import { resolvePresetCatalog } from './presets.js'
+import { openProcessServices } from './process-services.js'
 import { initStaticSeams } from './seams.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 import { trustedHookCommands } from './trusted-hooks.js'
@@ -338,341 +256,67 @@ const STEP_ORDER = ['packages', 'adapters', 'presets', 'seams', 'provider', 'ope
 export type AssemblyStep = (typeof STEP_ORDER)[number]
 export const ASSEMBLY_STEPS: readonly AssemblyStep[] = STEP_ORDER
 
-/** What `Assembled.extHost` and `Host.extensions()` actually are, named once for both call sites. */
-export type ManagedExtHost = ReturnType<typeof createManagedExtHost>
-
 export type {
+  Assembled,
   HostComputerUseRuntimeStatus,
   HostComputerUseStatusSource,
-} from '@agnes/host-computer-use/computer-use/status'
-export type OrdinaryReconciliationLifecycle = Readonly<{
-  /** Refuses new target applications and settles only after every admitted one finishes. */
-  close(): Promise<void>
-}>
-
-/** Where this host lives on disk. Every one is required: none of them has a safe default. */
+  ManagedExtHost,
+  OrdinaryReconciliationLifecycle,
+} from './assembled.js'
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
-export type Assembled = {
-  referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
-  activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
-  approvalGrants: ApprovalGrantManagement
-  callService: ReturnType<typeof serviceInvoker>['call']
-  inspectService: ReturnType<typeof serviceInvoker>['inspect']
-  prepareService: ReturnType<typeof serviceInvoker>['prepare']
-  callPreparedService: ReturnType<typeof serviceInvoker>['callPrepared']
-  inspectPreparedService: ReturnType<typeof serviceInvoker>['inspectPrepared']
-  kernel: Kernel
-  memory(workspaceRoot: string, sessionKey: string): MemorySession | undefined
-  seams: SeamImplementations
-  provider: Awaited<ReturnType<typeof buildProvider>>['provider']
-  providerFingerprint: string | null
-  applyModelProfile(next: ResolvedProfile): Promise<void>
-  routes: RouteTable | undefined
-  /** Read-only metadata for installed model adapter factories. */
-  modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
-  observeSession(key: string): () => void
-  observability?: import('@agnes/observability').ObservabilityProvider
-  providers: import('@agnes/extension-api').ProvidersCatalogPort
-  sessionPresetDefault?(): Promise<string | undefined>
-  sessionModelSlots?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
-  sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
-  compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
-  /** Read-only metadata for installed child agent providers. */
-  childAgentCatalog(): ReturnType<typeof childAgentCatalog>
-  compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
-  sessionCapabilities(sessionKey: string, tools?: ToolRegistry): SessionCapabilitySet
-  /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
-  preconfiguredRoutes: readonly string[]
-  presets: Record<string, PresetDoc>
-  runtimes: Partial<Record<'python' | 'typescript', RuntimeFactory>>
-  adapters: AdapterBundle
-  lockedPackageMutations: HostLockedPackageMutationRuntime
-  /** Present only after platform-scoped driver install, signature verification and health checks pass. */
-  computerUse: HostComputerUseStatusSource | undefined
-  /** Native, reachability-checked screenshot collector; absent on unsupported platforms. */
-  computerUseArtifactGc: ComputerUseArtifactGcRuntime | undefined
-  /** Live C1 ordinary Cordis tree containing preset rows and the eight dynamic runtime seams. */
-  intelligentUi: ReturnType<typeof createIntelligentUiBridge>
-  pluginTree: HostPluginTreeBase
-  extHost: ManagedExtHost
-  /** The managed host's extensions and the plugin rows', in the order each was first seen. */
-  extensionStatus(): ExtensionStatus[]
-  rollback: Rollback
-  defaultPreset: { view: PresetView; hash: string }
-  /** Production per-binding constructor used when HostOptions does not supply a test override. */
-  openWorkspaceRuntime(
-    binding: WorkspaceBinding,
-    preset?: PresetDoc,
-    invocation?: import('@agnes/core').WorkspaceInvocationPort,
-  ): Promise<SessionWorkspaceRuntime>
-  /**
-   * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without
-   * restarting the worker process. It does not touch
-   * PackageManager's own IH0-IH10 hot-update path.
-   */
-  reloadEcosystemExtension(
-    id: string,
-    freshInit: Readonly<{ skillResources?: SkillRuntimeInput }>,
-  ): Promise<ExtensionStatus>
-  /** Drive the ext: rows on the tree: the live rows, a row builder, and the second apply. */
-  readonly extensionRows: Readonly<{
-    current(): readonly Readonly<EntryRow>[]
-    prepare(
-      input: Readonly<{
-        extensionId: string
-        entryRevision?: string
-        liveResourceRevision?: string
-        config?: unknown
-        disabled?: boolean
-        /** Supply the extension itself, for a row that exists only at runtime (stage 2b, D107′). */
-        dynamic?: DynamicExtension
-        skillResources?: SkillRuntimeInput | undefined
-      }>,
-    ): Readonly<EntryRow>
-    apply(rows: readonly Readonly<EntryRow>[]): Promise<RuntimeConvergenceReport>
-  }>
-  /** Refresh every row declaring Skills consumption against a newly bootstrapped resource view. */
-  refreshSkillRow(fresh: SkillRuntimeInput | undefined): Promise<void>
-  ordinaryReconciliation: OrdinaryReconciliationLifecycle
-  ordinaryConvergence(): RuntimeConvergenceReport
-  publicationDispatch: PublicationDispatch
-  /** The sole Host publication of a complete RuntimeTarget. It shares this assembly's PublicationGate. */
-  applyRuntimeTarget(target: RuntimeTarget): Promise<RuntimeConvergenceReport>
-  runtimeTargetSnapshot(): RuntimeTarget
-  bindRuntimeSession(sessionKey: string, preset: string): Promise<void>
-  unbindRuntimeSession(sessionKey: string): Promise<void>
-  systemPromptProvider?: (selection?: { id: string; version: string }) => SystemPromptProvider
-  sessionPresetLimits(): { limits?: Record<string, number>; park?: unknown }
-}
-
-// Refuses a second package contributing a name an earlier one already gave. Every other collision
-// in this file is a refusal; these two were an Object.assign, and E_PACKAGE_DUPLICATE already exists.
-const dup = (id: string, k: string, n: string): never => {
-  throw new HostError('E_PACKAGE_DUPLICATE', `${id}: ${k} ${n} is a duplicate`, { detail: { k, source: n } })
-}
-
-/** Rebuild the pure preset catalogue from the exact package modules selected for this Host generation. */
-function collectPresets(
-  modules: ReadonlyMap<string, PackageModule>,
-  profileConsent: ReturnType<typeof readProfileTelemetryConsent>,
-  profile: ResolvedProfile,
-): Record<string, PresetDoc> {
-  const presets: Record<string, PresetDoc> = {}
-  for (const module of modules.values())
-    for (const [name, document] of Object.entries(module.presets ?? {}))
-      presets[name] =
-        name in presets ? dup(module.id, 'preset', name) : applyTelemetryConsent(document, profileConsent)
-  for (const [name, doc] of Object.entries(profile.bundlePresets ?? {}))
-    presets[name] = applyTelemetryConsent(mergeValue(presets[name], doc) as PresetDoc, profileConsent)
-  return presets
-}
-
-/** Preserve the startup preset contract on every runtime snapshot reconciliation. */
-function validatePresetCatalog(
-  profile: ResolvedProfile,
-  presets: Record<string, PresetDoc>,
-): ReturnType<typeof resolvePreset> {
-  for (const name of profile.presets.allowed)
-    if (!presets[name]) {
-      throw new HostError('E_PRESET_UNSUPPORTED', `no package provides preset ${name}`, {
-        detail: { capability: 'preset', source: name },
-      })
-    }
-  return resolvePreset(profile.presets.default, presets, { limits: profile.limits })
-}
 
 export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
-  const workspaceInvocationFor: WorkspaceInvocationResolver =
-    deps.workspaceInvocationFor ??
-    (() => {
-      throw Object.assign(new Error('E_WORKSPACE_REQUIRED: session has no workspace invocation'), {
-        code: 'E_WORKSPACE_REQUIRED',
-      })
-    })
-  deps.signal?.throwIfAborted()
-  const providerSelections = readProviderSelections(profile)
-  profile = applyProviderSelections(profile, providerSelections)
-  profile = withAssemblyIsolation(profile, deps.extensionIsolation)
-  const { dataDir, workspaceRoot } = deps
-  const rollback = new Rollback()
-  const clock = deps.clock ?? (() => Date.now())
-  const env = deps.env ?? process.env
-  validateExtensionIsolation(profile.extensionIsolation)
-  const ac = new AbortController()
-  const activationBarrier = deps.activationBarrier ?? createExtensionActivationBarrier()
-  deps.signal?.addEventListener('abort', () => ac.abort(), { once: true })
-  // One call ends a step and names the next, so the sequence reads off the body and the crash point
-  // is unambiguously "after this step's work, before the next step's".
-  const done = (next: string): void => {
-    if (deps.crashAt === step) throw new Error(`crash:${step}`)
-    step = next
-  }
-  const say = (kind: string, detail: Record<string, unknown>): void => deps.audit.write({ kind, detail })
-  const refuse = (code: HostErrorCode, msg: string, detail: Record<string, unknown>): never => {
-    throw new HostError(code, msg, { detail })
-  }
-  const fail = async (s: string, e: unknown): Promise<never> => {
-    const failed = await rollback.unwind()
-    const msg = e instanceof Error ? e.message : String(e)
-    const err =
-      e instanceof HostError
-        ? e
-        : new HostError('E_SEAM_INIT', msg, {
-            detail: {
-              step: s,
-              ...(e instanceof ProviderError
-                ? { reason: e.code.slice(2).toLowerCase().replaceAll('_', '-') }
-                : {}),
-            },
-          })
-    say('startup.failed', { step: s, code: err.code, message: err.message, rollbackFailed: failed })
-    throw err
-  }
-  let step: string = 'packages'
+  const ctx = createAssemblyContext(profile, deps)
+  const {
+    dataDir,
+    workspaceRoot,
+    rollback,
+    clock,
+    env,
+    say,
+    refuse,
+    done,
+    activationBarrier,
+    workspaceInvocationFor,
+    providerSelections,
+  } = ctx
+  const ac = ctx.abort
+  const { hotPolicy, quietState, publicationGate, runtimeMutationGate, publicationDispatch } = ctx.gates
   try {
     mkdirSync(join(dataDir, 'tmp'), { recursive: true, mode: 0o700 })
-    // 2 packages
-    const enabled = profile.packages.filter((p) => p.enabled)
-    const runtimeModuleCache = new Map<string, Promise<LoadedRuntimePackage | undefined>>()
-    const loadRuntimeModule = (
-      source: Readonly<RuntimePluginSnapshot>,
-    ): Promise<LoadedRuntimePackage | undefined> => {
-      const key = `${source.snapshot.packageId}\0${source.snapshot.snapshotId}`
-      const existing = runtimeModuleCache.get(key)
-      if (existing) return existing
-      if (!deps.extensionLoader) return Promise.resolve(undefined)
-      const loading = loadRuntimePackage(source, deps.extensionLoader).catch((error) => {
-        runtimeModuleCache.delete(key)
-        throw error
-      })
-      runtimeModuleCache.set(key, loading)
-      return loading
-    }
-    const loadRuntimeSelection = async (
-      sources: readonly Readonly<RuntimePluginSnapshot>[],
-    ): Promise<Map<string, LoadedRuntimePackage>> => {
-      const selected = new Map<string, LoadedRuntimePackage>()
-      if (!sources.length) return selected
-      if (!deps.extensionLoader) {
-        throw new HostError('E_EXT_LOAD', 'runtime plugin snapshots need a module loader', {
-          detail: { reason: 'runtime-plugin-loader' },
-        })
-      }
-      return prepareRuntimeSelection(sources, deps, profile.name, loadRuntimeModule)
-    }
-    const activeRuntimeSources = Object.freeze([...(deps.runtimePluginSnapshots ?? [])])
-    const runtimePackageIds = new Set(activeRuntimeSources.map(({ snapshot }) => snapshot.packageId))
-    const managedExtensionPackages = new Set(deps.managedExtensionPackageIds ?? [])
-    // Resolve every authorized location before importing any module. The supplied map can include
-    // cached or disabled packages; neither their exports nor their bundled extensions may run.
-    const dirs = new Map<string, string>()
-    for (const { id, trust } of enabled) {
-      if (dirs.has(id))
-        refuse('E_PACKAGE_DUPLICATE', 'multiple enabled entries for one package', { package: id })
-      if (trust !== 'builtin' && !runtimePackageIds.has(id))
-        throw new HostError('E_EXT_LOAD', 'trusted package has no immutable runtime snapshot', {
-          detail: { package: id, reason: 'snapshot-unavailable' },
-        })
-      const dir = deps.packageDirs === undefined ? dataDir : deps.packageDirs.get(id)
-      if (!dir)
-        throw new HostError('E_DEP_MISSING', `enabled package ${id} has no package directory`, {
-          detail: { package: id },
-        })
-      dirs.set(id, dir)
-    }
-    for (const [name, pkg] of Object.entries(profile.seams))
-      if (name !== 'platform' && !dirs.has(pkg))
-        refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
-    const inventory = isolationInventory(profile, deps, dirs)
-    const runtimePackages = await loadRuntimeSelection(activeRuntimeSources)
-    const modules = new Map<string, PackageModule>()
-    for (const [id, dir] of dirs)
-      modules.set(
-        id,
-        runtimePackages.get(id)?.module ??
-          (runtimePackageIds.has(id) || managedExtensionPackages.has(id)
-            ? { id, extensionEntry: dir }
-            : await deps.loader.importPackage(id, dir)),
-      )
-    deps.onGenerationBasePackages?.(
-      [...modules]
-        .filter(
-          ([, module]) =>
-            module.persistenceProvider && module.persistenceProvider.id === profile.persistence?.provider,
-        )
-        .map(([id]) => id),
-    )
+    const pkgs = await loadPackages(ctx)
+    const {
+      dirs,
+      modules,
+      runtimePackages,
+      runtimePackageIds,
+      activeRuntimeSources,
+      inventory,
+      loadRuntimeModule,
+    } = pkgs
     done('adapters')
 
-    // 3 adapters - the fs fence opens on the bootstrap policy (workspace allow plus the
-    // host-integrity hard denies), which is what trusted seam factories run against. The sandbox
-    // seam's full policy replaces it after step 5, in one binding, before anything else is built.
-    const backend = deps.platform ? { platform: deps.platform } : {}
-    const sandboxProviderSlot: SandboxProviderSlot = {}
-    // Filled once the Skill generation exists; the fence asks through it on every read.
-    let skillReadRoots: () => readonly string[] = () => []
-    const adapters = await openAdapters(profile, {
-      dataDir,
-      skillReadRoots: () => skillReadRoots(),
-      fullAccessReadOnlyRoots: () =>
-        ownStateRoots({
-          profileDir: deps.profileDir,
-          dataDir,
-          secretsDir: profile.adapters.secrets.path,
-        }),
-      modules,
-      signal: ac.signal,
-      workspaceRoot,
-      ...(deps.env ? { env: deps.env } : {}),
-      ...(deps.windowsNodeExecutable !== undefined
-        ? { windowsNodeExecutable: deps.windowsNodeExecutable }
-        : {}),
-      sandboxDispatch: sandboxProviderSlot,
-      ...backend,
-    })
-    rollback.push('adapters', () => adapters.close())
-    const gitWorktrees = createSessionGitWorktreeService({
-      workspaceInvocationFor,
-      dataDir,
-      remote: adapters.transport !== undefined,
-      signal: ac.signal,
-    })
-    if (hasChildControl(adapters.storage)) {
-      const now = clock()
-      await recoverCreatingChildAttempts(adapters.storage, { staleBefore: now, now })
-    }
-    const lockedPackageMutations = await createHostLockedPackageMutationRuntime(
-      adapters.storage,
-      deps.lockedPackageMutations,
-    )
-    rollback.push('computer-use-locked-package-mutations', () => lockedPackageMutations.close())
-    const secrets = (ref: string): string => adapters.secrets.resolve(ref)
-    const nativePlatform = createPlatform().os
+    const {
+      adapters,
+      sandboxProviderSlot,
+      skillReadRoots,
+      gitWorktrees,
+      lockedPackageMutations,
+      secrets,
+      nativePlatform,
+    } = await openProcessServices(ctx, pkgs)
     done('presets')
 
-    // 4 presets - resolved before the seams, because SeamInitContext.profile.preset carries the
-    // merged document and the provider needs the route table read off the view.
-    // Last-writer-wins was the one collision in this assembly that was not a refusal, and "later"
-    // was nothing better than profile.packages order: two packages providing a preset or a runtime
-    // of the same name silently produced whichever the profile happened to list second.
-    const profileConsent = readProfileTelemetryConsent(deps.profileDir)
-    const presets = Object.fromEntries(
-      Object.entries(collectPresets(modules, profileConsent, profile)).map(([name, doc]) => [
-        name,
-        applyProviderPreset(doc, providerSelections),
-      ]),
-    )
-    const defaultPreset = validatePresetCatalog(profile, presets)
+    const { presets, defaultPreset, profileConsent } = resolvePresetCatalog(ctx, pkgs)
     done('seams')
-
     // 5 seams
     const seamProfile: SeamProfileView = {
-      name: profile.name,
-      resolvedProfileHash: profile.hash,
+      name: ctx.profile.name,
+      resolvedProfileHash: ctx.profile.hash,
       dataDir,
       workspaceRoot,
       homeDir: deps.homeDir ?? homedir(),
-      limits: profile.limits,
+      limits: ctx.profile.limits,
       preset: defaultPreset.doc,
     }
     const baseContext = (owner: string): SeamInitContext => ({
@@ -683,31 +327,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       signal: ac.signal,
       seamTimeoutMs: deps.seamTimeoutMs ?? 30_000,
     })
-    // Keep ordinary artifact writes and Host startup unchanged until Computer Use is enabled. Once
-    // screenshots have existed, retain the coordinated writer and collector while disabled so old
-    // private artifacts can still expire without racing a same-digest write in the shared CAS.
-    let computerUseArtifactMetadataPresent = false
-    try {
-      lstatSync(join(dataDir, 'artifacts', 'computer-use-meta'))
-      computerUseArtifactMetadataPresent = true
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-    const computerUseArtifactRetentionRequired =
-      profile.computerUse.enabled || computerUseArtifactMetadataPresent
+    const retention = inspectComputerUseArtifacts({
+      profile: ctx.profile,
+      dataDir,
+      platform: adapters.platform,
+      nativePlatform,
+      clock,
+      log: deps.log,
+    })
     const contextFor = (owner: string, seamName: SeamName): { context: SeamInitContext; cleanup(): void } => {
       const context = {
         ...baseContext(owner),
-        ...(computerUseArtifactRetentionRequired &&
-        owner === '@agnes/base' &&
-        seamName === 'artifacts' &&
-        adapters.platform.os === nativePlatform &&
-        (adapters.platform.os === 'win32' ||
-          adapters.platform.os === 'darwin' ||
-          adapters.platform.os === 'linux') &&
-        privateArtifactDeleteAvailable()
-          ? { privateArtifactStore: createPrivateArtifactStore(dataDir, adapters.platform.os) }
-          : {}),
+        ...retention.contextFor(owner, seamName),
       }
       // Only the sandbox factory is handed the path-policy canonicalizer and a probe exec, and the
       // probe dies with the factory. Every other seam gets the plain context - and the
@@ -716,12 +347,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       const { services, revoke } = sandboxHostServices(adapters)
       return { context: { ...context, sandboxHost: services }, cleanup: revoke }
     }
-    const staticSeams = await initStaticSeams(profile, modules, contextFor, {
+    const staticSeams = await initStaticSeams(ctx.profile, modules, contextFor, {
       timeoutMs: deps.seamTimeoutMs ?? 30_000,
       platform: adapters.platform,
       rollback,
     })
-    const sandboxPackage = modules.get(profile.seams.sandbox)
+    const sandboxPackage = modules.get(ctx.profile.seams.sandbox)
     const workspaceProbe = sandboxPackage?.sandboxWorkspaceProbe
     const rawProbe = adapters.createProbeExec()
     rollback.push('workspace-sandbox-probe', () => rawProbe.revoke())
@@ -743,9 +374,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             })
           },
         })
-      const providerId = sandboxProviderIdFrom(profile)
+      const providerId = sandboxProviderIdFrom(ctx.profile)
       if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
-        await bindStartupSandboxProvider(sandboxProviderSlot, profile, plan.policy.workspaceRoot, false)
+        await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, false)
         const selected = sandboxProviderSlot.selected
         if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
         const capabilities = selected.capabilities
@@ -841,7 +472,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               home: dirname(dirname(deps.profileDir)),
               dataDir,
               profileDir: deps.profileDir,
-              ...(profile.adapters?.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
+              ...(ctx.profile.adapters?.secrets.path
+                ? { secretsDir: ctx.profile.adapters.secrets.path }
+                : {}),
             }),
             semantics: sessionFence.semantics,
             staticConfig: sandboxConfig,
@@ -856,7 +489,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         bindReadiness: ({ workspace, plan }) =>
           readinessManager.bind(
             {
-              backendId: profile.seams.sandbox,
+              backendId: ctx.profile.seams.sandbox,
               canonicalRoot: workspace.root,
               staticConfigHash: plan.staticConfigHash,
               caseSensitive: plan.semantics.caseSensitive,
@@ -895,7 +528,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             })
           const providerId = await bindStartupSandboxProvider(
             sandboxProviderSlot,
-            profile,
+            ctx.profile,
             runtime.root,
             adapters.transport !== undefined,
           )
@@ -940,7 +573,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [],
     )
     let availableSkillResources = deps.skillResources
-    let preloadSkills = compositionSkills(deps.skillResources, profile.composition ?? {}, skillOwners)
+    let preloadSkills = compositionSkills(deps.skillResources, ctx.profile.composition ?? {}, skillOwners)
     let activeSkillResources = preloadSkills
     // Shared workers discover workspace Skills lazily inside a session invocation. Their global
     // list() can stay empty while the workspace catalogue changes, so an unchanged row must still
@@ -963,7 +596,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       agnesHome: dirname(dataDir),
       dataDir,
     }
-    skillReadRoots = () =>
+    skillReadRoots.current = () =>
       safeSkillReadRoots(preloadSkills?.readRoots?.() ?? [], {
         ...skillReadContext,
         generationRoot: join(deps.profileDir, '.runtime-generations'),
@@ -995,20 +628,20 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       runtimeRegistryRevision?: string,
     ): CurrentSessionRuntime => {
       const runtime = rawSessionRuntime(sessionKey, runtimeRegistryRevision)
-      if (!profile.composition) return runtime
+      if (!ctx.profile.composition) return runtime
       return {
         ...runtime,
         tools: compositionTools(
           runtime.tools,
-          profile.composition ?? {},
-          profile.compositionToolScope,
+          ctx.profile.composition ?? {},
+          ctx.profile.compositionToolScope,
           (tools) => sessionCapabilities(sessionKey, tools),
         ),
       }
     }
     const builtSeams = buildSeamRows({
       ...(deps.generationBuiltinRows ? { generationBuiltinRows: deps.generationBuiltinRows } : {}),
-      profile,
+      profile: ctx.profile,
       modules,
       preset: defaultPreset.doc,
       contextFor: (owner, name) => contextFor(owner, name).context,
@@ -1024,7 +657,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         (module.plugins ?? []).map((plugin) => [plugin.declaration.id, module.id] as const),
       ),
     )
-    const builtOrdinary = buildOrdinaryRows(profile, compositionModules, deps.ordinaryPluginLayers)
+    const builtOrdinary = buildOrdinaryRows(ctx.profile, compositionModules, deps.ordinaryPluginLayers)
     // `activeBuiltinClaims` is a `let` because ext: rows can only be built much further down, after
     // the managed ext host and the bundled-extension finder exist. `staticClaims` below is already a
     // thunk, so reassigning here is picked up by the publisher.
@@ -1049,7 +682,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const extensionInfo = {
       agnesVersion: deps.agnesVersion ?? '0.0.0',
       apiVersion: API_VERSION,
-      profileName: profile.name,
+      profileName: ctx.profile.name,
     }
     const extensionOrder = createExtensionOrder()
     // Which supplier holds an `ext:` row id: shared by builtin rows and plugin rows that replace them.
@@ -1135,7 +768,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return loaded?.module
       },
       trust: (source) => {
-        const resolved = profile.packages.find((pkg) => pkg.id === source.snapshot.packageId)
+        const resolved = ctx.profile.packages.find((pkg) => pkg.id === source.snapshot.packageId)
         if (resolved?.trust === 'builtin' || resolved?.trust === 'trusted') return resolved.trust
         // A package the user trusted after this Host booted is not in the boot profile.
         return source.trusted ? 'trusted' : undefined
@@ -1153,7 +786,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             const providers = installProviders(root)
             extensionServices.current?.attachBinder(providers)
             providers.configurationSource((entry) =>
-              providerConfigurationScopes(entry, profile, defaultPreset.view),
+              providerConfigurationScopes(entry, ctx.profile, defaultPreset.view),
             )
             const persistence = persistenceProviderRegistry(adapters.storage)
             if (persistence) providers.add(persistence)
@@ -1193,7 +826,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           afterApply: () => {
             const backend = sandboxProviderSlot.registry
               ?.catalog()
-              .find((entry) => entry.id === profile.sandbox?.provider)
+              .find((entry) => entry.id === ctx.profile.sandbox?.provider)
             if (backend) deps.onGenerationBasePackages?.([backend.sourcePackage])
             if (kernel) kernel.invalidateSeams()
           },
@@ -1244,7 +877,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     intelligentUi = createIntelligentUiBridge({
       extensionHost: extensionServices.current,
       profileDir: deps.profileDir,
-      profileName: profile.name,
+      profileName: ctx.profile.name,
       agnesVersion: deps.agnesVersion ?? '0.0.0',
       sessionGeneration: (key) => deps.sessionGeneration?.(key),
       session: (key) => kernel?.get(key),
@@ -1345,7 +978,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       rows: [
         ...bootTreeRows,
         ...activeRuntimeSources.flatMap((source) =>
-          profile.packages.some((pkg) => pkg.id === source.snapshot.packageId && pkg.enabled)
+          ctx.profile.packages.some((pkg) => pkg.id === source.snapshot.packageId && pkg.enabled)
             ? developmentPluginRows(source, bootTreeRows).filter((row) => row.id.startsWith('web:'))
             : [],
         ),
@@ -1415,410 +1048,21 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ...packageSeams,
       approval: approvalGrantControl.bind(packageSeams.approval),
     }
-    let computerUseArtifactGc: ComputerUseArtifactGcRuntime | undefined
-    const startComputerUseArtifactGc = () => {
-      if (
-        !computerUseArtifactGc &&
-        (adapters.platform.os === 'win32' ||
-          adapters.platform.os === 'darwin' ||
-          adapters.platform.os === 'linux') &&
-        adapters.platform.os === nativePlatform &&
-        privateArtifactDeleteAvailable()
-      ) {
-        computerUseArtifactGc = createComputerUseArtifactGcRuntime({
-          dataDir,
-          retention: profile.computerUse.retention,
-          clock,
-          onError: (error) =>
-            deps.log.error('Computer Use artifact GC failed closed', {
-              message: error instanceof Error ? error.message : String(error),
-            }),
-          onPressure: (pressure) => deps.log.warn('Computer Use artifact storage is above its cap', pressure),
-        })
-      }
-    }
-    // Old screenshots still need collection even if the feature was disabled. A fresh profile
-    // should not open retention databases or start a collector before ever using the driver.
-    if (computerUseArtifactMetadataPresent) startComputerUseArtifactGc()
-    rollback.push('computer-use-artifact-gc', () => computerUseArtifactGc?.close())
-    const initializeComputerUse = async (initializationSignal: AbortSignal) => {
-      let activeComputerUseBackendProvider: ComputerUseBackendProvider | undefined
-      let computerUseBackendProvider: ComputerUseBackendProvider
-      let computerUseStatus: HostComputerUseStatusSource
-      if (
-        adapters.platform.os !== 'win32' &&
-        adapters.platform.os !== 'darwin' &&
-        adapters.platform.os !== 'linux'
-      )
-        throw new HostError('E_SEAM_INIT', 'Computer Use production driver is not admitted on this platform')
-      if (profile.computerUse.appAccess === 'allowlist' && profile.computerUse.appAllowlist.length === 0)
-        throw new HostError('E_SEAM_INIT', 'Computer Use requires at least one stable application identity')
-      const runtimeArchitecture = adapters.platform.snapshot().arch
-      if (
-        runtimeArchitecture !== 'x64' &&
-        runtimeArchitecture !== 'x86_64' &&
-        runtimeArchitecture !== 'arm64'
-      )
-        throw new HostError(
-          'E_SEAM_INIT',
-          'Computer Use production driver is not admitted on this architecture',
-        )
-      const admission = evaluateFixedComputerUsePlatformAdmission(adapters.platform.os, runtimeArchitecture)
-      if (!admission.allowed)
-        throw new HostError('E_SEAM_INIT', 'Computer Use production driver admission is blocked', {
-          detail: { blockers: admission.blockers },
-        })
-      const inspectedDriverLock = inspectComputerUseDriverLock(fixedComputerUseDriverLock)
-      if (!inspectedDriverLock.ok) throw new HostError('E_SEAM_INIT', 'Computer Use driver lock is invalid')
-      const driverRoot = join(dataDir, 'computer-use', 'driver')
-      const artifactSink = {
-        put: (bytes: Uint8Array, meta: { mime: 'image/png' | 'image/jpeg'; name: string }) =>
-          seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }),
-      }
-      const runtimePlatform = adapters.platform.os
-      let runtimeVersion: string
-      let runtimePublisher: string
-      let preparationOutcome: 'installed' | 'already-current' | 'lkg-restored'
-      let probeHealth: (params: ComputerUseDoctorParams) => Promise<void>
-      let readPermissions: HostComputerUseStatusSource['permissionsStatus'] = async () => null
-      let grantPermissions: HostComputerUseStatusSource['permissionsGrant'] = async () => null
-      let createCurrentProvider: () => ComputerUseBackendProvider
-      let installCandidate: (signal: AbortSignal) => Promise<
-        Readonly<{
-          provider: ComputerUseBackendProvider
-          commit(): void
-          outcome: 'installed' | 'already-current' | 'repaired' | 'lkg-restored'
-        }>
-      >
-      if (adapters.platform.os === 'win32') {
-        const installed = await installOrUpdateLockedWindowsComputerUseDriver({
-          root: driverRoot,
-          lock: inspectedDriverLock.lock,
-          signal: initializationSignal,
-        })
-        preparationOutcome = installed.usedLastKnownGood
-          ? 'lkg-restored'
-          : installed.installed
-            ? 'installed'
-            : 'already-current'
-        let currentDriver = installed.verified
-        const buildProvider = (driver: typeof installed.verified) =>
-          createWindowsComputerUseBackendProvider({
-            driver,
-            profile: profile.computerUse,
-            profileHash: profile.hash,
-            artifacts: artifactSink,
-          })
-        const configure = (driver: typeof installed.verified) => {
-          currentDriver = driver
-          runtimeVersion = driver.version
-          runtimePublisher = driver.publisher
-          probeHealth = async (params) => {
-            await doctorLockedWindowsComputerUseDriver({
-              directory: dirname(driver.executablePath),
-              lock: inspectedDriverLock.lock,
-              signal: initializationSignal,
-              selectors: params,
-            })
-          }
-        }
-        configure(currentDriver)
-        activeComputerUseBackendProvider = buildProvider(currentDriver)
-        createCurrentProvider = () => buildProvider(currentDriver)
-        installCandidate = async (signal) => {
-          const priorPath = currentDriver.executablePath
-          const result = await installOrUpdateLockedWindowsComputerUseDriver({
-            root: driverRoot,
-            lock: inspectedDriverLock.lock,
-            signal,
-          })
-          const driver = result.verified
-          return Object.freeze({
-            provider: buildProvider(driver),
-            commit: () => configure(driver),
-            outcome: result.usedLastKnownGood
-              ? ('lkg-restored' as const)
-              : result.installed
-                ? driver.executablePath === priorPath
-                  ? ('repaired' as const)
-                  : ('installed' as const)
-                : ('already-current' as const),
-          })
-        }
-      } else if (adapters.platform.os === 'darwin') {
-        const installed = await installOrUpdateLockedMacOSComputerUseDriver({
-          root: driverRoot,
-          lock: inspectedDriverLock.lock,
-          signal: initializationSignal,
-        })
-        preparationOutcome = installed.usedLastKnownGood
-          ? 'lkg-restored'
-          : installed.installed
-            ? 'installed'
-            : 'already-current'
-        let currentDriver = installed.verified
-        const buildProvider = (driver: typeof installed.verified) =>
-          createMacOSComputerUseBackendProvider({
-            driver,
-            profile: profile.computerUse,
-            profileHash: profile.hash,
-            artifacts: artifactSink,
-          })
-        const configure = (driver: typeof installed.verified) => {
-          currentDriver = driver
-          runtimeVersion = driver.version
-          runtimePublisher = driver.authority
-          probeHealth = async (params) => {
-            await doctorLockedMacOSComputerUseDriver({
-              directory: dirname(driver.executablePath),
-              lock: inspectedDriverLock.lock,
-              signal: initializationSignal,
-              selectors: params,
-            })
-          }
-          let pendingPermissionProbe:
-            | Promise<Readonly<{ accessibility: boolean; screenRecording: boolean }>>
-            | undefined
-          readPermissions = () => {
-            pendingPermissionProbe ??= probeMacOSComputerUsePermissions({
-              driver,
-              signal: initializationSignal,
-            }).finally(() => {
-              pendingPermissionProbe = undefined
-            })
-            return pendingPermissionProbe
-          }
-          let pendingPermissionGrant:
-            | Promise<Readonly<{ accessibility: boolean; screenRecording: boolean }>>
-            | undefined
-          grantPermissions = () => {
-            pendingPermissionGrant ??= grantMacOSComputerUsePermissions({
-              driver,
-              signal: initializationSignal,
-            })
-              .then(() => readPermissions())
-              .then((status) => {
-                if (!status) throw new Error('Computer Use macOS permission status is unavailable')
-                return status
-              })
-              .finally(() => {
-                pendingPermissionGrant = undefined
-              })
-            return pendingPermissionGrant
-          }
-        }
-        configure(currentDriver)
-        activeComputerUseBackendProvider = buildProvider(currentDriver)
-        createCurrentProvider = () => buildProvider(currentDriver)
-        installCandidate = async (signal) => {
-          const priorPath = currentDriver.executablePath
-          const result = await installOrUpdateLockedMacOSComputerUseDriver({
-            root: driverRoot,
-            lock: inspectedDriverLock.lock,
-            signal,
-          })
-          const driver = result.verified
-          return Object.freeze({
-            provider: buildProvider(driver),
-            commit: () => configure(driver),
-            outcome: result.usedLastKnownGood
-              ? ('lkg-restored' as const)
-              : result.installed
-                ? driver.executablePath === priorPath
-                  ? ('repaired' as const)
-                  : ('installed' as const)
-                : ('already-current' as const),
-          })
-        }
-      } else {
-        const installed = await installOrUpdateLockedLinuxComputerUseDriver({
-          root: driverRoot,
-          lock: inspectedDriverLock.lock,
-          signal: initializationSignal,
-        })
-        preparationOutcome = installed.usedLastKnownGood
-          ? 'lkg-restored'
-          : installed.installed
-            ? 'installed'
-            : 'already-current'
-        let currentDriver = installed.verified
-        const buildProvider = (driver: typeof installed.verified) =>
-          createLinuxComputerUseBackendProvider({
-            driver,
-            profile: profile.computerUse,
-            profileHash: profile.hash,
-            artifacts: artifactSink,
-          })
-        const configure = (driver: typeof installed.verified) => {
-          currentDriver = driver
-          runtimeVersion = driver.version
-          runtimePublisher = `${driver.provenanceIssuer}#${driver.provenanceSubject}`
-          probeHealth = async (params) => {
-            await doctorLockedLinuxComputerUseDriver({
-              directory: dirname(driver.executablePath),
-              lock: inspectedDriverLock.lock,
-              signal: initializationSignal,
-              selectors: params,
-            })
-          }
-        }
-        configure(currentDriver)
-        activeComputerUseBackendProvider = buildProvider(currentDriver)
-        createCurrentProvider = () => buildProvider(currentDriver)
-        installCandidate = async (signal) => {
-          const priorPath = currentDriver.executablePath
-          const result = await installOrUpdateLockedLinuxComputerUseDriver({
-            root: driverRoot,
-            lock: inspectedDriverLock.lock,
-            signal,
-          })
-          const driver = result.verified
-          return Object.freeze({
-            provider: buildProvider(driver),
-            commit: () => configure(driver),
-            outcome: result.usedLastKnownGood
-              ? ('lkg-restored' as const)
-              : result.installed
-                ? driver.executablePath === priorPath
-                  ? ('repaired' as const)
-                  : ('installed' as const)
-                : ('already-current' as const),
-          })
-        }
-      }
-      const requireProvider = (): ComputerUseBackendProvider => {
-        if (!activeComputerUseBackendProvider) throw new Error('Computer Use backend is restarting')
-        return activeComputerUseBackendProvider
-      }
-      computerUseBackendProvider = Object.freeze({
-        acquire: (session, signal) => requireProvider().acquire(session, signal),
-        release: (session) => requireProvider().release(session),
-        setPermissionMode: (session, mode) => requireProvider().setPermissionMode(session, mode),
-        status: () => requireProvider().status(),
-        async dispose() {
-          const provider = activeComputerUseBackendProvider
-          activeComputerUseBackendProvider = undefined
-          await provider?.dispose()
-        },
-      })
-      const replaceProvider = async (candidate: ComputerUseBackendProvider) => {
-        const previous = requireProvider()
-        if (previous.status().activeSessions !== 0) {
-          await candidate.dispose()
-          throw new Error('Computer Use driver operation requires all sessions to be closed')
-        }
-        activeComputerUseBackendProvider = undefined
-        try {
-          await previous.dispose()
-        } catch (error) {
-          await candidate.dispose().catch(() => undefined)
-          // A provider close can fail after partially tearing down its runtime. Recreate the same
-          // already-verified driver so one failed maintenance attempt cannot strand this Host with
-          // no usable provider. If recovery itself fails, remaining unavailable is fail-closed.
-          try {
-            activeComputerUseBackendProvider = createCurrentProvider()
-          } catch {
-            activeComputerUseBackendProvider = undefined
-          }
-          throw error
-        }
-        activeComputerUseBackendProvider = candidate
-      }
-      const operations = createComputerUseDriverOperationRuntime({
-        async install(_kind, input) {
-          input.phase('installing')
-          const candidate = await installCandidate(input.signal)
-          try {
-            input.signal.throwIfAborted()
-            input.phase('restarting')
-            await replaceProvider(candidate.provider)
-            candidate.commit()
-            return candidate.outcome
-          } catch (error) {
-            if (activeComputerUseBackendProvider !== candidate.provider)
-              await candidate.provider.dispose().catch(() => undefined)
-            throw error
-          }
-        },
-        async restart(input) {
-          input.signal.throwIfAborted()
-          input.phase('restarting')
-          await replaceProvider(createCurrentProvider())
-          return 'restarted'
-        },
-      })
-      const pendingDoctors = new Map<string, Promise<void>>()
-      const doctor = (params: ComputerUseDoctorParams = {}) => {
-        const key = JSON.stringify(params)
-        const pending = pendingDoctors.get(key)
-        if (pending) return pending
-        const running = probeHealth(params).finally(() => {
-          pendingDoctors.delete(key)
-        })
-        pendingDoctors.set(key, running)
-        return running
-      }
-      computerUseStatus = Object.freeze({
-        status: () => {
-          const runtime = activeComputerUseBackendProvider?.status() ?? {
-            activeSessions: 0,
-            startAttempted: true,
-          }
-          return Object.freeze({
-            platform: runtimePlatform,
-            version: runtimeVersion,
-            publisher: runtimePublisher,
-            ...runtime,
-          })
-        },
-        doctor,
-        permissionsStatus: () => readPermissions(),
-        permissionsGrant: () => grantPermissions(),
-        setSessionYolo: (session: Readonly<{ key: string; lane: string }>, enabled: boolean) =>
-          computerUseBackendProvider?.setPermissionMode(session, enabled ? 'unrestricted' : 'standard') ??
-          Promise.reject(new Error('Computer Use backend is unavailable')),
-        operationStart: (kind) => {
-          if (activeComputerUseBackendProvider?.status().activeSessions !== 0)
-            throw new Error('Computer Use driver operation requires all sessions to be closed')
-          return operations.start(kind)
-        },
-        operationStatus: (operationId) => operations.status(operationId),
-        operationCancel: (operationId) => operations.cancel(operationId),
-      })
-      startComputerUseArtifactGc()
-      return {
-        backend: computerUseBackendProvider,
-        controls: computerUseStatus,
-        preparationOutcome,
-        async dispose() {
-          await operations.close()
-          await computerUseBackendProvider?.dispose()
-        },
-      }
-    }
-    const computerUseArchitecture = adapters.platform.snapshot().arch
-    const computerUseAdmission =
-      computerUseArchitecture === 'x64' ||
-      computerUseArchitecture === 'x86_64' ||
-      computerUseArchitecture === 'arm64'
-        ? evaluateFixedComputerUsePlatformAdmission(adapters.platform.os, computerUseArchitecture)
-        : { allowed: false }
-    const lazyComputerUse = createLazyComputerUseRuntime({
-      ...(!profile.computerUse.enabled
-        ? { unavailable: 'feature-disabled' as const }
-        : !computerUseAdmission.allowed
-          ? { unavailable: 'platform-unsupported' as const }
-          : {}),
-      initialize: initializeComputerUse,
+    const computerUse = mountComputerUse({
+      profile: ctx.profile,
+      dataDir,
+      platform: adapters.platform,
+      retention,
+      artifacts: {
+        put: (bytes, meta) => seams.artifacts.put(bytes, { mime: meta.mime, name: meta.name }),
+      },
+      rollback,
     })
-    const computerUseBackendProvider = profile.computerUse.enabled ? lazyComputerUse.backend : undefined
-    const computerUseStatus = lazyComputerUse.controls
-    rollback.push('computer-use', () => lazyComputerUse.dispose())
-    say('seams.assembled', { seams: profile.seams, fsDigest: adapters.fs.fence().digest })
+    say('seams.assembled', { seams: ctx.profile.seams, fsDigest: adapters.fs.fence().digest })
     let privacyTrajectory: SeamInitContext['privacyTrajectory']
     const hookCommands =
       adapters.platform.os === 'win32'
-        ? trustedHookCommands(profile.commandHooks, workspaceRoot, adapters.platform.fs())
+        ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
         : undefined
     // Factored out so a reload can build the same shape of context
     // against a caller-supplied fresh resource snapshot instead of the boot-time `deps` one, without
@@ -1865,31 +1109,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(owner === '@agnes/base' && extensionId === 'agnes/schedule'
           ? { scheduleTables: lazyPackageTables(adapters.storage, '@agnes/daemon') }
           : {}),
-        ...(extensionRowGrantFor(owner, extensionId)?.computerUse && computerUseBackendProvider
-          ? {
-              // Extension unload calls provider.dispose(). The lazy runtime's dispose closes the
-              // host-lifetime driver, so a row reload would make later sessions fail closed.
-              computerUseBackendProvider: {
-                acquire: (...args: Parameters<typeof computerUseBackendProvider.acquire>) =>
-                  computerUseBackendProvider.acquire(...args),
-                release: (...args: Parameters<typeof computerUseBackendProvider.release>) =>
-                  computerUseBackendProvider.release(...args),
-                setPermissionMode: (
-                  ...args: Parameters<typeof computerUseBackendProvider.setPermissionMode>
-                ) => computerUseBackendProvider.setPermissionMode(...args),
-                status: () => computerUseBackendProvider.status(),
-                dispose: async () => undefined,
-              },
-              computerUseOptions: {
-                captureAfterMode: 'som' as const,
-                autoCaptureAfterActions: true,
-                maxImageDimension: profile.computerUse.capture.maxImageDimension,
-                maxBytesPerImage: profile.computerUse.capture.maxBytesPerImage,
-                maxCapturesPerHour: profile.computerUse.capture.maxCapturesPerHour,
-                maxRecentPerSession: profile.computerUse.retention.maxRecentPerSession,
-              },
-            }
-          : {}),
+        ...computerUse.extensionContext(owner, extensionId),
       }
     }
     const ecosystemContext = (owner: string, extensionId: string): SeamInitContext =>
@@ -1901,7 +1121,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // 6 provider - route table first, environment second, credentials third.
     let routes: RouteTable | undefined
     try {
-      routes = materializeRoutes(defaultPreset.view, profile)
+      routes = materializeRoutes(defaultPreset.view, ctx.profile)
     } catch (error) {
       if (
         !(error instanceof HostError) ||
@@ -1910,11 +1130,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       )
         throw error
     }
-    const swept = sweepAwsDestination(env, profile)
+    const swept = sweepAwsDestination(env, ctx.profile)
     say('provider.env_swept', { removed: swept.removed, set: Object.keys(swept.set) })
     const requestTraces = new RequestTraceStore(
-      profile.dataDir,
-      profile.name,
+      ctx.profile.dataDir,
+      ctx.profile.name,
       undefined,
       Date.now,
       (sessionKey) => ({ generationId: deps.sessionGeneration?.(sessionKey) ?? null }),
@@ -1927,7 +1147,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       preconfiguredRoutes,
       dispose: disposeProvider,
     } = routes
-      ? await buildProvider(profile, routes, {
+      ? await buildProvider(ctx.profile, routes, {
           secrets,
           clock,
           log: deps.log,
@@ -1939,7 +1159,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       : unresolvedProviderAssembly()
     rollback.push('model-adapters', () => disposeProvider())
     const contractForModel = bindModelContracts(
-      provider.registry?.models() ?? (profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
+      provider.registry?.models() ??
+        (ctx.profile.provider.routes ?? []).flatMap((route) => route.models ?? []),
       contractStore,
     )
     // createProvider sealed the registry on its way out, so both of these are readable now and
@@ -2004,13 +1225,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       preconfiguredRoutes = built.preconfiguredRoutes
       routes = nextRoutes
       providerFingerprint = built.provider.registry?.fingerprint() ?? null
-      profile = next
+      ctx.profile = next
     }
     const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
     // The credit rate goes on the audit row, null included. An assembly that priced nothing is the
     // one whose ledger reads in dollars, and that has to be legible afterwards from the record the
     // deployment keeps, not only from a warning on a log nobody kept.
-    const creditsPerUsd = readCreditsPerUsd(profile, businessLimit(hotPolicy, 'cost.credits_per_usd')) ?? null
+    const creditsPerUsd =
+      readCreditsPerUsd(ctx.profile, businessLimit(hotPolicy, 'cost.credits_per_usd')) ?? null
     say('provider.assembled', {
       routes: Object.fromEntries(named),
       fingerprint: providerFingerprint,
@@ -2046,7 +1268,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         operations.push(op)
       }
       for (const [n, f] of Object.entries(m.runtimes ?? {}))
-        runtimes[n as keyof Assembled['runtimes']] = n in runtimes ? dup(m.id, 'runtime', n) : f
+        runtimes[n as keyof Assembled['runtimes']] =
+          n in runtimes ? duplicateContribution(m.id, 'runtime', n) : f
     }
     done('kernel')
 
@@ -2063,7 +1286,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       { ttlMs: ROW_BOUND_LEASE_TTL_MS, now: Date.now() },
     )
     rollback.push('observability-lease', () => observabilityLease.revoke('host closed'))
-    const compositionLease = profile.composition
+    const compositionLease = ctx.profile.composition
       ? leaseFor(
           {
             id: 'agnes/composition',
@@ -2077,9 +1300,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       : undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction =
-      profile.composition?.compaction === null
+      ctx.profile.composition?.compaction === null
         ? undefined
-        : await assembleCompaction(pluginTree.root.compactionEngines, profile.compaction)
+        : await assembleCompaction(pluginTree.root.compactionEngines, ctx.profile.compaction)
     const selectedLoop = providerSelections.loop
     const loopFactory = selectedLoop
       ? pluginTree.root.loops.resolve({
@@ -2088,7 +1311,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
       : undefined
     const loop = loopFactory ? { id: loopFactory.id, version: loopFactory.version } : undefined
-    if (loop) profile = { ...profile, loop }
+    if (loop) ctx.profile = { ...ctx.profile, loop }
     const effectiveLoop = loop ?? view.loop ?? DEFAULT_LOOP
     pluginTree.root.providers.select(
       'loop',
@@ -2148,7 +1371,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             systemPrompt: {
               config: async () => ({
                 ...view.model.systemPrompt,
-                ...(await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()),
+                ...(await new SystemPromptSettingsStore(ctx.profile.dataDir, ctx.profile.name).read()),
               }),
               resolve: systemPromptProvider,
             },
@@ -2202,19 +1425,19 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       memoryFor: ({ key, workspaceRoot }) => memory(workspaceRoot, key),
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
-      approvalMode: profile.approvals.mode,
+      approvalMode: ctx.profile.approvals.mode,
       toolPolicySettings: async (basePolicy, signal) =>
         pluginTree.root.providers.resolve('tool-policy', basePolicy).settings?.(
           {
             policy: basePolicy,
-            dataDir: profile.dataDir,
-            profile: profile.name,
-            approvalMode: profile.approvals.mode,
+            dataDir: ctx.profile.dataDir,
+            profile: ctx.profile.name,
+            approvalMode: ctx.profile.approvals.mode,
           },
           signal,
         ) ?? {},
-      ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
-      ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
+      ...(computerUse.hostToolDispatch ? { hostToolDispatch: computerUse.hostToolDispatch } : {}),
+      ...(ctx.profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
       ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),
       clock,
       agnesVersion: deps.agnesVersion ?? '0.0.0',
@@ -2241,7 +1464,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             lane: session.lane,
             workspaceRoot: session.workspaceRoot,
             telemetryConsent: readTelemetryConsent(
-              resolvePreset(session.preset.name, presets, { limits: profile.limits }).doc,
+              resolvePreset(session.preset.name, presets, { limits: ctx.profile.limits }).doc,
             ),
             telemetryConsentPendingAudit: profileConsent !== undefined,
           }),
@@ -2267,14 +1490,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           ),
       ),
       ...(compaction ? { compaction } : {}),
-      ...(profile.limits['lease.ttl_ms'] !== undefined ? { leaseTtlMs: profile.limits['lease.ttl_ms'] } : {}),
+      ...(ctx.profile.limits['lease.ttl_ms'] !== undefined
+        ? { leaseTtlMs: ctx.profile.limits['lease.ttl_ms'] }
+        : {}),
       // `children` is omitted on purpose: core's default factory refuses with a message saying
       // subagents are assembled later, which is more informative than a host-side stub.
     })
     rollback.push('kernel', () => kernel.close())
     const compositionForPreset = (name?: string, session?: CompositionPatch): ResolvedComposition =>
-      resolveComposition(profile, {
-        ...(name ? { preset: resolvePreset(name, presets, { limits: profile.limits }).doc } : {}),
+      resolveComposition(ctx.profile, {
+        ...(name ? { preset: resolvePreset(name, presets, { limits: ctx.profile.limits }).doc } : {}),
         ...(session ? { session } : {}),
         rows: builtOrdinary.rows.map((row) => ({
           id: row.id,
@@ -2316,14 +1541,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ).values(),
       ]
       return resolveSessionCapabilities({
-        profile,
+        profile: ctx.profile,
         composition:
           deps.compositionPin ??
-          (profile.composition
+          (ctx.profile.composition
             ? compositionForPreset(session?.preset.name)
-            : resolveComposition(profile, {
-                preset: resolvePreset(session?.preset.name ?? profile.presets.default, presets, {
-                  limits: profile.limits,
+            : resolveComposition(ctx.profile, {
+                preset: resolvePreset(session?.preset.name ?? ctx.profile.presets.default, presets, {
+                  limits: ctx.profile.limits,
                 }).doc,
               })),
         ...(session
@@ -2342,7 +1567,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
                 },
               },
               pin: {
-                legacy: !profile.composition,
+                legacy: !ctx.profile.composition,
                 loop: session.loop,
                 generationId: deps.sessionGeneration?.(sessionKey),
               },
@@ -2394,18 +1619,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           host: observabilityHost,
           home,
           kernel,
-          profileHash: profile.hash,
+          profileHash: ctx.profile.hash,
           dataDir,
           profileDir: deps.profileDir,
-          ...(profile.adapters.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
+          ...(ctx.profile.adapters.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
           ...(deps.sessionGeneration ? { sessionGeneration: deps.sessionGeneration } : {}),
         })
       : undefined
     const observability = observabilityFeed?.observability
     const observeSession = observabilityFeed?.observeSession ?? (() => () => undefined)
     if (observabilityFeed?.stop) rollback.push('observability-hooks', observabilityFeed.stop)
-    if (profile.composition) {
-      assertCompositionCompatible(compositionForPreset(), compositionForPreset(profile.presets.default))
+    if (ctx.profile.composition) {
+      assertCompositionCompatible(compositionForPreset(), compositionForPreset(ctx.profile.presets.default))
       const stopPolicy = kernel.hooks.on(
         'tool_call',
         (payload, context) => {
@@ -2465,8 +1690,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       {
         services,
         serviceProviders: extensionHost.ports,
-        tools: profile.composition
-          ? compositionTools(kernel.tools, profile.composition, profile.compositionToolScope)
+        tools: ctx.profile.composition
+          ? compositionTools(kernel.tools, ctx.profile.composition, ctx.profile.compositionToolScope)
           : kernel.tools,
         hooks: kernel.hooks,
         slots: kernel.slots,
@@ -2527,8 +1752,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // Options.shutdown contract now, correctly, rather than deferring the decision.
       shutdown: dispatchExtensionShutdown,
       loader: deps.extensionLoader ?? nativeExtensionImport,
-      ceiling: profile.policy.capabilityCeiling,
-      seamPackages: new Set([profile.seams.sandbox, profile.seams.platform]),
+      ceiling: ctx.profile.policy.capabilityCeiling,
+      seamPackages: new Set([ctx.profile.seams.sandbox, ctx.profile.seams.platform]),
       // Resource extensions keep their existing independent reload path. Only the two static seam
       // owners above are immutable now; the eight ordinary Cordis seams can update in place.
       // mutable() (ext-host/managed-host.ts:214-221) refuses by PACKAGE, and the shipped local-dev
@@ -2556,7 +1781,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       platform: extensionPlatform,
       shutdown: dispatchExtensionShutdown,
       loader: deps.extensionLoader ?? nativeExtensionImport,
-      ceiling: profile.policy.capabilityCeiling,
+      ceiling: ctx.profile.policy.capabilityCeiling,
       info: extensionInfo,
       log: deps.log,
       audit: say,
@@ -2568,7 +1793,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // unchanged rather than restating this literal a second time.
     const makeFactorySelector = (contextFor: (owner: string, extensionId: string) => SeamInitContext) =>
       createExtensionFactorySelector({
-        ...(profile.extensionIsolation ? { options: profile.extensionIsolation } : {}),
+        ...(ctx.profile.extensionIsolation ? { options: ctx.profile.extensionIsolation } : {}),
         ...(deps.extensionIsolationServices ? { services: deps.extensionIsolationServices } : {}),
         runtimeDirectory: join(deps.hostRoot, 'dist', 'agnes-runtime'),
         target: `${adapters.platform.os}-${adapters.platform.snapshot().arch}`,
@@ -2606,7 +1831,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           embedded?: ExtensionManifest
         }
       | undefined => {
-      for (const pkg of profile.packages) {
+      for (const pkg of ctx.profile.packages) {
         if (!pkg.enabled || pkg.trust !== 'builtin') continue
         const packageDirectory = dirs.get(pkg.id)
         if (!packageDirectory) continue
@@ -2682,7 +1907,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
     // A replacement bundled extension can declare the same public resource contract under any id.
     const declaredExtensionIds = new Set(EXT_ROW_EXTENSION_IDS)
-    for (const pkg of profile.packages) {
+    for (const pkg of ctx.profile.packages) {
       if (!pkg.enabled || pkg.trust !== 'builtin') continue
       for (const manifest of modules.get(pkg.id)?.embeddedExtensions ?? [])
         if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
@@ -2897,7 +2122,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // rowifying it must not turn that into "Host does not exist".
     const admitsExtensionRow = (found: NonNullable<ReturnType<typeof findBundledExtension>>) => {
       try {
-        const ceiling = profile.policy.capabilityCeiling
+        const ceiling = ctx.profile.policy.capabilityCeiling
         if (found.embedded)
           preflightEmbeddedExtension({
             id: found.spec.id,
@@ -2915,7 +2140,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     for (const extensionId of declaredExtensionIds) {
       // The Computer Use gate is a supply condition, not a grant condition: when it is off there is
       // nothing to load, so no row is built.
-      if (extensionId === 'agnes/computer-use' && !profile.computerUse.enabled) continue
+      if (extensionId === 'agnes/computer-use' && !ctx.profile.computerUse.enabled) continue
       const found = findBundledExtension(extensionId)
       if (!found) continue
       if (admitsExtensionRow(found)) extRowIds.push(extensionId)
@@ -2981,7 +2206,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let skillRetry = 0
     const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
       const supplied = fresh
-      fresh = compositionSkills(fresh, profile.composition ?? {}, skillOwners)
+      fresh = compositionSkills(fresh, ctx.profile.composition ?? {}, skillOwners)
       const task = skillRefreshTail.then(async () => {
         const previousRows = extensionRows.current()
         const consumers = previousRows.filter((row) => row.liveResources?.includes('skills'))
@@ -3087,7 +2312,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         rowExtensions.replacedBy,
       )
     // 10 ready
-    say('host.ready', { hash: profile.hash, extensions: extensionStatus().length })
+    say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
     const servicesInvocation = serviceInvoker({
       authorize: async (entry, params, actor, workspace, signal) => {
         if (
@@ -3130,7 +2355,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     })
     const sessionConfiguration = createConfigurationService({
       home: deps.homeDir ?? dirname(dirname(deps.profileDir)),
-      profile: profile.name,
+      profile: ctx.profile.name,
       profileDir: deps.profileDir,
     })
     return {
@@ -3173,9 +2398,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       runtimes,
       adapters,
       lockedPackageMutations,
-      computerUse: computerUseStatus,
+      computerUse: computerUse.status,
       get computerUseArtifactGc() {
-        return computerUseArtifactGc
+        return computerUse.artifactGc()
       },
       pluginTree,
       intelligentUi,
@@ -3208,11 +2433,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       unbindRuntimeSession,
       ...(systemPromptProvider ? { systemPromptProvider } : {}),
       sessionPresetLimits: () => ({
-        limits: profile.limits,
+        limits: ctx.profile.limits,
         park: businessLimit(hotPolicy, 'approval.park'),
       }),
     }
   } catch (e) {
-    return fail(step, e)
+    return failAssembly(ctx, e)
   }
 }

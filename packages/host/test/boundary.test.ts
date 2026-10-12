@@ -98,11 +98,11 @@ describe('host boundaries', () => {
       'host-common/profile-policy.ts': 1,
     })
     expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host/runtime/assemble/assemble.ts': 1 })
-    const wiring = uncommented(read(join(src, 'runtime', 'assemble', 'assemble.ts')))
-      .split('\n')
-      .filter((line) => /['"]lease\.ttl_ms['"]/.test(line))
+    // One expression reads the key, and what it reads becomes the kernel's leaseTtlMs.
+    const wiring = uncommented(read(join(src, 'runtime', 'assemble', 'assemble.ts'))).match(
+      /\.limits\['lease\.ttl_ms'\]\s*!==\s*undefined\s*\?\s*\{\s*leaseTtlMs:\s*[\w.]+\.limits\['lease\.ttl_ms'\]\s*\}/g,
+    )
     expect(wiring).toHaveLength(1)
-    expect(wiring[0]).toContain("leaseTtlMs: profile.limits['lease.ttl_ms']")
     // A comment that names the key is not a read of it.
     const provider = read(join(ownerSrc('host-providers'), 'assemble', 'provider.ts'))
     expect(provider).toContain('lease.ttl_ms')
