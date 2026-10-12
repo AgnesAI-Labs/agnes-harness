@@ -40,7 +40,7 @@ function harness() {
     '_agnes/v1/approvalGrants.list': () => ({ grants: [] }),
     '_agnes/v1/approvalGrants.revoke': () => ({
       grantId: 'grant-1',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'local',
       actorOrg: 'local',
       toolId: 'computer_use',

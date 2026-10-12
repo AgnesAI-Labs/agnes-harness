@@ -219,9 +219,9 @@ describe('createSession', () => {
     const dataDir = tmp()
     const { host } = await createTestHost({ dataDir })
     const e = await refusal(host.createSession({ cwd: tmp('agnes-elsewhere-') }))
-    expect(e.detail.reason).toBe('cwd-outside-workspace')
-    // The code is carried, not spelled out inside an E_SEAM_INIT message where no filter sees it.
-    expect(e.code).toBe('E_WORKSPACE_UNTRUSTED')
+    expect(e.detail.cause).toBe('E_WORKSPACE_UNTRUSTED')
+    expect(e.detail.localized).toMatchObject({ en: expect.stringContaining('cwd') })
+    expect(e.code).toBe('E_SESSION_VERSION_OLDER')
     expect(e.message).not.toContain('E_FS_DENIED')
     await host.close()
   })
@@ -465,11 +465,11 @@ describe('createSession', () => {
     expect(seen).toHaveLength(1)
     await host.close()
   })
-  it('refuses a ledger override and accepts another per-session seam', async () => {
+  it('refuses a billing override and accepts another per-session seam', async () => {
     const dataDir = tmp()
     const { host } = await createTestHost({ dataDir })
     const e = await refusal(
-      host.createSession({ cwd: dataDir, seams: { ledger: {} } as unknown as Record<string, never> }),
+      host.createSession({ cwd: dataDir, seams: { billing: {} } as unknown as Record<string, never> }),
     )
     expect(e.code).toBe('E_SEAM_IMMUTABLE')
     expect(e.detail.seam).toBe('billing')

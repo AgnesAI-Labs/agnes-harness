@@ -110,8 +110,8 @@ describe('testkit', () => {
     if (!base) throw new Error('default lock is missing base')
     base.enabled = false
     await expect(createTestHost({ dataDir, lock: { packages } })).rejects.toMatchObject({
-      code: 'E_DEP_MISSING',
-      detail: { package: '@agnes/base' },
+      code: 'E_PRESET_UNSUPPORTED',
+      detail: { source: 'standard', capability: 'preset:base' },
     })
   })
   it('resolves explicit user inputs and applies them to real session selection', async () => {

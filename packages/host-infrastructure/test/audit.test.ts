@@ -42,6 +42,8 @@ const CURRENT_KINDS = [
   'host.teardown_finished',
   'session.close_failed',
   'session.recovered',
+  'session.seams.pinned',
+  'session.seams.repinned',
   'preset.deprecated',
 ] as const
 

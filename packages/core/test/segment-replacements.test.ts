@@ -52,6 +52,7 @@ describe('typed core segment replacements', () => {
       operations,
       segments: segments(operations),
       resolvedProfileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'b'.repeat(64)}`,
     })
     await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const outcome = await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
