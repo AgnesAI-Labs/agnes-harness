@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { SEAM_NAMES } from '@agnes/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -134,7 +135,7 @@ describe('createJitiPackageLoader', () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
 
-  it("reads package.json exports['.'] over a decoy main, loads the entry through jiti, and resolves extensionEntry", async () => {
+  it('reads package exports over a decoy main and the shipped service entry with matching row metadata', async () => {
     const d = dir()
     // `main` is a decoy pointing at a file that does not exist: exports['.'] must win when both are
     // present, so a loader that fell back to `main` here would fail to resolve the entry at all.
@@ -152,6 +153,12 @@ describe('createJitiPackageLoader', () => {
     expect(m.id).toBe('acme/pkg')
     expect(Object.keys(m.seams ?? {})).toEqual(['approval'])
     expect(realpathSync(m.extensionEntry as string)).toBe(realpathSync(join(d, 'index.ts')))
+
+    const example = fileURLToPath(new URL('../../../../examples/third-party-plugin', import.meta.url))
+    const shipped = await l.importPackage('@example/agnes-echo-plugin', example)
+    expect(realpathSync(shipped.extensionEntry as string)).toBe(realpathSync(join(example, 'echo.js')))
+    expect(shipped.plugins).toHaveLength(2)
+    for (const row of shipped.plugins!) expect(row.declaration.provide).toEqual(row.entry.provides)
   })
 
   it('falls back to package.json main when exports is absent', async () => {

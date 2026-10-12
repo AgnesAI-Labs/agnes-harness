@@ -3,10 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": "./echo.js",
   "agnes": {
     "plugins": [
       {
         "export": "echo",
+        "provide": [
+          "ext:example/echo"
+        ],
         "apiRange": "^1.4.0",
         "id": "ext:example/echo",
         "runtime": "in-process",
@@ -40,6 +44,9 @@
       },
       {
         "export": "echo",
+        "provide": [
+          "ext:example/echo"
+        ],
         "apiRange": "^1.4.0",
         "id": "ext:example/echo-isolated",
         "runtime": "isolated",
