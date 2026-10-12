@@ -15,6 +15,7 @@ import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-cat
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   developmentPluginRows,
+  generationResourcesDigest,
   type PluginGenerationSnapshot,
   RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
@@ -167,23 +168,22 @@ export async function createRuntimeGenerationHost(
         detail: { sessionKey: key, generationId: id, seams: bound },
       })
   }
+  const headKey = options.compositionPin?.hash ?? 'default'
   const snapshotTarget = (
     target: RuntimeTarget,
     sources: readonly RuntimePluginSnapshot[],
     skills: SkillRuntimeInput | undefined,
     extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
-  ) =>
-    store.create(
-      target,
-      sources,
-      compatibilityFor(profile),
-      [
+    reuseHead = false,
+  ) => {
+    const compatibility = compatibilityFor(profile),
+      packages = [
         ...profile.packages
           .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
           .map((pkg) => ({ id: pkg.id, version: pkg.version })),
         ...sources.map((source) => ({ id: source.snapshot.packageId, version: source.snapshot.version })),
       ],
-      captureGenerationResources(
+      resources = captureGenerationResources(
         skills,
         [...preparedRows.values()].filter((row) =>
           targetRows(target).some(
@@ -192,18 +192,37 @@ export async function createRuntimeGenerationHost(
         ),
         (extensionRows ?? (current?.host ?? initial).extensionRows.current()).map((row) => row.id),
       ),
-      seamSelectionsOf(
+      seams = seamSelectionsOf(
         compileRunPlan({
           profile,
           ...(options.agnesVersion === undefined ? {} : { agnesVersion: options.agnesVersion }),
         }),
-      ),
-    )
+      )
+    // Workers of one composition share a recorded head instead of each snapshotting the same target.
+    const reused = reuseHead
+      ? store.reusableHead(headKey, {
+          artifactDigest: encodeRuntimeTargetArtifact(target).digest,
+          compatibility,
+          packages,
+          resourcesDigest: generationResourcesDigest(resources),
+          seams,
+        })
+      : undefined
+    return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
+  }
+  const recordHead = (id: string): void => {
+    try {
+      store.setHead(headKey, id)
+    } catch {
+      // The pointer is a shortcut; the next worker snapshots afresh.
+    }
+  }
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw new Error('E_GENERATION_TARGET_MISSING: Host has no runtime snapshot')
-    const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources)
+    const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources, undefined, true)
+    recordHead(snapshot.id)
     current = { snapshot, host: initial }
     live.set(snapshot.id, current)
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
@@ -700,13 +719,13 @@ export async function createRuntimeGenerationHost(
     if (
       !skills &&
       !extensionCodeChanged &&
-      encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest &&
-      head.snapshot.compatibility === compatibilityFor(profile)
+      encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest
     ) {
       lastChange = changeResult({ outcome: 'unchanged', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
-    // Backend facets are process configuration. A package generation cannot replace them live.
+    // Backend facets are process configuration. A package generation cannot replace them live, and the
+    // deployment fingerprint is fixed per process, so these row and package checks are the restart guards.
     for (const row of [...oldTarget.tree.rows, ...target.tree.rows])
       if (row.id.startsWith('adapter:')) {
         if (
@@ -726,10 +745,7 @@ export async function createRuntimeGenerationHost(
           refuseRestart(previous.snapshot.packageId)
       }
     const skillInput = skills ? skills.input : latestSkills
-    const codeChanged =
-      extensionCodeChanged ||
-      codeRevision(oldTarget) !== codeRevision(target) ||
-      head.snapshot.compatibility !== compatibilityFor(profile)
+    const codeChanged = extensionCodeChanged || codeRevision(oldTarget) !== codeRevision(target)
     // prepare() may have replaced a claim on the incumbent before a bound code update forks.
     // Restore its pinned importers before any later resource-only transaction uses that container.
     if (store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host))
@@ -824,6 +840,7 @@ export async function createRuntimeGenerationHost(
       }
       throw error
     }
+    recordHead(current.snapshot.id)
     // Publication has committed. Retirement failure belongs to the retired generation, and cannot
     // turn a successful head change into a rejected apply/compensation transaction.
     const referenced = new Set(store.sessions().map((pin) => pin.generationId))

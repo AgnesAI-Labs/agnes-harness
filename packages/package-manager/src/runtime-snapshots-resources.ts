@@ -9,6 +9,22 @@ export type RuntimeGenerationResourceInput = Readonly<{ data: JsonValue; directo
 export type RuntimeGenerationResourceSnapshot = RuntimeGenerationResourceInput
 const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 
+const resourcesText = (data: JsonValue, trees: readonly { path: string; integrity: string }[]) =>
+  JSON.stringify({ version: 1, data, trees })
+
+/** The digest `writeGenerationResources` would record, without writing anything. */
+export function generationResourcesDigest(input: RuntimeGenerationResourceInput): string {
+  return digest(
+    resourcesText(
+      input.data,
+      input.directories.map((source, index) => ({
+        path: String(index),
+        integrity: hashDirectory(source, { exclude: [] }),
+      })),
+    ),
+  )
+}
+
 /** Private resource bodies and SecretRefs, never resolved credentials. */
 export function writeGenerationResources(directory: string, input: RuntimeGenerationResourceInput): string {
   mkdirSync(directory, { recursive: true, mode: 0o700 })
@@ -20,7 +36,7 @@ export function writeGenerationResources(directory: string, input: RuntimeGenera
     if (before !== integrity) throw new Error('E_GENERATION_RESOURCE_CHANGED: resource changed while copying')
     return { path: String(index), integrity }
   })
-  const text = JSON.stringify({ version: 1, data: input.data, trees })
+  const text = resourcesText(input.data, trees)
   writeFileSync(join(directory, 'resources.json'), text, { mode: 0o600, flag: 'wx', flush: true })
   return digest(text)
 }

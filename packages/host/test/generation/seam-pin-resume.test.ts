@@ -304,3 +304,22 @@ it('reports a pin written by a newer AGH as newer, not as a generic failure', as
     await again.host.close()
   }
 })
+
+it('starts a later worker on the recorded head instead of snapshotting the same target again', async () => {
+  const root = scratch()
+  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  try {
+    await (await first.host.createSession({ key: 'first', cwd: root })).close()
+  } finally {
+    await first.host.close()
+  }
+  const second = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  try {
+    await (await second.host.createSession({ key: 'second', cwd: root })).close()
+    const store = snapshotsOf(root)
+    expect(store.session('second')?.generationId).toBe(store.session('first')?.generationId)
+    expect(readdirSync(store.root).filter((name) => /^[a-f0-9-]{36}$/.test(name))).toHaveLength(1)
+  } finally {
+    await second.host.close()
+  }
+})

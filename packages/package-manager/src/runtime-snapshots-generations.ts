@@ -428,10 +428,78 @@ export class RuntimeGenerationSnapshotStore {
     }
   }
 
+  private headPath(compositionKey: string): string {
+    return join(this.root, 'heads', `${createHash('sha256').update(compositionKey).digest('hex')}.json`)
+  }
+
+  /** Durable current head of one composition, so workers that start later agree on it. */
+  setHead(compositionKey: string, generationId: string): void {
+    this.directory(generationId)
+    if (!existsSync(join(this.directory(generationId), 'generation.json')))
+      throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${generationId} cannot become the head`)
+    mkdirSync(join(this.root, 'heads'), { recursive: true, mode: 0o700 })
+    writeAtomically(this.headPath(compositionKey), JSON.stringify({ compositionKey, generationId }))
+  }
+
+  headId(compositionKey: string): string | undefined {
+    try {
+      const value = JSON.parse(readFileSync(this.headPath(compositionKey), 'utf8')) as {
+        compositionKey?: unknown
+        generationId?: unknown
+      }
+      if (value.compositionKey !== compositionKey || typeof value.generationId !== 'string') return undefined
+      this.directory(value.generationId)
+      return value.generationId
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * The recorded head when it was built from exactly these inputs, else undefined. Anything unreadable,
+   * missing or different means the caller snapshots afresh; a pointer is a shortcut, never an authority.
+   */
+  reusableHead(
+    compositionKey: string,
+    expected: Readonly<{
+      artifactDigest: string
+      compatibility: string
+      packages: PluginGenerationSnapshot['packages']
+      resourcesDigest?: string
+      seams?: GenerationSeams
+    }>,
+  ): PluginGenerationSnapshot | undefined {
+    const id = this.headId(compositionKey)
+    if (!id) return undefined
+    try {
+      const snapshot = this.read(id)
+      if (
+        snapshot.artifact.digest !== expected.artifactDigest ||
+        snapshot.compatibility !== expected.compatibility ||
+        snapshot.resourcesDigest !== expected.resourcesDigest ||
+        JSON.stringify(snapshot.packages) !== JSON.stringify(expected.packages) ||
+        JSON.stringify(snapshot.seams ?? null) !== JSON.stringify(expected.seams ?? null)
+      )
+        return undefined
+      return snapshot
+    } catch {
+      return undefined
+    }
+  }
+
   collect(keep: ReadonlySet<string>, retired: ReadonlySet<string> = new Set()): readonly string[] {
     if (!existsSync(this.root)) return []
     const referenced = new Set(this.sessions().map((pin) => pin.generationId)),
       removed: string[] = []
+    // A recorded head outlives the worker that created it; the next worker to start reuses it.
+    for (const name of existsSync(join(this.root, 'heads')) ? readdirSync(join(this.root, 'heads')) : []) {
+      try {
+        const head = JSON.parse(readFileSync(join(this.root, 'heads', name), 'utf8')) as {
+          generationId?: string
+        }
+        if (typeof head.generationId === 'string') referenced.add(head.generationId)
+      } catch {}
+    }
     if (this.#unreadablePins > 0) return []
     for (const id of readdirSync(this.root)) {
       // Another workspace worker may still be accepting sessions on its own snapshot.

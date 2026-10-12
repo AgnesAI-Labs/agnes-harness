@@ -49,9 +49,10 @@ export type {
 } from './runtime-snapshots.js'
 export * from './runtime-snapshots-development.js'
 export * from './runtime-snapshots-generations.js'
-export type {
-  RuntimeGenerationResourceInput,
-  RuntimeGenerationResourceSnapshot,
+export {
+  generationResourcesDigest,
+  type RuntimeGenerationResourceInput,
+  type RuntimeGenerationResourceSnapshot,
 } from './runtime-snapshots-resources.js'
 export * from './skin-assets.js'
 export * from './sources.js'
