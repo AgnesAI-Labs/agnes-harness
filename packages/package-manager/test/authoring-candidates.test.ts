@@ -47,6 +47,7 @@ const files = [
             export: 'main',
             id: 'ext:reviewed-tool/main',
             inject: ['hooks', 'eventLog', 'self'],
+            capabilities: {},
           },
         ],
       },
