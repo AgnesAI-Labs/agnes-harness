@@ -121,7 +121,9 @@ export async function createKernel(
   // A table that cannot be read stops assembly with the rule named; it never degrades to deny-all.
   const commandTable = (() => {
     try {
-      return readCommandRules(presets.defaultPreset.doc.approval?.command_policy)
+      return readCommandRules(
+        (presets.defaultPreset.doc.approval as { command_policy?: unknown } | undefined)?.command_policy,
+      )
     } catch (e) {
       throw new HostError('E_PRESET_UNSUPPORTED', (e as Error).message, {
         detail: { capability: 'approval.command_policy' },
