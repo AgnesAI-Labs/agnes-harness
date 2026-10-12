@@ -18,6 +18,7 @@ import {
 } from '@agnes/package-manager'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
+import type { DecisionSnapshot } from '@agnes/protocol'
 import {
   createSkillCandidateRegistry,
   restoreSkillGeneration,
@@ -25,7 +26,6 @@ import {
 } from '@agnes/resource-control-runtime'
 import { expect, it, vi } from 'vitest'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
-import type { DecisionSnapshot } from '@agnes/protocol'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
 import { createTestHost } from '../testkit/index.js'
