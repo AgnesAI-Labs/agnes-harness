@@ -243,7 +243,7 @@ function fixture(
         },
       },
       input: {
-        async deliver(key, text, deliverSignal, presentation) {
+        async deliver(key, system, deliverSignal) {
           deliverSignal.throwIfAborted()
           if (failDelivery) throw new Error('delivery interrupted')
           const commandId = key.startsWith('ui-result:') ? key.slice('ui-result:'.length) : ''
@@ -259,7 +259,11 @@ function fixture(
           if (!deliveries.has(key))
             deliveries.set(
               key,
-              row('inbox', { key, text, actor: deliveredActor, ...(presentation ? { presentation } : {}) }),
+              row('inbox', {
+                key,
+                system: { ...system, source: 'agnes/intelligent-ui' },
+                actor: deliveredActor,
+              }),
             )
           return deliveries.get(key)!
         },
@@ -1000,17 +1004,21 @@ describe('question collector on the ordinary surface path', () => {
     const delivered = f.rows
       .filter((row) => row.type.endsWith('/inbox'))
       .find((row) => (row.data as { key: string }).key === 'ui-result:late')!
-    const payload = delivered.data as { text: string; actor: Actor }
-    expect(JSON.parse(payload.text.slice('Intelligent UI action result: '.length)).submitted).toEqual({
+    const payload = delivered.data as { system: import('@agnes/protocol').SystemInput; actor: Actor }
+    expect((payload.system.data as { submitted?: unknown }).submitted).toEqual({
       surfaceId: 'questions',
       answers,
     })
     expect(delivered.data).toMatchObject({
-      presentation: {
-        kind: 'ui-action',
-        operation: 'submit',
-        status: 'succeeded',
-        fields: expect.arrayContaining(['single', 'multi', 'text']),
+      system: {
+        source: 'agnes/intelligent-ui',
+        type: 'action-result',
+        presentation: {
+          kind: 'ui-action',
+          operation: 'submit',
+          status: 'succeeded',
+          fields: expect.arrayContaining(['single', 'multi', 'text']),
+        },
       },
     })
     expect(payload.actor).toEqual(actor)

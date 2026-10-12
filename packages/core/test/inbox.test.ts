@@ -227,47 +227,52 @@ describe('Inbox segment', () => {
     expect(session.op()).toBeNull()
   })
 
-  it('carries backend UI presentation with the enqueued trust and kind onto the user/message', async () => {
+  it('carries backend system input to messages and UI, refusing ordinary input forgery', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'from a channel' }],
+    const system = {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Submitted',
+      data: { answers: { name: 'Fixture' } },
+      presentation: {
+        kind: 'ui-action' as const,
+        operation: 'submit' as const,
+        status: 'succeeded' as const,
+        label: 'Submit',
+        fields: ['name'],
+      },
+    }
+    const delivery = session.enqueue('next-turn', {
+      content: [{ type: 'text', text: system.summary }],
       actor: { ...actor, id: 'bot' },
       kind: 'follow_up',
       titleLocale: 'en',
-      trust: 'untrusted',
+      trust: 'trusted',
       origin: 'system',
-      presentation: {
-        kind: 'ui-action',
-        operation: 'submit',
-        status: 'succeeded',
-        label: 'Submit',
-        fields: ['name', 'email'],
-      },
+      system,
     })
+    system.data.answers.name = 'mutated after delivery'
+    await delivery
     expect((await session.projectUI()).pendingInputs).toEqual([])
     await session.acceptInput()
     const msg = (await log.scan({ type: 'user/message', limit: 5 }))[0]
-    expect(msg).toMatchObject({ trust: 'untrusted', origin: 'system', actor: { id: 'bot' } })
-    expect(msg?.data).toMatchObject({ kind: 'follow_up', titleLocale: 'en' })
-    expect(msg?.data).toMatchObject({
-      content: [{ type: 'text', text: 'from a channel' }],
-      presentation: { kind: 'ui-action', fields: ['name', 'email'] },
+    expect(msg).toMatchObject({
+      trust: 'untrusted',
+      origin: 'system',
+      actor: { id: 'bot' },
+      data: { kind: 'follow_up', titleLocale: 'en', system: { data: { answers: { name: 'Fixture' } } } },
     })
     expect((await session.projectUI()).nodes.find((node) => node.kind === 'user')).toMatchObject({
-      presentation: { kind: 'ui-action', fields: ['name', 'email'] },
+      origin: 'system',
+      system: { presentation: { kind: 'ui-action', fields: ['name'] } },
     })
-    await session.enqueue('next-turn', {
-      actor,
-      content: [{ type: 'text', text: 'ordinary prompt' }],
-      presentation: {
-        kind: 'ui-action',
-        operation: 'submit',
-        status: 'succeeded',
-        label: 'Spoof',
-        fields: [],
-      },
-    })
-    expect((session.latest('inbox') as { items: unknown[] }).items[0]).not.toHaveProperty('presentation')
+    await expect(
+      session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'ordinary prompt' }],
+        system,
+      }),
+    ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
     const started = (await log.scan({ type: 'turn/start', limit: 5 }))[0]
     expect(started?.data).toMatchObject({ trigger: 'follow_up' })
   })

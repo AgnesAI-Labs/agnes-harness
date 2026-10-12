@@ -120,7 +120,8 @@ export function Message({
   const messageTarget = useRef<HTMLDivElement>(null)
   const registerTarget = useContext(registerConversationMessageTargetContext)
   const native = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
-  const usesAssistantUi = node.kind === 'user' || node.kind === 'assistant'
+  const systemInput = node.kind === 'user' && node.origin === 'system' && node.system !== undefined
+  const usesAssistantUi = (node.kind === 'user' && !systemInput) || node.kind === 'assistant'
   const context = useMemo<ConversationMessageContextValue>(
     () => ({
       node,
@@ -152,9 +153,9 @@ export function Message({
   )
   return (
     <article
-      className={`timeline-node ${node.kind}`}
+      className={`timeline-node ${systemInput ? 'system-input' : node.kind}`}
       data-node-id={node.id}
-      data-node-kind={node.kind}
+      data-node-kind={systemInput ? 'system-input' : node.kind}
       hidden={isEmptyStreamingAssistant(node)}
       {...(node.kind === 'assistant'
         ? { 'data-streaming': String(markdownState(node, turnStatus).streaming) }

@@ -28,6 +28,12 @@ API additions require a minor version; removals or semantic changes require a ma
   in official extensions and community plugins alike; it also validates optional
   structured result schemas.
 
+- Top-level `InputPresentation` and the text-based `AgentInputPort.deliver` signature.
+  Migrate to `deliver(key, { type, data, summary, presentation? }, signal)`. Host stamps
+  source from the admitted service owner and refuses caller-supplied source; ordinary
+  prompt RPCs cannot write this field. Loops read `system.data`; receipt string prefixes
+  and queue-based authenticity checks are removed.
+
 ### Changed
 
 `ToolMeta.costHint`, `deferLoading` and `requiresApproval` are optional. Omission means
@@ -42,6 +48,18 @@ spread a preset to declare contract-specific overrides.
 discovery while preserving internal invocation. `requiresImageInput` defaults to false
 and restricts discovery/execution to a model with native image input. Neither grants
 execution authority. Update manifest `apiRange` to `^2.0.0` when migrating.
+
+`LoopInput.origin` and `LoopInput.system` expose platform-authenticated structured
+notifications. `SystemInput` owns source, type, JSON data, summary and optional localized
+`SystemInputPresentation`. Core renders summaries and compact data for the model; clients
+render a status line and expandable data. Content remains untrusted for model policy.
+Intelligent UI action receipts and deferred wakeups use this path. Core `enqueue`
+optionally deduplicates commandId atomically against historical inbox facts.
+
+Protocol preview changes: `UserMessage`, `InboxItem` and user `UINode` replace top-level
+presentation with `system`; user `UINode` carries origin. No old-field compatibility shim.
+Use extension API dependencies and plugin `apiRange` compatible with `2.0.0` for both
+registration and structured-input migrations.
 
 ## 1.6.0
 
@@ -61,7 +79,10 @@ The official refine operation now reviews its exact edits and baseline through t
 
 Adds an optional typed `InputPresentation` to `AgentInputPort.deliver`. Backend UI actions can retain full machine input while clients render a localized terminal summary. Input metadata does not grant actor, lane or tool authority; the service binding validates it and ordinary prompt RPCs do not accept it.
 
-## Unreleased
+## Earlier preview repairs (included in 2.0.0)
+
+The entries below preserve the pre-release record. Their historical version notes are
+superseded by 2.0.0; the runtime contract and all shipped manifests now use that version.
 
 `PluginGenerationStatus` adds `historical` for generations referenced only by saved sessions,
 required generation `openSessions` / `live` fields, and plugin `historicalSessions` counts.

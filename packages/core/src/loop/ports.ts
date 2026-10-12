@@ -352,6 +352,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           kind: item.kind ?? 'steer',
           trust: item.trust ?? 'trusted',
           actor: structuredClone(item.actor),
+          ...(item.origin ? { origin: item.origin } : {}),
+          ...(item.origin === 'system' && item.system ? { system: structuredClone(item.system) } : {}),
         }
       }
     }
@@ -362,7 +364,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     const op = requireOp()
     const [row] = await s.d.log.scan({ fromSeq: op.meta.triggerSeq, toSeq: op.meta.triggerSeq, limit: 1 })
     if (!row) throw new Error('Accepted input is missing from the session ledger')
-    const data = row.data as { content?: ContentBlock[]; kind?: LoopInput['kind'] }
+    const data = row.data as {
+      content?: ContentBlock[]
+      kind?: LoopInput['kind']
+      system?: LoopInput['system']
+    }
     return {
       id: String(op.meta.triggerSeq),
       turnId: op.meta.turn,
@@ -370,6 +376,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       kind: data.kind ?? 'prompt',
       trust: row.trust,
       actor: structuredClone(row.actor),
+      origin: row.origin === 'system' ? 'system' : 'principal',
+      ...(row.origin === 'system' && data.system ? { system: structuredClone(data.system) } : {}),
     }
   }
   async function controlled<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {

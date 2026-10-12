@@ -7,7 +7,7 @@ import {
 } from '@assistant-ui/react'
 import { useMemo, useSyncExternalStore } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
-import { inputPresentationText } from './user-presentation.js'
+import { systemInputText } from './user-presentation.js'
 
 /** One already-projected Web window. The caller owns session and history loading. */
 export type ConversationProjection = Readonly<{
@@ -73,7 +73,7 @@ function displayText(
 ): string {
   switch (node.kind) {
     case 'user':
-      return inputPresentationText(node.presentation, t) ?? userText(node)
+      return node.origin === 'system' ? (systemInputText(node.system, t) ?? userText(node)) : userText(node)
     case 'assistant':
       return (
         node.text || (node.lostChars === undefined ? '' : t('runtime.lostOutput', { count: node.lostChars }))
@@ -130,7 +130,7 @@ export function projectConversationMessages(
     const status = messageStatus(node, owner)
     messages.set(node.id, {
       id: node.id,
-      role: node.kind === 'user' ? 'user' : 'assistant',
+      role: node.kind === 'user' && !(node.origin === 'system' && node.system) ? 'user' : 'assistant',
       content:
         node.kind === 'assistant' && node.thinking
           ? [

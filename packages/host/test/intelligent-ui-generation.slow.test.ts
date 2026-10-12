@@ -218,14 +218,14 @@ it('keeps a pending action on the old generation and delivers its result once', 
     )
     const delivered = async (current: typeof session) =>
       (await current.scan({ type: 'user/message', toSeq: current.lastSeq })).filter((event) =>
-        (event.data as UserMessage).content.some((block) => {
-          const prefix = 'Intelligent UI action result: '
-          if (block.type !== 'text' || !block.text.startsWith(prefix)) return false
-          const receipt = JSON.parse(block.text.slice(prefix.length)) as Record<string, unknown>
+        (() => {
+          const system = (event.data as UserMessage).system
+          if (system?.source !== 'agnes/intelligent-ui' || system.type !== 'action-result') return false
+          const receipt = system.data as Record<string, unknown>
           if (receipt.commandId !== 'late') return false
           expect(receipt).toMatchObject({ status: 'succeeded', submitted: { answers: { choice: 'B' } } })
           return true
-        }),
+        })(),
       )
     expect(await delivered(session)).toHaveLength(1)
     const sessionKey = session.key

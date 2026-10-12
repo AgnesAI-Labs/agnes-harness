@@ -301,7 +301,7 @@ describe('protocol src boundary', () => {
       'DecisionSnapshot',
       'JsonValue',
       'ContentBlock',
-      'InputPresentation',
+      'SystemInput',
       'Actor',
       'SurfaceOp',
       'EventEnvelope',

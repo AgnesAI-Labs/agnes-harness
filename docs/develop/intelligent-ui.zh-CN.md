@@ -6,9 +6,21 @@
 
 本文定义预设与已审阅自定义组件的 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
 
+## 结构化系统输入
+
+终态动作通过平台写入的 `system` 通知投递，来源为 `agnes/intelligent-ui`、类型为
+`action-result`。Loop 读取 `input.system.data`：UI 回执、已准入 invocation 与 result/error，
+成功的 `ui_submit` 还包含 `submitted`。Loop 只需匹配业务 surface 和工具；Host 保证来源，
+不再解析文本前缀或反查延迟队列。普通 prompt/submit payload 不能写入该字段；数据在模型策略中仍为不可信内容。
+
+Core 为模型统一渲染 `system.summary` 和紧凑数据。Web 根据 `origin`/`system` 显示状态行与可展开的
+完整数据；UI 本地化元数据仅存在于 `system.presentation`。其他 Host 生产者共用这一通道，
+包括类型为 `invocation-queued` 的延迟调用唤醒。服务输入端口接受
+`deliver(key, { type, data, summary, presentation? }, signal)`，Host 盖章 owner 来源。
+
 ## 归属与范围
 
-官方插件 `agnes/intelligent-ui` 位于 `packages/base/extensions/intelligent-ui`，负责 `ui_render`、`ui_update`、`ui_close`、扩展事实和可重放投影。Protocol 负责声明；Host 与 daemon 适配器绑定已认证的会话、actor、任务/通道以及会话锁定的插件 generation。Core 保持不变。客户端展示后台事实并提交请求；可点击的按钮或模型文字都不构成权限。
+官方插件 `agnes/intelligent-ui` 位于 `packages/base/extensions/intelligent-ui`，负责 `ui_render`、`ui_update`、`ui_close`、扩展事实和可重放投影。Protocol 负责声明；Host 与 daemon 适配器绑定已认证的会话、actor、任务/通道以及会话锁定的插件 generation。Core 负责结构化输入持久化与模型渲染。客户端展示后台事实并提交请求；可点击的按钮或模型文字都不构成权限。
 
 默认双位置 surface 在对话中显示摘要，在工作台中显示完整界面。单位置 surface 遵循对应的 `placement` 字段。展开卡片打开同一个 `(sessionId, surfaceId, revision)` 的面板。两处共享动作回执和草稿；展开只改变展示状态，不产生第二个 surface 或第二次执行。`placement.preferred` 只是布局提示，不能隐藏其中一个位置。
 

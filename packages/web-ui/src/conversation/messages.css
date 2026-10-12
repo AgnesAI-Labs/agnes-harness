@@ -66,4 +66,17 @@
     color: var(--color-text-tertiary, #777);
     font-size: 12px;
   }
+
+  [data-agnes-conversation-messages] .system-input {
+    align-self: stretch;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  [data-agnes-conversation-messages] .system-input-status {
+    padding-block: 4px;
+  }
+  [data-agnes-conversation-messages] .system-input-trace pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }

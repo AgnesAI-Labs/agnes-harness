@@ -6,9 +6,24 @@ English | [简体中文](intelligent-ui.zh-CN.md)
 
 This document defines the preset and reviewed custom-component surface contract. The official backend plugin, authenticated App Server methods and generic deferred execution bridge implement it; client rendering and the finance pilot are described below. Availability still requires the repository-wide validation pass.
 
+## Structured system input
+
+Terminal actions deliver a platform-written `system` notification with source
+`agnes/intelligent-ui` and type `action-result`. Loops read `input.system.data`: the UI
+receipt, its admitted invocation and result/error, plus `submitted` for a successful
+`ui_submit`. Match the surface and business tool; Host authenticates the source, so no
+text prefix parsing or deferred-queue lookup is needed. Ordinary prompt/submit payloads
+cannot write this field. The data remains untrusted for model policy.
+
+Core renders `system.summary` with compact data for the model. Web uses `origin`/`system`
+to show a status line and expandable full data; localized UI metadata lives only in
+`system.presentation`. Other Host producers use the same channel, including deferred
+`invocation-queued` wakeups. Service input ports accept
+`deliver(key, { type, data, summary, presentation? }, signal)`; Host stamps the owner.
+
 ## Ownership and scope
 
-The official `agnes/intelligent-ui` plugin belongs in `packages/base/extensions/intelligent-ui`. It owns `ui_render`, `ui_update`, `ui_close`, extension facts and a replayable projection. Protocol owns declarations; Host and daemon adapters bind the authenticated session, actor, task/lane and pinned plugin generation. Core remains unchanged. Clients render backend facts and submit requests; neither an enabled button nor model prose grants permission.
+The official `agnes/intelligent-ui` plugin belongs in `packages/base/extensions/intelligent-ui`. It owns `ui_render`, `ui_update`, `ui_close`, extension facts and a replayable projection. Protocol owns declarations; Host and daemon adapters bind the authenticated session, actor, task/lane and pinned plugin generation. Core owns structured input persistence and model rendering. Clients render backend facts and submit requests; neither an enabled button nor model prose grants permission.
 
 By default, a surface displays a conversation summary and a complete workbench view. A single-placement surface follows its corresponding `placement` flag. Expanding the card opens the panel for the same `(sessionId, surfaceId, revision)`. They share action receipts and drafts; expansion is presentation state, not a second surface or another execution. `placement.preferred` is a layout hint and cannot remove either placement.
 

@@ -109,7 +109,9 @@ import {
   UI_OPENING_DEFAULT_MAX_NODES,
   UI_PROJECTION_DEFAULT_MAX_BYTES,
   validateActor,
+  validateAgainst,
 } from '@agnes/protocol'
+import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
 import { unbindChildFactory } from '../child/sessions.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
@@ -1295,10 +1297,15 @@ export class SessionImpl {
     options: { dedupeByCommandId?: boolean } = {},
   ): Promise<Seq> {
     let content: ContentBlock[]
+    const system = msg.system === undefined ? undefined : structuredClone(msg.system)
     try {
       content = structuredClone(msg.content)
     } catch (error) {
       return Promise.reject(error)
+    }
+    if (system !== undefined) {
+      if (msg.origin !== 'system' || !validateAgainst(SystemInputSchema, system).ok)
+        throw new CoreError('E_ENVELOPE', 'structured system input requires platform provenance')
     }
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
@@ -1359,7 +1366,7 @@ export class SessionImpl {
         ...(msg.commandId ? { commandId: msg.commandId } : {}),
         ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
         kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
-        ...(msg.origin === 'system' && msg.presentation ? { presentation: msg.presentation } : {}),
+        ...(system ? { system } : {}),
         ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
         trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
         ...(msg.origin ? { origin: msg.origin } : {}),

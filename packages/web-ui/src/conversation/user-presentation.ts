@@ -1,12 +1,11 @@
-import type { InputPresentation } from '@agnes/protocol'
+import type { SystemInput } from '@agnes/protocol'
 import type { Translate } from '../locales/index.js'
 
 /** Typed backend presentation only. Machine input remains available in the execution trace. */
-export function inputPresentationText(
-  presentation: InputPresentation | undefined,
-  t: Translate,
-): string | undefined {
-  if (!presentation) return undefined
+export function systemInputText(system: SystemInput | undefined, t: Translate): string | undefined {
+  if (!system) return undefined
+  const presentation = system.presentation
+  if (!presentation) return system.summary
   if (presentation.status !== 'succeeded')
     return t(`timeline.uiAction.${presentation.status}`, { label: presentation.label })
   if (presentation.operation === 'submit')

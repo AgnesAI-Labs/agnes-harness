@@ -618,6 +618,35 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   const answer: UINode = { kind: 'user', id: 'answer', seq: 5, content: [{ type: 'text', text: 'Two' }] }
   await update(store, [question, echo, prose, answer])
   expect(item('answer')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
+  const receipt: UINode = {
+    kind: 'user',
+    id: 'receipt',
+    seq: 6,
+    origin: 'system',
+    content: [{ type: 'text', text: 'unused display text' }],
+    system: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Submitted',
+      data: { commandId: 'machine-only', submitted: { answers: { choice: 'Two' } } },
+      presentation: {
+        kind: 'ui-action',
+        operation: 'submit',
+        status: 'succeeded',
+        label: 'Submit',
+        fields: ['choice'],
+      },
+    },
+  }
+  await update(store, [question, echo, prose, answer, receipt])
+  expect(item('receipt')?.getAttribute('data-node-kind')).toBe('system-input')
+  expect(item('receipt')?.querySelector('[role=status]')?.textContent).toBe('已提交：choice')
+  expect(item('receipt')?.querySelector('[data-agnes-assistant-ui-target]')).toBeNull()
+  const trace = item('receipt')?.querySelector('details')
+  expect(trace?.open).toBe(false)
+  expect(trace?.querySelector('pre')?.textContent).toContain('machine-only')
+  trace?.setAttribute('open', '')
+  expect(trace?.open).toBe(true)
   const present: UINode = {
     ...tool('completed'),
     id: 'present',

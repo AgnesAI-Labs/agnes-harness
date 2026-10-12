@@ -599,15 +599,11 @@ describe('service binding gate', () => {
   })
 
   it('namespaces delivery keys and passes the existing exact keys through', async () => {
-    const seen: { key: string; text: string; presentation?: unknown }[] = []
+    const seen: { key: string; system: unknown }[] = []
+    const notification = (summary: string) => ({ type: 'result', summary: summary || 'Wake', data: {} })
     const input = () => ({
-      deliver: (
-        key: string,
-        text: string,
-        _signal: AbortSignal,
-        presentation?: import('@agnes/protocol').InputPresentation,
-      ) => {
-        seen.push({ key, text, ...(presentation ? { presentation } : {}) })
+      deliver: (key: string, system: Omit<import('@agnes/protocol').SystemInput, 'source'>) => {
+        seen.push({ key, system })
         return Promise.resolve(7)
       },
     })
@@ -637,22 +633,44 @@ describe('service binding gate', () => {
       const exactInput = captured[1]?.input
       if (!namespacedInput || !exactInput) throw new Error('input port was not granted')
       const signal = new AbortController().signal
-      await namespacedInput.deliver('ui-result:cmd-1', 'hello', signal)
-      expect(seen.at(-1)).toEqual({ key: `svc/sample/${owner}/ui-result:cmd-1`, text: 'hello' })
-      await namespacedInput.deliver('wake', '', signal)
-      expect(seen.at(-1)).toEqual({ key: `svc/sample/${owner}/wake`, text: '' })
+      await namespacedInput.deliver('ui-result:cmd-1', { type: 'result', summary: 'hello', data: {} }, signal)
+      expect(seen.at(-1)).toEqual({
+        key: `svc/sample/${owner}/ui-result:cmd-1`,
+        system: { ...notification('hello'), source: owner },
+      })
+      await namespacedInput.deliver('wake', { type: 'result', summary: 'Wake', data: {} }, signal)
+      expect(seen.at(-1)).toEqual({
+        key: `svc/sample/${owner}/wake`,
+        system: { ...notification(''), source: owner },
+      })
       const prefix = `svc/sample/${owner}/`
-      await namespacedInput.deliver('k'.repeat(256 - prefix.length), 'x', signal)
+      await namespacedInput.deliver(
+        'k'.repeat(256 - prefix.length),
+        { type: 'result', summary: 'x', data: {} },
+        signal,
+      )
       const before = seen.length
-      await refuse(() => namespacedInput.deliver('k'.repeat(257 - prefix.length), 'x', signal))
-      await refuse(() => namespacedInput.deliver('', 'x', signal))
-      await refuse(() => namespacedInput.deliver('bad\0key', 'x', signal))
-      await refuse(() => namespacedInput.deliver('x'.repeat(257), 'x', signal))
+      await refuse(() =>
+        namespacedInput.deliver(
+          'k'.repeat(257 - prefix.length),
+          { type: 'result', summary: 'x', data: {} },
+          signal,
+        ),
+      )
+      await refuse(() => namespacedInput.deliver('', { type: 'result', summary: 'x', data: {} }, signal))
+      await refuse(() =>
+        namespacedInput.deliver('bad\0key', { type: 'result', summary: 'x', data: {} }, signal),
+      )
+      await refuse(() =>
+        namespacedInput.deliver('x'.repeat(257), { type: 'result', summary: 'x', data: {} }, signal),
+      )
       await refuse(() => namespacedInput.deliver('ok', 1 as never, signal))
       const aborted = new AbortController()
       aborted.abort()
       await expect(
-        Promise.resolve().then(() => namespacedInput.deliver('ok', 'x', aborted.signal)),
+        Promise.resolve().then(() =>
+          namespacedInput.deliver('ok', { type: 'result', summary: 'x', data: {} }, aborted.signal),
+        ),
       ).rejects.toThrow()
       expect(seen).toHaveLength(before)
       const presentation = {
@@ -662,19 +680,52 @@ describe('service binding gate', () => {
         label: 'Submit',
         fields: ['name'],
       } as const
-      await exactInput.deliver('ui-result:cmd-1', 'hello', signal, {
-        ...presentation,
-        fields: [...presentation.fields],
-      })
+      const payload = {
+        ...notification('hello'),
+        presentation: { ...presentation, fields: [...presentation.fields] as string[] },
+      }
+      await exactInput.deliver('ui-result:cmd-1', payload, signal)
+      payload.presentation.fields.push('mutated')
       await refuse(() =>
-        namespacedInput.deliver('ui-result:invalid', 'hello', signal, {
-          ...presentation,
-          status: 'executing',
-        } as never),
+        namespacedInput.deliver(
+          'invalid',
+          {
+            ...notification('hello'),
+            presentation: { ...presentation, status: 'executing' },
+          } as never,
+          signal,
+        ),
       )
-      await exactInput.deliver('deferred-wake:job:4', 'again', signal)
-      expect(seen.at(-2)).toEqual({ key: 'ui-result:cmd-1', text: 'hello', presentation })
-      expect(seen.at(-1)).toEqual({ key: 'deferred-wake:job:4', text: 'again' })
+      await refuse(() =>
+        namespacedInput.deliver(
+          'forged',
+          {
+            ...notification('hello'),
+            source: 'agnes/intelligent-ui',
+          } as never,
+          signal,
+        ),
+      )
+      await refuse(() =>
+        namespacedInput.deliver(
+          'empty-summary',
+          {
+            type: 'result',
+            summary: '',
+            data: {},
+          },
+          signal,
+        ),
+      )
+      await exactInput.deliver('deferred-wake:job:4', notification('again'), signal)
+      expect(seen.at(-2)).toEqual({
+        key: 'ui-result:cmd-1',
+        system: { ...notification('hello'), source: owner, presentation },
+      })
+      expect(seen.at(-1)).toEqual({
+        key: 'deferred-wake:job:4',
+        system: { ...notification('again'), source: owner },
+      })
     } finally {
       await finish(namespaced.root)
       await finish(exact.root)
@@ -969,8 +1020,11 @@ describe('extension service host', () => {
       async enqueue(target, message) {
         enqueued.push({
           target,
-          commandId: message.commandId,
-          text: message.content[0]?.text ?? '',
+          commandId: message.commandId ?? '',
+          text: message.content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n'),
           actor: message.actor,
         })
         return 12
@@ -1073,7 +1127,11 @@ describe('extension service host', () => {
         meta: { source: owner, trust: 'trusted' },
       })
       const signal = new AbortController().signal
-      await captured?.input?.deliver('ui-result:cmd-1', 'hello', signal)
+      await captured?.input?.deliver(
+        'ui-result:cmd-1',
+        { type: 'result', summary: 'hello', data: {} },
+        signal,
+      )
       expect(fixture.enqueued[0]).toEqual({
         target: 'next-turn',
         commandId: 'ui-result:cmd-1',
@@ -1082,7 +1140,11 @@ describe('extension service host', () => {
       })
       fixture.setOperation({})
       fixture.setSteer(true)
-      await captured?.input?.deliver('deferred-wake:job:4', 'again', signal)
+      await captured?.input?.deliver(
+        'deferred-wake:job:4',
+        { type: 'result', summary: 'again', data: {} },
+        signal,
+      )
       expect(fixture.enqueued[1]).toMatchObject({
         target: 'next-step',
         commandId: 'deferred-wake:job:4',
@@ -1240,7 +1302,7 @@ describe('extension service host', () => {
         projections: unavailableProjections,
         recheck() {},
       })
-      await captured?.input?.deliver('wake', 'text', controller.signal)
+      await captured?.input?.deliver('wake', { type: 'result', summary: 'text', data: {} }, controller.signal)
       expect(fixture.enqueued[0]?.commandId).toBe(`svc/sample/${owner}/wake`)
       expect(() => root.providers.bindOwn(kind)).toThrow(/service binding is closed/)
       expect(fixture.enqueued).toHaveLength(1)
@@ -1747,7 +1809,11 @@ describe('intelligent UI service binding', () => {
         task = (ports as { capabilities?: { task?: () => string } }).capabilities?.task
         return {
           async mark() {
-            await ports.input!.deliver('ui-result:cmd-1', 'result', new AbortController().signal)
+            await ports.input!.deliver(
+              'ui-result:cmd-1',
+              { type: 'result', summary: 'result', data: {} },
+              new AbortController().signal,
+            )
             return 'ok'
           },
         } as never

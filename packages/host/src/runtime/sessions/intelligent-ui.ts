@@ -41,7 +41,8 @@ import {
   type SessionLedgerSession,
   sessionInputTarget,
 } from '../services/session-ports.js'
-import { deferredQueueFor, enqueueSessionInputOnce } from './deferred-invocations.js'
+import { deferredQueueFor } from './deferred-invocations.js'
+import { enqueueSystemInput } from './system-input.js'
 import { readUiComponentDeclarations } from './ui-component-declarations.js'
 import {
   dropUiDataSourceCache,
@@ -368,19 +369,18 @@ export function createIntelligentUiBridge(input: {
     },
     input(call) {
       return {
-        async deliver(key, text, signal, presentation) {
+        async deliver(key, input, signal) {
           const ref = call.session
           if (!ref) denied(UNAVAILABLE)
           const session = requireSession(ref.key, ref.lane)
           const actor = await actorForUiResult(session, call.owner, key)
-          return enqueueSessionInputOnce(
+          return enqueueSystemInput(
             session,
             key,
-            text,
+            { ...input, source: call.owner },
             actor,
             signal,
             sessionInputTarget(session, 'follow-steer'),
-            presentation,
           )
         },
       }

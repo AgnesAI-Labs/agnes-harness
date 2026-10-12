@@ -792,6 +792,9 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@agnes/loop-default':
+        specifier: workspace:*
+        version: link:../loop-default
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33

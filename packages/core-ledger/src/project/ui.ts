@@ -689,8 +689,9 @@ export class UIProjectionCell {
             seq,
             content: structuredClone(message.content),
             actorLabel: clip(event.actor.id, 128),
-            ...(event.origin === 'system' && event.trust === 'untrusted' && message.presentation
-              ? { presentation: structuredClone(message.presentation) }
+            origin: event.origin === 'system' ? 'system' : 'principal',
+            ...(event.origin === 'system' && message.system
+              ? { system: structuredClone(message.system) }
               : {}),
           })
         }
@@ -1074,7 +1075,7 @@ export class UIProjectionCell {
 
   private pendingInputs(): NonNullable<UITimeline['pendingInputs']> {
     return (this.state.registers.inbox.get(this.lane)?.value.items ?? [])
-      .filter((item) => !(item.origin === 'system' && item.presentation?.kind === 'ui-action'))
+      .filter((item) => !(item.origin === 'system' && item.system))
       .map((item) => ({
         itemId: item.itemId,
         preview: clip(text(item.content), 2000),

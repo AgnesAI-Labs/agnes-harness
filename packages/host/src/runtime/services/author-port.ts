@@ -184,6 +184,7 @@ export function createExtensionServiceHost(input: {
           session,
           extensionActor(identity.owner),
           descriptor.delivery ?? 'next-turn',
+          identity.owner,
         ),
       }),
       projections: identity.projections,
