@@ -109,6 +109,13 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     }
     element.addEventListener('scroll', onScroll)
     newContentButton?.addEventListener('click', onNewContent)
+    const contentResize =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            if (scroll.current.follow) scrollToBottom()
+          })
+        : undefined
+    if (content.current) contentResize?.observe(content.current)
     const sentinel =
       typeof IntersectionObserver === 'function'
         ? new IntersectionObserver((seen) => {
@@ -119,6 +126,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     return () => {
       element.removeEventListener('scroll', onScroll)
       newContentButton?.removeEventListener('click', onNewContent)
+      contentResize?.disconnect()
       sentinel?.disconnect()
       scroll.current.loadEpoch++
       scroll.current.loadingEarlier = false

@@ -6,6 +6,7 @@ export async function startProviderFixture(
   reply = 'Shared backend acceptance reply.',
   initialTool?: { name: string; args: Record<string, unknown> },
   model = 'deepseek-v4-flash',
+  stream?: () => AsyncIterable<string>,
 ) {
   let apiKey = randomBytes(24).toString('hex')
   let rejectedInferenceRequests = 0
@@ -65,9 +66,15 @@ export async function startProviderFixture(
         created: 0,
         model: body.model,
       }
-      response.write(
-        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `acceptance-${requests.length}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { role: 'assistant', content: reply }, finish_reason: null }] })}\n\n`,
-      )
+      if (stream && !tool && available.length > 0) {
+        for await (const content of stream())
+          response.write(
+            `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }] })}\n\n`,
+          )
+      } else
+        response.write(
+          `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `acceptance-${requests.length}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { role: 'assistant', content: reply }, finish_reason: null }] })}\n\n`,
+        )
       response.end(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: tool ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 5, total_tokens: 13 } })}\n\ndata: [DONE]\n\n`,
       )

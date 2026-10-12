@@ -82,6 +82,94 @@ for (const [issue, version, action] of [
     await accessible(page, info, `read-only-${issue}`)
   })
 
+test('streaming follows the bottom, preserves a reading position and resumes from new content', async ({
+  page,
+  runtime,
+}, info) => {
+  const gate = () => {
+    let release!: () => void
+    const promise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return { promise, release }
+  }
+  const reading = gate(),
+    following = gate(),
+    finished = gate()
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('The installed provider must declare a fixture model')
+  const provider = await startProviderFixture(
+    'Synthetic auxiliary reply',
+    undefined,
+    model,
+    async function* () {
+      yield Array.from(
+        { length: 80 },
+        (_, index) =>
+          `Streaming paragraph ${index}: synthetic browser content that makes the transcript scroll.\n\n`,
+      ).join('') + 'STREAM_BOTTOM_FIRST\n\n'
+      await reading.promise
+      yield 'STREAM_WHILE_READING\n\n' + 'Additional synthetic paragraph.\n\n'.repeat(30)
+      await following.promise
+      yield 'STREAM_FOLLOW_AGAIN\n\n' + 'Final synthetic paragraph.\n\n'.repeat(30)
+      await finished.promise
+    },
+  )
+  try {
+    await preferences(page)
+    const initial = await client.config.get()
+    const input = { providerId: 'deepseek', baseUrl: provider.baseUrl, apiKey: provider.apiKey }
+    expect((await client.config.test(input)).verified).toBe(true)
+    await client.config.save({
+      ...input,
+      model,
+      accountId: 'streaming-fixture',
+      label: 'Synthetic streaming fixture',
+      expectedRevision: initial.revision,
+      makeDefault: true,
+    })
+    const session = await client.session.new({
+      sessionKey: randomUUID(),
+      cwd: runtime.workspace,
+      preset: 'full-access',
+    })
+    await page.goto(`${runtime.url}/?session=${session.id}`)
+    await page
+      .getByRole('textbox', { name: 'Task content', exact: true })
+      .fill('Stream the synthetic conversation')
+    await page.locator('#send').click()
+    const viewport = page.getByRole('region', { name: 'Conversation', exact: true })
+    const distance = () =>
+      viewport.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)
+    await expect(viewport).toContainText('STREAM_BOTTOM_FIRST')
+    await expect.poll(distance).toBeLessThanOrEqual(1)
+    await viewport.evaluate(async (element) => {
+      element.scrollTo({ top: 0, behavior: 'instant' })
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      )
+    })
+    await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0)
+    reading.release()
+    await expect(viewport).toContainText('STREAM_WHILE_READING')
+    await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0)
+    await page.getByRole('button', { name: 'New content', exact: true }).click()
+    await expect.poll(distance).toBeLessThanOrEqual(1)
+    following.release()
+    await expect(viewport).toContainText('STREAM_FOLLOW_AGAIN')
+    await expect.poll(distance).toBeLessThanOrEqual(1)
+    finished.release()
+    await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
+    await accessible(page, info, 'streaming-scroll')
+  } finally {
+    reading.release()
+    following.release()
+    finished.release()
+    await provider.close()
+  }
+})
+
 test('Linux L1 admits a fresh workspace, hides secrets and anchors .agh against rename', async ({
   runtime,
 }) => {
