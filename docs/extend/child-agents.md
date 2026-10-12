@@ -67,7 +67,7 @@ These tools keep their current names:
 
 - `subagent_fork` starts a background child seeded from parent history and returns its key.
 - `subagent_spawn` starts a background child and returns its key. Both fork and spawn stay open for follow-ups.
-- `subagent_collect` reads the current result; an idle child can accept another message.
+- `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 
 Continuable children also accept:
@@ -77,6 +77,16 @@ Continuable children also accept:
 - `subagent_interrupt` stops the current turn and leaves the child open.
 
 `subagent_collect` reports `idle` when a continuable turn parks. `list_subagent_models` lists model selectors available to this parent, filtered by its allowlist. Fork and spawn accept `toolFilter: { allow?, deny? }` with exact tool names. Deny takes precedence, and filters apply to both disclosure and execution, including late registrations and descendants. The official tools deny the four `schedule_*` management tools by default.
+
+## Completion notices
+
+The parent does not poll. When a background child (one started by `subagent_fork` or `subagent_spawn`) finishes a turn and goes idle, or ends, Core writes one structured system input to the parent session after the child's state is durable:
+
+- `source: "agnes/child"`, `type: "child-completed"`.
+- `data`: `{ childKey, status, continuable?, result?, truncated?, credits? }`. `status` is `completed`, `failed`, `cancelled` or `budget_stopped`. `continuable: true` means the child is idle and still accepts `subagent_send_message`. `result` is the last assistant text, capped at 4000 characters; `subagent_collect` returns the full text.
+- `summary`: a short model-facing line with the result head. `presentation`: `{ kind: "child-completed", status, label }`; Web renders a localized status line with the data expandable.
+
+An idle parent wakes and the loop continues with the notice; a busy parent queues it like any input. The command id is `child-completed:<childKey>:<endSeq>:<status>` and Core deduplicates it against the parent's inbox history, so retries and restarts deliver once. When a parent session is reopened, Core delivers the notices of terminal children that a crash or a closed parent missed. Awaited forks (`ctx.subagent.fork`) and loop-owned children report through their caller and send no notice. A workflow loop reads the notice from `LoopInput.system`.
 
 ## Parent-bound facade
 

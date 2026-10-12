@@ -67,7 +67,7 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 
 - `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
 - `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。
-- `subagent_collect` 读取当前结果；空闲子代理可以继续接受消息。
+- `subagent_collect` 按需读取当前结果。了解子代理是否完成不需要它，见“完成通知”。
 - `subagent_cancel` 停止已启动的子任务及其子树。
 
 可继续的子代理还可以：
@@ -77,6 +77,16 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 - `subagent_interrupt` 停止当前回合，子代理保持打开。
 
 `subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
+
+## 完成通知
+
+父会话不需要轮询。后台子代理（由 `subagent_fork` 或 `subagent_spawn` 启动）完成一个回合进入空闲，或者结束时，Core 在子代理状态落盘之后，向父会话写入一条结构化系统输入：
+
+- `source: "agnes/child"`，`type: "child-completed"`。
+- `data`：`{ childKey, status, continuable?, result?, truncated?, credits? }`。`status` 取 `completed`、`failed`、`cancelled` 或 `budget_stopped`。`continuable: true` 表示子代理空闲，仍可用 `subagent_send_message` 继续。`result` 是最后一条助手文本，最多 4000 个字符；完整文本用 `subagent_collect` 读取。
+- `summary`：给模型看的简短一行，带结果开头。`presentation`：`{ kind: "child-completed", status, label }`；网页显示本地化的状态行，可展开查看数据。
+
+空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。
 
 ## 父会话外观
 

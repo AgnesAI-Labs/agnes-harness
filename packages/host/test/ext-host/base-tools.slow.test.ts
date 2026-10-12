@@ -1406,7 +1406,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         | { isError?: boolean; content?: Array<{ type?: string; text?: string }> }
         | undefined
       const started = result?.content?.[0]?.text?.match(
-        /^started (.+); use subagent_collect and subagent_send_message$/,
+        /^started (.+); its result arrives as a notice, use subagent_send_message to follow up$/,
       )
       expect(started).not.toBeNull()
       const childKey = started?.[1]

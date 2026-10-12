@@ -166,7 +166,8 @@ const forkParameters = Type.Object(
 
 const forkDefinition: ToolDef<typeof forkParameters> = {
   name: 'subagent_fork',
-  description: 'Start a background child inheriting parent context; collect its answer and send follow-ups.',
+  description:
+    'Start a background child inheriting parent context and send follow-ups. Its result arrives as a child-completed notice, so end your turn instead of polling.',
   parameters: forkParameters,
   meta: {
     isReadOnly: false,
@@ -231,7 +232,8 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
   assertDeps(deps)
   const definition: ToolDef<typeof spawnParameters> = {
     name: 'subagent_spawn',
-    description: 'Start a background continuable child; collect its answer and send follow-ups.',
+    description:
+      'Start a background continuable child and send follow-ups. Its result arrives as a child-completed notice, so end your turn instead of polling.',
     parameters: spawnParameters,
     meta: {
       isReadOnly: false,
@@ -322,7 +324,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           content: [
             {
               type: 'text',
-              text: `started ${spawned.childKey}; use subagent_collect and subagent_send_message`,
+              text: `started ${spawned.childKey}; its result arrives as a notice, use subagent_send_message to follow up`,
             },
           ],
           details,
@@ -397,7 +399,8 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
   assertDeps(deps)
   const definition: ToolDef<typeof collectParameters> = {
     name: 'subagent_collect',
-    description: 'Collect the current or terminal result of a spawned child task.',
+    description:
+      'Read the current or terminal result of a spawned child on demand. Do not poll: when a child finishes its turn or ends, the platform delivers a child-completed notice to this session.',
     parameters: collectParameters,
     meta: {
       isReadOnly: false,
