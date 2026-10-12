@@ -33,6 +33,16 @@ describe('Windows approval path identity', () => {
     expect(() =>
       normalizeArgv('write', { path: '\\\\server\\other\\repo\\file' }, '\\\\server\\share\\repo'),
     ).toThrow('NotCanonical')
+    // Parent traversal cannot climb above a share and then re-enter a similarly named machine path.
+    expect(normalizeArgv('write', { path: '../../repo/file' }, '\\\\server\\share\\repo')).toBe(
+      '//server/share/repo/file',
+    )
+    expect(() =>
+      normalizeArgv('write', { path: '../../../server/share/repo/file' }, '\\\\server\\share\\repo'),
+    ).toThrow('NotCanonical')
+    expect(() => normalizeArgv('write', { path: 'Z:/repo/file' }, '\\\\server\\share\\repo')).toThrow(
+      'NotCanonical',
+    )
   })
   it.each([
     '../outside',

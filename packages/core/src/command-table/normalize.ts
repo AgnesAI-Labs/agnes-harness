@@ -42,19 +42,26 @@ function normalizeWindowsPath(path: string, workspaceRoot: string): string {
   if (/^[A-Za-z]:(?![\\/])/.test(path) || (/^[\\/]/.test(path) && !/^[\\/]{2}/.test(path)))
     throw new NotCanonical('path depends on a current drive')
   const unc = /^[\\/]{2}/.test(workspaceRoot)
-  let root: ReturnType<typeof normalizeWorkspacePath>
+  if (unc && /^[A-Za-z]:/.test(path)) throw new NotCanonical('path is outside the workspace')
+  const rootParts = workspaceRoot.replaceAll('\\', '/').split('/').filter(Boolean)
+  const authority = unc ? `//${rootParts[0]}/${rootParts[1]}` : undefined
+  // A UNC share is a volume: parent segments clamp at that share, never at the machine root.
+  // Map its suffix to a lexical drive so the shared normalizer keeps that boundary intact.
+  const lexicalRoot = unc ? `Z:/${rootParts.slice(2).join('/')}` : workspaceRoot
+  let lexicalPath = path
+  if (unc && /^[\\/]{2}/.test(path)) {
+    const parts = path.replaceAll('\\', '/').split('/').filter(Boolean)
+    if (`//${parts[0]}/${parts[1]}` !== authority) throw new NotCanonical('path is outside the workspace')
+    lexicalPath = `Z:/${parts.slice(2).join('/')}`
+  }
+  let normalized: ReturnType<typeof normalizeWorkspacePath>
   try {
-    root = normalizeWorkspacePath('.', workspaceRoot)
+    normalized = normalizeWorkspacePath(lexicalPath, lexicalRoot)
   } catch {
     throw new NotCanonical('workspace must be narrower than a volume')
   }
-  if (unc && root.abs.split('/').filter(Boolean).length <= 2)
-    throw new NotCanonical('workspace must be narrower than a volume')
-  const normalized = normalizeWorkspacePath(path, workspaceRoot)
   if (!normalized.inside) throw new NotCanonical('path is outside the workspace')
-  // The shared lexical normalizer retains component case and renders one leading separator.
-  // UNC identities keep their second separator to remain distinct from drive-rooted paths.
-  return unc ? `/${normalized.abs}` : normalized.abs
+  return unc ? `${authority}/${normalized.abs.slice(3)}` : normalized.abs
 }
 
 /**
