@@ -8,6 +8,14 @@ Adds an optional typed `InputPresentation` to `AgentInputPort.deliver`. Backend 
 
 ## Unreleased
 
+Additive contract repairs: `@agnes/protocol` now exports the existing `UiArtifactFileData`
+type from its root, without changing the schema, wire format or runtime exports.
+`--agnes-scrollbar-thumb` joins the generated `THEME_TOKEN_NAMES` / `ThemeTokenName`
+vocabulary and skin manifest allowlist; skins may override it in both light and dark modes.
+Existing manifests remain valid and unknown tokens remain rejected. As with the adjacent
+`--agnes-focus-ring-soft` token addition, these preview contract repairs retain extension API
+`1.5.0` and the unpublished protocol package version.
+
 Tool policy/runtime plugins now inject `providers` and register by kind through
 `providers.register`. The named author services, plugin contexts and registration helpers
 were removed. Read the combined `providers.catalog`; typed backend selection, execution

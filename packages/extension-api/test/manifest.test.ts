@@ -230,7 +230,12 @@ describe('author manifest skin validation', () => {
       'agnes-bg-page',
     ])
       expect(checkManifest(withSkins([{ ...skin, tokens: { [token]: modes } }])).ok, token).toBe(false)
-    for (const token of ['--agnes-bg-page', '--shadow-elevation', '--agnes-text-primary'])
+    for (const token of [
+      '--agnes-bg-page',
+      '--shadow-elevation',
+      '--agnes-text-primary',
+      '--agnes-scrollbar-thumb',
+    ])
       expect(checkManifest(withSkins([{ ...skin, tokens: { [token]: modes } }])).ok, token).toBe(true)
   })
   it('rejects a token override that supplies only one palette mode', () => {

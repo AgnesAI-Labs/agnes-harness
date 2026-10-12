@@ -249,7 +249,7 @@ const INITIAL_CEILING: Record<string, number> = {
 
   'packages/core/src': 23781,
   'packages/ai/src': 4409,
-  'packages/protocol/src': 4726,
+  'packages/protocol/src': 4727,
   'packages/cli/src/tui': 38,
   'packages/cli-tui/src': 4957,
   'packages/extension-api/src': 3146, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.

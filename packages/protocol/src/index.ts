@@ -243,6 +243,7 @@ export type {
   UiActionReceipt,
   UiActionStatus,
   UiArgument,
+  UiArtifactFileData,
   UiChartSeries,
   UiCloseParams,
   UiColumn,
