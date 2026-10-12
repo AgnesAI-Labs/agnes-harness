@@ -48,6 +48,23 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#status')?.getAttribute('data-state')).toBe('running')
     expect(topbar?.querySelector('#connection')?.textContent).toBe('Local backend connected')
     expect(topbar?.querySelector('#connection')?.getAttribute('data-state')).toBe('connected')
+
+    const chat = document.getElementById('view-chat') as HTMLButtonElement
+    const trace = document.getElementById('view-trace') as HTMLButtonElement
+    expect(chat.getAttribute('aria-controls')).toBe('conversation-shell')
+    expect(trace.getAttribute('aria-controls')).toBe('trace-panel')
+    trace.click()
+    expect(runtime.trace?.isOpen()).toBe(true)
+    expect(trace.getAttribute('aria-selected')).toBe('true')
+    document.documentElement.lang = 'zh-CN'
+    window.dispatchEvent(new Event('agnes:locale-changed'))
+    await vi.waitFor(() => expect(trace.textContent).toBe('轨迹'))
+    expect(document.getElementById('view-trace')).toBe(trace)
+    expect(trace.getAttribute('aria-selected')).toBe('true')
+    expect(chat.getAttribute('aria-selected')).toBe('false')
+    expect(document.getElementById('report-problem')?.getAttribute('aria-label')).toBe('报告问题')
+    chat.click()
+    expect(runtime.trace?.isOpen()).toBe(false)
   })
 
   it('shadows only topbar and restores the built-in component after unload', async () => {

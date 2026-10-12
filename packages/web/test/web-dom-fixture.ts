@@ -10,6 +10,7 @@ import {
   startClientModules,
 } from '../src/client-modules/boot.js'
 import { mountNewSessionDialog } from '../src/new-session-dialog.js'
+import { renderSessionViews } from '../src/regions/session-views.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
@@ -50,6 +51,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
   materializeSettingsControls(document)
+  renderSessionViews()
 
   const runtime = await startClientModules({
     // The region bootstrap only retains this client for the reconciler. No roster read is issued by

@@ -140,8 +140,8 @@
       "className": 9
     },
     "packages/web/public/index.html": {
-      "intrinsic": 17,
-      "className": 25
+      "intrinsic": 14,
+      "className": 24
     },
     "packages/web/public/resources.html": {
       "intrinsic": 12,
@@ -166,9 +166,6 @@
       "dom": 1
     },
     "packages/web/src/message-feedback.ts": {
-      "dom": 1
-    },
-    "packages/web/src/regions/shell.ts": {
       "dom": 1
     },
     "packages/web/src/timeline-node-host.tsx": {

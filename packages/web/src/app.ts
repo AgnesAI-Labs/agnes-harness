@@ -91,12 +91,16 @@ import type { ModelPickerOption } from './model-picker.js'
 import { mountNewSessionDialog } from './new-session-dialog.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
+import { renderSessionViews } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
+
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
+
+renderSessionViews()
 
 const unbindDialogSheets = bindDialogSheets(document)
 
@@ -695,7 +699,7 @@ const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
 const goalHost = document.createElement('div')
 goalHost.className = 'session-goal-host'
-button('report-problem').before(goalHost)
+button('report-problem').parentElement?.before(goalHost)
 const wsUrl = element('agnes-config', 'meta').dataset.ws
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },

@@ -10,10 +10,9 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-conversation/document-preview'
-import { createAntdRoot } from '@agnes/web-ui'
+import { createAntdRoot, EmptyState, Icon } from '@agnes/web-ui'
 import { DocumentPreview } from '@agnes/web-ui/assistant-ui'
-
-import { createElement, useLayoutEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,
@@ -21,15 +20,12 @@ import {
   RIGHTBAR_GUIDE_CHILDREN,
   RIGHTBAR_SESSION_CHILDREN,
 } from './contracts.js'
-
 export interface RightbarRegionOptions {
   session?: SessionService
   resources?: ClientResourceService
   document?: RightbarDocument
 }
-
 export interface RightbarRegionMount extends EmptyStateRegionMount {}
-
 export interface RightbarDocument {
   readonly id: string
   readonly title?: string
@@ -39,7 +35,6 @@ export interface RightbarDocument {
   readonly laneId?: string
   readonly artifact?: ClientDocumentArtifact
 }
-
 export function documentPreviewInput(
   document: RightbarDocument | undefined,
   t: (key: string) => string = (key) => key,
@@ -51,7 +46,6 @@ export function documentPreviewInput(
     ...(document?.resourceUrl === undefined ? {} : { resourceUrl: document.resourceUrl }),
   }
 }
-
 export function DocumentPreviewBuiltin({
   document,
   resources,
@@ -60,7 +54,7 @@ export function DocumentPreviewBuiltin({
   document: RightbarDocument | undefined
   resources?: ClientResourceService
   t?: (key: string) => string
-}): ReturnType<typeof createElement> {
+}): JSX.Element {
   const artifact = document?.artifact
   const laneId = document?.laneId
   const kind = document?.kind ?? 'text'
@@ -120,16 +114,12 @@ export function DocumentPreviewBuiltin({
     loaded && loaded.request === request && loaded.resources === resources
       ? { ...documentPreviewInput(document, t), ...loaded.input }
       : documentPreviewInput(document, t)
-  return createElement(
-    'div',
-    {
-      className: 'rightbar-document-preview',
-      'data-rightbar-document-preview': document?.id ?? 'empty',
-    },
-    createElement(DocumentPreview, input),
+  return (
+    <div className="rightbar-document-preview" data-rightbar-document-preview={document?.id ?? 'empty'}>
+      <DocumentPreview {...input} />
+    </div>
   )
 }
-
 export function RightbarDocumentTab({
   document,
   resources,
@@ -138,46 +128,48 @@ export function RightbarDocumentTab({
   document: RightbarDocument | undefined
   resources?: ClientResourceService
   t?: (key: string) => string
-}): ReturnType<typeof createElement> {
+}): JSX.Element {
   const kind = document?.kind ?? 'text'
-  return createElement(
-    'section',
-    { className: 'rightbar-tab-content', 'data-rightbar-tab': 'document' },
-    createElement(SlotOutlet, {
-      name: 'sidebar.right.tab.document',
-      entryKey: kind,
-      props: { owner: document },
-      fallback: createElement(DocumentPreviewBuiltin, {
-        document,
-        ...(resources === undefined ? {} : { resources }),
-        t,
-      }),
-    }),
+  return (
+    <section className="rightbar-tab-content" data-rightbar-tab="document">
+      <SlotOutlet
+        name="sidebar.right.tab.document"
+        entryKey={kind}
+        props={{ owner: document }}
+        fallback={
+          <DocumentPreviewBuiltin
+            document={document}
+            {...(resources === undefined ? {} : { resources })}
+            t={t}
+          />
+        }
+      />
+    </section>
   )
 }
-
-export function RightbarGuideTab({
-  t = (key) => key,
-}: {
-  t?: (key: string) => string
-}): ReturnType<typeof createElement> {
-  return createElement(
-    'section',
-    { className: 'rightbar-tab-content', 'data-rightbar-tab': 'guide' },
-    createElement(SlotOutlet, {
-      name: 'sidebar.right.tab.guide',
-      owner: { tabId: 'guide' },
-      fallback: t('app.guide.empty'),
-    }),
-    createElement(SlotOutlet, {
-      name: 'sidebar.right.tab.guide.entry',
-      entryKey: 'default',
-      props: { owner: { entryId: 'default', tabId: 'guide' } },
-      hideWhenEmpty: true,
-    }),
+export function RightbarGuideTab({ t = (key) => key }: { t?: (key: string) => string }): JSX.Element {
+  return (
+    <section className="rightbar-tab-content" data-rightbar-tab="guide">
+      <SlotOutlet
+        name="sidebar.right.tab.guide"
+        owner={{ tabId: 'guide' }}
+        fallback={
+          <EmptyState
+            icon={<Icon name="file-text" />}
+            title={t('app.guide.title')}
+            description={t('app.guide.empty')}
+          />
+        }
+      />
+      <SlotOutlet
+        name="sidebar.right.tab.guide.entry"
+        entryKey="default"
+        props={{ owner: { entryId: 'default', tabId: 'guide' } }}
+        hideWhenEmpty={true}
+      />
+    </section>
   )
 }
-
 export function RightbarTabBuiltin({
   tab,
   document,
@@ -188,70 +180,64 @@ export function RightbarTabBuiltin({
   document: RightbarDocument | undefined
   resources?: ClientResourceService
   t?: (key: string) => string
-}): ReturnType<typeof createElement> {
-  return tab === 'document'
-    ? createElement(RightbarDocumentTab, {
-        document,
-        ...(resources === undefined ? {} : { resources }),
-      })
-    : createElement(RightbarGuideTab, { t })
+}): JSX.Element {
+  return tab === 'document' ? (
+    <RightbarDocumentTab document={document} {...(resources === undefined ? {} : { resources })} />
+  ) : (
+    <RightbarGuideTab t={t} />
+  )
 }
-
 export function RightbarSessionBuiltin({
   document,
   t = (key) => key,
 }: {
   document: RightbarDocument | undefined
   t?: (key: string) => string
-}): ReturnType<typeof createElement> {
+}): JSX.Element {
   const activeTab = document === undefined ? 'guide' : 'document'
   const owner = (tabId: 'document' | 'guide') => ({
     tabId,
     title: tabId === 'document' ? (document?.title ?? t('app.doc.fallbackTitle')) : t('app.guide.title'),
     active: activeTab === tabId,
   })
-  return createElement(
-    'div',
-    { id: 'rightbar-session', 'data-agnes-rightbar-session': true },
-    createElement(
-      'nav',
-      { className: 'rightbar-tabs', 'aria-label': t('app.rightbarTabs') },
-      createElement(SlotOutlet, {
-        name: 'sidebar.right.pane.tab',
-        entryKey: 'document',
-        props: { owner: owner('document') },
-        hideWhenEmpty: true,
-      }),
-      createElement(SlotOutlet, {
-        name: 'sidebar.right.pane.tab',
-        entryKey: 'guide',
-        props: { owner: owner('guide') },
-        hideWhenEmpty: true,
-      }),
-      createElement(SlotOutlet, {
-        name: 'sidebar.right.pane.tab.title',
-        entryKey: activeTab,
-        props: { owner: owner(activeTab) },
-        fallback: owner(activeTab).title,
-        hideWhenEmpty: true,
-      }),
-      createElement(SlotOutlet, {
-        name: 'sidebar.right.tab.menu.item',
-        props: { owner: { activeTab } },
-        hideWhenEmpty: true,
-      }),
-    ),
+  return (
+    <div id="rightbar-session" data-agnes-rightbar-session={true}>
+      <nav className="rightbar-tabs" aria-label={t('app.rightbarTabs')}>
+        <SlotOutlet
+          name="sidebar.right.pane.tab"
+          entryKey="document"
+          props={{ owner: owner('document') }}
+          hideWhenEmpty={true}
+        />
+        <SlotOutlet
+          name="sidebar.right.pane.tab"
+          entryKey="guide"
+          props={{ owner: owner('guide') }}
+          hideWhenEmpty={true}
+        />
+        <SlotOutlet
+          name="sidebar.right.pane.tab.title"
+          entryKey={activeTab}
+          props={{ owner: owner(activeTab) }}
+          fallback={owner(activeTab).title}
+          hideWhenEmpty={true}
+        />
+        <SlotOutlet
+          name="sidebar.right.tab.menu.item"
+          props={{ owner: { activeTab } }}
+          hideWhenEmpty={true}
+        />
+      </nav>
+    </div>
   )
 }
-
-export function RightbarBuiltin(): ReturnType<typeof createElement> {
-  return createElement(
-    'div',
-    { id: 'rightbar-content', 'data-agnes-region-unit': 'rightbar' },
-    createElement(SlotOutlet, { name: 'rightbar.session', hideWhenEmpty: true }),
+export function RightbarBuiltin(): JSX.Element {
+  return (
+    <div id="rightbar-content" data-agnes-region-unit="rightbar">
+      <SlotOutlet name="rightbar.session" hideWhenEmpty={true} />
+    </div>
   )
 }
-
 /** Mount the independent DSH rightbar surface; trace and approval keep their legacy owners. */
 export function mountRightbarRegion(
   registry: SlotRegistry,
@@ -272,7 +258,7 @@ export function mountRightbarRegion(
       priority: 0,
       children: { 'rightbar.session': sessionSpec },
     },
-    () => createElement(RightbarBuiltin),
+    () => <RightbarBuiltin />,
   )
   const removeSessionBuiltin = registry.register(
     {
@@ -282,11 +268,7 @@ export function mountRightbarRegion(
       priority: 1,
       children: RIGHTBAR_SESSION_CHILDREN,
     },
-    () =>
-      createElement(RightbarSessionBuiltin, {
-        document: options.document,
-        ...(t ? { t } : {}),
-      }),
+    () => <RightbarSessionBuiltin document={options.document} {...(t ? { t } : {})} />,
   )
   const removeDocumentTab = registry.register(
     {
@@ -297,12 +279,13 @@ export function mountRightbarRegion(
       priority: 1,
       children: RIGHTBAR_DOCUMENT_CHILDREN,
     },
-    () =>
-      createElement(RightbarTabBuiltin, {
-        tab: 'document',
-        document: options.document,
-        ...(options.resources === undefined ? {} : { resources: options.resources }),
-      }),
+    () => (
+      <RightbarTabBuiltin
+        tab="document"
+        document={options.document}
+        {...(options.resources === undefined ? {} : { resources: options.resources })}
+      />
+    ),
   )
   const removeGuideTab = registry.register(
     {
@@ -313,12 +296,13 @@ export function mountRightbarRegion(
       priority: 1,
       children: RIGHTBAR_GUIDE_CHILDREN,
     },
-    () =>
-      createElement(RightbarTabBuiltin, {
-        tab: 'guide',
-        document: options.document,
-        ...(options.resources === undefined ? {} : { resources: options.resources }),
-      }),
+    () => (
+      <RightbarTabBuiltin
+        tab="guide"
+        document={options.document}
+        {...(options.resources === undefined ? {} : { resources: options.resources })}
+      />
+    ),
   )
   const documentRenderers: Array<() => void> = []
   for (const kind of ['text', 'markdown', 'html', 'image', 'pdf', 'code'] as const) {
@@ -331,12 +315,13 @@ export function mountRightbarRegion(
           owner: '@agnes/web-rightbar',
           priority: 1,
         },
-        ({ owner }: { owner?: RightbarDocument }) =>
-          createElement(DocumentPreviewBuiltin, {
-            document: owner ?? options.document,
-            ...(options.resources === undefined ? {} : { resources: options.resources }),
-            ...(t ? { t } : {}),
-          }),
+        ({ owner }: { owner?: RightbarDocument }) => (
+          <DocumentPreviewBuiltin
+            document={owner ?? options.document}
+            {...(options.resources === undefined ? {} : { resources: options.resources })}
+            {...(t ? { t } : {})}
+          />
+        ),
       ),
     )
   }
@@ -360,11 +345,9 @@ export function mountRightbarRegion(
   const stops = watchedSlots.map((name) => registry.subscribeBatched(name, syncVisibility))
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry, ...(options.session ? { session: options.session } : {}) },
-        createElement(SlotOutlet, { name: 'rightbar' }),
-      ),
+      <SlotsProvider registry={registry} {...(options.session ? { session: options.session } : {})}>
+        <SlotOutlet name="rightbar" />
+      </SlotsProvider>,
     )
   })
   syncVisibility()

@@ -55,6 +55,12 @@
     border-bottom: 1px solid var(--agnes-line-primary);
     padding: 0.4rem 0.6rem;
   }
+  .workbench-dock-tabs {
+    display: contents;
+  }
+  .workbench-dock-tabs > .ant-tabs-content-holder {
+    display: none;
+  }
   .workbench-panel-tabs {
     display: flex;
     min-width: 0;

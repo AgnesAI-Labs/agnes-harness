@@ -157,12 +157,13 @@ it('the settings dialog no longer frames the admin pages', () => {
 
 it('exposes native tab and live status semantics for the rendered workbench', async () => {
   const runtime = await mountRenderedIndex()
-  const html = read('index.html')
-  expect(html).toContain('<div class="session-tabs" role="tablist"')
-  expect(html).toContain('id="view-chat" role="tab"')
-  expect(html).toContain('id="view-trace" role="tab"')
-  expect(html).toContain('aria-controls="conversation-shell"')
-  expect(html).toContain('aria-controls="trace-panel"')
+  expect(document.querySelector('.session-tabs[role="tablist"]')).not.toBeNull()
+  expect(document.querySelector('#view-chat[role="tab"][aria-controls="conversation-shell"]')).toBeInstanceOf(
+    HTMLButtonElement,
+  )
+  expect(document.querySelector('#view-trace[role="tab"][aria-controls="trace-panel"]')).toBeInstanceOf(
+    HTMLButtonElement,
+  )
   expect(document.querySelector('#connection[role="status"][aria-live="polite"]')).not.toBeNull()
   await runtime.dispose()
   resetWebDom()

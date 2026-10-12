@@ -142,6 +142,15 @@
     padding: 0 var(--s20);
     border-bottom: 1px solid var(--agnes-line-primary);
   }
+  #session-view-controls,
+  #session-view-controls > .agh-tooltip-anchor,
+  .session-view-tabs,
+  .session-view-tabs > .ant-tabs-content-holder {
+    display: contents;
+  }
+  .session-view-tabs > .ant-tabs-content-holder {
+    display: none;
+  }
   .session-tabs {
     display: flex;
     gap: var(--s16);

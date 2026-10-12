@@ -1,11 +1,8 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createAntdRoot } from '@agnes/web-ui'
-import { createElement } from 'react'
+import { createAntdRoot, createRegionHost } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { DSH_ROOT_CHILDREN, type EmptyStateRegionMount } from './contracts.js'
-
 export interface DshShellRegionMount extends EmptyStateRegionMount {}
-
 /**
  * Register the DSH root tree once for the page.  The legacy `ui:*` regions remain the visible
  * compatibility boundaries; their built-ins below forward into this tree so a DSH contribution
@@ -33,24 +30,16 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
       priority: 1,
       children: { 'main.conversation': { kind: 'single', scope: 'session-maybe' } },
     },
-    () =>
-      createElement(SlotOutlet, {
-        name: 'main.conversation',
-        hideWhenEmpty: true,
-      }),
+    () => <SlotOutlet name="main.conversation" hideWhenEmpty={true} />,
   )
-
-  const overlayHost = document.createElement('div')
+  const overlayHost = createRegionHost(document.body, 'div')
   overlayHost.dataset.agnesDshShellOverlay = 'true'
-  document.body.append(overlayHost)
   const overlayRoot = createAntdRoot(overlayHost)
   flushSync(() => {
     overlayRoot.render(
-      createElement(
-        SlotsProvider,
-        { registry },
-        createElement(SlotOutlet, { name: 'shell.overlay', hideWhenEmpty: true }),
-      ),
+      <SlotsProvider registry={registry}>
+        <SlotOutlet name="shell.overlay" hideWhenEmpty={true} />
+      </SlotsProvider>,
     )
   })
   let disposed = false
