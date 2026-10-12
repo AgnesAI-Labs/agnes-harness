@@ -139,7 +139,7 @@
   margin: 0.5rem 1rem;
   padding: 0.75rem;
   border: 1px solid var(--agnes-input-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 .goal-card label {
   display: grid;

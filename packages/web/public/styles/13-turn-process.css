@@ -526,7 +526,7 @@
   min-height: 2.125rem;
   padding: 0 0.75rem;
   border-color: transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: 0.8125rem;
   font-weight: 500;
 }
@@ -545,7 +545,7 @@
   place-items: center;
   padding: 0;
   overflow: visible;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   color: var(--agnes-text-secondary);
   /* 圆环本身就是指示器，底下再垫一块灰底会脏。只在悬停时给一点反馈。 */
   background: transparent;
@@ -630,7 +630,7 @@
   height: 0.25rem;
   margin: 0.625rem 0 0.75rem;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--agnes-bg-hover);
 }
 .usage-bar > span {

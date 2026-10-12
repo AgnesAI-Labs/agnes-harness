@@ -97,7 +97,7 @@
   min-height: 1.75rem;
   padding: 0.2rem 0.65rem;
   border: 1px solid var(--agnes-line-primary);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--agnes-bg-app-content);
   color: var(--agnes-text-primary);
   font-size: var(--font-size-xs);
@@ -108,7 +108,7 @@
   min-height: 1.75rem;
   padding: 0.2rem 0.55rem;
   border-color: var(--agnes-line-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   font-size: var(--font-size-xs);
   font-weight: 400;
@@ -138,7 +138,7 @@
   min-height: 1.5rem;
   padding: 0.1rem 0.3rem;
   border: 1px solid var(--agnes-line-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--agnes-bg-app-content);
   color: var(--agnes-text-primary);
   font-size: var(--font-size-xs);
@@ -161,7 +161,7 @@
   height: 0.85rem;
   overflow: hidden;
   background: var(--agnes-trace-track);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   touch-action: none;
   cursor: crosshair;
 }
@@ -187,7 +187,7 @@
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 button.trace-gantt-bar:hover:not(:disabled) {
   filter: brightness(1.15);
@@ -333,7 +333,7 @@ button.trace-gantt-bar:focus-visible {
 .trace-badge {
   justify-self: start;
   padding: 0.08rem 0.4rem;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-weight: 500;
 }
@@ -460,7 +460,7 @@ button.trace-gantt-bar:focus-visible {
   min-height: 1.6rem;
   padding: 0.2rem 0.45rem;
   border: 1px solid var(--agnes-line-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--agnes-text-primary);
   font-size: var(--font-size-xs);
