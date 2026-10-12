@@ -96,6 +96,12 @@
     --ant-control-height-sm: var(--control-height-sm);
     --ant-control-height-lg: var(--control-height-form);
 
+    --ant-motion-duration-fast: var(--motion-fast);
+    --ant-motion-duration-mid: var(--motion-base);
+    --ant-motion-duration-slow: var(--motion-base);
+    --ant-motion-ease-in-out: var(--motion-ease);
+    --ant-motion-ease-out: var(--motion-ease);
+
     /* Component defaults also contain light colors in Ant Design's static CSS. */
 
     /* zeroRuntime needs the same private overlay layers in static component variables. */

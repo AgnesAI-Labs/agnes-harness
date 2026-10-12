@@ -910,6 +910,10 @@
     padding: var(--s16) var(--s24);
     border-color: var(--agnes-line-primary);
   }
+  /* The native navigation drawer has no Ant z-index context; its menu sits above that surface. */
+  body.sidebar-open .agh-menu-popup {
+    --ant-dropdown-z-index-popup: calc(var(--agh-z-drawer) + 1);
+  }
   .agh-menu-popup .agh-menu {
     display: block;
     min-width: 180px;
