@@ -85,7 +85,12 @@ function componentLines(
     const blocked = bindingLine(surface, component.dataKey, sources)
     if (blocked) {
       if ('fallback' in component) lines.push(component.fallback)
-      lines.push(blocked)
+      const binding = surface.data[component.dataKey]
+      lines.push(
+        component.kind === 'chart' && object(binding) && typeof binding.$source === 'string'
+          ? `source ${binding.$source}: ${blocked}`
+          : blocked,
+      )
       return lines
     }
   }
@@ -121,8 +126,14 @@ function componentLines(
         )
           lines.push(`${id}: ${title} = ${value}`)
       }
-  } else if (component.kind === 'chart') lines.push(JSON.stringify(surface.data[component.dataKey]))
-  else if (component.kind === 'detail-card') {
+  } else if (component.kind === 'chart') {
+    const points = surface.data[component.dataKey]
+    if (Array.isArray(points)) {
+      const shown = points.slice(0, X_AGNES_UI_LIMITS.textFallbackRows)
+      lines.push(JSON.stringify(shown))
+      if (points.length > shown.length) lines.push(`… ${points.length - shown.length} more`)
+    }
+  } else if (component.kind === 'detail-card') {
     const data = surface.data[component.dataKey]
     if (object(data)) {
       for (const field of component.fields) lines.push(`${field.label}: ${textValue(data[field.key])}`)

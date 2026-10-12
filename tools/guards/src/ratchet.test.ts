@@ -1579,7 +1579,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
   // UI data-source bindings, refresh method, and uiData capability field.
   // countLines on this tree: 4633 (HEAD was 4486 against the previous 4207 ceiling; this change adds 147).
-  'packages/protocol/src': 4655,
+  'packages/protocol/src': 4666,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,

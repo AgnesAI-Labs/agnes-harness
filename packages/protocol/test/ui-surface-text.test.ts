@@ -167,7 +167,7 @@ describe('preset surface text', () => {
       },
       actions: [],
     }
-    expect(surfaceText(bound)).toBe('Rows (revision 1)\nunavailable\nunavailable')
+    expect(surfaceText(bound)).toBe('Rows (revision 1)\nunavailable\nsource finance/differences: unavailable')
     expect(surfaceText(bound)).not.toContain('$source')
     expect(surfaceText(bound)).not.toContain('hidden')
     expect(surfaceText(bound, { rows: { status: 'error', code: 'UI_SOURCE_DENIED' } })).toContain(
@@ -183,5 +183,13 @@ describe('preset surface text', () => {
     expect(long).toContain('r19 | 22')
     expect(long).not.toContain('r20')
     expect(long.endsWith('… 21 rows')).toBe(true)
+    const chart = surfaceText({
+      ...bound,
+      components: [bound.components[1]!],
+      data: { chart: rows.map((row) => ({ label: row.a, amount: 22 })) },
+    })
+    expect(chart).toContain('"label":"r19"')
+    expect(chart).not.toContain('"label":"r20"')
+    expect(chart.endsWith('… 1 more')).toBe(true)
   })
 })
