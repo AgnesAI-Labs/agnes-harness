@@ -76,7 +76,6 @@ async function fixture(
   const signals: AbortSignal[] = []
   let asked = false
   let ownedSession: HostSession | undefined
-  let receipt: { requestId: string; bindingHash: string; expiresAt: string } | null = null
   const { host } = await createTestHost({
     dataDir: root,
     ...(options.park
@@ -84,12 +83,7 @@ async function fixture(
           packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
           seams: {
             approval: {
-              ask: async (request: import('@agnes/core').ApprovalRequest) => {
-                const expiresAt = new Date(Date.now() + 60_000).toISOString()
-                receipt = { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt }
-                return { ticket: 'title-approval', expiresAt }
-              },
-              resume: async () => receipt,
+              ask: async () => 'unavailable',
             },
           },
         }
@@ -543,7 +537,19 @@ it('waits through approval and generates once after the continued logical turn c
     expect(await titleRecord(f.session)).toMatchObject({ status: 'pending', turn: 1 }),
   )
   expect(f.calls.filter((call) => call.kind === 'summary')).toHaveLength(0)
-  await f.session.resumeApproval('title-approval', 'allowed-once', { ...f.session.d.actor, id: 'approver' })
+  const pending = (await f.session.decisions.list()).find(
+    (value) => value.request.owner === 'core/tool-permission' && !value.result && !value.invalidation,
+  )
+  if (!pending) throw new Error('Expected a durable tool permission request')
+  await f.session.decisions.answer(
+    {
+      handle: pending.handle,
+      revision: pending.revision,
+      commandId: 'approve-title-turn',
+      response: { option: 'allowed-once', value: null },
+    },
+    { actor: { ...f.session.d.actor, id: 'approver' }, category: 'human', authorize() {} },
+  )
   expect((await f.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
     'completed',
   )
