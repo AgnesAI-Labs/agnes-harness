@@ -239,6 +239,25 @@ export class DecisionCommands {
       return detached(handle)
     })
   }
+  /** Backend withdrawal never manufactures a human refusal or effect receipt. */
+  withdraw(handle: DecisionHandle, source: DecisionSource, code: string): Promise<DecisionSnapshot> {
+    return this.s.transact(async () => {
+      this.live()
+      const value = await this.expire(this.read(handle, source))
+      if (value.consumption || value.invalidation || (value.result && value.result.reason !== 'answered'))
+        return detached(value)
+      const at = new Date(this.s.clock()).toISOString()
+      const next: DecisionSnapshot = {
+        ...value,
+        revision: value.revision + 1,
+        ...(value.result
+          ? { invalidation: { at, code } }
+          : { result: { reason: code === 'stopped' ? 'stopped' : 'unavailable', at, code } }),
+      }
+      await this.write(next)
+      return detached(next)
+    })
+  }
   get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {
       this.live()

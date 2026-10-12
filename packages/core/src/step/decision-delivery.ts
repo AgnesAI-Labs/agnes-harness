@@ -58,6 +58,7 @@ export async function deliverDecision(
     if (
       !isPending(answer) &&
       answer.answeredBy &&
+      answer.answeredBy.role !== 'agent' &&
       ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(answer.verdict)
     ) {
       try {
@@ -93,7 +94,7 @@ export async function deliverDecision(
               handle: current.handle,
               waitEndedBy: isPending(answer)
                 ? 'detached'
-                : (answer.reason ?? (answer.answeredBy ? 'no-approver' : 'invalid-answer')),
+                : (answer.reason ?? (answer.verdict === 'unavailable' ? 'no-approver' : 'invalid-answer')),
             },
             { ignorable: true },
           ),

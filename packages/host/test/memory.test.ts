@@ -44,6 +44,7 @@ it.each([
   'allowed-session',
   'allowed-permanent',
   'missing-human',
+  'pending',
   'agent',
   'no-handler',
   'policy_denied',
@@ -110,6 +111,7 @@ it.each([
               verdict: 'allowed-once',
               answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
             }
+          if (initialAnswer === 'pending') return { ticket: 'memory-pending', expiresAt: request.deadline }
           if (initialAnswer === 'missing-human') return 'allowed-once'
           if (initialAnswer === 'no-handler') return { verdict: 'unavailable', reason: 'no-handler' }
           if (initialAnswer === 'policy_denied' || initialAnswer === 'subagent_scope')
@@ -204,18 +206,36 @@ it.each([
           (value) => value.request.spec.purpose === 'unknown-outcome',
         ),
       ).toBe(false)
-      expect(
-        (await rejected.session.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data,
-      ).toMatchObject(
+      expect((await rejected.session.decisions.list()).at(-1)?.result).toMatchObject(
         initialAnswer === 'rejected'
-          ? { verdict: 'rejected' }
+          ? { reason: 'answered', response: { option: 'rejected' } }
           : {
-              verdict: 'unavailable',
-              reason: ['no-handler', 'policy_denied', 'subagent_scope'].includes(initialAnswer)
+              reason: 'unavailable',
+              code: ['no-handler', 'policy_denied', 'subagent_scope'].includes(initialAnswer)
                 ? initialAnswer
                 : 'invalid-answer',
             },
       )
+      expect(
+        await rejected.session.scan({ type: ['approval/asked', 'approval/decided'], limit: 100 }),
+      ).toEqual([])
+      const memoryDecision = (await rejected.session.decisions.list()).at(-1)
+      expect(memoryDecision?.request.spec).toMatchObject({
+        purpose: 'memory',
+        options: ['allowed-once', 'rejected'],
+      })
+      if (initialAnswer === 'pending' && memoryDecision)
+        await expect(
+          rejected.session.decideApproval({
+            command: {
+              handle: memoryDecision.handle,
+              revision: memoryDecision.revision,
+              commandId: 'late-candidate',
+              response: { option: 'allowed-once', value: null },
+            },
+            context: { actor: rejected.session.d.actor, category: 'human', authorize() {} },
+          }),
+        ).rejects.toThrow('NOT_PENDING')
       expect((await memory.readFile('MEMORY.md')).content).toBe('')
       allowed = true
       const accepted = await turn('accepted')
