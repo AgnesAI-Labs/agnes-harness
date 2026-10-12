@@ -213,7 +213,7 @@ profile is persisted before trust/enable. Its live tool and Skill assertions als
 hosts where MCP confinement is unavailable. Strict confinement and refusal are covered by
 the sandbox backend and resource-control-worker integration tests.
 
-CI and local guards enforce the reviewed line budgets in `tools/guards/ratchet.json`.
+CI and local guards enforce the reviewed file-size limits in `tools/guards/file-size-allowlist.json`.
 Any new excess fails the check and is also appended to the job summary. Re-measurement
 uses the guard's `countLines` and exact source-path matching; no report-only switch or
 spare allocation bypasses the ceiling. Structural, dependency, counting-regression
