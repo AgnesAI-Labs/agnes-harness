@@ -184,6 +184,7 @@ describe('protocol src boundary', () => {
         'inspectJsonData',
         'isWorkerGeneration',
         'jcs',
+        'JcsByteLimitError',
         'sha256Hex',
         'IncrementalSha256',
         'FILE_UPLOAD_PATH',

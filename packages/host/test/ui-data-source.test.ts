@@ -326,6 +326,9 @@ describe('ui data source resolution', () => {
     expect(result.sources.rows).toEqual({ status: 'error', code: 'UI_SOURCE_TOO_LARGE' })
     expect(result.surface.data.rows).toEqual(binding)
     expect(h.cache.size).toBe(0)
+    const early = await run(harness({ resultBytes: 4, query: async () => [...rows, NaN] }), 'read')
+    if (!early.ok) throw new Error('expected a degraded component')
+    expect(early.sources.rows).toEqual({ status: 'error', code: 'UI_SOURCE_TOO_LARGE' })
   })
 
   it('times out a source and still disposes it', async () => {

@@ -23,6 +23,7 @@ import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
   componentDataValid,
+  JcsByteLimitError,
   type JsonValue,
   jcs,
   type UiSurface,
@@ -108,14 +109,6 @@ function throwIfCaller(signal: AbortSignal): void {
   const error = new Error('aborted')
   error.name = 'AbortError'
   throw error
-}
-
-function isJson(value: unknown): value is JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
-  if (typeof value === 'number') return Number.isFinite(value)
-  if (Array.isArray(value)) return value.every((item) => isJson(item))
-  if (typeof value === 'object') return Object.values(value).every((item) => isJson(item))
-  return false
 }
 
 function resultMatches(result: UiDataSourceResult, data: JsonValue): boolean {
@@ -544,16 +537,18 @@ async function resolveKey(
     deps.timeoutMs ?? X_AGNES_UI_LIMITS.sourceTimeoutMs,
   )
   if (!queried.ok) return refuse(queried.code)
-  if (!isJson(queried.data)) return refuse('UI_SOURCE_UNAVAILABLE')
   let encoded: string
+  let data: JsonValue
   try {
-    encoded = jcs(queried.data)
-  } catch {
+    encoded = jcs(queried.data, deps.resultBytes ?? X_AGNES_UI_LIMITS.sourceResultBytes)
+    // The bounded canonical bytes are the validated JSON snapshot used for shape, hash and cache.
+    data = JSON.parse(encoded)
+  } catch (error) {
+    if (error instanceof JcsByteLimitError) return refuse('UI_SOURCE_TOO_LARGE')
     return refuse('UI_SOURCE_UNAVAILABLE')
   }
   const bytes = Buffer.byteLength(encoded)
-  if (bytes > (deps.resultBytes ?? X_AGNES_UI_LIMITS.sourceResultBytes)) return refuse('UI_SOURCE_TOO_LARGE')
-  if (!resultMatches(registration.result, queried.data)) return refuse('UI_SOURCE_SHAPE')
+  if (!resultMatches(registration.result, data)) return refuse('UI_SOURCE_SHAPE')
   let declarations: readonly UiComponentDeclaration[]
   try {
     declarations = deps.declarations()
@@ -563,7 +558,7 @@ async function resolveKey(
   try {
     for (const component of input.surface.components) {
       if (!('dataKey' in component) || component.dataKey !== key.dataKey) continue
-      if (!componentDataValid(component, queried.data, declarations)) return refuse('UI_SOURCE_SHAPE')
+      if (!componentDataValid(component, data, declarations)) return refuse('UI_SOURCE_SHAPE')
     }
   } catch {
     return refuse('UI_SOURCE_SHAPE')
@@ -573,7 +568,7 @@ async function resolveKey(
     dropSource(deps.cache, deps.session.key, registration.id)
     return finish(renewed, {})
   }
-  const rows = Array.isArray(queried.data) ? queried.data.length : 0
+  const rows = Array.isArray(data) ? data.length : 0
   const resultHash = createHash('sha256').update(encoded).digest('hex')
   const at = (stamps.get(deps.cache) ?? 0) + 1
   stamps.set(deps.cache, at)
@@ -586,13 +581,13 @@ async function resolveKey(
     sourceId: registration.id,
     paramsHash,
     resultHash,
-    data: structuredClone(queried.data),
+    data: structuredClone(data),
     bytes,
     rows,
     at,
   })
   retain(deps.cache, deps.session.key, input.surface.id)
-  return finish(undefined, { data: queried.data, resultHash, bytes, rows })
+  return finish(undefined, { data: data, resultHash, bytes, rows })
 }
 
 async function querySource(

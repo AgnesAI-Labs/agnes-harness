@@ -10,6 +10,12 @@ it('uses JSON number and escape spelling without lossy Unicode normalization', (
     '[0,1e+21,1e-7,4.5,null,true,false,"\\"\\\\\\n\\t\\u000f"]',
   )
   expect(jcs('e\u0301')).not.toBe(jcs('é'))
+  const value = ['😀', '"\\\n', { b: 'é', a: 1 }]
+  const encoded = jcs(value)
+  const bytes = new TextEncoder().encode(encoded).length
+  expect(jcs(value, bytes)).toBe(encoded)
+  expect(() => jcs(value, bytes - 1)).toThrow('JCS byte limit exceeded')
+  expect(() => jcs(['x'.repeat(1_000_000), NaN], 16)).toThrow('JCS byte limit exceeded')
 })
 it.each(
   [
