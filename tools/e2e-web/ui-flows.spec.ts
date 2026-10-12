@@ -327,7 +327,7 @@ test('UI background jobs and schedule cards persist observable results', async (
     page,
     'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","selector":{"every_seconds":86400}}',
   )
-  await expect(await workbenchSurface(page, 'Reminder / 提醒')).toContainText('E2E tool reminder')
+  await expect(await workbenchSurface(page, 'Reminders')).toContainText('E2E tool reminder')
   await quality(page, info, 'schedule-card')
   await settings(page)
   await section(page, 'jobs')

@@ -41,13 +41,14 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
                 ctx,
                 tableSurface(
                   ctx.session.toolUseId,
-                  'Reminder / 提醒',
-                  ['Title', 'Next', 'Status'],
+                  'Reminders',
+                  ['Title', { label: 'Next', format: 'date' }, { label: 'Status', format: 'status' }],
                   rows.map((row) => [
                     clip(row.title, 1024),
                     row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
                     row.status,
                   ]),
+                  { titleKey: 'ui.schedule' },
                 ),
               )
           }
