@@ -1,5 +1,5 @@
 import type { Context } from '@agnes/cordis'
-import { defineProviderKind, type ProviderIdentity } from '@agnes/extension-api'
+import { defineKind, type ProviderIdentity } from '@agnes/extension-api'
 import { installProviderRegistry, type ProviderRegistry } from '@agnes/host-common/assemble/provider-registry'
 
 /** The Host's own platform backend, described for the catalog. It carries no capability handle. */
@@ -14,7 +14,7 @@ export const HOST_PLATFORM_PROVIDER_ID = 'host'
  * neither register nor select another, and the catalog lists it read-only. The backend itself
  * stays behind `PlatformSeam` in Core.
  */
-export const platformKind = defineProviderKind<HostPlatformProvider>({
+export const platformKind = defineKind<HostPlatformProvider>({
   kind: 'platform',
   authority: 'host',
   scope: 'process',
