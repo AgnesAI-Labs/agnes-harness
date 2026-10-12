@@ -6,7 +6,7 @@ import type { Context } from '@agnes/cordis'
 import type { RemoteTransport, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ProviderPluginContext } from '@agnes/extension-api'
-import { SEAM_KINDS } from '@agnes/extension-api/seams'
+import { checkpointKind, SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
 import {
@@ -1552,7 +1552,7 @@ describe('assemble', () => {
           entry: normalizePluginExport({
             inject: ['providers'],
             apply: (ctx: ProviderPluginContext) => {
-              ctx.providers.register('checkpoint', '@agnes/code', alt as never)
+              ctx.providers.register(checkpointKind, '@agnes/code', alt as never)
             },
           } as never),
         },

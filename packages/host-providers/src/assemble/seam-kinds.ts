@@ -1,7 +1,7 @@
 import type { Context } from '@agnes/cordis'
-import { defineProviderKind } from '@agnes/extension-api'
+import type { ProviderKind } from '@agnes/extension-api'
 import type { SeamKind, SeamProvider } from '@agnes/extension-api/seams'
-import { PINNED_SEAM_KINDS, SEAM_KINDS } from '@agnes/extension-api/seams'
+import { SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
 import {
   installProviderRegistry,
   type ProviderRegistry,
@@ -21,16 +21,7 @@ export function installSeamKinds(root: Context, origins?: RowOriginLookup): void
 function installSeamKind(root: Context, kind: SeamKind, origins?: RowOriginLookup): void {
   const registry: ProviderRegistry<SeamProvider<object>> = installProviderRegistry(
     root,
-    defineProviderKind<SeamProvider<object>>({
-      kind,
-      required: true,
-      authority: 'open',
-      pinned: (PINNED_SEAM_KINDS as readonly string[]).includes(kind),
-      validate(provider) {
-        if (typeof provider.create !== 'function')
-          throw new Error(`invalid ${kind} provider: create() is required`)
-      },
-    }),
+    SEAM_KIND_TOKENS[kind] as unknown as ProviderKind<SeamProvider<object>>,
     (owner, source, provider) =>
       registry.register(providerSource(owner, origins, source, true), provider, owner),
   )

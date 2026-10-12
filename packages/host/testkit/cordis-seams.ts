@@ -1,6 +1,6 @@
 import { BASE_SEAM_PROVIDERS, defaultLoopPlugin, toolPolicyPlugin } from '@agnes/base'
 import type { ProviderPluginContext } from '@agnes/extension-api'
-import { SEAM_KINDS } from '@agnes/extension-api/seams'
+import { SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import type {} from '@agnes/host-providers/assemble/loops'
 import type {} from '@agnes/host-providers/assemble/tool-providers'
@@ -61,7 +61,7 @@ function seamProvidersRow(module: PackageModule) {
         for (const kind of SEAM_KINDS) {
           const factory = table[kind]
           if (!factory) continue
-          ctx.providers.register(kind, module.id, {
+          ctx.providers.register(SEAM_KIND_TOKENS[kind] as never, module.id, {
             id: BASE_SEAM_PROVIDERS[kind].id,
             version: BASE_SEAM_PROVIDERS[kind].version,
             create: (init: unknown) => factory(init as SeamInitContext),

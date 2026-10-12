@@ -1,5 +1,6 @@
 import { Context } from '@agnes/cordis'
 import type { SeamInit, SeamKind, VerifierProvider } from '@agnes/extension-api/seams'
+import { verifierKind } from '@agnes/extension-api/seams'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { describe, expect, it, vi } from 'vitest'
@@ -36,7 +37,7 @@ function rig(packages: ResolvedProfile['packages'] = [], timeoutMs = 50) {
   }
   const register = (source: string, provider: VerifierProvider) =>
     root.plugin((ctx) => {
-      ctx.providers.register('verifier', source, provider)
+      ctx.providers.register(verifierKind, source, provider)
     })
   return { root, input, inits, bound, register }
 }

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@agnes/cordis'
-import type { ProviderSelection } from '@agnes/extension-api'
+import type { ProviderKind, ProviderSelection } from '@agnes/extension-api'
 import type { SeamInit, SeamKind, SeamProvider } from '@agnes/extension-api/seams'
-import { SEAM_KINDS } from '@agnes/extension-api/seams'
+import { SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
 import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
@@ -125,7 +125,10 @@ export function seamBinding(kind: SeamKind, selection: ProviderSelection, input:
     const providers = ctx.providers
     let provider: SeamProvider<object>
     try {
-      provider = providers.resolve(kind, selection) as unknown as SeamProvider<object>
+      provider = providers.resolve(
+        SEAM_KIND_TOKENS[kind] as unknown as ProviderKind<SeamProvider<object>>,
+        selection,
+      )
     } catch (cause) {
       throw new HostError(
         'E_SEAM_MISSING',

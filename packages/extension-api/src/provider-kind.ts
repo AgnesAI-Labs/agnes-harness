@@ -116,8 +116,6 @@ export function defineKind(
     required: required ?? false,
     pinned: pinned ?? false,
     scope,
-    required: definition.required ?? false,
-    pinned: definition.pinned ?? false,
     restartRequired: providerRestartRequired(scope),
     operations,
     [providerType]: (value: ProviderIdentity) => value,

@@ -1,19 +1,13 @@
-import type {
-  Actor,
-  ApprovalReason,
-  ApprovalVerdict,
-  ArtifactRef,
-  Billing,
-} from '@agnes/protocol'
+import type { Actor, ApprovalReason, ApprovalVerdict, ArtifactRef, Billing } from '@agnes/protocol'
 import type { Logger, Seq } from './common.js'
 import type { DecisionHandle } from './decisions.js'
 import type { PersistenceMetadataNamespace } from './persistence.js'
-import type { ProviderIdentity } from './provider-kind.js'
+import { defineKind, type ProviderIdentity } from './provider-kind.js'
 import type { FsEntry, FsStat, ToolMeta } from './tool.js'
 import type { ApprovalConstraints } from './tool-policy.js'
 
 // The contracts of the runtime capabilities the kernel consumes as one typed object each. A seam
-// provider registers like any other provider: `ctx.providers.register('checkpoint', pkg, provider)`.
+// provider registers like any other provider: `ctx.providers.register(checkpointKind, pkg, provider)`.
 
 export type Verdict = ApprovalVerdict
 export type Pending = { ticket: string; expiresAt: string }
@@ -307,3 +301,32 @@ export const SEAM_KINDS = [
 export type SeamKind = (typeof SEAM_KINDS)[number]
 /** Kinds whose selection is recorded per session and replaced only by an explicit repin. */
 export const PINNED_SEAM_KINDS = ['approval', 'principals', 'billing', 'checkpoint', 'artifacts'] as const
+
+function seamKind<T extends object>(kind: SeamKind) {
+  return defineKind<SeamProvider<T>>({
+    kind,
+    required: true,
+    pinned: (PINNED_SEAM_KINDS as readonly string[]).includes(kind),
+    validate(provider) {
+      if (typeof provider.create !== 'function')
+        throw new Error(`invalid ${kind} provider: create() is required`)
+    },
+  })
+}
+export const approvalKind = seamKind<ApprovalSeam>('approval')
+export const principalsKind = seamKind<PrincipalsSeam>('principals')
+export const billingKind = seamKind<BillingSeam>('billing')
+export const checkpointKind = seamKind<CheckpointSeam>('checkpoint')
+export const artifactsKind = seamKind<ArtifactsSeam>('artifacts')
+export const verifierKind = seamKind<VerifierSeam>('verifier')
+export const repairKind = seamKind<RepairSeam>('repair')
+/** The token each seam kind is installed and registered under. */
+export const SEAM_KIND_TOKENS = {
+  approval: approvalKind,
+  principals: principalsKind,
+  billing: billingKind,
+  checkpoint: checkpointKind,
+  artifacts: artifactsKind,
+  verifier: verifierKind,
+  repair: repairKind,
+} as const

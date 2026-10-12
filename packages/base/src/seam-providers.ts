@@ -1,5 +1,14 @@
 import type { ProviderPluginContext } from '@agnes/extension-api'
 import type { SeamInit, SeamProvider } from '@agnes/extension-api/seams'
+import {
+  approvalKind,
+  artifactsKind,
+  billingKind,
+  checkpointKind,
+  principalsKind,
+  repairKind,
+  verifierKind,
+} from '@agnes/extension-api/seams'
 import { approvalPolicy } from '../extensions/approval-policy/src/seam.js'
 import { artifactsLocal } from '../extensions/artifacts-local/src/seam.js'
 import { budgetBilling } from '../extensions/budget/src/seam.js'
@@ -34,12 +43,12 @@ export const seamProvidersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     const { providers } = ctx
-    providers.register('approval', '@agnes/base', BASE_SEAM_PROVIDERS.approval)
-    providers.register('principals', '@agnes/base', BASE_SEAM_PROVIDERS.principals)
-    providers.register('billing', '@agnes/base', BASE_SEAM_PROVIDERS.billing)
-    providers.register('checkpoint', '@agnes/base', BASE_SEAM_PROVIDERS.checkpoint)
-    providers.register('artifacts', '@agnes/base', BASE_SEAM_PROVIDERS.artifacts)
-    providers.register('verifier', '@agnes/base', BASE_SEAM_PROVIDERS.verifier)
-    providers.register('repair', '@agnes/base', BASE_SEAM_PROVIDERS.repair)
+    providers.register(approvalKind, '@agnes/base', BASE_SEAM_PROVIDERS.approval)
+    providers.register(principalsKind, '@agnes/base', BASE_SEAM_PROVIDERS.principals)
+    providers.register(billingKind, '@agnes/base', BASE_SEAM_PROVIDERS.billing)
+    providers.register(checkpointKind, '@agnes/base', BASE_SEAM_PROVIDERS.checkpoint)
+    providers.register(artifactsKind, '@agnes/base', BASE_SEAM_PROVIDERS.artifacts)
+    providers.register(verifierKind, '@agnes/base', BASE_SEAM_PROVIDERS.verifier)
+    providers.register(repairKind, '@agnes/base', BASE_SEAM_PROVIDERS.repair)
   },
 }

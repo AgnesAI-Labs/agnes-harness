@@ -6,8 +6,8 @@ describe('base seam providers', () => {
     const registered: Array<[string, string, string]> = []
     seamProvidersPlugin.apply({
       providers: {
-        register: (kind: string, source: string, provider: { id: string }) => {
-          registered.push([kind, source, provider.id])
+        register: (kind: { kind: string }, source: string, provider: { id: string }) => {
+          registered.push([kind.kind, source, provider.id])
           return async () => undefined
         },
       },

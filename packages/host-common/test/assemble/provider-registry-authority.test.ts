@@ -1,5 +1,5 @@
 import { Context } from '@agnes/cordis'
-import { defineProviderKind } from '@agnes/extension-api'
+import { defineKind } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import { installProviderRegistry } from '../../src/assemble/provider-registry.js'
 
@@ -7,9 +7,9 @@ type Thing = { id: string; version: string; create(): object }
 const thing: Thing = { id: 'only', version: '1.0.0', create: () => ({}) }
 
 it('defaults a kind to open, optional and unpinned, and records the declared attributes', () => {
-  const plain = defineProviderKind<Thing>({ kind: 'plain', validate: () => undefined })
+  const plain = defineKind<Thing>({ kind: 'plain', validate: () => undefined })
   expect([plain.required, plain.authority, plain.pinned]).toEqual([false, 'open', false])
-  const seam = defineProviderKind<Thing>({
+  const seam = defineKind<Thing>({
     kind: 'strict',
     required: true,
     pinned: true,
@@ -17,13 +17,13 @@ it('defaults a kind to open, optional and unpinned, and records the declared att
   })
   expect([seam.required, seam.authority, seam.pinned]).toEqual([true, 'open', true])
   expect(() =>
-    defineProviderKind<Thing>({ kind: 'bad', authority: 'nobody' as never, validate: () => undefined }),
+    defineKind<Thing>({ kind: 'bad', authority: 'nobody' as never, validate: () => undefined }),
   ).toThrow()
 })
 
 it('refuses a package registration for a host-authority kind and shows it read-only in the catalog', async () => {
   const root = new Context()
-  const hostKind = defineProviderKind<Thing>({
+  const hostKind = defineKind<Thing>({
     kind: 'host-only',
     authority: 'host',
     validate: () => undefined,
