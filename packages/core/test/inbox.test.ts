@@ -272,6 +272,32 @@ describe('Inbox segment', () => {
     expect(started?.data).toMatchObject({ trigger: 'follow_up' })
   })
 
+  it('deduplicates concurrent command deliveries atomically, including claimed historical inputs', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([]) })
+    const message = {
+      actor,
+      commandId: 'notification:1',
+      origin: 'system' as const,
+      content: [{ type: 'text' as const, text: 'Delivered' }],
+    }
+    const seqs = await Promise.all([
+      session.enqueue('next-turn', message, { dedupeByCommandId: true }),
+      session.enqueue('next-turn', message, { dedupeByCommandId: true }),
+    ])
+    expect(seqs[0]).toBe(seqs[1])
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
+    await session.acceptInput()
+    expect(await session.enqueue('next-turn', message, { dedupeByCommandId: true })).toBe(seqs[0])
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(0)
+    expect(await log.scan({ type: 'user/message', toSeq: session.lastSeq })).toHaveLength(1)
+    await session.enqueue('next-turn', message)
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
+    const { commandId: _commandId, ...withoutCommand } = message
+    await expect(
+      session.enqueue('next-turn', withoutCommand, { dedupeByCommandId: true }),
+    ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+  })
+
   it('a second turn gets turn number 2, and endTurn clears the program counter', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })

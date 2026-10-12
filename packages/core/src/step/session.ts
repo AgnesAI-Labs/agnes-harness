@@ -1289,7 +1289,11 @@ export class SessionImpl {
    * enqueues drop one item, and one landing mid-transition shifts the sequence numbers the turn's
    * anchor and its tool arguments are addressed by.
    */
-  async enqueue(target: 'next-turn' | 'next-step', msg: EnqueueMsg): Promise<Seq> {
+  async enqueue(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    options: { dedupeByCommandId?: boolean } = {},
+  ): Promise<Seq> {
     let content: ContentBlock[]
     try {
       content = structuredClone(msg.content)
@@ -1298,6 +1302,21 @@ export class SessionImpl {
     }
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
+      if (options.dedupeByCommandId) {
+        if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
+        const rows = await scanAll((query) => this.scan(query), {
+          type: 'inbox',
+          lane: this.lane,
+          toSeq: this.lastSeq,
+        })
+        const original = rows.find(
+          (row) =>
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.data as Inbox).items.some((item) => item.commandId === msg.commandId),
+        )
+        if (original) return original.seq
+      }
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
