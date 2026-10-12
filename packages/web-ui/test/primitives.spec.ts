@@ -293,3 +293,68 @@ for (const theme of ['light', 'dark'])
         ).toEqual({ ellipsis: 'ellipsis', nowrap: 'nowrap', clipped: true })
       }
     })
+
+test('one application isolates a region failure, translates retry and preserves sibling state', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  const result = await build({
+    stdin: {
+      loader: 'tsx',
+      resolveDir: resolve(root, 'packages/web-ui'),
+      contents: `import { useState } from 'react'
+        import { flushSync } from 'react-dom'
+        import { mountApplication, createRegionRenderer } from './src/antd-root.js'
+        import { Button } from './src/ui/button.js'
+        let failed = false
+        function Sibling() { const [count, setCount] = useState(0); return <Button onClick={() => setCount(value => value + 1)}>Sibling count {count}</Button> }
+        function Region() { if (failed) throw new Error('Synthetic region fixture fault'); return <p>Region healthy</p> }
+        function Shell({ children }) { return <main>
+          <h1>Application regions</h1><section id="sibling-region" aria-label="Sibling"/><section id="failed-region" aria-label="Recoverable region"/>
+          <Button id="break-region" onClick={() => { failed = true; renderer.render(<Region />) }}>Break region</Button>
+          <Button id="repair-region" onClick={() => { failed = false }}>Make region healthy</Button>
+          {children}</main> }
+        mountApplication(document.getElementById('application'), <Shell />)
+        const sibling = createRegionRenderer(document.getElementById('sibling-region'))
+        const renderer = createRegionRenderer(document.getElementById('failed-region'))
+        flushSync(() => { sibling.render(<Sibling />); renderer.render(<Region />) })`,
+    },
+    bundle: true,
+    write: false,
+    jsx: 'automatic',
+    format: 'iife',
+    define: { 'process.env.NODE_ENV': '"production"' },
+  })
+  await page.goto('about:blank')
+  await page.setContent(
+    `<html lang="en"><head><title>Application regions</title><style>${css} body {display:block} main {padding:32px}</style></head><body><div id="application"></div></body></html>`,
+  )
+  await page.addScriptTag({ content: result.outputFiles[0]!.text })
+  await page.getByRole('button', { name: 'Sibling count 0', exact: true }).click()
+  await page.getByRole('button', { name: 'Break region', exact: true }).click()
+  const failure = page.locator('[data-agnes-region-error="failed-region"]')
+  await expect(failure).toContainText('This region failed')
+  await expect(page.getByRole('button', { name: 'Sibling count 1', exact: true })).toBeVisible()
+  await page.evaluate(() => {
+    document.documentElement.lang = 'zh-CN'
+  })
+  await expect(failure).toContainText('该区域出错')
+  await page.getByRole('button', { name: 'Make region healthy', exact: true }).click()
+  await failure.getByRole('button', { name: '重试', exact: true }).click()
+  await expect(failure).toBeHidden()
+  await expect(page.getByText('Region healthy', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sibling count 1', exact: true })).toBeVisible()
+  expect(errors.some((error) => error.startsWith('Agnes region render failed'))).toBe(true)
+  expect(
+    errors.filter(
+      (error) =>
+        !error.includes('Synthetic region fixture fault') && !error.startsWith('Agnes region render failed'),
+    ),
+  ).toEqual([])
+  const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  expect(scan.violations).toEqual([])
+})
