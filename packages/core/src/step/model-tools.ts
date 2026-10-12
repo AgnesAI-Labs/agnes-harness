@@ -43,12 +43,17 @@ export function modelAllowsTool(name: string, computerUseAllowed: boolean): bool
   return name !== 'computer_use' || computerUseAllowed
 }
 
-/** Hide Computer Use from operation-owned tool renderers such as the code-mode SDK. */
+/** Platform action targets stay executable internally but never enter model discovery or schemas. */
+export function modelVisibleTool(name: string, computerUseAllowed: boolean): boolean {
+  return name !== 'ui_submit' && modelAllowsTool(name, computerUseAllowed)
+}
+
+/** Filter model discovery and operation-owned renderers such as the code-mode SDK. */
 export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: boolean): RegistrySnapshot {
-  if (computerUseAllowed || !snapshot.byName.has('computer_use')) return snapshot
   const defs = Object.freeze(
-    snapshot.defs.filter((definition) => modelAllowsTool(definition.name, computerUseAllowed)),
+    snapshot.defs.filter((definition) => modelVisibleTool(definition.name, computerUseAllowed)),
   )
+  if (defs.length === snapshot.defs.length) return snapshot
   const byName = new Map<string, RegisteredTool>()
   for (const definition of defs) {
     const registered = snapshot.byName.get(definition.name)
@@ -61,5 +66,5 @@ export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: bo
 }
 
 export function toolNamesForModel(names: readonly string[], computerUseAllowed: boolean): string[] {
-  return computerUseAllowed ? [...names] : names.filter((name) => modelAllowsTool(name, computerUseAllowed))
+  return names.filter((name) => modelVisibleTool(name, computerUseAllowed))
 }

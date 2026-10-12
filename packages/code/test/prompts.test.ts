@@ -174,7 +174,11 @@ const PROMPT_TEXT: Record<string, string> = {
   'tools-available': [
     'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
     '',
-    'For requests to show/display tables, charts or forms in the UI, discover and use ui_render. For requests to create a file, use file tools, then present the saved file as a deliverable. UI display alone does not require an HTML file.',
+    '| User needs | Tool |',
+    '| --- | --- |',
+    '| A file to open or download | `present` |',
+    '| One question or choice | `ask_user_question` |',
+    '| Tables, charts, forms or dashboards in the UI | `ui_render` |',
   ].join('\n'),
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',
@@ -279,9 +283,7 @@ describe('prompt rendering', () => {
     expect(text).toContain('tool_search if offered, then tool_describe')
     expect(text).toContain('Discovery grants no execution permission.')
     expect(text).toContain('Filesystem, command and network access require the corresponding tools.')
-    expect(text.split('\n\n').at(-1)).toMatchInlineSnapshot(
-      '"For requests to show/display tables, charts or forms in the UI, discover and use ui_render. For requests to create a file, use file tools, then present the saved file as a deliverable. UI display alone does not require an HTML file."',
-    )
+    expect(text.split('\n\n').at(-1)).toBe(PROMPT_TEXT['tools-available']?.split('\n\n').at(-1))
     expect(text).not.toContain('- read')
     expect(text).not.toContain('{{')
   })

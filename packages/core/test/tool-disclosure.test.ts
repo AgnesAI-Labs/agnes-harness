@@ -2,6 +2,7 @@ import type { ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { deferredToolsSection } from '../src/request/deferred-tools.js'
 import { discloseTools } from '../src/step/inference.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -52,6 +53,11 @@ it.each(['allowed-once', 'rejected'] as const)(
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
+    const catalogText = provider.requests[0]?.system.match(
+      /<available_deferred_tools>[\s\S]*?<\/available_deferred_tools>/,
+    )?.[0]
+    expect(catalogText).toContain('later —')
+    expect(provider.requests[2]?.system).toContain(catalogText!)
     expect(provider.requests[0]?.tools.map((tool) => tool.name)).toEqual(['describe'])
     expect(provider.requests[2]?.tools.find((tool) => tool.name === 'later')?.parameters).toEqual(
       JSON.parse(JSON.stringify(checked.parameters)),
@@ -62,6 +68,10 @@ it.each(['allowed-once', 'rejected'] as const)(
     expect(executed).toEqual(verdict === 'allowed-once' ? [{ amount: 1 }] : [])
     expect(approvals).toHaveLength(1)
     await session.close()
+    registry.add(
+      { ...checked, name: 'new_later', description: 'New live capability.' },
+      { source: 'test', trust: 'builtin' },
+    )
     const reopened = await openSession({
       storage,
       registry,
@@ -74,6 +84,12 @@ it.each(['allowed-once', 'rejected'] as const)(
       await reopened.session.acceptInput()
       await reopened.session.runInference()
       expect(discloseTools(reopened.session)).toContain('later')
+      expect((reopened.session.d.provider as ReturnType<typeof fakeProvider>).requests[0]?.system).toContain(
+        'later —',
+      )
+      expect((reopened.session.d.provider as ReturnType<typeof fakeProvider>).requests[0]?.system).toContain(
+        'new_later — New live capability.',
+      )
       const rows = await reopened.session.scan({
         type: 'x/core/tool-disclosed',
         toSeq: reopened.session.lastSeq,
@@ -84,3 +100,66 @@ it.each(['allowed-once', 'rejected'] as const)(
     }
   },
 )
+
+it('renders a deterministic live deferred catalog and bounds long descriptions and catalogs', () => {
+  const eager = readTool() as ToolDef
+  const row = (name: string, description = 'Search records. More details.') => ({
+    ...eager,
+    name,
+    description,
+    meta: { ...eager.meta, deferLoading: true },
+  })
+  const rows = [row('zeta'), row('alpha'), eager, row('ui_submit')]
+  const section = deferredToolsSection(rows)
+  expect(section).toEqual(deferredToolsSection([...rows].reverse()))
+  expect(section?.text).toContain('alpha — Search records.\nzeta — Search records.')
+  expect(section?.text).not.toContain('ui_submit')
+  expect(section?.text).not.toContain('More details')
+  expect(deferredToolsSection([eager])).toBeUndefined()
+  const long = deferredToolsSection([row('long', '界😀'.repeat(200))])!.text
+  expect(long).toContain('…')
+  expect(long).not.toContain('\ufffd')
+  const huge = deferredToolsSection(
+    Array.from({ length: 1000 }, (_, i) => row(`tool_${i}`, '界😀'.repeat(200))),
+  )!
+  expect(new TextEncoder().encode(huge.text).byteLength).toBeLessThanOrEqual(8192)
+  expect(huge.text).toMatch(/omitted \d+ deferred tools; use tool_search/)
+  expect(huge.text).toContain('</available_deferred_tools>')
+})
+
+it('keeps internal UI collection out of model requests, discovery and disclosure', async () => {
+  const registry = new ToolRegistry()
+  const eager = readTool() as ToolDef
+  const seen: string[][] = []
+  registry.add(
+    { ...eager, name: 'ui_submit', meta: { ...eager.meta, deferLoading: true } },
+    { source: 'test', trust: 'builtin' },
+  )
+  registry.add(
+    {
+      ...eager,
+      name: 'describe',
+      async execute(_args, ctx) {
+        seen.push(ctx.tools.list().map((tool) => tool.name))
+        await expect(ctx.tools.disclose!('ui_submit')).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+        return { content: [{ type: 'text', text: 'internal target unavailable' }] }
+      },
+    },
+    { source: 'test', trust: 'builtin' },
+  )
+  const provider = fakeProvider([toolTurn('ui_submit', {}), toolTurn('describe', {}), textTurn('done')])
+  const { session } = await openSession({ provider, registry })
+  try {
+    await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'discover' }] })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(
+      provider.requests.every((request) => request.tools.every((tool) => tool.name !== 'ui_submit')),
+    ).toBe(true)
+    expect(provider.requests[0]?.system).not.toContain('ui_submit')
+    expect(seen).toEqual([['describe']])
+    const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+    expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+  } finally {
+    await session.close()
+  }
+})

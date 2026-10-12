@@ -1,6 +1,6 @@
 import { X_AGNES_UI_LIMITS as limits } from '@agnes/protocol/gen/intelligent-ui'
 
-/** Deferred model guidance, also used to explain pre-effect data rejections. */
+/** Model guidance, also used to explain pre-effect data rejections. */
 export const UI_DATA_CONTRACTS = {
   'artifact-file':
     'object {name,description,artifact:{sha256,size,mime}}. Use an existing authorized session artifact, never a URL or workspace path. Web offers safe preview and download.',

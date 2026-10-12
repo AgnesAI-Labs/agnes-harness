@@ -1,5 +1,6 @@
 import { CoreError } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import { modelVisibleTool } from '../../step/model-tools.js'
 import type { SessionImpl } from '../../step/session.js'
 
 const EVENT = 'x/core/tool-disclosed'
@@ -28,7 +29,7 @@ export async function restoreToolDisclosure(s: SessionImpl): Promise<void> {
 export async function discloseTool(s: SessionImpl, name: string, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted()
   const def = s.turn?.snapshot.byName.get(name)
-  if (!def || (name === 'computer_use' && !s.computerUseAllowed()))
+  if (!def || !modelVisibleTool(name, s.computerUseAllowed()))
     throw new CoreError('E_ENVELOPE', 'Cannot disclose a tool outside the available turn catalog')
   if (def.meta.deferLoading !== true || loadedToolNames(s).has(name)) return
   await s.d.log.append([s.ev(EVENT, { name }, { ignorable: true })])

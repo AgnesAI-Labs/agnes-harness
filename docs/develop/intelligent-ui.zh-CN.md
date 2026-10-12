@@ -14,7 +14,7 @@
 
 第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本、状态、详情卡、分页、步骤、进度和图像。日期与日期时间是表单字段格式，不是单独的组件。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
 
-要求在会话/工作台界面展示表格、图表或表单时使用 `ui_render`；需要时经 `tool_search` 发现，再用 `tool_describe` 加载。要求创建文件时使用文件工具，再通过 `present` 呈现已保存的交付物。仅展示界面不需要生成 HTML。官方工具指引明确这一区分，不授予未提供的工具或执行权限。
+要求在会话/工作台界面展示表格、图表或表单时使用 `ui_render`；标准预设直接提供其 schema。要求创建文件时使用文件工具，再通过 `present` 呈现已保存的交付物。仅展示界面不需要生成 HTML。官方工具指引明确这一区分，不授予未提供的工具或执行权限。
 
 ## Schema 与绑定
 
@@ -135,7 +135,7 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 ## 公开操作与执行桥接
 
-`ui_render` 与 `ui_update` 保持延迟加载。`tool_describe` 描述包含每种预设组件的数据契约与紧凑示例，包括 steps 的 `{id,label,state}` 与 progress 的 `{label,value,total}`。值放在 `surface.data[component.dataKey]`；按钮组与 tabs 没有数据值。这些细节不进入 eager 工具目录。
+`ui_render`、`ui_update` 与 `ui_close` 在官方预设中直接加载。render/update 的描述包含每种预设组件的数据契约与紧凑示例，包括 steps 的 `{id,label,state}` 与 progress 的 `{label,value,total}`。值放在 `surface.data[component.dataKey]`；按钮组与 tabs 没有数据值。`ui_submit` 保留为内部界面动作目标，不进入模型工具 schema 或发现目录。
 
 三个 surface 工具的确定性输入验证发生在读取状态、解析 source 或写入 ledger 之前。拒绝输入时返回 `isError`，包含 `UI_INVALID`、`effect: "none"` 和有界 issues（JSON 路径与期望形状），模型可以修正后重试。RPC 调用方仍收到 `INVALID_PARAMS`。状态错误、取消及持久化失败继续走原有错误路径。
 

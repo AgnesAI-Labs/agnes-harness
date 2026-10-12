@@ -59,6 +59,7 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'coding-doctrine', order: 130, owner: 'code' },
   { id: 'code-doctrine', order: 140, owner: 'code' },
   { id: 'tools:sdk', order: 150, owner: 'code' },
+  { id: 'core:deferred-tools', order: 155, owner: 'core' },
   { id: 'skills', order: 160, owner: 'base' },
   { id: 'plan-mode', order: 162, owner: 'base' },
   { id: 'persistent-goal', order: 164, owner: 'base' },

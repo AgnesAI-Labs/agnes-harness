@@ -329,7 +329,7 @@ async function opened() {
 }
 
 describe('preset surface contract and ledger lifecycle', () => {
-  it('exposes bounded deferred data contracts and keeps nested argument validation', async () => {
+  it('exposes eager bounded data contracts and keeps nested argument validation', async () => {
     const tools: ToolDef[] = []
     const f = fixture()
     intelligentUi({
@@ -341,6 +341,11 @@ describe('preset surface contract and ledger lifecycle', () => {
       },
     } as unknown as ExtensionAPI)
     expect(tools.map((tool) => tool.name)).toEqual(['ui_render', 'ui_update', 'ui_close', 'ui_submit'])
+    expect(tools.filter((tool) => tool.meta.deferLoading === false).map((tool) => tool.name)).toEqual([
+      'ui_render',
+      'ui_update',
+      'ui_close',
+    ])
     for (const tool of tools) {
       expect(tool.parameters.type).toBe('object')
       expect(tool.parameters.$ref).toBeUndefined()
@@ -363,7 +368,7 @@ describe('preset surface contract and ledger lifecycle', () => {
     ]
     for (const name of ['ui_render', 'ui_update']) {
       const tool = tools.find((item) => item.name === name)!
-      expect(tool.meta.deferLoading).toBe(true)
+      expect(tool.meta.deferLoading).toBe(false)
       if (name === 'ui_render') {
         expect(tool.description).toContain('show/display in the UI')
         expect(tool.description).toContain('instead of writing HTML and presenting a file')

@@ -23,7 +23,7 @@ const meta = {
   requiresApproval: 'never' as const,
 }
 /** Display-only surface publication. ui_submit collects answers and must not inherit this flag. */
-const presentational = { ...meta, isPresentational: true }
+const presentational = { ...meta, deferLoading: false, isPresentational: true }
 export default defineExtension((agnes) => {
   const bound = async <T>(run: (ui: IntelligentUiInstance) => Promise<T>) => {
     const ui = await agnes.providers.bindOwn(intelligentUiKind)
@@ -46,7 +46,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_render',
         description:
-          'Show tables, charts and forms in the conversation/workbench UI. For "show/display in the UI", use this instead of writing HTML and presenting a file. Use presets or pinned plugin components; actions map to declared tools. No HTML or executable code.' +
+          'Show tables, charts, forms and dashboards in the conversation/workbench UI. For "show/display in the UI", use this instead of writing HTML and presenting a file. Use present for files the user should open or download, and ask_user_question for a question or choice instead. Use presets or pinned plugin components; actions map to declared tools. No HTML or executable code.' +
           '\n' +
           UI_DATA_DESCRIPTION,
         parameters: reachableParameters(UiRenderParams),

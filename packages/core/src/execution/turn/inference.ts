@@ -42,6 +42,7 @@ import type {
   Merged,
 } from '../../request/contribute.js'
 import { mergeContributions } from '../../request/contribute.js'
+import { deferredToolsSection } from '../../request/deferred-tools.js'
 import {
   type DeriveInput,
   type DeriveOutput,
@@ -62,6 +63,7 @@ import {
 } from '../../step/calibrate.js'
 import { finishAborted } from '../../step/control.js'
 import {
+  modelVisibleTool,
   resolvedModelRecord,
   supportsComputerUse,
   toolNamesForModel,
@@ -303,6 +305,8 @@ export async function assembleRequestPrefix(
       .filter((o) => o.contribute)
       .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
   ]
+  const deferred = deferredToolsSection(ctx.snapshot.defs)
+  if (deferred) contribs.push({ op: 'core:deferred-tools', promptSections: [deferred] })
   const memory = await s.d.memory?.snapshot(ctx.state?.meta.turn ?? 0)
   if (memory) {
     if (!(await s.d.log.scan({ type: 'x/core/memory-private', limit: 1 })).length)
@@ -403,7 +407,12 @@ export function discloseTools(s: SessionImpl): string[] {
   const snap = s.turn?.snapshot
   if (!snap) return []
   const eager = (): string[] =>
-    snap.defs.filter((d) => d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)).map((d) => d.name)
+    snap.defs
+      .filter(
+        (d) =>
+          modelVisibleTool(d.name, true) && (d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)),
+      )
+      .map((d) => d.name)
   let names: string[]
   switch (s.preset.disclosure) {
     case 'code':

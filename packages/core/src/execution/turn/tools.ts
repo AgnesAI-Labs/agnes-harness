@@ -34,6 +34,7 @@ import {
 } from '../../step/approval-grants.js'
 import { finishAborted } from '../../step/control.js'
 import { deferredEffectId } from '../../step/deferred.js'
+import { modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
@@ -1397,7 +1398,7 @@ export async function approveAndExecute(
           invoke: invokeNested,
           discloseTool: (name, signal) => discloseTool(s, name, signal),
           listTools: () =>
-            t.snapshot.defs.filter((definition) => definition.name !== 'computer_use' || computerUseAllowed),
+            t.snapshot.defs.filter((definition) => modelVisibleTool(definition.name, computerUseAllowed)),
           appendPlan: (items) =>
             s.d.log
               .append([s.ev('plan.items', { items }, { register: 'plan.items' })])

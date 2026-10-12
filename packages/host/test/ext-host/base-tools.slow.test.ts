@@ -477,7 +477,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(provider.calls[0]?.tools.map((tool) => tool.name)).toContain('ask_user_question')
       expect(
         provider.calls[0]?.tools.map((tool) => tool.name).filter((name) => name.startsWith('ui_')),
-      ).toEqual([])
+      ).toEqual(['ui_close', 'ui_render', 'ui_update'])
       expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
       expect(provider.calls[1]?.system).toContain('LIVE_RULE_V2')
       expect(JSON.stringify(provider.calls[0]?.messages)).toContain('Time zone:')
@@ -520,6 +520,14 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',
       })
+      expect(
+        provider.calls.every((request) => !request.tools.some((tool) => tool.name === 'ui_submit')),
+      ).toBe(true)
+      expect(
+        (await session.scan({ type: 'tool/call', toSeq: session.lastSeq })).some(
+          (row) => (row.data as { name: string }).name === 'ui_submit',
+        ),
+      ).toBe(true)
       expect(JSON.stringify(provider.calls[3]?.messages)).toContain('choice')
       const answerRows = await session.scan({ type: 'user/message', toSeq: session.lastSeq })
       const answer = answerRows.find((event) => JSON.stringify(event.data).includes('submitted'))
@@ -540,6 +548,110 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     } finally {
       await host.close()
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('renders a model-authored form eagerly and follows its internal submission receipt', async () => {
+    const dataDir = scratch()
+    const form = {
+      id: 'contact',
+      revision: 1,
+      title: 'Contact',
+      placement: { inline: true, workbench: true },
+      data: { draft: {} },
+      components: [
+        {
+          id: 'fields',
+          kind: 'form',
+          dataKey: 'draft',
+          schema: {
+            type: 'object',
+            properties: { name: { type: 'string' } },
+            required: ['name'],
+            additionalProperties: false,
+          },
+          actionIds: ['submit'],
+        },
+      ],
+      actions: [
+        {
+          id: 'submit',
+          label: 'Submit',
+          tool: 'ui_submit',
+          argsTemplate: { surfaceId: { literal: 'contact' }, answers: { from: 'input', key: 'fields' } },
+          paramsSchema: {
+            type: 'object',
+            properties: {
+              surfaceId: { type: 'string' },
+              answers: {
+                type: 'object',
+                properties: { name: { type: 'string' } },
+                required: ['name'],
+                additionalProperties: false,
+              },
+            },
+            required: ['surfaceId', 'answers'],
+            additionalProperties: false,
+          },
+        },
+      ],
+    }
+    const provider = new ScriptedProvider({
+      models: [fakeModel({ route: 'gw', id: 'm1' })],
+      scripts: [callTool('ui_render', { surface: form }), say('Form ready.'), say('Hello Ada.')],
+      onExhausted: 'error',
+    })
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      provider,
+      disableSessionTitle: true,
+    })
+    const signal = new AbortController().signal
+    try {
+      const session = await host.createSession({ cwd: dataDir })
+      await session.enqueue('next-turn', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'Show a contact form' }],
+      })
+      expect(await session.run({ until: 'turn-end', signal })).toMatchObject({ reason: 'completed' })
+      expect(provider.calls[0]?.tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(['ui_render', 'ui_update', 'ui_close']),
+      )
+      const ui = session.intelligentUi!
+      expect((await ui.read({ sessionId: session.key }, signal)).surfaces[0]?.status).toBe('open')
+      expect(
+        await ui.action(
+          {
+            sessionId: session.key,
+            surfaceId: 'contact',
+            revision: 1,
+            actionId: 'submit',
+            commandId: 'contact-submit',
+            input: { fields: { name: 'Ada' } },
+            selection: {},
+          },
+          session.d.actor,
+          signal,
+        ),
+      ).toMatchObject({ status: 'received' })
+      expect(await session.run({ until: 'turn-end', signal })).toMatchObject({ reason: 'completed' })
+      const view = await ui.read({ sessionId: session.key, surfaceId: 'contact' }, signal)
+      expect(view.surfaces[0]?.status).toBe('closed')
+      expect(view.actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ commandId: 'contact-submit', status: 'succeeded' }),
+        ]),
+      )
+      expect(
+        provider.calls.every((request) => !request.tools.some((tool) => tool.name === 'ui_submit')),
+      ).toBe(true)
+      expect(JSON.stringify(provider.calls[2]?.messages)).toContain('Ada')
+      expect(JSON.stringify(provider.calls[2]?.messages)).toContain('Intelligent UI action result:')
+      const facts = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
+      expect(facts.map((row) => (row.data as { name: string }).name)).toEqual(['ui_render', 'ui_submit'])
+    } finally {
+      await host.close()
     }
   })
 

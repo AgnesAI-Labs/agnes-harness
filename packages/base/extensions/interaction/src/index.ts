@@ -78,7 +78,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ask_user_question',
         description:
-          'Ask one to four questions with single choice, multiple choice, or free text. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
+          'Ask one to four questions with single choice, multiple choice, or free text. Use present for files the user should open or download, and ui_render for tables, charts, forms or dashboards in the UI instead. The agent continues immediately by default; timeoutMs optionally waits up to a bounded deadline. Late answers arrive as new input. Options are labels; omit options for free text. Responses use authenticated surface actions and the ordinary queued-input delivery path.',
         parameters: QuestionParams,
         meta: {
           isReadOnly: true,

@@ -247,7 +247,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cli/tools/build-local': 381,
   'packages/web/src/serve': 1,
 
-  'packages/core/src': 23781,
+  'packages/core/src': 23845,
   'packages/ai/src': 4409,
   'packages/protocol/src': 4727,
   'packages/cli/src/tui': 38,

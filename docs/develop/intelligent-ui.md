@@ -14,7 +14,7 @@ By default, a surface displays a conversation summary and a complete workbench v
 
 Phase 1 supports forms, tables, data-only charts, button groups, plain text, status, detail cards, tabs, steps, progress and images. Date and date-time values are form field formats, not a separate component. There is no generated HTML, JavaScript, expression evaluator, remote component loader or arbitrary CSS. External UI dependencies stay in `packages/web-ui`; clients preserve its theme, accessibility, CSP and skin hooks. Labels supplied by business plugins are content; renderer controls and refusal messages have English and Simplified Chinese catalogs, keyboard access, live status announcements and stable test ids.
 
-Requests to show tables, charts or forms in the conversation/workbench UI use `ui_render`; discover it with `tool_search` and load it with `tool_describe` when needed. Requests to create a file use file tools followed by `present` for the saved deliverable. Displaying a UI alone does not require generating HTML. The official tool guidance states this distinction; it does not grant unavailable tools or execution permission.
+Requests to show tables, charts or forms in the conversation/workbench UI use `ui_render`; the standard preset provides its schema up front. Requests to create a file use file tools followed by `present` for the saved deliverable. Displaying a UI alone does not require generating HTML. The official tool guidance states this distinction; it does not grant unavailable tools or execution permission.
 
 ## Schema and bindings
 
@@ -135,7 +135,7 @@ Detail cards, steps, progress, images and tabs are data only. The percentage bel
 
 ## Public operations and execution bridge
 
-`ui_render` and `ui_update` stay deferred. Their `tool_describe` descriptions include the data contract and a compact example for every preset kind, including steps `{id,label,state}` and progress `{label,value,total}`. Values belong in `surface.data[component.dataKey]`; button groups and tabs have no data value. The eager catalog does not carry these details.
+`ui_render`, `ui_update` and `ui_close` are eager in the official preset. Render/update descriptions include the data contract and a compact example for every preset kind, including steps `{id,label,state}` and progress `{label,value,total}`. Values belong in `surface.data[component.dataKey]`; button groups and tabs have no data value. `ui_submit` remains an internal surface-action target, excluded from model schemas and discovery.
 
 Deterministic input validation for the three surface tools runs before state, source resolution or ledger writes. Rejected input returns `isError` with `UI_INVALID`, `effect: "none"`, and bounded issues containing JSON paths and expected shapes; the model can correct and retry. RPC callers still receive `INVALID_PARAMS`. Stateful failures, cancellation and persistence failures retain their existing error paths.
 

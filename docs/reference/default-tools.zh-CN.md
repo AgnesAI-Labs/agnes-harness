@@ -4,7 +4,7 @@
 
 标准预设通过官方 `defineTool` 插件披露以下工具。部署能力和文件系统策略仍然生效。新的 local-dev 和 enterprise 模板允许问答与交付物需要的投影能力；现有托管配置需要显式允许该能力。
 
-Intelligent UI 工具（`ui_render`、`ui_update`、`ui_close`、`ui_submit`）按需披露。先用 `tool_search` 找到匹配的延迟工具，再用 `tool_describe` 指定确切名称，使完整 schema 出现在后续模型请求中。发现记录跨压缩与会话恢复保留；每次调用仍受当前会话目录、模型能力、参数校验与工具授权约束。`ask_user_question` 始终立即可用，并通过普通内部工具通道渲染表单。业务 Loop 可以用 `prepareRequest({ tools: [...] })` 显式选择工具，或通过受控工具端口执行；金融示例使用该执行端口，说明文本请求保持 `tools: []`。
+标准预设直接提供 `ui_render`、`ui_update` 和 `ui_close`。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
 
 | 工具 | 输入与行为 |
 | --- | --- |
