@@ -50,6 +50,17 @@ it('preserves empty-value choices and ignores hidden/disabled items', () => {
   top -= 20
   scrollAt(999)
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  // A later form scroll can settle the anchor by a fractional CSS pixel.
+  top += 0.390625
+  scrollAt(1001)
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  top += 0.390625
+  scrollAt(1002)
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  top += 0.390625
+  scrollAt(1003)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  trigger.click()
   document.getElementById('choice-listbox-1')?.click()
   expect(select.value).toBe('a')
   trigger.click()

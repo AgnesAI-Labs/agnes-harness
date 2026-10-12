@@ -178,6 +178,20 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
   })
   await expect(page.locator('#synthetic-choice-trigger')).toHaveAttribute('aria-expanded', 'true')
+  const jitter = await page.locator('#picker-scroll-frame').evaluate((frame) => {
+    const trigger = document.getElementById('synthetic-choice-trigger')
+    if (!trigger) throw new Error('Synthetic picker trigger is missing')
+    const label = trigger.closest('label')
+    if (!label) throw new Error('Synthetic picker label is missing')
+    const before = trigger.getBoundingClientRect().top
+    label.style.position = 'relative'
+    label.style.top = '0.390625px'
+    frame.dispatchEvent(new Event('scroll'))
+    return trigger.getBoundingClientRect().top - before
+  })
+  expect(jitter).toBeGreaterThan(0)
+  expect(jitter).toBeLessThan(1)
+  await expect(page.locator('#synthetic-choice-trigger')).toHaveAttribute('aria-expanded', 'true')
   await page.getByRole('option', { name: 'Beta', exact: true }).click()
   await expect(page.locator('#synthetic-choice')).toHaveValue('beta')
   await page.locator('#synthetic-choice-trigger').click()

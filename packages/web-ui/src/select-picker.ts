@@ -105,7 +105,9 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       if (next.top !== anchor?.top || next.left !== anchor?.left) placePanel()
       return
     }
-    if (next.top !== anchor?.top || next.left !== anchor?.left) close()
+    // Scroll anchoring can settle fractional layout after focus. Keep the original
+    // anchor so cumulative movement still dismisses, but subpixel jitter does not.
+    if (anchor && (Math.abs(next.top - anchor.top) >= 1 || Math.abs(next.left - anchor.left) >= 1)) close()
   }
 
   function placePanel(): void {
