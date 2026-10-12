@@ -266,7 +266,10 @@ async function fixture(selected: string, missingCredential = false) {
       const origin = file.startsWith(root)
         ? fileURLToPath(new URL(`../fixtures/model-adapter${file.slice(root.length)}`, import.meta.url))
         : file
-      const namespace = (await import(`${pathToFileURL(origin).href}?run=${basename(dataDir)}`)) as Record<string, unknown>
+      const namespace = (await import(`${pathToFileURL(origin).href}?run=${basename(dataDir)}`)) as Record<
+        string,
+        unknown
+      >
       if (file.endsWith('/index.ts')) fixtureNamespace = namespace as typeof fixtureNamespace
       return namespace
     },

@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@agnes/cordis'
 import {
+  type ChildAgentProvider,
   type ChildAgentResult,
-  type KindMap,
   type LoopContext,
   type LoopDriver,
   type LoopFactory,
@@ -12,6 +12,7 @@ import {
   loopKind,
   type PersistenceProvider,
   type PersistenceSessionStore,
+  type SandboxProvider,
 } from '@agnes/extension-api'
 import {
   childAgentConformance,
@@ -80,7 +81,7 @@ it('verifies child-agent cancellation and handle drain through a real Host paren
     inheritsParentContext: false,
     worktree: false,
   }
-  const provider: KindMap['child-agent'] = {
+  const provider: ChildAgentProvider = {
     id: 'conformance-child',
     version: '1.0.0',
     capabilities,
@@ -164,7 +165,7 @@ it('verifies sandbox cancellation and selected instance drain through a real Hos
   }
   let disposed = false
   let cleaned = false
-  const provider: KindMap['sandbox'] = {
+  const provider: SandboxProvider = {
     id: 'conformance-box',
     version: '1.0.0',
     capabilities,
@@ -356,7 +357,7 @@ it.each([sqlitePersistenceProvider, jsonlProvider])(
     const release = deferred()
     let storeClosed = false
     let readFinished = false
-    const provider: KindMap['persistence'] = {
+    const provider: PersistenceProvider = {
       ...backend,
       id: 'conformance-store',
       async open(options) {

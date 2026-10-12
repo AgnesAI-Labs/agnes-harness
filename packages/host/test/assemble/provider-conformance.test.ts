@@ -2,7 +2,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@agnes/cordis'
-import type { KindMap, ProviderRegistrationPort } from '@agnes/extension-api'
+import {
+  type CompactionEngine,
+  compactionKind,
+  type ModelAdapter,
+  modelAdapterKind,
+  type ProviderKind,
+  type ProviderRegistrationPort,
+  type ToolPolicy,
+  type ToolRuntimeProvider,
+  toolPolicyKind,
+  toolRuntimeKind,
+} from '@agnes/extension-api'
 import { runProviderConformance } from '@agnes/extension-api/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
@@ -61,7 +72,19 @@ it('runs the public provider suites through an assembled Host and its ordinary p
   const cleanup = () => {
     disposal.push('registration')
   }
-  const definitions: Pick<KindMap, 'tool-policy' | 'tool-runtime' | 'compaction' | 'model-adapter'> = {
+  type Definitions = {
+    'tool-policy': ToolPolicy
+    'tool-runtime': ToolRuntimeProvider
+    compaction: CompactionEngine
+    'model-adapter': ModelAdapter
+  }
+  const tokens = {
+    'tool-policy': toolPolicyKind,
+    'tool-runtime': toolRuntimeKind,
+    compaction: compactionKind,
+    'model-adapter': modelAdapterKind,
+  }
+  const definitions: Definitions = {
     'tool-policy': {
       id: 'conformance-policy',
       version: '1.0.0',
@@ -122,30 +145,30 @@ it('runs the public provider suites through an assembled Host and its ordinary p
   }
   try {
     const exercise = async <K extends keyof typeof definitions>(kind: K) => {
-      const cases = await runProviderConformance(kind, {
+      const cases = await runProviderConformance(tokens[kind] as ProviderKind<Definitions[K]>, {
         providers,
         sourcePackage: '@agnes/code',
-        provider: definitions[kind] as KindMap[K],
+        provider: definitions[kind],
         async open(provider) {
           let invoke: (signal: AbortSignal) => Promise<unknown>
           let close = async () => {}
           if (kind === 'tool-policy') {
-            const policy = provider as KindMap['tool-policy']
+            const policy = provider as Definitions['tool-policy']
             invoke = async (signal) => policy.decide({} as never, signal)
           } else if (kind === 'tool-runtime') {
-            const runtime = await (provider as KindMap['tool-runtime']).create({ maxParallel: 1 })
+            const runtime = await (provider as Definitions['tool-runtime']).create({ maxParallel: 1 })
             invoke = (signal) => runtime.execute(call, { dispatch: async () => ({ content: [] }) }, signal)
             close = async () => {
               await runtime.dispose()
             }
           } else if (kind === 'compaction') {
-            const engine = await (provider as KindMap['compaction']).create()
+            const engine = await (provider as Definitions['compaction']).create()
             invoke = (signal) => engine.compact({} as never, { signal, model: { summarize: async () => '' } })
             close = async () => {
               await engine.dispose?.()
             }
           } else {
-            const adapter = await (provider as KindMap['model-adapter']).create({ routes: [] })
+            const adapter = await (provider as Definitions['model-adapter']).create({ routes: [] })
             invoke = async (signal) => {
               for await (const _event of adapter.stream('test', {} as never, {
                 signal,
