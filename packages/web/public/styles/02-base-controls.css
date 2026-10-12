@@ -27,10 +27,57 @@
     .tool-detail-text,
     .code-block pre,
     .table-scroll,
-    #approval pre
+    #approval pre,
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .agh-table-scroll .ant-table-content,
+    .agh-table-scroll .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .candidate-technical pre,
+    .request-trace-json,
+    .system-prompt-section,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
   ) {
     scrollbar-width: thin;
     scrollbar-color: var(--agnes-scrollbar-thumb) transparent;
+  }
+  :is(
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .ant-table-content,
+    .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
+  )::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+    height: 6px;
+  }
+  :is(
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .ant-table-content,
+    .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
+  )::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-pill);
+    background: var(--agnes-scrollbar-thumb);
   }
   :where([hidden]) {
     display: none !important;
@@ -53,7 +100,7 @@
     background: var(--agnes-bg-app-content);
     font-family: var(--font-sans);
     font-size: var(--font-size-body);
-    line-height: 1.5;
+    line-height: 1.6;
   }
   ::selection {
     color: var(--agnes-text-primary);

@@ -43,7 +43,12 @@
     background: var(--agnes-bg-hover);
   }
   button:active:not(:disabled) {
-    transform: translateY(1px);
+    transform: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    button:active:not(:disabled):not(:focus-visible) {
+      transform: translateY(1px);
+    }
   }
   button:focus-visible,
   summary:focus-visible,
@@ -75,7 +80,9 @@
   select:disabled,
   textarea:disabled {
     cursor: not-allowed;
-    opacity: 0.5;
+    opacity: 1;
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-card);
   }
   input,
   select {
@@ -88,6 +95,13 @@
     max-height: 11.25rem;
     padding: 0.25rem 0;
     resize: none;
+  }
+  input,
+  textarea {
+    caret-color: var(--agnes-brand-primary);
+  }
+  a[href] {
+    text-underline-offset: 0.16em;
   }
   ::placeholder {
     color: var(--agnes-input-placeholder);

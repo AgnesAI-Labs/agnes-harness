@@ -266,7 +266,8 @@
     color: var(--agnes-status-success-text);
     box-shadow: var(--elevation-1);
     font-size: var(--font-size-body);
-    animation: agh-toast-in var(--transition) both;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
   }
   /* Outcome modifiers change colour only; placement and timing are shared by every toast. */
   .agh-toast--info {
@@ -278,12 +279,6 @@
     border-color: var(--agnes-status-danger-border);
     background: var(--agnes-status-danger-bg);
     color: var(--agnes-status-danger-text);
-  }
-  @keyframes agh-toast-in {
-    from {
-      opacity: 0;
-      translate: 0 var(--s8);
-    }
   }
   @media (max-width: 767px) {
     .agh-menu-item {
@@ -448,7 +443,12 @@
     color: inherit;
   }
   .agh-banner-action {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
     flex: 0 0 auto;
+    max-width: 100%;
   }
   .agh-list-row {
     display: flex;
@@ -497,10 +497,10 @@
     line-height: var(--line-sm);
   }
   .agh-list-row p {
-    margin: 0;
+    margin: var(--s4) 0 0;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
-    line-height: var(--line-xs);
+    line-height: 1.6;
   }
   .agh-list-row-actions {
     display: flex;
@@ -625,6 +625,12 @@
     }
     .agh-banner {
       flex-wrap: wrap;
+    }
+    .agh-banner-copy {
+      flex-basis: calc(100% - 18px - var(--s12));
+    }
+    .agh-banner-action {
+      padding-inline-start: calc(18px + var(--s12));
     }
     .agh-drawer[open] {
       width: 100vw;
@@ -794,6 +800,10 @@
       min-height: var(--control-height-touch);
       min-width: var(--control-height-touch);
     }
+    .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+    .agnes-ui-select .ant-select-input {
+      font-size: var(--font-size-md);
+    }
     .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
       min-height: var(--control-height-touch);
     }
@@ -825,6 +835,11 @@
   }
 
   @media (max-width: 767px) {
+    :is(.agnes-ui-field, .form-field, .agnes-settings-toolbar)
+      .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+    .agnes-settings-toolbar .agnes-ui-select {
+      font-size: var(--font-size-md);
+    }
     .agnes-ui-select.ant-select,
     .ant-select-item-option {
       min-height: var(--control-height-touch);
@@ -962,5 +977,18 @@
       animation-duration: 0s !important;
       transition-duration: 0s !important;
     }
+  }
+  :is(.agnes-settings-page, .agh-dialog, .agh-drawer, .agh-empty-state) :is(h2, h3, h4) {
+    text-wrap: balance;
+  }
+  :is(.agnes-settings-page, .agh-dialog, .agh-drawer, .agh-empty-state) p {
+    text-wrap: pretty;
+  }
+  :is(.agh-count, .agh-meta, .agh-tag, .agh-table, .agh-chart, .agnes-conversation-card table) {
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-ui-field-label {
+    overflow-wrap: anywhere;
+    line-height: 1.6;
   }
 }
