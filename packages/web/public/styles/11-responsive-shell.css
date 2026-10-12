@@ -34,7 +34,7 @@
       min-height: 2.25rem;
       margin: 0 0 var(--s12);
     }
-    body.sidebar-collapsed .sidebar-actions .primary-button {
+    body.sidebar-collapsed .sidebar-actions :where(#new) {
       width: 2.25rem;
       height: 2.25rem;
       min-height: 2.25rem;
@@ -44,7 +44,7 @@
       border-color: transparent;
       background: transparent;
     }
-    body.sidebar-collapsed .sidebar-actions .primary-button span {
+    body.sidebar-collapsed .sidebar-actions :where(#new) span {
       display: none;
     }
     body.sidebar-collapsed .sidebar-section-heading,
@@ -166,7 +166,7 @@
     .secondary-button.compact {
       min-height: 2.75rem;
     }
-    .sidebar-actions .primary-button,
+    .sidebar-actions :where(#new),
     .session,
     .code-copy,
     .tool-detail,

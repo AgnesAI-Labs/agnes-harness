@@ -1,6 +1,8 @@
 /** @vitest-environment happy-dom */
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { unmountRegion } from '@agnes/web-ui'
+import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { renderSessionNavigation, renderWorkspaceOptions } from '../src/navigation.js'
 import { createSessionActions, forkTitle } from '../src/session-actions.js'
@@ -9,6 +11,7 @@ import { zhT } from './helpers/locale.js'
 const controllers: ReturnType<typeof createSessionActions>[] = []
 afterEach(() => {
   for (const controller of controllers.splice(0)) controller.dispose()
+  document.querySelectorAll<HTMLElement>('nav, [data-picker-fixture]').forEach(unmountRegion)
   document.body.replaceChildren()
   vi.restoreAllMocks()
 })
@@ -24,6 +27,12 @@ const row = (id: string, archived = false) => ({
 })
 const flush = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
+}
+function visible(node: HTMLElement): boolean {
+  if (!node.isConnected) return false
+  for (let parent: HTMLElement | null = node; parent; parent = parent.parentElement)
+    if (parent.hidden || parent.style.display === 'none') return false
+  return true
 }
 function setup() {
   document.body.innerHTML = `<section id="archived-settings-pane"><input id="archived-search" /><p id="archived-message"></p><p id="archived-empty"></p><ul id="archived-list"></ul><button id="archived-refresh"></button></section><button id="trigger">菜单</button>`
@@ -53,7 +62,7 @@ function setup() {
   }
 }
 
-it('keeps the row menu out of the session button and hides archived rows', () => {
+it('keeps the row menu out of the session button and hides archived rows', async () => {
   const nav = document.createElement('nav')
   document.body.append(nav)
   const action = vi.fn()
@@ -70,26 +79,38 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
     zhT,
   )
   expect(nav.querySelectorAll('button.session')).toHaveLength(1)
-  expect(nav.querySelector('.session')?.classList.contains('agnes-ui-button')).toBe(false)
-  expect(nav.querySelector('.workspace-heading')?.classList.contains('agnes-ui-button')).toBe(false)
+  expect(nav.querySelector('.session')?.classList.contains('agnes-ui-button')).toBe(true)
+  expect(nav.querySelector('.workspace-heading')?.classList.contains('agnes-ui-button')).toBe(true)
   expect(nav.querySelector('button button')).toBeNull()
   const trigger = nav.querySelector('.session-menu-trigger') as HTMLButtonElement
   const rowElement = nav.querySelector('.session-row') as HTMLElement
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
-  trigger.click()
-  const panel = document.querySelector('.session-menu-actions') as HTMLElement
+  flushSync(() => trigger.click())
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
+  const panel = document.querySelector('[role=menu]') as HTMLElement
   expect([...panel.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
     '重命名',
     '分叉会话',
     '归档会话',
   ])
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
-  expect(rowElement.getAttribute('data-menu-open')).toBe('true')
+  await vi.waitFor(() => expect(rowElement.getAttribute('data-menu-open')).toBe('true'))
   ;(panel.querySelector('[role="menuitem"]') as HTMLButtonElement).click()
   expect(action).toHaveBeenCalledWith('rename', 'visible', '名称 visible', trigger)
-  expect(document.querySelector('.session-menu-actions')).toBeNull()
-  expect(trigger.getAttribute('aria-expanded')).toBe('false')
-  expect(rowElement.hasAttribute('data-menu-open')).toBe(false)
+  await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+  await vi.waitFor(() => expect(rowElement.hasAttribute('data-menu-open')).toBe(false))
+  const key = (node: Element, value: string) =>
+    node.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }))
+  key(trigger, 'ArrowDown')
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('重命名'))
+  if (!document.activeElement) throw new Error('menu focus missing')
+  key(document.activeElement, 'ArrowDown')
+  expect(document.activeElement?.textContent).toBe('分叉会话')
+  key(document.activeElement, 'End')
+  expect(document.activeElement?.textContent).toBe('归档会话')
+  key(document.activeElement, 'Escape')
+  await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
+  expect(document.activeElement).toBe(trigger)
 })
 
 it.each([
@@ -102,6 +123,7 @@ it.each([
   const workspace = { path, name: '   ', available: true, lastUsedAt: null, sessionCount: 0 }
   const nav = document.createElement('nav'),
     picker = document.createElement('div')
+  picker.dataset.pickerFixture = ''
   document.body.append(nav, picker)
   renderSessionNavigation(
     { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
@@ -139,30 +161,36 @@ it('marks the current session on the row so the highlight also covers the row ac
 it('prefills and validates rename, shows save failures, allows retry and returns focus', async () => {
   const { actions, session, changed, trigger } = setup()
   await actions.act('rename', 's', '原名', trigger)
-  const dialog = document.querySelector('dialog') as HTMLDialogElement
+  const dialog = document.querySelector('[role=dialog]') as HTMLElement
   const input = dialog.querySelector('input') as HTMLInputElement
   const form = dialog.querySelector('form') as HTMLFormElement
-  expect(dialog.open).toBe(true)
+  expect(visible(dialog)).toBe(true)
   expect(input.value).toBe('原名')
   input.value = '字'.repeat(81)
-  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
   expect(session.rename).not.toHaveBeenCalled()
   expect(input.getAttribute('aria-invalid')).toBe('true')
   input.value = '  新名称  '
   session.rename.mockRejectedValueOnce(new Error('保存失败'))
-  form.dispatchEvent(new Event('submit', { cancelable: true }))
-  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  expect(input.disabled).toBe(true)
+  dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+  expect((dialog.closest('dialog') as HTMLDialogElement).open).toBe(true)
   await flush()
   expect(session.rename).toHaveBeenCalledTimes(1)
   expect(dialog.textContent).toContain('保存失败')
-  expect(dialog.open).toBe(true)
-  form.dispatchEvent(new Event('submit', { cancelable: true }))
+  expect(visible(dialog)).toBe(true)
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
   await flush()
   expect(session.rename).toHaveBeenLastCalledWith('s', '新名称')
   expect(changed).toHaveBeenCalledOnce()
-  expect(dialog.open).toBe(false)
+  await vi.waitFor(() => expect(visible(dialog)).toBe(false))
   await flush()
   expect(document.activeElement).toBe(trigger)
+  await actions.act('rename', 's', '新名称', trigger)
+  expect(document.getElementById('session-rename-input')?.getAttribute('aria-invalid')).toBeNull()
+  expect((document.getElementById('session-rename-input') as HTMLInputElement).value).toBe('新名称')
 })
 
 it('reads every page, searches archived sessions by workspace and restores durably through SDK', async () => {
@@ -229,9 +257,10 @@ it('retries only refresh after a successful rename and failed list read', async 
   const { actions, session, changed, trigger } = setup()
   changed.mockRejectedValueOnce(new Error('读取超时'))
   await actions.act('rename', 's', '旧名', trigger)
-  const dialog = document.querySelector('dialog') as HTMLDialogElement
+  const dialog = document.querySelector('[role=dialog]') as HTMLElement
   ;(dialog.querySelector('input') as HTMLInputElement).value = '新名'
-  const submit = () => dialog.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }))
+  const submit = () =>
+    dialog.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
   submit()
   await flush()
   expect(dialog.textContent).toContain('名称已保存，但列表刷新失败')
@@ -241,7 +270,7 @@ it('retries only refresh after a successful rename and failed list read', async 
   await flush()
   expect(session.rename).toHaveBeenCalledOnce()
   expect(changed).toHaveBeenCalledTimes(2)
-  expect(dialog.open).toBe(false)
+  await vi.waitFor(() => expect(visible(dialog)).toBe(false))
 })
 
 it('removes a restored row even if sidebar refresh fails and refresh never repeats the write', async () => {

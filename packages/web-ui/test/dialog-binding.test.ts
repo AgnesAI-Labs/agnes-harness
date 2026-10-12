@@ -126,10 +126,15 @@ describe('bindDismissibleDialog', () => {
   it('routes native sheet gestures through cancel and removes handles/listeners on cleanup', async () => {
     let pending = true
     const { dialog, close, restoreFocus } = setup(() => !pending)
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<dialog id="react-host" open role="presentation"><div role="dialog">React modal</div></dialog>',
+    )
     const unbind = bindDialogSheets(document)
     try {
       dialog.open = true
       await vi.waitFor(() => expect(dialog.querySelector('.agh-native-sheet-handle')).not.toBeNull())
+      expect(document.querySelector('#react-host .agh-native-sheet-handle')).toBeNull()
       const handle = dialog.querySelector<HTMLButtonElement>('.agh-native-sheet-handle')!
       const drag = () => {
         handle.dispatchEvent(new PointerEvent('pointerdown', { clientY: 10, pointerId: 1 }))

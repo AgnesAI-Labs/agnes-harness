@@ -1,7 +1,7 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { createSettingsButton, materializeSettingsControls } from '@agnes/web-ui'
+import { Button, createRegionHost, Dialog, renderRegion, SettingsInput, unmountRegion } from '@agnes/web-ui'
 
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
@@ -16,7 +16,7 @@ export function forkTitle(title: string): string {
   )
 }
 
-/** Uses the existing SDK and native dialog focus behavior, without another UI state store. */
+/** The existing action controller owns SDK writes, retries and pending state. */
 export function createSessionActions(options: {
   client: Client
   changed(): Promise<unknown>
@@ -25,72 +25,50 @@ export function createSessionActions(options: {
   translate: Translate
 }) {
   const t = options.translate
-  const dialog = document.createElement('dialog')
-  dialog.className = 'session-rename-dialog'
-  dialog.setAttribute('aria-labelledby', 'session-rename-heading')
-  dialog.dataset.agnesRegion = 'dialog'
-  dialog.innerHTML = `<form>
-    <div class="dialog-heading"><h2 id="session-rename-heading"></h2></div>
-    <label class="form-field" for="session-rename-input">
-      <span id="session-rename-label"></span>
-      <template data-agnes-control="input" id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" ></template>
-    </label>
-    <p id="session-rename-error" class="session-rename-error agnes-settings-state" data-tone="error" role="alert"></p>
-    <div class="dialog-actions"><button class="secondary-button" type="button"></button><button class="primary-button" type="submit"></button></div></form>`
-  materializeSettingsControls(dialog)
-  document.body.append(dialog)
-  const heading = dialog.querySelector('h2') as HTMLHeadingElement
-  const nameLabel = dialog.querySelector('#session-rename-label') as HTMLElement
-  const form = dialog.querySelector('form') as HTMLFormElement
-  const input = dialog.querySelector('input') as HTMLInputElement
-  const error = dialog.querySelector('p') as HTMLParagraphElement
-  const cancel = dialog.querySelector('button') as HTMLButtonElement
-  const submit = dialog.querySelector('[type=submit]') as HTMLButtonElement
+  const host = createRegionHost(document.body, 'div')
   let target: string | undefined
   let pending = false
   let saved = false
+  let opened = false
+  let initialTitle = ''
+  let renameVersion = 0
+  let message = ''
+  let invalid = false
+  let input: HTMLInputElement | null = null
+  let submit: HTMLButtonElement | null = null
   let returnFocus: HTMLElement | undefined
-  // 弹窗只创建一次，所以在每次打开时重新取词，否则切换语言后它仍显示启动时的文案。
-  const applyStaticText = (): void => {
-    heading.textContent = t('session.rename.heading')
-    nameLabel.textContent = t('session.rename.nameLabel')
-    cancel.textContent = t('session.rename.cancel')
-    submit.textContent = saved ? t('session.rename.retryRefresh') : t('session.rename.submit')
-  }
   const text = (failure: unknown) =>
     failure instanceof Error ? failure.message : t('session.rename.defaultError')
-  const close = () => {
-    if (!pending) dialog.close()
-  }
-  cancel.addEventListener('click', close)
-  dialog.addEventListener('cancel', (event) => {
-    if (pending) event.preventDefault()
-  })
-  dialog.addEventListener('close', () => {
+  const restoreFocus = () => {
     if (returnFocus?.isConnected) returnFocus.focus()
     else
       document.querySelector<HTMLElement>(`[data-session-action-id="${CSS.escape(target ?? '')}"]`)?.focus()
-  })
-  form.addEventListener('submit', (event) => {
-    event.preventDefault()
+  }
+  const close = () => {
+    if (pending) return
+    opened = false
+    renderRename()
+    restoreFocus()
+  }
+  const save = () => {
     if (!target || pending) return
-    const title = input.value.trim()
+    const title = input?.value.trim() ?? ''
     if (
       !title ||
       Array.from(title).length > 80 ||
       /[\p{Cc}\p{Zl}\p{Zp}\u202a-\u202e\u2066-\u2069]/u.test(title)
     ) {
-      error.textContent = t('session.rename.invalidName')
-      input.setAttribute('aria-invalid', 'true')
-      input.focus()
+      message = t('session.rename.invalidName')
+      invalid = true
+      renderRename()
+      input?.focus()
       return
     }
     const id = target
-    pending = submit.disabled = cancel.disabled = true
-    input.disabled = true
-    dialog.setAttribute('aria-busy', 'true')
-    error.textContent = ''
-    input.removeAttribute('aria-invalid')
+    pending = true
+    message = ''
+    invalid = false
+    renderRename()
     void (async () => {
       try {
         if (!saved) {
@@ -98,20 +76,90 @@ export function createSessionActions(options: {
           saved = true
         }
         await options.changed()
-        dialog.close()
+        opened = false
       } catch (failure) {
-        error.textContent = saved
-          ? t('session.rename.savedRefreshFailed', { detail: text(failure) })
-          : text(failure)
+        message = saved ? t('session.rename.savedRefreshFailed', { detail: text(failure) }) : text(failure)
       } finally {
-        pending = submit.disabled = cancel.disabled = false
-        input.disabled = saved
-        applyStaticText()
-        dialog.removeAttribute('aria-busy')
-        if (dialog.open) (saved ? submit : input).focus()
+        pending = false
+        if (!disposed) {
+          renderRename()
+          if (opened) (saved ? submit : input)?.focus()
+          else restoreFocus()
+        }
       }
     })()
-  })
+  }
+  const renderRename = () =>
+    renderRegion(
+      host,
+      <dialog
+        open={opened}
+        hidden={!opened}
+        role="presentation"
+        className="react-dialog-host"
+        data-agnes-region="dialog"
+      >
+        <Dialog
+          open={opened}
+          focusable={{ focusTriggerAfterClose: false }}
+          forceRender
+          footer={null}
+          closable={{ disabled: pending }}
+          onCancel={close}
+          className="session-rename-dialog"
+          title={<h2 id="session-rename-heading">{t('session.rename.heading')}</h2>}
+          afterOpenChange={(open) => {
+            if (open && opened) {
+              input?.focus()
+              input?.select()
+            }
+          }}
+        >
+          <form
+            aria-busy={pending || undefined}
+            onSubmit={(event) => {
+              event.preventDefault()
+              save()
+            }}
+          >
+            <label className="form-field" htmlFor="session-rename-input">
+              <span id="session-rename-label">{t('session.rename.nameLabel')}</span>
+              <SettingsInput
+                key={renameVersion}
+                ref={(node) => {
+                  input = node
+                }}
+                id="session-rename-input"
+                defaultValue={initialTitle}
+                required
+                autoComplete="off"
+                aria-describedby="session-rename-error"
+                aria-invalid={invalid || undefined}
+                disabled={pending || saved}
+              />
+            </label>
+            <p id="session-rename-error" className="session-rename-error" role="alert">
+              {message}
+            </p>
+            <div className="dialog-actions">
+              <Button disabled={pending} onClick={close}>
+                {t('session.rename.cancel')}
+              </Button>
+              <Button
+                ref={(node) => {
+                  submit = node
+                }}
+                appearance="primary"
+                htmlType="submit"
+                disabled={pending}
+              >
+                {t(saved ? 'session.rename.retryRefresh' : 'session.rename.submit')}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      </dialog>,
+    )
 
   let disposed = false
   const archivedView = () => {
@@ -135,56 +183,56 @@ export function createSessionActions(options: {
     const visible = archived.filter((row) =>
       `${row.title ?? row.sessionId} ${row.cwd ?? ''}`.toLocaleLowerCase().includes(query),
     )
-    rows.replaceChildren()
-    for (const row of visible) {
-      const item = document.createElement('li')
-      const copy = document.createElement('div')
-      const title = document.createElement('strong')
-      title.textContent = row.title ?? t('session.archived.unnamed')
-      const location = document.createElement('p')
-      location.textContent = row.cwd ?? t('session.uncategorized')
-      copy.append(title, location)
-      const restore = createSettingsButton(document)
-      restore.type = 'button'
-      const restoreLabel = t('session.archived.restore')
-      restore.textContent = restoring.has(row.sessionId) ? t('session.archived.restoring') : restoreLabel
-      restore.setAttribute(
-        'aria-label',
-        t('session.archived.restoreAria', { title: title.textContent ?? '' }),
-      )
-      restore.disabled = restoring.has(row.sessionId)
-      restore.addEventListener('click', () => {
-        if (archivedView()?.rows !== rows || restoring.has(row.sessionId)) return
-        restoring.add(row.sessionId)
-        message.textContent = ''
-        renderArchived()
-        void (async () => {
-          let restored = false
-          try {
-            await options.client.session.archive(row.sessionId, false)
-            restored = true
-            ++epoch
-            archivedView()?.pane.removeAttribute('aria-busy')
-            archived = archived.filter((item) => item.sessionId !== row.sessionId)
-            renderArchived()
-            await options.changed()
-            await loadArchived(t('session.archived.refreshFailedPrefix'))
-            if (archivedView()?.rows === rows) search.focus()
-          } catch (failure) {
-            const current = archivedView()
-            if (current)
-              current.message.textContent = restored
-                ? t('session.archived.refreshFailedPrefix') + text(failure)
-                : text(failure)
-          } finally {
-            restoring.delete(row.sessionId)
-            renderArchived()
-          }
-        })()
-      })
-      item.append(copy, restore)
-      rows.append(item)
-    }
+    renderRegion(
+      rows,
+      visible.map((row) => {
+        const title = row.title ?? t('session.archived.unnamed')
+        const restore = () => {
+          if (archivedView()?.rows !== rows || restoring.has(row.sessionId)) return
+          restoring.add(row.sessionId)
+          message.textContent = ''
+          renderArchived()
+          void (async () => {
+            let restored = false
+            try {
+              await options.client.session.archive(row.sessionId, false)
+              restored = true
+              ++epoch
+              archivedView()?.pane.removeAttribute('aria-busy')
+              archived = archived.filter((item) => item.sessionId !== row.sessionId)
+              renderArchived()
+              await options.changed()
+              await loadArchived(t('session.archived.refreshFailedPrefix'))
+              if (archivedView()?.rows === rows) search.focus()
+            } catch (failure) {
+              const current = archivedView()
+              if (current)
+                current.message.textContent = restored
+                  ? t('session.archived.refreshFailedPrefix') + text(failure)
+                  : text(failure)
+            } finally {
+              restoring.delete(row.sessionId)
+              renderArchived()
+            }
+          })()
+        }
+        return (
+          <li key={row.sessionId}>
+            <div>
+              <strong>{title}</strong>
+              <p>{row.cwd ?? t('session.uncategorized')}</p>
+            </div>
+            <Button
+              aria-label={t('session.archived.restoreAria', { title })}
+              disabled={restoring.has(row.sessionId)}
+              onClick={restore}
+            >
+              {t(restoring.has(row.sessionId) ? 'session.archived.restoring' : 'session.archived.restore')}
+            </Button>
+          </li>
+        )
+      }),
+    )
     empty.textContent = visible.length
       ? ''
       : archived.length
@@ -244,6 +292,7 @@ export function createSessionActions(options: {
   const observer = new MutationObserver(() => {
     const rows = archivedView()?.rows
     if (rows === observedRows) return
+    if (observedRows) unmountRegion(observedRows)
     observedRows = rows
     ++epoch
     if (rows) void loadArchived()
@@ -256,7 +305,9 @@ export function createSessionActions(options: {
     document.removeEventListener('input', onSearch, true)
     document.removeEventListener('click', onRefresh)
     window.removeEventListener('pagehide', dispose)
-    dialog.remove()
+    if (observedRows) unmountRegion(observedRows)
+    unmountRegion(host)
+    host.remove()
   }
   window.addEventListener('pagehide', dispose, { once: true })
   const busy = new Set<string>()
@@ -266,18 +317,18 @@ export function createSessionActions(options: {
     async act(action: SessionAction, id: string, title: string, trigger: HTMLElement) {
       if (disposed) return
       if (action === 'rename') {
-        if (dialog.open) return
+        if (opened) return
         target = id
         returnFocus = trigger
         saved = false
-        input.disabled = false
-        applyStaticText()
-        input.value = title
-        error.textContent = ''
-        input.removeAttribute('aria-invalid')
-        dialog.showModal()
-        input.focus()
-        input.select()
+        initialTitle = title
+        renameVersion++
+        message = ''
+        invalid = false
+        opened = true
+        renderRename()
+        input?.focus()
+        input?.select()
         return
       }
       if (busy.has(id)) return

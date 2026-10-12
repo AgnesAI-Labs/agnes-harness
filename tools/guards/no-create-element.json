@@ -27,6 +27,13 @@
     "packages/web-ui/src/conversation/messages/message.tsx",
     "packages/web-ui/src/conversation/messages/tool-card.tsx",
     "packages/web-ui/src/conversation/messages/turn.tsx",
-    "packages/web-ui/src/conversation/messages/user-message.tsx"
+    "packages/web-ui/src/conversation/messages/user-message.tsx",
+    "packages/web/src/navigation.tsx",
+    "packages/web/src/session-menu.tsx",
+    "packages/web/src/session-actions.tsx",
+    "packages/web/src/new-session-dialog.tsx",
+    "packages/web/src/regions/sidebar.tsx",
+    "packages/web-units/src/sidebar.tsx",
+    "packages/web-units/src/workspace-dialog.tsx"
   ]
 }

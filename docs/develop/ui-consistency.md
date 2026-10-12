@@ -14,6 +14,8 @@ Embedded and standalone plugin/resource pages use the same header, body, rows an
 
 Page actions belong beside the title; row actions belong beside the row; save/cancel actions belong after the fields. At narrow widths, actions wrap in source order and fields become one column. At 390 px, content must remain reachable without horizontal page scrolling. Only code, terminal output, diffs and genuine wide tables may scroll within a labeled region.
 
+The built-in sidebar renders workspace headings, session buttons and action menus in one React tree. Its host `renderNavigation` adapter returns a React node; it does not populate a DOM mount point. Controller updates enter through `useSyncExternalStore`. Workspace selection and renaming use `Dialog`, retaining selector IDs, pending-state dismissal vetoes and focus return. Presentational native dialog hosts preserve skin hooks and the `open` selector while the shared component owns the modal behavior.
+
 ## Controls and forms
 
 | Need | Public web-ui component | Contract to retain |

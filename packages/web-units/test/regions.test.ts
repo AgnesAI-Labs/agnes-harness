@@ -407,9 +407,9 @@ describe('independent core web-unit implementations', () => {
           state: EMPTY_SIDEBAR_STATE,
           dependencies: {
             translate: (key) => key,
-            renderNavigation: ({ nav }) => {
+            renderNavigation: () => {
               rendered++
-              nav.textContent = 'navigation'
+              return 'navigation'
             },
             bindSidebar: () => ({
               close: () => undefined,

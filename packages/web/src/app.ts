@@ -4,7 +4,6 @@ import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import {
   bindDialogSheets,
-  bindDismissibleDialog,
   createCatalogTranslator,
   createSettingsButton,
   materializeSettingsControls,
@@ -52,7 +51,6 @@ import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 import {
   errorNotice,
   type KnownSessionModel,
-  setButtonLabel,
   type Translate,
   workspaceErrorNotice,
 } from '@agnes/web-conversation/presentation'
@@ -90,7 +88,7 @@ import {
   type NewSessionCatalog,
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
-import { renderWorkspaceOptions } from './navigation.js'
+import { mountNewSessionDialog } from './new-session-dialog.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSessionActions } from './session-actions.js'
@@ -698,15 +696,6 @@ const conversation = element('conversation-shell', 'div')
 const goalHost = document.createElement('div')
 goalHost.className = 'session-goal-host'
 button('report-problem').before(goalHost)
-const newSessionDialog = element('new-session', 'dialog')
-const newSessionError = element('new-session-error', 'p')
-const newSessionForm = element('new-session-form', 'form')
-const newSessionCwd = element('new-session-cwd', 'input')
-const newSessionCancel = button('new-session-cancel')
-const newSessionCreate = button('new-session-create')
-const workspacePick = button('workspace-pick')
-const workspacePickerState = element('workspace-picker-state', 'p')
-const workspaceManual = element('workspace-manual', 'details')
 const wsUrl = element('agnes-config', 'meta').dataset.ws
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
@@ -1028,6 +1017,18 @@ const unmountIntelligentUi = mountIntelligentUi({
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
+const newSessionDialog = mountNewSessionDialog(element('new-session-root', 'div'), {
+  translate: t,
+  submit: () => run(chooseWorkspace),
+  pick: () => run(pickWorkspace),
+  select: (workspace) => {
+    selectedWorkspace = workspace
+    closeNewSessionDialog()
+    renderControls()
+    composerRuntime.focus()
+  },
+  restoreFocus: () => clientModules.sidebar?.focusNew(),
+})
 setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 
@@ -1338,7 +1339,7 @@ function showError(error: unknown): void {
     notice.textContent = message
     notice.dataset.kind = 'error'
   }
-  if (newSessionDialog.open) newSessionError.textContent = message
+  if (newSessionDialog.open) newSessionDialog.update({ error: message })
   const data =
     error && typeof error === 'object' && 'data' in error
       ? (error.data as { code?: unknown; modelRoute?: unknown })
@@ -1356,7 +1357,7 @@ function showError(error: unknown): void {
   }
 }
 function run(op: () => Promise<void>): void {
-  newSessionError.textContent = ''
+  newSessionDialog.update({ error: '' })
   if (sessionRecovery) renderSessionRecovery()
   else {
     notice.textContent = ''
@@ -1541,67 +1542,23 @@ function forkTurn(turn: UITurn): Promise<void> {
   return sessionController.forkTurn(turn)
 }
 function renderNewSessionControls(): void {
-  newSessionCreate.setAttribute(
-    'aria-busy',
-    String(sessionPending || newSessionCreating || workspacePickerBusy),
-  )
-  workspacePick.setAttribute(
-    'aria-busy',
-    String(sessionPending || newSessionCreating || workspacePickerBusy || workspacePickerReady === undefined),
-  )
-  newSessionCreate.disabled =
-    !connected || sessionPending || newSessionCreating || workspacePickerBusy || !newSessionCwd.value.trim()
-  setButtonLabel(
-    newSessionCreate,
-    newSessionCreating ? t('app.newSession.verifying') : t('app.newSession.useWorkspace'),
-  )
-  workspacePick.disabled =
-    !connected || sessionPending || newSessionCreating || workspacePickerBusy || !workspacePickerReady
-  workspacePick.hidden = workspacePickerReady === false
-  setButtonLabel(
-    workspacePick,
-    workspacePickerBusy ? t('app.newSession.opening') : t('app.newSession.pickFolder'),
-  )
-  workspacePickerState.textContent = workspacePickerBusy
-    ? t('app.newSession.pickSystemHint')
-    : workspacePickerReady === undefined
-      ? t('app.newSession.checkingPicker')
-      : workspacePickerReady
-        ? t('app.newSession.pickMachine')
-        : t('app.newSession.noPicker')
-  if (workspacePickerReady === false) workspaceManual.open = true
-  newSessionCwd.disabled = workspacePickerBusy
-  newSessionCancel.disabled = newSessionCreating || workspacePickerBusy
-  for (const control of newSessionDialog.querySelectorAll<HTMLButtonElement>('[data-new-session-cancel]'))
-    control.disabled = newSessionCreating || workspacePickerBusy
+  newSessionDialog.update({
+    connected,
+    pending: sessionPending,
+    creating: newSessionCreating,
+    pickerBusy: workspacePickerBusy,
+    pickerReady: workspacePickerReady,
+  })
 }
 function openNewSessionDialog(transitioning = false): void {
   if (!connected || (sessionPending && !transitioning) || newSessionCreating) return
-  if (!newSessionDialog.open) {
-    try {
-      newSessionDialog.showModal()
-    } catch {
-      newSessionDialog.setAttribute('open', '')
-    }
-  }
-  if (workspacePickerReady) workspacePick.focus()
-  else newSessionCwd.focus()
+  newSessionDialog.show()
 }
 function closeNewSessionDialog(): void {
-  if (!newSessionDialog.open) return
-  try {
-    newSessionDialog.close()
-  } catch {
-    newSessionDialog.removeAttribute('open')
-  }
+  newSessionDialog.close()
 }
 function updateWorkspaceOptions(): void {
-  renderWorkspaceOptions(element('workspace-option-items', 'div'), workspaceRows, (workspace) => {
-    selectedWorkspace = workspace
-    closeNewSessionDialog()
-    renderControls()
-    composerRuntime.focus()
-  })
+  newSessionDialog.update({ workspaces: workspaceRows })
 }
 async function registerWorkspace(cwd: string): Promise<void> {
   if (!connected || sessionPending || newSessionCreating) return
@@ -1618,7 +1575,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
     composerRuntime.focus()
   } catch (error) {
     const failure = new Error(workspaceErrorNotice(error, t), { cause: error })
-    newSessionError.textContent = failure.message
+    newSessionDialog.update({ error: failure.message })
     throw failure
   } finally {
     newSessionCreating = false
@@ -1626,7 +1583,7 @@ async function registerWorkspace(cwd: string): Promise<void> {
   }
 }
 async function chooseWorkspace(): Promise<void> {
-  await registerWorkspace(newSessionCwd.value.trim())
+  await registerWorkspace(newSessionDialog.path.trim())
 }
 async function pickWorkspace(): Promise<void> {
   if (!workspacePickerReady || workspacePickerBusy || newSessionCreating) return
@@ -1636,17 +1593,17 @@ async function pickWorkspace(): Promise<void> {
     const result = await requestWorkspacePicker().catch(() => undefined)
     if (!result) {
       workspacePickerReady = false
-      workspaceManual.open = true
-      newSessionError.textContent = t('app.newSession.pickerFailed')
+      newSessionDialog.update({ manual: true })
+      newSessionDialog.update({ error: t('app.newSession.pickerFailed') })
       return
     }
     if (result.status === 'cancelled') return
     if (result.status === 'unavailable') {
       workspacePickerReady = false
-      workspaceManual.open = true
+      newSessionDialog.update({ manual: true })
       return
     }
-    newSessionCwd.value = result.path
+    newSessionDialog.update({ path: result.path })
     await registerWorkspace(result.path)
   } finally {
     workspacePickerBusy = false
@@ -1986,20 +1943,6 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   }
   notice.textContent = firstRun.active ? '' : t('app.model.savedNotice')
 }
-newSessionForm.addEventListener('submit', (event) => {
-  event.preventDefault()
-  run(chooseWorkspace)
-})
-newSessionCwd.addEventListener('input', renderNewSessionControls)
-workspacePick.addEventListener('click', () => run(pickWorkspace))
-bindDismissibleDialog({
-  dialog: newSessionDialog,
-  cancel: newSessionCancel,
-  additional: newSessionDialog.querySelectorAll('[data-new-session-cancel]'),
-  canClose: () => !newSessionCreating && !workspacePickerBusy,
-  close: closeNewSessionDialog,
-  restoreFocus: () => clientModules.sidebar?.focusNew(),
-})
 addEventListener('focus', () => {
   if (connected)
     run(async () => {
@@ -2415,6 +2358,7 @@ const modelRefresh = createRefreshCoordinator({
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
 window.addEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
 window.addEventListener('pagehide', () => {
+  newSessionDialog.dispose()
   unbindDialogSheets()
   unmountIntelligentUi()
   firstRun.dispose()

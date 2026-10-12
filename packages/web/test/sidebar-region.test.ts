@@ -2,6 +2,7 @@
 
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import { createElement } from 'react'
+import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetCollapsedGroups } from '../src/navigation.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
@@ -66,9 +67,10 @@ describe('rendered sidebar region', () => {
     sessionButton?.click()
     expect(openSession).toHaveBeenCalledWith('one')
 
-    sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')?.click()
+    flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')?.click())
     expect((sidebar?.querySelector('.workspace-sessions') as HTMLElement | null)?.hidden).toBe(true)
-    sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click()
+    flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
+    await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
     sidebar?.querySelector<HTMLButtonElement>('#new')?.click()
@@ -171,7 +173,7 @@ describe('rendered sidebar region', () => {
     const heading = () => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
     const children = () => sidebar?.querySelector('.workspace-sessions') as HTMLElement | null
 
-    heading()?.click()
+    flushSync(() => heading()?.click())
     expect(children()?.hidden).toBe(true)
     expect(heading()?.getAttribute('aria-expanded')).toBe('false')
 
@@ -185,7 +187,7 @@ describe('rendered sidebar region', () => {
     expect(heading()?.getAttribute('aria-expanded')).toBe('false')
 
     // 收起状态不得变成「点不开」：再点一次应当恢复展开。
-    heading()?.click()
+    flushSync(() => heading()?.click())
     expect(children()?.hidden).toBe(false)
   })
 
@@ -243,9 +245,9 @@ describe('rendered sidebar region', () => {
     runtime.sidebar?.update(sidebarState([session('one', '/workspace')]))
     expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
 
-    // 数据变化时必须重建，否则界面会停在旧数据上。
+    // React reconciles changed rows without discarding the focused navigation subtree.
     runtime.sidebar?.update(sidebarState([session('one', '/workspace'), session('two', '/workspace')]))
-    expect(sidebar?.querySelector('.workspace-sessions')).not.toBe(before)
+    expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
     expect(sidebar?.querySelectorAll('.session-row')).toHaveLength(2)
   })
 

@@ -18,6 +18,7 @@
    只让外层透明时，内层 `[data-slot="sidebar"]` / `[data-slot-entry]` 仍是普通 block 盒子，
    `#sessions` 的 flex:1 与 `.sidebar-footer` 的 flex:none 全部失效 ——
    列表不再自己滚动，底部「设置」也不会钉在侧栏底部。这里按后代泛化，避免写死嵌套深度。 */
+  .sidebar-slot-group,
   .sidebar :where([data-slot], [data-slot-entry]) {
     display: contents;
   }
@@ -160,52 +161,10 @@
   .session-menu-trigger {
     width: 1rem;
   }
-  /* 菜单卡使用 4px 内边距和 20px 圆角；宽度与落点由 positionPopover 设置。
-   面板挂在 body 上，必须用 fixed 避开侧栏的 overflow 裁剪。 */
-  .session-menu-actions {
-    position: fixed;
-    z-index: 70;
-    display: flex;
-    flex-direction: column;
-    padding: 0.25rem;
-    overflow: auto;
-    overscroll-behavior: contain;
-    border: 0;
-    border-radius: 1.25rem;
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-popover);
-    box-shadow: var(--shadow-elevation-prominent), var(--shadow-hairline);
-  }
-  /* 菜单单元显式左对齐；全局 button 使用 inline-flex 居中，text-align 不会覆盖它。 */
-  .session-menu-actions button {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.5rem;
-    width: 100%;
-    min-height: 2.5rem;
-    padding: 0.5rem 0.625rem;
-    border: 0;
-    border-radius: 0.625rem;
-    color: var(--agnes-text-primary);
-    background: transparent;
-    font-size: var(--font-size-body);
-    font-weight: 400;
-    line-height: 1.375rem;
-    text-align: left;
-  }
-  .session-menu-actions button:hover:not(:disabled) {
-    border-color: transparent;
-    background: var(--agnes-bg-hover);
-  }
-  .session-menu-actions .icon {
-    color: var(--agnes-text-tertiary);
-  }
-  .session-rename-dialog {
-    width: min(480px, calc(100vw - 32px));
-    padding: 24px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+  /* The compatibility landmark preserves the new-session selector and skin hook;
+     the shared Dialog owns the modal surface and its focus/backdrop behavior. */
+  dialog.react-dialog-host[open] {
+    display: contents;
   }
   .session-rename-dialog form {
     display: grid;

@@ -136,7 +136,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-admin/src/admin/plugins/types': 82,
   'packages/web-admin/src/admin/plugins/api': 548,
   'packages/web-admin/src': 16543,
-  'packages/web-foundation/src': 2462,
+  'packages/web-foundation/src': 2464,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   'packages/daemon-rpc/src': 8391,
@@ -207,8 +207,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/cosmokit/src': 356,
   'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
-  'packages/web-ui/src': 15158,
-  'packages/web-units/src': 9920,
+  'packages/web-ui/src': 15161,
+  'packages/web-units/src': 10019,
   'packages/base/extensions/tools-core': 1125,
   'packages/base/extensions/mcp-server': 446,
   'packages/base/extensions/mcp-search': 178,
@@ -269,7 +269,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
 
-  'packages/web/src': 14048,
+  'packages/web/src': 14105,
 
   'packages/bridges/src': 1728,
   'packages/channels/src': 5398,

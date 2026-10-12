@@ -9,6 +9,7 @@ import {
   type ClientModulesRuntime,
   startClientModules,
 } from '../src/client-modules/boot.js'
+import { mountNewSessionDialog } from '../src/new-session-dialog.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
@@ -84,6 +85,19 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
     settingsPaneContainer: document.getElementById('config') ?? undefined,
   })
+
+  const workspaceDialog = mountNewSessionDialog(document.getElementById('new-session-root') as HTMLElement, {
+    translate: (key, vars) => runtime.locale.t(key, vars),
+    submit() {},
+    pick() {},
+    select() {},
+    restoreFocus() {},
+  })
+  const dispose = runtime.dispose.bind(runtime)
+  runtime.dispose = async () => {
+    workspaceDialog.dispose()
+    await dispose()
+  }
 
   // React roots that are not flushed by a region mount (the panel outlet, and the empty state the
   // conversation mounts as a child) commit on a later scheduler task, which a loaded runner can

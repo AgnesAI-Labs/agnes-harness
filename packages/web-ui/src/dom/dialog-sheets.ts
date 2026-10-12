@@ -7,7 +7,10 @@ export function bindDialogSheets(document: Document): () => void {
   const handles = new Map<HTMLButtonElement, () => void>()
   const addHandles = () => {
     for (const dialog of document.querySelectorAll<HTMLDialogElement>('dialog[open]')) {
-      if (dialog.matches('.agh-drawer, .lightbox') || dialog.querySelector(':scope > .agh-sheet-handle'))
+      if (
+        dialog.matches('.agh-drawer, .lightbox, [role=presentation]') ||
+        dialog.querySelector(':scope > .agh-sheet-handle')
+      )
         continue
       const handle = document.createElement('button')
       handle.type = 'button'

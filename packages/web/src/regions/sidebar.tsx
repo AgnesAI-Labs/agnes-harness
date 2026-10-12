@@ -8,9 +8,8 @@ import {
   type SidebarHandle,
   type SidebarState,
 } from '@agnes/web-units'
-import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { renderSessionNavigation } from '../navigation.js'
+import { SessionNavigation } from '../navigation.js'
 import {
   type EmptyStateRegionMount,
   rootStableRegistry,
@@ -38,27 +37,29 @@ export function SidebarDshFrame({
   state: SidebarState
   actions?: Partial<SidebarActions>
   dependencies: SidebarDependencies
-}): ReturnType<typeof createElement> {
-  const outlet = (name: string) => createElement(SlotOutlet, { name: name as never, hideWhenEmpty: true })
-  return createElement(Sidebar, {
-    ref: handle,
-    state,
-    actions,
-    dependencies,
-    slots: {
-      brandMark: outlet('sidebar.brand.mark'),
-      brandName: outlet('sidebar.brand.name'),
-      panellist: outlet('sidebar.panellist'),
-      footerAction: outlet('sidebar.footer.action'),
-      settings: outlet('sidebar.settings'),
-      workspaces: createElement(
-        'span',
-        { style: { display: 'contents' } },
-        outlet('sidebar.workspaces'),
-        outlet('sidebar.workspaces.directoryFlow'),
-      ),
-    },
-  })
+}) {
+  const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty />
+  return (
+    <Sidebar
+      ref={handle}
+      state={state}
+      actions={actions}
+      dependencies={dependencies}
+      slots={{
+        brandMark: outlet('sidebar.brand.mark'),
+        brandName: outlet('sidebar.brand.name'),
+        panellist: outlet('sidebar.panellist'),
+        footerAction: outlet('sidebar.footer.action'),
+        settings: outlet('sidebar.settings'),
+        workspaces: (
+          <span className="sidebar-slot-group">
+            {outlet('sidebar.workspaces')}
+            {outlet('sidebar.workspaces.directoryFlow')}
+          </span>
+        ),
+      }}
+    />
+  )
 }
 
 /** Render the built-in sidebar behind the root-scoped slot ledger without replacing its outer landmark. */
@@ -75,7 +76,9 @@ export function mountSidebarRegion(
   const sidebarDependencies: SidebarDependencies = {
     ...SIDEBAR_DEPENDENCIES_BASE,
     translate: (key, vars) => locale.t(key, vars),
-    renderNavigation: (options) => renderSessionNavigation(options, (key, vars) => locale.t(key, vars)),
+    renderNavigation: (options) => (
+      <SessionNavigation options={options} t={(key, vars) => locale.t(key, vars)} />
+    ),
   }
   registry.declare(SIDEBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   if (!registry.spec('sidebar')) registry.declare('sidebar', { kind: 'single', scope: 'root' }, 'web-shell')
@@ -98,21 +101,18 @@ export function mountSidebarRegion(
   )
   const removeBuiltin = registry.register(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },
-    () =>
-      createElement(
-        SlotsProvider,
-        { registry, locale },
-        createElement(SlotOutlet, { name: 'sidebar' as never }),
-      ),
+    () => (
+      <SlotsProvider registry={registry} locale={locale}>
+        <SlotOutlet name={'sidebar' as never} />
+      </SlotsProvider>
+    ),
   )
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
-      createElement(
-        SlotsProvider,
-        { registry: rootStableRegistry(registry), locale },
-        createElement(SlotOutlet, { name: SIDEBAR_SLOT }),
-      ),
+      <SlotsProvider registry={rootStableRegistry(registry)} locale={locale}>
+        <SlotOutlet name={SIDEBAR_SLOT} />
+      </SlotsProvider>,
     )
   })
   let disposed = false

@@ -253,11 +253,6 @@ function installPublicFixture(): void {
   document.documentElement.innerHTML = publicHtml
     .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
     .replace(/<script type="module" src="\/app\.js"><\/script>/, '')
-  if (!document.getElementById('new-session'))
-    document.body.insertAdjacentHTML(
-      'beforeend',
-      `<dialog id="new-session"><form id="new-session-form"><input id="new-session-cwd" value="." /><button id="new-session-cancel" type="button">取消</button><button id="new-session-create" type="submit">创建任务</button></form></dialog>`,
-    )
   history.replaceState(null, '', '/?session=old#test-launcher-token')
   sessionStorage.clear()
   localStorage.clear()
@@ -917,6 +912,7 @@ describe('web session selection', () => {
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
+      cwd.dispatchEvent(new Event('input', { bubbles: true }))
       document
         .getElementById('new-session-form')
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -1551,6 +1547,7 @@ describe('web session selection', () => {
     newButton.click()
     expect(location.hash).toBe('#settings-subsection-examples')
     newSessionCwd.value = ' /workspace/agnes '
+    newSessionCwd.dispatchEvent(new Event('input', { bubbles: true }))
     await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
     newSessionForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(newSession.open).toBe(false))
@@ -2669,10 +2666,10 @@ describe('session action review regressions', () => {
   it('retains a renamed paged-out current session through the next transcript render', async () => {
     const { rename, old, on } = await boot({ value: false })
     document.querySelector<HTMLButtonElement>('#task-title')?.click()
-    const dialog = document.querySelector('.session-rename-dialog') as HTMLDialogElement
+    const dialog = document.querySelector('.session-rename-dialog') as HTMLElement
     ;(dialog.querySelector('input') as HTMLInputElement).value = '改名后'
-    dialog.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }))
-    await vi.waitFor(() => expect(dialog.open).toBe(false))
+    dialog.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect((dialog.closest('dialog') as HTMLDialogElement).open).toBe(false))
     expect(rename).toHaveBeenCalledOnce()
     expect(document.getElementById('task-title')?.textContent).toBe('改名后')
     const prior = old.projectUIOpening.mock.calls.length
