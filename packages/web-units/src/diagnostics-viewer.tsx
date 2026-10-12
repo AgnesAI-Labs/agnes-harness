@@ -26,17 +26,23 @@ const STYLE = `
 }
 @layer base {
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); font-size: 14px; line-height: 1.6; }
 }
 @layer app {
   header { padding: 16px 20px; border-bottom: 1px solid var(--agnes-line-primary); }
-  header h1 { margin: 0 0 4px; font-size: 18px; }
-  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; }
+  header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; text-wrap: balance; overflow-wrap: anywhere; }
+  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; max-width: 75ch; overflow-wrap: anywhere; }
   #agh-tabs { display: flex; gap: 4px; padding: 8px 20px; border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
-   #agh-tabs button { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-primary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+   #agh-tabs button { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-primary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; min-height: 32px; touch-action: manipulation; }
    #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: HighlightText; border-color: var(--agnes-accent-primary); }
+  #agh-tabs button:focus-visible { outline: 2px solid var(--agnes-accent-primary); outline-offset: 2px; }
   main { padding: 16px 20px; }
-  main section { max-width: 960px; }
+  main section { max-width: 960px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) {
+    header, main { padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+    #agh-tabs { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+    #agh-tabs button { min-height: 44px; }
+  }
   pre { white-space: pre-wrap; word-break: break-word; background: color-mix(in srgb, var(--agnes-text-secondary) 8%, transparent); padding: 8px; border-radius: 6px; font-size: 12px; }
   .agh-node, .agh-span { padding: 4px 0; border-bottom: 1px solid var(--agnes-line-primary); }
   .agh-node-kind { font-weight: 600; margin-right: 6px; }
