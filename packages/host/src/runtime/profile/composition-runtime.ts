@@ -51,6 +51,7 @@ export async function createCompositionHost(
     profileDir: options.profileDir,
   })
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
+  store.sweepOrphans((key) => generations.session(key) !== undefined)
   const containers = new Map<string, Container>()
   const opening = new Map<string, Promise<Container>>()
   const sessionOwners = new Map<string, Container>()
