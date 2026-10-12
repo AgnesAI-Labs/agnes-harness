@@ -841,6 +841,119 @@ describe('v3 approval modes and grants', () => {
     expect(await opened.log.scan({ type: 'x/approval/reservation', limit: 10 })).toHaveLength(1)
   })
 
+  it('re-decides a resumed review with the current policy and reuses only the recorded model output', async () => {
+    const modelReviewing = (id: string) => {
+      const registry = new ToolPolicyRegistry()
+      registry.register('test', {
+        id,
+        version: '1',
+        async decide(_input, signal, ports) {
+          await ports!.reserve(5)
+          const response = await ports!.model({ slot: 'fast', prompt: 'Review the bounded write' }, signal)
+          return {
+            effect: 'allow' as const,
+            reason: response.text,
+            review: {
+              model: response.model,
+              promptHash: 'a'.repeat(64),
+              argsHash: sha256Hex(canonicalJson({ value: '0' })),
+              scopeHash: 'b'.repeat(64),
+              decision: 'allow' as const,
+              risk: 'low' as const,
+              reason: response.text,
+              latencyMs: 1,
+              cost: response.cost,
+              costSource: response.costSource ?? ('estimated' as const),
+              source: 'model' as const,
+            },
+          }
+        },
+      })
+      return registry
+    }
+    const preset = presetDefaults()
+    preset.model.route.fast = 'cheap'
+    preset.model.id.fast = 'scripted-cheap'
+    const catalogue = (provider: Provider) => {
+      provider.models = () => [
+        {
+          id: 'scripted-cheap',
+          name: 'scripted-cheap',
+          api: 'openai-completions',
+          route: 'cheap',
+          baseUrl: 'https://example.invalid/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8_000,
+          maxTokens: 1024,
+          toolCallFormats: ['native'],
+          thinkingReplay: 'native',
+          contract_id: null,
+          slot: 'fast',
+        },
+      ]
+      return provider
+    }
+    let executions = 0
+    const original = await atTools({
+      provider: catalogue(
+        fakeProvider([toolTurn('scoped_write', { value: '0' }), textTurn('Bounded write')]),
+      ),
+      preset,
+      scopes: ['tool:write'],
+      toolPolicies: modelReviewing('model-review'),
+      toolPolicySettings: async () => ({ policy: 'model-review' }),
+      execute: async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'done' }] }
+      },
+    })
+    await original.session.runToolsPhase()
+    expect(executions).toBe(1)
+    const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
+    const review = events.find((row) => row.type === 'x/approval/review')!
+    const reopen = async (policies: ToolPolicyRegistry, policy: string, provider: Provider) => {
+      const reopened = await openSession({
+        provider: catalogue(provider),
+        preset,
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy }),
+        registry: registryWith(
+          scopedTool(['tool:write'], async () => {
+            executions++
+            return { content: [{ type: 'text', text: 'done' }] }
+          }),
+        ),
+        storage: MemoryStorage.fromEvents(
+          'k',
+          events.filter((row) => row.seq <= review.seq),
+          { opCells: original.opCellsBefore(review.seq + 1) },
+        ),
+        key: 'k',
+        writerRunId: `review-recovery-${policy}`,
+      })
+      await reopened.session.resume()
+      await reopened.session.runToolsPhase()
+      return reopened
+    }
+    const denying = new ToolPolicyRegistry()
+    denying.register('test', {
+      id: 'tightened',
+      version: '1',
+      decide: () => ({ effect: 'deny', reason: 'blocked by the command policy' }),
+    })
+    const tightened = await reopen(denying, 'tightened', fakeProvider([]))
+    expect(executions).toBe(1)
+    expect((await tightened.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+      code: 'POLICY_DENIED',
+    })
+    const sameProvider = fakeProvider([])
+    await reopen(modelReviewing('model-review'), 'model-review', sameProvider)
+    expect(executions).toBe(2)
+    expect(sameProvider.requests.filter((request) => request.model === 'scripted-cheap')).toHaveLength(0)
+  })
+
   it('off mode bypasses asks but never overrides an authorization deny', async () => {
     let asks = 0
     const opened = await atTools({

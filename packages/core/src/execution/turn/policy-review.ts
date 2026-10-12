@@ -8,6 +8,28 @@ import { applyBeforeRequestPatches } from '../../request/transforms.js'
 import type { SessionImpl } from '../../step/session.js'
 import { estimateTokens, resolveModel } from './inference.js'
 
+type ModelResponseFact = {
+  slot: 'fast' | 'verifier'
+  promptHash: string
+  text: string
+  model: string
+  cost: number
+  costSource: 'estimated' | 'gateway'
+}
+function isModelResponseFact(value: unknown): value is ModelResponseFact {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return (
+    (v.slot === 'fast' || v.slot === 'verifier') &&
+    typeof v.promptHash === 'string' &&
+    typeof v.text === 'string' &&
+    typeof v.model === 'string' &&
+    typeof v.cost === 'number' &&
+    Number.isFinite(v.cost) &&
+    (v.costSource === 'estimated' || v.costSource === 'gateway')
+  )
+}
+
 const counters = new WeakMap<SessionImpl, number>()
 /** Generic policy execution. Policy algorithms and review consistency belong to plugins. */
 export async function decideToolPolicy(
@@ -31,25 +53,19 @@ export async function decideToolPolicy(
       row.lane === s.lane,
   )
   const data = prior?.data as
-    | { review?: unknown; effect?: unknown; reason?: unknown; policyHash?: unknown; name?: unknown }
+    | { policyHash?: unknown; name?: unknown; argsHash?: unknown; modelResponse?: unknown }
     | undefined
-  if (
+  // A recorded review only supplies its model output: the current policy, wrapped by the deployment
+  // floor, always makes the decision, so a resumed call is never authorised by an older verdict.
+  let replay: ModelResponseFact | undefined =
     data &&
-    validateAgainst(ToolReviewFact, data.review).ok &&
     data.policyHash === sha256Hex(canonicalJson(input.policy)) &&
     data.name === input.call.name &&
-    (data.review as ToolReviewFact).argsHash === sha256Hex(canonicalJson(input.call.args)) &&
-    data.effect ===
-      ((data.review as ToolReviewFact).decision === 'escalate'
-        ? 'ask'
-        : (data.review as ToolReviewFact).decision) &&
-    ['allow', 'ask', 'deny'].includes(String(data.effect))
-  )
-    return {
-      effect: data.effect as ToolPolicyDecision['effect'],
-      reason: String(data.reason),
-      review: data.review as ToolReviewFact,
-    }
+    data.argsHash === sha256Hex(canonicalJson(input.call.args)) &&
+    isModelResponseFact(data.modelResponse)
+      ? data.modelResponse
+      : undefined
+  let modelResponse: ModelResponseFact | undefined
   const settings = await s.d.toolPolicySettings?.(s.preset.approval.policy ?? 'default', signal)
   const history = rows.filter((row) => row.origin === 'system' && row.trust === 'trusted')
   const user = await scanAll((q) => s.d.log.scan(q), { type: 'user/message', lane: s.lane, toSeq: s.lastSeq })
@@ -68,6 +84,7 @@ export async function decideToolPolicy(
       signal,
       {
         async reserve(limit) {
+          if (replay) return true
           const count =
             counters.get(s) ?? history.filter((row) => row.type === 'x/approval/reservation').length
           if (count >= limit) return false
@@ -78,6 +95,22 @@ export async function decideToolPolicy(
           return true
         },
         async model(request, reviewSignal, onUsage) {
+          const recorded = replay
+          replay = undefined
+          if (
+            recorded &&
+            recorded.slot === request.slot &&
+            recorded.promptHash === sha256Hex(request.prompt)
+          ) {
+            onUsage?.({ model: recorded.model, cost: recorded.cost, costSource: recorded.costSource })
+            modelResponse = recorded
+            return {
+              text: recorded.text,
+              model: recorded.model,
+              cost: recorded.cost,
+              costSource: recorded.costSource,
+            }
+          }
           const target = resolveModel(s, request.slot)
           // A fast slot must be explicitly configured; never quietly spend on the primary model.
           if (!s.preset.model.route[request.slot]) throw new Error('Reviewer model profile is not configured')
@@ -175,6 +208,14 @@ export async function decideToolPolicy(
             await s.d.log.append([s.ev('cost/ledger', spend)])
           }
           if (!costRecorded) throw new Error('Review cost unavailable')
+          modelResponse = {
+            slot: request.slot,
+            promptHash: sha256Hex(request.prompt),
+            text,
+            model: target.model,
+            cost: credits,
+            costSource: creditSource ?? 'estimated',
+          }
           return { text, model: target.model, cost: credits, costSource: creditSource }
         },
       },
@@ -194,6 +235,8 @@ export async function decideToolPolicy(
             name: input.call.name,
             policy: s.toolPolicy(settings?.policy).id,
             policyHash: sha256Hex(canonicalJson(input.policy)),
+            argsHash: sha256Hex(canonicalJson(input.call.args)),
+            ...(modelResponse ? { modelResponse } : {}),
             effect: permission.effect,
             reason: permission.reason,
             review: permission.review,
