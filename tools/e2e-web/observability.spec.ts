@@ -15,6 +15,7 @@ test('OTLP settings save and collector connection test in both languages', async
       await chooseWorkspace(page, runtime, locale)
       await settings(page, locale)
       await section(page, 'diagnostics')
+      await page.getByTestId('diagnostics-runtime-toggle').click()
       const card = page.getByTestId('otlp-settings')
       await expect(card).toHaveAttribute('aria-busy', 'false')
       await page.getByTestId('otlp-endpoint').fill(collector.endpoint)
