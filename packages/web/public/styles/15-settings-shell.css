@@ -56,14 +56,14 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 0.5rem 1.5rem 1.5rem;
+  padding: var(--s8) var(--s24) var(--s24);
 }
 .admin-toolbar-actions {
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .settings-rail {
   background: transparent;
@@ -71,7 +71,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.125rem;
-  padding: 1.375rem 0.75rem 0;
+  padding: 1.375rem var(--s12) 0;
   border-right: 0;
 }
 .config-card {
@@ -91,22 +91,22 @@
   }
   .topbar {
     min-height: 3.4rem;
-    padding-inline: 0.75rem;
+    padding-inline: var(--s12);
   }
   #transcript-content {
-    padding: 1.5rem 1rem 5rem;
+    padding: var(--s24) var(--s16) 5rem;
   }
   .timeline-node.user {
     max-width: 92%;
   }
   .timeline-node.assistant {
-    padding-left: 2rem;
+    padding-left: var(--s32);
   }
   .timeline-node.tool,
   .timeline-node.cost,
   .timeline-node.artifact,
   .timeline-node.compaction {
-    margin-left: 2rem;
+    margin-left: var(--s32);
   }
   #composer {
     width: calc(100% - 1rem);
@@ -150,7 +150,7 @@ body.admin-page {
   display: grid;
   grid-template-columns: minmax(9rem, 1fr) minmax(0, 2fr) minmax(9rem, 1fr);
   align-items: center;
-  gap: 1rem;
+  gap: var(--s16);
   margin: 0 auto;
   flex: 0 0 auto;
 }
@@ -179,7 +179,7 @@ body.admin-page {
 .admin-main {
   width: min(var(--admin-content-width), calc(100% - 3rem));
   margin: 0 auto;
-  padding: 0 0 1.5rem;
+  padding: 0 0 var(--s24);
   /* 与 .admin-pane-body 同构：吃掉剩余高度，把滚动交给列表与详情。 */
   flex: 1;
   min-height: 0;
@@ -189,7 +189,7 @@ body.admin-page {
 }
 .admin-notice {
   min-height: 1.35rem;
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--s12);
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-sm);
 }
@@ -211,9 +211,9 @@ body.admin-page {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin: 0 0 1rem;
-  padding: 0.75rem 0.75rem;
+  gap: var(--s8) var(--s12);
+  margin: 0 0 var(--s16);
+  padding: var(--s12) var(--s12);
   border: 1px solid var(--agnes-status-warning-text);
   border-inline-start: 3px solid var(--agnes-status-warning-text);
   border-radius: var(--radius-card);
@@ -230,9 +230,9 @@ body.admin-page {
 }
 .orphan-pins {
   display: grid;
-  gap: 0.5rem;
-  margin: 0 0 1rem;
-  padding: 0.75rem 0.75rem;
+  gap: var(--s8);
+  margin: 0 0 var(--s16);
+  padding: var(--s12) var(--s12);
   border: 1px solid var(--agnes-line-primary);
   border-inline-start: 3px solid var(--agnes-status-warning-text);
   border-radius: var(--radius-card);
@@ -243,7 +243,7 @@ body.admin-page {
   align-items: baseline;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.5rem 0.75rem;
+  gap: var(--s8) var(--s12);
 }
 .orphan-pins-heading strong {
   color: var(--agnes-status-warning-text);
@@ -256,7 +256,7 @@ body.admin-page {
 }
 .orphan-pins-list {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--s8);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -265,8 +265,8 @@ body.admin-page {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.625rem;
+  gap: var(--s12);
+  padding: var(--s8) 0.625rem;
   border: 1px solid var(--agnes-status-warning-text);
   border-radius: var(--radius-md);
   background: var(--agnes-status-warning-bg);

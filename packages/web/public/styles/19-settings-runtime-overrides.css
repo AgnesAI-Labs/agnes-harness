@@ -7,7 +7,7 @@
   scrollbar-width: thin;
 }
 .settings-nav-label {
-  margin: 1rem 0 0.375rem;
+  margin: var(--s16) 0 0.375rem;
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }
@@ -20,7 +20,7 @@
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: stretch;
-  gap: 0.25rem;
+  gap: var(--s4);
   width: 13rem;
   flex-shrink: 0;
   margin: 0;
@@ -30,7 +30,7 @@
 }
 .runtime-settings:has(> nav) {
   display: flex;
-  gap: 2rem;
+  gap: var(--s32);
 }
 .runtime-settings > section {
   min-width: 0;
@@ -39,7 +39,7 @@
 @media (max-width: 640px) {
   .runtime-settings:has(> nav) {
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--s16);
   }
   .runtime-settings > nav {
     width: 100%;

@@ -26,7 +26,7 @@
   overflow-y: auto;
 }
 .reference-popup [role="option"] {
-  padding: 0.5rem;
+  padding: var(--s8);
   border-radius: var(--radius-md);
   cursor: pointer;
   overflow-wrap: anywhere;
@@ -41,7 +41,7 @@
 }
 .reference-help,
 .reference-popup [role="status"] {
-  margin: 0.25rem 0;
+  margin: var(--s4) 0;
   font-size: var(--font-size-xs);
   color: var(--agnes-text-secondary);
 }
@@ -57,9 +57,9 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: var(--s4);
   max-width: 100%;
-  padding: 0.25rem 0.5rem;
+  padding: var(--s4) var(--s8);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
   overflow-wrap: anywhere;

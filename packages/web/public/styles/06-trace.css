@@ -37,14 +37,14 @@
 #rightbar-session {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: var(--s12);
+  padding: var(--s16);
 }
 .rightbar-tabs {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .rightbar-tab-content {
   min-width: 0;
@@ -80,14 +80,14 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.4rem 1rem;
+  gap: var(--s12);
+  padding: 0.4rem var(--s16);
   border-bottom: 1px solid var(--agnes-line-primary);
 }
 .trace-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: var(--s16);
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-xs);
   font-weight: 400;
@@ -117,7 +117,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
-  padding: 0.55rem 1rem 0.7rem;
+  padding: 0.55rem var(--s16) 0.7rem;
   border-bottom: 1px solid var(--agnes-line-primary);
 }
 .trace-gantt-note {
@@ -241,7 +241,7 @@ button.trace-gantt-bar:focus-visible {
   pointer-events: none;
 }
 .trace-no-results {
-  margin: 1rem;
+  margin: var(--s16);
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -249,7 +249,7 @@ button.trace-gantt-bar:focus-visible {
   display: block;
   width: 100%;
   height: 33px;
-  padding: 0 1rem;
+  padding: 0 var(--s16);
   border: 0;
   border-bottom: 1px solid var(--agnes-line-primary);
   border-radius: 0;
@@ -263,7 +263,7 @@ button.trace-gantt-bar:focus-visible {
   top: 0;
   z-index: 2;
   height: 33px;
-  padding: 0 1rem;
+  padding: 0 var(--s16);
   border-bottom: 1px solid var(--agnes-line-primary);
   background: var(--agnes-trace-track);
 }
@@ -284,7 +284,7 @@ button.trace-gantt-bar:focus-visible {
   gap: 0.55rem;
   width: 100%;
   height: 32px;
-  padding: 0 1rem;
+  padding: 0 var(--s16);
   border: 0;
   border-radius: 0;
   color: var(--agnes-text-primary);
@@ -372,13 +372,13 @@ button.trace-gantt-bar:focus-visible {
 .trace-inspector {
   min-width: 0;
   overflow: auto;
-  padding: 0.75rem 1rem 1.25rem;
+  padding: var(--s12) var(--s16) var(--s20);
   border-left: 1px solid var(--agnes-line-primary);
 }
 .trace-inspector-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .trace-inspector-title {
   flex: 1;
@@ -407,8 +407,8 @@ button.trace-gantt-bar:focus-visible {
 }
 .trace-inspector-tabs {
   display: flex;
-  gap: 0.75rem;
-  margin: 0.75rem 0;
+  gap: var(--s12);
+  margin: var(--s12) 0;
   border-bottom: 1px solid var(--agnes-line-primary);
   overflow-x: auto;
 }
@@ -429,7 +429,7 @@ button.trace-gantt-bar:focus-visible {
 .trace-field {
   display: grid;
   grid-template-columns: 4rem minmax(0, 1fr);
-  gap: 0.5rem;
+  gap: var(--s8);
   margin: 0.4rem 0;
   font-size: var(--font-size-sm);
 }
@@ -441,14 +441,14 @@ button.trace-gantt-bar:focus-visible {
   overflow-wrap: anywhere;
 }
 .trace-pre {
-  margin: 0.5rem 0 0;
+  margin: var(--s8) 0 0;
   overflow: auto;
   color: var(--agnes-text-primary);
   font-size: 0.8rem;
   white-space: pre-wrap;
 }
 .trace-raw-note {
-  margin: 0.5rem 0 0;
+  margin: var(--s8) 0 0;
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-xs);
 }
@@ -477,7 +477,7 @@ button.trace-gantt-bar:focus-visible {
   overflow-wrap: anywhere;
 }
 .trace-detail-media {
-  margin: 0.5rem 0;
+  margin: var(--s8) 0;
 }
 .trace-image-thumb {
   display: block;
@@ -498,7 +498,7 @@ button.trace-gantt-bar:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 2rem;
+  padding: var(--s32);
   background: var(--agnes-bg-lightbox);
 }
 .trace-lightbox img {
@@ -514,7 +514,7 @@ button.trace-gantt-bar:focus-visible {
   min-height: 2rem;
 }
 .trace-empty {
-  margin: 1.5rem 1.25rem;
+  margin: var(--s24) var(--s20);
 }
 @media (max-width: 900px) {
   .trace-body {

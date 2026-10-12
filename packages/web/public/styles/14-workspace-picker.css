@@ -1,6 +1,6 @@
 #new-session-form {
   max-height: var(--dialog-max-height);
-  padding: 1.25rem;
+  padding: var(--s20);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -8,12 +8,12 @@
   min-inline-size: 0;
   padding: 0;
   border: 0;
-  margin: 1rem 0;
+  margin: var(--s16) 0;
 }
 .workspace-picker-action {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem;
+  gap: var(--s8);
+  padding: var(--s12);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-card);
   background: var(--agnes-bg-surface);
@@ -27,7 +27,7 @@
   text-align: center;
 }
 .workspace-manual {
-  margin-top: 0.75rem;
+  margin-top: var(--s12);
   color: var(--agnes-text-tertiary);
 }
 .workspace-manual > summary {
@@ -47,7 +47,7 @@
   width: 100%;
   min-height: 3.25rem;
   justify-content: flex-start;
-  padding: 0.5rem 0.75rem;
+  padding: var(--s8) var(--s12);
   border-color: var(--agnes-line-primary);
   text-align: left;
   background: var(--agnes-bg-surface);
@@ -74,7 +74,7 @@
   opacity: 0.62;
 }
 .dialog-kicker {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--s4);
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }

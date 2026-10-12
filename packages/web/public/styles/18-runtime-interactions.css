@@ -24,35 +24,35 @@
 .runtime-settings nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-block: 1rem;
+  gap: var(--s8);
+  margin-block: var(--s16);
 }
 .runtime-settings h2 {
-  margin-block: 1rem;
+  margin-block: var(--s16);
 }
 .runtime-card {
   border: 1px solid var(--agnes-line-primary);
   background: var(--agnes-bg-surface);
   border-radius: var(--radius-card);
-  padding: 1rem;
-  margin-block: 0.75rem;
+  padding: var(--s16);
+  margin-block: var(--s12);
   overflow-wrap: anywhere;
 }
 .runtime-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: 0.75rem;
+  gap: var(--s12);
 }
 .runtime-settings dd {
-  margin: 0.25rem 0 0.75rem;
+  margin: var(--s4) 0 var(--s12);
   overflow-wrap: anywhere;
 }
 .runtime-settings details {
-  margin-block: 1rem;
+  margin-block: var(--s16);
 }
 .runtime-settings summary {
   cursor: pointer;
-  padding-block: 0.5rem;
+  padding-block: var(--s8);
 }
 .runtime-settings table {
   width: 100%;
@@ -61,7 +61,7 @@
 }
 .runtime-settings td,
 .runtime-settings th {
-  padding: 0.5rem;
+  padding: var(--s8);
   border-bottom: 1px solid var(--agnes-line-primary);
   overflow-wrap: anywhere;
 }
@@ -70,7 +70,7 @@
   min-height: 36rem;
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-card);
-  margin-block: 1rem;
+  margin-block: var(--s16);
 }
 
 .runtime-table-scroll {
@@ -91,8 +91,8 @@
   max-width: 100%;
 }
 .conversation-native-card {
-  margin-block: 0.75rem;
-  padding: 1rem;
+  margin-block: var(--s12);
+  padding: var(--s16);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-card);
   background: var(--agnes-bg-surface);
@@ -103,7 +103,7 @@
 }
 .history-search {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--s8);
   max-width: 40rem;
 }
 .history-search input {
@@ -116,8 +116,8 @@
 }
 .history-search li {
   display: grid;
-  gap: 0.25rem;
-  padding-block: 0.5rem;
+  gap: var(--s4);
+  padding-block: var(--s8);
   border-block-end: 1px solid var(--agnes-line-primary);
   overflow-wrap: anywhere;
 }
@@ -136,15 +136,15 @@
 }
 
 .goal-card {
-  margin: 0.5rem 1rem;
-  padding: 0.75rem;
+  margin: var(--s8) var(--s16);
+  padding: var(--s12);
   border: 1px solid var(--agnes-input-border);
   border-radius: var(--radius-md);
 }
 .goal-card label {
   display: grid;
-  gap: 0.25rem;
-  margin-block: 0.5rem;
+  gap: var(--s4);
+  margin-block: var(--s8);
 }
 .goal-card textarea {
   min-height: 4rem;
@@ -158,7 +158,7 @@
 .goal-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 
 .goal-card > button {

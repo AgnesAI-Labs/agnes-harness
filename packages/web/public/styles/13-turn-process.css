@@ -1,5 +1,5 @@
 .conversation-turn {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--s16);
 }
 .turn-user:empty,
 .turn-final:empty,
@@ -13,7 +13,7 @@
 /* 身份行独立于过程折叠；摘要只承载真实状态、耗时和计数，箭头紧随文字。 */
 .turn-process {
   min-width: 0;
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--s8);
   color: var(--agnes-text-tertiary);
 }
 .turn-process > summary {
@@ -36,12 +36,12 @@
 .process-identity {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s8);
   min-width: 0;
-  margin: 1rem 0 0.5rem;
+  margin: var(--s16) 0 var(--s8);
 }
 .turn-status {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--s8);
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
@@ -49,7 +49,7 @@
   overflow-wrap: anywhere;
 }
 .turn-error {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--s8);
   color: var(--agnes-status-danger-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -118,13 +118,13 @@
 }
 /* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
 .turn-process-body {
-  margin-top: 0.5rem;
+  margin-top: var(--s8);
   padding-left: 0;
   border-left: 0;
 }
 .turn-process-body > * {
   margin: 0;
-  padding: 0.5rem 0;
+  padding: var(--s8) 0;
 }
 .turn-process-body > :first-child {
   padding-top: 0;
@@ -158,8 +158,8 @@
   line-height: 1.5rem;
 }
 .turn-process-body .tool-summary {
-  margin: 0.25rem 0 0;
-  padding: 0.375rem 0.5rem;
+  margin: var(--s4) 0 0;
+  padding: 0.375rem var(--s8);
   overflow: visible;
   border: 0.5px solid var(--agnes-line-primary);
   border-radius: 0.5rem;
@@ -219,8 +219,8 @@
 .tool-detail-text {
   max-height: 16.25rem;
   overflow-y: auto;
-  margin: 0.5rem 0 0;
-  padding: 0.5rem 0.75rem;
+  margin: var(--s8) 0 0;
+  padding: var(--s8) var(--s12);
   border: 0.5px solid var(--agnes-line-primary);
   border-radius: var(--radius-lg);
   color: var(--agnes-text-secondary);
@@ -242,7 +242,7 @@
   padding-left: 0;
 }
 .turn-attention {
-  margin: 1rem 0 0;
+  margin: var(--s16) 0 0;
 }
 .turn-final .assistant {
   margin-top: 0;
@@ -251,8 +251,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  row-gap: 0.5rem;
+  gap: var(--s8);
+  row-gap: var(--s8);
   min-height: 1.75rem;
   margin: 1rem 0 0 -0.375rem;
   color: var(--agnes-text-tertiary);
@@ -265,8 +265,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
-  padding: 0.375rem 0.5rem;
+  gap: var(--s4);
+  padding: 0.375rem var(--s8);
   border-color: transparent;
   border-radius: 28px;
   color: var(--agnes-text-tertiary);
@@ -313,9 +313,9 @@
   z-index: 60;
   display: none;
   grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
-  gap: 6px 16px;
+  gap: 6px var(--s16);
   margin: 0;
-  padding: 1rem;
+  padding: var(--s16);
   max-height: min(22rem, 60vh);
   overflow: auto;
   overscroll-behavior: contain;
@@ -347,7 +347,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .turn-usage-grid dd {
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--s8);
     text-align: left;
   }
 }
@@ -356,7 +356,7 @@
   font-size: var(--font-size-xs);
 }
 .timeline-unassigned:not(:empty) {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--s16);
   padding: 0.625rem;
   border-left: 1px solid var(--agnes-line-primary);
 }
@@ -372,7 +372,7 @@
   display: none;
 }
 .user .node-body {
-  padding: 0.625rem 1rem;
+  padding: 0.625rem var(--s16);
   border: 0;
   border-radius: var(--radius-lg);
   color: var(--agnes-text-primary);
@@ -405,7 +405,7 @@
 }
 .call-usage > summary {
   width: fit-content;
-  padding: 0.25rem 0;
+  padding: var(--s4) 0;
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }
@@ -414,7 +414,7 @@
   min-height: 1.75rem;
   max-width: min(360px, 45cqw);
   justify-content: flex-start;
-  padding: 0 0.25rem 0 0.5rem;
+  padding: 0 var(--s4) 0 var(--s8);
   overflow: hidden;
   border-color: transparent;
   border-radius: 1.5rem;
@@ -448,8 +448,8 @@
   min-height: 1.75rem;
   max-width: min(360px, 45cqw);
   justify-content: flex-start;
-  gap: 0.25rem;
-  padding: 0 0.25rem 0 0.5rem;
+  gap: var(--s4);
+  padding: 0 var(--s4) 0 var(--s8);
   overflow: hidden;
   border-color: transparent;
   border-radius: 1.5rem;
@@ -475,7 +475,7 @@
   overscroll-behavior-y: contain;
   min-width: min(240px, calc(100vw - 32px));
   max-width: min(360px, calc(100vw - 32px));
-  padding: 0.25rem;
+  padding: var(--s4);
   border: 0;
   border-radius: 1.25rem;
   /* 此前是未定义的 --agnes-bg-elevated：声明失效 → background 退到 initial（全透明），
@@ -491,9 +491,9 @@
 .permission-picker-option {
   display: grid;
   grid-template-columns: 1.25rem minmax(0, 1fr);
-  gap: 0.5rem;
+  gap: var(--s8);
   align-items: start;
-  padding: 0.5rem 0.75rem;
+  padding: var(--s8) var(--s12);
   border-radius: 0.85rem;
   cursor: pointer;
 }
@@ -524,7 +524,7 @@
 }
 #cancel {
   min-height: 2.125rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--s12);
   border-color: transparent;
   border-radius: var(--radius-full);
   font-size: var(--font-size-sm);
@@ -583,7 +583,7 @@
   /* 合并 Token 用量分区后内容变长（上下文 4 行 + Token 10 行），面板上限放到
      36rem 并让视口兜底；真放不下时在面板内滚动。 */
   max-height: min(36rem, calc(100vh - 6rem));
-  padding: 0.75rem;
+  padding: var(--s12);
   overflow: auto;
   border: 0;
   border-radius: 0.75rem;
@@ -628,7 +628,7 @@
   display: flex;
   gap: 1px;
   height: 0.25rem;
-  margin: 0.625rem 0 0.75rem;
+  margin: 0.625rem 0 var(--s12);
   overflow: hidden;
   border-radius: var(--radius-full);
   background: var(--agnes-bg-hover);
@@ -644,7 +644,7 @@
 :where(.usage-popover) .usage-grid {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-  gap: 0.125rem 0.75rem;
+  gap: 0.125rem var(--s12);
   margin: 0;
   padding: 0;
   border-top: 0;

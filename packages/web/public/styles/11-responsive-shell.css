@@ -31,7 +31,7 @@ body {
     justify-content: center;
     padding: 0;
     min-height: 2.25rem;
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--s12);
   }
   body.sidebar-collapsed .sidebar-actions .primary-button {
     width: 2.25rem;
@@ -39,7 +39,7 @@ body {
     min-height: 2.25rem;
     padding: 0;
     gap: 0;
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--s12);
     border-color: transparent;
     background: transparent;
   }
@@ -91,7 +91,7 @@ body {
   body.sidebar-collapsed .sidebar {
     display: flex;
     width: min(17rem, calc(100vw - 3.25rem));
-    padding: 1.25rem 0.75rem 0.75rem;
+    padding: var(--s20) var(--s12) var(--s12);
     /* 与宽屏同口径：覆盖层也不做滚动容器，底部行不随列表滚走。 */
     overflow: hidden;
     border-right: 1px solid var(--agnes-line-primary);
@@ -126,7 +126,7 @@ body {
     width: calc(100% - 2rem);
   }
   #transcript-content {
-    padding-inline: 1rem;
+    padding-inline: var(--s16);
   }
   .new-content {
     right: 1rem;
@@ -142,8 +142,8 @@ body {
   }
   .topbar {
     min-height: 3.75rem;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    gap: var(--s8);
+    padding: var(--s8) var(--s16);
   }
   .connection-group {
     gap: var(--s8);
@@ -204,10 +204,10 @@ body {
   }
   #config-form,
   #new-session-form {
-    padding: 1rem;
+    padding: var(--s16);
   }
   .dialog-heading-actions {
-    gap: 0.25rem;
+    gap: var(--s4);
   }
 }
 
@@ -220,7 +220,7 @@ body {
     width: calc(100% - 1.5rem);
   }
   #transcript-content {
-    padding-inline: 0.75rem;
+    padding-inline: var(--s12);
   }
   .composer-controls {
     gap: var(--s8);

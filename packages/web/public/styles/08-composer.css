@@ -79,11 +79,11 @@ body.session-switching #approval {
 }
 #composer {
   width: min(calc(100% - 2rem), var(--composer-card-max-width));
-  margin: 0 auto 1rem;
+  margin: 0 auto var(--s16);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.5rem 0 0;
+  gap: var(--s12);
+  padding: var(--s8) 0 0;
   transition: box-shadow var(--transition);
   position: relative;
   z-index: 7;
@@ -101,8 +101,8 @@ body.session-switching #approval {
    圆角取同一个值，成为一组而不是一体。 */
 .composer-queue {
   width: min(calc(100% - 2rem), var(--composer-card-max-width));
-  margin: 0 auto 0.5rem;
-  padding: 0.5rem 0.625rem;
+  margin: 0 auto var(--s8);
+  padding: var(--s8) 0.625rem;
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-panel);
   background: var(--agnes-bg-card);
@@ -111,7 +111,7 @@ body.session-switching #approval {
   font-size: var(--font-size-sm);
 }
 .composer-queue-count {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--s4);
   padding: 0 0.375rem;
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
@@ -144,9 +144,9 @@ body.session-switching #approval {
 .composer-queue-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s8);
   min-width: 0;
-  padding: 0.25rem 0.375rem;
+  padding: var(--s4) 0.375rem;
   border-radius: var(--radius-md);
 }
 /* 行本身不可点，所以底色只在指针或焦点落到这一行的动作上时出现，用来说明你正要操作哪一条。 */
@@ -177,7 +177,7 @@ body.session-switching #approval {
 .composer-queue button {
   flex: none;
   min-height: 1.5rem;
-  padding: 0.125rem 0.5rem;
+  padding: 0.125rem var(--s8);
   border-color: transparent;
   border-radius: var(--radius-full);
   color: var(--agnes-brand-primary);
@@ -223,8 +223,8 @@ body.session-switching #approval {
   }
 }
 .composer-queue-error {
-  margin: 0.5rem 0 0;
-  padding: 0.375rem 0.5rem;
+  margin: var(--s8) 0 0;
+  padding: 0.375rem var(--s8);
   border-radius: var(--radius-md);
   color: var(--agnes-status-danger-text);
   background: var(--agnes-status-danger-bg);
@@ -249,7 +249,7 @@ body.session-switching #approval {
   width: 100%;
   min-height: 2.25rem;
   line-height: 1.5rem;
-  padding: 0.25rem 0.5rem 0 0.875rem;
+  padding: var(--s4) var(--s8) 0 0.875rem;
   font-size: var(--font-size-body);
 }
 [data-agnes-region="composer-input"] {
@@ -264,7 +264,7 @@ body.session-switching #approval {
   box-shadow: none;
 }
 #composer-hint {
-  margin-top: 0.25rem;
+  margin-top: var(--s4);
   /* 与 textarea 的字形左缘对齐（writing 区 14px + 自身 14px），否则 hint 贴着卡片边。 */
   padding: 0 0.875rem;
   color: var(--agnes-text-tertiary);
@@ -284,8 +284,8 @@ body.session-switching #approval {
 /* 附件在输入文字之上，所以顶边距归它：0.25rem 加上表单的 0.5rem，与 textarea 首行齐平。 */
 .composer-image-attachments {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.25rem 0.875rem 0;
+  gap: var(--s8);
+  padding: var(--s4) 0.875rem 0;
 }
 /* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
    否则这段上边距会把输入框整体顶下去。 */
@@ -298,7 +298,7 @@ body.session-switching #approval {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .composer-image-preview {
   position: relative;
@@ -317,11 +317,11 @@ body.session-switching #approval {
 .composer-file-preview {
   position: relative;
   display: grid;
-  gap: 0.25rem;
+  gap: var(--s4);
   min-width: 0;
   max-width: min(16rem, 100%);
   margin: 0;
-  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  padding: var(--s8) var(--s16) var(--s8) var(--s12);
   border: 1px solid var(--agnes-line-primary);
   border-radius: 0.5rem;
 }
@@ -367,8 +367,8 @@ body.session-switching #approval {
 .composer-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.125rem 0.5rem 0.375rem;
+  gap: var(--s12);
+  padding: 0.125rem var(--s8) 0.375rem;
   container-type: inline-size;
 }
 

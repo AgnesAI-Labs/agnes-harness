@@ -66,11 +66,11 @@ dialog::backdrop {
 /* 工具详情默认就是宽版：此前有个"展开阅读/收起阅读"切换按钮，属于多余的一次点击。 */
 .dialog-heading {
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--s16);
 }
 .dialog-heading-actions {
   flex: 0 0 auto;
-  gap: 0.5rem;
+  gap: var(--s8);
 }
 .dialog-heading h2,
 #config-form h2,
@@ -108,13 +108,13 @@ dialog::backdrop {
 .config-section {
   min-width: 0;
   display: grid;
-  gap: 0.75rem;
+  gap: var(--s12);
   margin: 0;
   padding: 0;
   border: 0;
 }
 .config-section + .config-section {
-  padding-top: 1rem;
+  padding-top: var(--s16);
 }
 .config-section legend {
   padding: 0;
@@ -151,6 +151,6 @@ dialog::backdrop {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
+  gap: var(--s8);
+  padding-top: var(--s8);
 }
