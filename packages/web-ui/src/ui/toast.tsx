@@ -5,6 +5,7 @@ export type ToastProps = HTMLAttributes<HTMLDivElement> & {
   open: boolean
   onDismiss(): void
   duration?: number
+  tone?: 'success' | 'info' | 'error'
 }
 const ToastContent = createContext<HTMLAttributes<HTMLDivElement>>({})
 function ToastBody() {
@@ -21,7 +22,15 @@ function ToastBody() {
   )
 }
 /** Context-bound antd message; outcome classes preserve the existing success/info/error colours. */
-export function Toast({ open, onDismiss, duration = 3000, children, className, ...props }: ToastProps) {
+export function Toast({
+  open,
+  onDismiss,
+  duration = 3000,
+  tone = 'success',
+  children,
+  className,
+  ...props
+}: ToastProps) {
   const host = useRef<HTMLDivElement>(null)
   const dismiss = useRef(onDismiss)
   const id = useId()
@@ -60,7 +69,13 @@ export function Toast({ open, onDismiss, duration = 3000, children, className, .
     }
   }, [open, duration, api, id])
   return (
-    <ToastContent.Provider value={{ ...props, className, children }}>
+    <ToastContent.Provider
+      value={{
+        ...props,
+        className: [tone !== 'success' && `agh-toast--${tone}`, className].filter(Boolean).join(' '),
+        children,
+      }}
+    >
       <div ref={host} className="agh-toast-host">
         {holder}
       </div>

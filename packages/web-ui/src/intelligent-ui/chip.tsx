@@ -30,6 +30,7 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
   const now = useNow()
   const titleId = useId()
   const [copyMessage, setCopyMessage] = useState('')
+  const [copyFailed, setCopyFailed] = useState(false)
   const title = surfaceTitle(surface, t)
   const attention = props.needsReview
     ? t('ui.changed')
@@ -48,8 +49,10 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(summary ? `${title} · ${summary}` : title)
+      setCopyFailed(false)
       setCopyMessage(t('ui.copied'))
     } catch {
+      setCopyFailed(true)
       setCopyMessage(t('ui.copyFailed'))
     }
   }
@@ -70,7 +73,11 @@ export function IntelligentSurfaceChip(props: IntelligentSurfaceChipProps) {
       data-attention={attention ? true : undefined}
       aria-labelledby={titleId}
     >
-      <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
+      <Toast
+        tone={copyFailed ? 'error' : 'success'}
+        open={!!copyMessage}
+        onDismiss={() => setCopyMessage('')}
+      >
         {copyMessage}
       </Toast>
       <Button

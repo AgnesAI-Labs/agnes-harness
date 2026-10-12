@@ -54,6 +54,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   const [layout, setLayout] = useState(readLayout)
   const [expanded, setExpanded] = useState(false)
   const [copyMessage, setCopyMessage] = useState('')
+  const [copyFailed, setCopyFailed] = useState(false)
   useEffect(() => {
     if (!bottomAvailable) setLayout((value) => (value.bottomOpen ? { ...value, bottomOpen: false } : value))
   }, [bottomAvailable])
@@ -249,14 +250,20 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(workspace.path)
+      setCopyFailed(false)
       setCopyMessage(t('workbench.copied'))
     } catch {
+      setCopyFailed(true)
       setCopyMessage(t('workbench.copyFailed'))
     }
   }
   const controlsView = (
     <div ref={controls} className="workbench-controls">
-      <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
+      <Toast
+        tone={copyFailed ? 'error' : 'success'}
+        open={!!copyMessage}
+        onDismiss={() => setCopyMessage('')}
+      >
         {copyMessage}
       </Toast>
       {workspace &&

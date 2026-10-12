@@ -54,7 +54,7 @@ SettingsPage accepts `headingId` and `bodyClassName` for existing native pane ID
 | `Menu` | Shared | antd Dropdown / Menu | Action menu with arrows, Home/End, typeahead, Enter/Space, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
 | `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
 | `Icon` / `createSettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
-| `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `className="agh-toast--info|agh-toast--error"` retains the outcome colours. Duration remains milliseconds. |
+| `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `tone="success|info|error"` selects outcome colours; existing outcome class names remain supported. Duration remains milliseconds. |
 | `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
 | `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
 | `Drawer` | Shared | antd Drawer | 480px right detail surface, narrow full screen, Escape and focus return. Close other modal hosts before opening. |

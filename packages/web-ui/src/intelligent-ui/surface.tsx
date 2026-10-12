@@ -76,6 +76,7 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
   const titleId = useId()
   const [sourceVisible, setSourceVisible] = useState(false)
   const [copyMessage, setCopyMessage] = useState('')
+  const [copyFailed, setCopyFailed] = useState(false)
   const textComponent = surface.components.find((component) => component.kind === 'text')
   const text = textComponent && 'dataKey' in textComponent ? surface.data[textComponent.dataKey] : undefined
   const summary =
@@ -90,8 +91,10 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable')
       await navigator.clipboard.writeText(summary)
+      setCopyFailed(false)
       setCopyMessage(t('ui.copied'))
     } catch {
+      setCopyFailed(true)
       setCopyMessage(t('ui.copyFailed'))
     }
   }
@@ -103,7 +106,11 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       data-revision={surface.revision}
       aria-labelledby={titleId}
     >
-      <Toast open={!!copyMessage} onDismiss={() => setCopyMessage('')}>
+      <Toast
+        tone={copyFailed ? 'error' : 'success'}
+        open={!!copyMessage}
+        onDismiss={() => setCopyMessage('')}
+      >
         {copyMessage}
       </Toast>
       <header>
