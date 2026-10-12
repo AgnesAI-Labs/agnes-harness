@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDef, ToolPolicyInput } from '@agnes/extension-api'
@@ -16,7 +16,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-it.each(['live', 'unknown', 'malformed'] as const)(
+it.each(['live', 'unknown', 'malformed', 'empty'] as const)(
   'preserves the plan and refuses /plan off when lock owner liveness is %s',
   (liveness) => {
     const root = workspace()
@@ -24,8 +24,16 @@ it.each(['live', 'unknown', 'malformed'] as const)(
     const path = planModePath(root)
     const plan = readFileSync(path, 'utf8')
     const lock =
-      liveness === 'malformed' ? '{' : JSON.stringify({ pid: process.pid, startToken: `0-${randomUUID()}` })
+      liveness === 'empty'
+        ? ''
+        : liveness === 'malformed'
+          ? '{'
+          : JSON.stringify({ pid: process.pid, startToken: `0-${randomUUID()}` })
     writeFileSync(`${path}.lock`, lock)
+    if (liveness === 'live' || liveness === 'unknown') {
+      const old = new Date(Date.now() - 60_000)
+      utimesSync(`${path}.lock`, old, old)
+    }
     if (liveness === 'unknown')
       vi.spyOn(process, 'kill').mockImplementation(() => {
         throw Object.assign(new Error('liveness unavailable'), { code: 'EPERM' })
@@ -35,6 +43,17 @@ it.each(['live', 'unknown', 'malformed'] as const)(
     expect(readFileSync(`${path}.lock`, 'utf8')).toBe(lock)
   },
 )
+
+it.each(['', '{'])('reclaims an aged incomplete lock without losing the plan: %j', (contents) => {
+  const root = workspace()
+  applyPlanCommand(root, '/plan keep this plan')
+  const path = planModePath(root)
+  writeFileSync(`${path}.lock`, contents)
+  const old = new Date(Date.now() - 60_000)
+  utimesSync(`${path}.lock`, old, old)
+  expect(applyPlanCommand(root, '/plan off')).toEqual({ active: false, text: 'Plan mode is off' })
+  expect(readPlanMode(root).active).toBe(false)
+})
 
 function workspace(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-plan-'))

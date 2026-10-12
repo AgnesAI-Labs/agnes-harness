@@ -3207,7 +3207,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Workspace plan state at canonical AGH_DIR paths and the ordered
   // read-only planning prompt/policy.
   // countLines: new scope 167; exact measured cap, no exclusions or spare allocation.
-  'packages/base/extensions/plan-mode': 274,
+  'packages/base/extensions/plan-mode': 282,
   // 2026-10-07 gap-fill review: Live context rules and validated settings with hook-scoped caching.
   // countLines: new scope -> 295; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/context-rules': 298,

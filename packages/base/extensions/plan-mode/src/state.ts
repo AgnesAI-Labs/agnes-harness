@@ -7,6 +7,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -60,6 +61,8 @@ export function readPlanMode(workspaceRoot: string): PlanModeState {
 }
 const startToken = `${Math.trunc(Date.now() - process.uptime() * 1000)}-${randomUUID()}`
 type LockOwner = { pid: number; startToken: string }
+// Allow a creator time to publish its owner. Only an unreadable owner uses this fallback.
+const INCOMPLETE_LOCK_AGE_MS = 30_000
 function deadOwner(lock: string): LockOwner | undefined {
   try {
     const owner = JSON.parse(readFileSync(lock, 'utf8')) as LockOwner
@@ -77,7 +80,13 @@ function deadOwner(lock: string): LockOwner | undefined {
       if ((error as NodeJS.ErrnoException).code === 'ESRCH') return owner
     }
   } catch {
-    // An unreadable/incomplete owner record does not prove that its process is dead.
+    try {
+      const stat = statSync(lock)
+      if (!stat.isFile() || Date.now() - stat.mtimeMs < INCOMPLETE_LOCK_AGE_MS) return undefined
+      return { pid: 0, startToken: `incomplete:${stat.dev}:${stat.ino}:${stat.mtimeMs}:${stat.size}` }
+    } catch {
+      // Missing or unstatable files cannot be reclaimed from this observation.
+    }
   }
   return undefined
 }
@@ -121,7 +130,7 @@ function acquireLock(lock: string): number {
     }
   }
 }
-/** All writers share the exclusive lock; only a proven-dead owner permits lock recovery. */
+/** All writers share the exclusive lock; a proven-dead owner or an aged incomplete owner permits recovery. */
 function mutate(workspaceRoot: string, change: () => PlanModeState | undefined): boolean {
   const path = planModePath(workspaceRoot)
   mkdirSync(join(canonicalPlanWorkspaceRoot(workspaceRoot), AGH_DIR), { recursive: true })
