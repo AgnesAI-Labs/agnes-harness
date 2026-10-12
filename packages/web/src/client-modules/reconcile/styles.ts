@@ -24,7 +24,7 @@ export async function prepareDocumentStyles(
   const links = target.styleUrls.map((href) => {
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = href
+    link.href = `${href}${href.includes('?') ? '&' : '?'}agnes_css_layer=app`
     link.media = 'not all'
     link.dataset.plugin = target.packageId
     return link

@@ -23,24 +23,17 @@
   .settings-nav-item {
     width: 100%;
     min-height: 2.5rem;
-    display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: var(--s8);
     padding: 0.5625rem var(--s16) 0.5625rem var(--s12);
-    border: 0;
     border-radius: 0.75rem;
-    color: var(--agnes-text-primary);
-    background: transparent;
     font-size: var(--font-size-body);
     font-weight: 400;
-    line-height: 1.375rem;
     text-align: start;
   }
   .settings-nav-item.active,
   .settings-nav-item[aria-current="page"] {
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-selected);
     box-shadow: none;
   }
   .settings-nav-item:hover:not(:disabled) {
@@ -140,7 +133,6 @@
   }
   .config-accounts-section {
     min-height: 0;
-    display: flex;
     flex-direction: column;
     margin: 0;
     overflow: visible;
@@ -168,7 +160,6 @@
   .config-detail-heading h3 {
     color: var(--agnes-text-primary);
     font-size: var(--font-size-md);
-    font-weight: 700;
     letter-spacing: -0.015em;
   }
   #config-form .config-accounts-heading > div > p,
@@ -280,9 +271,7 @@
     margin-top: auto;
     padding: var(--s12) var(--s20);
     border-top: 1px solid var(--agnes-line-primary);
-    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.5;
   }
   .config-detail-card {
     min-height: 0;

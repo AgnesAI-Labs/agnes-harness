@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
+import { readUiCss } from '../../../tools/web-style-source.mjs'
 import { resolveLaunchResources } from '../launch/resources.js'
 
 it('builds local web assets with the shared platform vendor modules', async () => {
@@ -72,16 +73,20 @@ it('builds local web assets with the shared platform vendor modules', async () =
       }
     }
 
-    const conversationCss = await readFile(
-      join(import.meta.dirname, '../../web-ui/src/conversation/messages.css'),
-      'utf8',
-    )
+    const conversationCss = readUiCss(join(import.meta.dirname, '../../web-ui/src/conversation/messages.css'))
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain(conversationCss.trim())
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.aui\\:flex')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('var(--agnes-bg-card)')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown-dark')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.conversation-markdown')
+    const styles = await readFile(join(output, 'style.css'), 'utf8')
+    expect(styles).toContain('@layer vendor {')
+    expect(styles).not.toMatch(
+      /(?:background(?:-color)?|color): var\(--(?:light-bg|dark-bg|text-color)\) !important/,
+    )
+    expect(styles).toContain('background: var(--light-bg);')
+    expect(styles).toContain('background: var(--dark-bg);')
     await expect(readFile(join(output, 'vendor/assistant-ui.css'), 'utf8')).rejects.toThrow()
   } finally {
     await rm(output, { recursive: true, force: true })

@@ -18,7 +18,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readUiCss, readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()
@@ -239,7 +239,8 @@ beforeAll(async () => {
   rules = parseRules(
     stripComments(
       readWebStyleSource(stylePath) +
-        readFileSync(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8'),
+        readUiCss(resolve(packageDirectory, '../web-ui/src/components.css')) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/native.css')),
     ),
   )
   collectTokens()

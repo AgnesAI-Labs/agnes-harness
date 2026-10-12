@@ -712,6 +712,13 @@ it('serves client module assets through the injected resolver and 404s everythin
     expect((await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css`)).headers.get('content-type')).toBe(
       'text/css',
     )
+    const layered = await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css?agnes_css_layer=app`)
+    expect(layered.status).toBe(200)
+    expect(layered.headers.get('content-type')).toBe('text/css')
+    expect(await layered.text()).toBe('@import url("/plugins/demo/panel.css") layer(app);\n')
+    expect(await (await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css`)).text()).toBe(
+      '.panel { color: #000; }\n',
+    )
     expect(
       (await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.js.map`)).headers.get('content-type'),
     ).toBe('application/json')

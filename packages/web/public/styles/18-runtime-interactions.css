@@ -51,10 +51,6 @@
   .runtime-settings details {
     margin-block: var(--s16);
   }
-  .runtime-settings summary {
-    cursor: pointer;
-    padding-block: var(--s8);
-  }
   .runtime-settings table {
     width: 100%;
     text-align: start;

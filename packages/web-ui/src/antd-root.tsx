@@ -3,6 +3,7 @@ import enUS from 'antd/locale/en_US.js'
 import zhCN from 'antd/locale/zh_CN.js'
 import { createElement, type ReactNode, useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { retainAntdStyles } from './antd-styles.js'
 
 export type AntdRoot = Pick<Root, 'render' | 'unmount'>
 
@@ -30,6 +31,7 @@ function LocalizedProvider({ children, nonce }: { children: ReactNode; nonce: st
 
 /** Keep Ant Design's generated styles under the nonce authorized by this document's CSP. */
 export function createAntdRoot(container: Element | DocumentFragment): AntdRoot {
+  const releaseStyles = retainAntdStyles(container.ownerDocument)
   const root = createRoot(container)
   const nonce = container.ownerDocument.querySelector<HTMLMetaElement>(
     'meta[name="agnes-csp-nonce"]',
@@ -40,6 +42,7 @@ export function createAntdRoot(container: Element | DocumentFragment): AntdRoot 
     },
     unmount() {
       root.unmount()
+      releaseStyles()
     },
   }
 }

@@ -463,13 +463,10 @@
   }
   .composer-workspace {
     align-items: center;
-    min-height: 1.75rem;
     max-width: min(360px, 45cqw);
-    justify-content: flex-start;
-    padding: 0 var(--s4) 0 var(--s8);
+
     overflow: hidden;
     border-color: transparent;
-    border-radius: 1.5rem;
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
@@ -497,14 +494,10 @@
   }
   .composer-permission {
     align-items: center;
-    min-height: 1.75rem;
     max-width: min(360px, 45cqw);
-    justify-content: flex-start;
     gap: var(--s4);
-    padding: 0 var(--s4) 0 var(--s8);
     overflow: hidden;
     border-color: transparent;
-    border-radius: 1.5rem;
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);

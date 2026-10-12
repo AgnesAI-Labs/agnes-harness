@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 import { build } from 'esbuild'
-import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
+import { inCssLayer, readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 async function settled(page: Page) {
@@ -27,7 +27,7 @@ async function settled(page: Page) {
 }
 const css = [
   readWebStyleSource(resolve(root, 'packages/web/public/style.css')),
-  readFileSync(createRequire(import.meta.url).resolve('antd/dist/antd.css'), 'utf8'),
+  inCssLayer(readFileSync(createRequire(import.meta.url).resolve('antd/dist/antd.css'), 'utf8'), 'vendor'),
   readWebUiStyleSource(resolve(root, 'packages/web-ui/src/tokens.css')),
 ].join('\n')
 let fixture: string

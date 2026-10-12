@@ -352,6 +352,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
       await vi.waitFor(() => {
         expect(scriptStarted).toBe(true)
         expect(link()).not.toBeNull()
+        expect(link()?.getAttribute('href')).toContain('agnes_css_layer=app')
       })
       expect(link()?.getAttribute('media')).not.toBe('all')
       let removed: Promise<void> | undefined

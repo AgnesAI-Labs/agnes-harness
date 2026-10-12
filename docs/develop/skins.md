@@ -137,25 +137,25 @@ You can also use a system font stack without distributing assets, for example `f
 
 <a id="23-特异性为什么用钩子选择器就够不需要-important"></a>
 
-### 2.3 Specificity and stylesheet order
+### 2.3 Cascade layers and skin precedence
 
-Skin stylesheets are inserted through `adoptedStyleSheets`, after document stylesheets in cascade order. Order resolves a conflict only when specificity is equal. Base styles therefore place skin-facing surface properties on `data-agnes-region` selectors with specificity (0,1,0), rather than element IDs with specificity (1,0,0). With the same specificity, the later skin rule wins, so `!important` is unnecessary for those surfaces.
+The canonical order is declared in `@agnes/web-ui/layers.css`:
 
 ```css
-/* Override the composer background using its region hook. */
+@layer tokens, base, vendor, ui, app, skin;
+```
+
+Platform theme variables belong to `tokens`, native control defaults to `base`, Ant Design and Markdown vendor styles to `vendor`, shared components and the Ant Design theme bridge to `ui`, and application rules to `app`. The Web build emits the order once, before the rules, on all three entry pages. Shared component CSS exports import this same order for other Web UI consumers.
+
+The host wraps a skin's authored stylesheet in `skin` when adopting it. Write ordinary CSS using the public region hooks; no layer declaration is required in the skin file. Normal skin declarations win over the earlier layers, including application ID selectors, so settings dialog surface overrides do not need `!important`. Token overrides retain their existing inline application and light/dark behavior. CSS importance still takes priority over normal declarations; hidden elements and reduced-motion safeguards retain their important rules.
+
+```css
 [data-agnes-region="composer"] {
   background-image: linear-gradient(160deg, #101820, #1d2b3a);
 }
 ```
 
-The guard in `packages/web/test/skin-regions.test.ts` checks this invariant and fails if those surface properties move back to ID selectors.
-
-**Exception: the workbench settings dialog.** Workbench dialogs share the `dialog` hook, but settings (`#config`) has a distinct surface declared through an ID selector. To override that surface:
-
-- Prefer **tokens**, such as allowlisted `--agnes-bg-surface` and `--agnes-bg-page`.
-- Use `!important` only when an arbitrary CSS surface rule, such as a background image, needs to override that ID rule.
-
-Other dialogs, `settings-pane`, and the listed hook surfaces do not require `!important` for these overrides.
+Region hooks remain the stable contract. The guard in `packages/web/test/skin-regions.test.ts` continues to check their surface declarations. Client-module styles are loaded through a native CSS `@import` in `app`; relative imports and asset URLs resolve from the original package stylesheet. Client modules own their component styling, while a skin owns appearance overrides across the host.
 
 <a id="3-语义-token-清单"></a>
 

@@ -95,7 +95,6 @@
   }
   .resource-empty {
     padding: var(--s20) var(--s12);
-    color: var(--agnes-text-secondary);
     white-space: pre-line;
   }
   #resource-list[data-state="error"] {

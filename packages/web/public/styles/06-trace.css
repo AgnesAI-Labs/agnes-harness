@@ -95,13 +95,8 @@
   }
   .trace-search {
     width: min(14rem, 100%);
-    min-height: 1.75rem;
-    padding: 0.2rem 0.65rem;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-full);
     background: var(--agnes-bg-app-content);
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-xs);
     font-weight: 400;
   }
   .trace-fold-all {

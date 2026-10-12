@@ -1,6 +1,6 @@
 @import "./layers.css";
 @import "./components.css";
-@layer tokens {
+@layer ui {
   /* ═══════════════════════════════════════════════════════════════════════
    Web UI 组件层 · 主题桥：--agnes-* → --ant-*
    组件消费统一的语义主题变量。

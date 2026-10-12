@@ -136,11 +136,6 @@
 
   @media (max-width: 540px) {
     /* Touch targets stay usable even where the desktop skin intentionally uses compact controls. */
-    button,
-    input,
-    select {
-      min-height: 44px;
-    }
     .topbar {
       min-height: 3.75rem;
       gap: var(--s8);
@@ -160,17 +155,7 @@
       white-space: nowrap;
       clip-path: inset(50%);
     }
-    button,
-    input,
-    select {
-      min-height: 2.75rem;
-    }
-    .icon-button {
-      width: 2.75rem;
-      min-width: 2.75rem;
-      height: 2.75rem;
-      min-height: 2.75rem;
-    }
+
     /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
     #report-problem {
       width: 2.25rem;
@@ -275,10 +260,6 @@
 @layer app {
   /* Narrow screens keep actions reachable while content owns its scrolling. */
   @media (max-width: 900px) {
-    body[data-agnes-region="app"] :is(button, select, summary) {
-      min-width: 32px;
-      min-height: 32px;
-    }
     :is(#composer-workspace, #composer-permission, #model, #config-close) {
       min-width: 32px;
       min-height: 32px;
@@ -367,10 +348,6 @@
     }
     main:has(#view-trace[aria-selected="true"]) #composer-mount {
       display: none;
-    }
-    :is(.agnes-settings-checkbox, .ant-checkbox-wrapper, .ant-radio-wrapper) {
-      min-height: 32px;
-      align-content: center;
     }
     .trace-gantt-track {
       height: 32px;

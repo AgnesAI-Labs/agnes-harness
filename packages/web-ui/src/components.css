@@ -1,4 +1,5 @@
 @import "./layers.css";
+@import "./native.css";
 
 @layer ui {
   /* Public component contracts and native aliases share one declaration source. */

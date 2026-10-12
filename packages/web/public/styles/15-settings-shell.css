@@ -78,9 +78,7 @@
   .config-card {
     min-width: 0;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-xl);
     background: var(--agnes-bg-page);
-    box-shadow: var(--shadow-elevation);
   }
 
   @media (max-width: 720px) {

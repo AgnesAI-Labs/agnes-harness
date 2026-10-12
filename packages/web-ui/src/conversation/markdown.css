@@ -44,9 +44,8 @@
     outline-offset: 2px;
   }
 
-  /* Match the pinned core selector's specificity: the focusable .table-scroll owns overflow
-   and the border; the table must use native column layout inside it. */
-  .conversation-markdown.x-markdown:not(.x-md-disable-all):not(.x-md-disable-table) table:not(pre) {
+  /* The focusable .table-scroll owns overflow and the border; tables retain native column layout. */
+  .conversation-markdown:where(:not(.x-md-disable-all, .x-md-disable-table)) table {
     display: table;
     width: 100%;
     min-width: 0;
@@ -98,10 +97,8 @@
   .conversation-markdown.x-markdown-dark pre code {
     display: block;
     margin: 0;
-    /* biome-ignore lint/complexity/noImportantStyles: the pinned theme marks this declaration important. */
-    background: transparent !important;
-    /* biome-ignore lint/complexity/noImportantStyles: the pinned theme marks this declaration important. */
-    color: var(--agnes-text-primary) !important;
+    background: transparent;
+    color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
     line-height: 1.5rem;
     white-space: pre;

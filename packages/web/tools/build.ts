@@ -6,6 +6,7 @@ import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import {
   inCssLayer,
+  readMarkdownThemeCss,
   readUiCss,
   readWebStyleSource,
   readWebUiStyleSource,
@@ -156,8 +157,8 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   const generatedMarkdownCss = join(out, 'vendor', 'assistant-ui.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(generatedMarkdownCss, 'utf8'),
-    readFile(markdownLightCss, 'utf8'),
-    readFile(markdownDarkCss, 'utf8'),
+    Promise.resolve(readMarkdownThemeCss(markdownLightCss)),
+    Promise.resolve(readMarkdownThemeCss(markdownDarkCss)),
     Promise.resolve(readUiCss(markdownOverridesCss)),
   ])
   await appendFile(

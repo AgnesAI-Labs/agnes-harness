@@ -91,7 +91,6 @@
     white-space: pre-line;
   }
   .config-heading {
-    display: grid;
     gap: var(--s8);
   }
   #new-session-form .eyebrow {

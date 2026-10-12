@@ -8,6 +8,11 @@ export function inCssLayer(source, layer) {
   return `@layer ${layer} {\n${source}\n}\n`
 }
 
+/** Vendor theme declarations are defaults; the ui layer owns their customization. */
+export function readMarkdownThemeCss(file) {
+  return readFileSync(file, 'utf8').replace(/\s*!important\b/g, '')
+}
+
 export function readUiCss(file) {
   return readFileSync(file, 'utf8').replace(/@import "\.\.?\/layers\.css";\s*/g, '')
 }
@@ -40,6 +45,8 @@ export function readWebUiStyleSource(file) {
   return (
     source.replace('@import "./components.css";', '') +
     '\n' +
-    readUiCss(join(dirname(file), 'components.css'))
+    readUiCss(join(dirname(file), 'components.css')).replace('@import "./native.css";', '') +
+    '\n' +
+    readUiCss(join(dirname(file), 'native.css'))
   )
 }

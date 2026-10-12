@@ -10,6 +10,7 @@ import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import {
   inCssLayer,
+  readMarkdownThemeCss,
   readUiCss,
   readWebStyleSource,
   readWebUiStyleSource,
@@ -324,8 +325,12 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(markdownCss, 'utf8'),
-    readFile(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] }), 'utf8'),
-    readFile(require.resolve('@ant-design/x-markdown/themes/dark.css', { paths: [webUi] }), 'utf8'),
+    Promise.resolve(
+      readMarkdownThemeCss(require.resolve('@ant-design/x-markdown/themes/light.css', { paths: [webUi] })),
+    ),
+    Promise.resolve(
+      readMarkdownThemeCss(require.resolve('@ant-design/x-markdown/themes/dark.css', { paths: [webUi] })),
+    ),
     Promise.resolve(readUiCss(join(webUi, 'src', 'conversation', 'markdown.css'))),
   ])
   await appendFile(

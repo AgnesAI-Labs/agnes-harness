@@ -41,6 +41,6 @@ send('agnes-ui-loaded');
   const code = (lockdown + source + bootstrap).replace(/<\/script/gi, '<\\/script')
   return {
     csp,
-    body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style nonce="${nonce}">body{margin:0;font:14px system-ui;color:CanvasText;background:Canvas}button{font:inherit}table{border-collapse:collapse;width:100%}th,td{text-align:start;padding:.4em}button:focus-visible{outline:2px solid Highlight}body{color-scheme:light dark}</style></head><body><div id="mount"></div><script type="module" nonce="${nonce}">${code}</script></body></html>`,
+    body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style nonce="${nonce}">@layer ui {body{margin:0;font:14px system-ui;color:CanvasText;background:Canvas}button{font:inherit}table{border-collapse:collapse;width:100%}th,td{text-align:start;padding:.4em}button:focus-visible{outline:2px solid Highlight}body{color-scheme:light dark}}</style></head><body><div id="mount"></div><script type="module" nonce="${nonce}">${code}</script></body></html>`,
   }
 }

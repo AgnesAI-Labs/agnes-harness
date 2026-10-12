@@ -77,3 +77,6 @@ Implementation: [loading coordination](../../packages/web/src/client-modules/rec
 ## Consistent interfaces
 
 Follow the [short UI author guide](ui-author-guide.md): shared components and `.agh-btn*` contracts, contextual workbench tabs, settings groups and Intelligent UI summaries. Settings has eight everyday groups and Advanced; technical controls belong in Agent behavior or Diagnostics. Registries control presentation; backend facts and authorization remain with their services.
+
+
+Client stylesheets load in the `app` cascade layer through a native CSS import. Author ordinary CSS; relative imports and asset URLs remain relative to the package stylesheet. Shared `@agnes/web-ui` CSS uses the canonical layer order from `@agnes/web-ui/layers.css`. See [skin precedence](skins.md#23-特异性为什么用钩子选择器就够不需要-important).

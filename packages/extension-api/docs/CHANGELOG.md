@@ -15,6 +15,12 @@ Consumers must distinguish open sessions from historical references. Historical 
 their pinned code while retired in-memory containers close after the configured idle timeout.
 The unpublished protocol package version and extension API version remain unchanged.
 
+Web styling now uses the canonical `tokens, base, vendor, ui, app, skin` cascade
+layers. Client-module CSS loads in `app`; the host adopts skin CSS in `skin`,
+so normal region-hook overrides also win over application ID selectors. Skin
+manifest fields, token names, asset resolution and theme switching are unchanged.
+
+
 Additive contract repairs: `@agnes/protocol` now exports the existing `UiArtifactFileData`
 type from its root, without changing the schema, wire format or runtime exports.
 `--agnes-scrollbar-thumb` joins the generated `THEME_TOKEN_NAMES` / `ThemeTokenName`

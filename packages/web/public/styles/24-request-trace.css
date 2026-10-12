@@ -30,14 +30,10 @@
   .trace-type-filter {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-surface);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: 6px;
-    padding: 5px;
   }
 
   .trace-type-filter {
     width: auto;
-    min-width: 6rem;
     max-width: 11rem;
   }
   .request-trace-header {

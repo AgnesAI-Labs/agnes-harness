@@ -132,30 +132,25 @@ textarea {
 **不改资产也能换字体**：直接写系统字体栈（无需额外分发字体文件），例如
 `font-family: "Chalkboard SE", "Comic Sans MS", cursive;`。
 
-### 2.3 特异性：为什么用钩子选择器就够，不需要 `!important`
+### 2.3 级联层与皮肤优先级
 
-皮肤样式表以 `adoptedStyleSheets` 注入，层叠顺序**永远在所有文档样式表之后**；
-而层叠顺序只在**特异性相同**时才决定胜负。所以基础样式表里凡是你可能想覆盖的表面属性，
-都**故意声明在 `data-agnes-region` 选择器 (0,1,0) 上**，而不是元素自己的 `#id` (1,0,0) 上。
-你和基础样式同为 (0,1,0)，由顺序决定——你必胜。**因此不需要 `!important`。**
+唯一层序声明位于 `@agnes/web-ui/layers.css`：
 
 ```css
-/* 这样写就能生效：改输入框背景图 */
+@layer tokens, base, vendor, ui, app, skin;
+```
+
+平台主题变量属于 `tokens`，原生控件默认值属于 `base`，Ant Design 与 Markdown 外部样式属于 `vendor`，共享组件与 Ant Design 主题桥属于 `ui`，应用规则属于 `app`。Web 构建在三个页面入口的规则之前输出一次层序；共享组件 CSS 导出也引用同一个层序文件，供其他 Web UI 消费者使用。
+
+宿主在采用皮肤样式表时，将作者的 CSS 包进 `skin` 层。皮肤文件直接使用公共区域钩子写普通 CSS，无需自行声明层。普通皮肤声明优先于前面的层，也能覆盖应用的 ID 选择器，因此设置弹窗表面覆盖不再需要 `!important`。Token 覆盖继续按现有方式内联应用，保留浅深色切换行为。CSS 的重要声明仍高于普通声明；隐藏元素与减少动效等保障保留必要的重要声明。
+
+```css
 [data-agnes-region="composer"] {
   background-image: linear-gradient(160deg, #101820, #1d2b3a);
 }
 ```
 
-这条不变量有机检守卫（`packages/web/test/skin-regions.test.ts`）：谁把表面属性写回 `#id`，
-守卫就会变红。
-
-**一个例外：工作台设置弹窗。** 九个弹窗共用一个 `dialog` 钩子，而工作台设置（`#config`）
-有自己不同的表面，因此它仍以 `#id` 声明。要覆盖它的表面：
-
-- 优先用 **token**（`--agnes-bg-surface`、`--agnes-bg-page` 等在白名单里，改 token 一定生效）；
-- 只有需要给它加**任意 CSS**（例如背景图）时才需要 `!important`。
-
-其余弹窗、`settings-pane` 以及上表所有钩子都不需要 `!important`。
+区域钩子仍是稳定合同，`packages/web/test/skin-regions.test.ts` 继续检查其表面声明。客户端模块样式通过原生 CSS `@import` 加载进 `app` 层，相对导入与资产 URL 继续以原包样式表为基准解析。客户端模块维护自己的组件样式；皮肤负责跨宿主的外观覆盖。
 
 ## 3. 语义 token 清单
 

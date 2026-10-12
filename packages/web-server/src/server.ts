@@ -513,7 +513,13 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           'X-Content-Type-Options': 'nosniff',
         })
         if (request.method === 'HEAD') response.end()
-        else response.end(bytes)
+        else if (
+          contentType === 'text/css' &&
+          new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_css_layer') === 'app'
+        ) {
+          // A layered import preserves the stylesheet's own relative imports and asset URLs.
+          response.end(`@import url(${JSON.stringify(assetPath)}) layer(app);\n`)
+        } else response.end(bytes)
         return
       }
       // A mounted Surface owns its whole prefix (e.g. `/demo`), so it must be consulted before the

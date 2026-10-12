@@ -39,7 +39,6 @@
   }
   .agent-choice small {
     color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
   }
   .session-goal-host {
     width: min(100%, var(--chat-content-width, 48rem));
