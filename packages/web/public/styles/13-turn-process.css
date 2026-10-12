@@ -238,12 +238,10 @@
     font-size: var(--font-size-xs);
     line-height: 1.125rem;
   }
-  /* 行内详情：0fr → 1fr 的栅格行过渡，展开与收起两个方向都有动画；
-   内容层 overflow: hidden 才有收缩效果。 */
+  /* Frequent detail inspection is immediate; the grid keeps the existing collapsed layout. */
   .tool-detail-body {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows var(--transition);
   }
   .tool-detail-body > .tool-detail-inner {
     min-height: 0;

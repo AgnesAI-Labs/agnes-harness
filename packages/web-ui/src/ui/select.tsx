@@ -9,6 +9,7 @@ export function Select<ValueType = unknown>({ className, ...props }: SelectProps
   return (
     <AntSelect<ValueType>
       {...props}
+      transitionName=""
       className={classes}
       onOpenChange={(open) => {
         setPopupOpen(open)

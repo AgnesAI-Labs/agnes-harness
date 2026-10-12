@@ -6,15 +6,6 @@
   body.sidebar-collapsed {
     grid-template-columns: 3.5rem minmax(0, 1fr);
   }
-  body {
-    transition: grid-template-columns var(--transition);
-  }
-  .sidebar {
-    transition:
-      width var(--transition),
-      padding var(--transition),
-      opacity var(--transition);
-  }
   @media (min-width: 901px) {
     body.sidebar-collapsed .sidebar {
       align-items: center;

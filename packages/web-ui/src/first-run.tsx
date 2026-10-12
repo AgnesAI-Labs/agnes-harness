@@ -75,7 +75,7 @@ export function FirstRunGuide({
       closable={false}
       className="agnes-first-run"
       rootClassName="agnes-first-run-layer"
-      mask={{ blur: true, closable: false }}
+      mask={{ closable: false }}
     >
       <section data-testid="first-run-guide" data-step={key} aria-label={t(`firstRun.${key}`)}>
         <p className="field-hint">{t('firstRun.step', { step: step + 1, total: steps.length })}</p>

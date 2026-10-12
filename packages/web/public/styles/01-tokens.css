@@ -140,7 +140,7 @@
     --agnes-bg-code: var(--agnes-color-neutral-150-a40);
     --agnes-bg-selected: var(--agnes-color-neutral-575-a12);
     --agnes-bg-hover: var(--agnes-color-neutral-150-a40);
-    --agnes-bg-scrim: var(--agnes-color-white-a50);
+    --agnes-bg-scrim: rgb(22 27 33 / 36%);
     --agnes-bg-lightbox: var(--agnes-color-black-a85);
     /* 头部和设置表头不使用磨砂底；-soft / -hover 仍有消费点。 */
     --agnes-surface-glass-soft: rgb(255 255 255 / 72%);
@@ -186,9 +186,8 @@
      尺度层的 :root 在文件更后方，与 .dark 特异性相同，会把深色值覆盖回浅色。 */
     --shadow-elevation: var(--elevation-1);
     --shadow-hairline: var(--elevation-0);
-    --shadow-dialog: 0 28px 80px rgb(22 30 25 / 20%);
-    --shadow-elevation-soft:
-      0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+    --shadow-dialog: 0 8px 24px rgb(28 32 38 / 12%), 0 24px 64px rgb(28 32 38 / 16%);
+    --shadow-elevation-soft: 0 2px 6px rgb(28 32 38 / 8%), 0 12px 28px rgb(28 32 38 / 10%);
     --shadow-elevation-prominent: var(--elevation-1);
     --elevation-0: none;
     --elevation-1: var(--shadow-elevation-soft);
@@ -262,7 +261,7 @@
     --agnes-bg-code: var(--agnes-color-neutral-850);
     --agnes-bg-selected: var(--agnes-color-neutral-750);
     --agnes-bg-hover: var(--agnes-color-white-a04);
-    --agnes-bg-scrim: var(--agnes-color-neutral-850-a70);
+    --agnes-bg-scrim: rgb(10 14 20 / 64%);
     --agnes-surface-glass-soft: rgb(255 255 255 / 8%);
     --agnes-surface-glass-hover: rgb(255 255 255 / 12%);
 
@@ -299,12 +298,11 @@
     --agnes-status-danger-border: color-mix(in srgb, var(--agnes-status-danger-text) 30%, transparent);
     --agnes-status-info-border: color-mix(in srgb, var(--agnes-status-info-text) 30%, transparent);
 
-    /* Shadow —— 深色底上浅色阴影看不见，改用更强的黑；hairline 反过来用浅环 */
+    /* Shadow —— 深色用背景同色系的两层投影；边框由卡片自身声明。 */
     --shadow-elevation: var(--elevation-1);
     --shadow-hairline: var(--elevation-0);
-    --shadow-dialog: 0 28px 80px rgb(0 0 0 / 55%);
-    --shadow-elevation-soft:
-      0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+    --shadow-dialog: 0 8px 24px rgb(8 12 18 / 32%), 0 24px 64px rgb(8 12 18 / 40%);
+    --shadow-elevation-soft: 0 2px 6px rgb(8 12 18 / 24%), 0 12px 28px rgb(8 12 18 / 28%);
     --shadow-elevation-prominent: var(--elevation-1);
     --elevation-0: none;
     --elevation-1: var(--shadow-elevation-soft);

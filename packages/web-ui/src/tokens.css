@@ -956,10 +956,9 @@
     max-width: min(42rem, calc(100vw - 2rem));
     z-index: var(--agh-z-notification);
   }
-  /* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
+  /* Onboarding shares the modal vocabulary; familiarity comes from the controls, not glass. */
   .agnes-first-run-layer .ant-modal-mask {
-    background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
-    backdrop-filter: blur(4px);
+    background: var(--agnes-bg-scrim);
   }
 
   /* Resource surfaces keep their controller-owned layout and use shared states/actions. */

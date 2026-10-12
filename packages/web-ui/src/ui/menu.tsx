@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useReducedMotion } from './overlay.js'
 import { Tooltip } from './tooltip.js'
 
 export type MenuItem = {
@@ -33,7 +32,6 @@ export type MenuProps = {
 /** antd owns placement and menu semantics; this adapter preserves the existing keyboard contract. */
 export function Menu({ trigger, label, items }: MenuProps) {
   const [open, setOpen] = useState(false)
-  const reduce = useReducedMotion()
   const endOnOpen = useRef(false)
   const anchor = useRef<HTMLSpanElement>(null)
   const popup = useRef<HTMLDivElement | null>(null)
@@ -81,7 +79,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
       trigger={['click']}
       placement="bottomRight"
       destroyOnHidden
-      transitionName={reduce ? '' : 'ant-slide-up'}
+      transitionName=""
       rootClassName="agh-menu-popup"
       menu={{
         id,

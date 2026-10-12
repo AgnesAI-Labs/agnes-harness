@@ -48,7 +48,7 @@
   }
   dialog::backdrop {
     background: var(--agnes-bg-scrim);
-    backdrop-filter: blur(2px);
+    backdrop-filter: none;
     transition:
       opacity var(--transition),
       overlay var(--transition) allow-discrete;
