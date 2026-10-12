@@ -907,8 +907,14 @@
 
 /* Plugins owns its page header and add menu; suppress the outer runtime shell's duplicate heading. */
 :is([data-testid="settings-page-plugins"], [data-testid="settings-page-discover"])
+  > [id^="settings-hub-panel-"]
   > .agnes-settings-page
   > .agnes-settings-page-heading {
+  display: none;
+}
+/* The settings shell already switches Installed / Discover in its section tabs; the page's own
+   tab row stays for hosts without that strip. */
+#config-form:has(#settings-section-tabs:not([hidden])) [data-testid="plugin-browser"] > .agnes-ui-tabs {
   display: none;
 }
 

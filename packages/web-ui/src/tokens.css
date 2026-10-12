@@ -454,7 +454,8 @@ textarea.agnes-settings-input {
   font: inherit;
   cursor: pointer;
 }
-.agnes-settings-section-tabs button[aria-selected="true"] {
+/* The :not() pair lifts the selected marker above the ghost button's transparent border. */
+.agnes-settings-section-tabs button[aria-selected="true"]:not(:disabled):not([aria-disabled="true"]) {
   border-bottom-color: var(--agnes-text-emphasis);
   color: var(--agnes-text-primary);
 }
