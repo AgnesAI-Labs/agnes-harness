@@ -1,5 +1,5 @@
 /** Scan rule boundaries without treating quoted URLs or comments as CSS syntax. */
-export function cssLayerFindings(source: string): string[] {
+export function cssLayerFindings(source: string, allowedLayers?: readonly string[]): string[] {
   const code = source.replace(/\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, (value) =>
     ' '.repeat(value.length),
   )
@@ -25,8 +25,11 @@ export function cssLayerFindings(source: string): string[] {
         if (code[close] === '}') depth--
       }
       if (depth) throw new Error('Unclosed CSS rule')
-      if (/^@layer\s+[\w.-]+$/.test(header)) walk(next.index + 1, close - 1, true)
-      else if (/^@(media|supports|container|scope)\b/.test(header)) walk(next.index + 1, close - 1, layered)
+      if (/^@layer\s+[\w.-]+$/.test(header)) {
+        const name = header.slice('@layer '.length).split('.')[0]
+        if (!layered && allowedLayers && !allowedLayers.includes(name)) findings.push(header)
+        walk(next.index + 1, close - 1, true)
+      } else if (/^@(media|supports|container|scope)\b/.test(header)) walk(next.index + 1, close - 1, layered)
       else if (!layered) findings.push(header)
       cursor = close
     }

@@ -28,6 +28,7 @@ it('detects unlayered rules inside conditional blocks, without reading strings o
   ).toEqual([])
   expect(cssLayerOrders('@layer tokens, base, vendor, ui, app, skin; @layer app, ui;')).toHaveLength(2)
   expect(cssLayerOrders('@layer ui { @layer base, components; }')).toEqual([])
+  expect(cssLayerFindings('@layer surprise { .row {} }', ['app'])).toEqual(['@layer surprise'])
   expect(cssLayerFindings('@keyframes pulse { to {} }')).toEqual(['@keyframes pulse'])
   expect(() => cssLayerFindings('@layer app { .row {}')).toThrow('Unclosed CSS rule')
 })
@@ -58,8 +59,8 @@ it('requires layers for every stylesheet and exact, explained allowances for wra
   for (const file of cssFiles) {
     const path = relativePath(file)
     const source = readFileSync(file, 'utf8')
-    const findings = cssLayerFindings(source)
     const wrapped = policy.wrappedInputs[path]
+    const findings = cssLayerFindings(source, wrapped ? undefined : policy.order)
     if (wrapped) {
       seen.add(path)
       expect(wrapped.reason.trim(), path).not.toBe('')
@@ -68,7 +69,13 @@ it('requires layers for every stylesheet and exact, explained allowances for wra
     } else {
       errors.push(...findings.map((rule) => `${path}: ${rule}`))
       for (const imported of source.matchAll(/@import\s+"([^"]+)"([^;]*);/g)) {
-        if (/\blayer\s*\(/.test(imported[2])) continue
+        const layer = /\blayer\s*\(([\w.-]+)\)/.exec(imported[2])?.[1]
+        if (layer) {
+          expect(policy.order, `${path}: imported layer must belong to the canonical order`).toContain(
+            layer.split('.')[0],
+          )
+          continue
+        }
         const dependency = resolve(dirname(file), imported[1])
         expect(cssFiles, `${path}: unlayered imports must reference a checked stylesheet`).toContain(
           dependency,
