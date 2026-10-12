@@ -85,8 +85,8 @@
 | C2 worker 中的实时插件树 | 进程内存，由唯一的指针 `RuntimeStateCoordinator` 持有（`packages/host-providers/src/runtime-state.ts:43`） | 发布闸门之下的 `RuntimeTargetPublisher`（`packages/host-providers/src/runtime-target-publisher.ts:130`） | Kernel；会话经 `runtimeRegistryRevisionForTarget`（`runtime-target-publisher.ts:58`） | C1 中的 `acknowledged` 行与 `pluginTreeActual`（观测）（`packages/daemon-admin/src/plugin-tree-surface.ts:36`） | 从不是权威：它向 C1 收敛。纪元（epoch）检查拒绝基于过期基线的发布（`E_RUNTIME_STATE_STALE`） | 重启后为空，由 C1 重建 |
 | C3 插件配置值 | 同一存储中的 `plugin_config_values` 与 `plugin_config_audit` 表（`packages/daemon-foundation/src/storage/plugin-config-audit.ts:5`） | 发布事务内的 `PluginConfigAuditStore.stage` | `rebuildDesiredFromInventory` 构造行时读取（`packages/daemon-foundation/src/composite-desired.ts:173`） | desired 行上的 `config` 字段（投影） | 重建行时以表为准；未发布的意图在启动时删除，“崩溃留下的未发布意图不算成功变更” | 构造函数中清除 `plugin_config_intents` |
 | C4 由锁推导 desired | 派生：按包对上一个 desired 目标打补丁，依据已安装清单 | 每次 enable、disable、update、rollback、remove 的 `rebuildDesiredFromInventory`（`composite-desired.ts:173`） | C1 | 其他包沿用的旧 desired 行 | 锁决定是否合格；C1 决定行。见[缺口 G6](#缺口) | 启动只修复本地来源与 web 行（`packages/daemon/src/supervisor/runtime.ts:1450-1500`）；其他漂移依赖 B5 操作日志 |
-| C5 会话组合 | `.session-compositions/<sha256(sessionKey)>.json`：已解析的组合树加 Profile 快照（`packages/host-providers/src/profile/composition-state.ts:41,69`） | 经组合宿主的 `CompositionSessionStore.pin`（`packages/host/src/runtime/profile/composition-runtime.ts:260`） | 组合宿主、事实链绑定、客户端模块准入 | 以树哈希为键的内存容器（`composition-runtime.ts:54`，缓存） | 对该会话 pin 说了算；容器据此重建 | 基于 link 的先写者胜发布；读取时校验树哈希 |
-| C6 实时组合状态 | 每个 worker 一个 `.composition-live/<uuid>.json`，带 pid 与进程启动标识（`composition-state.ts:91,119`） | `createLiveCompositionWriter` | 迁移与 bundle 选择的守卫 | 无 | 进程身份已不匹配的文件被忽略 | 被忽略的文件不会被删除，见[缺口 G7](#缺口) |
+| C5 会话组合 | `.session-compositions/<sha256(sessionKey)>.json`：已解析的组合树加 Profile 快照（`packages/host-providers/src/profile/composition-state.ts:41,69`） | 经组合宿主的 `CompositionSessionStore.pin`（`packages/host/src/runtime/profile/composition-runtime.ts:260`） | 组合宿主、事实链绑定、客户端模块准入 | 以树哈希为键的内存容器（`composition-runtime.ts:54`，缓存） | 对该会话 pin 说了算；容器据此重建 | 基于 link 的先写者胜发布；读取时校验树哈希。绑定是意图记录：先于代次 pin（D2）写入、后于它释放；组合宿主启动时清扫没有代次 pin 且超过十分钟的绑定（已关闭缺口 G1） |
+| C6 实时组合状态 | 每个 worker 一个 `.composition-live/<uuid>.json`，带 pid 与进程启动标识（`composition-state.ts:91,119`） | `createLiveCompositionWriter` | 迁移与 bundle 选择的守卫 | 无 | 进程身份已不匹配的文件被忽略 | 下一个写入方启动时，会删除已死亡或 pid 被复用的 worker 的文件以及无法解析的文件；进程身份未知时绝不当作已死亡（已关闭缺口 G7） |
 | C7 管理员 bundle 选择 | 带 revision 的 `bundle-selection.json`（`packages/host/src/runtime/profile/bundle-selection.ts:32`） | 配置锁下的配置服务 | Profile 输入读取（`inputs.ts:109`） | 已解析 Profile 的 `adminBundles`（投影） | 文件说了算 | 持久 |
 
 ## D. 代次与会话 pin
@@ -158,7 +158,7 @@
 | 会话组合（C5）里的绑定 Profile | Pin | 有意对会话冻结 |
 | 兼容性指纹（D5） | 固定部分的投影（adapters、persistence、sandbox、platform、composition、内置包完整性） | 不同即需重启或新建部署 |
 
-已解析 Profile 的 `hash` 覆盖整个 Profile，包括模型路由。任何以它为键的东西都会随模型配置的变化而变；见[缺口 G5](#缺口)。
+已解析 Profile 的 `hash` 覆盖整个 Profile，包括模型路由。任何以它为键的东西都会随模型配置的变化而变。因此永久审批授权改为绑定 `policyDigest`（`packages/host-common/src/profile/policy-digest.ts`），它只对授权相关字段求摘要：审批、策略、computer use、seams、presets、sandbox、隔离、命令钩子与固定适配器。
 
 ## G. 管理面快照
 
@@ -201,20 +201,30 @@
 
 ## 缺口
 
-这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办；本次变更不修复其中任何一项。
+这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办。G1、G5、G7、G8、G9 已关闭（见[已关闭缺口](#已关闭缺口)）；G2 等待 seam pin 对代次快照的改动；G6 与 G10 是读取规则，不是代码改动。
 
 | 编号 | 机制 | 证据 | 影响 |
 | --- | --- | --- | --- |
-| G1 | 两个按会话的 pin 没有联合提交：组合绑定（C5）与代次 pin（D2）由不同存储在不同时刻写入，并依次释放 | 绑定写于 `composition-runtime.ts:260`；代次 pin 由内层宿主写；释放顺序见 `composition-runtime.ts:555-560` | 两次写入或两次释放之间崩溃会留下没有清扫器的孤儿绑定。对正确性无害（下次打开会修复或忽略），但每个孤儿都会泄漏文件和一份 Profile 快照 |
-| G2 | 头部代次没有持久指针，各 worker 之间也没有共享的头部 | `ensureCurrent` 对新装配的目标做快照（`host.ts:213-224`）；`collect` 在创建者 pid 存活期间保留该代次（`runtime-snapshots-generations.ts:325-338`） | 每次 worker 启动都写一个新的快照目录；两个 worker 的头部可能不同；管理面只显示被询问宿主的头部 |
+| G1 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G2 | 头部代次没有持久指针，各 worker 之间也没有共享的头部 | `ensureCurrent` 对新装配的目标做快照（`host.ts`）；`collect` 在创建者 pid 存活期间保留该代次 | 每次 worker 启动都写一个新的快照目录；两个 worker 的头部可能不同；管理面只显示被询问宿主的头部。未关闭：修复会改动 seam pin 工作仍在重写的代次快照，因此按组合持久化头部指针排在该改动之后 |
 | G3 | 管理面目录描述的是共享 worker 的头部，而不是某个会话的实际运行时 | `session.catalog` 在 `@shared` 上执行（`runtime.ts:2414`；`commands.ts:805`） | 客户端无法得知某个会话在运行什么，也不知道变更何时到达它。由计划中的会话运行时描述符解决 |
 | G4 | 会话 pin 覆盖代码，但不覆盖 seam 选择 | 指纹不含 `seams.approval`、`principals`、`ledger`、`checkpoint`、`artifacts`、`verifier`、`repair`、`harness`（`host.ts:147-166`）；`build` 按实时 `profile` 解析（`host.ts:226`）；迁移只比较指纹与 loop（`host.ts:922-960`） | 重启并更改了选择后，旧会话以新实现重新打开；一次迁移可能悄悄换掉审批、身份或计费。由计划中的 seam pin 解决 |
-| G5 | 授权绑定键是整个已解析 Profile 的哈希 | 授权按 `profileHash` 匹配（`grants.ts:199`）；会话记录 `profile.hash`（`packages/host/src/runtime/sessions/session.ts:441`）；该哈希覆盖 `provider`（`resolve.ts:626`），并被 `applyModelProfile` 替换（`host.ts:1026`） | 来自阅读代码，未实际运行：更换模型路由或账号可能使此前的永久授权无法匹配新会话。授权应绑定到策略摘要，而不是 Profile 的每一个字段 |
-| G6 | desired 目标按包操作打补丁；启动时没有完整的锁到 desired 的差异比对 | `rebuildDesiredFromInventory` 只编辑一个包（`composite-desired.ts:173`）；启动只修复本地来源与 web 行（`runtime.ts:1450-1500`） | 带外的锁变更（离线 CLI 编辑）要等到该包下一次被操作才对账。未做穷尽审计，可能还有其他修复路径 |
-| G7 | 已死亡 worker 的实时组合状态文件被忽略但从不清理 | `readLiveCompositionSessions` 跳过 pid 或启动标识不再匹配的文件（`composition-state.ts:119-141`） | 崩溃后文件在 `.composition-live/` 中累积 |
-| G8 | 写坏的 `generation.json` 永远不会被回收 | `create` 原地写入（`runtime-snapshots-generations.ts:85-96`）；`collect` 跳过无法读出所属 pid 的目录（`:327-333`） | 写入期间崩溃会永久留下无法读取的代次目录。改为临时文件加 rename 可以关闭 |
-| G9 | 重叠的“须重启”守卫 | 指纹覆盖 sandbox 与 platform（`host.ts:147-166`）；另一处检查按行 id `seam:sandbox` 与 `seam:platform` 判断（`host.ts:687`） | 同一条规则两套机制；第二套是否仍可能命中，尚未验证 |
-| G10 | 已解析 Profile 的 `packages` 是启动时锁的副本 | `inputs.ts:88` 只读一次锁；之后的安装经已发布来源到达新会话（`composition-runtime.ts:458-480`） | 启动之后读取 `profile.packages` 的代码会看到过期的安装状态。组合宿主通过合并实时目录来补偿；其他读取方不能依赖它 |
+| G5 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G6 | desired 目标按包操作打补丁；启动时没有完整的锁到 desired 的差异比对 | `rebuildDesiredFromInventory` 只编辑一个包（`composite-desired.ts:173`）；启动只修复本地来源与 web 行（`runtime.ts:1450-1500`） | 带外的锁变更（离线 CLI 编辑）要等到该包下一次被操作才对账。**读取规则：**锁回答“装了什么”，组合目标（C1）回答“发布了什么”；不要由一个推断另一个，各自从自己的权威读取。只有按包操作与启动修复可以写 C4。未做穷尽审计，可能还有其他修复路径 |
+| G7 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G8 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G9 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G10 | 已解析 Profile 的 `packages` 是启动时锁的副本 | `inputs.ts:88` 只读一次锁；之后的安装经已发布来源到达新会话（`composition-runtime.ts:458-480`） | 启动之后读取 `profile.packages` 的代码会看到过期的安装状态。**读取规则：**`profile.packages` 只用于启动时决策与内置包身份（兼容性指纹、seam 解析）；当前安装状态来自实时清单或实时目录。组合宿主自己合并目录，其他读取方不能依赖 `profile.packages` |
+
+### 已关闭缺口
+
+| 编号 | 修复 | 位置 |
+| --- | --- | --- |
+| G1 | 组合绑定是意图记录：先于代次 pin 写入，后于它释放。组合宿主启动时清扫没有代次 pin 且超过十分钟的绑定及其 Profile 快照；读不出的 pin 会保留其绑定。 | `CompositionSessionStore.sweepOrphans`（`composition-state.ts`），由 `createCompositionHost` 调用 |
+| G5 | 已复现：切换模型路由会改变 Profile 的 `hash`，使永久授权失配。授权改为按 `policyDigest` 匹配；授权存储 schema 升为 3，旧存储报告 `reset-required`。 | `policy-digest.ts`、`approval-grants.ts`、`packages/host/src/runtime/approval/grants.ts` |
+| G7 | 写入方启动时删除已死亡或 pid 被复用的 worker 的状态文件以及无法解析的文件。 | `reapDeadLiveCompositions`（`composition-state.ts`） |
+| G8 | `generation.json` 先写临时文件再 rename，并先写 `owner.pid`。`collect` 先从 `generation.json` 读所属者，再读 `owner.pid`；两者都读不出时保留目录十分钟，之后删除。被 pin、被保留或本进程创建的代次永不删除。 | `runtime-snapshots-generations.ts` |
+| G9 | 按 `seam:sandbox` 与 `seam:platform` 行 id 的检查已随这两行一起消失。兼容性指纹（`sandboxProvider`、固定适配器）是唯一的须重启守卫；`platform` 仅宿主可用。 | `host.ts` 中的 `compatibilityFor` |
 
 ## 相关页面
 
