@@ -232,6 +232,11 @@ button.trace-gantt-bar:focus-visible {
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
   min-height: 0;
 }
+/* The inspector column exists only while a record is open; otherwise the list, and with it the
+   sticky turn headers, spans the whole panel instead of stopping at an empty reserved column. */
+.trace-body:not(:has(.trace-inspector:not([hidden]))) {
+  grid-template-columns: minmax(0, 1fr);
+}
 .trace-list {
   min-width: 0;
   overflow: auto;
