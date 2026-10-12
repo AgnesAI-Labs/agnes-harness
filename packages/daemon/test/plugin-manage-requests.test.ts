@@ -289,6 +289,13 @@ it('rejects aliases, file-directory conflicts, bounds and lifecycle/dependency d
       checkedPluginFiles([{ path: 'package.json', content: JSON.stringify(pkg) }, files[1]]),
     ).toThrow('PLUGIN_FILES_INVALID')
   }
+  for (const service of ['providers', 'fs', 'net', 'shell']) {
+    const pkg = JSON.parse(files[0].content)
+    pkg.agnes.plugins[0].inject = ['tools', service]
+    expect(() =>
+      checkedPluginFiles([{ path: 'package.json', content: JSON.stringify(pkg) }, files[1]]),
+    ).toThrow('PLUGIN_FILES_INVALID')
+  }
   expect(() =>
     checkedPluginFiles([
       ...files,
@@ -303,7 +310,7 @@ it.each(['tool', 'skill'])('the shipped %s template passes real package inspecti
   )
   const tools: { name: string; execute(args: unknown): Promise<{ content: { text: string }[] }> }[] = []
   module.pluginHelper.apply({
-    extension: () => ({ registerTool: (tool: (typeof tools)[number]) => tools.push(tool) }),
+    tools: { register: (tool: (typeof tools)[number]) => tools.push(tool) },
   })
   const guide = tools.find((t) => t.name === 'plugin_helper_guide')
   if (!guide) throw new Error('guide missing')
