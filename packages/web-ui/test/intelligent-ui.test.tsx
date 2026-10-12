@@ -107,9 +107,11 @@ describe('preset Intelligent UI catalog', () => {
           ),
         )
         expect(host.querySelectorAll('[data-testid^="ui-component-"]')).toHaveLength(6)
-        const tableScroll = host.querySelector<HTMLElement>('.agnes-intelligent-table-scroll')
+        const tableScroll = host.querySelector<HTMLElement>('.agnes-intelligent-table-scroll [role=region]')
         expect(tableScroll?.tabIndex).toBe(0)
         expect(tableScroll?.getAttribute('role')).toBe('region')
+        expect(tableScroll?.querySelector('[data-testid=ui-table-rows]')).not.toBeNull()
+        expect(tableScroll?.getAttribute('aria-label')?.trim()).toBeTruthy()
         expect(host.querySelector('script')).toBeNull()
         expect(host.textContent).toContain('<script>inert</script>')
         expect(host.textContent).toContain('250')
