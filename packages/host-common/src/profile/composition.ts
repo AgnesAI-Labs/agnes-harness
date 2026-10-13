@@ -308,6 +308,42 @@ export function checkResolvedCompositionSelection(value: unknown): ResolvedCompo
   )
 }
 
+/**
+ * Decodes a persisted tree: every field the Host reads later, and a hash that still matches the
+ * content. A record edited or damaged after publication is refused here, never downstream.
+ */
+export function checkResolvedComposition(value: unknown): ResolvedComposition {
+  if (!map(value)) fail('resolved composition must be an object')
+  const { hash, ...content } = value
+  if (typeof hash !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(hash)) fail('invalid composition hash')
+  if (!text(value.profile) || !text(value.preset)) fail('invalid composition profile or preset')
+  if (!list(value.bundles)) fail('invalid composition bundles')
+  if (value.sessionBundles !== undefined && !list(value.sessionBundles)) fail('invalid session bundles')
+  checkResolvedCompositionSelection(value.selection)
+  if (!map(value.sources)) fail('invalid composition sources')
+  for (const [key, source] of Object.entries(value.sources))
+    if (
+      !map(source) ||
+      !['default', 'profile', 'preset', 'admin', 'session'].includes(source.layer as string) ||
+      !text(source.name)
+    )
+      fail(`invalid composition source ${key}`)
+  if (!Array.isArray(value.rows)) fail('invalid composition rows')
+  for (const row of value.rows)
+    if (!map(row) || !text(row.id) || !text(row.packageId) || typeof row.enabled !== 'boolean')
+      fail('invalid composition row')
+  const scope = value.toolScope
+  if (scope !== undefined) {
+    if (!map(scope) || !Array.isArray(scope.bundlePackages) || !Array.isArray(scope.activePackages))
+      fail('invalid composition tool scope')
+    if (![...scope.bundlePackages, ...scope.activePackages].every(text))
+      fail('invalid composition tool scope')
+  }
+  if (`sha256-${sha256hex(canonicalJson(content))}` !== hash)
+    fail('composition hash does not match its content')
+  return value as ResolvedComposition
+}
+
 export function mergeComposition<T extends CompositionPatch | ResolvedCompositionSelection>(
   base: T,
   patch: T,

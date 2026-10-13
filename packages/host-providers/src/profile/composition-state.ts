@@ -2,10 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import {
-  checkResolvedCompositionSelection,
-  type ResolvedComposition,
-} from '@agnes/host-common/profile/composition'
+import { checkResolvedComposition, type ResolvedComposition } from '@agnes/host-common/profile/composition'
+import { checkSavedProfile } from '@agnes/host-common/profile/saved-profile'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { DurableStateError, publishFileDurablySync, removeFileDurablySync } from '@agnes/package-manager'
@@ -57,30 +55,25 @@ export class CompositionSessionStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw invalidBinding(file, 'cannot be read', error)
     }
-    let value: Partial<CompositionBinding> | null
+    let value: Record<string, unknown> | null
     try {
-      value = JSON.parse(bytes) as Partial<CompositionBinding> | null
+      value = JSON.parse(bytes) as Record<string, unknown> | null
     } catch (error) {
       throw invalidBinding(file, 'is not valid JSON', error)
     }
-    const { tree, profile } = value ?? {}
-    if (
-      value?.sessionKey !== key ||
-      !tree ||
-      typeof tree !== 'object' ||
-      !profile ||
-      typeof profile !== 'object' ||
-      tree.profile !== profile.name ||
-      typeof tree.hash !== 'string' ||
-      !/^sha256-[a-f0-9]{64}$/.test(tree.hash)
-    )
+    if (!value || typeof value !== 'object' || value.sessionKey !== key)
       throw invalidBinding(file, 'does not describe this session')
     try {
-      checkResolvedCompositionSelection(tree.selection)
+      const tree = checkResolvedComposition(value.tree),
+        profile = checkSavedProfile(value.profile)
+      if (tree.profile !== profile.name) throw invalidBinding(file, 'does not describe this session')
+      if (value.legacy !== undefined && value.legacy !== true)
+        throw invalidBinding(file, 'does not describe this session')
     } catch (error) {
-      throw invalidBinding(file, 'has an invalid selection', error)
+      if (error instanceof DurableStateError) throw error
+      throw invalidBinding(file, 'is not a complete composition record', error)
     }
-    return value as CompositionBinding
+    return value as unknown as CompositionBinding
   }
   /** For lookups that must not fail on damage (ownership, deletion); opening a session uses `read`. */
   readIfValid(key: string): CompositionBinding | undefined {
