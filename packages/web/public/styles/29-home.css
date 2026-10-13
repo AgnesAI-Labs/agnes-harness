@@ -31,6 +31,9 @@
     background: var(--agnes-bg-selected);
     font-weight: var(--font-weight-medium, 500);
   }
+  .home-entry > .icon {
+    color: var(--agnes-icon-secondary);
+  }
   .home-entry-label {
     min-width: 0;
     flex: 1;
@@ -79,6 +82,9 @@
   }
   main[data-home-page] > .topbar-row {
     border-bottom-color: transparent;
+  }
+  body:has(#empty-state:not([hidden])) main[data-home-page] > .topbar-row {
+    position: static;
   }
   /* With the sidebar open the bar would hold nothing; the page starts at the top instead. */
   @media (min-width: 901px) {
@@ -607,17 +613,17 @@
     display: grid;
     place-items: center;
     border-radius: var(--radius-sm);
-    color: var(--agnes-color-gray-0);
-    background: var(--agnes-color-indigo-600);
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     line-height: 1;
   }
   .empty-state-agent-tile[data-tone="1"] {
-    background: var(--agnes-color-green-500);
+    background: var(--agnes-status-success-solid);
   }
   .empty-state-agent-tile[data-tone="2"] {
-    background: var(--agnes-color-blue-500);
+    background: var(--agnes-status-info-solid);
   }
   .empty-state-agent-name {
     overflow: hidden;

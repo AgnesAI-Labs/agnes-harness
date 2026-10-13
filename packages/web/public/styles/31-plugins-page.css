@@ -64,7 +64,7 @@
   .plugins-page-split > :last-child .agnes-ui-button,
   .plugins-page-split > .agnes-ui-button:last-child {
     min-width: 0;
-    padding-inline: var(--s6, 0.375rem);
+    padding-inline: 0.375rem;
     border-inline-start: 0.5px solid color-mix(in srgb, currentColor 35%, transparent);
     border-start-start-radius: 0;
     border-end-start-radius: 0;
