@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { sessionViewCommands } from '../src/regions/session-views.js'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -18,6 +19,7 @@ describe('rendered topbar region', () => {
     await runtime?.dispose()
     runtime = undefined
     resetWebDom()
+    delete sessionViewCommands.reportProblem
   })
 
   it('renders the topbar controls and updates them through its public handle', async () => {
@@ -108,7 +110,12 @@ describe('rendered topbar region', () => {
     expect(more.closest('#session-view-controls')).not.toBeNull()
     expect(more.closest('[role="tablist"]')).toBeNull()
     const pressed = vi.fn()
-    document.getElementById('report-problem')?.addEventListener('click', pressed)
+    const report = document.getElementById('report-problem') as HTMLButtonElement
+    report.style.display = 'none'
+    const priorReport = sessionViewCommands.reportProblem
+    const opened = vi.fn()
+    sessionViewCommands.reportProblem = opened
+    report.addEventListener('click', pressed)
 
     more.click()
     const entries = await vi.waitFor(() => {
@@ -118,6 +125,9 @@ describe('rendered topbar region', () => {
     }, committed)
     entries[0]?.click()
     expect(pressed).toHaveBeenCalledTimes(1)
+    expect(opened).toHaveBeenCalledWith(more)
+    if (priorReport) sessionViewCommands.reportProblem = priorReport
+    else delete sessionViewCommands.reportProblem
 
     // Runtime info joins the menu once a session offers it.
     runtime.topbar?.setRuntimeAvailable(true)

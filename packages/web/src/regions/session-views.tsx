@@ -88,7 +88,13 @@ export function SessionViews({
       <IconButton
         id="report-problem"
         name="bug"
-        onClick={(event) => sessionViewCommands.reportProblem?.(event.currentTarget)}
+        onClick={(event) => {
+          const trigger = event.currentTarget
+          const more = document.getElementById('topbar-more')
+          sessionViewCommands.reportProblem?.(
+            getComputedStyle(trigger).display === 'none' && more instanceof HTMLElement ? more : trigger,
+          )
+        }}
         label={tr('index-shell.reportProblem')}
         title={tr('index-shell.reportProblem')}
       />
