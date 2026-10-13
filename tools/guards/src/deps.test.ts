@@ -63,7 +63,7 @@ const LAYER: Record<string, number> = {
   '@agnes/plugin-runtime': 1,
   '@agnes/web-slots': -1,
   // UI component layer (web-ui component system, spec 2026-09-24): the only package allowed to
-  // import antd/@assistant-ui (enforced by ui-layer.test.ts). Sits just above protocol so it can
+  // import antd/@ant-design (enforced by ui-layer.test.ts). Sits just above protocol so it can
   // consume UINode types; external UI libraries are npm deps, not @agnes layers.
   '@agnes/web-ui': 1,
   // Raised from 1 to 2 when web-ui landed: web-units consumes web-ui components, and the

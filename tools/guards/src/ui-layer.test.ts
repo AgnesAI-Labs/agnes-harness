@@ -6,7 +6,7 @@ import { listPackages, repoRoot } from './repo.js'
 const root = repoRoot()
 
 /**
- * External UI libraries (antd, @assistant-ui/*) may only be imported inside packages/web-ui.
+ * External UI libraries (antd, @ant-design/*) may only be imported inside packages/web-ui.
  *
  * The component boundary makes web-ui the sole owner of those dependencies: every other package consumes components
  * through the @agnes/web-ui export surface. Without this fence the import map and vendor pipeline
@@ -22,7 +22,7 @@ const root = repoRoot()
  * suite must go red; removing it must go green again.
  */
 
-const FORBIDDEN_PREFIXES = ['antd/', 'recharts/', '@assistant-ui/', '@ant-design/']
+const FORBIDDEN_PREFIXES = ['antd/', 'recharts/', '@ant-design/']
 const FORBIDDEN_EXACT = new Set(['antd', 'recharts'])
 const ALLOWED_PKG = '@agnes/web-ui'
 const ALLOWED_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
@@ -69,7 +69,7 @@ it('also fences private library entry points and dynamic imports', () => {
     'antd/es/button',
     'recharts',
     'recharts/lib/chart',
-    '@assistant-ui/react',
+    '@ant-design/x',
     '@ant-design/icons',
   ])
     expect(isExternalUI(name)).toBe(true)
@@ -77,7 +77,7 @@ it('also fences private library entry points and dynamic imports', () => {
 })
 
 describe('external UI libraries are only imported by the web-ui component layer', () => {
-  it('antd / @assistant-ui imports appear only in packages/web-ui', () => {
+  it('antd / @ant-design imports appear only in packages/web-ui', () => {
     const offenders: string[] = []
     for (const pkg of listPackages(root)) {
       if (pkg.name === ALLOWED_PKG) continue

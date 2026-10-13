@@ -21,20 +21,16 @@
     "@agnes/protocol-validation": "workspace:*",
     "@ant-design/x": "2.9.0",
     "@ant-design/x-markdown": "2.9.0",
-    "@assistant-ui/react": "0.11.27",
-    "@assistant-ui/tap": "0.1.2",
     "antd": "6.6.5",
     "react-is": "18.3.1",
     "recharts": "3.10.1"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.3.3",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "esbuild": "0.28.2",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "tailwindcss": "4.3.3"
+    "react-dom": "18.3.1"
   },
   "license": "Apache-2.0"
 }
