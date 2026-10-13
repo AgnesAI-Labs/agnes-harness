@@ -6,6 +6,7 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { traceRowPreview } from '../../web-units/src/trace-row-preview.js'
 import {
   TRACE_PANEL_STORAGE_KEY,
   Trace,
@@ -325,6 +326,15 @@ describe('trace panel', () => {
     expect(row.children[0]?.classList.contains('trace-step-mark')).toBe(true)
     expect(row.children[1]?.classList.contains('trace-badge')).toBe(true)
     expect(row.children[2]?.classList.contains('trace-row-preview')).toBe(true)
+    // A tool row's summary keeps its text and marks the parts a reader scans for.
+    for (const preview of root.querySelectorAll('.trace-row-preview')) {
+      const parts = [
+        ...preview.querySelectorAll('.trace-preview-name, .trace-preview-raw, .trace-preview-result'),
+      ]
+      if (parts.length) expect(preview.textContent).toContain(parts.map((part) => part.textContent).join(''))
+    }
+    expect(traceRowPreview('tool', 'ls {"path":"."} → a.md b.md')).not.toBe('ls {"path":"."} → a.md b.md')
+    expect(traceRowPreview('assistant', 'plain answer')).toBe('plain answer')
   })
 
   it('folds a turn, reveals search matches, and expands it for timeline selection', () => {

@@ -108,9 +108,14 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--s16);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-toolbar > .trace-stat {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
   }
   .trace-search {
     width: min(14rem, 100%);
@@ -118,15 +123,21 @@
     color: var(--agnes-text-primary);
     font-weight: 400;
   }
+  /* The three toolbar controls share one height, radius and quiet border. */
   .trace-fold-all {
     flex: 0 0 auto;
-    min-height: 1.75rem;
-    padding: 0.2rem 0.55rem;
+    height: var(--s32);
+    min-height: var(--s32);
+    padding: 0 var(--s12);
     border-color: var(--agnes-line-primary);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
     background: transparent;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     font-weight: 400;
+  }
+  .trace-toolbar :is(.trace-type-filter, .trace-search) {
+    border-radius: var(--radius-control);
   }
   .trace-gantt {
     display: flex;
@@ -169,15 +180,15 @@
     align-items: center;
   }
   .trace-gantt-label {
-    font-size: 0.7rem;
-    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
   }
   .trace-gantt-track {
     position: relative;
-    height: 0.85rem;
+    height: 0.625rem;
     overflow: hidden;
     background: var(--agnes-trace-track);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-full);
     touch-action: none;
     cursor: crosshair;
   }
@@ -204,7 +215,7 @@
     min-height: 0;
     padding: 0;
     border: 0;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-full);
   }
   button.trace-gantt-bar:hover:not(:disabled) {
     filter: brightness(1.15);
@@ -286,18 +297,30 @@
     top: 0;
     z-index: 2;
     height: 33px;
-    padding: 0 var(--s16);
-    border-bottom: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-trace-track);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--s12);
+    /* A turn starts with a hairline and a quiet label, not a band. The ground stays opaque so
+     rows scrolling under the sticky header do not show through. */
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+  }
+  .trace-turn-header:first-child {
+    border-top: 0;
   }
   .trace-turn-toggle {
     display: inline-flex;
     min-height: 1.5rem;
     padding: 0 0.3rem;
     border: 0;
+    color: var(--agnes-text-tertiary);
     background: transparent;
     font-size: var(--font-size-xs);
-    font-weight: 600;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-turn-toggle:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
   }
   .trace-row {
     display: grid;
@@ -349,18 +372,22 @@
   }
   .trace-step-mark {
     min-width: 0;
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
+    font-variant-numeric: tabular-nums;
     font-size: var(--font-size-xs);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Role chips are small tinted pills: the hue says the kind, the weight stays out of the way. */
   .trace-badge {
     justify-self: start;
-    padding: 0.08rem 0.4rem;
-    border-radius: var(--radius-xs);
+    padding: 0 0.5rem;
+    border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
-    font-weight: 500;
+    font-weight: 400;
+    line-height: 1.25rem;
+    white-space: nowrap;
   }
   .trace-badge.kind-user {
     color: var(--agnes-trace-badge-user-text);
@@ -389,10 +416,33 @@
   .trace-row-preview {
     min-width: 0;
     overflow: hidden;
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-primary);
     font-weight: 400;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A tool row reads name, arguments, result; a context row reads label, payload. Raw payloads
+   recede in monospace; the full record opens in the inspector. */
+  .trace-preview-name {
+    color: var(--agnes-text-primary);
+    font-weight: 500;
+  }
+  .trace-preview-raw {
+    color: var(--agnes-text-tertiary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: var(--font-size-xs);
+  }
+  .trace-preview-result {
+    color: var(--agnes-text-secondary);
+  }
+  .trace-preview-status {
+    color: var(--agnes-text-tertiary);
+  }
+  .trace-preview-status:is([data-status="failed"], [data-status="completed"]) {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-preview-status[data-status="running"] {
+    color: var(--agnes-text-emphasis);
   }
   .trace-inspector {
     min-width: 0;

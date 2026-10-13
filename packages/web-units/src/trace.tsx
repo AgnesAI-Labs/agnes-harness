@@ -39,6 +39,7 @@ import { flushSync } from 'react-dom'
 import { buildTraceToolHierarchy, isTraceRowHiddenByTool, traceToolAncestors } from './trace-hierarchy.js'
 import { traceLocale, traceText } from './trace-locale.js'
 import { buildTraceRequestMetrics } from './trace-request-metrics.js'
+import { traceRowPreview } from './trace-row-preview.js'
 import { buildTraceTimelineDensity, pickTraceTimelineDensityMember } from './trace-timeline-density.js'
 import {
   buildTraceVirtualLayout,
@@ -1067,7 +1068,15 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                   {item.showStep ? traceStepLabel(row.step) : undefined}
                 </span>
                 <span className={`trace-badge kind-${row.kind}`}>{row.badge}</span>
-                <span className="trace-row-preview">{`${requestPrefix}${clip(row.preview, 160) || traceText('trace.emptyPreview')}${row.statusCode === 'completed' ? '' : ` · ${row.status}`}${row.errorCode ? ` · ${row.errorCode}` : ''}`}</span>
+                <span className="trace-row-preview">
+                  {requestPrefix}
+                  {traceRowPreview(row.kind, clip(row.preview, 160)) || traceText('trace.emptyPreview')}
+                  {row.statusCode === 'completed' && !row.errorCode ? null : (
+                    <span className="trace-preview-status" data-status={row.statusCode}>
+                      {`${row.statusCode === 'completed' ? '' : ` · ${row.status}`}${row.errorCode ? ` · ${row.errorCode}` : ''}`}
+                    </span>
+                  )}
+                </span>
               </Button>
             )
             if (!nested)
