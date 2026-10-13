@@ -26,7 +26,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.25rem 0.75rem;
     cursor: pointer;
     font-size: var(--font-size-sm);
     font-weight: 600;
@@ -43,7 +43,9 @@
   }
   @media (prefers-reduced-motion: no-preference) {
     :is(button, a.agh-btn):not(:empty):active:not(:disabled):not(:focus-visible):not([aria-disabled="true"]) {
-      translate: 0 1px;
+      /* A press is a slight shrink and darken: no glow, ripple or shadow animates. */
+      scale: var(--press-scale);
+      filter: brightness(var(--press-dim));
     }
   }
   button:focus-visible,
@@ -90,9 +92,9 @@
   }
   input,
   select {
-    min-height: var(--control-height);
+    min-height: var(--control-height-form);
     width: 100%;
-    padding: 0.5rem 0.625rem;
+    padding: 0.3125rem 0.625rem;
   }
   textarea {
     min-height: 2.875rem;
@@ -120,7 +122,7 @@
     stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-width: 1.75;
+    stroke-width: 1.5;
   }
 
   @media (max-width: 540px) {

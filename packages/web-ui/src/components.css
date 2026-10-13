@@ -1,5 +1,6 @@
 @import "./layers.css";
 @import "./native.css";
+@import "./refinement.css";
 
 @layer ui {
   :root {
@@ -1289,7 +1290,8 @@
     background: none;
   }
   .agh-disclosure-summary:active:not(:disabled) {
-    translate: none;
+    scale: none;
+    filter: none;
   }
   .agh-disclosure-marker {
     display: inline-block;

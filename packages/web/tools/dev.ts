@@ -16,6 +16,8 @@ const copiedInputs = [
   join(root, 'public', 'favicon.png'),
   join(root, '..', 'web-ui', 'src', 'tokens.css'),
   join(root, '..', 'web-ui', 'src', 'components.css'),
+  join(root, '..', 'web-ui', 'src', 'native.css'),
+  join(root, '..', 'web-ui', 'src', 'refinement.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'markdown.css'),
 ]

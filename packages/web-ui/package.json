@@ -10,6 +10,7 @@
     "./x": "./src/x-vendor.ts",
     "./layers.css": "./src/layers.css",
     "./components.css": "./src/components.css",
+    "./refinement.css": "./src/refinement.css",
     "./tokens.css": "./src/tokens.css",
     "./intelligent-ui.css": "./src/intelligent-ui/styles.css"
   },

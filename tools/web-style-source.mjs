@@ -45,8 +45,13 @@ export function readWebUiStyleSource(file) {
   return (
     source.replace('@import "./components.css";', '') +
     '\n' +
-    readUiCss(join(dirname(file), 'components.css')).replace('@import "./native.css";', '') +
+    readUiCss(join(dirname(file), 'components.css'))
+      .replace('@import "./native.css";', '')
+      .replace('@import "./refinement.css";', '') +
     '\n' +
-    readUiCss(join(dirname(file), 'native.css'))
+    readUiCss(join(dirname(file), 'native.css')) +
+    '\n' +
+    // The refinement layer comes last so its proportions settle equal-specificity rules.
+    readUiCss(join(dirname(file), 'refinement.css'))
   )
 }

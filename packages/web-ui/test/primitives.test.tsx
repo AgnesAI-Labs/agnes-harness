@@ -178,7 +178,7 @@ it('draws settings icons with the shared Icon geometry and labels icon actions',
     expect(settings.outerHTML).toBe(svg.outerHTML)
     expect(svg.getAttribute('data-agnes-region')).toBe('icon')
     expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
-    expect(svg.getAttribute('stroke-width')).toBe('1.75')
+    expect(svg.getAttribute('stroke-width')).toBe('1.5')
   }
   // A settings category maps to its glyph, and an unknown name reads as a plugin.
   expect(settingsIconName('security')).toBe('shield-check')

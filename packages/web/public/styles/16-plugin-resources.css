@@ -377,18 +377,21 @@
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    width: 2.375rem;
-    min-width: 2.375rem;
-    height: 1.375rem;
-    min-height: 1.375rem;
+    width: var(--switch-width);
+    min-width: var(--switch-width);
+    height: var(--switch-height);
+    min-height: var(--switch-height);
     padding: 0;
-    border: 1px solid var(--agnes-line-primary);
+    border: 0;
     border-radius: var(--radius-full);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-switch-track);
+    /* The hairline is the track's 3:1 boundary; the fill alone is only a tint. */
+    box-shadow: inset 0 0 0 var(--hairline) var(--agnes-input-border);
     cursor: pointer;
-    transition:
-      background-color var(--transition-fast),
-      border-color var(--transition-fast);
+    transition: background-color var(--motion-medium) var(--motion-ease-out);
+  }
+  .switch:hover:not(:disabled) {
+    background: var(--agnes-switch-track);
   }
   .switch-track {
     position: relative;
@@ -399,25 +402,26 @@
   .switch-knob {
     position: absolute;
     top: 50%;
-    left: 0.1875rem;
-    width: 0.875rem;
-    height: 0.875rem;
+    left: calc((var(--switch-height) - var(--switch-knob)) / 2);
+    width: var(--switch-knob);
+    height: var(--switch-knob);
     border-radius: var(--radius-full);
-    background: var(--agnes-text-tertiary);
+    background: var(--agnes-switch-knob);
+    box-shadow: var(--shadow-knob);
     transform: translateY(-50%);
-    transition:
-      transform var(--transition-fast),
-      background-color var(--transition-fast);
+    /* The knob settles on a slight spring; the colour simply follows. */
+    transition: transform var(--motion-medium) var(--motion-spring);
   }
-  .switch[aria-checked="true"] {
-    border-color: var(--agnes-brand-primary);
+  .switch[aria-checked="true"],
+  .switch[aria-checked="true"]:hover:not(:disabled) {
     background: var(--agnes-brand-primary);
+    box-shadow: none;
   }
   .switch[aria-checked="true"] .switch-knob {
     /* 轨道是品牌填充色，圆钮沿用"品牌填充上的内容色"这个既有语义 token，
      深浅色各自取到正确的前景（浅色白、深色近黑）。 */
     background: var(--agnes-button-primary-content);
-    transform: translate(1rem, -50%);
+    transform: translate(calc(var(--switch-width) - var(--switch-height)), -50%);
   }
   .switch:focus-visible {
     outline: var(--focus-outline);
