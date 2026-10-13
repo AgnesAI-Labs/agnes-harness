@@ -22,7 +22,7 @@ agh batch status <id> --watch
 agh batch results <id>
 ```
 
-`start` prints the batch id and returns at once. The folder must be inside the current directory (or the one given with `--cwd`), which is the workspace the batch belongs to: it also names where the item sessions run and where results go. If that directory is not a workspace folder yet, `start` registers it as one; a request sent to the daemon without that step is refused with `workspace is not registered`. Try three or four files in a separate folder first: it shows the cost per file and whether the prompt and schema work, before you commit the whole set.
+`start` prints the batch id and returns at once. The folder must be inside the current directory (or the one given with `--cwd`), which is the workspace the batch belongs to: it also names where the item sessions run and where results go. If that directory is not a workspace folder yet, `start` registers it as one; a request sent to the daemon without that step is refused with `workspace is not registered`. Give `--cwd` a folder made for the batch (holding the input folder and the results), not your home directory or a project with secrets: it becomes a workspace, and the model in each item session can read other files in it (see [Safety and privacy](#safety-and-privacy)). Try three or four files in a separate folder first: it shows the cost per file and whether the prompt and schema work, before you commit the whole set.
 
 <a id="能读什么"></a>
 
@@ -42,7 +42,7 @@ Everything else is left out of the model's hands and listed in `errors.jsonl` as
 - `outside_root`: a file link that points out of the workspace.
 - `unreadable_name`: a name that is not valid UTF-8.
 
-Hidden files and folders (names starting with a dot) are skipped silently, as are links to folders (they are never followed) and the `agh-batch` results folder. A folder holds at most 100,000 files and 200,000 entries, nested at most 32 levels deep. A folder with no supported file is refused.
+Hidden files and folders (names starting with a dot) are skipped silently, without a line in `errors.jsonl`, as are links to folders (they are never followed), links that lead nowhere or in a loop, links to special files, special files themselves (pipes, sockets, devices) and the `agh-batch` results folder. A folder holds at most 100,000 files and 200,000 entries, nested at most 32 levels deep. A folder with no supported file is refused.
 
 A long text file is read in pages; the batch tells the model to keep reading until it has the whole file. A file the model does not manage to read is never answered from guesswork (see [Failures and stopping](#failures-and-stopping)).
 
@@ -56,7 +56,7 @@ An original much larger than the model's edge loses detail: a 6000 pixel photo i
 magick photo.jpg -crop 1456x1456 +repage tiles/photo-%d.jpg
 ```
 
-What reaches the model has no EXIF data (location included) or colour profile. A PNG or JPEG that is damaged, too big to decode within memory limits, or takes more than 30 seconds to prepare fails with `image_not_read`. If the selected model cannot take images, every image file fails the same way and the batch stops early.
+What reaches the model has no EXIF data (location included) or colour profile. A PNG or JPEG that is damaged, too big to decode within memory limits, or takes more than 30 seconds to prepare fails with `image_not_read`, and so does every image when the bundled image library cannot be loaded on this machine (text files are not affected). If the selected model cannot take images, every image file fails the same way and the batch stops early.
 
 <a id="提示词与输出模式"></a>
 
@@ -105,7 +105,7 @@ Answers come from a model reading files you may not control, so treat them as un
 Each file is a full agent turn, not a bare model call. It carries the system prompt and tool definitions, makes two model requests (one that calls `read`, then the answer), and the new session also triggers one short title request. A repair adds another turn. Expect roughly 1.3 to 2 times the cost of sending the same image to the model directly. There is no estimate before a start.
 
 - The summary and `agh batch status` show credits spent. Spend is read from each file's record when the file finishes, so a cost that lands later (such as a title request after a timeout) can be missing from the total.
-- `--budget <credits>` is an optional hard stop. Once the spend reaches it, no new file starts and the batch ends as `budget_exhausted` (if files were left over); files already running finish, so the total can exceed the budget by the cost of the files that were in flight. An answer that needs its repair when nothing is left of the budget is marked `invalid` instead.
+- `--budget <credits>` is an optional hard stop. Once the spend reaches it, no new file starts and the batch ends as `budget_exhausted` (if files were left over); files already running finish, so the total can exceed the budget by the cost of the files that were in flight. An answer that needs its repair when nothing is left of the budget is marked `invalid` instead. A file whose run is stopped because the rest of the budget cannot pay for it fails with `turn_budget`; the budget then counts as spent too, so no new file starts and the batch ends as `budget_exhausted`, even when no file has succeeded.
 - `--concurrency <1-8>` (default 4) is how many files run at once. Image decoding is limited to two at a time. While a batch runs, other background jobs in the daemon can wait for the slowest file of the current wave.
 
 <a id="失败与停止"></a>
@@ -124,7 +124,7 @@ A file ends as `done`, `invalid` (answer did not match the schema), `failed`, `s
 | `job_<status>` | The run failed in the daemon's queue, which retries a failed run up to two more times first |
 | `prompt_too_long` | The prompt with your schema exceeds the 64 KiB job limit |
 
-If no file has succeeded and five have failed or been marked `invalid`, the batch stops as `failed` and the rest are cancelled; a wrong prompt, schema or model should not burn the whole folder. Fix the cause and start a new batch.
+If no file has succeeded and five have failed or been marked `invalid`, the batch stops as `failed` and the rest are cancelled; a wrong prompt, schema or model should not burn the whole folder. The status gives the most common error as the reason, without the model's reply, which is only in `errors.jsonl`. Fix the cause and start a new batch.
 
 `agh batch cancel <id>` (or `batch_cancel`) stops a running batch: running files are aborted, files not yet started are marked `cancelled`, the result files are still written, and what running files had already cost stays in the total.
 
