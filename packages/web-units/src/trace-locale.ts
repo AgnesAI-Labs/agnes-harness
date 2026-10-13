@@ -172,6 +172,15 @@ const en = {
   'trace.noResults': 'No matching records.',
   'trace.omittedNote': 'Turn {turn} · {label}',
   'trace.lightbox.close': 'Close image preview',
+  'trace.code.copy': 'Copy',
+  'trace.code.copied': 'Copied',
+  'trace.code.more': 'Show more',
+  'trace.code.less': 'Show less',
+  'trace.code.text': 'Text',
+  'trace.code.json': 'JSON',
+  'trace.card.review': 'Automatic review',
+  'trace.card.usage': 'Usage and order',
+  'trace.card.images': 'Images',
   'trace.empty': 'Send a task to see timing for each step.',
 } as const
 
@@ -348,6 +357,15 @@ const zh: Record<keyof typeof en, string> = {
   'trace.noResults': '没有匹配的记录',
   'trace.omittedNote': '第 {turn} 轮 · {label}',
   'trace.lightbox.close': '关闭图片预览',
+  'trace.code.copy': '复制',
+  'trace.code.copied': '已复制',
+  'trace.code.more': '展开全部',
+  'trace.code.less': '收起',
+  'trace.code.text': '文本',
+  'trace.code.json': 'JSON',
+  'trace.card.review': '自动审查',
+  'trace.card.usage': '用量与次序',
+  'trace.card.images': '图片',
   'trace.empty': '发送一条任务后，这里会按步骤显示耗时。',
 }
 
