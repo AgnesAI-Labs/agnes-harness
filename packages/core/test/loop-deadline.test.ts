@@ -1,16 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { withLoopDeadline } from '../src/step/loop-deadline.js'
 
 const loop = { id: 'test.loop', version: '1.0.0' }
 const settleAfter = (ms: number) => new Promise<string>((resolve) => setTimeout(() => resolve('done'), ms))
 
 describe('loop step deadline', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
   it('does not count time spent waiting on work the platform owns', async () => {
     let waiting = true
     setTimeout(() => {
       waiting = false
     }, 85)
-    await expect(
+    const result = expect(
       withLoopDeadline({
         loop,
         idleMs: 20,
@@ -22,12 +24,14 @@ describe('loop step deadline', () => {
         },
       }),
     ).resolves.toBe('done')
+    await vi.advanceTimersByTimeAsync(95)
+    await result
   })
 
   it('keeps waiting while the ledger advances, and expires a silent driver naming the loop', async () => {
     let seq = 0
     const tick = setInterval(() => seq++, 5)
-    await expect(
+    const progressing = expect(
       withLoopDeadline({
         loop,
         idleMs: 20,
@@ -37,9 +41,11 @@ describe('loop step deadline', () => {
         expire: () => undefined,
       }),
     ).resolves.toBe('done')
+    await vi.advanceTimersByTimeAsync(80)
+    await progressing
     clearInterval(tick)
     let expired = false
-    await expect(
+    const silent = expect(
       withLoopDeadline({
         loop,
         idleMs: 20,
@@ -51,11 +57,13 @@ describe('loop step deadline', () => {
         },
       }),
     ).rejects.toMatchObject({ code: 'E_LOOP_TIMEOUT', message: expect.stringContaining('test.loop@1.0.0') })
+    await vi.advanceTimersByTimeAsync(20)
+    await silent
     expect(expired).toBe(true)
   })
 
   it('holds a window longer than one runtime timer can express', async () => {
-    await expect(
+    const result = expect(
       withLoopDeadline({
         loop,
         idleMs: 2 ** 31 + 5,
@@ -67,5 +75,7 @@ describe('loop step deadline', () => {
         },
       }),
     ).resolves.toBe('done')
+    await vi.advanceTimersByTimeAsync(40)
+    await result
   })
 })
