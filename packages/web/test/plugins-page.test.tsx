@@ -1,14 +1,18 @@
 /** @vitest-environment happy-dom */
+
+import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
   SkillDetailContent,
   setAdvancedSettingsShown,
 } from '@agnes/web-ui'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PluginView } from '../src/pages/plugins/admin-view.js'
+import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, isExperimental } from '../src/pages/plugins/plugins-tab.js'
 import { CAPABILITIES, PLUGIN_TABS, pluginsRoute } from '../src/pages/plugins/route.js'
@@ -85,6 +89,76 @@ describe('plugin grouping', () => {
     expect(isExperimental(item('a', { experimental: 'yes' }))).toBe(false)
     expect(isExperimental(item('a'))).toBe(false)
   })
+})
+
+it('groups marketplace releases and opens or installs the selected release', async () => {
+  const item: PackageCatalogDescriptor = {
+    id: '@example/panel',
+    version: '1.0.0',
+    source: { type: 'file', ref: 'file:./panel' },
+    integrity: 'sha256-' + 'a'.repeat(64),
+    license: 'MIT',
+    contributions: [],
+    compatibility: 'supported',
+    sourceId: 'local',
+    retrievedAt: '2026-10-14T00:00:00Z',
+  }
+  let chosen: string | undefined
+  const view = {
+    state: {
+      catalog: [item, { ...item, version: '2.0.0' }, { ...item, version: '2.0.0' }],
+      installed: [],
+      loading: false,
+    },
+    tab: 'discover',
+    query: '',
+    kind: '',
+    category: '',
+    t: (key: string) => key,
+    queryRaw: '',
+    purposeText: (key: string) => key,
+    can: () => true,
+    render: () => {},
+    settingsText: (key: string) => key,
+    canEffect: () => true,
+    loadCatalog: async () => {},
+    setQuery: () => {},
+    setKind: () => {},
+    setCategory: () => {},
+    primaryAction: (row: PackageCatalogDescriptor) => ({
+      disabled: false,
+      run: () => {
+        chosen = row.version
+      },
+    }),
+    selectItem: (row: PackageCatalogDescriptor) => {
+      chosen = row.version
+    },
+  } as unknown as PluginView
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(1)
+    const picker = host.querySelector('[data-testid="plugin-version-picker"]')!
+    await act(async () =>
+      picker.querySelector('input')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+    )
+    const choices = [...host.querySelectorAll<HTMLElement>('.ant-select-item-option')]
+    expect(choices.map((entry) => entry.textContent)).toEqual(['1.0.0', '2.0.0'])
+    await act(async () => choices[1]?.click())
+    expect(chosen).toBeUndefined()
+    expect(host.querySelector('[data-testid="market-card"]')?.getAttribute('data-plugin-version')).toBe(
+      '2.0.0',
+    )
+    host.querySelector<HTMLButtonElement>('.plugins-page-card-title')?.click()
+    expect(chosen).toBe('2.0.0')
+    chosen = undefined
+    host.querySelector<HTMLButtonElement>('[data-testid="market-install"]')?.click()
+    expect(chosen).toBe('2.0.0')
+  } finally {
+    flushSync(() => root.unmount())
+  }
 })
 
 describe('computer use capability', () => {

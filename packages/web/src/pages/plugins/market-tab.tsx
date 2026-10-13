@@ -1,6 +1,8 @@
 import { type PackageCatalogDescriptor, resolvePluginMetadata } from '@agnes/protocol'
 import { homeNavigation } from '@agnes/web-client'
 import {
+  ADMIN_LIST_LOCALE_NAMESPACE,
+  adminListLocaleCatalog,
   Badge,
   Button,
   EmptyState,
@@ -9,10 +11,13 @@ import {
   MetaText,
   PLUGIN_PRESENTATION_NAMESPACE,
   pluginPresentationCatalog,
+  Select,
+  SettingsDetails,
   SettingsState,
   Tag,
   useUiText,
 } from '@agnes/web-ui'
+import { useState } from 'react'
 import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
 import { isBusinessAgent, PluginToolbar } from './plugins-tab.js'
@@ -22,7 +27,21 @@ type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => s
 const official = (item: PackageCatalogDescriptor) =>
   ['official', 'example'].includes(item.presentation?.origin ?? '')
 
-function MarketCard({ item, view, t }: { item: PackageCatalogDescriptor; view: PluginView; t: Text }) {
+function MarketCard({
+  group,
+  view,
+  t,
+}: {
+  group: readonly PackageCatalogDescriptor[]
+  view: PluginView
+  t: Text
+}) {
+  const [version, setVersion] = useState<string>()
+  const item = group.find((row) => row.version === version) ?? group[0]!
+  const alternatives = group.filter(
+    (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
+  )
+  const { t: listText } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { t: purposeText, locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const purpose = resolvePluginMetadata(item.metadata, locale)
   const name = purpose?.displayName ?? item.id
@@ -32,7 +51,12 @@ function MarketCard({ item, view, t }: { item: PackageCatalogDescriptor; view: P
     item.presentation?.origin ??
     (['file', 'local', 'workspace', 'path'].includes(item.source.type) ? 'local-source' : 'third-party')
   return (
-    <article className="plugins-page-card" data-plugin-id={item.id} data-testid="market-card">
+    <article
+      className="plugins-page-card"
+      data-plugin-id={item.id}
+      data-plugin-version={item.version}
+      data-testid="market-card"
+    >
       <header>
         <IconTile name="plug" />
         <div>
@@ -50,6 +74,27 @@ function MarketCard({ item, view, t }: { item: PackageCatalogDescriptor; view: P
         </div>
       </header>
       <p data-testid="plugin-summary">{purpose?.summary ?? t('market.noPurpose')}</p>
+      {alternatives.length > 1 && (
+        <SettingsDetails
+          title={listText('row.versions', { version: item.version })}
+          data-testid="plugin-other-versions"
+        >
+          <label htmlFor={`market-version-${encodeURIComponent(item.id)}`}>
+            {listText('row.version')}
+            <Select<string>
+              id={`market-version-${encodeURIComponent(item.id)}`}
+              data-testid="plugin-version-picker"
+              className="plugin-version-picker"
+              virtual={false}
+              aria-label={listText('row.version')}
+              value={item.version}
+              options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
+              getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
+              onChange={setVersion}
+            />
+          </label>
+        </SettingsDetails>
+      )}
       <footer>
         {item.compatibility === 'unsupported' ? (
           <Tag tone="bad">{view.t('state.unsupported')}</Tag>
@@ -84,11 +129,14 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
       (!view.kind || item.kinds?.includes(view.kind)) &&
       (!view.category || (item.metadata?.category ?? 'unclassified') === view.category),
   )
+  const grouped = new Map<string, PackageCatalogDescriptor[]>()
+  for (const row of rows) grouped.set(row.id, [...(grouped.get(row.id) ?? []), row])
+  const groups = [...grouped.values()]
   // The controller keeps one list; until it has switched to the catalog there is nothing to show.
   const ready = view.tab === 'discover'
   const sections = [
-    ['official', rows.filter(official)],
-    ['community', rows.filter((item) => !official(item))],
+    ['official', groups.filter((group) => official(group[0]!))],
+    ['community', groups.filter((group) => !official(group[0]!))],
   ] as const
   return (
     <>
@@ -118,8 +166,8 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
             items.length > 0 && (
               <HomePageSection key={key} title={t(`market.${key}`)}>
                 <div className="plugins-page-gallery" data-testid={`market-${key}`}>
-                  {items.map((item) => (
-                    <MarketCard key={item.id} item={item} view={view} t={t} />
+                  {items.map((group) => (
+                    <MarketCard key={group[0]!.id} group={group} view={view} t={t} />
                   ))}
                 </div>
               </HomePageSection>
