@@ -33,7 +33,7 @@ import {
   optionalElement,
   readElements,
 } from './settings/dialog.js'
-import { ModelSlotsPanel } from './settings/model-slots.js'
+import { modelSlotsPanel } from './settings/model-slots.js'
 
 export type SettingsControllerOptions = {
   client: Client
@@ -820,8 +820,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const slotsHost = optionalElement('config-auxiliary-models', 'div')
     if (renderedSlots && renderedSlots !== slotsHost) unmountRegion(renderedSlots)
     renderedSlots = slotsHost
-    if (slotsHost)
-      renderRegion(slotsHost, createElement(ModelSlotsPanel, { key: configuration?.revision ?? 0, t: tr }))
+    if (slotsHost) renderRegion(slotsHost, modelSlotsPanel(configuration, tr))
     const guard = optionalElement('config-account-guard', 'p')
     if (guard) guard.hidden = !editingId || editingId !== configuration?.defaultAccountId
     const currentAccountList = accountList()
