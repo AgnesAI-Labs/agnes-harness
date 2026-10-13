@@ -22,7 +22,7 @@ it('keeps the selected locale through theme repaint after a failed storage write
   vi.resetModules()
   await import('../src/theme-boot.js')
   const { mountAppShell } = await import('../src/app-shell.js')
-  disposeShell = mountAppShell()
+  disposeShell = mountAppShell().dispose
 
   const skipLink = document.querySelector<HTMLAnchorElement>('.skip-link')
   expect(skipLink?.textContent).toBe(indexShellLocaleCatalog.en?.['index-shell.skip'])

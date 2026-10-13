@@ -37,6 +37,11 @@ describe('mobile sidebar navigation', () => {
     transcript.scrollTop = 0
     sidebar.close()
     expect(transcript.scrollTop).toBe(0)
+
+    // A closed drawer has nothing to dismiss, so it must not pull focus to its toggle.
+    focus.mockClear()
+    sidebar.dismiss()
+    expect(focus).not.toHaveBeenCalled()
   })
 })
 

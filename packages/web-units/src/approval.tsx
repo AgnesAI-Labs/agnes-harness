@@ -35,6 +35,8 @@ export interface ApprovalView {
 
 export interface ApprovalHandle {
   render(view: ApprovalView | undefined): void
+  /** Bring the pending approval into view and put focus on its first available decision. */
+  focus(): void
 }
 
 export interface ApprovalProps {
@@ -64,6 +66,10 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           if (next.disabled) active.blur()
         }
         setView(next)
+      },
+      focus() {
+        content.current?.scrollIntoView?.({ block: 'nearest' })
+        content.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
       },
     }),
     [],

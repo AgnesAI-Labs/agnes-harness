@@ -169,6 +169,23 @@ it.each([
   )
 })
 
+it('the settings region reports its active pane and routes section requests through its own form', async () => {
+  const runtime = await mountRenderedIndex()
+  const settings = runtime.settings
+  expect(settings?.active()).toBe('model')
+  settings?.open('archived')
+  expect(settings?.active()).toBe('archived')
+  expect(document.getElementById('archived-settings-pane')?.hidden).toBe(false)
+  const routed: unknown[] = []
+  settings?.form()?.addEventListener('agnes:settings-route', (event) => {
+    routed.push((event as CustomEvent<unknown>).detail)
+  })
+  settings?.route('security')
+  expect(routed).toEqual(['security'])
+  await runtime.dispose()
+  resetWebDom()
+})
+
 it('the settings dialog no longer frames the admin pages', () => {
   const html = read('index.html')
   for (const gone of [

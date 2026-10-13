@@ -48,8 +48,8 @@ it('keeps index.html bootstrap-only, rejecting business elements and static tran
 })
 
 it('keeps the controller composition free of element access and listeners', () => {
-  // app.ts composes controllers. Shell mount points come from app/shell-hosts.ts and window or
-  // document listeners from app/global-events.ts; rendered state belongs to React through a store.
+  // app.ts composes controllers. AppShell hands over the hosts it rendered, each region answers for
+  // its own state, and window or document listeners are bound in app/global-events.ts.
   const touch =
     /\bdocument\.|\bquerySelector|\bclassList\b|\.hidden\s*=|\bsetAttribute\b|\baddEventListener\b/
   const code = readFileSync(join(repoRoot(), 'packages/web/src/app.ts'), 'utf8')

@@ -34,6 +34,8 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     readingTop = undefined
   }
   const dismiss = (): void => {
+    // Only an open drawer has anything to dismiss; a closed one must not take focus.
+    if (!document.body.classList.contains('sidebar-open')) return
     hide()
     getButton('sidebar-toggle').focus({ preventScroll: true })
     if (readingTop !== undefined) {

@@ -47,21 +47,21 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<script[\s\S]*?<\/script>/g, '')
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
-  const unmountShell = mountAppShell()
+  const { hosts, dispose: unmountShell } = mountAppShell()
 
   const runtime = await startClientModules({
     // The region bootstrap only retains this client for the reconciler. No roster read is issued by
     // this fixture, so an empty test double keeps the fixture independent of daemon contracts.
     agnes: {} as AgnesClient,
     rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
-    panelContainer: document.getElementById('workbench-plugin-panels') ?? undefined,
-    sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
+    panelContainer: hosts.panels,
+    sidebarContainer: hosts.sidebar,
     ...(options.sidebar ? { sidebar: options.sidebar } : {}),
     ...(options.claim ? { claim: options.claim } : {}),
-    conversationContainer: document.getElementById('conversation-shell') ?? undefined,
-    topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,
-    approvalContainer: document.getElementById('approval') ?? undefined,
-    composerContainer: document.getElementById('composer-mount') ?? undefined,
+    conversationContainer: hosts.conversation,
+    topbarContainer: hosts.topbar,
+    approvalContainer: hosts.approval,
+    composerContainer: hosts.composer,
     composer: {
       initialDraft: '',
       onCancel: () => undefined,
@@ -73,17 +73,13 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
       onWorkspace: () => undefined,
       ...options.composer,
     },
-    traceContainer: document.getElementById('trace-panel') ?? undefined,
-    trace: {
-      toggle: document.getElementById('view-trace') as HTMLButtonElement,
-      chatToggle: document.getElementById('view-chat') as HTMLButtonElement,
-      conversation: document.getElementById('conversation-shell') as HTMLElement,
-    },
-    rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
-    settingsPaneContainer: document.getElementById('config') ?? undefined,
+    traceContainer: hosts.trace,
+    trace: { toggle: hosts.viewTrace, chatToggle: hosts.viewChat, conversation: hosts.conversation },
+    rightbarContainer: hosts.rightbar,
+    settingsPaneContainer: hosts.settings,
   })
 
-  const workspaceDialog = mountNewSessionDialog(document.getElementById('new-session-root') as HTMLElement, {
+  const workspaceDialog = mountNewSessionDialog(hosts.newSession, {
     translate: (key, vars) => runtime.locale.t(key, vars),
     submit() {},
     pick() {},

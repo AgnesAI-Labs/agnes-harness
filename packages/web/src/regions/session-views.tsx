@@ -1,6 +1,6 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import { Button, IconButton, Menu, type MenuItem, Tabs, useDocumentLanguage } from '@agnes/web-ui'
-import { useReducer } from 'react'
+import { type Ref, useReducer } from 'react'
 
 /**
  * The secondary top bar actions, for a bar too narrow to show them one by one. Each entry presses
@@ -21,7 +21,13 @@ function overflowActions(): MenuItem[] {
 export const sessionViewCommands: { reportProblem?: (trigger: HTMLElement) => void } = {}
 
 /** The trace controller owns selection and visibility on these stable buttons; the view owns their keys. */
-export function SessionViews() {
+export function SessionViews({
+  chatRef,
+  traceRef,
+}: {
+  chatRef?: Ref<HTMLButtonElement>
+  traceRef?: Ref<HTMLButtonElement>
+}) {
   useDocumentLanguage()
   // The entries depend on what the bar currently holds; re-read them when the menu is approached.
   const [, refreshOverflow] = useReducer((version: number) => version + 1, 0)
@@ -40,6 +46,7 @@ export function SessionViews() {
                 key={view}
                 appearance="ghost"
                 size="small"
+                ref={view === 'chat' ? chatRef : traceRef}
                 id={`view-${view}`}
                 role="tab"
                 aria-selected={view === 'chat'}

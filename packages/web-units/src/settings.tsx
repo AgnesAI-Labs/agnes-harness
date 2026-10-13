@@ -58,6 +58,8 @@ export interface SettingsRegionOptions {
 
 export interface SettingsRegionHandle {
   open(pane: SettingsPane): void
+  /** The pane currently on screen. */
+  active(): SettingsPane
   pane(pane: SettingsPane): HTMLElement | null
   form(): HTMLFormElement | null
 }
@@ -157,7 +159,12 @@ function SettingsBuiltinImpl(
   )
   useImperativeHandle(
     ref,
-    () => ({ open, pane: (pane) => host.current?.querySelector(`#${PANE_IDS[pane]}`) ?? null, form }),
+    () => ({
+      open,
+      active: () => activePane.current,
+      pane: (pane) => host.current?.querySelector(`#${PANE_IDS[pane]}`) ?? null,
+      form,
+    }),
     [form, open],
   )
   useLayoutEffect(() => {

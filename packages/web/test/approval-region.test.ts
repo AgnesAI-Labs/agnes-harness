@@ -123,7 +123,9 @@ describe('rendered approval region', () => {
 
     const allow = document.querySelector<HTMLButtonElement>('#approval .approval-actions button')
     expect(allow?.type).toBe('button')
-    allow?.focus()
+    // The region itself moves focus to its first available decision when asked.
+    handle?.focus()
+    expect(document.activeElement).toBe(allow)
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     allow?.dispatchEvent(enter)
     expect(enter.defaultPrevented).toBe(false)

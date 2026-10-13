@@ -57,6 +57,9 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
       else container.removeAttribute('data-key')
       handle.current?.render(next)
     },
+    focus() {
+      handle.current?.focus()
+    },
     dispose() {
       if (disposed) return
       disposed = true

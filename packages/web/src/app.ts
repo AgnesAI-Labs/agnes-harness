@@ -20,14 +20,6 @@ import {
 } from './app/global-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
-import {
-  archivedSettingsShown,
-  focusApproval,
-  modelRefreshInterval,
-  resolveShellHosts,
-  routeSettings,
-  sidebarDrawerOpen,
-} from './app/shell-hosts.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
@@ -104,7 +96,7 @@ import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
 installBrowserLogCapture()
-const unmountAppShell = mountAppShell()
+const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
 
 const unbindDialogSheets = bindDialogSheets(document)
 
@@ -702,14 +694,13 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginNewDraft(),
 })
 
-const hosts = resolveShellHosts()
 const composerDraftKey: string = 'agnes-web-composer-draft'
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
-const wsUrl = hosts.wsUrl
+const wsUrl = shellConfig.wsUrl
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
   auth: { kind: 'local' },
@@ -1004,7 +995,7 @@ const unmountIntelligentUi = mountIntelligentUi({
   revealInline: () => tracePanel.setOpen(false),
   approval: () => {
     searchApproval()
-    focusApproval(hosts)
+    approvalRuntime.focus()
   },
 })
 
@@ -1235,7 +1226,7 @@ onSurfaceEvent('agnes:permission-settings', () =>
   run(async () => {
     settingsRegion.open('model')
     await settings.open()
-    routeSettings('security')
+    settingsRegion.route('security')
   }),
 )
 clientModules.locale.subscribe(() => settings.refreshLocale())
@@ -1260,12 +1251,12 @@ const firstRun = createFirstRunController({
   examples: async () => {
     settingsRegion.open('model')
     await settings.open()
-    routeSettings('examples')
+    settingsRegion.route('examples')
   },
   details: async () => {
     settingsRegion.open('model')
     await settings.open()
-    routeSettings('diagnostics')
+    settingsRegion.route('diagnostics')
   },
   start: async () => {
     settings.close()
@@ -1279,7 +1270,7 @@ const sessionActions = createSessionActions({
   changed: () => list(),
   fork: forkSidebar,
   error: (error) => {
-    if (sidebarDrawerOpen()) clientModules.sidebar?.dismiss()
+    clientModules.sidebar?.dismiss()
     showError(error)
   },
   translate: t,
@@ -1410,7 +1401,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   settings.setConnected(connected)
   renderControls()
 }
-const dockControlsHost = hosts.dockControls ?? null
+const dockControlsHost = hosts.dockControls
 function renderControls(): void {
   composerController.renderControls()
 }
@@ -1920,7 +1911,7 @@ onWindowFocus(() => {
   if (connected)
     run(async () => {
       await list()
-      if (archivedSettingsShown()) await sessionActions.loadArchived()
+      if (settingsRegion.active() === 'archived') await sessionActions.loadArchived()
     })
 })
 const { appearance, skins: skinGroup } = createAppearanceController({
@@ -2107,7 +2098,7 @@ async function refreshModelConfiguration(): Promise<void> {
   await refreshSessionCatalog()
   await refreshModels()
 }
-const refreshInterval = modelRefreshInterval()
+const refreshInterval = shellConfig.modelRefreshIntervalMs
 const modelRefresh = createRefreshCoordinator({
   refresh: refreshModelConfiguration,
   canPoll: () => connected && pageVisible(),
@@ -2264,6 +2255,6 @@ run(async () => {
       anchoredRoute.id === startupSettings && anchoredRoute.anchor === startupSettingsAnchor
         ? anchoredSettings
         : startupSettings
-    routeSettings(target)
+    settingsRegion.route(target)
   }
 })

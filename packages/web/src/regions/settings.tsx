@@ -45,6 +45,8 @@ export interface SettingsRegionOptions {
 export interface SettingsRegionMount extends EmptyStateRegionMount, SettingsRegionHandle {
   /** Remove exactly one built-in pane without disturbing its siblings or the settings shell. */
   unmountPane(pane: SettingsPane): void
+  /** Ask the open settings dialog to show one of its sections. */
+  route(section: string): void
 }
 
 /**
@@ -165,6 +167,15 @@ export function mountSettingsPaneRegion(
   return {
     open(pane: SettingsPane) {
       handle.current?.open(pane)
+    },
+    active() {
+      return handle.current?.active() ?? 'model'
+    },
+    route(section: string) {
+      // The settings shell listens for route requests on its own form.
+      handle.current
+        ?.form()
+        ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: section, bubbles: true }))
     },
     pane(pane: SettingsPane) {
       return handle.current?.pane(pane) ?? null

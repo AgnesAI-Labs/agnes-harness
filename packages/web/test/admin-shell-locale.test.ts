@@ -34,7 +34,7 @@ it('translates the MCP transports and confirmation of the workbench on the block
 
   await import('../src/theme-boot.js')
   const { mountAppShell } = await import('../src/app-shell.js')
-  disposeShell = mountAppShell()
+  disposeShell = mountAppShell().dispose
 
   expect(document.querySelector('#admin-confirm .eyebrow')?.textContent).toBe('需要确认')
   const transport = document.querySelector<HTMLSelectElement>('#mcp-transport')

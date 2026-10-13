@@ -5,9 +5,42 @@ import { renderAppDialogs } from './app-dialogs.js'
 import { AppNotice, ReadOnlyNotice, ReconnectNotice } from './app-notices.js'
 import { SessionViews } from './regions/session-views.js'
 
+/** The elements AppShell renders for controller-owned regions to mount into. */
+export type ShellHosts = {
+  conversation: HTMLDivElement
+  goal: HTMLDivElement
+  newSession: HTMLDivElement
+  firstRun: HTMLDivElement
+  doctorNotice: HTMLDivElement
+  viewChat: HTMLButtonElement
+  viewTrace: HTMLButtonElement
+  panels: HTMLDivElement
+  sidebar: HTMLElement
+  topbar: HTMLDivElement
+  approval: HTMLElement
+  composer: HTMLDivElement
+  trace: HTMLElement
+  rightbar: HTMLElement
+  settings: HTMLDialogElement
+  dockControls: HTMLDivElement
+}
+/** What the server and an embedder wrote into the page for the workbench to start with. */
+export type ShellConfig = {
+  /** The daemon WebSocket address. */
+  wsUrl: string | undefined
+  /** `data-model-refresh-interval-ms` on <html>; absent or out of range uses the default. */
+  modelRefreshIntervalMs: number | undefined
+}
+
 /** React owns the page structure; controller views and plugin outlets are children via portals. */
-export function AppShell({ children }: { children?: ReactNode }) {
+export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Partial<ShellHosts> }) {
   useDocumentLanguage()
+  // Each host is handed over as it commits, so no controller looks it up in the document.
+  const hold =
+    <K extends keyof ShellHosts>(key: K) =>
+    (node: ShellHosts[K] | null): void => {
+      if (hosts && node) hosts[key] = node
+    }
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -21,6 +54,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
       ></Button>
 
       <aside
+        ref={hold('sidebar')}
         className="sidebar"
         data-agnes-region="sidebar"
         aria-label={t('index-shell.sessionsNav')}
@@ -29,15 +63,15 @@ export function AppShell({ children }: { children?: ReactNode }) {
       <main id="main-content" tabIndex={-1}>
         {/* One slim bar: the left part is the replaceable topbar unit, the right part the view controls. */}
         <header className="topbar-row" data-agnes-region="topbar">
-          <div className="topbar"></div>
+          <div ref={hold('topbar')} className="topbar"></div>
           <div className="session-tabs-bar">
             <div id="session-view-controls">
               <RegionErrorBoundary region="topbar">
-                <SessionViews />
+                <SessionViews chatRef={hold('viewChat')} traceRef={hold('viewTrace')} />
               </RegionErrorBoundary>
             </div>
-            <div id="session-goal-host" className="session-goal-host" />
-            <div id="workbench-controls"></div>
+            <div ref={hold('goal')} id="session-goal-host" className="session-goal-host" />
+            <div ref={hold('dockControls')} id="workbench-controls"></div>
           </div>
         </header>
 
@@ -52,6 +86,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
         </RegionErrorBoundary>
         <div className="workbench-split">
           <div
+            ref={hold('conversation')}
             id="conversation-shell"
             className="conversation-shell"
             role="tabpanel"
@@ -59,6 +94,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
             data-agnes-region="conversation"
           ></div>
           <aside
+            ref={hold('trace')}
             id="trace-panel"
             role="tabpanel"
             aria-labelledby="view-trace"
@@ -68,12 +104,13 @@ export function AppShell({ children }: { children?: ReactNode }) {
           ></aside>
           <aside id="workbench-right" data-agnes-region="workbench-right" hidden>
             <div id="workbench-right-content"></div>
-            <div id="workbench-plugin-panels"></div>
+            <div ref={hold('panels')} id="workbench-plugin-panels"></div>
           </aside>
           <aside id="workbench-bottom" data-agnes-region="workbench-bottom" hidden>
             <div id="workbench-bottom-content"></div>
           </aside>
           <aside
+            ref={hold('rightbar')}
             id="rightbar-panel"
             data-agnes-region="rightbar"
             hidden
@@ -81,16 +118,27 @@ export function AppShell({ children }: { children?: ReactNode }) {
           ></aside>
         </div>
 
-        <section id="approval" data-agnes-region="approval" hidden aria-live="polite"></section>
-        <div id="composer-mount"></div>
+        <section
+          ref={hold('approval')}
+          id="approval"
+          data-agnes-region="approval"
+          hidden
+          aria-live="polite"
+        ></section>
+        <div ref={hold('composer')} id="composer-mount"></div>
       </main>
 
       <div id="agnes-overlay-container" className="agnes-overlay-root">
-        <div id="new-session-root" className="agnes-overlay-root"></div>
+        <div ref={hold('newSession')} id="new-session-root" className="agnes-overlay-root"></div>
 
-        <div id="first-run-root" className="agnes-overlay-root"></div>
-        <div id="doctor-notice-root" className="agnes-overlay-root"></div>
-        <dialog data-agnes-region="dialog" id="config" aria-labelledby="config-title"></dialog>
+        <div ref={hold('firstRun')} id="first-run-root" className="agnes-overlay-root"></div>
+        <div ref={hold('doctorNotice')} id="doctor-notice-root" className="agnes-overlay-root"></div>
+        <dialog
+          ref={hold('settings')}
+          data-agnes-region="dialog"
+          id="config"
+          aria-labelledby="config-title"
+        ></dialog>
 
         <dialog
           data-agnes-region="dialog"
@@ -115,10 +163,43 @@ export function AppShell({ children }: { children?: ReactNode }) {
   )
 }
 
-export function mountAppShell(): () => void {
+const HOSTS = [
+  'conversation',
+  'goal',
+  'newSession',
+  'firstRun',
+  'doctorNotice',
+  'viewChat',
+  'viewTrace',
+  'panels',
+  'sidebar',
+  'topbar',
+  'approval',
+  'composer',
+  'trace',
+  'rightbar',
+  'settings',
+  'dockControls',
+] as const satisfies readonly (keyof ShellHosts)[]
+
+/** Mount the one application shell and return the hosts it rendered and the page's start-up facts. */
+export function mountAppShell(): { hosts: ShellHosts; config: ShellConfig; dispose(): void } {
   const host = document.getElementById('app-root')
   if (!host) throw new Error('missing #app-root')
-  const dispose = mountApplication(host, <AppShell />)
+  const hosts: Partial<ShellHosts> = {}
+  const dispose = mountApplication(host, <AppShell hosts={hosts} />)
   renderAppDialogs()
-  return dispose
+  for (const key of HOSTS) if (!hosts[key]) throw new Error(`the application shell did not render ${key}`)
+  const interval = Number(document.documentElement.dataset.modelRefreshIntervalMs)
+  return {
+    hosts: hosts as ShellHosts,
+    config: {
+      wsUrl: document.querySelector<HTMLMetaElement>('meta#agnes-config')?.dataset.ws,
+      modelRefreshIntervalMs:
+        Number.isSafeInteger(interval) && interval >= 1_000 && interval <= 2_147_483_647
+          ? interval
+          : undefined,
+    },
+    dispose,
+  }
 }
