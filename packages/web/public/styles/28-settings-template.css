@@ -7,8 +7,12 @@
   #config-form.settings-shell #settings-content-slots {
     container: settings-content / inline-size;
   }
+  /* The pane spans the dialog; its header and body keep to the column themselves. */
   .settings-shell .settings-content {
     flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    margin-inline: 0;
   }
 
   /* Header: the page names itself once. Actions sit on the title's line, inside the column. */
@@ -42,9 +46,8 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .agnes-settings-group-title,
-  .settings-shell .agnes-settings-page-heading h2,
-  .runtime-settings .agnes-settings-page-heading h2 {
+  /* The dialog's generic heading rules are written against its id; the template outranks them. */
+  :is(#config-form, .runtime-settings) :is(.agnes-settings-group-title, .agnes-settings-page-heading h2) {
     margin: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-lg);
@@ -52,8 +55,7 @@
     line-height: var(--line-lg);
     letter-spacing: 0;
   }
-  .settings-shell .agnes-settings-page-heading > div > p,
-  .runtime-settings .agnes-settings-page-heading > div > p {
+  :is(#config-form, .runtime-settings) .agnes-settings-page-heading > div > p {
     max-width: 60ch;
     margin: var(--s2) 0 0;
     color: var(--agnes-text-secondary);
@@ -131,7 +133,6 @@
 
   /* Body: the one vertical scroller of a page. */
   .settings-shell .config-workspace,
-  .settings-shell #model-settings-pane .config-workspace,
   .settings-shell .archived-pane-body,
   .settings-shell #plugin-list,
   .settings-shell #resource-list {
@@ -172,7 +173,13 @@
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
   }
-  .settings-shell .admin-pane-body {
+  /* An extension slot adds its entries to the page flow; an empty one takes no row. */
+  .settings-shell .config-workspace > [data-agnes-dsh-slot],
+  .settings-shell .config-workspace > [data-agnes-dsh-slot] > [data-slot] {
+    display: contents;
+  }
+  .settings-shell .admin-pane-body,
+  #plugin-settings-pane .admin-pane-body {
     padding: 0;
   }
   .settings-shell .admin-pane-body > :not(.plugin-layout) {
