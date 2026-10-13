@@ -51,11 +51,18 @@ export function modelImageInputError(
   const resize = limits?.resize
   for (const images of groups) {
     for (const image of images) {
-      // A stored image counts as one image and is checked by its declared size; its bytes are fitted
-      // to the model when a request is built.
+      // A stored image counts as one image and is checked by its declared size and by the Base64
+      // length its bytes would have, without reading them.
       if (image.attachment !== undefined && image.data === undefined) {
         if (!Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height))
           return 'Invalid image input.'
+        const stored = (image.attachment as { bytes?: unknown } | null)?.bytes
+        if (
+          resize?.maxBytes !== undefined &&
+          typeof stored === 'number' &&
+          Math.ceil(stored / 3) * 4 > resize.maxBytes
+        )
+          return `An image exceeds the model's ${resize.maxBytes}-byte Base64 limit.`
         if (
           (image.width as number) > (resize?.maxWidth ?? Infinity) ||
           (image.height as number) > (resize?.maxHeight ?? Infinity)

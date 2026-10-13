@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { constants as fsConstants } from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
-import { link, lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, link, lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export type AttachmentKind = 'user-attachment' | 'request-version' | 'thumbnail'
@@ -326,8 +327,9 @@ export function createAttachmentStoreInternal(o: {
   }
 
   /**
-   * `createOnly` publishes with a hard link, which fails when a marker is already there instead of
-   * replacing it; resolves false in that case. Without it the marker is replaced.
+   * `createOnly` publishes with a hard link (or, without hard links, an exclusive copy), which fails
+   * when a marker is already there instead of replacing it; resolves false in that case. Without it
+   * the marker is replaced.
    */
   async function writeMarker(
     sha256: string,
@@ -356,8 +358,14 @@ export function createAttachmentStoreInternal(o: {
             created = false
             await rm(temporary, { force: true })
           } else {
-            // A file system without hard links: fall back to the plain replace.
-            await rename(temporary, markerPath(sha256))
+            // A file system without hard links: an exclusive copy still never replaces a marker.
+            try {
+              await copyFile(temporary, markerPath(sha256), fsConstants.COPYFILE_EXCL)
+            } catch (copyError) {
+              if (errorCode(copyError) !== 'EEXIST') throw copyError
+              created = false
+            }
+            await rm(temporary, { force: true })
           }
         }
       }
@@ -438,9 +446,9 @@ export function createAttachmentStoreInternal(o: {
           await writeMarker(object.sha256, marker)
           return
         }
-        if (await writeMarker(object.sha256, marker, true)) return
-        // Already there: either intact (nothing to add) or damaged, which a rewrite repairs.
-        if (!(await readMarker(object.sha256, false))) await writeMarker(object.sha256, marker)
+        // Already there, intact or damaged, it is left alone: repairing it here would be a replace,
+        // and a damaged marker is rewritten by the next mark that adds a receipt.
+        await writeMarker(object.sha256, marker, true)
       })
       const tail = next.catch(() => undefined)
       markerLocks.set(object.sha256, tail)

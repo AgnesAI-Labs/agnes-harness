@@ -510,9 +510,15 @@ describe('model image limits', () => {
     })
     const model = {
       input: ['image'],
-      inputLimits: { images: { maxPerMessage: 2, resize: { maxWidth: 10, maxHeight: 10, maxBytes: 1 } } },
+      inputLimits: { images: { maxPerMessage: 2, resize: { maxWidth: 10, maxHeight: 10, maxBytes: 16 } } },
     }
     expect(modelImageInputError(model, [{ content: [ref(10, 10), ref(1, 1)] }])).toBeUndefined()
+    // 10 bytes are 16 Base64 characters.
+    expect(
+      modelImageInputError({ ...model, inputLimits: { images: { resize: { maxBytes: 15 } } } }, [
+        { content: [ref(1, 1)] },
+      ]),
+    ).toMatch(/Base64 limit/)
     expect(modelImageInputError(model, [{ content: [ref(11, 1)] }])).toMatch(/dimensions/)
     expect(modelImageInputError(model, [{ content: [ref(1, 1), ref(1, 1), ref(1, 1)] }])).toMatch(/at most 2/)
     expect(modelImageInputError(model, [{ content: [{ ...ref(1, 1), width: undefined }] }])).toBe(

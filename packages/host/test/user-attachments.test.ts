@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -123,6 +123,37 @@ describe('user attachment port', () => {
     expect(await second.usage()).toBe(1000)
   })
 
+  it('applies the session quota to bytes that are already stored', async () => {
+    const store = createAttachmentStore({ dataDir: fresh() })
+    const port = createUserAttachmentPort({
+      store,
+      limits: { 'attachments.session_quota_bytes': 1000 },
+      storeByReference: true,
+      diskFree: plenty,
+    })
+    await port.store(input(bytes(600)), signal)
+    // Another session already stored these bytes; this one has no room for them all the same.
+    await expect(port.store(input(bytes(600), 500), signal)).rejects.toMatchObject({ code: 'UPLOAD_QUOTA' })
+  })
+
+  it('lets only one of two concurrent writes take the last room', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const port = createUserAttachmentPort({
+      store,
+      limits: { 'attachments.global_quota_bytes': 1000 },
+      storeByReference: true,
+      diskFree: plenty,
+    })
+    const results = await Promise.allSettled([
+      port.store(input(bytes(600, 1)), signal),
+      port.store(input(bytes(600, 2)), signal),
+    ])
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+    expect(objectFiles(dataDir)).toHaveLength(1)
+    expect(await port.usage()).toBe(600)
+  })
+
   it('refuses when the write would leave less than the free-space floor', async () => {
     const dataDir = fresh()
     const store = createAttachmentStore({ dataDir })
@@ -173,6 +204,20 @@ describe('user attachment port', () => {
 })
 
 describe('user attachment markers across processes', () => {
+  it('a receipt-less mark leaves a damaged marker for the next receipt to repair', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const b = bytes(32)
+    const object = await store.put(b, { kind: 'user-attachment', mimeType: 'application/zip' })
+    await store.markUserAttachment(object, { mimeType: 'application/zip' })
+    const marker = join(dataDir, 'artifacts', 'user-attachment-meta', sha(b).slice(0, 2), `${sha(b)}.json`)
+    writeFileSync(marker, '{')
+    await store.markUserAttachment(object, { mimeType: 'application/zip' })
+    expect(readFileSync(marker, 'utf8')).toBe('{')
+    await store.markUserAttachment(object, { mimeType: 'application/zip', receiptFor: 'k' })
+    expect((await store.userAttachment(sha(b)))?.receipts).toEqual([attachmentReceiptFor('k')])
+  })
+
   it('a mark without a receipt never replaces a marker another process wrote', async () => {
     const dataDir = fresh()
     // Two stores over one directory stand in for the upload process and a session worker.

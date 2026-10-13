@@ -570,6 +570,8 @@ export class SessionImpl {
   private lock: Promise<void> = Promise.resolve()
   /** What the session already references; a reference already in its history needs no new receipt. */
   attachmentIndex?: { referenced(sha256: string): boolean; referencedBytes(): number }
+  /** Settles once the latest enqueue has taken its place in the lock queue, or failed before it. */
+  private enqueueTail: Promise<void> = Promise.resolve()
   /**
    * The cancellation scope of the work in flight, which is the scope of one `run()`. `run()`
    * replaces it, because "stop this turn" and "this session is over" are different statements and
@@ -959,6 +961,8 @@ export class SessionImpl {
     try {
       content = structuredClone(msg.content)
       validateUserMessageImages(content)
+      // Refusals that cost nothing to decide come before any bytes are stored.
+      this.checkQueuedInput(target, msg, content)
     } catch (error) {
       return Promise.reject(error)
     }
@@ -971,7 +975,46 @@ export class SessionImpl {
       sessionBytes: () => this.attachmentIndex?.referencedBytes() ?? 0,
       signal: AbortSignal.timeout(attachmentDeadlineMs(content)),
     })
-    return admitted.then((queued) => this.lockedEnqueue(target, msg, content, queued))
+    admitted.catch(() => undefined)
+    // Inputs still reach the lock in the order they were sent: each waits for the one before it to
+    // take its place in the queue, while the stores themselves run side by side.
+    const previous = this.enqueueTail
+    let placed!: () => void
+    this.enqueueTail = new Promise<void>((resolve) => {
+      placed = resolve
+    })
+    return previous
+      .then(() => admitted)
+      .then(
+        (queued) => {
+          const written = this.lockedEnqueue(target, msg, content, queued)
+          placed()
+          return written
+        },
+        (error: unknown) => {
+          placed()
+          throw error
+        },
+      )
+  }
+
+  private checkQueuedInput(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    checked: ContentBlock[],
+  ): void {
+    if (msg.budget !== undefined) {
+      if (target !== 'next-turn')
+        throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
+      if (!Number.isFinite(msg.budget) || msg.budget < 0)
+        throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
+    }
+    if (checked.some((block) => block.type === 'image')) {
+      const route = resolveModel(this, 'primary')
+      const model = this.d.provider.models().find((m) => m.route === route.route && m.id === route.model)
+      const error = modelImageInputError(model, [{ content: checked }])
+      if (error) throw new CoreError('E_ENVELOPE', error)
+    }
   }
 
   /** `checked` is the input as sent, for the model's image limits; `content` is what the ledger keeps. */
@@ -982,18 +1025,8 @@ export class SessionImpl {
     content: ContentBlock[],
   ): Promise<Seq> {
     return this.locked(async () => {
-      if (msg.budget !== undefined) {
-        if (target !== 'next-turn')
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
-        if (!Number.isFinite(msg.budget) || msg.budget < 0)
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
-      }
-      if (checked.some((block) => block.type === 'image')) {
-        const target = resolveModel(this, 'primary')
-        const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
-        const error = modelImageInputError(model, [{ content: checked }])
-        if (error) throw new CoreError('E_ENVELOPE', error)
-      }
+      // Again under the lock: the selected model may have changed while the bytes were stored.
+      this.checkQueuedInput(target, msg, checked)
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),

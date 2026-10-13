@@ -88,16 +88,31 @@ export function createUserAttachmentPort(o: {
     return global
   }
   const limit = (key: AttachmentLimitKey) => attachmentLimit(o.limits, key)
-  const checkQuota = async ({ add, sessionBytes }: { add: number; sessionBytes: number }) => {
+  const sessionQuota = (add: number, sessionBytes: number) => {
     if (sessionBytes + add > limit('attachments.session_quota_bytes'))
       throw new AttachmentQuotaError('This session has no room for more attachments.')
-    if ((await usage()) + pending + add > limit('attachments.global_quota_bytes'))
+  }
+  /**
+   * Checks the room for `add` more bytes and holds it until `release` is called. Everything after the
+   * last await runs without yielding, so two writes cannot both pass on the same room.
+   */
+  const reserve = async (add: number, sessionBytes: number): Promise<() => void> => {
+    sessionQuota(add, sessionBytes)
+    const used = await usage()
+    const free = await (o.diskFree ?? defaultDiskFree)(o.store.root)
+    if (used + pending + add > limit('attachments.global_quota_bytes'))
       throw new AttachmentQuotaError('Attachment storage is full.')
-    if (
-      (await (o.diskFree ?? defaultDiskFree)(o.store.root)) - pending - add <
-      limit('attachments.min_free_bytes')
-    )
+    if (free - pending - add < limit('attachments.min_free_bytes'))
       throw new AttachmentQuotaError('The disk is too full to store this attachment.')
+    pending += add
+    let held = true
+    return () => {
+      if (held) pending -= add
+      held = false
+    }
+  }
+  const checkQuota = async ({ add, sessionBytes }: { add: number; sessionBytes: number }) => {
+    ;(await reserve(add, sessionBytes))()
   }
   return {
     storeByReference: o.storeByReference,
@@ -107,12 +122,11 @@ export function createUserAttachmentPort(o: {
       if (bytes.byteLength > limit('attachments.max_upload_bytes'))
         throw new AttachmentQuotaError('The attachment is larger than the upload limit.')
       const sha256 = createHash('sha256').update(bytes).digest('hex')
-      // Bytes already marked are already counted and need no room; the reference is all that is new.
+      // The session quota applies to every reference, so whether the bytes are already stored makes no
+      // difference to the answer. Bytes already marked are counted and need no room on the volume.
+      sessionQuota(bytes.byteLength, sessionBytes)
       const known = await o.store.userAttachment(sha256).catch(() => undefined)
-      if (!known) {
-        await checkQuota({ add: bytes.byteLength, sessionBytes })
-        pending += bytes.byteLength
-      }
+      const release = known ? () => undefined : await reserve(bytes.byteLength, sessionBytes)
       try {
         const object = await o.store.put(bytes, { kind: 'user-attachment', mimeType })
         await usage()
@@ -121,7 +135,7 @@ export function createUserAttachmentPort(o: {
         if (!before) global += object.bytes
         return { sha256: object.sha256, bytes: object.bytes }
       } finally {
-        if (!known) pending -= bytes.byteLength
+        release()
       }
     },
     async authorize({ sha256, bytes, sessionKey, referenced }) {

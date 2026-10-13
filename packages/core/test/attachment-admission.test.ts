@@ -123,7 +123,6 @@ describe('admitAttachments', () => {
     ).rejects.toMatchObject({ code: 'E_ENVELOPE', detail: { code: 'UPLOAD_QUOTA' } })
   })
 
-  // Beyond the plan's cases.
   it('passes the running byte total to each store so a session quota sees the whole message', async () => {
     const seen: number[] = []
     const p = port({
@@ -191,6 +190,98 @@ describe('admitAttachments', () => {
     await expect(
       admitAttachments({ ...base, port: port({ read: async () => bytes }), content: [ref] }),
     ).resolves.toEqual([ref])
+  })
+
+  it('refuses an image reference larger than an image may be without reading it', async () => {
+    let reads = 0
+    const ref = {
+      type: 'image' as const,
+      mimeType: 'image/png' as const,
+      attachment: { sha256: 'd'.repeat(64), bytes: 100 * 1024 * 1024 + 1 },
+      width: 1,
+      height: 1,
+    }
+    const p = port({
+      async read() {
+        reads++
+        return new Uint8Array()
+      },
+    })
+    await expect(admitAttachments({ ...base, port: p, content: [ref] })).rejects.toMatchObject({
+      code: 'E_ENVELOPE',
+      detail: { code: 'ATTACHMENT_BYTES' },
+    })
+    expect(reads).toBe(0)
+  })
+
+  it('refuses a thumbnail that is too large or not an image of its declared size', async () => {
+    const png = Uint8Array.from(Buffer.from(PNG_1X1, 'base64'))
+    const zip = Uint8Array.from(Buffer.from('PK\u0003\u0004 not an image'))
+    const image = (thumbnail: Record<string, unknown>) => ({
+      type: 'image' as const,
+      mimeType: 'image/png' as const,
+      attachment: { sha256: 'd'.repeat(64), bytes: png.byteLength },
+      width: 1,
+      height: 1,
+      thumbnail,
+    })
+    const reads: string[] = []
+    const p = port({
+      async read(sha256) {
+        reads.push(sha256)
+        return sha256 === '9'.repeat(64) ? zip : png
+      },
+    })
+    const large = { sha256: '8'.repeat(64), bytes: 256 * 1024 + 1, width: 1, height: 1 }
+    await expect(
+      admitAttachments({ ...base, port: p, content: [image(large) as never] }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
+    expect(reads).toEqual([])
+    const notImage = { sha256: '9'.repeat(64), bytes: zip.byteLength, width: 1, height: 1 }
+    await expect(
+      admitAttachments({ ...base, port: p, content: [image(notImage) as never] }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
+    const wrongSize = { sha256: '7'.repeat(64), bytes: png.byteLength, width: 2, height: 1 }
+    await expect(
+      admitAttachments({ ...base, port: p, content: [image(wrongSize) as never] }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
+  })
+
+  it('reports a file system failure as unavailable without its message', async () => {
+    const leak = Object.assign(
+      new Error('ENOSPC: no space left, open /srv/agh/data/artifacts/staging/x'),
+      {
+        code: 'ENOSPC',
+      },
+    )
+    const failure = await admitAttachments({
+      ...base,
+      port: port({ store: async () => Promise.reject(leak) }),
+      content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
+    }).then(
+      () => new Error('admitted'),
+      (error: unknown) => error as Error,
+    )
+    expect(failure).toMatchObject({ code: 'E_ENVELOPE', detail: { code: 'UPLOAD_UNAVAILABLE' } })
+    expect(failure.message).not.toMatch(/srv|ENOSPC|artifacts/)
+    const read = await admitAttachments({
+      ...base,
+      port: port({ read: async () => Promise.reject(leak) }),
+      content: [
+        {
+          type: 'image',
+          mimeType: 'image/png',
+          attachment: { sha256: 'd'.repeat(64), bytes: 68 },
+          width: 1,
+          height: 1,
+        },
+      ],
+    }).then(
+      () => new Error('admitted'),
+      (error: unknown) => error as Error,
+    )
+    expect(read).toMatchObject({ detail: { code: 'ATTACHMENT_UNAVAILABLE' } })
+    expect(read.message).not.toMatch(/srv|ENOSPC|artifacts/)
   })
 
   it('refuses a message whose attachment part would exceed 64 KiB', async () => {

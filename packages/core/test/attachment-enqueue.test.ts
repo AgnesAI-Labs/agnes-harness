@@ -190,8 +190,74 @@ describe('enqueue stores inline attachments by reference', () => {
     expect(session.latest('inbox')).toMatchObject({ items: [{ content: [file] }] })
   })
 
+  it('queues inputs in the order they were sent while an earlier one is still being stored', async () => {
+    let release!: () => void
+    const slow = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { port } = fakePort({
+      async store({ bytes }) {
+        await slow
+        return { sha256: 'a'.repeat(64), bytes: bytes.byteLength }
+      },
+    })
+    const { session } = await imageSession(port)
+    const first = session.enqueue('next-turn', {
+      content: [
+        { type: 'text', text: 'first' },
+        { type: 'file', mimeType: 'application/zip', name: 'a.zip', data: 'UEsDBA==' },
+      ],
+      actor,
+      kind: 'follow_up',
+    })
+    const second = session.enqueue('next-step', {
+      content: [{ type: 'text', text: 'second' }],
+      actor,
+      kind: 'steer',
+    })
+    const third = session.enqueue('next-turn', { content: [{ type: 'text', text: 'third' }], actor })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(session.latest('inbox')).toBeUndefined()
+    release()
+    await Promise.all([first, second, third])
+    const inbox = session.latest('inbox') as { items: Array<{ content: ContentBlock[] }> }
+    expect(inbox.items.map((item) => (item.content[0] as { text: string }).text)).toEqual([
+      'first',
+      'second',
+      'third',
+    ])
+  })
+
+  it('a refused input does not hold up the ones sent after it', async () => {
+    const { port } = fakePort({
+      store: async () => Promise.reject(Object.assign(new Error('full'), { code: 'UPLOAD_QUOTA' })),
+    })
+    const { session } = await imageSession(port)
+    const refused = session.enqueue('next-turn', {
+      content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
+      actor,
+    })
+    const after = session.enqueue('next-turn', { content: [{ type: 'text', text: 'after' }], actor })
+    await expect(refused).rejects.toMatchObject({ detail: { code: 'UPLOAD_QUOTA' } })
+    await after
+    expect(session.latest('inbox')).toMatchObject({ items: [{ content: [{ type: 'text', text: 'after' }] }] })
+  })
+
+  it('stores nothing for an input refused by the budget checks', async () => {
+    const { port, calls } = fakePort()
+    const { session } = await imageSession(port)
+    const file = { type: 'file' as const, mimeType: 'a/b', name: 'n', data: 'QUJD' }
+    await expect(session.enqueue('next-step', { content: [file], actor, budget: 1 })).rejects.toMatchObject({
+      code: 'E_ENVELOPE',
+    })
+    await expect(session.enqueue('next-turn', { content: [file], actor, budget: -1 })).rejects.toMatchObject({
+      code: 'E_ENVELOPE',
+    })
+    expect(calls.store).toBe(0)
+  })
+
   it('still applies the model image check to a stored image', async () => {
-    const { port } = fakePort()
+    const { port, calls } = fakePort()
     const provider = fakeProvider([])
     provider.models = () => [{ ...model, input: ['text'] }]
     const { session, log } = await openSession({ provider, attachments: port })
@@ -203,10 +269,12 @@ describe('enqueue stores inline attachments by reference', () => {
       }),
     ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
     expect(await log.scan({ fromSeq: 1, limit: 50 })).toEqual(before)
+    // Decided before any bytes were stored.
+    expect(calls.store).toBe(0)
   })
 
   it('checks the image as it was sent, so the model byte limit still applies', async () => {
-    const { port } = fakePort()
+    const { port, calls } = fakePort()
     const provider = fakeProvider([])
     provider.models = () => [{ ...model, inputLimits: { images: { resize: { maxBytes: 64 } } } }]
     const { session, log } = await openSession({ provider, attachments: port })
@@ -218,5 +286,6 @@ describe('enqueue stores inline attachments by reference', () => {
       }),
     ).rejects.toThrow(/Base64 limit/)
     expect(await log.scan({ fromSeq: 1, limit: 50 })).toEqual(before)
+    expect(calls.store).toBe(0)
   })
 })
