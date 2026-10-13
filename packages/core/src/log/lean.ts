@@ -69,11 +69,19 @@ export function isLeanEvent(event: Event): boolean {
   return Array.isArray(data.items) && data.items.some((item) => hasOmitted((item as Block | null)?.content))
 }
 
-/** Append-time guard: the lean shape is a read view and must never be written back. */
-export function containsOmittedData(value: unknown, depth = 0): boolean {
-  if (depth > 8 || !value || typeof value !== 'object') return false
-  if (Array.isArray(value)) return value.some((v) => containsOmittedData(v, depth + 1))
-  if ('dataOmitted' in value && ((value as Block).type === 'image' || (value as Block).type === 'file'))
-    return true
-  return Object.values(value).some((v) => containsOmittedData(v, depth + 1))
+/**
+ * Append-time guard: the lean shape is a read view and must never be written back. It is looked for
+ * only where the session schema places a ContentBlock: the `content` of user/message and tool/result,
+ * and the `content` of each inbox item. Free-form JSON elsewhere, such as tool-call arguments or an
+ * extension event's data, may hold any shape and is left alone.
+ */
+export function containsOmittedData(type: string, data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false
+  const d = data as Block
+  if (type === 'user/message' || type === 'tool/result') return hasOmitted(d.content)
+  return (
+    type === 'inbox' &&
+    Array.isArray(d.items) &&
+    d.items.some((item) => hasOmitted((item as Block | null)?.content))
+  )
 }

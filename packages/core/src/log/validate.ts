@@ -30,7 +30,7 @@ export function prepareEvents(
     // The program counter is a register cell committed beside the rows; no row may write it.
     if (e.register === 'op.state')
       throw new CoreError('E_ENVELOPE', 'the op.state register is not written by rows')
-    if (containsOmittedData(input.data))
+    if (containsOmittedData(input.type, input.data))
       throw new CoreError('E_ENVELOPE', 'omitted attachment data is a read view and cannot be appended', {
         type: input.type,
       })

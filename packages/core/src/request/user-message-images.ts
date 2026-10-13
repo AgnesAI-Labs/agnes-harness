@@ -16,7 +16,7 @@ export function validateUserMessageImages(content: readonly ContentBlock[]): voi
   } catch (error) {
     throw new CoreError('E_ENVELOPE', error instanceof Error ? error.message : 'Invalid attachment.')
   }
-  // A lean image carries no bytes to decode; append refuses it on its own.
+  // validateUserAttachments has already refused a lean image (it has no data); this only narrows the type.
   const images = content.filter((block): block is UserImage => block.type === 'image' && 'data' in block)
   if (images.length === 0) return
 

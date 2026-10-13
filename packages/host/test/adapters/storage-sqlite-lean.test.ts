@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { LEAN_DATA_MIN_CHARS, leanEvents } from '@agnes/core'
 import { afterEach, expect, it } from 'vitest'
 import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
-import { LEAN_DATA_COLUMN } from '../../src/adapters/storage-sqlite-lean.js'
+import { EVENT_COLUMNS_LEAN_READ, LEAN_DATA_COLUMN } from '../../src/adapters/storage-sqlite-lean.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const big = 'QUJD'.repeat(LEAN_DATA_MIN_CHARS / 4 + 1)
@@ -167,6 +167,13 @@ it('agrees with the JS rule on malformed and boundary shapes, for a child readin
   const base = { ts: '2026-10-13T00:00:00.000Z', id: 'x', lane: 'main', v: 1, actor, trust: 'trusted' }
   const events = [
     ...odd.map((data) => ({ ...base, origin: 'principal', type: 'user/message', data })),
+    // The awkward neighbours again, beside a block only the JS pass can finish.
+    {
+      ...base,
+      origin: 'principal',
+      type: 'user/message',
+      data: { content: [{ ...awkward, data: 'é'.repeat(LEAN_DATA_MIN_CHARS + 1) }, awkward] },
+    },
     ...oddInbox.map((data) => ({ ...base, origin: 'system', type: 'inbox', register: 'inbox', data })),
   ]
   await storage.commit('p', { events: events as never, expectedWriterRunId: 'w' })
@@ -187,6 +194,43 @@ it('agrees with the JS rule on malformed and boundary shapes, for a child readin
   await storage.close()
 })
 
+// Base64 blocks whose neighbours, and whose own other keys, need exact re-rendering: every value and
+// key the SQL carries over must come out as JSON.stringify would write it.
+const awkward = {
+  '0': 'integer-like key',
+  '10': true,
+  type: 'image',
+  flag: false,
+  nothing: null,
+  big: 12345678901234567000,
+  neg: -0,
+  e: 1e21,
+  tiny: 1.5e-7,
+  real: 0.30000000000000004,
+  '\u0001\u2028\u007f': 'ctl \u0001 \u2028 \u007f "q" \\ \n \t /',
+  '\ud800': 'lone key',
+  lone: '\udfff',
+  'a"b\\c': [true, { '\ud800': -0 }],
+  mimeType: 'image/png',
+  data: big,
+  dataOmitted: 'not an object',
+  after: { nested: [1e21, false] },
+}
+const siblings: unknown[] = [
+  {
+    '1': 1e21,
+    content: [awkward, { type: 'text', text: '\ud800\u2028' }, true, -0, 12345678901234567000],
+    z: '\u007f',
+  },
+  { content: [{ ...awkward, type: 'file', name: '\u2028"', data: `${big}=` }, awkward] },
+]
+const siblingInbox = {
+  items: [
+    { '1': 'x', itemId: 'w', '\ud800': true, content: [awkward, false], tail: 1e21 },
+    { itemId: 'v', z: -0 },
+  ],
+}
+
 it('does the whole rewrite in SQL for base64 data, with nothing left for the JS pass', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agh-lean-'))
   dirs.push(dir)
@@ -195,8 +239,9 @@ it('does the whole rewrite in SQL for base64 data, with nothing left for the JS 
   await storage.open('k', { writerRunId: 'w', ttlMs: 60_000 })
   const base = { ts: '2026-10-13T00:00:00.000Z', id: 'x', lane: 'main', v: 1, actor, trust: 'trusted' }
   const events = [
-    ...shapes.map((data) => ({ ...base, origin: 'principal', type: 'user/message', data })),
+    ...[...shapes, ...siblings].map((data) => ({ ...base, origin: 'principal', type: 'user/message', data })),
     { ...base, origin: 'system', type: 'inbox', register: 'inbox', data: inbox },
+    { ...base, origin: 'system', type: 'inbox', register: 'inbox', data: siblingInbox },
   ]
   await storage.commit('k', { events: events as never, expectedWriterRunId: 'w' })
   const full = await storage.scan('k', { fromSeq: 1, toSeq: events.length, limit: 500 })
@@ -209,4 +254,20 @@ it('does the whole rewrite in SQL for base64 data, with nothing left for the JS 
   expect(rows.map((r) => JSON.stringify(JSON.parse(r.data)))).toEqual(
     leanEvents(full).map((e) => JSON.stringify(e.data)),
   )
+})
+
+it('reads every column of the events table that rowToEvent reads, and names the rest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agh-lean-'))
+  dirs.push(dir)
+  const file = join(dir, 'sessions.db')
+  const storage = createSqliteStorage({ file, tablesDir: join(dir, 'tables') })
+  await storage.close()
+  const db = new DatabaseSync(file, { readOnly: true })
+  const columns = (
+    db.prepare('SELECT name FROM pragma_table_info(?)').all('events') as Array<{ name: string }>
+  ).map((c) => c.name)
+  db.close()
+  // A column added to the table lands in neither list and fails here until it is placed.
+  const unread = ['session_key', 'integrity_mode', 'integrity_prev', 'integrity_digest']
+  expect([...columns].sort()).toEqual([...EVENT_COLUMNS_LEAN_READ, 'data', ...unread].sort())
 })
