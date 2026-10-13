@@ -1,10 +1,7 @@
 @layer app {
   /* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
-   此前用的 `#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content`
-   子节点，`:empty` 不匹配，下面这一组规则全是死规则，实际效果一直是"输入卡贴底"。 */
-  body:has(#empty-state:not([hidden])) #prompt {
-    min-height: 3.25rem;
-  }
+   （`#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content` 子节点。）
+   输入框的高度由 Sender 按行数自适应，这里不再给空态单独定最小高度。 */
   .empty-state-suggestions {
     display: flex;
     flex-wrap: wrap;
@@ -544,6 +541,9 @@
     align-items: center;
     gap: var(--s4);
     min-width: 0;
+  }
+  .composer-meta-start {
+    flex: 0 1 auto;
   }
   .composer-meta-end {
     flex: none;
