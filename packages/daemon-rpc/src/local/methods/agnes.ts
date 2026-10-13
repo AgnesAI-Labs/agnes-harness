@@ -74,6 +74,7 @@ import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { registerFileUpload } from '../file-upload.js'
+import { enqueueFollowUp } from '../follow-up-runner.js'
 import { approvalActor, notifyApprovalConnectionAttached, type SourceApprovalVerifier } from '../prompter.js'
 import { resolvePromptReferences } from '../references.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
@@ -1648,20 +1649,13 @@ export function registerAgnes(
       case 'followUp': {
         const entry = cx.registry.require(sessionId)
         // Input targets the existing pinned session; generation publication cannot block control.
-        const seq = await entry.session
-          .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-            content: await resolvePromptReferences(
-              entry.session,
-              payload.content as never,
-              payload.references,
-            ),
-            actor: connActor(c.conn),
-            kind: kind === 'steer' ? 'steer' : 'follow_up',
-            commandId,
-            admissionId,
-          })
-          .catch(controlRefusal)
-        if (kind === 'followUp') cx.continueFollowUps?.(entry)
+        const seq = await enqueueFollowUp(cx, entry, kind, {
+          content: await resolvePromptReferences(entry.session, payload.content as never, payload.references),
+          actor: connActor(c.conn),
+          kind: kind === 'steer' ? 'steer' : 'follow_up',
+          commandId,
+          admissionId,
+        }).catch(controlRefusal)
         return { seq }
       }
       case 'compact': {

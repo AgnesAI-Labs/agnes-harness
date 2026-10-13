@@ -752,6 +752,28 @@ describe('submit admission and journal', () => {
           content: [{ type: 'text', text: 'D' }],
         })
         expect(core.latest('inbox')).toMatchObject({ items: [] })
+        const ended = (await core.scan({ type: 'turn/end', limit: 10 })).length
+        expect(
+          await ep.handle({
+            jsonrpc: '2.0',
+            id: 33,
+            method: '_agnes/v1/submit',
+            params: {
+              clientId: CLIENT,
+              kind: 'steer',
+              commandId: 'late-steer',
+              payload: { sessionId, content: [{ type: 'text', text: 'E' }] },
+            },
+          }),
+        ).toMatchObject({ result: { seq: expect.any(Number) } })
+        await vi.waitFor(async () => {
+          expect((await core.scan({ type: 'user/message', limit: 10 })).at(-1)?.data).toMatchObject({
+            kind: 'steer',
+            content: [{ type: 'text', text: 'E' }],
+          })
+          expect(await core.scan({ type: 'turn/end', limit: 10 })).toHaveLength(ended + 1)
+          expect(core.latest('inbox')).toMatchObject({ items: [] })
+        })
       } finally {
         release()
         releaseSecond()

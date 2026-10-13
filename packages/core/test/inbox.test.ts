@@ -303,18 +303,31 @@ describe('Inbox segment', () => {
     ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
   })
 
-  it('a second turn gets turn number 2, and endTurn clears the program counter', async () => {
-    const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
-    await session.acceptInput()
-    await session.endTurn('completed')
-    expect(session.op()).toBeNull()
-    expect(session.turn).toBeNull()
-    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'completed' })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'b' }], actor })
-    await session.acceptInput()
-    expect(session.op()?.meta.turn).toBe(2)
-  })
+  it.each(['completed', 'aborted', 'error', 'blocked', 'parked'] as const)(
+    'endTurn clears the program counter and promotes late steers only after completion: %s',
+    async (reason) => {
+      const { session, log } = await openSession({ provider: fakeProvider([]) })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
+      await session.acceptInput()
+      await session.endTurn(reason)
+      expect(session.op()).toBeNull()
+      expect(session.turn).toBeNull()
+      expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason })
+      await session.enqueue('next-step', {
+        content: [{ type: 'text', text: 'late steer' }],
+        actor,
+        kind: 'steer',
+      })
+      expect(session.latest('inbox')).toMatchObject({
+        items: [{ kind: 'steer', target: reason === 'completed' ? 'next-turn' : 'next-step' }],
+      })
+      expect(await session.acceptInput()).toBe(reason === 'completed')
+      if (reason === 'completed') await session.endTurn('completed')
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'b' }], actor })
+      await session.acceptInput()
+      expect(session.op()?.meta.turn).toBe(reason === 'completed' ? 3 : 2)
+    },
+  )
 
   it('transition guards the op.state cell it read: a stale CAS is refused', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })

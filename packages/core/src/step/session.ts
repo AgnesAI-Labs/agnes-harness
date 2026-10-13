@@ -1378,9 +1378,16 @@ export class SessionImpl {
       }
       if (msg.ifEmpty && cur.items.length)
         throw new CoreError('E_RELATION', 'continuation input competed with pending input')
+      // Completion and admission share this lock. A late steer has the same next-turn
+      // destination as one carried by endTurn; stopped or failed turns stay untouched.
+      const [end] =
+        target === 'next-step' && !this.op()
+          ? await this.scan({ type: 'turn/end', order: 'desc', limit: 1, lane: this.lane })
+          : []
+      const completed = (end?.data as { reason?: TurnEndReason } | undefined)?.reason === 'completed'
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),
-        target,
+        target: completed ? 'next-turn' : target,
         content,
         actor: msg.actor,
         enqueuedAt: new Date(this.d.clock()).toISOString(),

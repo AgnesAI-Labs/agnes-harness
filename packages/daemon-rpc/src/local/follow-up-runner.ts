@@ -2,6 +2,35 @@ import { runQueued } from './command-queue.js'
 import type { LocalContext } from './methods/acp.js'
 import type { SessionEntry } from './sessions.js'
 
+/** Preserve late steers at the completed boundary and reuse the existing continuation gates. */
+export async function enqueueFollowUp(
+  cx: Pick<LocalContext, 'continueFollowUps'>,
+  entry: SessionEntry,
+  kind: 'steer' | 'followUp',
+  message: Parameters<SessionEntry['session']['enqueue']>[1],
+): Promise<number> {
+  const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', message)
+  if (kind === 'followUp') cx.continueFollowUps?.(entry)
+  else {
+    // Core promotes only a steer admitted after completion. Read that durable decision
+    // through the worker port; an old prompt may still be finishing its response.
+    const [row] = await entry.session.scan({
+      type: 'inbox',
+      fromSeq: seq,
+      toSeq: seq,
+      limit: 1,
+      lane: 'main',
+    })
+    const items = (row?.data as { items?: Array<{ target: string; commandId?: string }> } | undefined)?.items
+    if (
+      message.commandId &&
+      items?.some((item) => item.commandId === message.commandId && item.target === 'next-turn')
+    )
+      cx.continueFollowUps?.(entry, undefined, true)
+  }
+  return seq
+}
+
 /** Reuse the persisted inbox; admission stays serialized, but model IO never holds its queue. */
 export function createFollowUpRunner(
   cx: Pick<LocalContext, 'commandQueue' | 'activationBarrier' | 'onPromptStart' | 'onPromptEnd'>,
