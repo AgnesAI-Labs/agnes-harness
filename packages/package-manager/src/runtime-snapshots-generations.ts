@@ -46,7 +46,7 @@ import {
 import { hashDirectory } from './sources.js'
 
 // Durable record publication is shared by every module that keeps recoverable state beside generations.
-export { publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
+export { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
 export { DurableStateError } from './runtime-snapshots-decode.js'
 
 const OWNER_FILE = 'owner.json'
@@ -417,6 +417,12 @@ export class RuntimeGenerationSnapshotStore {
 
   /** The damaged durable entries found by the latest `sessions()` or `collect()`, each with its file. */
   corruptEntries(): readonly StateProblem[] {
+    return this.#problems
+  }
+
+  /** Scans every pin and head afresh and lists the damaged ones; collection stands down while any exists. */
+  scanDamage(): readonly StateProblem[] {
+    this.#references()
     return this.#problems
   }
 

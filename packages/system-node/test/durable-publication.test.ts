@@ -1,8 +1,13 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { publishFileDurablySync, removeFileDurablySync } from '../src/index.js'
+import {
+  mkdirDurablySync,
+  publishFileDurablySync,
+  removeFileDurablySync,
+  syncTreeSync,
+} from '../src/index.js'
 
 const directories: string[] = []
 afterEach(() => {
@@ -47,5 +52,38 @@ describe('durable file publication', () => {
     const root = directory()
     expect(() => publishFileDurablySync(join(root, 'absent', 'record.json'), 'x')).toThrow()
     expect(readdirSync(root)).toEqual([])
+  })
+})
+
+describe('durable directory chains', () => {
+  it('creates every missing level below the anchor and tolerates existing ones', () => {
+    const root = directory(),
+      leaf = join(root, 'a', 'b', 'c')
+    mkdirDurablySync(leaf, root)
+    expect(existsSync(leaf)).toBe(true)
+    mkdirDurablySync(leaf, root)
+    mkdirDurablySync(join(root, 'a', 'b'), root)
+  })
+
+  it('never creates the anchor: a removed anchor is reported, not resurrected', () => {
+    const root = directory(),
+      anchor = join(root, 'generation')
+    expect(() => mkdirDurablySync(join(anchor, 'adopters'), anchor)).toThrow(/ENOENT/)
+    expect(existsSync(anchor)).toBe(false)
+  })
+
+  it('refuses a path outside its anchor and reports filesystem errors as they are', () => {
+    const root = directory()
+    expect(() => mkdirDurablySync(join(root, 'x'), join(root, 'elsewhere'))).toThrow(/not inside/)
+    writeFileSync(join(root, 'file'), '')
+    expect(() => mkdirDurablySync(join(root, 'file', 'child'), root)).toThrow(/ENOTDIR|EEXIST/)
+  })
+
+  it('flushes a whole tree, and a tree that is not a directory is an error', () => {
+    const root = directory()
+    mkdirSync(join(root, 'tree', 'nested'), { recursive: true })
+    writeFileSync(join(root, 'tree', 'nested', 'file'), 'x')
+    syncTreeSync(join(root, 'tree'))
+    expect(() => syncTreeSync(join(root, 'missing'))).toThrow(/ENOENT/)
   })
 })

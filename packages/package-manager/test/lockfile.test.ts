@@ -195,6 +195,12 @@ describe('lockfile', () => {
     expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
   })
 
+  it('reports a filesystem failure as itself, never as a busy lock', async () => {
+    const error = await withLock(join(dir, 'missing'), async () => 'never').catch((caught: unknown) => caught)
+    expect((error as NodeJS.ErrnoException).code).toBe('ENOENT')
+    expect(isPackageError(error, 'E_LOCK_MISMATCH')).toBe(false)
+  })
+
   it('never writes host names or absolute paths', () => {
     writeLock(dir, writableLock('p'))
     const text = readFileSync(lockPath(dir), 'utf8')
