@@ -2,6 +2,8 @@
 import { createElement, useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  ADVANCED_SETTINGS_STORAGE_KEY,
+  advancedSettingsShown,
   Banner,
   Button,
   Drawer,
@@ -11,15 +13,18 @@ import {
   ListRow,
   Menu,
   mountRegion,
+  SettingsAdvanced,
   SettingsPage,
   SettingsSaveBar,
   SettingsToolbar,
+  setAdvancedSettingsShown,
 } from '../src/index.js'
 
 const disposers: (() => void)[] = []
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose()
   document.body.replaceChildren()
+  setAdvancedSettingsShown(false)
 })
 function render(element: Parameters<typeof mountRegion>[1]) {
   const host = document.createElement('div')
@@ -193,4 +198,38 @@ it('announces loading once, marks it busy and removes the decorative skeleton af
   renderRegion(host, createElement(SettingsState, { tone: 'success' }, 'Loaded'))
   expect(host.querySelector('.agh-skeleton')).toBeNull()
   expect(host.querySelector('[role="status"]')?.getAttribute('aria-busy')).toBeNull()
+})
+
+it('shows an advanced fold only while advanced settings are on, and remembers the switch on this computer', async () => {
+  const host = render(
+    createElement(
+      SettingsAdvanced,
+      { title: 'Auxiliary models', summary: 'Automatic', 'data-testid': 'aux' },
+      createElement('p', null, 'Fast model'),
+    ),
+  )
+  expect(host.querySelector('[data-testid="aux"]')).toBeNull()
+  expect(advancedSettingsShown()).toBe(false)
+  setAdvancedSettingsShown(true)
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="aux"]')).not.toBeNull())
+  expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBe('1')
+  const fold = host.querySelector<HTMLElement>('[data-testid="aux"]')
+  // Closed by default; the header names the setting, marks it advanced and states the current value.
+  expect(fold?.dataset.open).toBe('false')
+  expect(fold?.querySelector('.agh-disclosure-title')?.textContent).toBe('Auxiliary modelsAdvanced')
+  expect(fold?.querySelector('.agh-disclosure-meta')?.textContent).toBe('Automatic')
+  host.querySelector<HTMLButtonElement>('[data-testid="aux-toggle"]')?.click()
+  await vi.waitFor(() => expect(fold?.dataset.open).toBe('true'))
+  // A blocked store keeps the choice for this page instead of failing.
+  const blocked = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+    throw new Error('storage is blocked')
+  })
+  try {
+    expect(() => setAdvancedSettingsShown(false)).not.toThrow()
+    expect(advancedSettingsShown()).toBe(false)
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="aux"]')).toBeNull())
+  } finally {
+    blocked.mockRestore()
+    localStorage.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+  }
 })

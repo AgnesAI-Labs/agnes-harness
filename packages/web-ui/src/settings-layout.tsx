@@ -8,6 +8,7 @@ import type {
 import { createContext, forwardRef, useContext, useEffect, useId, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { useAdvancedSettings } from './advanced-settings.js'
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
@@ -341,6 +342,43 @@ export function SettingsDetails({
       description={description}
       data-compact={compact || undefined}
       className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}
+      summaryProps={{ 'data-testid': props['data-testid'] ? `${props['data-testid']}-toggle` : undefined }}
+    >
+      {children}
+    </Disclosure>
+  )
+}
+/**
+ * A setting only a few people change. It exists on the page only while 「显示高级设置」 is on; then it
+ * is a dashed card marked "Advanced" whose header states the current value.
+ */
+export function SettingsAdvanced({
+  title,
+  summary,
+  children,
+  ...props
+}: Omit<DisclosureProps, 'title' | 'summary' | 'variant' | 'summaryProps' | 'icon' | 'meta'> & {
+  title: ReactNode
+  /** The current value in a few words, shown while the fold is closed. */
+  summary?: ReactNode
+  'data-testid'?: string
+}) {
+  const shown = useAdvancedSettings()
+  if (!shown) return null
+  return (
+    <Disclosure
+      {...props}
+      variant="card"
+      summary={
+        <>
+          {title}
+          <span className="agh-advanced-mark">{fallbackT('ui.advanced')}</span>
+        </>
+      }
+      meta={summary}
+      className={['agnes-settings-details', 'agnes-settings-advanced', props.className]
+        .filter(Boolean)
+        .join(' ')}
       summaryProps={{ 'data-testid': props['data-testid'] ? `${props['data-testid']}-toggle` : undefined }}
     >
       {children}

@@ -1348,6 +1348,27 @@
   .agh-disclosure-title {
     min-width: 0;
   }
+  /* An advanced fold is a card with a dashed outline: present only while advanced settings show. */
+  .agh-disclosure[data-variant="card"].agnes-settings-advanced {
+    border-style: dashed;
+    border-color: var(--agnes-line-emphasis);
+    background: transparent;
+  }
+  .agh-advanced-mark {
+    display: inline-flex;
+    align-items: center;
+    height: 1.25rem;
+    margin-inline-start: var(--s8);
+    padding-inline: var(--s8);
+    border: 1px dashed var(--agnes-line-emphasis);
+    border-radius: 999px;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
   /* The current value, in one line, pushed to the far side of the header. */
   .agh-disclosure-meta {
     flex: 1 1 0;

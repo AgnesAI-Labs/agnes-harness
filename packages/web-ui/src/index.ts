@@ -3,6 +3,13 @@ export * from './admin-detail.js'
 export * from './admin-dialogs.js'
 export * from './admin-list.js'
 export * from './admin-text.js'
+export {
+  ADVANCED_SETTINGS_STORAGE_KEY,
+  advancedSettingsShown,
+  setAdvancedSettingsShown,
+  subscribeAdvancedSettings,
+  useAdvancedSettings,
+} from './advanced-settings.js'
 export type { AntdRoot, RegionRenderer } from './antd-root.js'
 export {
   createAntdRoot,
@@ -94,6 +101,7 @@ export {
 export * from './settings-control-templates.js'
 export { SettingsIcon, settingsIconName } from './settings-icon.js'
 export {
+  SettingsAdvanced,
   SettingsCard,
   SettingsCheckbox,
   SettingsChoice,
