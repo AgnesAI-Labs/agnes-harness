@@ -350,11 +350,16 @@ export function createAttachmentStoreInternal(o: {
       else {
         try {
           await link(temporary, markerPath(sha256))
+          await rm(temporary, { force: true })
         } catch (error) {
-          if (errorCode(error) !== 'EEXIST') throw error
-          created = false
+          if (errorCode(error) === 'EEXIST') {
+            created = false
+            await rm(temporary, { force: true })
+          } else {
+            // A file system without hard links: fall back to the plain replace.
+            await rename(temporary, markerPath(sha256))
+          }
         }
-        await rm(temporary, { force: true })
       }
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined)
