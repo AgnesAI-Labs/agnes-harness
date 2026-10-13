@@ -104,7 +104,9 @@ describe('methods (I1 set)', () => {
     expect(fromAcpPrompt([mismatched])).toEqual([mismatched])
     const malformed = {
       ...link,
-      _meta: { 'ai.agnes.harness': { attachment: { type: 'file', mimeType: 'a/b', name: 'a', data: 'QUJD' } } },
+      _meta: {
+        'ai.agnes.harness': { attachment: { type: 'file', mimeType: 'a/b', name: 'a', data: 'QUJD' } },
+      },
     }
     expect(fromAcpPrompt([malformed])).toEqual([malformed])
   })
