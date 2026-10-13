@@ -124,6 +124,14 @@ describe('read saveTo', () => {
     'data/in\u0000sects.zip',
     'data/in\nsects.zip',
     'data/a:b.zip',
+    'CON',
+    'data/nul.txt',
+    'Com1.zip',
+    'lpt9',
+    'data/aux/x.zip',
+    'data./x.zip',
+    'x.zip ',
+    'x.zip.',
     `${'n'.repeat(256)}.zip`,
   ])('refuses %j as a target', async (saveTo) => {
     const { ctx, writes, asked } = ctxWith()
@@ -133,7 +141,7 @@ describe('read saveTo', () => {
     expect(asked).toEqual([])
   })
 
-  it('refuses an attachment larger than 256 MiB and names the raw export', async () => {
+  it('refuses an attachment larger than 256 MiB and points to the download through the client', async () => {
     const huge = {
       name: 'big.zip',
       mimeType: 'application/zip',
@@ -142,7 +150,7 @@ describe('read saveTo', () => {
     const { ctx, writes } = ctxWith({ original: huge })
     const result = await save(ctx, 'big.zip')
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toContain('agh export --raw')
+    expect(textOf(result)).toContain('download it through the client')
     expect(writes).toEqual([])
     // The reader may refuse before reading a byte; that is reported the same way.
     const refused = ctxWith({
@@ -156,7 +164,7 @@ describe('read saveTo', () => {
     })
     const early = await save(refused.ctx, 'big.zip')
     expect(early.isError).toBe(true)
-    expect(textOf(early)).toContain('agh export --raw')
+    expect(textOf(early)).toContain('download it through the client')
   })
 
   it('reports a missing or unreadable original without writing', async () => {
@@ -183,6 +191,50 @@ describe('read saveTo', () => {
     expect(textOf(result)).toContain('permission denied')
   })
 
+  it('names a partial file a failed write may leave behind', async () => {
+    const { ctx, mem } = ctxWith()
+    ctx.fs.write = async (path, data) => {
+      mem.files.set(path, (data as Uint8Array).subarray(0, 3))
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+    }
+    const result = await save(ctx, 'a.zip')
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('no space left')
+    expect(textOf(result)).toContain('partial file may be left at a.zip')
+  })
+
+  it('lets exactly one of two copies to the same target win', async () => {
+    const { ctx, writes, mem } = ctxWith()
+    const [a, b] = await Promise.all([save(ctx, 'data/insects.zip'), save(ctx, 'data/insects.zip')])
+    expect([a.isError === true, b.isError === true].sort()).toEqual([false, true])
+    expect(textOf(a.isError ? a : b)).toContain('already exists')
+    expect(writes).toEqual(['/work/proj/data/insects.zip'])
+    expect(mem.files.get('/work/proj/data/insects.zip')).toEqual(ZIP)
+  })
+
+  it('holds at most two copies of one session in memory at once', async () => {
+    let active = 0
+    let peak = 0
+    const { ctx, writes } = ctxWith({
+      original: async () => {
+        active++
+        peak = Math.max(peak, active)
+        await new Promise((r) => setTimeout(r, 5))
+        return { name: 'big.bin', mimeType: 'application/octet-stream', bytes: ZIP }
+      },
+    })
+    const write = ctx.fs.write
+    ctx.fs.write = async (path, data) => {
+      await new Promise((r) => setTimeout(r, 5))
+      await write(path, data)
+      active--
+    }
+    const results = await Promise.all(Array.from({ length: 6 }, (_, i) => save(ctx, `copy-${i}.bin`)))
+    expect(results.every((r) => r.isError === undefined)).toBe(true)
+    expect(writes).toHaveLength(6)
+    expect(peak).toBe(2)
+  })
+
   it('only copies session attachments', async () => {
     for (const path of [
       'notes.txt',
@@ -207,9 +259,10 @@ describe('read saveTo', () => {
       replay: 'safe',
       requiresApproval: 'never',
     })
+    // Exactly as `write` is classified, so manual mode asks before every copy.
     expect(resolveToolCallPolicy(readTool, { path: 'session-file://5/1', saveTo: 'a.zip' })).toMatchObject({
       isReadOnly: false,
-      isDestructive: false,
+      isDestructive: true,
       replay: 'never',
       requiresApproval: 'destructive',
     })

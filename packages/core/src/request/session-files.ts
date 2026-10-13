@@ -1,6 +1,6 @@
 import type { ToolContext } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
-import { attachmentBytes } from './attachment-bytes.js'
+import { ATTACHMENT_READ_MAX_BYTES, attachmentBytes } from './attachment-bytes.js'
 
 /**
  * Lookups bounded to the active lane and the sequence visible at call start. Lists come from the
@@ -8,6 +8,10 @@ import { attachmentBytes } from './attachment-bytes.js'
  * inline block, from its row (see `attachmentBytes`). `session-image://<seq>/<n>` is accepted too, so
  * an image original can be copied out as a file; reading an image for the model goes through
  * `readSessionImages`.
+ *
+ * `maxBytes` bounds a list page. For one attachment it is the most the caller accepts whole: an
+ * ordinary read (a page of text) loads at most the old 100 MiB inline limit, and only a caller asking
+ * for more than that (copying the original out) may load up to 256 MiB.
  */
 export const readSessionAttachment = async (
   session: SessionImpl,
@@ -66,7 +70,11 @@ export const readSessionAttachment = async (
   const entry = session.attachmentIndex.get(seq, kind, index)
   if (!entry || entry.lane !== session.lane) return undefined
   // Missing, damaged or oversized bytes reject with a coded error the tool reports; never other bytes.
-  const bytes = await attachmentBytes(session, entry, signal)
+  const limit =
+    input.maxBytes !== undefined && input.maxBytes > ATTACHMENT_READ_MAX_BYTES
+      ? input.maxBytes
+      : ATTACHMENT_READ_MAX_BYTES
+  const bytes = await attachmentBytes(session, entry, signal, limit)
   checkAbort()
   return { name: entry.name ?? 'image', mimeType: entry.mimeType, bytes }
 }

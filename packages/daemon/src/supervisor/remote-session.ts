@@ -202,11 +202,12 @@ export class RemoteSession {
     offset: number
     length: number
     thumbnail?: boolean
-  }): Promise<{ mimeType: string; totalBytes: number; base64: string }> {
+  }): Promise<{ mimeType: string; totalBytes: number; base64: string; sha256?: string }> {
     return this.link.command('attachmentRead', input) as Promise<{
       mimeType: string
       totalBytes: number
       base64: string
+      sha256?: string
     }>
   }
 

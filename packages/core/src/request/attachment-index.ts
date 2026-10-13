@@ -7,6 +7,8 @@ export type AttachmentKind = 'image' | 'file'
 /** One user attachment, located by the row it is in and its 1-based place among that row's blocks of its kind. */
 export type AttachmentEntry = Readonly<{
   seq: number
+  /** The id of the row it is in, which a cache entry is bound to (a seq can be reused by an import). */
+  rowId: string
   lane: string
   kind: AttachmentKind
   index: number
@@ -56,6 +58,7 @@ function entryOf(
   const thumb = block.thumbnail as { sha256?: unknown; bytes?: unknown } | undefined
   return Object.freeze({
     seq: event.seq,
+    rowId: event.id,
     lane: event.lane ?? 'main',
     kind,
     index,
@@ -146,12 +149,12 @@ export class AttachmentIndex {
     return undefined
   }
 
-  /** Whether a row of this session already references the object. */
+  /** Whether a row of this session already references the object, as an attachment or as a thumbnail. */
   referenced(sha256: string): boolean {
     return this.#refs.has(sha256)
   }
 
-  /** Bytes of the distinct objects this session references, each counted once. */
+  /** Bytes of the distinct objects this session references (attachments and thumbnails), each counted once. */
   referencedBytes(): number {
     return this.#refBytes
   }
@@ -164,9 +167,15 @@ export class AttachmentIndex {
     }
     lists[entry.kind].push(entry)
     this.#size++
-    if (entry.sha256 !== undefined && !this.#refs.has(entry.sha256)) {
-      this.#refs.add(entry.sha256)
-      this.#refBytes += entry.bytes
-    }
+    if (entry.sha256 !== undefined) this.#reference(entry.sha256, entry.bytes)
+    // A thumbnail is a stored object of its own that the row names, so it is authorized (and
+    // occupies the session's storage) the same way the attachment is.
+    if (entry.thumbnail) this.#reference(entry.thumbnail.sha256, entry.thumbnail.bytes)
+  }
+
+  #reference(sha256: string, bytes: number): void {
+    if (this.#refs.has(sha256)) return
+    this.#refs.add(sha256)
+    this.#refBytes += bytes
   }
 }

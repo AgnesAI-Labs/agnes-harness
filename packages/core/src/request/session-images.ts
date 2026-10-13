@@ -6,6 +6,7 @@ import { resolveModel } from '../step/inference.js'
 import { resolvedModelRecord } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
 import { attachmentBytes, attachmentFailureCode } from './attachment-bytes.js'
+import type { AttachmentEntry } from './attachment-index.js'
 import { sha256Hex } from './hash.js'
 import { sessionImageRef } from './inline-images.js'
 
@@ -50,27 +51,39 @@ export async function readSessionImages(
     new Set(references).size !== references.length
   )
     return result('Invalid session image reference.', true)
-  const images: Extract<ContentBlock, { type: 'image'; data: string }>[] = []
+  // Every image is located first, and the batch is judged on the sizes the index records, so a
+  // batch that cannot be admitted is refused before any of its bytes are read.
+  const entries: AttachmentEntry[] = []
   for (const reference of references) {
     const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(reference)
     const seq = Number(match?.[1])
     const index = Number(match?.[2])
     if (!match || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index))
       return result('Invalid session image reference.', true)
-    abort()
     const entry = session.attachmentIndex.get(seq, 'image', index)
     if (!entry || entry.lane !== session.lane)
       return result('The image is not available in this session.', true)
-    // Too large to be admitted as an image: refused before its bytes are read.
-    if (entry.bytes > USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage)
-      return result('The requested image batch exceeds safe size or pixel limits. Read fewer images.', true)
+    entries.push(entry)
+  }
+  const recorded = entries.reduce((n, entry) => n + entry.bytes, 0)
+  const media = session.d.requestMedia?.mediaLimits
+  if (
+    entries.some((entry) => entry.bytes > USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage) ||
+    recorded > USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes ||
+    (media &&
+      (entries.some((entry) => entry.bytes > media.maxBytesPerImage) || recorded > media.maxSelectedBytes))
+  )
+    return result('The requested image batch exceeds safe size or pixel limits. Read fewer images.', true)
+  const images: Extract<ContentBlock, { type: 'image'; data: string }>[] = []
+  for (const [at, entry] of entries.entries()) {
+    abort()
     let bytes: Uint8Array
     try {
       bytes = await attachmentBytes(session, entry, signal)
     } catch (error) {
       if (!attachmentFailureCode(error)) throw error
       return result(
-        `session-image://${reference} cannot be read: ${(error as Error).message.replace(/^E_ENVELOPE: /u, '')}`,
+        `session-image://${references[at]} cannot be read: ${(error as Error).message.replace(/^E_ENVELOPE: /u, '')}`,
         true,
       )
     }

@@ -41,12 +41,19 @@ const text = (r: { content: Array<{ type: string; text?: string }> }) =>
     .map((b) => b.text)
     .join('\n')
 
-/** An in-memory attachment store with the inline cache, counting what is asked of it. */
+/**
+ * An in-memory attachment store with the inline cache, counting what is asked of it. Every object is
+ * a marked user attachment unless it is listed in `unmarked` (a generic artifact).
+ */
 function fakePort(over: Partial<AttachmentReadPort> = {}) {
   const objects = new Map<string, Uint8Array>()
-  const cache = new Map<string, { sha256: string; bytes: number }>()
+  const unmarked = new Set<string>()
+  const cache = new Map<string, { sha256: string; bytes: number; rowId: string }>()
   const calls = { read: 0, cacheInline: 0, cachedInline: 0 }
   const port: AttachmentReadPort = {
+    async isUserAttachment(sha256) {
+      return !unmarked.has(sha256)
+    },
     async read(sha256, range) {
       calls.read++
       const bytes = objects.get(sha256)
@@ -58,16 +65,20 @@ function fakePort(over: Partial<AttachmentReadPort> = {}) {
       const sha256 = hex(input.bytes)
       objects.set(sha256, input.bytes)
       const stored = { sha256, bytes: input.bytes.byteLength }
-      cache.set(`${input.sessionKey}/${input.seq}/${input.kind}/${input.index}`, stored)
+      cache.set(`${input.sessionKey}/${input.seq}/${input.kind}/${input.index}`, {
+        ...stored,
+        rowId: input.rowId,
+      })
       return stored
     },
-    async cachedInline(sessionKey, seq, kind, index) {
+    async cachedInline(sessionKey, seq, kind, index, rowId) {
       calls.cachedInline++
-      return cache.get(`${sessionKey}/${seq}/${kind}/${index}`)
+      const hit = cache.get(`${sessionKey}/${seq}/${kind}/${index}`)
+      return hit && hit.rowId === rowId ? { sha256: hit.sha256, bytes: hit.bytes } : undefined
     },
     ...over,
   }
-  return { port, objects, cache, calls }
+  return { port, objects, unmarked, cache, calls }
 }
 
 async function opened(port: AttachmentReadPort | undefined) {
@@ -310,6 +321,201 @@ describe('session attachment readers', () => {
     await expect(
       s.session.readAttachmentRange({ seq, kind: 'file', index: 2, offset: 0, length: 10 }),
     ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_NOT_FOUND' } })
+  })
+
+  it('names the digest of what a window came from, and confines windows to the session lane', async () => {
+    const f = fakePort()
+    f.objects.set(hex(PNG8_BYTES), PNG8_BYTES)
+    const s = await opened(f.port)
+    const original = Buffer.alloc(3000, 9)
+    const seq = await s.append([
+      imageRef(hex(PNG8_BYTES), PNG8_BYTES.byteLength),
+      { type: 'file', mimeType: 'application/zip', name: 'a.zip', data: original.toString('base64') },
+    ])
+    const image = await s.session.readAttachmentRange({ seq, kind: 'image', index: 1, offset: 2, length: 10 })
+    expect(image.sha256).toBe(hex(PNG8_BYTES))
+    // An old inline block names the digest of its store copy, from the first window on.
+    const first = await s.session.readAttachmentRange({
+      seq,
+      kind: 'file',
+      index: 1,
+      offset: 0,
+      length: 1000,
+    })
+    expect(first.sha256).toBe(hex(original))
+    const later = await s.session.readAttachmentRange({
+      seq,
+      kind: 'file',
+      index: 1,
+      offset: 1000,
+      length: 1000,
+    })
+    expect(later.sha256).toBe(hex(original))
+    const other = await s.append(
+      [{ type: 'file', mimeType: 'text/plain', name: 'b.txt', data: 'QQ==' }],
+      'other',
+    )
+    await expect(
+      s.session.readAttachmentRange({ seq: other, kind: 'file', index: 1, offset: 0, length: 10 }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_NOT_FOUND' } })
+  })
+
+  it('serves no stored object that is not a marked user attachment, on every read path', async () => {
+    const f = fakePort()
+    const thumb = Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3])
+    const generic = Buffer.from('spilled tool output, not an upload')
+    for (const b of [PNG8_BYTES, thumb, generic]) f.objects.set(hex(b), b)
+    f.unmarked.add(hex(PNG8_BYTES))
+    f.unmarked.add(hex(thumb))
+    f.unmarked.add(hex(generic))
+    const s = await opened(f.port)
+    const seq = await s.append([
+      {
+        ...imageRef(hex(PNG8_BYTES), PNG8_BYTES.byteLength),
+        thumbnail: { sha256: hex(thumb), bytes: thumb.length, width: 2, height: 2 },
+      },
+      {
+        type: 'file',
+        mimeType: 'text/plain',
+        name: 'x.txt',
+        attachment: { sha256: hex(generic), bytes: generic.length },
+      },
+    ])
+    const refused = { code: 'E_ENVELOPE', detail: { code: 'ATTACHMENT_MISSING' } }
+    await expect(
+      readSessionAttachment(s.session, { path: `session-file://${seq}/1` }, signal()),
+    ).rejects.toMatchObject(refused)
+    await expect(
+      readSessionAttachment(s.session, { path: `session-image://${seq}/1` }, signal()),
+    ).rejects.toMatchObject(refused)
+    const image = await readSessionImages(s.session, { path: `session-image://${seq}/1` }, signal())
+    expect(image.isError).toBe(true)
+    expect(text(image)).toContain('missing')
+    for (const window of [
+      { kind: 'file' as const, offset: 0, length: 4 },
+      { kind: 'file' as const, offset: 4, length: 4 },
+      { kind: 'image' as const, offset: 0, length: 1024 },
+      { kind: 'image' as const, offset: 0, length: 1024, thumbnail: true },
+    ])
+      await expect(s.session.readAttachmentRange({ seq, index: 1, ...window })).rejects.toMatchObject(refused)
+    expect(f.calls.read).toBe(0)
+    // With no store at all, a thumbnail is reported missing too, not unknown.
+    const bare = await opened(undefined)
+    const at = await bare.append([
+      {
+        ...imageRef(hex(PNG8_BYTES), PNG8_BYTES.byteLength),
+        thumbnail: { sha256: hex(thumb), bytes: thumb.length, width: 2, height: 2 },
+      },
+    ])
+    await expect(
+      bare.session.readAttachmentRange({
+        seq: at,
+        kind: 'image',
+        index: 1,
+        offset: 0,
+        length: 10,
+        thumbnail: true,
+      }),
+    ).rejects.toMatchObject(refused)
+  })
+
+  it('loads at most 100 MiB whole for an ordinary read and 256 MiB only for a copy out', async () => {
+    const MIB = 1024 * 1024
+    const sizes = new Map<string, number>()
+    const f = fakePort({
+      // A stand-in for a large object: only its length is looked at.
+      read: async (sha256) => ({ byteLength: sizes.get(sha256) ?? 0 }) as Uint8Array,
+    })
+    const s = await opened(f.port)
+    const fileRef = (sha256: string, bytes: number) => {
+      sizes.set(sha256, bytes)
+      return { type: 'file', mimeType: 'application/zip', name: 'big.zip', attachment: { sha256, bytes } }
+    }
+    const seq = await s.append([fileRef('1'.repeat(64), 150 * MIB), fileRef('2'.repeat(64), 257 * MIB)])
+    const tooLarge = { detail: { code: 'ATTACHMENT_TOO_LARGE' } }
+    await expect(
+      readSessionAttachment(s.session, { path: `session-file://${seq}/1` }, signal()),
+    ).rejects.toMatchObject(tooLarge)
+    await expect(
+      readSessionAttachment(s.session, { path: `session-file://${seq}/1`, maxBytes: 8192 }, signal()),
+    ).rejects.toMatchObject(tooLarge)
+    const copied = await readSessionAttachment(
+      s.session,
+      { path: `session-file://${seq}/1`, maxBytes: 256 * MIB },
+      signal(),
+    )
+    expect(copied?.bytes.byteLength).toBe(150 * MIB)
+    await expect(
+      readSessionAttachment(s.session, { path: `session-file://${seq}/2`, maxBytes: 1024 * MIB }, signal()),
+    ).rejects.toMatchObject(tooLarge)
+  })
+
+  it('lets at most two large whole reads of a session hold their bytes at once', async () => {
+    const MIB = 1024 * 1024
+    const big = new Uint8Array(9 * MIB)
+    let active = 0
+    let peak = 0
+    const f = fakePort({
+      read: async () => {
+        active++
+        peak = Math.max(peak, active)
+        await new Promise((r) => setTimeout(r, 5))
+        active--
+        return big
+      },
+    })
+    const s = await opened(f.port)
+    const content = Array.from({ length: 6 }, (_, i) => ({
+      type: 'file',
+      mimeType: 'application/octet-stream',
+      name: `f${i}.bin`,
+      attachment: { sha256: String(i).repeat(64), bytes: big.byteLength },
+    }))
+    const seq = await s.append(content)
+    const reads = await Promise.all(
+      content.map((_, i) =>
+        readSessionAttachment(s.session, { path: `session-file://${seq}/${i + 1}` }, signal()),
+      ),
+    )
+    expect(reads.every((r) => r?.bytes.byteLength === big.byteLength)).toBe(true)
+    expect(peak).toBe(2)
+  })
+
+  it('decodes an old inline row once for a download in windows when no store copy can be kept', async () => {
+    const s = await opened(undefined)
+    const original = Buffer.alloc(5000, 4)
+    const seq = await s.append([
+      { type: 'file', mimeType: 'application/zip', name: 'a.zip', data: original.toString('base64') },
+    ])
+    s.scans.length = 0
+    const parts: Buffer[] = []
+    for (let offset = 0; offset < original.length; offset += 1000) {
+      const piece = await s.session.readAttachmentRange({ seq, kind: 'file', index: 1, offset, length: 1000 })
+      expect(piece.sha256).toBeUndefined()
+      parts.push(Buffer.from(piece.bytes))
+    }
+    expect(Buffer.concat(parts).equals(original)).toBe(true)
+    expect(s.scans).toHaveLength(1)
+    // The last window let it go: the next download reads the row again.
+    await s.session.readAttachmentRange({ seq, kind: 'file', index: 1, offset: 0, length: 1000 })
+    expect(s.scans).toHaveLength(2)
+  })
+
+  it('refuses an image batch on the sizes the index records, before reading any image', async () => {
+    const f = fakePort()
+    const s = await opened(f.port)
+    // The test runtime admits 1 MiB per batch; three 400 KiB images add up to more.
+    const seq = await s.append(
+      Array.from({ length: 3 }, (_, i) => imageRef(String(i + 3).repeat(64), 400 * 1024)),
+    )
+    const result = await readSessionImages(
+      s.session,
+      { path: `session-image://${seq}/1,${seq}/2,${seq}/3` },
+      signal(),
+    )
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('exceeds safe size')
+    expect(f.calls.read).toBe(0)
   })
 
   it('folds the index from the stored rows when a session is opened again', async () => {

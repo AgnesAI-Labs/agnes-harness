@@ -89,7 +89,7 @@ import {
   hasTrustedToolCallProvenance,
 } from '../registry/tool-policy.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
-import { attachmentRange } from '../request/attachment-bytes.js'
+import { type AttachmentWindow, attachmentRange } from '../request/attachment-bytes.js'
 import type { AttachmentIndex, AttachmentKind } from '../request/attachment-index.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
@@ -687,13 +687,15 @@ export class SessionImpl {
       thumbnail?: boolean
     },
     signal?: AbortSignal,
-  ): Promise<{ mimeType: string; totalBytes: number; bytes: Uint8Array }> {
+  ): Promise<AttachmentWindow> {
     const { seq, kind, index } = input
+    // Confined to this session's lane, as the tool readers are.
+    const entry = this.d.attachmentIndex.get(seq, kind, index)
     return attachmentRange(
       this,
       { seq, kind, index },
       input,
-      this.d.attachmentIndex.get(seq, kind, index),
+      entry?.lane === this.lane ? entry : undefined,
       signal,
     )
   }

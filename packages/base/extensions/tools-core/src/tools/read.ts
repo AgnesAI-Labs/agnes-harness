@@ -177,7 +177,7 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Binary files, PDF, audio and video may be unreadable with the current pi-ai input. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace and never replaces an existing file.',
+    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Binary files, PDF, audio and video may be unreadable with the current pi-ai input. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace; a target that already exists is refused.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -189,9 +189,11 @@ export const readTool = defineTool({
     deferLoading: false,
     requiresApproval: 'never',
   },
-  policyVersion: 'read-save-to-v1',
-  // A call with saveTo writes a new file into the workspace, so it is classified as the write it is:
-  // not read-only, asked about where a writing call is asked about, and never replayed after a crash.
+  policyVersion: 'read-save-to-v2',
+  // A call with saveTo writes a file into the workspace, so it is classified exactly as `write` is:
+  // not read-only and destructive, so the person is asked in manual mode as for `write` (and a
+  // tainted turn or an unavailable sandbox is handled as for any writing call), and never replayed
+  // after a crash, so an interrupted copy is reported as unknown rather than run again.
   classify: (args): ResolvedToolCallPolicy =>
     args.saveTo === undefined
       ? {
@@ -203,7 +205,7 @@ export const readTool = defineTool({
         }
       : {
           isReadOnly: false,
-          isDestructive: false,
+          isDestructive: true,
           replay: 'never',
           requiresApproval: 'destructive',
           approvalScopes: [],

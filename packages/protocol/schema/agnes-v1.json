@@ -1913,7 +1913,7 @@
       }
     },
     "SessionAttachmentReadResult": {
-      "description": "One window of the attachment's bytes. totalBytes is the size of the whole attachment (or thumbnail); read on from offset plus the decoded length until it reaches totalBytes.",
+      "description": "One window of the attachment's bytes. totalBytes is the size of the whole attachment (or thumbnail); read on from offset plus the decoded length until it reaches totalBytes. sha256, when present, is the digest of the stored object the window was read from (the reference, the thumbnail, or the store copy of an old inline attachment); an object larger than one window is not checked by the server, so check the assembled bytes against it.",
       "type": "object",
       "additionalProperties": false,
       "required": ["mimeType", "totalBytes", "base64"],
@@ -1924,7 +1924,8 @@
           "description": "Standard base64 for at most 1048576 bytes.",
           "type": "string",
           "maxLength": 1398104
-        }
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "SessionExportRawParams": {

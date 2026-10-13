@@ -5,7 +5,7 @@ import { ARTIFACT_READ_RPC_MAX_BYTES, rpcError } from '@agnes/protocol'
 type AttachmentSession = Pick<HostSession, 'readAttachmentRange'> & {
   readonly d: { readonly log: { fullVerified(): Promise<void> } }
 }
-type Page = { mimeType: string; totalBytes: number; base64: string }
+type Page = { mimeType: string; totalBytes: number; base64: string; sha256?: string }
 export type AttachmentReadInput = {
   seq: number
   kind: 'image' | 'file'
@@ -69,7 +69,7 @@ function asRpc(error: unknown): unknown {
 export async function attachmentReadPage(session: AttachmentSession, params: unknown): Promise<Page> {
   const input = checked((params ?? {}) as Record<string, unknown>)
   await session.d.log.fullVerified()
-  let window: { mimeType: string; totalBytes: number; bytes: Uint8Array }
+  let window: { mimeType: string; totalBytes: number; bytes: Uint8Array; sha256?: string }
   try {
     window = await session.readAttachmentRange(input)
   } catch (error) {
@@ -81,5 +81,6 @@ export async function attachmentReadPage(session: AttachmentSession, params: unk
     base64: Buffer.from(window.bytes.buffer, window.bytes.byteOffset, window.bytes.byteLength).toString(
       'base64',
     ),
+    ...(window.sha256 === undefined ? {} : { sha256: window.sha256 }),
   }
 }

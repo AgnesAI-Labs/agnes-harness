@@ -79,6 +79,7 @@ describe('AttachmentIndex', () => {
     expect(images[1]).toMatchObject({ bytes: 300_000, mimeType: 'image/jpeg' })
     expect(index.get(7, 'image', 2)).toEqual({
       seq: 7,
+      rowId: 'e7',
       lane: 'main',
       kind: 'image',
       index: 2,
@@ -96,9 +97,12 @@ describe('AttachmentIndex', () => {
     expect(index.get(5, 'image', 1)).toBeUndefined()
     expect(index.referenced(SHA_A)).toBe(true)
     expect(index.referenced(SHA_B)).toBe(true)
-    expect(index.referenced(SHA_T)).toBe(false)
-    // SHA_A appears twice and is counted once.
-    expect(index.referencedBytes()).toBe(9000 + 70)
+    // A thumbnail is authorized like the attachment: admission checks it through this same call, and a
+    // later message may name it again without a new upload receipt.
+    expect(index.referenced(SHA_T)).toBe(true)
+    expect(index.referenced('d'.repeat(64))).toBe(false)
+    // SHA_A appears twice and is counted once; the thumbnail's 40 bytes are stored too.
+    expect(index.referencedBytes()).toBe(9000 + 70 + 40)
     expect(index.size).toBe(5)
   })
 

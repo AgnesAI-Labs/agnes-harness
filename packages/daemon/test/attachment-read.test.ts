@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { createAttachmentStore } from '@agnes/host'
@@ -19,7 +20,7 @@ type Response<T> = {
   result?: T
   error?: { code?: number; data?: { code?: string; reason?: string } }
 }
-type Window = { mimeType: string; totalBytes: number; base64: string }
+type Window = { mimeType: string; totalBytes: number; base64: string; sha256?: string }
 let nextId = 2
 const rpc = async <T>(ep: Endpoint, method: string, params: unknown): Promise<Response<T>> =>
   (await ep.handle({ jsonrpc: '2.0', id: nextId++, method, params })) as Response<T>
@@ -52,6 +53,9 @@ describe('_agnes/v1/session.attachmentRead', () => {
     const store = createAttachmentStore({ dataDir: h.dataDir })
     const image = await store.put(PNG8, { kind: 'user-attachment', mimeType: 'image/png' })
     const thumb = await store.put(THUMB, { kind: 'thumbnail', mimeType: 'image/jpeg' })
+    // Uploads are marked as user attachments; only marked objects are served.
+    await store.markUserAttachment(image, { mimeType: 'image/png', receiptFor: 'uploader' })
+    await store.markUserAttachment(thumb, { mimeType: 'image/jpeg', receiptFor: 'uploader' })
     // 2.5 MiB, so the file takes three windows.
     const original = Buffer.alloc(2.5 * MIB)
     for (let i = 0; i < original.length; i++) original[i] = (i * 31) & 0xff
@@ -84,6 +88,7 @@ describe('_agnes/v1/session.attachmentRead', () => {
     const before = await session.scan({ fromSeq: 1, limit: 100 })
 
     const parts: Buffer[] = []
+    const digests = new Set<string | undefined>()
     let offset = 0
     let total = Number.POSITIVE_INFINITY
     while (offset < total) {
@@ -98,6 +103,7 @@ describe('_agnes/v1/session.attachmentRead', () => {
       const page = response.result
       if (!page) throw new Error(JSON.stringify(response))
       expect(page.mimeType).toBe('application/zip')
+      digests.add(page.sha256)
       total = page.totalBytes
       const bytes = Buffer.from(page.base64, 'base64')
       expect(bytes.length).toBeLessThanOrEqual(MIB)
@@ -106,6 +112,9 @@ describe('_agnes/v1/session.attachmentRead', () => {
     }
     expect(parts).toHaveLength(3)
     expect(Buffer.concat(parts).equals(original)).toBe(true)
+    // Every window names the digest of the store copy the old inline file was given.
+    expect(digests.size).toBe(1)
+    expect([...digests][0]).toBe(createHash('sha256').update(original).digest('hex'))
     // Reading the old inline file kept a copy in the store; the ledger is unchanged.
     expect(await session.scan({ fromSeq: 1, limit: 100 })).toEqual(before)
 
@@ -121,6 +130,7 @@ describe('_agnes/v1/session.attachmentRead', () => {
       mimeType: 'image/png',
       totalBytes: PNG8.length,
       base64: PNG8.toString('base64'),
+      sha256: image.sha256,
     })
     const small = await rpc<Window>(ep, '_agnes/v1/session.attachmentRead', {
       sessionId,
@@ -135,6 +145,7 @@ describe('_agnes/v1/session.attachmentRead', () => {
       mimeType: 'image/jpeg',
       totalBytes: THUMB.length,
       base64: THUMB.toString('base64'),
+      sha256: thumb.sha256,
     })
 
     const tooLong = await rpc(ep, '_agnes/v1/session.attachmentRead', {
@@ -237,6 +248,60 @@ describe('_agnes/v1/session.attachmentRead', () => {
     const refused = await pending
     expect(refused.result).toBeUndefined()
     expect(refused.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY' })
+  })
+
+  it('serves no stored object that is not a marked user attachment, whatever a row names', async () => {
+    const h = await openTestHost()
+    const ep = h.endpoint({ pollMs: 5 })
+    cleanup.push(() => h.close())
+    cleanup.push(() => ep.close())
+    await ep.handle(initialize)
+    const created = await rpc<{ sessionId: string }>(ep, 'session/new', { cwd: h.dataDir, mcpServers: [] })
+    const sessionId = created.result?.sessionId as string
+    const session = h.host.kernel.get(sessionId)
+    if (!session) throw new Error('session missing')
+    // Generic artifacts in the same tree: spilled tool output and an image stored without a marker.
+    const store = createAttachmentStore({ dataDir: h.dataDir })
+    const spilled = await store.put(Buffer.from('secret tool output'), {
+      kind: 'request-version',
+      mimeType: 'text/plain',
+    })
+    const image = await store.put(PNG8, { kind: 'request-version', mimeType: 'image/png' })
+    const thumb = await store.put(THUMB, { kind: 'request-version', mimeType: 'image/jpeg' })
+    const { seqs } = await session.append([
+      session.ev('user/message', {
+        content: [
+          { type: 'file', mimeType: 'text/plain', name: 'x.txt', attachment: spilled },
+          {
+            type: 'image',
+            mimeType: 'image/png',
+            attachment: image,
+            width: 8,
+            height: 8,
+            thumbnail: { ...thumb, width: 8, height: 8 },
+          },
+        ],
+      }),
+    ])
+    const read = (params: Record<string, unknown>) =>
+      rpc<Window>(ep, '_agnes/v1/session.attachmentRead', {
+        sessionId,
+        seq: seqs[0],
+        index: 1,
+        offset: 0,
+        length: 16,
+        ...params,
+      })
+    for (const params of [
+      { kind: 'file' },
+      { kind: 'file', offset: 4, length: 4 },
+      { kind: 'image' },
+      { kind: 'image', thumbnail: true },
+    ]) {
+      const response = await read(params)
+      expect(response.result).toBeUndefined()
+      expect(response.error?.data).toMatchObject({ code: 'ATTACHMENT_MISSING' })
+    }
   })
 
   it('reports a referenced object that is gone as missing instead of failing the connection', async () => {

@@ -1,7 +1,7 @@
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
 import { ledgerIntegrityRpcError } from './acp.js'
 
-type AttachmentPage = { mimeType: string; totalBytes: number; base64: string }
+type AttachmentPage = { mimeType: string; totalBytes: number; base64: string; sha256?: string }
 type AttachmentInput = {
   seq: number
   kind: 'image' | 'file'

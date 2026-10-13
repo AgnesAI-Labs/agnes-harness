@@ -2067,8 +2067,9 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'attachment windows name the attachment by message seq, kind and place, and carry at most 1 MiB',
   },
   SessionAttachmentReadResult: {
-    valid: { mimeType: 'application/zip', totalBytes: 3, base64: 'QUJD' },
+    valid: { mimeType: 'application/zip', totalBytes: 3, base64: 'QUJD', sha256: 'a'.repeat(64) },
     invalid: [
+      { mimeType: 'a/b', totalBytes: 3, base64: 'QUJD', sha256: 'A'.repeat(64) },
       { mimeType: '', totalBytes: 3, base64: 'QUJD' },
       { mimeType: 'a/b', totalBytes: -1, base64: 'QUJD' },
       { mimeType: 'a/b', totalBytes: 3, base64: rep(1_398_105) },
