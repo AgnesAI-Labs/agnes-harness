@@ -113,12 +113,9 @@
 
   .session-tabs-bar .session-goal-host {
     width: auto;
-    margin: 0 0 0 auto;
+    margin: 0;
     padding: 0;
     flex: 0 1 auto;
-  }
-  .session-tabs-bar:has(.session-goal-host:not([hidden])) #report-problem {
-    margin-left: var(--s8);
   }
   .session-goal-host .agnes-ui-button {
     max-width: 14rem;

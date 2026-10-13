@@ -68,12 +68,10 @@
   body:has(#empty-state:not([hidden])) main {
     position: relative;
   }
-  body:has(#empty-state:not([hidden])) .topbar {
+  body:has(#empty-state:not([hidden])) .topbar-row {
     position: absolute;
     inset: 0 0 auto 0;
     z-index: 6;
-    min-height: 0;
-    padding: 0.625rem 1.75rem;
     border-bottom: 0;
     background: transparent;
   }

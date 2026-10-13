@@ -88,10 +88,6 @@
     .sidebar {
       width: min(19rem, calc(100vw - 2.5rem));
     }
-    .topbar {
-      min-height: 3.4rem;
-      padding-inline: var(--s12);
-    }
     #transcript-content {
       padding: var(--s24) var(--s16) 5rem;
     }

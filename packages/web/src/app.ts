@@ -893,7 +893,7 @@ const clientModules = await startClientModules({
   },
   transcript: { nodeHost: 'react', onFork: forkTurn },
   conversationContainer: conversation,
-  topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
+  topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,
   approvalContainer: document.getElementById('approval') ?? undefined,
   composerContainer: document.getElementById('composer-mount') ?? undefined,
   composer: {
@@ -1287,12 +1287,14 @@ const sessionActions = createSessionActions({
   },
   translate: t,
 })
-document.addEventListener('agnes:rename-current-session', (event) => {
-  if (!current || draftingNew || sessionPending) return
-  const trigger = event.target
-  if (trigger instanceof HTMLElement)
-    void sessionActions.act('rename', current.id, trigger.textContent ?? '', trigger)
-})
+// Top bar entries for the selected session: its title renames it, the info button shows its runtime.
+for (const action of ['rename', 'runtime'] as const)
+  document.addEventListener(`agnes:${action}-current-session`, (event) => {
+    if (!current || draftingNew || sessionPending) return
+    const trigger = event.target
+    if (trigger instanceof HTMLElement)
+      void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
+  })
 document.addEventListener('agnes:compose-suggestion', (event) => {
   if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
   if (typeof event.detail !== 'string') return

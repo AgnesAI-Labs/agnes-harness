@@ -14,6 +14,10 @@ export interface TopbarHandle {
   setTaskTitle(title: string): void
   setStatus(text: string, state?: string): void
   setConnectionState(value: TopbarConnectionState): void
+  /** The session's Agent (loop) name; omitted while no session is selected. */
+  setAgent(name: string | undefined): void
+  /** Whether a live session can show its runtime information. */
+  setRuntimeAvailable(available: boolean): void
 }
 interface TopbarProps {
   translate: Translate
@@ -25,6 +29,8 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
   const [taskTitle, setTaskTitle] = useState<string>()
   const [status, setStatus] = useState<{ text: string; state: string }>()
   const [connection, setConnection] = useState<TopbarConnectionState>('connecting')
+  const [agent, setAgent] = useState<string>()
+  const [runtimeAvailable, setRuntimeAvailable] = useState(false)
   useEffect(() => {
     const previous = document.title
     document.title = taskTitle ? `${taskTitle} · Agnes Harness` : 'Agnes Harness'
@@ -43,6 +49,12 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
       },
       setConnectionState(value) {
         flushSync(() => setConnection(value))
+      },
+      setAgent(name) {
+        flushSync(() => setAgent(name))
+      },
+      setRuntimeAvailable(available) {
+        flushSync(() => setRuntimeAvailable(available))
       },
     }),
     [],
@@ -63,7 +75,7 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
             id="task-title"
             appearance="ghost"
             size="small"
-            title={t('topbar.rename')}
+            title={taskTitle ? `${taskTitle} · ${t('topbar.rename')}` : t('topbar.rename')}
             onClick={(event) =>
               event.currentTarget.dispatchEvent(
                 new CustomEvent('agnes:rename-current-session', { bubbles: true }),
@@ -73,10 +85,33 @@ export const Topbar = forwardRef<TopbarHandle, TopbarProps>(function Topbar(
             {taskTitle ?? t('topbar.defaultTitle')}
           </Button>
         </h1>
+        {agent && (
+          <span
+            className="topbar-agent"
+            data-testid="topbar-agent"
+            title={t('topbar.agent', { name: agent })}
+          >
+            <span translate="no">{agent}</span>
+          </span>
+        )}
         <span id="status" role="status" aria-live="polite" data-state={status?.state ?? 'idle'}>
           {status?.text ?? t('topbar.defaultStatus')}
         </span>
       </div>
+      {runtimeAvailable && (
+        <IconButton
+          id="session-runtime"
+          name="info"
+          className="topbar-runtime"
+          label={t('topbar.runtime')}
+          title={t('topbar.runtime')}
+          onClick={(event) =>
+            event.currentTarget.dispatchEvent(
+              new CustomEvent('agnes:runtime-current-session', { bubbles: true }),
+            )
+          }
+        />
+      )}
       <div className="connection-group">
         <span id="connection" role="status" aria-live="polite" data-state={connection}>
           {t(CONNECTION_LABEL_KEYS[connection])}

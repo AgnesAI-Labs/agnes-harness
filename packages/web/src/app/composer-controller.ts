@@ -1,4 +1,6 @@
 import { defaultLoop, userImagePolicy } from '@agnes/protocol'
+import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
+import { choiceName } from '@agnes/web-admin/settings/choices'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import { renderGoalCard } from '@agnes/web-conversation/goal-card'
@@ -12,7 +14,7 @@ import {
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
-import { updateLoopPicker } from '../loop-picker.js'
+import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
 
@@ -120,6 +122,17 @@ export function createComposerController(
         context.submitComposer()
       },
     )
+    // The top bar names the Agent bound to the selected session and offers its runtime information.
+    const sessionLoop = workbench.session
+      ? (sessionLoopSelection(context.projection) ?? sessionLoopSelection(workbench.session))
+      : undefined
+    const loopEntry =
+      sessionLoop &&
+      context.newSessionCatalog?.loops.find((entry) => loopIdentity(entry) === loopIdentity(sessionLoop))
+    context.topbarRuntime.setAgent(
+      sessionLoop ? choiceName(loopEntry ?? { id: sessionLoop.id }, context.t) : undefined,
+    )
+    context.topbarRuntime.setRuntimeAvailable(!!workbench.session)
     // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
     // 由 sessionPending = false 的那次 renderControls 平滑恢复。
     document.body.classList.toggle('session-switching', context.sessionPending)

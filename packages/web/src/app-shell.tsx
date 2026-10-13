@@ -27,7 +27,19 @@ export function AppShell({ children }: { children?: ReactNode }) {
       ></aside>
 
       <main id="main-content" tabIndex={-1}>
-        <header className="topbar" data-agnes-region="topbar"></header>
+        {/* One slim bar: the left part is the replaceable topbar unit, the right part the view controls. */}
+        <header className="topbar-row" data-agnes-region="topbar">
+          <div className="topbar"></div>
+          <div className="session-tabs-bar">
+            <div id="session-view-controls">
+              <RegionErrorBoundary region="topbar">
+                <SessionViews />
+              </RegionErrorBoundary>
+            </div>
+            <div id="session-goal-host" className="session-goal-host" />
+            <div id="workbench-controls"></div>
+          </div>
+        </header>
 
         <RegionErrorBoundary region="notice">
           <AppNotice />
@@ -39,15 +51,6 @@ export function AppShell({ children }: { children?: ReactNode }) {
           <ReconnectNotice />
         </RegionErrorBoundary>
         <div className="workbench-split">
-          <div className="session-tabs-bar">
-            <div id="workbench-controls"></div>
-            <div id="session-goal-host" className="session-goal-host" />
-            <div id="session-view-controls">
-              <RegionErrorBoundary region="topbar">
-                <SessionViews />
-              </RegionErrorBoundary>
-            </div>
-          </div>
           <div
             id="conversation-shell"
             className="conversation-shell"

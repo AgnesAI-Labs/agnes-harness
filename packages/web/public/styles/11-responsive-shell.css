@@ -127,10 +127,9 @@
 
   @media (max-width: 540px) {
     /* Touch targets stay usable even where the desktop skin intentionally uses compact controls. */
-    .topbar {
-      min-height: 3.75rem;
-      gap: var(--s8);
-      padding: var(--s8) var(--s16);
+    .topbar-row {
+      min-height: 3rem;
+      gap: var(--s4);
     }
     .connection-group {
       gap: var(--s8);
@@ -259,18 +258,8 @@
     summary {
       align-content: center;
     }
-    .session-tabs-bar {
-      flex-wrap: wrap;
-      gap: var(--s4) var(--s8);
-      padding-inline: var(--s12);
-    }
-    .session-tabs {
-      min-width: 0;
-      flex-wrap: wrap;
-      gap: var(--s12);
-    }
-    .session-tabs-bar .session-goal-host {
-      margin-inline-start: 0;
+    .topbar-row {
+      padding-inline: var(--s8);
     }
     .composer-controls {
       flex-wrap: wrap;

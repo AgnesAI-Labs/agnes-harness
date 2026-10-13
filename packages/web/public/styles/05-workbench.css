@@ -7,14 +7,21 @@
     flex-direction: column;
     background: var(--agnes-bg-app-content);
   }
-  .topbar {
-    min-height: 3rem;
+  /* One 44px bar: session identity on the left, view and workbench controls on the right. */
+  .topbar-row {
+    flex: 0 0 auto;
+    display: flex;
     align-items: center;
     gap: var(--s8);
-    padding: var(--s8) var(--s24);
-    border-bottom: 0.5px solid var(--agnes-line-primary);
+    min-height: 2.75rem;
+    padding: 0 var(--s12) 0 var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
     background: var(--agnes-bg-app-content);
-    backdrop-filter: none;
+  }
+  .topbar {
+    min-width: 0;
+    flex: 1;
+    gap: var(--s8);
   }
   .sidebar-toggle {
     flex: 0 0 auto;
@@ -24,17 +31,18 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--s8);
   }
   .task-heading h1 {
-    max-width: 36rem;
+    max-width: min(36rem, 100%);
     min-width: 0;
+    flex: 0 1 auto;
     margin: 0;
     overflow: hidden;
     padding: 0;
     color: var(--agnes-text-primary);
     font-size: var(--font-size-body);
-    font-weight: 500;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.25rem;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -47,6 +55,20 @@
     line-height: 1.125rem;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* The Agent bound to this session: a quiet chip, never accent-coloured. */
+  .task-heading .topbar-agent {
+    flex: 0 1 auto;
+    max-width: 12rem;
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    line-height: 1.25rem;
+  }
+  .task-heading .topbar-agent > span {
+    color: inherit;
   }
   #status[data-state="running"] {
     color: var(--agnes-text-emphasis);
@@ -131,16 +153,15 @@
     min-height: 0;
     flex: 1;
     display: grid;
-    /* The goal action lives in the tab bar; the remaining row belongs to the transcript. */
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
   }
-  /* 页签行：tablist 与「报告问题」按钮同级，按钮不进 tablist，以免破坏 tab 语义。 */
+  /* The view switch and its neighbours close the top bar; the report button stays outside the tablist. */
   .session-tabs-bar {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    padding: 0 var(--s20);
-    border-bottom: 1px solid var(--agnes-line-primary);
+    gap: var(--s4);
   }
   #session-view-controls,
   #session-view-controls > .agh-tooltip-anchor,
@@ -153,24 +174,24 @@
   }
   .session-tabs {
     display: flex;
-    gap: var(--s16);
+    gap: var(--s2);
   }
   #report-problem {
     margin-left: auto;
   }
   .session-tabs button {
-    min-height: 2.25rem;
-    padding: 0.35rem 0;
+    min-height: 1.75rem;
+    padding: 0 var(--s10);
     border: 0;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
+    border-radius: var(--radius-control);
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
   }
   .session-tabs button[aria-selected="true"] {
-    border-bottom-color: var(--agnes-text-emphasis);
-    color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+    font-weight: var(--font-weight-medium);
   }
   .conversation-shell {
     position: relative;
@@ -193,13 +214,16 @@
     display: none;
   }
   .topbar .topbar-workspace {
-    margin-left: auto;
+    flex: 0 1 auto;
+    min-width: 0;
     color: var(--agnes-text-secondary);
     max-width: 15rem;
     overflow: hidden;
   }
-  @media (max-width: 767px) {
-    .topbar-workspace {
+  /* Narrow bars keep the title, state and controls; the Agent and workspace stay one tap away. */
+  @media (max-width: 900px) {
+    .topbar-workspace,
+    .task-heading .topbar-agent {
       display: none;
     }
   }

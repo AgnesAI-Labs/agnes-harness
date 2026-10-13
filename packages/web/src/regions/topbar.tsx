@@ -25,6 +25,8 @@ export function mountTopbarRegion(
       }
     | undefined
   let connectionState: TopbarConnectionState | undefined
+  let agent: { name: string | undefined } | undefined
+  let runtimeAvailable: boolean | undefined
   const setHandle = (value: TopbarHandle | null): void => {
     handle.current = value
     if (!value) return
@@ -34,6 +36,8 @@ export function mountTopbarRegion(
       if (taskTitle !== undefined) value.setTaskTitle(taskTitle)
       if (status !== undefined) value.setStatus(status.text, status.state)
       if (connectionState !== undefined) value.setConnectionState(connectionState)
+      if (agent !== undefined) value.setAgent(agent.name)
+      if (runtimeAvailable !== undefined) value.setRuntimeAvailable(runtimeAvailable)
     })
   }
   registry.declare(TOPBAR_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
@@ -64,6 +68,16 @@ export function mountTopbarRegion(
     setConnectionState(value) {
       connectionState = value
       handle.current?.setConnectionState(value)
+    },
+    setAgent(name) {
+      if (agent?.name === name) return
+      agent = { name }
+      handle.current?.setAgent(name)
+    },
+    setRuntimeAvailable(available) {
+      if (runtimeAvailable === available) return
+      runtimeAvailable = available
+      handle.current?.setRuntimeAvailable(available)
     },
     dispose() {
       if (disposed) return

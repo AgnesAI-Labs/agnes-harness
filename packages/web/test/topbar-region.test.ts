@@ -20,7 +20,7 @@ describe('rendered topbar region', () => {
 
   it('renders the topbar controls and updates them through its public handle', async () => {
     runtime = await mountRenderedIndex()
-    const topbar = document.querySelector('header.topbar')
+    const topbar = document.querySelector('header .topbar')
     const handle = runtime.topbar
     expect(handle).toBeDefined()
     expect(topbar?.querySelector('[data-slot="ui:topbar"]')).toBeTruthy()
@@ -49,6 +49,26 @@ describe('rendered topbar region', () => {
     expect(topbar?.querySelector('#connection')?.textContent).toBe('Local backend connected')
     expect(topbar?.querySelector('#connection')?.getAttribute('data-state')).toBe('connected')
 
+    // The full title stays reachable when the bar truncates it.
+    expect(topbar?.querySelector('#task-title')?.getAttribute('title')).toContain('测试任务')
+
+    // Agent and runtime information appear only for a selected session.
+    expect(topbar?.querySelector('[data-testid="topbar-agent"]')).toBeNull()
+    expect(topbar?.querySelector('#session-runtime')).toBeNull()
+    handle?.setAgent('Research Agent')
+    handle?.setRuntimeAvailable(true)
+    expect(topbar?.querySelector('[data-testid="topbar-agent"]')?.textContent).toBe('Research Agent')
+    let runtimeRequests = 0
+    const onRuntime = () => runtimeRequests++
+    document.addEventListener('agnes:runtime-current-session', onRuntime)
+    topbar?.querySelector<HTMLButtonElement>('#session-runtime')?.click()
+    document.removeEventListener('agnes:runtime-current-session', onRuntime)
+    expect(runtimeRequests).toBe(1)
+    handle?.setAgent(undefined)
+    handle?.setRuntimeAvailable(false)
+    expect(topbar?.querySelector('[data-testid="topbar-agent"]')).toBeNull()
+    expect(topbar?.querySelector('#session-runtime')).toBeNull()
+
     const chat = document.getElementById('view-chat') as HTMLButtonElement
     const trace = document.getElementById('view-trace') as HTMLButtonElement
     expect(chat.getAttribute('aria-controls')).toBe('conversation-shell')
@@ -69,7 +89,7 @@ describe('rendered topbar region', () => {
 
   it('shadows only topbar and restores the built-in component after unload', async () => {
     runtime = await mountRenderedIndex()
-    const topbar = document.querySelector('header.topbar')
+    const topbar = document.querySelector('header .topbar')
     const remove = runtime.registry.register(
       {
         name: TOPBAR_SLOT as string,

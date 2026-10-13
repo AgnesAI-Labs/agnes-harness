@@ -63,7 +63,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     ...(options.transcript ? { transcript: options.transcript } : {}),
     ...(options.claim ? { claim: options.claim } : {}),
     conversationContainer: document.getElementById('conversation-shell') ?? undefined,
-    topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
+    topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,
     approvalContainer: document.getElementById('approval') ?? undefined,
     composerContainer: document.getElementById('composer-mount') ?? undefined,
     composer: {
