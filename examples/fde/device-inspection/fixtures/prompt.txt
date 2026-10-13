@@ -1,1 +1,1 @@
-Run the device-inspection workflow with the bundled synthetic fixtures.
+Check the sample device's status. If the temperature is out of range, show me the proposed setpoint change and wait for my confirmation before applying it, then verify the receipt.

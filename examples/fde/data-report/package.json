@@ -110,7 +110,11 @@
       "displayName": "Data report example",
       "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
       "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
-      "category": "tools",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Read the sample sales CSV, compute revenue, cost and margin totals, and produce a report with charts that I can open and download.",
+        "zh-CN": "读取示例销售 CSV，计算收入、成本和毛利合计，生成一份带图表、可打开和下载的报告。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "数据报告示例",

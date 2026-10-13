@@ -116,7 +116,11 @@
       "displayName": "CRM follow-up example",
       "summary": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
       "description": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
-      "category": "integrations",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Look up the sample account's health and open tickets, draft a renewal follow-up note from the renewal playbook, and ask me before saving it to the CRM.",
+        "zh-CN": "查询示例客户的健康度和未结工单，按续约手册起草一条续约跟进记录，写入 CRM 前先问我。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "CRM 跟进示例",

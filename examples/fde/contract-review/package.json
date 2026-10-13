@@ -110,7 +110,11 @@
       "displayName": "Contract review example",
       "summary": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
       "description": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
-      "category": "tools",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Review the sample supplier contract clause by clause, flag unlimited liability and one-sided change terms, and prepare a risk report for a qualified reviewer.",
+        "zh-CN": "逐条审查示例供应商合同，标出无限责任和单方变更条款，并整理一份供专业审核者复核的风险报告。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "合同审查示例",

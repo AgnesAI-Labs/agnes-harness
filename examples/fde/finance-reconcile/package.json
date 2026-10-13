@@ -121,7 +121,11 @@
       "displayName": "Ledger reconciliation example",
       "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
       "description": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
-      "category": "tools",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Reconcile the sample bank and book ledgers to the cent, explain each mismatch, and ask me before recording the proposed adjusting entries.",
+        "zh-CN": "把示例银行流水和账簿逐分对平，解释每一笔差异，记录拟定的调整分录前先问我。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "账目核对示例",

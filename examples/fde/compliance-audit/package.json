@@ -110,7 +110,11 @@
       "displayName": "Compliance evidence example",
       "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
       "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
-      "category": "safety-approval",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Audit the sample control checklist against the local evidence files. For each control, tell me whether it is evidenced, a gap or missing, with severity and the source quote.",
+        "zh-CN": "对照本地证据文件审计示例控制清单。逐项说明是已有证据、存在缺口还是缺失，并给出严重程度和原文引用。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "合规证据示例",

@@ -62,6 +62,33 @@ describe('plugin purpose metadata', () => {
     })
     expect(resolvePluginMetadata(metadata, 'en')?.displayName).toBe('Search')
   })
+  it('carries a localized sample prompt, an experimental mark and the business-agent category', () => {
+    const agent = {
+      ...metadata,
+      category: 'business-agent' as const,
+      experimental: true,
+      samplePrompt: { en: 'Review the sample contract.', 'zh-CN': '审查示例合同。' },
+    }
+    expect(validatePluginMetadata(agent).ok).toBe(true)
+    expect(resolvePluginMetadata(agent, 'zh-CN')).toMatchObject({
+      category: 'business-agent',
+      experimental: true,
+      samplePrompt: '审查示例合同。',
+    })
+    // English is the required base; a missing translation falls back to it.
+    const english = { ...agent, samplePrompt: { en: agent.samplePrompt.en } }
+    expect(resolvePluginMetadata(english, 'zh-CN')?.samplePrompt).toBe(agent.samplePrompt.en)
+    expect(resolvePluginMetadata(metadata, 'en')).toMatchObject({ experimental: false })
+    expect(resolvePluginMetadata(metadata, 'en')?.samplePrompt).toBeUndefined()
+    for (const invalid of [
+      { ...agent, samplePrompt: { 'zh-CN': '审查示例合同。' } },
+      { ...agent, samplePrompt: { en: 'line one\nline two' } },
+      { ...agent, samplePrompt: { en: 'ok', fr: 'non' } },
+      { ...agent, samplePrompt: 'Review the sample contract.' },
+      { ...agent, experimental: 'yes' },
+    ])
+      expect(validatePluginMetadata(invalid).ok).toBe(false)
+  })
   it('enforces the whole-block UTF-8 budget after individual field bounds', () => {
     const text = {
       displayName: 'Search',

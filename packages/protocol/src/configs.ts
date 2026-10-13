@@ -36,6 +36,8 @@ export function resolvePluginMetadata(
     description: localized?.description ?? metadata.description,
     category: metadata.category,
     docsUrl: localized?.docsUrl ?? metadata.docsUrl,
+    samplePrompt: metadata.samplePrompt?.[locale] ?? metadata.samplePrompt?.en,
+    experimental: metadata.experimental === true,
   }
 }
 

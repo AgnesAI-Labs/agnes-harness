@@ -29,7 +29,22 @@ Explain the user outcome in the public `PluginMetadata` contract exported by `@a
 
 When present, `displayName`, `summary`, `description` and `category` are required. Name (1–80), summary (1–240), description (1–1,200) and optional docs URL (1–2,048) are bounded in Unicode code points. Text must be trimmed, printable and a single line/paragraph; control characters and Unicode line separators are rejected. Write a summary as one sentence about the problem solved. Descriptions may add scope or prerequisites. The schema uses a code-point-bounded pattern and a UTF-16 ceiling so its generated validator also accepts supplementary Unicode characters within the limit.
 
-Category is one of `agent-loop`, `tools`, `safety-approval`, `memory-context`, `collaboration`, `integrations`, `observability`, `ui`, `developer`. It is an editorial grouping, not a runtime kind or permission. `docsUrl` must be an absolute HTTPS URL without credentials, whitespace or control characters. `locales` accepts only `en` and `zh-CN`; either may partially override name, summary, description and docs URL. Unknown keys are rejected. Each complete metadata block is limited to 24 KiB of UTF-8 JSON.
+Category is one of `agent-loop`, `tools`, `safety-approval`, `memory-context`, `collaboration`, `integrations`, `observability`, `ui`, `developer`, `business-agent`. It is an editorial grouping, not a runtime kind or permission. Use `business-agent` for a bundle that delivers one business workflow; clients list those packages as business agents. `docsUrl` must be an absolute HTTPS URL without credentials, whitespace or control characters. `locales` accepts only `en` and `zh-CN`; either may partially override name, summary, description and docs URL. Unknown keys are rejected. Each complete metadata block is limited to 24 KiB of UTF-8 JSON.
+
+Two optional fields describe how a package is offered:
+
+```json
+{
+  "category": "business-agent",
+  "samplePrompt": {
+    "en": "Review the sample supplier contract clause by clause.",
+    "zh-CN": "逐条审查示例供应商合同。"
+  },
+  "experimental": true
+}
+```
+
+`samplePrompt` is a prompt a person can send as written to try the package. `en` is required and `zh-CN` is optional; a client shows the current language and falls back to `en`. Each value is one paragraph of 1–600 code points under the same text rules as the summary. `experimental: true` marks a package whose behavior may still change; clients list it apart from stable packages. Omit it otherwise. Both fields are display data with no effect on loading or authorization.
 
 Installation inspection validates package and row metadata without importing plugin code. Extension admission uses the same protocol schema. Validated package metadata travels with previews, catalog entries, lock entries and immutable runtime snapshots; version changes follow the existing integrity, trust and pin rules. Metadata grants no capability and does not affect the capability hash, loading, authorization or enable/disable semantics.
 

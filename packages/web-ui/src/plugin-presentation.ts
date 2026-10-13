@@ -10,6 +10,7 @@ export const PLUGIN_CATEGORIES = [
   'observability',
   'ui',
   'developer',
+  'business-agent',
 ] as const
 export type PluginSurface =
   | 'chat'

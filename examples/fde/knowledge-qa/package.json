@@ -110,7 +110,11 @@
       "displayName": "Knowledge answer example",
       "summary": "Searches local sample documents and drafts an answer with source citations.",
       "description": "Searches local sample documents and drafts an answer with source citations.",
-      "category": "memory-context",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "What is the refund window and who reviews refund requests?",
+        "zh-CN": "退款期限（refund window）是多久？退款申请由谁审核（who reviews refund requests）？"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "知识问答示例",

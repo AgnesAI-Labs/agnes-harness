@@ -5769,10 +5769,26 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
       displayName: 'Reports',
       summary: 'Find reports.',
       description: 'Search project reports.',
-      category: 'tools',
+      category: 'business-agent',
       docsUrl: 'https://example.org/docs',
+      samplePrompt: { en: 'Find the March report.', 'zh-CN': '找出三月的报告。' },
+      experimental: true,
     },
     invalid: [
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'tools',
+        samplePrompt: { 'zh-CN': '找出三月的报告。' },
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'tools',
+        experimental: 'yes',
+      },
       {
         displayName: '',
         summary: 'Find reports.',

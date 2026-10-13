@@ -110,7 +110,11 @@
       "displayName": "Recruiting review example",
       "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
       "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
-      "category": "tools",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Compare the sample resumes with the job rubric using job-skill evidence only, list what is unknown for each candidate, and ask me to confirm the follow-up step.",
+        "zh-CN": "只依据岗位技能证据，把示例简历与岗位评分标准逐项对照，列出每位候选人的未知项，并请我确认后续步骤。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "招聘审核示例",

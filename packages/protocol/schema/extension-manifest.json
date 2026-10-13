@@ -461,6 +461,28 @@
         "category": {
           "$ref": "#/$defs/PluginCategory"
         },
+        "samplePrompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,600}(?<!\\s)$"
+            },
+            "zh-CN": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,600}(?<!\\s)$"
+            }
+          }
+        },
+        "experimental": {
+          "type": "boolean"
+        },
         "locales": {
           "type": "object",
           "additionalProperties": false,
@@ -516,7 +538,8 @@
         "integrations",
         "observability",
         "ui",
-        "developer"
+        "developer",
+        "business-agent"
       ]
     }
   }

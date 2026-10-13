@@ -229,6 +229,15 @@ describe('local example catalog', () => {
     const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
     expect(fde).toHaveLength(12)
     expect(fde.every((entry) => entry.kinds?.includes('bundle'))).toBe(true)
+    // The gallery finds business agents by category and offers each one's own prompt in both languages.
+    expect(result.entries.filter((entry) => entry.metadata?.category === 'business-agent')).toEqual(fde)
+    for (const entry of fde) {
+      const prompt = entry.metadata?.samplePrompt
+      expect(prompt?.en).toBeTruthy()
+      expect(prompt?.['zh-CN']).toBeTruthy()
+      expect(prompt?.en).not.toMatch(/^Run the .* workflow/)
+    }
+    expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
     for (const entry of result.entries) {
       const directory = fileURLToPath(
         new URL(`../../../${entry.source.ref.slice('file:./'.length)}`, import.meta.url),

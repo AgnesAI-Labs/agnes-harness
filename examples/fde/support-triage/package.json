@@ -118,7 +118,11 @@
       "displayName": "Support triage example",
       "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
       "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
-      "category": "agent-loop",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Look up the sample support ticket, classify its type and priority, draft a reply to the customer, and ask me before sending it.",
+        "zh-CN": "查询示例客服工单，判断类型和优先级，起草给客户的回复，发送前先问我。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "客服分流示例",

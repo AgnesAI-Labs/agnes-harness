@@ -117,7 +117,11 @@
       "displayName": "Device inspection simulator",
       "summary": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
       "description": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
-      "category": "integrations",
+      "category": "business-agent",
+      "samplePrompt": {
+        "en": "Check the sample device's status. If the temperature is out of range, show me the proposed setpoint change and wait for my confirmation before applying it, then verify the receipt.",
+        "zh-CN": "检查示例设备的状态。温度超出范围时，先给我看拟调整的设定值并等我确认，再执行并核对回执。"
+      },
       "locales": {
         "zh-CN": {
           "displayName": "设备巡检模拟器",
