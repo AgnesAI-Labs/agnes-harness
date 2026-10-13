@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -60,18 +60,72 @@ async function readCacheMaps(root: string): Promise<CacheMap[]> {
   return maps
 }
 
-/** Bytes a run set aside and never decided about (it crashed) go back where they were. */
-async function restoreSetAside(root: string, sweeping: string): Promise<void> {
-  for (const name of await readdir(sweeping).catch(() => [] as string[])) {
-    const match = /^([0-9a-f]{64})\.[0-9a-f-]+$/u.exec(name)
-    if (!match?.[1]) continue
-    const sha256 = match[1]
-    const objectPath = join(root, 'sha256', sha256.slice(0, 2), sha256)
-    if (existsSync(objectPath)) await rm(join(sweeping, name), { force: true })
-    else {
-      await mkdir(dirname(objectPath), { recursive: true, mode: 0o700 })
-      await rename(join(sweeping, name), objectPath)
+/** How long putting set-aside bytes back waits for the ledger write lock before leaving it to later. */
+const RESTORE_LOCK_WAIT_MS = 10_000
+
+const isBusy = (error: unknown) => {
+  const e = error as { errcode?: unknown; message?: unknown } | null
+  return e?.errcode === 5 || e?.errcode === 6 || /database is (locked|busy)/u.test(String(e?.message))
+}
+
+/**
+ * Takes the ledger write lock without blocking the event loop while another holder (a run of this
+ * process among them) finishes; false when it is still held after `waitMs`.
+ */
+async function lockLedger(ledger: DatabaseSync, waitMs: number, signal?: AbortSignal): Promise<boolean> {
+  const until = performance.now() + waitMs
+  ledger.exec('PRAGMA busy_timeout=0')
+  for (;;) {
+    try {
+      ledger.exec('BEGIN IMMEDIATE')
+      return true
+    } catch (error) {
+      if (!isBusy(error)) throw error
+      if (performance.now() >= until || signal?.aborted) return false
+      await new Promise((done) => setTimeout(done, 25))
     }
+  }
+}
+
+/**
+ * Bytes a run set aside and never decided about (it crashed) go back where they were. A run holds the
+ * ledger write lock from setting bytes aside until it has decided about them, so this takes the same
+ * lock: what it finds aside then is never what a live run (of this or another process) is still
+ * deciding about. The moves are synchronous, so the lock is never held across a turn of the event
+ * loop that a ledger write of this process would have to wait out. Resolves false when the lock could
+ * not be had; the bytes then wait for the next attempt.
+ */
+export async function restoreSetAsideAttachments(o: {
+  dataDir: string
+  root: string
+  signal?: AbortSignal
+}): Promise<boolean> {
+  const sweeping = join(o.root, 'sweeping')
+  if ((await readdir(sweeping).catch(() => [] as string[])).length === 0) return true
+  const ledgerFile = join(o.dataDir, 'sessions.db')
+  // Only a run that found a ledger sets bytes aside.
+  if (!existsSync(ledgerFile)) return true
+  const ledger = new DatabaseSync(ledgerFile)
+  try {
+    if (!(await lockLedger(ledger, RESTORE_LOCK_WAIT_MS, o.signal))) return false
+    try {
+      for (const name of readdirSync(sweeping)) {
+        const match = /^([0-9a-f]{64})\.[0-9a-f-]+$/u.exec(name)
+        if (!match?.[1]) continue
+        const sha256 = match[1]
+        const objectPath = join(o.root, 'sha256', sha256.slice(0, 2), sha256)
+        if (existsSync(objectPath)) rmSync(join(sweeping, name), { force: true })
+        else {
+          mkdirSync(dirname(objectPath), { recursive: true, mode: 0o700 })
+          renameSync(join(sweeping, name), objectPath)
+        }
+      }
+    } finally {
+      ledger.exec('ROLLBACK')
+    }
+    return true
+  } finally {
+    ledger.close()
   }
 }
 
@@ -102,7 +156,12 @@ export async function collectAttachmentOrphans(
   const now = clock()
   const markers = join(o.store.root, 'user-attachment-meta')
   const sweeping = join(o.store.root, 'sweeping')
-  await restoreSetAside(o.store.root, sweeping)
+  const restored = await restoreSetAsideAttachments({
+    dataDir: o.dataDir,
+    root: o.store.root,
+    ...(o.signal ? { signal: o.signal } : {}),
+  })
+  if (!restored) return none
   const lastSeen = (marker: { firstSeenMs: number; lastSeenMs?: number }) =>
     Math.max(marker.firstSeenMs, marker.lastSeenMs ?? 0)
   const candidates = new Set<string>()

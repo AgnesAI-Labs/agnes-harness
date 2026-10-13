@@ -31,7 +31,9 @@ vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
 })
 
 const { DDL } = await import('../src/adapters/ddl.js')
-const { collectAttachmentOrphans, scheduleAttachmentOrphans } = await import('../src/attachment-orphans.js')
+const { collectAttachmentOrphans, restoreSetAsideAttachments, scheduleAttachmentOrphans } = await import(
+  '../src/attachment-orphans.js'
+)
 const { attachmentReceiptFor, createAttachmentStore } = await import('../src/attachment-store.js')
 const { createPrivateArtifactStore } = await import('../src/private-artifact-store.js')
 const { createUserAttachmentPort } = await import('../src/user-attachments.js')
@@ -222,6 +224,67 @@ describe('collecting unreferenced user attachments', () => {
     await f.collect()
     expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
     expect(readdirSync(aside)).toEqual([])
+  })
+
+  it('never restores bytes another run has set aside and is still deciding about', async () => {
+    const f = fixture()
+    const b = await f.object('swept by two runs at once', T - 8 * DAY)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    let reads = 0
+    let second: Promise<unknown> | undefined
+    // Run A has set the bytes aside and is about to judge the marker again when run B starts, as a
+    // second worker process's daily run would.
+    const store = {
+      ...f.store,
+      userAttachment: async (sha256: string) => {
+        if (sha256 === b.sha256 && ++reads === 3) {
+          second = f.collect().then(
+            (result) => result,
+            (error: unknown) => error,
+          )
+          await new Promise((done) => setTimeout(done, 200))
+        }
+        return f.store.userAttachment(sha256)
+      },
+    }
+    const first = await collectAttachmentOrphans({
+      dataDir: f.dataDir,
+      store,
+      graceMs: GRACE,
+      clock: () => T,
+    })
+    expect(first).toEqual({ deleted: 1, bytes: b.bytes })
+    expect(await second).toEqual({ deleted: 0, bytes: 0 })
+    // Bytes and marker went together: no object is left behind without the marker that collects it.
+    expect(f.present(b.sha256)).toEqual({ bytes: false, marker: false })
+    expect(readdirSync(join(f.dataDir, 'artifacts', 'sweeping'))).toEqual([])
+  })
+
+  it('puts set-aside bytes back only once the run that set them aside has decided', async () => {
+    const f = fixture()
+    const b = await f.object('restored at a start meanwhile', T - 8 * DAY)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    let reads = 0
+    let restoring: Promise<boolean> | undefined
+    let early: { bytes: boolean; marker: boolean } | undefined
+    // A host starting while a run has the bytes aside puts back what it finds there.
+    const store = {
+      ...f.store,
+      userAttachment: async (sha256: string) => {
+        if (sha256 === b.sha256 && ++reads === 3) {
+          restoring = restoreSetAsideAttachments({ dataDir: f.dataDir, root: f.store.root })
+          await new Promise((done) => setTimeout(done, 200))
+          early = f.present(b.sha256)
+        }
+        return f.store.userAttachment(sha256)
+      },
+    }
+    expect(
+      await collectAttachmentOrphans({ dataDir: f.dataDir, store, graceMs: GRACE, clock: () => T }),
+    ).toEqual({ deleted: 1, bytes: b.bytes })
+    expect(early).toEqual({ bytes: false, marker: true })
+    expect(await restoring).toBe(true)
+    expect(f.present(b.sha256)).toEqual({ bytes: false, marker: false })
   })
 
   it('keeps an object uploaded again while the run was deciding', async () => {

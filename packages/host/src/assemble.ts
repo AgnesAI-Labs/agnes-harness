@@ -77,7 +77,7 @@ import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-c
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import { scheduleAttachmentOrphans } from './attachment-orphans.js'
+import { restoreSetAsideAttachments, scheduleAttachmentOrphans } from './attachment-orphans.js'
 import { type AttachmentStore, createAttachmentStore } from './attachment-store.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
@@ -1714,6 +1714,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       cacheInline: bundledArtifacts,
     })
     const requestVersions = assembleRequestVersions(attachmentStore, dataDir, clock)
+    // Bytes a sweep had set aside when its process died go back now rather than at the next sweep,
+    // whatever the switch says: references a session holds are read either way.
+    const restoring = new AbortController()
+    const restored = restoreSetAsideAttachments({
+      dataDir,
+      root: attachmentStore.root,
+      signal: restoring.signal,
+    }).catch((error) => deps.log.warn('attachment restore failed', { error: String(error) }))
+    rollback.push('attachment-restore', async () => {
+      restoring.abort()
+      await restored
+    })
     if (attachments.storeByReference) {
       const orphans = scheduleAttachmentOrphans({
         dataDir,
