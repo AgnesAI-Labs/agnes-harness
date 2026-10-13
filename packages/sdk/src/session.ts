@@ -51,6 +51,7 @@ import {
 import { ToolCall as ToolCallSchema, ToolResult as ToolResultSchema } from '@agnes/protocol/gen/session-v1'
 import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
+import { notifyListeners } from './events.js'
 // A handle on one conversation. It owns two things the client cannot own for it:
 // the running position in that session's event stream (cursor, generation), and the
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
@@ -329,7 +330,7 @@ export class Session {
           ...(meta.credits ? { credits: meta.credits } : {}),
         }
     }
-    for (const l of [...this.listeners]) l(method, params, meta)
+    notifyListeners(this.listeners, `session ${this.id}`, method, params, meta)
   }
 
   // The in-flight attach is registered before the first await inside, so anything that

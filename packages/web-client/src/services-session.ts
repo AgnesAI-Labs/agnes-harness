@@ -1,4 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
+import { notifyListeners } from '@agnes/sdk/browser'
 import type {
   HostAgnesClient,
   SessionClientHandle,
@@ -31,7 +32,7 @@ export class SessionService extends Service {
     this.detachHandle()
     this.currentSessionId = sessionId
     this.reattachHandle()
-    for (const listener of [...this.listeners]) listener()
+    notifyListeners(this.listeners, 'session scope')
   }
 
   /** Alias for hosts that model a session switch as a scope reattachment. */
@@ -99,7 +100,7 @@ export class SessionService extends Service {
     const handle = sessions?.get?.(this.currentSessionId) as SessionClientHandle | undefined
     if (!handle) return
     const listener = (() => {
-      for (const item of [...this.projectionListeners]) item()
+      notifyListeners(this.projectionListeners, 'session projection')
     }) as (...args: never[]) => void
     this.currentHandle = handle
     this.currentHandleListener = listener

@@ -82,7 +82,7 @@ export * from './client.js'
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
-export { Emitter } from './events.js'
+export { Emitter, notifyListeners } from './events.js'
 export * from './extensions.node.js'
 export * from './headless.js'
 export * from './identity.node.js'

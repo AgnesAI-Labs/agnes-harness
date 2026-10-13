@@ -1,4 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
+import { notifyListeners } from '@agnes/sdk/browser'
 
 export type ResolvedTheme = 'light' | 'dark'
 
@@ -20,7 +21,7 @@ export class ThemeService extends Service {
   setTheme(theme: ResolvedTheme): void {
     if (theme === this.resolved) return
     this.resolved = theme
-    for (const listener of [...this.listeners]) listener()
+    notifyListeners(this.listeners, 'theme')
   }
 
   subscribe = (listener: () => void): (() => void) => {

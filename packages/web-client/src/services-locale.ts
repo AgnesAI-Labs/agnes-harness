@@ -1,4 +1,5 @@
 import { type Context, Service } from '@agnes/cordis'
+import { notifyListeners } from '@agnes/sdk/browser'
 
 export const UI_LOCALES = ['en', 'zh-CN'] as const
 export type UiLocale = (typeof UI_LOCALES)[number]
@@ -42,11 +43,11 @@ export class LocaleService extends Service {
     // Delete first so the newest revision wins deterministic lookup order.
     this.catalogs.delete(namespace)
     this.catalogs.set(namespace, catalog)
-    for (const listener of [...this.listeners]) listener()
+    notifyListeners(this.listeners, 'locale')
     return () => {
       if (this.catalogs.get(namespace) !== catalog) return
       this.catalogs.delete(namespace)
-      for (const listener of [...this.listeners]) listener()
+      notifyListeners(this.listeners, 'locale')
     }
   }
 
@@ -79,7 +80,7 @@ export class LocaleService extends Service {
     const next = resolveUiLocale(locale)
     if (next === this.currentLocale) return
     this.currentLocale = next
-    for (const listener of [...this.listeners]) listener()
+    notifyListeners(this.listeners, 'locale')
   }
 
   subscribe = (listener: () => void): (() => void) => {

@@ -108,7 +108,7 @@ export type {
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
-export { Emitter } from './events.js'
+export { Emitter, notifyListeners } from './events.js'
 export * from './headless.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'

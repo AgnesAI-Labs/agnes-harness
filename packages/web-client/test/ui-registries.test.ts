@@ -36,3 +36,16 @@ it('keeps presentation links unavailable without a host and disposes only the re
   removeSecond()
   expect(links.open('files')).toBe(false)
 })
+
+it('notifies every subscriber even when an earlier one throws', () => {
+  const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const registry = new UiExtensionRegistry<{ id: string; order: number }>()
+  const later = vi.fn()
+  registry.subscribe(() => {
+    throw new Error('view failed')
+  })
+  registry.subscribe(later)
+  registry.register({ id: 'one', order: 1 })
+  expect(later).toHaveBeenCalledOnce()
+  report.mockRestore()
+})

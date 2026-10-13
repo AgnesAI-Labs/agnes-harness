@@ -1,3 +1,4 @@
+import { notifyListeners } from '@agnes/sdk/browser'
 import type { ComponentType } from 'react'
 import type { ClientResourceService, SessionService } from './services.js'
 
@@ -85,7 +86,7 @@ export class UiExtensionRegistry<Entry extends { readonly id: string; readonly o
   }
   #changed() {
     this.#version += 1
-    for (const listener of this.#listeners) listener()
+    notifyListeners(this.#listeners, 'ui registry')
   }
 }
 
