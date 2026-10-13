@@ -120,6 +120,50 @@ describe('durable session approval grants', () => {
     await reopen(h, nextActor)
     expect(h.asks()).toBe(2)
     expect(h.executed()).toBe(1)
+    // If the new principal later earns its own grant for the same scope, management must not
+    // relabel the old principal's decision as another grant belonging to the new one.
+    let asks = 0
+    const n = await openSession({
+      storage: h.storage,
+      clock: h.clock,
+      registry: h.registry,
+      actor: nextActor,
+      seams: fakeSeams({
+        approval: {
+          ask: async () => ({
+            verdict: ++asks === 1 ? ('allowed-session' as const) : ('rejected' as const),
+            answeredBy: nextActor,
+          }),
+        },
+      }),
+      provider: fakeProvider([
+        toolTurn('shell', { command: 'x' }),
+        textTurn('done'),
+        toolTurn('shell', { command: 'x' }),
+        textTurn('done'),
+      ]),
+    })
+    try {
+      const run = async () => {
+        await n.session.enqueue('next-turn', { actor: nextActor, content: [{ type: 'text', text: 'go' }] })
+        await n.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      }
+      await run()
+      const grants = listSessionGrants(n.session)
+      expect(grants).toHaveLength(1)
+      expect(grants[0]?.issuer).toEqual(nextActor)
+      expect(await revokeSessionGrant(n.session, grants[0]!.grantId)).toBe(true)
+      expect(listSessionGrants(n.session)).toEqual([])
+      await run()
+      expect(asks).toBe(2)
+      expect(h.executed()).toBe(2)
+    } finally {
+      await n.session.close()
+    }
+    // Revoking the second principal's grant leaves the first principal's original grant intact.
+    await reopen(h)
+    expect(h.asks()).toBe(2)
+    expect(h.executed()).toBe(3)
   })
   it.each(['sync', 'callback'] as const)(
     'lists a %s session grant and revokes it for this and every later opening',

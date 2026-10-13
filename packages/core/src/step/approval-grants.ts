@@ -254,6 +254,8 @@ function activeSessionGrants(s: SessionImpl): Array<{ key: string; entry: Sessio
       value.request.owner !== TOOL_DECISION_OWNER ||
       value.request.sourcePackage !== '@agnes/core' ||
       value.request.lane !== s.lane ||
+      value.request.requestedBy.id !== s.d.actor.id ||
+      value.request.requestedBy.org !== s.d.actor.org ||
       !value.consumption ||
       value.invalidation ||
       value.result?.reason !== 'answered' ||
