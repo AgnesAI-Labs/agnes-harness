@@ -172,8 +172,11 @@
     /* Shadow —— 边框优先于阴影：只有浮层（菜单、弹窗、抽屉）使用高程。
      阴影内含颜色，必须随主题切换，故归语义层而不是尺度层。 */
     --shadow-elevation: var(--elevation-1);
-    /* The one keyboard focus ring: soft, 3px, following the element's own radius. */
+    /* The one keyboard focus ring, following the element's own radius: a 1px solid line at the
+     element's edge (3:1 against every surface) inside a soft 3px halo. */
     --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
+    --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
     /* The current item of a navigation rail: a raised pill, barely lifted. */
     --shadow-raised: 0 0 0 1px rgb(27 29 34 / 5%), 0 1px 2px rgb(27 29 34 / 8%);
     /* The composer card's 1px lift; every other bordered card stays flat. */
@@ -296,6 +299,8 @@
     /* Shadow —— 深色用近黑的两层投影；边框由卡片自身声明。 */
     --shadow-elevation: var(--elevation-1);
     --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
+    --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
     --shadow-raised: 0 0 0 1px rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 30%);
     --shadow-hairline: 0 1px 2px rgb(0 0 0 / 24%);
     --shadow-dialog: 0 4px 12px rgb(0 0 0 / 28%), 0 24px 56px rgb(0 0 0 / 40%);

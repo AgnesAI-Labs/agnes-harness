@@ -52,7 +52,8 @@
   }
   #model:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
 
   /* One panel: search, models grouped by provider account, then the current model's session settings. */

@@ -45,7 +45,8 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 
 - Theme tokens `--agnes-bg-fill`, `--agnes-bg-fill-hover` (the soft neutral fill of text fields,
   secondary buttons and icon tiles), `--agnes-bg-group` (the surface of a grouped card),
-  `--focus-outline` (the one keyboard focus ring) and `--shadow-raised` (the current item of a
+  `--focus-outline`, `--focus-line` and `--focus-line-inset` (the one keyboard focus ring: a solid
+  1px line inside a soft halo) and `--shadow-raised` (the current item of a
   navigation rail). A skin that sets none of them keeps the theme's values.
 
 - `LoopEventRegistryPort.dispatch` takes an optional `resultMaxBytes`: an `after_tool_result`

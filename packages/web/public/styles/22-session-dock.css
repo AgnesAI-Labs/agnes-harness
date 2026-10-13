@@ -103,6 +103,8 @@
   }
   .workbench-resize:focus-visible {
     outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .workbench-resize::after {
     content: "";

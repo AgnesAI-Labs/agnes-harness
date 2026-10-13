@@ -116,6 +116,8 @@
   }
   .session-terminal:focus-visible {
     outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
 
   .goal-card {
@@ -295,6 +297,7 @@
   .runtime-settings > nav .agh-disclosure > .agh-disclosure-summary:focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
     border-radius: var(--radius-control);
   }
   #config-form.settings-shell .settings-nav-group [hidden],

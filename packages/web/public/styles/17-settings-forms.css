@@ -203,7 +203,8 @@
   }
   .config-account button:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   /* A quiet closing line of the account list; it carries no rule of its own, so nothing is drawn
    between it and the list above or the card below. */
@@ -280,7 +281,8 @@
   }
   .select-picker-trigger:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .select-picker-trigger:disabled {
     color: var(--agnes-text-tertiary);
@@ -369,6 +371,7 @@
   .select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .select-picker-option:active {
     background: var(--agnes-bg-selected);
@@ -686,7 +689,8 @@
   }
   .usage-disclosure .agh-disclosure-summary:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .usage-grid {
     display: grid;
@@ -789,6 +793,7 @@
   .appearance-option:has(input:focus-visible) {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .appearance-option:has(input:disabled) {
     cursor: not-allowed;
@@ -927,7 +932,8 @@
   .account-key-help > .agh-disclosure-summary:focus-visible,
   .agnes-first-run .agh-disclosure-summary:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .agnes-first-run .agnes-settings-actions {
     flex-wrap: wrap;

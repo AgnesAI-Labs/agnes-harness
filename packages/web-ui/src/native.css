@@ -52,7 +52,8 @@
   a[href]:focus-visible,
   [role="tab"]:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
 
   /* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。

@@ -216,6 +216,8 @@ textarea {
 --agnes-status-info-solid
 --shadow-elevation
 --focus-outline
+--focus-line
+--focus-line-inset
 --shadow-raised
 --shadow-hairline
 --shadow-dialog

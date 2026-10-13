@@ -177,7 +177,8 @@
   }
   .trace-gantt-track:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .trace-gantt-selection {
     position: absolute;
@@ -205,6 +206,7 @@
   button.trace-gantt-bar:focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .trace-gantt-bar[aria-pressed="true"] {
     box-shadow: inset 0 0 0 2px var(--agnes-text-primary);
@@ -331,6 +333,7 @@
   .trace-tool-toggle:focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .trace-row[aria-current="true"] {
     background: var(--agnes-trace-row-current);

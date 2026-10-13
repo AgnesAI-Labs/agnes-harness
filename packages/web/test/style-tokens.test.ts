@@ -258,6 +258,11 @@ describe('style.css token 门禁', () => {
       property: 'outline',
       value: 'var(--focus-outline)',
     })
+    // The solid line at the element's edge is what keeps the ring at 3:1.
+    expect(declarationsOf(buttonFocus as Rule)).toContainEqual({
+      property: 'box-shadow',
+      value: 'var(--focus-line)',
+    })
     expect(declarationsOf(inputFocus as Rule)).toContainEqual({
       property: 'box-shadow',
       value: '0 0 0 3px var(--agnes-focus-ring-soft)',

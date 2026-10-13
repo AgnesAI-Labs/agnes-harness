@@ -38,7 +38,7 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 - 强调色只用于主操作、当前选中和状态指示，不用于装饰；状态色与强调色分开。
 - 悬停、选中和卡片底色是正文色的半透明叠层（`--agnes-bg-hover`、`--agnes-bg-selected`、`--agnes-bg-card`），因此在底色、面板和表面上都成立。
 - 状态色有两档：`-text` 用于文字（在底色和自身 `-bg` 上达到 4.5:1），`-solid` 用于圆点和图标（3:1）。浅色下文字档比标记档更深。
-- 弱化文字在它出现的每一种表面上（包括悬停与卡片叠层）都保持 4.5:1；获得焦点的输入框使用焦点色边框（`--agnes-input-border-focus`，3:1）。静止状态的输入框是柔和的中性填充（`--agnes-bg-fill`），没有边界线；其他控件的键盘焦点环是跟随元素圆角的 3px 柔和强调色环（`--focus-outline`）。这两处是有意的视觉取舍，相对表面的对比度低于 3:1。[`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) 与 [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) 中的对比度表对两种模式分别校验。
+- 弱化文字在它出现的每一种表面上（包括悬停与卡片叠层）都保持 4.5:1；控件边界（`--agnes-input-border`）和焦点环保持 3:1。输入框是这条细边界线内的柔和中性填充（`--agnes-bg-fill`）；键盘焦点环由紧贴元素边缘的 1px 实色线（`--focus-line`，由它保证 3:1）和外侧 3px 柔和光晕（`--focus-outline`）组成，都跟随元素圆角。[`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) 与 [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) 中的对比度表对两种模式分别校验。
 
 ## 字体、形状与动效
 

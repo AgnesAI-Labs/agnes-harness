@@ -236,6 +236,7 @@
   .plugin-row:not(.agh-list-row):focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .plugin-row-content {
     min-width: 0;
@@ -312,7 +313,8 @@
   }
   .plugin-surface-link:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   /* 状态指示灯：信任 / 期望 / 实际 / 浏览器 UI 四格纵向排开。此前是一排文字 chip，
    长短随取值变化，扫读要逐字读。改用色点后一眼能看出"哪一格不对劲"。
@@ -431,7 +433,8 @@
   }
   .switch:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .switch:disabled {
     cursor: not-allowed;

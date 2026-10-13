@@ -41,7 +41,8 @@
   .conversation-markdown.x-markdown-dark a:focus-visible,
   .conversation-markdown .code-copy:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
 
   /* The focusable .table-scroll owns overflow and the border; tables retain native column layout. */

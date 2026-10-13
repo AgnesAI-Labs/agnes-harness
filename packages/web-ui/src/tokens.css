@@ -459,7 +459,8 @@
     min-width: 0;
     min-height: var(--control-height);
     padding: var(--s8) var(--s12);
-    border: 1px solid transparent;
+    /* A soft fill with a thin boundary line: the field's edge stays 3:1 against the surface. */
+    border: 1px solid var(--agnes-input-border);
     border-radius: var(--radius-control);
     background: var(--agnes-bg-fill);
     color: var(--agnes-input-content-strong);
@@ -473,6 +474,7 @@
     resize: vertical;
   }
   .agnes-settings-input:hover:not(:disabled):not(:focus-visible) {
+    border-color: var(--agnes-input-border-emphasis);
     background-color: var(--agnes-bg-fill-hover);
   }
   .agnes-settings-input:focus-visible {
@@ -482,7 +484,7 @@
     box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
   }
   .agnes-settings-input:disabled {
-    border-color: transparent;
+    border-color: var(--agnes-line-primary);
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-card);
     cursor: not-allowed;
@@ -616,7 +618,8 @@
   }
   .agnes-settings-card .agh-disclosure-summary:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   /* A list is one grouped card; its rows round on hover inside it and share inset hairlines. */
   .agnes-settings-list {
@@ -667,6 +670,8 @@
   }
   .agnes-settings-table:focus-visible {
     outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   @media (max-width: 640px) {
     .agnes-settings-card {
@@ -715,6 +720,7 @@
   .agnes-settings-section-tabs button:focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .agnes-conversation-card {
     min-width: 0;
@@ -781,7 +787,8 @@
   }
   .plugin-details-button:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
     border-radius: var(--radius-sm);
   }
   .agnes-ui-popover .ant-popover-container,
@@ -876,10 +883,10 @@
     box-shadow: none;
     color: inherit;
   }
-  /* A select is a soft filled field like every other input: no boundary line until it has focus. */
+  /* A select is a soft filled field like every other input, with the same thin boundary line. */
   .agnes-ui-select.ant-select {
-    --ant-color-border: transparent;
-    --ant-select-hover-border-color: transparent;
+    --ant-color-border: var(--agnes-input-border);
+    --ant-select-hover-border-color: var(--agnes-input-border-emphasis);
     --ant-select-selector-bg: transparent;
     border-radius: var(--radius-control);
   }

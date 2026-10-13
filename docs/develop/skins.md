@@ -223,6 +223,8 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-status-info-solid
 --shadow-elevation
 --focus-outline
+--focus-line
+--focus-line-inset
 --shadow-raised
 --shadow-hairline
 --shadow-dialog

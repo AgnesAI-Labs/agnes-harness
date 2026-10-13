@@ -101,7 +101,8 @@
   }
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
@@ -225,7 +226,8 @@
   }
   .agh-tooltip-anchor:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
@@ -270,6 +272,7 @@
   .agh-menu-item:focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .agh-menu-item[aria-disabled="true"] {
     color: var(--agnes-text-tertiary);
@@ -682,6 +685,7 @@
   .agh-table-scroll :is(.ant-table-body, .ant-table-content):focus-visible {
     outline: var(--focus-outline);
     outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
   }
   .agh-sheet-handle {
     display: none;
@@ -1301,7 +1305,8 @@
   }
   .agh-disclosure[data-variant] > .agh-disclosure-summary:focus-visible {
     outline: var(--focus-outline);
-    outline-offset: 0;
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
   }
   .agh-disclosure-chevron {
     flex: 0 0 auto;
@@ -1457,7 +1462,7 @@
     height: var(--control-height-form);
     min-height: var(--control-height-form);
     padding: 0 var(--s12) 0 var(--s32);
-    border: 1px solid transparent;
+    border: 1px solid var(--agnes-input-border);
     border-radius: var(--radius-control);
     color: var(--agnes-input-content-strong);
     background: var(--agnes-bg-fill);
@@ -1468,6 +1473,7 @@
     color: var(--agnes-text-tertiary);
   }
   .agh-search-bar-field > input:hover {
+    border-color: var(--agnes-input-border-emphasis);
     background: var(--agnes-bg-fill-hover);
   }
   .agh-search-bar-field > input:focus-visible {

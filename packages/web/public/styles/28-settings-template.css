@@ -251,6 +251,10 @@
   .settings-shell .settings-nav-item[aria-current="page"] .icon {
     color: var(--agnes-brand-primary);
   }
+  /* The current item's raised shadow gives way to the focus line while it holds keyboard focus. */
+  .settings-shell .settings-nav-item:focus-visible {
+    box-shadow: var(--focus-line);
+  }
   .settings-shell #settings-advanced {
     margin-top: var(--s8);
   }
