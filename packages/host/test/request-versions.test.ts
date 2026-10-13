@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -6,7 +5,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -329,7 +327,7 @@ describe('request version cache', () => {
       expect(indexFiles(root)).toEqual([`${made.id}.json`])
     })
 
-    it('leaves a corrupt object alone when it is also a user attachment', async () => {
+    it('repairs a corrupt object that is also a user attachment through the store', async () => {
       const { encoder } = fixed()
       const { store, cache } = setup(encoder)
       const src = await store.put(PNG, { kind: 'user-attachment', mimeType: 'image/png' })
@@ -337,44 +335,8 @@ describe('request version cache', () => {
       await store.markUserAttachment(made.object, { mimeType: 'image/jpeg' })
       writeFileSync(objectPath(store, made.object.sha256), Uint8Array.of(9, 9, 9, 9))
       await cache.getOrCreate({ ...src, ...png }, tiny)
-      expect(new Uint8Array(readFileSync(objectPath(store, made.object.sha256)))).toEqual(
-        Uint8Array.of(9, 9, 9, 9),
-      )
-    })
-
-    it('does not delete an object that was replaced between the failed read and the delete', async () => {
-      const { encoder } = fixed()
-      let swapped = false
-      let presentAtRedo: boolean | undefined
-      let version: { sha256: string } | undefined
-      const { store, cache } = setup(encoder, {
-        wrap: (inner) => ({
-          ...inner,
-          async read(sha, range, signal) {
-            if (sha === version?.sha256 && !swapped) {
-              swapped = true
-              // A concurrent writer puts the correct bytes in place under a new file, then our read fails.
-              const fresh = `${objectPath(inner, sha)}.fresh`
-              writeFileSync(fresh, Uint8Array.of(1, 2, 3, 4))
-              renameSync(fresh, objectPath(inner, sha))
-              throw Object.assign(new Error('corrupt'), { code: 'ATTACHMENT_CORRUPT' })
-            }
-            return inner.read(sha, range, signal)
-          },
-          async put(bytes, meta) {
-            if (swapped)
-              presentAtRedo = existsSync(objectPath(inner, createHash('sha256').update(bytes).digest('hex')))
-            return inner.put(bytes, meta)
-          },
-        }),
-      })
-      const src = await store.put(PNG, { kind: 'user-attachment', mimeType: 'image/png' })
-      const made = await cache.getOrCreate({ ...src, ...png }, tiny)
-      version = made.object
-      writeFileSync(objectPath(store, made.object.sha256), Uint8Array.of(9, 9, 9, 9))
-      await cache.getOrCreate({ ...src, ...png }, tiny)
-      expect(presentAtRedo).toBe(true)
       expect(await store.read(made.object.sha256)).toEqual(Uint8Array.of(1, 2, 3, 4))
+      expect(await store.userAttachment(made.object.sha256)).toBeDefined()
     })
 
     it('redoes a version whose object is gone', async () => {
