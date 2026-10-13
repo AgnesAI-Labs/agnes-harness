@@ -5,6 +5,23 @@ import { readFile } from 'node:fs/promises'
 export const scrollbarCsp = {
   name: 'agnes-scrollbar-csp',
   setup(build) {
+    // The portal's body scroll lock also inserts a stylesheet outside ConfigProvider.csp.
+    build.onLoad(
+      { filter: /[/\\]@rc-component[/\\]portal[/\\](?:es|lib)[/\\]useScrollLocker\.js$/ },
+      async ({ path }) => {
+        const source = await readFile(path, 'utf8')
+        const target = '}`, id);'
+        if (source.split(target).length !== 2)
+          throw new Error('Portal CSP adapter needs review for this rc-portal version')
+        return {
+          contents: source.replace(
+            target,
+            '}`, id, { csp: { nonce: document.querySelector(\'meta[name="agnes-csp-nonce"]\')?.content } });',
+          ),
+          loader: 'js',
+        }
+      },
+    )
     build.onLoad(
       { filter: /[/\\]@rc-component[/\\]input[/\\](?:es|lib)[/\\]calculateNodeHeight\.js$/ },
       async ({ path }) => {
