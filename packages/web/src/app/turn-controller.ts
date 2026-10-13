@@ -37,6 +37,7 @@ export function createTurnController(
     | 'permissionMode'
     | 'permissionRefreshPending'
     | 'permissionSelectionSeq'
+    | 'clientModules'
     | 'projection'
     | 'readOnly'
     | 'readOnlyController'
@@ -65,6 +66,7 @@ export function createTurnController(
   function render(): void {
     if (!context.projection) {
       context.topbarRuntime.setStatus(context.t('app.status.newTask'))
+      context.clientModules.sidebar?.setRunning([])
       context.tracePanel.render([], [])
       context.renderControls()
       return
@@ -144,6 +146,9 @@ export function createTurnController(
             : view.status,
         context.liveApproval ? 'approval' : view.busy ? 'running' : (receipt?.reason ?? 'idle'),
       )
+    context.clientModules.sidebar?.setRunning(
+      context.current && view.busy && !context.readOnly ? [context.current.id] : [],
+    )
     const meta = transcriptMeta()
     context.renderer.render(view.nodes, context.projection.turns, meta)
     renderTrace(view, context.projection.turns, meta)

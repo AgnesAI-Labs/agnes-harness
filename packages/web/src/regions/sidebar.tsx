@@ -30,11 +30,13 @@ export const DSH_SIDEBAR_CHILDREN = Object.freeze({
 export function SidebarDshFrame({
   handle,
   state,
+  running,
   actions,
   dependencies,
 }: {
   handle: { current: SidebarHandle | null }
   state: SidebarState
+  running?: readonly string[]
   actions?: Partial<SidebarActions>
   dependencies: SidebarDependencies
 }) {
@@ -43,6 +45,7 @@ export function SidebarDshFrame({
     <Sidebar
       ref={handle}
       state={state}
+      {...(running ? { running } : {})}
       actions={actions}
       dependencies={dependencies}
       slots={{
@@ -72,6 +75,7 @@ export function mountSidebarRegion(
   locale: LocaleService,
 ): SidebarRegionMount {
   let state = options.state ?? EMPTY_SIDEBAR_STATE
+  let running: readonly string[] = []
   // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
   const sidebarDependencies: SidebarDependencies = {
     ...SIDEBAR_DEPENDENCIES_BASE,
@@ -95,6 +99,7 @@ export function mountSidebarRegion(
       SidebarDshFrame({
         handle,
         state,
+        running,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
         dependencies: sidebarDependencies,
       }),
@@ -120,6 +125,10 @@ export function mountSidebarRegion(
     update(next) {
       state = next
       flushSync(() => handle.current?.update(next))
+    },
+    setRunning(ids) {
+      running = ids
+      handle.current?.setRunning(ids)
     },
     close() {
       handle.current?.close()

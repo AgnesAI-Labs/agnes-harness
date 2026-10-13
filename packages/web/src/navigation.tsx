@@ -142,6 +142,7 @@ export function SessionNavigation({ options, t }: { options: SidebarNavigationOp
                   options.labels.get(row.sessionId) ||
                   t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
                 const active = row.sessionId === options.currentId
+                const running = options.runningIds?.includes(row.sessionId) ?? false
                 return (
                   <div key={row.sessionId} className="session-row" data-active={String(active)}>
                     <Button
@@ -153,6 +154,9 @@ export function SessionNavigation({ options, t }: { options: SidebarNavigationOp
                       title={title}
                       onClick={() => options.open(row.sessionId)}
                     >
+                      {running && (
+                        <span className="session-running" role="img" aria-label={t('nav.running')} />
+                      )}
                       <span className="session-title">{title}</span>
                     </Button>
                     {options.action && (

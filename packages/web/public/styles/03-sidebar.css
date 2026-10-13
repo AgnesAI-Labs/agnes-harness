@@ -3,7 +3,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 0.375rem 0.75rem;
+    padding: 0 0.625rem 0.375rem;
     /* 侧栏自己**不滚动**：滚动职责只归 `#sessions`。此前这里是 `auto`，
      一旦内容总高超出视口（窗口拉矮，或 `sidebar.panellist` 插槽有内容），
      整个侧栏变成滚动容器，底部的「设置」行会随列表一起滚出视野。
@@ -30,12 +30,13 @@
     display: flex;
     align-items: center;
   }
+  /* Same 44px as the top bar, so both headers share one baseline across the app. */
   .sidebar-head {
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.5rem 0 0.5rem 0.25rem;
+    padding: 0 0 0 0.375rem;
     margin: 0 0 0.5rem;
-    min-height: 3.75rem;
+    min-height: 2.75rem;
   }
   .brand-lockup {
     min-width: 0;
@@ -43,9 +44,9 @@
     align-items: center;
     gap: 0.5rem;
   }
-  /* 品牌锁定组合沿用原 AgnesMark，图形标和字标共用主题品牌色。 */
+  /* 品牌锁定组合沿用原 AgnesMark；图形标和字标用正文色，强调色只留给主操作、选中与状态。 */
   .brand-lockup {
-    color: var(--agnes-brand-primary);
+    color: var(--agnes-text-primary);
   }
   /* 原 AgnesMark 以 alpha 蒙版着色，侧栏、空态与过程行头像复用同一资产。 */
   .agnes-mark {
@@ -63,10 +64,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 1.0625rem;
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
-    line-height: 1.25;
-    letter-spacing: -0.025em;
+    line-height: 1.25rem;
   }
   .eyebrow,
   .section-label,
@@ -95,8 +95,37 @@
   .sidebar-actions {
     display: grid;
   }
-  .sidebar-actions .agh-btn--primary {
+  /* New session is a bordered surface button: label on the left, its shortcut chip on the right. */
+  .sidebar-actions :where(#new) {
     width: 100%;
+    justify-content: flex-start;
+    background: var(--agnes-bg-surface);
+  }
+  .sidebar-actions :where(#new) > kbd {
+    margin-left: auto;
+  }
+  /* A running session breathes; the motion is slow and stops under reduced motion. */
+  .session-running {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-brand-primary);
+    animation: session-breathe 2.4s ease-in-out infinite;
+  }
+  @keyframes session-breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .session-running {
+      animation: none;
+    }
   }
   .section-label {
     margin: 0;

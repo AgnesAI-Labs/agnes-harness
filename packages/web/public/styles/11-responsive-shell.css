@@ -9,7 +9,7 @@
   @media (min-width: 901px) {
     body.sidebar-collapsed .sidebar {
       align-items: center;
-      padding: 1.125rem 0.625rem 0.375rem;
+      padding: 0.25rem 0.625rem 0.375rem;
       overflow: hidden;
       border-right: 1px solid var(--agnes-line-primary);
     }
@@ -35,7 +35,7 @@
       border-color: transparent;
       background: transparent;
     }
-    body.sidebar-collapsed .sidebar-actions :where(#new) span {
+    body.sidebar-collapsed .sidebar-actions :where(#new) :is(span, kbd) {
       display: none;
     }
     body.sidebar-collapsed .sidebar-section-heading,

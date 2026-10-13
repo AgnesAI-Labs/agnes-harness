@@ -144,6 +144,21 @@
     background: transparent;
     border-color: var(--agnes-input-border);
   }
+  /* Keyboard hint chip: small, quiet, never the primary label. */
+  .agh-kbd {
+    flex: 0 0 auto;
+    padding: 0 var(--s4);
+    border: 1px solid var(--agnes-line-primary);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-page);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
   .agh-tag {
     display: inline-flex;
     align-items: center;

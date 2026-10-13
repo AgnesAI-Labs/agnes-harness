@@ -100,6 +100,45 @@ describe('rendered sidebar region', () => {
     expect(document.querySelector('[role=menu]')).toBeNull()
   })
 
+  it('marks the running session, shows the shortcut hint and starts a session from the chord', async () => {
+    const newSession = vi.fn()
+    const state = {
+      sessions: [session('one', '/workspace'), session('two', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区')],
+      labels: new Map<string, string>(),
+      currentId: 'one',
+      sessionPending: false,
+      newDisabled: false,
+    }
+    runtime = await mountRenderedIndex({ sidebar: { state, actions: { newSession } } })
+    const sidebar = document.querySelector('aside.sidebar')
+    expect(sidebar?.querySelector('#new kbd')?.textContent).toMatch(/O$/)
+    expect(sidebar?.querySelector('.session-running')).toBeNull()
+
+    flushSync(() => runtime?.sidebar?.setRunning(['two']))
+    expect(sidebar?.querySelector('[data-session="two"] .session-running')).not.toBeNull()
+    expect(sidebar?.querySelector('[data-session="one"] .session-running')).toBeNull()
+    flushSync(() => runtime?.sidebar?.setRunning([]))
+    expect(sidebar?.querySelector('.session-running')).toBeNull()
+
+    const chord = () =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'O',
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    chord()
+    expect(newSession).toHaveBeenCalledOnce()
+    // A disabled new-session action also ignores the chord.
+    runtime.sidebar?.update({ ...state, newDisabled: true })
+    chord()
+    expect(newSession).toHaveBeenCalledOnce()
+  })
+
   it('starts a new session in the selected workspace without toggling the group', async () => {
     const newSession = vi.fn()
     const selectedWorkspace = workspace('/workspace', '主工作区')

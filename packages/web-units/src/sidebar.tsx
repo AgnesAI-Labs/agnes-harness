@@ -1,15 +1,18 @@
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
-import { Button, Icon, IconButton } from '@agnes/web-ui'
+import { Button, Icon, IconButton, Kbd } from '@agnes/web-ui'
 import {
   forwardRef,
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
+  useState,
   useSyncExternalStore,
 } from 'react'
 import type { Translate } from './locales/index.js'
+import { isNewSessionShortcut, newSessionShortcutLabel } from './session-groups.js'
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
 export interface SidebarNavigationOptions {
@@ -19,6 +22,8 @@ export interface SidebarNavigationOptions {
   activeId?: string
   activeWorkspace?: string
   labels: ReadonlyMap<string, string>
+  /** Sessions with a turn in flight; they show a breathing dot. */
+  runningIds?: readonly string[]
   disabled?: boolean
   newDisabled?: boolean
   next?: string
@@ -63,6 +68,8 @@ export interface SidebarActions {
 
 export interface SidebarHandle {
   update(state: SidebarState): void
+  /** Mark the sessions that currently have a turn in flight. */
+  setRunning(ids: readonly string[]): void
   close(): void
   dismiss(): void
   focusNew(): void
@@ -122,10 +129,11 @@ const SidebarBuiltin = forwardRef<
   {
     state: SidebarState
     actions: SidebarActions
+    running?: readonly string[]
     dependencies?: SidebarDependencies
     slots?: SidebarSlots
   }
->(function SidebarBuiltin({ state, actions, dependencies, slots }, ref) {
+>(function SidebarBuiltin({ state, actions, running: initialRunning, dependencies, slots }, ref) {
   const store = useRef({
     state,
     signature: navigationSignature(state),
@@ -153,13 +161,31 @@ const SidebarBuiltin = forwardRef<
     [store],
   )
   useLayoutEffect(() => update(state), [state, update])
+  const [running, setRunning] = useState<readonly string[]>(initialRunning ?? [])
   const newButton = useRef<HTMLButtonElement>(null)
+  const newSession = useRef(actions.newSession)
+  newSession.current = actions.newSession
+  // One chord starts a session from anywhere on the page; it yields to an open dialog.
+  useEffect(() => {
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isNewSessionShortcut(event)) return
+      if (store.state.newDisabled || document.querySelector('dialog[open]')) return
+      event.preventDefault()
+      newSession.current()
+    }
+    document.addEventListener('keydown', onKeydown)
+    return () => document.removeEventListener('keydown', onKeydown)
+  }, [store])
   const shell = useRef<SidebarShell | undefined>(undefined)
   const t: Translate = dependencies?.translate ?? ((key) => key)
   useImperativeHandle(
     ref,
     () => ({
       update,
+      setRunning: (ids) =>
+        setRunning((previous) =>
+          previous.length === ids.length && previous.every((id, index) => id === ids[index]) ? previous : ids,
+        ),
       close: () => shell.current?.close(),
       dismiss: () => shell.current?.dismiss(),
       focusNew: () => newButton.current?.focus(),
@@ -206,12 +232,15 @@ const SidebarBuiltin = forwardRef<
         <Button
           id="new"
           ref={newButton}
-          appearance="primary"
+          appearance="secondary"
+          aria-keyshortcuts="Meta+Shift+O Control+Shift+O"
+          aria-label={t('sidebar.newSession')}
           disabled={current.newDisabled}
           onClick={() => actions.newSession()}
         >
           <Icon name="plus" />
           <span>{t('sidebar.newSession')}</span>
+          <Kbd aria-hidden="true">{newSessionShortcutLabel(globalThis.navigator?.platform ?? '')}</Kbd>
         </Button>
       </div>
       <div className="sidebar-section-heading">
@@ -230,6 +259,7 @@ const SidebarBuiltin = forwardRef<
           sessions: current.sessions,
           workspaces: current.workspaces,
           labels: current.labels,
+          runningIds: running,
           ...(current.currentId ? { currentId: current.currentId } : {}),
           disabled: current.sessionPending,
           newDisabled: current.newDisabled,
@@ -258,6 +288,7 @@ export const Sidebar = forwardRef<
   {
     state: SidebarState
     actions?: Partial<SidebarActions> | undefined
+    running?: readonly string[]
     dependencies?: SidebarDependencies
     slots?: SidebarSlots
   }
@@ -267,6 +298,7 @@ export const Sidebar = forwardRef<
       ref={ref}
       state={props.state}
       actions={{ ...EMPTY_ACTIONS, ...props.actions }}
+      {...(props.running ? { running: props.running } : {})}
       {...(props.dependencies ? { dependencies: props.dependencies } : {})}
       {...(props.slots ? { slots: props.slots } : {})}
     />

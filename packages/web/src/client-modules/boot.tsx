@@ -95,6 +95,7 @@ export interface ClientModulesRuntime {
   actualSlots(packageId: string): readonly string[]
   sidebar?: {
     update(state: SidebarState): void
+    setRunning(ids: readonly string[]): void
     close(): void
     dismiss(): void
     focusNew(): void

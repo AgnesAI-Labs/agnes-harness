@@ -63,6 +63,14 @@ export {
   WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from './locales/index.js'
+export {
+  groupSessionsByTime,
+  isNewSessionShortcut,
+  newSessionShortcutLabel,
+  SESSION_TIME_GROUPS,
+  type SessionTimeGroup,
+  sessionTimeGroup,
+} from './session-groups.js'
 export type {
   SettingsDshSlotName,
   SettingsPane,
