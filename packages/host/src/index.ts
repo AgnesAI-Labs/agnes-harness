@@ -421,6 +421,7 @@ export {
   createProductionImageInputTokenFallback,
   type ProductionRequestMediaConfiguration,
 } from './request-media-runtime.js'
+export * from './request-versions.js'
 export * from './resources/index.js'
 export type { McpManageBridge, McpManageInvocation } from './resources/mcp-manage-port.js'
 export type { PluginManageBridge, PluginManageInvocation } from './resources/plugin-manage-port.js'

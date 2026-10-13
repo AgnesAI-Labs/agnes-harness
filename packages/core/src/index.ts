@@ -190,6 +190,8 @@ export { canonicalJson, sha256Hex, utf8 } from './request/hash.js'
 // brand exists to withhold, which is the ability to present a request that was never derived.
 export type { LedgerRequest } from './request/mint.js'
 export { isLedgerRequest } from './request/mint.js'
+export type { ImageEncoderSpec, RequestImageTransform } from './request/request-version.js'
+export { REQUEST_IMAGE_ENCODER, requestImageTransform, requestVersionId } from './request/request-version.js'
 export { toProviderRequest } from './request/to-provider.js'
 export type { BeforeRequestPatch, ContextResult } from './request/transforms.js'
 export {
