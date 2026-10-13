@@ -229,17 +229,19 @@
     flex-direction: column;
     max-height: none;
     overflow-y: auto;
-    padding: var(--s24) var(--s16);
+    padding: var(--s16) var(--s12);
   }
   #config-form.settings-shell #settings-content-slots {
     grid-column: 2;
     grid-row: 1;
   }
+  /* The settings rail mirrors the app sidebar: panel tone, compact rows, hairline-raised current item. */
   .settings-shell .settings-rail,
   .runtime-settings > .settings-rail {
-    gap: var(--s16);
-    padding: var(--s24) var(--s16);
+    gap: var(--s12);
+    padding: var(--s16) var(--s12);
     border-inline-end: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-sidebar);
   }
   .settings-shell .settings-nav-group,
   .settings-shell #settings-everyday,
@@ -251,29 +253,40 @@
   }
   .settings-shell .settings-nav-label {
     display: block;
-    margin: var(--s8) 0;
-    color: var(--agnes-text-secondary);
-    font-weight: var(--font-weight-medium);
+    margin: var(--s8) var(--s8) var(--s2);
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
   }
   .settings-shell .settings-nav-item,
   .runtime-settings > nav .settings-nav-item {
     width: 100%;
-    min-height: var(--control-height-touch);
+    min-height: var(--control-height);
     height: auto;
-    padding: var(--s8) var(--s12);
+    padding: var(--s4) var(--s8);
     justify-content: flex-start;
     white-space: normal;
     border-radius: var(--radius-control);
     font-weight: var(--font-weight-regular);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-sm);
   }
   .settings-shell .settings-nav-item .icon {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
   }
   .settings-shell .settings-nav-item[aria-current="page"] {
-    font-weight: var(--font-weight-semibold);
+    background: var(--agnes-bg-surface);
+    box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  @media (max-width: 900px) {
+    .settings-shell .settings-nav-item,
+    .runtime-settings > nav .settings-nav-item {
+      min-height: var(--control-height-touch);
+      padding: var(--s8) var(--s12);
+      font-size: var(--font-size-body);
+    }
   }
   .settings-shell #settings-advanced > summary,
   .runtime-settings > nav details > summary {
@@ -356,6 +369,7 @@
       overflow-y: auto;
       border: 0;
       padding: var(--s16);
+      background: transparent;
     }
     .settings-shell .settings-nav-group {
       display: grid;
