@@ -164,6 +164,8 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
       finish: async (...args) => {
         finished = args
         current = null
+        const [reason] = args
+        return { outcome: reason === 'parked' ? 'parked' : 'turn-ended', phase: 'terminal', reason }
       },
     },
     checkpoints: {

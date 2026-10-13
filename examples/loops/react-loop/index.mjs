@@ -62,8 +62,18 @@ export function createReactLoop(config = {}) {
       state.endReason = reason
       state.endError = error ?? null
       await save()
-      await ctx.events.finish(reason, error)
-      return { outcome: 'turn-ended', reason }
+      return await close()
+    }
+    // Core decides how the turn ends. A stop gate that keeps a completion open has recorded why in
+    // history, so the next model round answers it.
+    const close = async () => {
+      const end = await ctx.events.finish(state.endReason, state.endError ?? undefined)
+      if (end.outcome !== 'running') return end
+      state.stage = 'model'
+      state.endReason = null
+      state.round++
+      await save()
+      return running()
     }
     return {
       checkpoint: () => codec.encode(state),
@@ -115,8 +125,10 @@ export function createReactLoop(config = {}) {
           }
           const input = await ctx.input.claim('next-turn')
           if (!input) return { outcome: 'idle' }
-          if (state.stage === 'done' && state.turnId === input.turnId)
-            return await finish(state.endReason ?? 'completed', state.endError ?? undefined)
+          if (state.stage === 'done' && state.turnId === input.turnId) {
+            state.endReason ??= 'completed'
+            return await close()
+          }
           if (state.turnId !== null && state.turnId !== input.turnId) state = initial()
           if (state.stage === 'input') {
             state.turnId = input.turnId
@@ -245,11 +257,7 @@ export function createReactLoop(config = {}) {
               },
               codec.encode(state),
             )
-            if (state.stage === 'done') {
-              await ctx.events.finish('completed')
-              return { outcome: 'turn-ended', reason: 'completed' }
-            }
-            return running()
+            return state.stage === 'done' ? await close() : running()
           }
           if (state.stage === 'tools') {
             // Core can close a parked turn before returning PARKED. Save the park intent first.

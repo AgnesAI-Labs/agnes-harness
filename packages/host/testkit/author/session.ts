@@ -192,8 +192,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           const result = await ctx.tools.execute({ ...call, invocationId: `author:${input.id}` }, signal)
           results.set(ctx.sessionKey, result)
           await ctx.checkpoints.write(codec.encode(null))
-          await ctx.events.finish('completed')
-          return { outcome: 'turn-ended' as const, phase: 'done', reason: 'completed' as const }
+          return await ctx.events.finish('completed')
         },
         checkpoint: () => codec.encode(null),
         cancel() {},

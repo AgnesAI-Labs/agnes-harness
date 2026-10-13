@@ -140,10 +140,13 @@ export function workflowDriver(
         await save()
       }
       if (state.index === workflow.length) {
-        await ctx.events.finish('completed')
+        // Core decides how the turn ends. A stop gate that keeps it open is asked once more on the
+        // next step; a workflow has no further stage to offer, so Core then ends the turn as blocked.
+        const end = await ctx.events.finish('completed')
+        if (end.outcome === 'running') return end
         state.completed = true
         await save()
-        return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
+        return { ...end, phase: 'done' }
       }
       const stage = workflow[state.index]
       if (!stage) throw new Error('Workflow stage unavailable')

@@ -163,8 +163,7 @@ export function createDagLoop(config = {}) {
           state = initial()
         if (state.stage === 'done') {
           if (input.id && input.id === state.inputId) {
-            await ctx.events.finish('completed')
-            return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
+            return await ctx.events.finish('completed')
           }
           state = initial()
         }
@@ -283,8 +282,8 @@ export function createDagLoop(config = {}) {
             state.stage = 'done'
             await save()
           }
-          await ctx.events.finish('completed')
-          return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
+          // Core decides how the turn ends; stage `done` asks again if the stop gate keeps it open.
+          return await ctx.events.finish('completed')
         }
         throw new Error('Invalid DAG stage')
       },

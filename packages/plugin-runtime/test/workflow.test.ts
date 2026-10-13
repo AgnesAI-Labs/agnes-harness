@@ -143,6 +143,7 @@ function fixture() {
       },
       async finish(reason) {
         finishes.push(reason)
+        return { outcome: reason === 'parked' ? 'parked' : 'turn-ended', reason }
       },
     },
     checkpoints: {

@@ -93,8 +93,9 @@ function ports(planReply: string | string[] = JSON.stringify(nodes)) {
         events.push({ type: 'assistant/message', data: message })
         checkpoint = structuredClone(next)
       },
-      finish: async () => {
+      finish: async (reason) => {
         finished = true
+        return { outcome: 'turn-ended' as const, reason }
       },
     },
     wait: {

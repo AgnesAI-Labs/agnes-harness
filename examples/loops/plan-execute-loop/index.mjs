@@ -105,11 +105,13 @@ export function createPlanExecuteLoop() {
       return await closeTurn()
     }
     const closeTurn = async () => {
-      const reason = state.endReason
-      await ctx.events.finish(reason, state.endError ?? undefined)
+      // Core decides how the turn ends. A stop gate that keeps it open is asked once more on the
+      // next step; this loop has no further step to offer, so Core then ends the turn as blocked.
+      const end = await ctx.events.finish(state.endReason, state.endError ?? undefined)
+      if (end.outcome === 'running') return end
       state = initial()
       await save()
-      return { outcome: 'turn-ended', reason }
+      return end
     }
     const unknownOutcome = (id) =>
       finish('error', {
@@ -174,8 +176,9 @@ export function createPlanExecuteLoop() {
             if (notice) {
               // No plan is waiting for this child; record it and say nothing was done.
               await ctx.events.emit('x/plan/notice', notice)
-              await ctx.events.finish('completed')
-              return { outcome: 'turn-ended', reason: 'completed' }
+              state = { ...initial(), stage: 'done', turnId: input.turnId, endReason: 'completed' }
+              await save()
+              return await closeTurn()
             }
             state = { ...initial(), stage: 'planning', turnId: input.turnId, request: textOf(input.content) }
             await save()

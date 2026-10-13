@@ -205,6 +205,11 @@ export interface GenericLoopPorts {
   prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>
   /** Uses this turn's prepared request without dispatch, admission or budget reservation. */
   estimateRequest(request: LoopRequest): Promise<LoopRequestEstimate>
+  /**
+   * Model and tool ports open a step when none is open. Opening one is an admission edge: the step
+   * and credit budget and the `before_step` hooks decide there. A refusal ends the turn in Core and
+   * throws `E_BUDGET` with `detail.reason` set to the reason the turn ended with; do not finish it again.
+   */
   readonly turn: {
     view(): Promise<LoopTurnView | null>
     /** Close the current execution step before compaction. Does not run a scheduler edge. */
@@ -242,7 +247,14 @@ export interface GenericLoopPorts {
     emit(type: string, data: JsonValue): Promise<void>
     /** Persist an assistant message and the driver's next checkpoint in one ledger transaction. */
     assistant(message: Omit<AssistantMessage, 'requestSeq'>, checkpoint: LoopCheckpoint): Promise<void>
-    finish(reason: LoopEndReason, error?: { code: string; message: string }): Promise<void>
+    /**
+     * End the turn. `completed` first passes the platform stop gate (`turn_stopping` hooks, the
+     * verifier and the repair decision), so the result is the gate's answer, not the request:
+     * `running` means the turn stays open with the reason recorded in history, and the loop must
+     * take another step before asking again. Asking again without one ends the turn as `blocked`.
+     * Every other reason ends the turn as given.
+     */
+    finish(reason: LoopEndReason, error?: { code: string; message: string }): Promise<LoopStepOutcome>
   }
   readonly checkpoints: {
     read(): LoopCheckpoint | null

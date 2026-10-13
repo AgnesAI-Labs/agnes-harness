@@ -14,6 +14,18 @@ API additions require a minor version; removals or semantic changes require a ma
 
   Migration: delete the second argument.
 
+### Changed
+
+- `GenericLoopPorts.events.finish(reason, error?)` returns the `LoopStepOutcome` Core ended with
+  instead of `void`. `finish('completed')` passes the stop gate first: `turn_stopping` hooks, the
+  verifier and the repair decision run for every loop, not only through the default loop's
+  `turn.checkpoint`. A gate that keeps the turn open returns `running` with the reason recorded in
+  history; a second `completed` request with no step in between ends the turn as `blocked`
+  (`STOP_GATE_HELD`). A driver returns the outcome it was given.
+- The step a generic model or tool port opens fires `before_step`. A park or block ends the turn in
+  Core and the port throws `E_BUDGET` with `detail.reason` (`parked`, `blocked` or `aborted`),
+  the same refusal a step or credit budget produces.
+
 ## 3.1.0
 
 Adds optional `ToolPolicyDecision.allowedBy`. The command-table floor sets it to `command-policy` when a rule allows a call the selected policy asked about, so the policy's own `review` (for example an `escalate` fallback) is kept as an observation beside the final `allow` instead of being rewritten.

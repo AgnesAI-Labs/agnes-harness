@@ -6,6 +6,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState, Inbox, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
 import { minimumContextBudget } from '@agnes/protocol'
 import { quoteBudget } from '../../step/calibrate.js'
+import { finishAborted } from '../../step/control.js'
 import { domainDecisionEvents, requestDomainDecision } from '../../step/domain-decision.js'
 import { claimFrom, inboxEvent } from '../../step/inbox.js'
 import { replacementEffects, runCoreReplacement, runSlot } from '../../step/reentry.js'
@@ -256,6 +257,25 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
       events: replacementEffects(s, 'Budget', out.effects),
     })
   return { reason: out.reason }
+}
+
+/**
+ * The `before_step` edge. Every loop crosses it when a step opens, whichever port opens the step:
+ * a park or a block ends the turn here and the caller starts no work under that step.
+ */
+export async function beforeStepGate(s: SessionImpl, step: number): Promise<'ok' | StepOutcome> {
+  const op = s.op() as OpStateObj
+  const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
+  if (!gate.park && !gate.block) return 'ok'
+  // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
+  // user stopped it, and that is what the ledger and the client should say.
+  if (s.ac.signal.aborted) return finishAborted(s)
+  if (gate.block) {
+    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
+    return { phase: 'terminal', reason: 'blocked' }
+  }
+  await s.endTurn('parked')
+  return { phase: 'terminal', reason: 'parked' }
 }
 
 /** The gate a turn has to pass to be allowed to finish. */

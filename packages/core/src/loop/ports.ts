@@ -30,7 +30,7 @@ import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
 import { appendExtensionEvent } from '../step/ext-events.js'
-import { builtinBudgetPreflight, checkpointRoutine } from '../step/gate.js'
+import { beforeStepGate, builtinBudgetPreflight, checkpointRoutine, stopGate } from '../step/gate.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { loopChildStarts } from './child-starts.js'
@@ -101,6 +101,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     return op
   }
   let lastPortEdge: number | null = null
+  // The completion the stop gate last kept open. Asking again before another step cannot change
+  // the gate's answer, so that second request ends the turn as blocked instead of asking forever.
+  let heldCompletion: string | null = null
   async function ensureStep(newModel = false, open = true): Promise<void> {
     const op = requireOp()
     if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
@@ -118,6 +121,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           reason: admission.reason,
         })
       if (!open) return
+      const hooked = await beforeStepGate(s, requireOp().step + 1)
+      if (hooked !== 'ok')
+        throw new CoreError('E_BUDGET', 'Loop step refused by a before_step hook', { reason: hooked.reason })
       const current = requireOp()
       await s.transition([s.ev('step/start', { turn: current.meta.turn, step: current.step + 1 })], {
         ...current,
@@ -638,11 +644,35 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         )
       },
       async finish(reason, error) {
-        const step = s.state.openStep.get(s.lane)
-        await s.endTurn(reason, {
-          ...(error ? { error } : {}),
-          ...(step ? { events: [s.ev('step/end', { turn: step.turn, step: step.step })] } : {}),
-        })
+        if (reason !== 'completed') {
+          const step = s.state.openStep.get(s.lane)
+          await s.endTurn(reason, {
+            ...(error ? { error } : {}),
+            ...(step ? { events: [s.ev('step/end', { turn: step.turn, step: step.step })] } : {}),
+          })
+          return { outcome: reason === 'parked' ? 'parked' : 'turn-ended', phase: 'terminal', reason }
+        }
+        const done = s.beginLoopOperation()
+        try {
+          const op = requireOp()
+          if (!s.turn) await s.rehydrateTurn(op)
+          const step = s.state.openStep.get(s.lane)
+          if (step) await s.transition([s.ev('step/end', { turn: step.turn, step: step.step })], op)
+          const mark = `${op.meta.turn}:${op.step}:${op.latestAssistantSeq ?? ''}`
+          if (heldCompletion === mark) {
+            const held = {
+              code: 'STOP_GATE_HELD',
+              message: 'The stop gate kept the turn open and the loop made no further step',
+            }
+            await s.endTurn('blocked', { error: held })
+            return { outcome: 'turn-ended', phase: 'terminal', reason: 'blocked' }
+          }
+          const gated = await stopGate(s)
+          heldCompletion = gated.phase === 'terminal' ? null : mark
+          return publicOutcome(gated)
+        } finally {
+          done()
+        }
       },
     },
     checkpoints: {

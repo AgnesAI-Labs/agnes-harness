@@ -1190,3 +1190,194 @@ it.each([true, false])('bounds DAG plan repair and returns Core errors (repaired
     await k.close()
   }
 })
+
+describe('platform policy edges on the generic ports', () => {
+  const state = loopCheckpointCodec(1, (value) => {
+    if (typeof value !== 'number') throw new Error('invalid round checkpoint')
+    return value
+  })
+  /** One model round per step, then asks Core to complete. Uses no default-loop convenience edge. */
+  function roundLoop(id: string, rounds: { model: boolean }): LoopFactory {
+    const driver = (ctx: LoopContext, saved = 0): LoopDriver => {
+      let round = saved
+      return {
+        cancel() {},
+        dispose() {},
+        checkpoint: () => state.encode(round),
+        async step(signal) {
+          if (!(await ctx.input.accept())) return { outcome: 'idle', phase: 'idle' }
+          if (rounds.model) {
+            const request = await ctx.prepareRequest({ tools: [] })
+            const response = await ctx.model.complete(request, signal)
+            const text = response.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : []))
+            round++
+            await ctx.events.assistant(
+              { content: [{ type: 'text', text: text.join('') }], stopReason: 'end_turn' },
+              state.encode(round),
+            )
+          } else await ctx.tools.execute({ name: 'read', args: {}, invocationId: `${id}:read` }, signal)
+          return ctx.events.finish('completed')
+        },
+      }
+    }
+    return {
+      id,
+      version: '1.0.0',
+      capabilities: ['model', 'tools'],
+      codec: state,
+      create: (ctx) => driver(ctx),
+      resume: (ctx, checkpoint) => driver(ctx, state.decode(checkpoint)),
+    }
+  }
+  async function open(loop: LoopFactory, extra: Partial<import('../src/kernel.js').KernelOptions> = {}) {
+    const loops = defaultLoops()
+    loops.register('@test/policy-edges', loop)
+    const provider = fakeProvider([textTurn('first answer'), textTurn('second answer')])
+    provider.models = () => [model]
+    const k = kernel(new MemoryStorage(), loops, { provider, ...extra })
+    k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+    const session = await k.session(loop.id, { ...options, loop })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+    const run = () => session.run({ until: 'turn-end', signal: new AbortController().signal })
+    return { k, session, provider, run }
+  }
+
+  it('passes a completion through the stop gate, and continues when a turn_stopping hook says so', async () => {
+    const { k, session, provider, run } = await open(roundLoop('test.gated', { model: true }))
+    const asked: number[] = []
+    session.hooks = {
+      ...noopHooks,
+      turnStopping: async ({ step }) => {
+        asked.push(step)
+        return asked.length === 1 ? { action: 'continue', note: 'cite the source first' } : { action: 'stop' }
+      },
+    }
+    try {
+      expect((await run()).reason).toBe('completed')
+      expect(asked).toHaveLength(2)
+      expect(provider.requests).toHaveLength(2)
+      expect(JSON.stringify(provider.requests[1]?.messages)).toContain('cite the source first')
+      const rows = await session.scan({ fromSeq: 1, limit: 200 })
+      expect(rows.filter((row) => row.type === 'turn/end').map((row) => row.data)).toEqual([
+        expect.objectContaining({ reason: 'completed' }),
+      ])
+      // The verifier seam ran at the completion that ended the turn.
+      expect(rows.filter((row) => row.type === 'verifier/signal')).toHaveLength(1)
+    } finally {
+      await k.close()
+    }
+  })
+
+  it('runs the verifier and repair seams before a generic loop may complete', async () => {
+    const verify = vi
+      .fn()
+      .mockResolvedValueOnce({ verdict: 'fail', reasons: ['no evidence'] })
+      .mockResolvedValue({ verdict: 'pass', reasons: [] })
+    const { k, session, provider, run } = await open(roundLoop('test.verified', { model: true }), {
+      seams: fakeSeams({ verifier: { verify }, repair: { decide: async () => 'repair' } }),
+    })
+    try {
+      expect((await run()).reason).toBe('completed')
+      expect(verify).toHaveBeenCalledTimes(2)
+      expect(provider.requests).toHaveLength(2)
+      expect((await session.scan({ type: 'repair/decision', limit: 10 })).map((row) => row.data)).toEqual([
+        expect.objectContaining({ round: 1, decision: 'repair' }),
+      ])
+    } finally {
+      await k.close()
+    }
+  })
+
+  it('ends the turn as blocked when the gate keeps it open and the loop takes no further step', async () => {
+    const { k, session, run } = await open(roundLoop('test.held', { model: false }))
+    session.hooks = {
+      ...noopHooks,
+      turnStopping: async () => ({ action: 'continue', note: 'not done' }),
+    }
+    try {
+      expect(await run()).toMatchObject({ reason: 'blocked', error: { code: 'STOP_GATE_HELD' } })
+      expect(await session.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+    } finally {
+      await k.close()
+    }
+  })
+
+  it.each([
+    ['block', { block: true, reason: 'quota' }, { reason: 'blocked', error: { code: 'HOOK_BLOCKED' } }],
+    ['park', { park: true }, { reason: 'parked' }],
+  ] as const)(
+    'fires before_step where a generic loop opens a step, and honours %s',
+    async (_n, verdict, end) => {
+      const { k, session, provider, run } = await open(roundLoop('test.stepped', { model: true }))
+      const steps: number[] = []
+      session.hooks = {
+        ...noopHooks,
+        beforeStep: async ({ step }) => {
+          steps.push(step)
+          return verdict
+        },
+      }
+      try {
+        expect(await run()).toMatchObject(end)
+        expect(steps).toEqual([1])
+        expect(provider.requests).toHaveLength(0)
+        expect(await session.scan({ type: 'step/start', limit: 10 })).toHaveLength(0)
+      } finally {
+        await k.close()
+      }
+    },
+  )
+
+  it('fires before_step once for each step a generic loop opens', async () => {
+    const { k, session, run } = await open(roundLoop('test.steps', { model: true }))
+    const steps: number[] = []
+    let stops = 0
+    session.hooks = {
+      ...noopHooks,
+      beforeStep: async ({ step }) => {
+        steps.push(step)
+        return {}
+      },
+      turnStopping: async () => (stops++ ? { action: 'stop' } : { action: 'continue', note: 'again' }),
+    }
+    try {
+      expect((await run()).reason).toBe('completed')
+      expect(steps).toEqual([1, 2])
+    } finally {
+      await k.close()
+    }
+  })
+
+  it('keeps running a driver that reports completion while the stop gate holds the turn open', async () => {
+    const loop = roundLoop('test.ignores', { model: false })
+    const create = loop.create
+    const ignoring: LoopFactory = {
+      ...loop,
+      create(ctx) {
+        const driver = create(ctx) as LoopDriver
+        return {
+          ...driver,
+          async step(signal) {
+            await driver.step(signal)
+            return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
+          },
+        }
+      },
+    }
+    const { k, session, run } = await open(ignoring)
+    session.hooks = { ...noopHooks, turnStopping: async () => ({ action: 'continue', note: 'not done' }) }
+    try {
+      await run()
+      // The run did not return on the first, held completion: the turn is closed, and as blocked.
+      expect(session.op()).toBeNull()
+      expect((await session.scan({ type: 'turn/end', limit: 10 })).map((row) => row.data)).toEqual([
+        expect.objectContaining({
+          reason: 'blocked',
+          error: expect.objectContaining({ code: 'STOP_GATE_HELD' }),
+        }),
+      ])
+    } finally {
+      await k.close()
+    }
+  })
+})

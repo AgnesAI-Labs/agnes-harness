@@ -120,7 +120,7 @@ import type { CoreDiagName } from '../kernel.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
-import { publicOutcome, shouldStopLoop } from '../loop/outcome.js'
+import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import type {
   AuxiliaryVisionAssemblyInput,
@@ -1924,7 +1924,7 @@ export class SessionImpl {
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {
-      return await this.stepWithinDeadline()
+      return drivenOutcome(await this.stepWithinDeadline(), this.op()?.phase.kind)
     } catch (error) {
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
         return { outcome: 'parked', phase: 'paused', reason: 'parked' }
@@ -2034,6 +2034,10 @@ export class SessionImpl {
     })
   }
 
+  private turnOutcome(reason: TurnEndReason): TurnOutcome {
+    return { reason, lastSeq: this.lastSeq, ...(this.turnEndError ? { error: this.turnEndError } : {}) }
+  }
+
   private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
     if (!this.closing) {
@@ -2058,11 +2062,7 @@ export class SessionImpl {
       if (opts.signal.aborted && !this.op() && (await this.acceptInput())) {
         await this.abort()
         const stopped = await finishAborted(this)
-        return {
-          reason: stopped.reason ?? 'aborted',
-          lastSeq: this.lastSeq,
-          ...(this.turnEndError ? { error: this.turnEndError } : {}),
-        }
+        return this.turnOutcome(stopped.reason ?? 'aborted')
       }
       // Nothing was queued. Pull the signal so the cancelled run does not start work.
       if (opts.signal.aborted) onAbort()
@@ -2094,8 +2094,7 @@ export class SessionImpl {
         } catch (err) {
           if (err instanceof CoreError && err.code === 'E_BUDGET' && !this.op()) {
             const reason = err.detail?.reason
-            if (reason === 'budget' || reason === 'max_steps' || reason === 'parked' || reason === 'aborted')
-              return { reason, lastSeq: this.lastSeq }
+            if (isAdmissionEnding(reason)) return this.turnOutcome(reason)
           }
           if (!this.op() && (err as { code?: string })?.code === 'PARKED')
             return { reason: 'parked', lastSeq: this.lastSeq }
@@ -2120,12 +2119,7 @@ export class SessionImpl {
             try {
               await this.abort()
               const stopped = await finishAborted(this)
-              if (stopped.phase === 'terminal')
-                return {
-                  reason: stopped.reason ?? 'aborted',
-                  lastSeq: this.lastSeq,
-                  ...(this.turnEndError ? { error: this.turnEndError } : {}),
-                }
+              if (stopped.phase === 'terminal') return this.turnOutcome(stopped.reason ?? 'aborted')
             } catch {
               /* fall through to the failure close */
             }
@@ -2137,11 +2131,7 @@ export class SessionImpl {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
         }
         if (shouldStopLoop(out, opts.until) && out.outcome !== 'idle')
-          return {
-            reason: out.reason ?? 'completed',
-            lastSeq: this.lastSeq,
-            ...(this.turnEndError ? { error: this.turnEndError } : {}),
-          }
+          return this.turnOutcome(out.reason ?? 'completed')
         // Idle means no open turn and nothing queued to open one. Looping on would only spin:
         // acceptInput answers false every time, and new input arrives by enqueue then run().
         if (out.outcome === 'idle') return { reason: 'completed', lastSeq: this.lastSeq }

@@ -23,9 +23,11 @@ export const plugin = {
 }
 ```
 
+同一行的事件与 hook 在同一条边上触发，这条边对所有循环相同：Core 的请求准备和唯一的工具执行路径。新插件使用 loop event 名称；同一行的 hook 是这条边的旧写法，为已声明它的包保留。没有对应事件的边（`before_step`、`turn_stopping`、`approval_request`、压缩与生命周期 hook）只有 hook。
+
 已有 hook 只运行一次，随后监听器按注册顺序执行；后面的转换器看到前面的结果。工具拒绝不可撤销。前置失败阻止执行；结果及观察事件失败保留已有值。每个监听器有两秒上限并接收取消信号。
 
-自定义循环通过 `LoopContext.model`、`tools`、`events.finish` 获得相同处理。运行时还提供 `events.dispatch`，用于显式边界；不要在自动发出事件的操作周围重复调用。为兼容旧测试端口，该字段在类型中为可选。自定义 wire 请求只接受协议支持的采样字段和输出上限，不支持的补丁明确失败。
+自定义循环通过 `LoopContext.model`、`tools`、`events.finish` 获得相同处理。`before_step` 与 `turn_stopping` 钩子、verifier 和 repair 决策同样是平台边：对所有循环生效，分别在端口打开 step 时和 `events.finish('completed')` 时执行。运行时还提供 `events.dispatch`，用于显式边界；不要在自动发出事件的操作周围重复调用。为兼容旧测试端口，该字段在类型中为可选。自定义 wire 请求只接受协议支持的采样字段和输出上限，不支持的补丁明确失败。
 
 参见[工具运行时与策略](tool-runtime.zh-CN.md)。
 

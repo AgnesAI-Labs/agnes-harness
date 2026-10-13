@@ -72,7 +72,7 @@ import {
 import { runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
-import { builtinBudgetPreflight, contextBudgetError } from './gate.js'
+import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
@@ -896,19 +896,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     return { phase: 'terminal', reason: 'error' }
   }
   const step = op.step + 1
-  const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
-  if (gate.park && !gate.block) {
-    if (s.ac.signal.aborted) return finishAborted(s)
-    await s.endTurn('parked')
-    return { phase: 'terminal', reason: 'parked' }
-  }
-  if (gate.block) {
-    // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
-    // user stopped it, and that is what the ledger and the client should say.
-    if (s.ac.signal.aborted) return finishAborted(s)
-    await s.endTurn('blocked', { error: { code: 'HOOK_BLOCKED', message: gate.reason ?? '' } })
-    return { phase: 'terminal', reason: 'blocked' }
-  }
+  const hooked = await beforeStepGate(s, step)
+  if (hooked !== 'ok') return hooked
   const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
   // Both computed before the contributions rather than after them, because an operation writing a
   // prompt section about this request has to describe the request that is actually sent. Recomputing

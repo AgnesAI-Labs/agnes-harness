@@ -133,7 +133,7 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `ctx.providers.register(loopKind, factory)`；`agnes.plugins` 的入口声明 `inject: ["providers"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
 
-每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。返回结束结果前先调用 `ctx.events.finish(reason)`。
+每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。用 `ctx.events.finish(reason)` 结束轮次，并返回它给出的结果。关闭轮次的是 Core，不是 driver：`finish('completed')` 先经过所有 Loop 共用的停止门（`turn_stopping` 钩子、verifier 与 repair 决策）。停止门不放行时返回 `running`，原因已写入历史；再走一步（通常是一轮模型）之后才能再次请求完成。没有新的一步就再次请求，轮次以 `blocked`（`STOP_GATE_HELD`）结束，这对没有后续步骤可走的 Loop 是如实的结局。模型或工具端口打开的 step 同样是准入边：步数与额度预算、`before_step` 钩子在这里判定，被拒绝时 Core 结束轮次并抛出带 `detail.reason` 的 `E_BUDGET`。
 
 `ctx.input.claim('next-turn')` 打开或恢复轮次；轮次结束前重复调用返回当前输入。`claim('next-step')` 消费本轮 steer。输入含稳定 `id`、`turnId`、`kind`、`trust`、`actor` 与内容。`ctx.turn.view()` 返回独立且深度冻结的视图：压缩后的可见历史、本轮工具目录与 JSON schema、有效模型及能力、system/runtime 提示词与预算。执行仍受策略和审批约束。
 

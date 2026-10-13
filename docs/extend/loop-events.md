@@ -25,11 +25,13 @@ export const plugin = {
 }
 ```
 
+A row's event and its hook fire on the same edge, and that edge is the same for every loop: Core's request preparation and its one tool execution path. Use the loop event name in a new plugin; the hook of the same row is the older spelling of that edge and stays for packages that already declare it. Edges with no event (`before_step`, `turn_stopping`, `approval_request`, compaction and lifecycle hooks) are hooks only.
+
 Aliases run the existing hook pipeline once and then event listeners in registration order. Later transformers see the previous transformed request view or result. A tool denial is terminal. Before-request and before-tool failures stop execution; result and observer failures retain the preceding value. Each listener has a two-second bound and receives cancellation.
 
 The default loop emits response events after a successful stream and before assistant persistence, and ending events after the ledger commits `turn/end`. These are runtime callbacks rather than additional ledger rows. Usage, cancellation, park and recovery facts remain on the session ledger.
 
-Custom loops receive the same handling automatically through `LoopContext.model`, `tools` and `events.finish()`. The runtime also supplies `events.dispatch(name, payload, signal)` for explicit boundaries. Avoid manually dispatching an event around an operation that already emits it. The field is optional in the type for compatibility with older test ports. Custom wire requests support protocol sampling fields and `maxTokens`; unsupported sampling or metadata patches fail explicitly.
+Custom loops receive the same handling automatically through `LoopContext.model`, `tools` and `events.finish()`. The `before_step` and `turn_stopping` hooks, the verifier and the repair decision are platform edges too: they run for every loop, at the step a port opens and at `events.finish('completed')`. The runtime also supplies `events.dispatch(name, payload, signal)` for explicit boundaries. Avoid manually dispatching an event around an operation that already emits it. The field is optional in the type for compatibility with older test ports. Custom wire requests support protocol sampling fields and `maxTokens`; unsupported sampling or metadata patches fail explicitly.
 
 ## Human controls
 

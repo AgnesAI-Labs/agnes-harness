@@ -70,10 +70,12 @@ export function createDecisionLoop() {
           await save([state.handle])
         }
         const reason = state.option === 'continue' ? 'completed' : 'blocked'
-        await ctx.events.finish(reason)
+        // A completion the stop gate keeps open is asked again on the next step, from stage `done`.
+        const end = await ctx.events.finish(reason)
+        if (end.outcome === 'running') return end
         state = initial()
         await save()
-        return { outcome: 'turn-ended', reason }
+        return end
       },
     }
   }
