@@ -207,8 +207,6 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         : `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
     )
   const objects = namedObjects(converted.events)
-  if (objects.length > 0)
-    await admitImportedAttachments(file, objects, createAttachmentStore({ dataDir: deps.host.dataDir }))
   // No session_start hooks: an extension may record a row there (code-mode notes that no kernel is
   // alive yet), and anything after session/start would move the imported body off its sequence.
   let reservedNew = false
@@ -216,6 +214,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     const reserved = await deps.admission.reserve(key, deps.cwd)
     reservedNew = reserved.reservedNew
+    // After the key is admitted: a key that is refused stores and marks nothing.
+    if (objects.length > 0)
+      await admitImportedAttachments(file, objects, createAttachmentStore({ dataDir: deps.host.dataDir }))
     const imported = importedMarker(converted.events, converted.report.source, reserved.binding.canonicalRoot)
     session = await deps.host
       .createSession({

@@ -182,6 +182,13 @@ describe('main', () => {
       safeExpectedSessionRpcFailureLine({
         kind: 'json-rpc',
         code: -32011,
+        data: { code: 'NEWER_LEDGER_FORMAT', reason: '/private/worker secret=not-safe' },
+      }),
+    ).toBe('NEWER_LEDGER_FORMAT: this session was written by a newer version; upgrade to open it.')
+    expect(
+      safeExpectedSessionRpcFailureLine({
+        kind: 'json-rpc',
+        code: -32011,
         data: { code: 'WORKSPACE_INVALID' },
       }),
     ).toBeUndefined()

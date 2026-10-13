@@ -13,10 +13,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { PassThrough, Readable } from 'node:stream'
+import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import { createAttachmentStore } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { describe, expect, it, vi } from 'vitest'
+import { parseArgs } from '../src/args.js'
 import { type MainIO, main } from '../src/bin.js'
+import { importFile } from '../src/commands/import.js'
 import { say, TEST_LOCK } from './boot-host.js'
 
 // Records, for one digest, whether its marker had been touched when the import checked the bytes.
@@ -223,6 +226,38 @@ describe('agh import of rows that reference attachments', () => {
       } finally {
         await reopened.host.close()
       }
+    } finally {
+      rmSync(source, { recursive: true, force: true })
+      rmSync(target, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('leaves no stored or marked attachment behind when the session key is refused', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'agnes-import-attach-src-'))
+    const target = mkdtempSync(join(tmpdir(), 'agnes-import-attach-dst-'))
+    try {
+      const { file } = await exportedWithReference(source)
+      const copy = join(target, 'session.jsonl')
+      cpSync(file, copy)
+      cpSync(`${file}.attachments`, `${copy}.attachments`, { recursive: true })
+      const sink = { write: () => true }
+      await expect(
+        importFile(parseArgs(['import', copy, '--key', 'taken']), {
+          env: {},
+          cwd: target,
+          host: { dataDir: target } as never,
+          admission: {
+            reserve: async () => {
+              throw new SessionAdmissionDenied('taken')
+            },
+            activate: () => undefined,
+          },
+          io: { stdout: sink, stderr: sink },
+        }),
+      ).rejects.toThrow(/not available to this local owner/)
+      const store = createAttachmentStore({ dataDir: target })
+      expect(await store.stat(SHA)).toBeUndefined()
+      expect(await store.userAttachment(SHA)).toBeUndefined()
     } finally {
       rmSync(source, { recursive: true, force: true })
       rmSync(target, { recursive: true, force: true })
