@@ -258,9 +258,16 @@ describe('session.storedOpening', () => {
   function endpoint(o: {
     owner?: string
     storedOpening?: Parameters<typeof registerStoredOpening>[1]['storedOpening']
+    attachmentRefs?: boolean
+    audit?: (record: unknown) => void
   }) {
-    const ep = new LocalEndpoint({ clock: () => Date.now(), principalId: 'local' })
+    const ep = new LocalEndpoint({
+      clock: () => Date.now(),
+      principalId: 'local',
+      ...(o.audit ? { audit: o.audit } : {}),
+    })
     ep.conn.initialized = true
+    ep.conn.capabilities.attachmentRefs = o.attachmentRefs ?? false
     registerStoredOpening(ep, {
       requireSessionOwner: (method, sessionId, c) => {
         if ((o.owner ?? 'local') !== c.conn.principalId)
@@ -318,5 +325,71 @@ describe('session.storedOpening', () => {
       code: 'SEMANTIC_REJECTED',
       reason: 'stored-opening-unavailable',
     })
+  })
+
+  it('refuses a session or an ancestor in a newer ledger format as NEWER_LEDGER_FORMAT, and audits it', async () => {
+    const audited: Array<{ kind: string; detail: Record<string, unknown> }> = []
+    // As core's ledgerFormatError builds it; the host reader throws the real one.
+    const newer = Object.assign(new Error('E_FORMAT: session k was written by a newer AGH'), {
+      code: 'E_FORMAT',
+      detail: { sessionKey: 'k', formatVersion: 3, supported: 2, reason: 'newer-ledger-format' },
+    })
+    const call = endpoint({
+      audit: (record) => audited.push(record as (typeof audited)[number]),
+      storedOpening: {
+        opening: async () => {
+          throw newer
+        },
+      },
+    })
+    const reply = await call({ sessionId: KEY })
+    expect(reply.error?.data).toMatchObject({
+      code: 'NEWER_LEDGER_FORMAT',
+      reason: 'newer-ledger-format',
+    })
+    expect(typeof reply.error?.data?.diagnosticId).toBe('string')
+    expect(audited).toEqual([
+      {
+        kind: 'daemon.request_failed',
+        detail: {
+          diagnosticId: reply.error?.data?.diagnosticId,
+          method: '_agnes/v1/session.storedOpening',
+          errorCode: 'NEWER_LEDGER_FORMAT',
+        },
+      },
+    ])
+    // A newer child-control format carries no ledger reason and is not this refusal.
+    const childControl = endpoint({
+      storedOpening: {
+        opening: async () => {
+          throw Object.assign(new Error('E_FORMAT: child control format 9'), { code: 'E_FORMAT' })
+        },
+      },
+    })
+    expect((await childControl({ sessionId: KEY })).error?.data?.code).not.toBe('NEWER_LEDGER_FORMAT')
+  })
+
+  it('downgrades reference blocks in the stored opening for a client that never declared them', async () => {
+    const ref = {
+      type: 'image',
+      mimeType: 'image/png',
+      name: 'shot.png',
+      attachment: { sha256: 'd'.repeat(64), bytes: 1234 },
+      width: 640,
+      height: 480,
+    }
+    const stored = {
+      ...timeline,
+      nodes: [{ kind: 'user', id: 'n1', seq: 9, content: [{ type: 'text', text: 'look' }, ref] }],
+    }
+    const opening = async () => ({ timeline: stored, hasEarlier: false, lastSeq: 9 })
+    const withRefs = await endpoint({ attachmentRefs: true, storedOpening: { opening } })({ sessionId: KEY })
+    expect(withRefs.error).toBeUndefined()
+    expect(withRefs.result).toMatchObject({ timeline: { nodes: [{ content: [{ type: 'text' }, ref] }] } })
+    const without = await endpoint({ attachmentRefs: false, storedOpening: { opening } })({ sessionId: KEY })
+    expect(without.error).toBeUndefined()
+    const sent = JSON.stringify(without.result)
+    expect(sent).not.toContain('"attachment"')
+    expect(sent).toContain('shot.png')
   })
 })

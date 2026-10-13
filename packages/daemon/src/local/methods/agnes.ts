@@ -198,7 +198,7 @@ function rememberProjection(
 }
 
 /** A projection as this connection may see it: links and text in place of reference blocks it never declared. */
-function projectionFor<T>(connection: { capabilities: { attachmentRefs: boolean } }, value: T): T {
+export function projectionFor<T>(connection: { capabilities: { attachmentRefs: boolean } }, value: T): T {
   return connection.capabilities.attachmentRefs ? value : downgradeTimeline(value)
 }
 

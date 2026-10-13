@@ -1,6 +1,12 @@
 import { DatabaseSync } from 'node:sqlite'
 import { setImmediate as nextTurn } from 'node:timers/promises'
-import { type Event, leanEvents, UIProjectionCell } from '@agnes/core'
+import {
+  type Event,
+  LEDGER_FORMAT_VERSION,
+  leanEvents,
+  ledgerFormatError,
+  UIProjectionCell,
+} from '@agnes/core'
 import { UI_OPENING_MAX_NODES, UI_PROJECTION_DEFAULT_MAX_BYTES } from '@agnes/protocol'
 import { rowToEventForRead } from './adapters/storage-sqlite.js'
 import { EVENT_COLUMNS_LEAN } from './adapters/storage-sqlite-lean.js'
@@ -51,7 +57,9 @@ export function openStoredOpeningReader(o: StoredOpeningReaderOptions): StoredOp
   const pageBytes = o.pageBytes ?? PAGE_BYTES
   const db = new DatabaseSync(o.file, { readOnly: true })
   db.exec('PRAGMA busy_timeout = 5000')
-  const parentOf = db.prepare('SELECT parent_key, boundary_seq FROM sessions WHERE session_key = ?')
+  const parentOf = db.prepare(
+    'SELECT format_version, parent_key, boundary_seq FROM sessions WHERE session_key = ?',
+  )
   // octet_length on a column reads the record header, not the value, so sizing a page is cheap.
   const sizes = db.prepare(
     `SELECT seq, octet_length(data) AS n FROM events WHERE session_key = ? AND seq > ? AND seq <= ? ORDER BY seq LIMIT ${PAGE_ROWS}`,
@@ -59,12 +67,19 @@ export function openStoredOpeningReader(o: StoredOpeningReaderOptions): StoredOp
   const page = db.prepare(
     `SELECT ${EVENT_COLUMNS_LEAN} FROM events WHERE session_key = ? AND seq > ? AND seq <= ? ORDER BY seq`,
   )
-  /** The ledgers a session reads, oldest ancestor first, each with the last seq it contributes. */
+  /**
+   * The ledgers a session reads, oldest ancestor first, each with the last seq it contributes. Like a
+   * full open, it refuses when the session or any ancestor was written in a newer ledger format.
+   */
   const chainOf = (key: string): Array<{ key: string; upto: number }> => {
     const chain = [{ key, upto: Number.MAX_SAFE_INTEGER }]
     const seen = new Set([key])
     for (let at = key; ; ) {
-      const link = parentOf.get(at) as { parent_key: string | null; boundary_seq: number | null } | undefined
+      const link = parentOf.get(at) as
+        | { format_version: number; parent_key: string | null; boundary_seq: number | null }
+        | undefined
+      if (link && Number(link.format_version) > LEDGER_FORMAT_VERSION)
+        throw ledgerFormatError(at, Number(link.format_version))
       if (!link?.parent_key) return chain.reverse()
       if (seen.has(link.parent_key) || chain.length >= MAX_ANCESTRY)
         throw new StoredOpeningError('stored session ancestry loops or is too deep')

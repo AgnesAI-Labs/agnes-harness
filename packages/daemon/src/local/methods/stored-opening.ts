@@ -6,6 +6,8 @@ import {
   UI_OPENING_DEFAULT_MAX_NODES,
 } from '@agnes/protocol'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
+import { isNewerLedgerFormat, newerLedgerRpcError } from './acp.js'
+import { projectionFor } from './agnes.js'
 
 /**
  * `_agnes/v1/session.storedOpening`: the latest stretch of a session's history read straight from
@@ -32,12 +34,18 @@ export function registerStoredOpening(
       // A damaged ancestry in storage is a refusal like any other missing history, not a daemon fault.
       if (error instanceof StoredOpeningError)
         throw rpcError('SEMANTIC_REJECTED', { reason: 'stored-opening-unavailable' })
+      // The session or an ancestor was written by a newer build: the same refusal a full open gives.
+      if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
       throw error
     }
     // Every session starts with a row; none means its ledger is not in the storage this daemon reads.
     if (read.lastSeq === 0) throw rpcError('SEMANTIC_REJECTED', { reason: 'stored-opening-unavailable' })
     // Not a live projection, so nothing will patch it: the first generation is as good as any.
-    const timeline = { ...(read.timeline as SessionStoredOpeningResult['timeline']), generation: 1 }
+    // A client that never declared attachment references gets links and text in their place.
+    const timeline = projectionFor(c.conn, {
+      ...(read.timeline as SessionStoredOpeningResult['timeline']),
+      generation: 1,
+    })
     return { timeline, hasEarlier: read.hasEarlier, verified: false, lastSeq: read.lastSeq }
   })
 }

@@ -291,6 +291,67 @@ describe('stored opening reader', () => {
     }
   })
 
+  it('refuses a session or an ancestor written in a newer ledger format, as a full open does', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stored-opening-'))
+    dirs.push(dir)
+    const key = 'agnes:local:default:cli:workspace:newer'
+    const file = await writeSession(dir, key, 'QUJD')
+    const storage = createSqliteStorage({ file, tablesDir: join(dir, 'tables') })
+    const parent = await SessionLogImpl.open({
+      storage,
+      key,
+      writerRunId: 'writer',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers,
+    })
+    const childKey = `${key}:child`
+    const child = await parent.forkInto(10, childKey, {
+      actor,
+      agnesVersion: '0.0.0-test',
+      preset: null,
+      resolvedProfileHash: null,
+      writerRunId: 'child',
+      lane: 'main',
+    })
+    await child.close()
+    await parent.close()
+    await storage.close()
+    const newer = { code: 'E_FORMAT', detail: { reason: 'newer-ledger-format', formatVersion: 3 } }
+    const db = new DatabaseSync(file)
+    const setFormat = db.prepare('UPDATE sessions SET format_version = ? WHERE session_key = ?')
+
+    // Only the ancestor is newer: the child's own row still says format 1.
+    setFormat.run(3, key)
+    let reader = createStoredOpeningReader({ file })
+    try {
+      await expect(reader.opening(childKey, 200)).rejects.toMatchObject({
+        ...newer,
+        detail: { ...newer.detail, sessionKey: key },
+      })
+      await expect(reader.opening(key, 200)).rejects.toMatchObject(newer)
+    } finally {
+      reader.close()
+    }
+
+    // Only the session itself is newer.
+    setFormat.run(2, key)
+    setFormat.run(3, childKey)
+    db.close()
+    reader = createStoredOpeningReader({ file })
+    try {
+      await expect(reader.opening(childKey, 200)).rejects.toMatchObject({
+        ...newer,
+        detail: { ...newer.detail, sessionKey: childKey },
+      })
+      // The format this build writes is read as before.
+      expect((await reader.opening(key, 200)).lastSeq).toBeGreaterThan(0)
+    } finally {
+      reader.close()
+    }
+  })
+
   it('opens the database read-only, so it never creates one', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-stored-opening-'))
     dirs.push(dir)
