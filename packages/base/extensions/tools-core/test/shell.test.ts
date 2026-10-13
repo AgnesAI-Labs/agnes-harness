@@ -41,6 +41,7 @@ describe('shell', () => {
       isConcurrencySafe: false,
       isOpenWorld: true,
       replay: 'never',
+      commandArg: 'command',
       costHint: {},
       deferLoading: false,
       requiresApproval: undefined,
