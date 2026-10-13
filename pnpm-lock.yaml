@@ -342,6 +342,9 @@ importers:
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       es-module-lexer:
         specifier: 2.3.2
         version: 2.3.2

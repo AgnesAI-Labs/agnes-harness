@@ -30,6 +30,7 @@
     "@agnes/worker-runtime": "workspace:*",
     "@agnes/error-sanitization": "workspace:*",
     "@agnes/system-node": "workspace:*",
+    "ajv": "8.20.0",
     "es-module-lexer": "2.3.2",
     "ws": "8.21.3"
   },
