@@ -336,7 +336,17 @@ describe('local endpoint: ACP round trip', () => {
     // default); 'minimal-rl' is a real preset name elsewhere in this codebase but is not in this
     // deployment's presets.allowed, so it exercises the same host gate a disallowed arbitrary name
     // would - `validatePresetSwitch` -> `E_PRESET_UNSUPPORTED` -> `mapCore` -> -32008.
-    const h = await openTestHost()
+    const h = await openTestHost({
+      profileInputs: {
+        bundleCatalog: {
+          'acme/modes#modes': {
+            id: 'acme/modes#modes',
+            sourcePackage: 'acme/modes',
+            document: { presets: { review: { name: 'review', extends: 'standard' } } },
+          },
+        },
+      },
+    })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
     await ep.handle(init)
     await addWorkspace(ep, h.dataDir)
@@ -362,6 +372,29 @@ describe('local endpoint: ACP round trip', () => {
         params: { sessionId: ok.result.sessionId, modeId: 'minimal-rl' },
       }),
     ).toMatchObject({ error: { code: -32008 } })
+    const bundled = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'session/new',
+      params: {
+        cwd: h.dataDir,
+        mcpServers: [],
+        _meta: { 'ai.agnes.harness': { bundles: ['acme/modes#modes'] } },
+      },
+    })) as { result: { sessionId: string } }
+    expect(bundled.result.sessionId).toBeTypeOf('string')
+    for (const method of ['session/set_mode', '_agnes/v1/session.setPreset']) {
+      const switchTo = (sessionId: string, preset: string) =>
+        ep.handle({
+          jsonrpc: '2.0',
+          id: 6,
+          method,
+          params: { sessionId, ...(method === 'session/set_mode' ? { modeId: preset } : { preset }) },
+        })
+      expect(await switchTo(bundled.result.sessionId, 'standard')).toHaveProperty('result')
+      expect(await switchTo(bundled.result.sessionId, 'review')).toHaveProperty('result')
+      expect(await switchTo(ok.result.sessionId, 'review')).toHaveProperty('error.code', -32008)
+    }
     await ep.close()
     await h.close()
   })

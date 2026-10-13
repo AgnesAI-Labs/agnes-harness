@@ -803,19 +803,14 @@ export function registerAcp(
     e?.inflight?.abort.abort()
   })
 
-  // `modeId` is ACP's name for what this package calls a preset; `session/set_mode` is the one
-  // reachable surface this deployment has for a preset switch today - `_agnes/v1/session.setPreset`
-  // has no protocol schema yet (see `mapCore`'s doc comment in methods/agnes.ts). The validated-gate
-  // shape is the same one that method would use: never hand the client-supplied name straight to
-  // `session.setPreset()` without going through `cx.host.validatePresetSwitch()` first, so a switch
-  // can never land on a preset this deployment did not mean to expose (minimal-rl, an unresolvable
-  // name, a hard requirement this assembly cannot satisfy).
+  // `modeId` is ACP's name for a preset. Both switch methods validate against the owning session's
+  // composition, including any presets it pinned from bundles, before handing the view to Core.
   ep.register('session/set_mode', async (params) => {
     const p = params as { sessionId: string; modeId: string }
     requireOwner('session/set_mode', p.sessionId)
     const entry = cx.registry.require(p.sessionId)
     try {
-      const resolved = cx.host.validatePresetSwitch(p.modeId)
+      const resolved = cx.host.validatePresetSwitch(p.modeId, p.sessionId)
       await runQueued(cx.commandQueue, p.sessionId, new AbortController().signal, async () => {
         await entry.session.setPreset(resolved.view)
       })

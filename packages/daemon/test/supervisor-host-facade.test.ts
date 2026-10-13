@@ -18,6 +18,11 @@ describe('supervisorHostFacade.validateModelSwitch', () => {
     expect(() => host.validateModelSwitch({ slot: 'primary', route, model: 'deepseek-v4-pro' })).not.toThrow()
   })
 
+  it('leaves session preset admission to its worker, while keeping deployment-only checks scoped', () => {
+    expect(() => host.validatePresetSwitch('review')).toThrow('presets.allowed')
+    expect(host.validatePresetSwitch('review', 'bundle-session').view).toBe('review')
+  })
+
   it('refuses an undeclared model on an account route by code, without quoting the route', () => {
     let thrown: unknown
     try {

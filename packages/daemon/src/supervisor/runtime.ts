@@ -556,17 +556,15 @@ export function supervisorHostFacade(
     },
     /**
      * Best-effort, profile-only check: the supervisor has the raw `ResolvedProfile` but no assembled
-     * preset table, so this can only check `presets.allowed` (the same check `session/new` already
-     * makes directly against `cx.host.profile`), not a preset's hard requirements or its real
-     * resolved view. That is not a gap in enforcement: `worker/commands.ts`'s own `setPreset` case
-     * calls the REAL host's `validatePresetSwitch` again, with the real assembled route table,
-     * before ever calling `session.setPreset()` - this daemon-side check is a fast, friendly
-     * rejection, not the security boundary. `resolved.view` is deliberately just the preset NAME
+     * preset table. Without a session it can check only deployment `presets.allowed`; a session's
+     * pinned bundles may add names the supervisor cannot see. Session switches therefore delegate
+     * admission to the worker's `setPreset` case, which calls the real Host's `setSessionPreset`
+     * against that session's composition and hard requirements. `resolved.view` is just the preset NAME
      * (not a real `PresetView`): `RemoteSession.setPreset` forwards it as the wire's `preset` field
      * verbatim, and the worker re-derives the real view from that name itself.
      */
-    validatePresetSwitch(name: string): ResolvedPreset {
-      if (!profile.presets.allowed.includes(name))
+    validatePresetSwitch(name: string, sessionKey?: string): ResolvedPreset {
+      if (!sessionKey && !profile.presets.allowed.includes(name))
         throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
           detail: { preset: name },
         })
