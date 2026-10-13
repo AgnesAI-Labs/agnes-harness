@@ -2,7 +2,7 @@ import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, EmptyState, Icon, IconButton, renderRegion } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
-import { type SidebarNavigationOptions, sortSessionsByRecency } from '@agnes/web-units'
+import { type SidebarNavigationOptions, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units'
 import { useState } from 'react'
 import { SessionMenu } from './session-menu.js'
 
@@ -134,7 +134,7 @@ export function SessionNavigation({ options, t }: { options: SidebarNavigationOp
     const title =
       row.title ||
       options.labels.get(row.sessionId) ||
-      t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
+      untitledSessionLabel(t('nav.sessionFallback'), row.createdAt, document.documentElement.lang || 'en')
     const active = row.sessionId === options.currentId
     const running = options.runningIds?.includes(row.sessionId) ?? false
     return {

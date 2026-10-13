@@ -26,3 +26,35 @@ export function isNewSessionShortcut(
   // ⌘N only arrives where the host leaves it to the page (a desktop shell); honour it there too.
   return event.shiftKey ? key === 'o' : key === 'n'
 }
+
+/**
+ * What a session is called before it has a title: the plain name plus when it was started, so two
+ * untitled sessions can be told apart without showing an internal id. Today reads as a time, any
+ * other day as a date.
+ */
+export function untitledSessionLabel(
+  name: string,
+  createdAt: string | undefined,
+  locale: string,
+  now: number = Date.now(),
+): string {
+  const created = createdAt ? Date.parse(createdAt) : Number.NaN
+  if (Number.isNaN(created)) return name
+  const at = new Date(created)
+  const today = new Date(now)
+  const sameDay =
+    at.getFullYear() === today.getFullYear() &&
+    at.getMonth() === today.getMonth() &&
+    at.getDate() === today.getDate()
+  const when = new Intl.DateTimeFormat(
+    locale,
+    sameDay
+      ? { hour: '2-digit', minute: '2-digit', hour12: false }
+      : {
+          ...(at.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
+          month: 'short',
+          day: 'numeric',
+        },
+  ).format(at)
+  return `${name} · ${when}`
+}

@@ -4,7 +4,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 export const sessionLocaleCatalog: LocaleCatalog = {
   en: {
     'nav.noWorkspaceTitle': 'History sessions without a workspace',
-    'nav.sessionFallback': 'Session {id}',
+    'nav.sessionFallback': 'New session',
     'nav.loadMore': 'Load more tasks',
     'nav.running': 'Running',
     'nav.empty.title': 'No sessions yet',
@@ -65,7 +65,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'nav.noWorkspaceTitle': '没有工作区归属的历史会话',
-    'nav.sessionFallback': '会话 {id}',
+    'nav.sessionFallback': '新会话',
     'nav.loadMore': '加载更多任务',
     'nav.running': '运行中',
     'nav.empty.title': '还没有会话',

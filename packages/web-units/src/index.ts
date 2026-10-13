@@ -78,6 +78,7 @@ export {
   isNewSessionShortcut,
   newSessionShortcutLabel,
   sortSessionsByRecency,
+  untitledSessionLabel,
 } from './session-groups.js'
 export type {
   SettingsDshSlotName,

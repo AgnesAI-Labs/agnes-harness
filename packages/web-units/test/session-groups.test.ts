@@ -3,6 +3,7 @@ import {
   isNewSessionShortcut,
   newSessionShortcutLabel,
   sortSessionsByRecency,
+  untitledSessionLabel,
 } from '../src/session-groups.js'
 
 const at = (day: number, hour: number) => new Date(2026, 9, day, hour).toISOString()
@@ -52,5 +53,22 @@ describe('new session shortcut', () => {
     expect(newSessionShortcutLabel('MacIntel')).toBe('⇧⌘O')
     expect(newSessionShortcutLabel('Win32')).toBe('Ctrl+Shift+O')
     expect(newSessionShortcutLabel('')).toBe('Ctrl+Shift+O')
+  })
+})
+
+describe('untitled session label', () => {
+  const now = new Date(2026, 9, 13, 22, 30).getTime()
+  it('names an untitled session by when it started, never by its id', () => {
+    expect(untitledSessionLabel('新会话', at(13, 9), 'zh-CN', now)).toBe('新会话 · 09:00')
+    expect(untitledSessionLabel('New session', at(13, 21), 'en', now)).toBe('New session · 21:00')
+    expect(untitledSessionLabel('新会话', at(2, 9), 'zh-CN', now)).toBe('新会话 · 10月2日')
+    expect(untitledSessionLabel('New session', at(2, 9), 'en', now)).toBe('New session · Oct 2')
+    expect(untitledSessionLabel('New session', new Date(2025, 0, 5).toISOString(), 'en', now)).toBe(
+      'New session · Jan 5, 2025',
+    )
+  })
+  it('falls back to the plain name when the start time is unknown', () => {
+    expect(untitledSessionLabel('新会话', undefined, 'zh-CN', now)).toBe('新会话')
+    expect(untitledSessionLabel('新会话', 'not a date', 'zh-CN', now)).toBe('新会话')
   })
 })
