@@ -45,6 +45,14 @@ export const itemSessionKey = (profile: string, batchId: string, ordinal: number
 export const isItemSession = (sessionKey: string): boolean => BATCH_ITEM_SESSION_PATTERN.test(sessionKey)
 /** Item sessions belong to the batch, not to a person, so they stay out of every session list. */
 export const itemPrincipal = (batchId: string): string => `batch:${batchId}`
+/** The principal kind that owns item sessions; no connection ever authenticates as one. */
+export const isBatchPrincipal = (principalId: string): boolean => principalId.startsWith('batch:')
+/**
+ * The batch an item session key names. The key pattern is not anchored at its start, so the key
+ * alone proves nothing: callers that grant anything also compare the owner with `itemPrincipal`.
+ */
+export const itemSessionBatchId = (sessionKey: string): string | undefined =>
+  /:batch:(b[0-9a-f]{12}):\d+$/u.exec(sessionKey)?.[1]
 export const toPosix = (path: string): string => path.split(sep).join('/')
 
 /**

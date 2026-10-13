@@ -58,6 +58,7 @@ import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { type CallContext, connActor, type LocalEndpoint } from '../endpoint.js'
 import type {
+  BatchPort,
   ClaimStore,
   CommandJournal,
   CompactOutcome,
@@ -78,6 +79,8 @@ export type AgnesContext = LocalContext & {
   journal: CommandJournal
   claims: ClaimStore
   jobs?: JobsPort
+  /** The batch engine; its methods are for the local owner only. */
+  batch?: BatchPort
   directory?: DirectoryPort
   lister?: SessionLister
   authKind: AuthKind
@@ -380,6 +383,12 @@ async function serializeSessionMutation<T>(session: object, key: string, work: (
   }
 }
 
+/** A connection authenticated as the local owner over the local socket. */
+const localSocketOwner = (x: {
+  authKind?: AuthKind | undefined
+  auth?: Pick<AgnesContext['auth'], 'config'> | undefined
+}): boolean => x.authKind === 'local' && x.auth?.config.transport === 'unix'
+
 const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
   {
     name: 'computer-use',
@@ -459,6 +468,17 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     methods: ['_agnes/v1/participant.join', '_agnes/v1/participant.leave', '_agnes/v1/participant.list'],
     guidance: 'credentials only; never an actor',
     when: (x) => !!x.resolveActor,
+  },
+  {
+    name: 'batch',
+    methods: [
+      '_agnes/v1/batch.start',
+      '_agnes/v1/batch.status',
+      '_agnes/v1/batch.cancel',
+      '_agnes/v1/batch.list',
+    ],
+    guidance: 'background batch processing of workspace files; local owner on the local socket only',
+    when: (x) => localSocketOwner(x) && !!x.batch,
   },
   {
     name: 'jobs',
@@ -1335,6 +1355,33 @@ export function registerAgnes(
     await jobs('jobs.cancel').cancel(jobId)
     return {}
   })
+  // The local owner on the local socket only (not the loopback Web listener): batches spend credits
+  // and write into the workspace. The engine answers only for batches the connection's principal
+  // started, and keeps every folder inside the workspace.
+  const batch = (method: string, c: CallContext): BatchPort => {
+    if (!cx.batch || !localSocketOwner({ authKind: c.conn.authKind, auth: cx.auth }))
+      throw rpcError('CAPABILITY_DENIED', { method })
+    return cx.batch
+  }
+  ep.register('_agnes/v1/batch.start', async (params, c) => {
+    const p = params as { cwd: string; spec: unknown }
+    return batch('batch.start', c).start({ principalId: c.conn.principalId, cwd: p.cwd, spec: p.spec })
+  })
+  ep.register('_agnes/v1/batch.status', async (params, c) => {
+    const p = params as { batchId: string; export?: boolean }
+    return batch('batch.status', c).status({
+      principalId: c.conn.principalId,
+      batchId: p.batchId,
+      ...(p.export !== undefined ? { export: p.export } : {}),
+    })
+  })
+  ep.register('_agnes/v1/batch.cancel', async (params, c) => {
+    const p = params as { batchId: string }
+    return batch('batch.cancel', c).cancel({ principalId: c.conn.principalId, batchId: p.batchId })
+  })
+  ep.register('_agnes/v1/batch.list', async (_params, c) => ({
+    items: await batch('batch.list', c).list({ principalId: c.conn.principalId }),
+  }))
   const participantRows = async (session: ScannableSession): Promise<ParticipantListResult> => {
     const current = new Map<string, ParticipantListResult['participants'][number]>()
     for (const event of await rowsOfType(session, 'participant')) {

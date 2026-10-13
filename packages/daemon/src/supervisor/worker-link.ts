@@ -270,7 +270,13 @@ export class WorkerLink {
                 }
               : frame.method === 'skill-install'
                 ? skillInstallReplyError(error)
-                : { code: 'E_REQUEST', message: String(error) },
+                : frame.method === 'batch'
+                  ? // Batch refusals are written for the model that called the tool.
+                    {
+                      code: 'E_BATCH',
+                      message: error instanceof Error ? error.message : 'the batch request failed',
+                    }
+                  : { code: 'E_REQUEST', message: String(error) },
         }),
     )
     this.options.onActivity?.(frame.sessionKey)

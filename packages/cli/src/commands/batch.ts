@@ -295,7 +295,9 @@ export async function runBatchCommand(
     if (error instanceof UsageError || !isRpcFailure(error)) throw error
     const code = codeOf(error)
     const missing = code === -32601
-    const message = error instanceof Error ? error.message : ''
+    // The daemon names its refusal (SEMANTIC_REJECTED) and says why in data.reason.
+    const reason = (error as { data?: { reason?: unknown } }).data?.reason
+    const message = typeof reason === 'string' ? reason : error instanceof Error ? error.message : ''
     io.error(
       `agh batch: ${inert(message).slice(0, 300) || `request refused (${String(code)})`}${missing ? ' (batch processing needs the AGH daemon: agh daemon start)' : ''}\n`,
     )

@@ -229,6 +229,44 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     }
   })
 
+  it('hands the daemon batch bridge only to the exact batch extension id', async () => {
+    const bridge = vi.fn(async () => {
+      throw new Error('unused')
+    })
+    for (const supplied of [true, false]) {
+      const seen: Record<string, unknown> = {}
+      const { host } = await createTestHost({
+        dataDir: scratch(),
+        packageDirs: { '@agnes/base': baseDir },
+        ...(supplied ? { batch: bridge } : {}),
+        packages: {
+          '@agnes/base': {
+            ecosystem: {
+              ...baseEcosystem,
+              'agnes/batch': (context) => {
+                seen.batch = context.batch
+                return baseEcosystem['agnes/batch'](context)
+              },
+              'agnes/refine': (context) => {
+                seen.refine = context.batch
+                return baseEcosystem['agnes/refine'](context)
+              },
+            },
+          },
+        },
+      })
+      try {
+        if (supplied) {
+          expect((seen.batch as { request?: unknown } | undefined)?.request).toBe(bridge)
+          expect(Object.isFrozen(seen.batch)).toBe(true)
+        } else expect(seen.batch).toBeUndefined()
+        expect(seen.refine).toBeUndefined()
+      } finally {
+        await host.close()
+      }
+    }
+  })
+
   it('loads bundled tools, including the compaction request surface', async () => {
     const { host } = await createTestHost({
       dataDir: scratch(),

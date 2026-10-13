@@ -81,6 +81,8 @@ export type SeamInitContext = {
   skillDiscovery?: SkillRuntimeDiscovery
   /** Host-owned fixed operation, populated only for the exact agnes/privacy factory. */
   privacyTrajectory?: PrivacyTrajectoryCapability
+  /** Exact bundled agnes/batch extension only: forwards its tool requests to the daemon batch engine. */
+  batch?: Readonly<{ request: import('../resources/batch-port.js').BatchBridge }>
   /** Exact trusted computer-use extension only; never supplied to another package or extension. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: Readonly<{

@@ -1544,6 +1544,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(owner === '@agnes/base' && extensionId === 'agnes/privacy' && privacyTrajectory
           ? { privacyTrajectory }
           : {}),
+        ...(owner === '@agnes/base' && extensionId === 'agnes/batch' && deps.batch
+          ? { batch: Object.freeze({ request: deps.batch }) }
+          : {}),
         ...(extensionRowGrantFor(owner, extensionId)?.computerUse && computerUseBackendProvider
           ? {
               // Extension unload calls provider.dispose(). The lazy runtime's dispose closes the

@@ -413,6 +413,15 @@ describe('output', () => {
     ).toBe(1)
     expect(t.err.join('')).toBe('agh batch: no such batch\n')
   })
+  it("shows the daemon's reason for a refusal rather than its error name", async () => {
+    const t = io()
+    const refusal = Object.assign(rpc('SEMANTIC_REJECTED (-32011)', -32011), {
+      data: { code: 'BATCH_SPEC_INVALID', reason: `dir is not an existing folder ${DANGER}` },
+    })
+    expect(await runBatchCommand(parseBatchArgs(['status', ID]), fakeClient([refusal]).client, t.io)).toBe(1)
+    noEscape(t.err.join('').replace(/\n$/u, ''))
+    expect(t.err.join('')).toContain('agh batch: dir is not an existing folder')
+  })
   it('hands anything that is not a daemon answer to the caller', async () => {
     await expect(
       runBatchCommand(parseBatchArgs(['list']), fakeClient([closed()]).client, io().io),

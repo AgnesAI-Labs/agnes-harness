@@ -174,6 +174,7 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
     serviceAuthority: expect.objectContaining({ resolve: expect.any(Function) }),
     mcpManage: expect.any(Function),
     pluginManage: expect.any(Function),
+    batch: expect.any(Function),
   })
 })
 

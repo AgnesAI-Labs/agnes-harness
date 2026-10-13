@@ -77,6 +77,8 @@ export type AssembleDeps = HostPaths &
     /** Request-only daemon bridge. Never a resource-admin client or authority. */
     mcpManage?: import('./resources/mcp-manage-port.js').McpManageBridge
     pluginManage?: import('./resources/plugin-manage-port.js').PluginManageBridge
+    /** Request-only daemon bridge for the bundled batch tools; the daemon stamps the session. */
+    batch?: import('./resources/batch-port.js').BatchBridge
     skillInstall?: import('./resources/skill-install-port.js').SkillInstallBridge
     /**
      * Cordis contribution port for the same registry that produced `skillResources`.
