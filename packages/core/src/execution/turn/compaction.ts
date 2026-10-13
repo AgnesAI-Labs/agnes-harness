@@ -366,6 +366,7 @@ async function summarize(
       signal,
       toolNames: segment.wide ? prefix.tools.map((tool) => tool.name) : [],
     })) {
+      s.noteLoopActivity()
       if (event.type === 'text_delta') text += event.delta
       else if (event.type === 'usage') usage = event
       // A reasoning model can spend the whole budget before (or while) writing: an empty summary

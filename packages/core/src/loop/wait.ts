@@ -87,10 +87,12 @@ export async function loopWait(
           })
           if (signal.aborted) return
           if (consumedWake || ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0) return
+          const waited = s.beginLoopWait()
           await new Promise<void>((resolve) => {
             const finish = () => {
               waiters.delete(finish)
               signal.removeEventListener('abort', finish)
+              waited()
               resolve()
             }
             waiters.add(finish)

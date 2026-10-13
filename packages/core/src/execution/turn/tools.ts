@@ -1291,7 +1291,13 @@ export async function approveAndExecute(
         // Deliberately not the injected timers: those drive the writer lease, and a test that freezes
         // them to hold a lease still has to be able to watch a tool run out of time.
         dispatched = invokeAttempt(attempt)
-        observation = await withTimeout(dispatched, timeoutMs, call.name, ac.signal)
+        // Bounded by its own timeout, so the loop step deadline does not run under it.
+        const waited = s.beginLoopWait()
+        try {
+          observation = await withTimeout(dispatched, timeoutMs, call.name, ac.signal)
+        } finally {
+          waited()
+        }
       } catch (error) {
         timedOut = error instanceof Error && error.message.startsWith('timeout:')
         cancelled = !timedOut && ac.signal.aborted

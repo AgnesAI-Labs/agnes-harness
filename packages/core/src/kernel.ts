@@ -140,6 +140,7 @@ export type KernelOptions = {
   ids?: IdMinter
   timers?: Timers
   loopStepTimeoutMs?: number
+  closeDrainMs?: number
   fsOps: FsOps
   /** Host selects one session-pinned memory provider; omission preserves deployments without it. */
   memoryFor?: (input: {
@@ -654,6 +655,7 @@ export class Kernel {
         segments,
         ...(this.o.timers ? { timers: this.o.timers } : {}),
         ...(this.o.loopStepTimeoutMs ? { loopStepTimeoutMs: this.o.loopStepTimeoutMs } : {}),
+        ...(this.o.closeDrainMs ? { closeDrainMs: this.o.closeDrainMs } : {}),
         ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
         ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
         ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),

@@ -1195,6 +1195,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           break
         }
         const ev = next.value
+        s.noteLoopActivity()
         if (ev.type === 'sent') {
           if (sentWritten) {
             error = {

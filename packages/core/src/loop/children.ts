@@ -1,7 +1,12 @@
 import { MICROCREDITS_PER_CREDIT } from '@agnes/core-child-control/child/credits'
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import { CoreError } from '@agnes/core-common/types'
-import type { ChildAgentHandle, ChildAgentParentScope, ChildAgentSessionService } from '@agnes/extension-api'
+import type {
+  ChildAgentEvent,
+  ChildAgentHandle,
+  ChildAgentParentScope,
+  ChildAgentSessionService,
+} from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
 
 /** Read the parent's current ceiling, including already held/settled tree spend. */
@@ -72,8 +77,8 @@ export class LoopChildren {
           ),
         ),
       interrupt: (id) => this.owned(() => this.required().interrupt(id)),
-      result: (id) => this.owned(() => this.required().result(id)),
-      events: (id) => this.required().events(id),
+      result: (id) => this.owned(() => this.awaited(() => this.required().result(id))),
+      events: (id) => this.awaitedEvents(this.required().events(id)),
       dispose: (id) => (id === undefined ? this.close() : this.required().dispose(id)),
     } satisfies ChildAgentSessionService)
   }
@@ -113,6 +118,27 @@ export class LoopChildren {
       return await work()
     } finally {
       done()
+    }
+  }
+  /** A running child is the turn's own work: the step deadline does not run while it is awaited. */
+  private async awaited<T>(work: () => Promise<T>): Promise<T> {
+    const waited = this.s.beginLoopWait()
+    try {
+      return await work()
+    } finally {
+      waited()
+    }
+  }
+  private awaitedEvents(events: AsyncIterable<ChildAgentEvent>): AsyncIterable<ChildAgentEvent> {
+    const awaited = <T>(work: () => Promise<T>) => this.awaited(work)
+    return {
+      [Symbol.asyncIterator]() {
+        const iterator = events[Symbol.asyncIterator]()
+        return {
+          next: () => awaited(() => iterator.next()),
+          return: async (value?: unknown) => (await iterator.return?.(value)) ?? { done: true, value },
+        }
+      },
     }
   }
   cancel(): void {

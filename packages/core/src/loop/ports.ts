@@ -243,6 +243,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           sent = true
         } else if (!sent && event.type !== 'error')
           throw new CoreError('E_ENVELOPE', 'Provider response is missing a sent stamp')
+        s.noteLoopActivity()
         if (event.type === 'error') failed = true
         if (event.type === 'done') completed = true
         if (event.type === 'done')
@@ -700,7 +701,12 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       wake: waiting.wake,
       async delay(ms, signal) {
         signal.throwIfAborted()
-        await s.sleep(ms)
+        const waited = s.beginLoopWait()
+        try {
+          await s.sleep(ms)
+        } finally {
+          waited()
+        }
         signal.throwIfAborted()
       },
       async poll(signal) {

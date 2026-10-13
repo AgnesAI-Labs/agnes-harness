@@ -22,7 +22,7 @@ import { createLoopContext, disposeLoopContext } from '../src/loop/ports.js'
 import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { noopHooks } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
-import { fakeProvider, textTurn } from './helpers/fake-provider.js'
+import { fakeProvider, sentFor, textTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import {
   actor,
@@ -189,59 +189,138 @@ describe('loop plugins', () => {
     },
   )
 
-  it('ends the turn as an error and releases close when a driver step never settles', async () => {
-    const stuck: LoopFactory = {
-      ...echo,
-      id: 'test.stuck',
-      create: (ctx) => {
-        const driver = echoDriver(ctx)
-        return { ...driver, step: () => new Promise<never>(() => undefined) }
+  /** A driver whose one step does `work` between accepting the input and completing the turn. */
+  const working = (id: string, work: (ctx: LoopContext, signal: AbortSignal) => Promise<unknown>) => {
+    const create = (ctx: LoopContext): LoopDriver => ({
+      ...echoDriver(ctx),
+      async step(signal) {
+        if (!(await ctx.input.accept())) return { outcome: 'idle', phase: 'idle' }
+        await work(ctx, signal)
+        await ctx.events.finish('completed')
+        return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
       },
-      resume: (ctx) => {
-        const driver = echoDriver(ctx)
-        return { ...driver, step: () => new Promise<never>(() => undefined) }
-      },
+    })
+    return { ...echo, id, create, resume: create } satisfies LoopFactory
+  }
+  const later = <T>(ms: number, value: T) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms))
+  const never = () => new Promise<never>(() => undefined)
+  const modelCall = async (ctx: LoopContext, signal: AbortSignal) =>
+    ctx.model.complete(await ctx.prepareRequest({ tools: [], messages: [] }), signal)
+  /** A model stream that starts and then neither produces an event nor honours its signal. */
+  const deafProvider = () => {
+    const provider = fakeProvider([])
+    provider.models = () => [model]
+    provider.infer = async function* (request) {
+      provider.calls++
+      yield sentFor(request)
+      await never()
     }
-    const loops = defaultLoops()
-    loops.register('@test/stuck', stuck)
+    return provider
+  }
+  const quickPreset = () => {
     const preset = presetDefaults()
-    preset.tools.timeoutMs = 5
     preset.model.timeoutMs = 5
-    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset })
-    k.tools.add(readTool() as ToolDef, { source: 'test', trust: 'builtin' })
-    const session = await k.session('stuck-driver', { ...options, loop: stuck })
+    return preset
+  }
+
+  it.each([
+    ['a step that never settles', never, {}],
+    ['a model call that goes silent and ignores cancellation', modelCall, { provider: deafProvider() }],
+  ] as const)(
+    'ends the turn as an error and releases close when the driver is stuck in %s',
+    async (_name, work, extra) => {
+      const stuck = working('test.stuck', work)
+      const loops = defaultLoops()
+      loops.register('@test/stuck', stuck)
+      const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset: quickPreset(), ...extra })
+      const session = await k.session('stuck-driver', { ...options, loop: stuck })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(outcome.reason).toBe('error')
+        expect(outcome.error?.message).toContain('test.stuck@1.0.0')
+        const rows = await session.scan({ fromSeq: 1, limit: 200 })
+        expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
+      } finally {
+        await k.close()
+      }
+    },
+  )
+
+  it('closes within its drain window while a port call ignores cancellation', async () => {
+    const stuck = working('test.deaf', modelCall)
+    const loops = defaultLoops()
+    loops.register('@test/deaf', stuck)
+    const provider = deafProvider()
+    const k = kernel(new MemoryStorage(), loops, { closeDrainMs: 30, provider })
+    const session = await k.session('deaf-port', { ...options, loop: stuck })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+    void session.run({ until: 'turn-end', signal: new AbortController().signal }).catch(() => undefined)
+    await vi.waitFor(() => expect(provider.calls).toBe(1))
+    await expect(k.close()).resolves.toBeUndefined()
+  })
+
+  it.each([
+    [
+      'a tool inside its own timeout',
+      (ctx: LoopContext, signal: AbortSignal) => ctx.tools.execute({ name: 'read', args: {} }, signal),
+    ],
+    [
+      'a running child agent',
+      async (ctx: LoopContext) => {
+        const child = await ctx.children!.start('work')
+        for await (const _event of child.events());
+        await child.result()
+      },
+    ],
+    ['a model response that keeps streaming', modelCall],
+  ] as const)('does not count %s as a silent driver', async (_name, work) => {
+    const busy = working('test.busy', work)
+    const loops = defaultLoops()
+    loops.register('@test/busy', busy)
+    const provider = fakeProvider([])
+    provider.models = () => [model]
+    provider.infer = async function* (request) {
+      yield sentFor(request)
+      for (let i = 0; i < 12; i++) yield await later(12, { type: 'text_delta' as const, delta: '.' })
+      yield usage()
+      yield { type: 'done', reason: 'stop' }
+    }
+    const child = {
+      id: 'child-1',
+      providerId: 'test',
+      capabilities: {} as never,
+      sendMessage: async () => ({ messageId: 'm1' }),
+      interrupt: async () => ({ accepted: true }),
+      events: async function* () {
+        for (let i = 0; i < 2; i++) yield await later(60, { type: 'text' as const, text: 'working' })
+      },
+      result: () => later(60, { status: 'completed' as const, text: 'done' }),
+      dispose: async () => {},
+    }
+    const k = kernel(new MemoryStorage(), loops, {
+      loopStepTimeoutMs: 30,
+      preset: quickPreset(),
+      provider,
+      loopChildren: () => ({
+        start: async () => child,
+        list: async () => [],
+        sendMessage: child.sendMessage,
+        interrupt: child.interrupt,
+        result: child.result,
+        events: child.events,
+        dispose: child.dispose,
+      }),
+    })
+    k.tools.add(readTool(async () => later(150, { content: [{ type: 'text', text: 'slow' }] })) as ToolDef, {
+      source: 'test',
+      trust: 'builtin',
+    })
+    const session = await k.session('busy-driver', { ...options, loop: busy })
     try {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
       const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
-      expect(outcome.reason).toBe('error')
-      expect(outcome.error?.message).toContain('test.stuck@1.0.0')
-      const rows = await session.scan({ fromSeq: 1, limit: 200 })
-      expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
-    } finally {
-      await k.close()
-    }
-  })
-
-  it('never sets the idle window below the longest configured tool or model timeout', async () => {
-    const slow: LoopFactory = {
-      ...echo,
-      id: 'test.slow',
-      create: (ctx) => ({
-        ...echoDriver(ctx),
-        step: () =>
-          new Promise((resolve) => setTimeout(() => resolve({ outcome: 'idle', phase: 'idle' }), 120)),
-      }),
-      resume: (ctx) => slow.create(ctx, new AbortController().signal) as never,
-    }
-    const loops = defaultLoops()
-    loops.register('@test/slow', slow)
-    const preset = presetDefaults()
-    preset.tools.timeouts = { shell: 400 }
-    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset })
-    const session = await k.session('slow-driver', { ...options, loop: slow })
-    try {
-      // 120 ms of silence is past the 30 ms override but inside the 400 ms tool timeout it must respect.
-      await expect(session.step()).resolves.toMatchObject({ outcome: 'idle' })
+      expect(outcome).toMatchObject({ reason: 'completed' })
     } finally {
       await k.close()
     }
