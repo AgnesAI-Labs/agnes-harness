@@ -277,9 +277,13 @@ export async function runBusinessAgentStart(
     }
     const loop = loops.find((item) => item.sourcePackage === id)
     if (!loop) throw new StartError({ step: 'session', code: 'loop-missing' })
-    // The package's bundle carries its presets and tool policy into the session. A package that
-    // ships one may take a moment to list it after enabling; a daemon that never lists it still
-    // starts the loop, without that policy.
+    // The package's bundle carries its presets and tool policy into the session. The daemon names
+    // the bundles of an installed package in its policy summary; the runtime catalog is asked only
+    // when that summary is missing, and may take a moment to list a bundle after enabling. A
+    // daemon that names none still starts the loop, without that policy.
+    const current = await installedOf(api, id, 'session', options.signal)
+    const named = [...new Set((current?.presentation?.presets ?? []).map((preset) => preset.bundle))]
+    if (named.length) return { loop: { id: loop.id, version: loop.version }, bundles: named }
     const expected = plan.entry.kinds?.includes('bundle') === true
     let bundles: { id: string }[] = []
     for (let attempt = 0; attempt < (expected ? 8 : 1); attempt++) {

@@ -241,6 +241,41 @@ describe('one-click start', () => {
     expect(target).toEqual({ loop: { id: 'fde.data-report', version: '5.0.0' }, bundles: [] })
   })
 
+  it('takes the session bundles the daemon names for the installed package, without asking the runtime catalog', async () => {
+    const preset = {
+      id: 'data-report',
+      toolPolicy: 'fde.data-report',
+      readOnly: 'unknown',
+      confirmBeforeActions: 'unknown',
+      network: 'none',
+    }
+    const d = daemon(
+      installed({
+        trusted: true,
+        desired: 'enabled',
+        actual: 'running',
+        presentation: {
+          rows: [],
+          presets: [
+            { ...preset, bundle: `${ID}#data-report` },
+            { ...preset, id: 'other', bundle: `${ID}#data-report` },
+          ],
+        },
+      } as never),
+    )
+    let reads = 0
+    const api = {
+      ...d.api,
+      runtime: async () => {
+        reads += 1
+        return { bundles: [] }
+      },
+    } as unknown as StartApi
+    const plan = await planBusinessAgentStart(api, entry(), options)
+    expect((await runBusinessAgentStart(api, plan, () => {}, options)).bundles).toEqual([`${ID}#data-report`])
+    expect(reads).toBe(0)
+  })
+
   it('skips the steps a package already satisfies', async () => {
     const d = daemon(installed({ trusted: true }))
     const plan = await planBusinessAgentStart(d.api, entry(), options)
