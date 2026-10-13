@@ -40,6 +40,8 @@ export type RuntimeSettingsContext = {
   canSave: boolean
   /** Whether leftover plugin files may be released (the plugin removal permission). */
   canRelease?: boolean
+  /** Whether workspace plugins may be trusted (the package trust permission). */
+  canTrust?: boolean
   canInstall: boolean
   pluginText(key: string): string
   installed: readonly PackageInstalledDescriptor[]
@@ -206,6 +208,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
               api={c.api}
               snapshot={snapshot}
               canSave={c.canSave}
+              canTrust={!!c.canTrust}
               t={t}
               onRefresh={c.onRefresh}
             />

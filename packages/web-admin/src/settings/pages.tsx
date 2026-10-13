@@ -181,6 +181,8 @@ function SettingsPageHost({
     canSave,
     canRelease:
       !!admin && !admin.context.readOnly && hasPermission(admin.context.permissions, 'packages.remove'),
+    canTrust:
+      !!admin && !admin.context.readOnly && hasPermission(admin.context.permissions, 'packages.trust'),
     canInstall:
       !!admin && !admin.context.readOnly && hasPermission(admin.context.permissions, 'packages.install'),
     pluginText,

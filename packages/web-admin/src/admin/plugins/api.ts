@@ -476,6 +476,11 @@ export class PluginAdminApi {
     return this.#effect<{ pinIds: string[] }, PackagePinsReleaseResult>('pins/release', { pinIds })
   }
 
+  /** Vouch for a workspace deploy directory the runtime snapshot offered; returns the trusted hash. */
+  async trustWorkspace(deployDir: string): Promise<{ hash: string }> {
+    return this.#effect<{ deployDir: string }, { hash: string }>('trust-workspace', { deployDir })
+  }
+
   async #effect<T extends Record<string, unknown>, R = PackageOperationReceipt>(
     path: AdminPath,
     params: T,

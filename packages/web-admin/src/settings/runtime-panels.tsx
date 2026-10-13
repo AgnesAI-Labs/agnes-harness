@@ -1,6 +1,7 @@
 import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protocol'
 import {
   Badge,
+  Banner,
   Button,
   Disclosure,
   Field,
@@ -27,7 +28,9 @@ export const PROVIDER_KINDS = [
   'child-agent',
   'memory',
 ] as const
-type Text = (key: string) => string
+type Text = (key: string, vars?: Record<string, string | number>) => string
+/** A deploy directory `packages.trustWorkspace` accepts, as the runtime snapshot offers it. */
+type WorkspaceDeployment = NonNullable<RuntimeAdminSnapshot['workspaceDeployments']>[number]
 export function ProvidersPanel({
   snapshot,
   t,
@@ -203,13 +206,30 @@ export function GenerationsPanel({
               <SettingsRow
                 key={`${session.generation}:${session.key}`}
                 data-testid="migration-session"
-                title={<code>{session.key}</code>}
-                description={`${session.generation.slice(0, 8)} · ${t(session.open ? 'migrateOpen' : 'migrateClosed')}`}
+                // The backend names the session when it can; the key is always the stable identity.
+                title={session.title ?? <code>{session.key}</code>}
+                description={
+                  <>
+                    {session.title && (
+                      <>
+                        <code>{session.key}</code> ·{' '}
+                      </>
+                    )}
+                    {session.generation.slice(0, 8)} ·{' '}
+                    {t(
+                      session.run === 'running'
+                        ? 'migrateRunning'
+                        : session.open
+                          ? 'migrateOpen'
+                          : 'migrateClosed',
+                    )}
+                  </>
+                }
                 actions={
                   <Button
                     size="small"
                     data-testid="migration-session-pick"
-                    disabled={!supported || !canSave || busy}
+                    disabled={!supported || !canSave || busy || session.run === 'running'}
                     onClick={() => {
                       setSessionId(session.key)
                       setConfirming(true)
@@ -308,18 +328,41 @@ export function LocalPluginsPanel({
   api,
   snapshot,
   canSave,
+  canTrust = false,
   t,
   onRefresh,
 }: {
   api: PluginAdminApi
   snapshot: RuntimeAdminSnapshot
   canSave: boolean
+  /** Whether workspace plugins may be trusted (the package trust permission). */
+  canTrust?: boolean
   t: Text
   onRefresh(): Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [failed, setFailed] = useState(false)
+  const [confirming, setConfirming] = useState<WorkspaceDeployment>()
+  // Offered by the backend only; without the list there is nothing this page can vouch for.
+  const deployments = snapshot.workspaceDeployments ?? []
+  async function trust(deployment: WorkspaceDeployment) {
+    setBusy(true)
+    setMessage('')
+    setFailed(false)
+    setConfirming(undefined)
+    try {
+      await api.trustWorkspace(deployment.deployDir)
+      setMessage('trusted')
+      // The trust stands even if the separate catalog refresh is unavailable.
+      await onRefresh().catch(() => undefined)
+    } catch {
+      setMessage('trustFailed')
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
   async function reload() {
     setBusy(true)
     setMessage('')
@@ -353,6 +396,58 @@ export function LocalPluginsPanel({
           <code>{snapshot.localPluginFolders.workspace}</code>
         </dd>
       </dl>
+      {deployments.length > 0 && (
+        <>
+          <h4>{t('workspaceDeployments')}</h4>
+          <SettingsList data-testid="workspace-deployments">
+            {deployments.map((deployment) => (
+              <SettingsRow
+                key={deployment.deployDir}
+                data-testid="workspace-deployment"
+                title={<code>{deployment.path}</code>}
+                description={`${deployment.manifestId} · ${t(`trustState.${deployment.state}`)}`}
+                actions={
+                  deployment.state === 'trusted' ? (
+                    <Badge tone="ok">{t('trustState.trusted')}</Badge>
+                  ) : (
+                    <Button
+                      size="small"
+                      data-testid="trust-workspace"
+                      disabled={!canTrust || busy}
+                      onClick={() => setConfirming(deployment)}
+                    >
+                      {t(deployment.state === 'changed' ? 'retrustWorkspace' : 'trustWorkspace')}
+                    </Button>
+                  )
+                }
+              />
+            ))}
+          </SettingsList>
+          {confirming && (
+            <Banner
+              tone="warning"
+              data-testid="trust-workspace-confirm"
+              action={
+                <>
+                  <Button size="small" onClick={() => setConfirming(undefined)}>
+                    {t('cancel')}
+                  </Button>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    data-testid="trust-workspace-confirm-action"
+                    onClick={() => void trust(confirming)}
+                  >
+                    {t('trustConfirmAction')}
+                  </Button>
+                </>
+              }
+            >
+              {t('trustConfirm', { path: confirming.path })}
+            </Banner>
+          )}
+        </>
+      )}
       <Button
         data-testid="reload-local-plugins"
         disabled={!canSave || busy}

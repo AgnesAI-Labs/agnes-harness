@@ -13,7 +13,11 @@ import { pluginAdminLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { SETTINGS_PAGES, SettingsHub } from '@agnes/web-admin/settings/hub'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
-import { GenerationsPanel, PublicationPanel } from '@agnes/web-admin/settings/runtime-panels'
+import {
+  GenerationsPanel,
+  LocalPluginsPanel,
+  PublicationPanel,
+} from '@agnes/web-admin/settings/runtime-panels'
 import { SecurityStatusPanel } from '@agnes/web-admin/settings/security-status'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { SessionToolsPanel } from '@agnes/web-admin/settings/session-tools'
@@ -575,14 +579,29 @@ it('offers the sessions still on an earlier plugin version for migration, by con
         plugins: [],
         generations: [
           { ...generation, id: current, state: 'active', sessions: [{ key: 'on-current', open: true }] },
-          { ...generation, id: earlier, state: 'draining', sessions: [{ key: 'on-earlier', open: false }] },
+          {
+            ...generation,
+            id: earlier,
+            state: 'draining',
+            // The backend names a session and says whether a turn is running when it knows.
+            sessions: [
+              { key: 'on-earlier', open: false },
+              { key: 'busy-key', open: true, title: 'Monthly reconciliation', run: 'running' },
+            ],
+          },
         ],
       },
     }),
   )
   // Only sessions bound to an earlier version are candidates.
   const rows = host.querySelectorAll('[data-testid="migration-session"]')
-  expect([...rows].map((row) => row.querySelector('code')?.textContent)).toEqual(['on-earlier'])
+  expect([...rows].map((row) => row.querySelector('code')?.textContent)).toEqual(['on-earlier', 'busy-key'])
+  expect(rows[1]?.querySelector('h4')?.textContent).toBe('Monthly reconciliation')
+  expect(rows[1]?.textContent).toContain(text('migrateRunning'))
+  // A session in the middle of a turn cannot be picked.
+  expect(rows[1]?.querySelector<HTMLButtonElement>('[data-testid="migration-session-pick"]')?.disabled).toBe(
+    true,
+  )
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="migration-session-pick"]')?.click(),
   )
@@ -592,6 +611,68 @@ it('offers the sessions still on an earlier plugin version for migration, by con
   )
   expect(migrateSession).toHaveBeenCalledWith('on-earlier')
   expect(host.textContent).toContain('previous → current')
+})
+
+it('trusts a workspace deploy directory the backend offers, by confirmation, and hides the list without one', async () => {
+  const text = (key: string, vars?: Record<string, string | number>) =>
+    (settingsCatalog.en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars?.[name] ?? ''))
+  const trustWorkspace = vi.fn(async () => ({ hash: 'a'.repeat(64) }))
+  const onRefresh = vi.fn(async () => {})
+  const api = Object.assign(
+    new PluginAdminApi(
+      { profile: 'local-dev', clientId: 'admin', permissions: ['packages.trust'], readOnly: false },
+      vi.fn(),
+    ),
+    { trustWorkspace },
+  )
+  const base = {
+    providers: [],
+    presets: [],
+    localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+  }
+  const without = await mount(
+    createElement(LocalPluginsPanel, {
+      api,
+      snapshot: base,
+      canSave: true,
+      canTrust: true,
+      t: text,
+      onRefresh,
+    }),
+  )
+  expect(without.querySelector('[data-testid="workspace-deployments"]')).toBeNull()
+  const host = await mount(
+    createElement(LocalPluginsPanel, {
+      api,
+      canSave: true,
+      canTrust: true,
+      t: text,
+      onRefresh,
+      snapshot: {
+        ...base,
+        workspaceDeployments: [
+          { deployDir: 'workspaces/site', path: '/synthetic/site', manifestId: 'site', state: 'untrusted' },
+          { deployDir: 'workspaces/docs', path: '/synthetic/docs', manifestId: 'docs', state: 'trusted' },
+        ],
+      },
+    }),
+  )
+  const rows = host.querySelectorAll('[data-testid="workspace-deployment"]')
+  expect(rows).toHaveLength(2)
+  // A trusted directory needs no action.
+  expect(rows[1]?.querySelector('[data-testid="trust-workspace"]')).toBeNull()
+  await act(async () => rows[0]?.querySelector<HTMLButtonElement>('[data-testid="trust-workspace"]')?.click())
+  expect(trustWorkspace).not.toHaveBeenCalled()
+  expect(host.querySelector('[data-testid="trust-workspace-confirm"]')?.textContent).toContain(
+    '/synthetic/site',
+  )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="trust-workspace-confirm-action"]')?.click(),
+  )
+  // What is sent is the backend's own value for the directory, not the display path.
+  expect(trustWorkspace).toHaveBeenCalledWith('workspaces/site')
+  expect(onRefresh).toHaveBeenCalledOnce()
+  expect(host.querySelector('[role="status"]')?.textContent).toBe(text('trusted'))
 })
 
 it('places ordered bundle and preset choices beside the loop only for a new session', async () => {
