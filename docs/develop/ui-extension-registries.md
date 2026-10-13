@@ -2,7 +2,7 @@
 
 English | [简体中文](ui-extension-registries.zh-CN.md)
 
-`@agnes/web-client` exports the platform singletons `settingsSections` and `conversationCards`, plus `UiExtensionRegistry` for isolated hosts/tests. These are presentation APIs. They do not select session tools, change configuration or grant capabilities. Use the host platform import rather than bundling another copy of web-client.
+`@agnes/web-client` exports the platform singletons `settingsSections`, `conversationCards` and `homeEntries`, plus `UiExtensionRegistry` for isolated hosts/tests. These are presentation APIs. They do not select session tools, change configuration or grant capabilities. Use the host platform import rather than bundling another copy of web-client.
 
 Register a settings section with `{ group, id, titleKey, groupTitleKey, icon, order, component }`. `runtimeCatalog: false` lets a section use its own service, refresh and loading states without fetching the plugin catalog; the shell still owns its title and navigation. IDs use lowercase letters, digits, dots and hyphens, starting with a letter. IDs must be unique and order must be finite. Register locale keys in the existing host locale service before rendering. `icon` identifies the shared settings icon. `component` receives `{ context }`, with locale text, optional session/resources and host-specific opaque `data`.
 
@@ -30,6 +30,21 @@ const disposeCard = conversationCards.register({
 ```
 
 Use `ConversationCardLayout` for the surface and `SettingsState` for feedback. Card state is `ready`, `loading`, `empty`, `error` or `disabled`. Keep stable `<kind>-card` test IDs and meaningful form/article/log roles; job, child-agent and goal cards retain their IDs. Official questions, deliverable lists and workflow/reminder tables use the [Intelligent UI catalog](intelligent-ui-web.md) and its surface/form/action IDs.
+
+### Home entries
+
+`homeEntries` lists the pages a person opens from the home sidebar. A registration has `{ id, icon, titleKey, order, component }`, with optional `subtitleKey` (a quiet second label) and `badge`. Selecting the entry shows `component` as a full page in the main area in place of the conversation; the sidebar stays. The built-in Business agents, Plugins and Automation entries register through the same registry. Entries from plugins list after those three whatever `order` they declare, sorted by `order` then ID; more than three collapse into one “More” menu. Disposing the registration removes the entry, and a page that was showing returns to the conversation.
+
+```tsx
+import { homeEntries, homeNavigation } from '@agnes/web-client'
+const dispose = homeEntries.register({
+  id: 'example.board', order: 100, icon: 'activity',
+  titleKey: 'example.board.title', component: BoardPage,
+})
+homeNavigation.open('example.board', { tab: 'week' })
+```
+
+`component` receives `{ context }`: `context.t` resolves host locale keys, and `context.selection` is the opaque value passed to `homeNavigation.open(id, selection)`. `badge` is `{ subscribe, getSnapshot }` returning a count; zero shows nothing. `icon` names a shared icon and falls back to the plugin icon. `homeNavigation.close()` returns to the conversation; `subscribe`/`getSnapshot` expose the requested `{ id, selection }`. The host mirrors the request in the address as `?page=<id>`, plus `&tab=<name>` when the selection is `{ tab: string }`, so a link opens the page once its entry registers. Entries are navigation only: they grant no capability and select no session tools. The sidebar uses `data-testid="home-entries"` and `home-entry-<id>`; a page built with the host frame uses `home-page-<id>`.
 
 Registration returns an idempotent, identity-bound disposer. Bind it to the client module's effect/disposal scope; disposing an old registration cannot remove a later registration with the same ID. `subscribe` and `getSnapshot` support reactive hosts; `entries` returns registrations in render order, and `get` resolves an ID. Disposed selected sections fall back to the first built-in section. UI registration lifetimes must follow the installed module lifetime.
 

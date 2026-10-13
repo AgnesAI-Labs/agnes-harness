@@ -2,7 +2,7 @@
 
 [English](ui-extension-registries.md) | 简体中文
 
-`@agnes/web-client` 导出平台单例 `settingsSections`、`conversationCards`，以及供独立宿主和测试使用的 `UiExtensionRegistry`。这些 API 只负责展示，不选择会话工具、不修改配置、不授予能力。使用宿主提供的 web-client 平台模块，避免打包出另一份注册表单例。
+`@agnes/web-client` 导出平台单例 `settingsSections`、`conversationCards`、`homeEntries`，以及供独立宿主和测试使用的 `UiExtensionRegistry`。这些 API 只负责展示，不选择会话工具、不修改配置、不授予能力。使用宿主提供的 web-client 平台模块，避免打包出另一份注册表单例。
 
 设置区注册 `{ group, id, titleKey, groupTitleKey, icon, order, component }`。ID 以小写字母开头，仅包含小写字母、数字、点和连字符，必须唯一；order 为有限数值。渲染前向现有语言服务注册标题键。icon 指定共享设置图标。component 接收 `{ context }`，包括取词函数、可选会话和资源服务，以及由宿主拥有的不透明 data。
 
@@ -30,6 +30,21 @@ const disposeCard = conversationCards.register({
 ```
 
 使用 ConversationCardLayout 作为卡片表面、SettingsState 作为状态反馈。卡片状态为 ready、loading、empty、error、disabled。沿用稳定 test id 与有意义的 form/article/log 角色；后台任务、子 Agent 与目标卡片保留原 ID。官方问答、交付物列表与工作流/提醒表格使用 [Intelligent UI catalog](intelligent-ui-web.zh-CN.md) 的 surface/form/action ID。
+
+### 首页入口
+
+`homeEntries` 列出首页侧栏里可以打开的页面。注册项为 `{ id, icon, titleKey, order, component }`，可选 `subtitleKey`（标题旁的次要说明）和 `badge`。选中入口后，`component` 作为整页显示在主区域，替换对话区，侧栏保留。内置的业务 Agent、插件、自动化三个入口也通过这个注册表注册。插件注册的入口无论 `order` 是多少都排在这三个之后，按 `order`、再按 ID 排序；超过三个时折叠成一个「更多」菜单。卸载注册项后入口消失，正在显示的页面回到对话区。
+
+```tsx
+import { homeEntries, homeNavigation } from '@agnes/web-client'
+const dispose = homeEntries.register({
+  id: 'example.board', order: 100, icon: 'activity',
+  titleKey: 'example.board.title', component: BoardPage,
+})
+homeNavigation.open('example.board', { tab: 'week' })
+```
+
+`component` 接收 `{ context }`：`context.t` 解析宿主语言键，`context.selection` 是调用 `homeNavigation.open(id, selection)` 时传入的不透明值。`badge` 为 `{ subscribe, getSnapshot }`，返回一个数量，为零时不显示。`icon` 指定共享图标，未知名称退回插件图标。`homeNavigation.close()` 回到对话区；`subscribe`、`getSnapshot` 给出当前请求的 `{ id, selection }`。宿主把请求写进地址 `?page=<id>`，selection 为 `{ tab: string }` 时再加 `&tab=<name>`，因此链接会在入口注册后打开对应页面。入口只负责导航，不授予能力，也不选择会话工具。侧栏使用 `data-testid="home-entries"` 和 `home-entry-<id>`；用宿主页面框架搭的页面使用 `home-page-<id>`。
 
 register 返回幂等且绑定该注册项身份的卸载函数，须绑定到客户端模块的 effect 或销毁作用域。旧卸载函数不会删除后来使用同一 ID 的注册项。subscribe、getSnapshot 支持响应式宿主；entries 返回排序后的注册项；get 按 ID 查询。选中页面卸载后回到第一个内置分类。UI 注册项必须与已安装客户端模块的生命周期一致。
 

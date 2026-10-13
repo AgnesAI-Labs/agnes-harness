@@ -104,3 +104,53 @@ export type FileViewerAction = Readonly<{
   component: ComponentType<{ context: UiExtensionContext; path: string; revision: string }>
 }>
 export const fileViewerActions = new UiExtensionRegistry<FileViewerAction>()
+
+/** A numeric badge the host re-reads whenever the source notifies; zero shows no badge. */
+export type HomeEntryBadge = Readonly<{
+  subscribe(listener: () => void): () => void
+  getSnapshot(): number
+}>
+/**
+ * A home sidebar entry. Selecting it shows `component` as a full page in the main area, in place of
+ * the conversation. `selection` on the component's context is the opaque value the opener passed.
+ */
+export type HomeEntry = Readonly<{
+  id: string
+  /** A shared icon name; an unknown name falls back to the plugin icon. */
+  icon: string
+  titleKey: string
+  /** Optional quiet second label beside the title, e.g. an abbreviation. */
+  subtitleKey?: string
+  order: number
+  badge?: HomeEntryBadge
+  component: ComponentType<{ context: UiExtensionContext }>
+}>
+export const homeEntries = new UiExtensionRegistry<HomeEntry>()
+
+export type HomePageSelection = Readonly<{ id: string; selection?: unknown }>
+/**
+ * Which home entry page is requested. The page shows while an entry with that ID is registered; a
+ * request whose entry is missing (not loaded yet, or its plugin was disabled) shows the conversation.
+ */
+export class HomeNavigation {
+  #current: HomePageSelection | undefined
+  #listeners = new Set<() => void>()
+  open(id: string, selection?: unknown): void {
+    this.#set(selection === undefined ? { id } : { id, selection })
+  }
+  close(): void {
+    if (this.#current) this.#set(undefined)
+  }
+  getSnapshot = (): HomePageSelection | undefined => this.#current
+  subscribe = (listener: () => void): (() => void) => {
+    this.#listeners.add(listener)
+    return () => {
+      this.#listeners.delete(listener)
+    }
+  }
+  #set(next: HomePageSelection | undefined) {
+    this.#current = next
+    notifyListeners(this.#listeners, 'home navigation')
+  }
+}
+export const homeNavigation = new HomeNavigation()

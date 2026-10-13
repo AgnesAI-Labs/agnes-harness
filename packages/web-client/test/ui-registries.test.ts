@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { RegistrableLink } from '../src/fact-chain-links.js'
-import { UiExtensionRegistry } from '../src/ui-registries.js'
+import { type HomeEntry, HomeNavigation, UiExtensionRegistry } from '../src/ui-registries.js'
 
 it('orders registrations, refuses duplicate IDs and disposes only its own live entry', () => {
   const registry = new UiExtensionRegistry<{ id: string; order: number }>()
@@ -48,4 +48,46 @@ it('notifies every subscriber even when an earlier one throws', () => {
   registry.register({ id: 'one', order: 1 })
   expect(later).toHaveBeenCalledOnce()
   report.mockRestore()
+})
+
+it('lists home entries by order and drops an entry when its registration is disposed', () => {
+  const entries = new UiExtensionRegistry<HomeEntry>()
+  const entry = (id: string, order: number): HomeEntry => ({
+    id,
+    order,
+    icon: 'plug',
+    titleKey: `${id}.title`,
+    component: () => null,
+  })
+  entries.register(entry('automation', 30))
+  entries.register(entry('agents', 10))
+  const removePlugin = entries.register(entry('example.board', 100))
+  entries.register(entry('plugins', 20))
+  expect(entries.entries().map((item) => item.id)).toEqual([
+    'agents',
+    'plugins',
+    'automation',
+    'example.board',
+  ])
+  removePlugin()
+  expect(entries.get('example.board')).toBeUndefined()
+  // A reload registers the same ID again; the earlier disposer no longer owns it.
+  entries.register(entry('example.board', 5))
+  removePlugin()
+  expect(entries.entries()[0]?.id).toBe('example.board')
+})
+
+it('tracks the requested home page and notifies on open and close', () => {
+  const navigation = new HomeNavigation()
+  const changed = vi.fn()
+  navigation.subscribe(changed)
+  expect(navigation.getSnapshot()).toBeUndefined()
+  navigation.open('plugins', { tab: 'mcp' })
+  expect(navigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'mcp' } })
+  navigation.open('agents')
+  expect(navigation.getSnapshot()).toEqual({ id: 'agents' })
+  navigation.close()
+  navigation.close()
+  expect(navigation.getSnapshot()).toBeUndefined()
+  expect(changed).toHaveBeenCalledTimes(3)
 })
