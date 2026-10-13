@@ -76,6 +76,18 @@ Arrays replace rather than append, except package references which merge by id. 
 
 A bundle can provide presets with the usual preset inheritance, plus `bundles`, `composition` and `providers` fields. A preset's `providers` table also selects `tool-runtime` and `tool-policy`; its `composition` carries no provider block. Bundle-provided presets join the profile’s allowed presets. Choose a preset when creating a session to obtain its loop and invocation policy.
 
+## Select for one session
+
+`session/new` accepts an ordered bundle selection in its `ai.agnes.harness` metadata (`client.session.new({ cwd, bundles })` in the SDK). The selection applies to that session only: the deployment profile and the saved admin selection stay unchanged, and no restart is needed. Packages installed, trusted and enabled after startup are included.
+
+```json
+{ "cwd": "/work/site", "mcpServers": [], "_meta": { "ai.agnes.harness": { "bundles": ["acme/research#research"] } } }
+```
+
+The session receives the bundle's `profile` patch and its `presets`. Those presets are allowed for this session alone. When the selected bundles offer exactly one preset and the request names none, the session uses it, which is how a bundle's `tool-policy` selection reaches a session opened this way. When they offer several, the deployment default stays in effect unless the request names one in `preset`. The composition, preset and policy are pinned with the session and restored on reopen.
+
+A bundle that is not installed, enabled and trusted is refused with `SEMANTIC_REJECTED` and `data.code: "BUNDLE_UNAVAILABLE"`. A preset that neither the deployment nor the selected bundles allow is refused with `PRESET_SWITCH_REJECTED`. The preset's model route must exist in the deployment, as for any preset.
+
 ## Inspect and select in admin
 
 ```sh

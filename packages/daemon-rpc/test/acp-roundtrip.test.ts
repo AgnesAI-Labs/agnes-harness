@@ -198,6 +198,19 @@ describe('local endpoint: ACP round trip', () => {
       },
     })
     expect(bad).toMatchObject({ error: { code: -32008, data: { reason: 'not in presets.allowed' } } })
+    // With a bundle selected the Host decides, since the bundle may bring that preset itself; a
+    // bundle that is not installed, enabled and trusted is the refusal it reports first.
+    const missing = await ep.handle({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/new',
+      params: {
+        cwd: h.dataDir,
+        mcpServers: [],
+        _meta: { 'ai.agnes.harness': { preset: 'nope', bundles: ['acme/absent#bundle'] } },
+      },
+    })
+    expect(missing).toMatchObject({ error: { code: -32011, data: { code: 'BUNDLE_UNAVAILABLE' } } })
     await ep.close()
     await h.close()
   })

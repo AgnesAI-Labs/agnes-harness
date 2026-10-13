@@ -51,6 +51,18 @@ Host 只读取已启用、已信任且完整性校验通过的已安装包。包
 
 bundle 提供的 preset 使用已有继承规则，并可加入 `bundles`、`composition` 与 `providers` 字段；preset 的 `providers` 表还接受 `tool-runtime` 和 `tool-policy`，它的 `composition` 不再携带 provider 块。这些 preset 加入 profile 的允许列表。新会话选择 preset 后采用其 loop 和调用策略。
 
+## 只为一个会话选择
+
+`session/new` 在 `ai.agnes.harness` 元数据里接受一个有序的组合包列表（SDK 为 `client.session.new({ cwd, bundles })`）。它只对这个会话生效：不改部署 profile 和已保存的 admin 选择，也不需要重启。启动之后才安装、信任并启用的包同样可选。
+
+```json
+{ "cwd": "/work/site", "mcpServers": [], "_meta": { "ai.agnes.harness": { "bundles": ["acme/research#research"] } } }
+```
+
+会话会得到组合包的 `profile` 补丁和它的 `presets`，这些 preset 只对该会话开放。所选组合包恰好提供一个 preset、请求又没有指定时，会话直接使用它；组合包里的 `tool-policy` 选择就是这样作用到会话上的。提供多个时保持部署默认 preset，除非请求用 `preset` 指定其中一个。composition、preset 与策略随会话固定，重新打开时恢复。
+
+组合包未安装、未启用或未信任时，请求以 `SEMANTIC_REJECTED`、`data.code: "BUNDLE_UNAVAILABLE"` 拒绝。部署和所选组合包都不允许的 preset 以 `PRESET_SWITCH_REJECTED` 拒绝。和其他 preset 一样，preset 指定的模型路由必须在部署中存在。
+
 ## 查看与管理
 
 ```sh

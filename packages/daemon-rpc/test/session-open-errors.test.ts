@@ -72,6 +72,25 @@ describe('throwSessionOpenRpcError', () => {
     })
   })
 
+  it('names an unavailable session bundle and a preset outside the session allow-list', () => {
+    for (const error of [
+      new HostError('E_PRESET_UNSUPPORTED', 'composition: unknown bundle acme/x#y', {
+        detail: { reason: 'bundle-unavailable' },
+      }),
+      { code: 'E_PRESET_UNSUPPORTED', message: 'omitted', reason: 'bundle-unavailable' },
+    ])
+      expect(caught(error)).toMatchObject({
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: { code: 'BUNDLE_UNAVAILABLE' },
+      })
+    expect(
+      caught({ code: 'E_PRESET_UNSUPPORTED', message: 'omitted', reason: 'preset-not-allowed' }),
+    ).toMatchObject({ code: -32008, message: 'PRESET_SWITCH_REJECTED' })
+    const other = new HostError('E_PRESET_UNSUPPORTED', 'composition: invalid tools')
+    expect(caught(other)).toBe(other)
+  })
+
   it('leaves other preset refusals and workspace errors to their existing mapping', () => {
     const other = new HostError('E_PRESET_UNRESOLVED', 'model contract is not loaded')
     expect(caught(other)).toBe(other)

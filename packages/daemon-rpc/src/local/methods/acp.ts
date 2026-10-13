@@ -411,6 +411,17 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
         : {}),
     })
   }
+  // By reason, as a worker returns it: the message may have been withheld on the way here.
+  if (e?.code === 'E_PRESET_UNSUPPORTED') {
+    const reason = e.reason ?? e.detail?.reason
+    if (reason === 'bundle-unavailable')
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'BUNDLE_UNAVAILABLE',
+        reason: 'selected bundle is not installed, enabled and trusted',
+      })
+    if (reason === 'preset-not-allowed')
+      throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed' })
+  }
   if (e?.code === 'E_LOOP_MISSING')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'LOOP_MISSING',
@@ -567,7 +578,9 @@ export function registerAcp(
       throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid session bundle selection' })
     }
     const preset = typeof h.preset === 'string' ? h.preset : undefined
-    if (preset && !cx.host.profile.presets.allowed.includes(preset))
+    // A selected bundle may bring its own preset, which only the Host can see at admission; it
+    // refuses a name outside the session's allowed list there.
+    if (preset && !bundles?.length && !cx.host.profile.presets.allowed.includes(preset))
       throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
     let entry: SessionEntry
     let workspace: Awaited<ReturnType<WorkspaceCatalog['validate']>>

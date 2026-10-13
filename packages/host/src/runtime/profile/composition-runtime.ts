@@ -36,6 +36,7 @@ import {
 import { sessionKey } from '../sessions/session.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
+import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
@@ -488,15 +489,14 @@ export async function createCompositionHost(
               bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
             }
             const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
+            const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)
             const tree =
               parent?.tree ??
               resolveComposition(
-                { ...profile, bundleCatalog: admissionProfile.bundleCatalog },
+                { ...profile, ...admitted.scope },
                 {
                   packageCatalog: admissionProfile.packages,
-                  preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
-                    limits: profile.limits,
-                  }).doc,
+                  preset: admitted.preset,
                   ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
                   ...(input.loop ? { session: loopPatch(input.loop) } : {}),
                   ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
@@ -516,7 +516,7 @@ export async function createCompositionHost(
             binding = store.pin({
               sessionKey: key,
               tree,
-              profile: parent?.profile ?? profileForComposition(admissionProfile, tree),
+              profile: parent?.profile ?? profileForComposition(admitted.profile, tree),
             })
           }
           if (

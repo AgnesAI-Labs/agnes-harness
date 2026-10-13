@@ -291,7 +291,10 @@ export function expandBundles(ids: readonly string[], catalog: BundleCatalog): r
     if (visiting.has(id)) fail(`bundle inheritance cycle at ${id}`)
     if (applied.has(id)) return
     const entry = catalog[id]
-    if (!entry) fail(`unknown bundle ${id}`)
+    if (!entry)
+      throw new HostError('E_PRESET_UNSUPPORTED', `composition: unknown bundle ${id}`, {
+        detail: { reason: 'bundle-unavailable' },
+      })
     visiting.add(id)
     for (const parent of entry.document.extends ?? []) visit(parent)
     visiting.delete(id)
@@ -300,6 +303,22 @@ export function expandBundles(ids: readonly string[], catalog: BundleCatalog): r
   }
   for (const id of ids) visit(id)
   return result
+}
+
+/**
+ * The presets a per-session bundle selection brings with it. A bundle keeps its policy selection in
+ * its presets, so a session that selects the bundle needs them in its own pinned profile; later
+ * bundles refine earlier ones, as they do for the profile and admin layers.
+ */
+export function sessionBundlePresets(
+  ids: readonly string[],
+  catalog: BundleCatalog,
+): Record<string, PresetDoc> {
+  const presets: Record<string, PresetDoc> = {}
+  for (const entry of expandBundles(ids, catalog))
+    for (const [name, doc] of Object.entries(entry.document.presets ?? {}))
+      presets[name] = mergeValue(presets[name], doc) as PresetDoc
+  return presets
 }
 
 /** Validate the backend's pinned identity representation, not author configuration. */
