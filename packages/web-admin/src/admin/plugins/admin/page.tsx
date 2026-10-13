@@ -9,6 +9,7 @@ import type {
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
+import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
@@ -26,13 +27,9 @@ import {
   type DetailActionSpec,
   hasPermission,
   PLUGIN_PRESENTATION_NAMESPACE,
-  PreviewConfirmationFacts,
   pluginPresentationCatalog,
-  RollbackActivationFacts,
-  TrustConfirmationFacts,
   terminal,
   type UiLocaleSource,
-  UpdateActivationFacts,
   unmountRegion,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
@@ -40,7 +37,6 @@ import type { SettingsPage } from '../../../settings/hub.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../../settings/locales.js'
 import type { SchedulesApi } from '../../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from '../api.js'
-import { CapabilityReview, ProvenanceReview } from '../capability-review.js'
 import type { PluginKind } from '../control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from '../source-form.js'
@@ -53,6 +49,7 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
+import { confirmSimple, EnableFacts, PreviewFacts, RollbackFacts } from './confirms.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
@@ -83,6 +80,10 @@ type PendingConfirm = {
   label: string | (() => string)
   run: () => Promise<void>
   facts?: ReactNode
+  /** The main action destroys or revokes something. */
+  danger?: boolean
+  /** A second path beside the main action, e.g. install without enabling. */
+  secondary?: { label: () => string; run: () => Promise<void> }
 }
 
 export type PluginAdminOptions = Readonly<{
@@ -608,7 +609,7 @@ export class PluginAdminPage {
     }
   }
 
-  async confirmPreview(): Promise<void> {
+  async confirmPreview(enableAfter = false): Promise<void> {
     const preview = this.#state.preview
     if (!preview) return
     const mode = this.#state.previewMode ?? 'install'
@@ -649,10 +650,17 @@ export class PluginAdminPage {
     this.track(
       receipt.operationId,
       { packageId: preview.id },
-      continueExample
+      continueExample || enableAfter
         ? async () => {
             const installed = this.#state.installed.find((item) => item.id === preview.id)
-            if (installed) await this.confirmEnable(installed)
+            if (!installed) return
+            // Only the exact version and capability scope the user just confirmed runs unasked.
+            const reviewed =
+              enableAfter &&
+              installed.integrity === preview.integrity &&
+              installed.capabilityHash === preview.capabilityHash
+            if (reviewed) await this.#trustAndEnable(installed)
+            else await this.confirmEnable(installed)
           }
         : undefined,
     )
@@ -840,38 +848,34 @@ export class PluginAdminPage {
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
     const combined = !!installed && this.canCombineUpdate(installed, preview)
+    // Confirming an install preview is trusting what it shows, so it can go straight to running.
+    const enables =
+      mode === 'install' &&
+      !!preview.capabilityHash &&
+      this.can('packages.trust') &&
+      this.canEffect('packages.activate')
+    const action = enables ? 'install-enable' : mode === 'install' ? 'install' : 'update'
+    const describe = mode === 'install' ? mode : combined ? 'update-combined' : 'update-compatible'
     this.configureConfirm({
-      title: () =>
-        `${this.#t(mode === 'install' ? 'preview.title.install' : 'preview.title.update')} · ${preview.id}`,
-      description: () =>
-        this.#t(
-          mode === 'install'
-            ? 'preview.description.install'
-            : combined
-              ? 'preview.description.update-combined'
-              : 'preview.description.update-compatible',
-        ),
-      label: () =>
-        this.#t(
-          mode === 'install'
-            ? 'preview.action.install'
-            : combined
-              ? 'preview.action.update-activate'
-              : 'preview.action.update',
-        ),
-      facts: (
-        <>
-          <ProvenanceReview value={preview.provenance} t={this.#t} />
-          <CapabilityReview value={preview.declaredCapabilities} t={this.#t} />
-          {combined ? (
-            <UpdateActivationFacts installed={installed!} preview={preview} />
-          ) : (
-            <PreviewConfirmationFacts preview={preview} />
-          )}
-        </>
-      ),
-      run: () => this.confirmPreview(),
+      title: () => this.#t(`preview.title.${mode}`, { id: this.nameOf(preview) }),
+      description: () => this.#t(`preview.description.${describe}`),
+      label: () => this.#t(`preview.action.${combined ? 'update-activate' : action}`),
+      facts: <PreviewFacts preview={preview} installed={combined ? installed : undefined} t={this.#t} />,
+      run: () => this.confirmPreview(enables),
+      ...(enables
+        ? {
+            secondary: {
+              label: () => this.#t('preview.action.install-only'),
+              run: () => this.confirmPreview(),
+            },
+          }
+        : {}),
     })
+  }
+
+  /** The name people know a package by; its id until the metadata says more. */
+  nameOf(item: Pick<PackageInstalledDescriptor, 'id' | 'metadata'>): string {
+    return resolvePluginMetadata(item.metadata, this.#locale.getSnapshot())?.displayName ?? item.id
   }
 
   configureConfirm(pending: PendingConfirm): void {
@@ -1215,6 +1219,13 @@ export class PluginAdminPage {
         title: rollbackReady ? this.#t('action.rollback-ready') : this.#t('action.rollback-unavailable'),
         onClick: () => this.confirmRollback(installed),
       })
+      if (installed.trusted)
+        specs.push({
+          label: this.#t('action.untrust'),
+          className: 'agh-btn agh-btn--secondary plugin-untrust',
+          disabled: !this.canEffect('packages.trust') || !installed.capabilityHash || busy,
+          onClick: () => confirmSimple(this, 'untrust', installed, this.nameOf(installed)),
+        })
       specs.push({
         label: this.#t('action.remove'),
         className: 'agh-btn agh-btn--danger',
@@ -1526,41 +1537,36 @@ export class PluginAdminPage {
       return Promise.resolve()
     }
     this.configureConfirm({
-      title: () => this.#t('confirm.enable.title', { id: item.id }),
+      title: () => this.#t('confirm.enable.title', { id: this.nameOf(item) }),
       description: () => this.#t(item.trusted ? 'confirm.enable.trusted' : 'confirm.enable.verify'),
-      label: () => this.#t('confirm.enable.action'),
-      facts: (
-        <>
-          <ProvenanceReview value={item.provenance} t={this.#t} />
-          <CapabilityReview value={item.declaredCapabilities} t={this.#t} />
-          {!item.trusted ? <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" /> : undefined}
-        </>
-      ),
-      run: async () => {
-        if (item.trusted) {
-          await this.#submitEnable(item)
-          return
-        }
-        const api = this.effectApi('packages.trust')
-        if (!api || !this.canEffect('packages.activate') || !capabilityHash) return
-        const receipt = await this.submitPackage(item.id, () =>
-          api.trust(item.id, item.integrity, capabilityHash),
-        )
-        this.track(receipt.operationId, { packageId: item.id }, async () => {
-          const current = this.#state.installed.find((candidate) => candidate.id === item.id)
-          if (!current || current.integrity !== item.integrity || current.capabilityHash !== capabilityHash) {
-            this.showError({
-              code: 'E_PACKAGE_STATE',
-              message:
-                'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
-            })
-            return
-          }
-          await this.#submitEnable(current)
-        })
-      },
+      label: () => this.#t(item.trusted ? 'confirm.enable.action' : 'confirm.enable.trust-action'),
+      facts: <EnableFacts item={item} t={this.#t} />,
+      run: () => this.#trustAndEnable(item),
     })
     return Promise.resolve()
+  }
+
+  /** Trust this exact version if it is not trusted yet, then enable it once that has landed. */
+  async #trustAndEnable(item: PackageInstalledDescriptor): Promise<void> {
+    const capabilityHash = item.capabilityHash
+    if (item.trusted) return this.#submitEnable(item)
+    const api = this.effectApi('packages.trust')
+    if (!api || !this.canEffect('packages.activate') || !capabilityHash) return
+    const receipt = await this.submitPackage(item.id, () =>
+      api.trust(item.id, item.integrity, capabilityHash),
+    )
+    this.track(receipt.operationId, { packageId: item.id }, async () => {
+      const current = this.#state.installed.find((candidate) => candidate.id === item.id)
+      if (!current || current.integrity !== item.integrity || current.capabilityHash !== capabilityHash) {
+        this.showError({
+          code: 'E_PACKAGE_STATE',
+          message:
+            'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
+        })
+        return
+      }
+      await this.#submitEnable(current)
+    })
   }
 
   async #submitEnable(item: PackageInstalledDescriptor): Promise<void> {
@@ -1584,32 +1590,12 @@ export class PluginAdminPage {
   }
 
   confirmDisable(item: PackageInstalledDescriptor): Promise<void> {
-    this.configureConfirm({
-      title: () => this.#t('confirm.disable.title', { id: item.id }),
-      description: () => this.#t('confirm.disable.description'),
-      label: () => this.#t('confirm.disable.action'),
-      run: async () => {
-        const api = this.effectApi('packages.activate')
-        if (!api) return
-        const receipt = await this.submitPackage(item.id, () => api.disable(item.id))
-        this.track(receipt.operationId, { packageId: item.id })
-      },
-    })
+    confirmSimple(this, 'disable', item, this.nameOf(item))
     return Promise.resolve()
   }
 
   confirmRemove(item: PackageInstalledDescriptor): void {
-    this.configureConfirm({
-      title: () => this.#t('confirm.remove.title', { id: item.id }),
-      description: () => this.#t('confirm.remove.description'),
-      label: () => this.#t('confirm.remove.action'),
-      run: async () => {
-        const api = this.effectApi('packages.remove')
-        if (!api) return
-        const receipt = await this.submitPackage(item.id, () => api.remove(item.id))
-        this.track(receipt.operationId, { packageId: item.id })
-      },
-    })
+    confirmSimple(this, 'remove', item, this.nameOf(item))
   }
 
   confirmRollback(item: PackageInstalledDescriptor): void {
@@ -1617,10 +1603,10 @@ export class PluginAdminPage {
     const activeIntegrity = this.activeIntegrity(item)
     if (!target || activeIntegrity === undefined || !this.supportsCompositeActivation()) return
     this.configureConfirm({
-      title: () => this.#t('confirm.rollback.title', { id: item.id, version: target.version }),
-      description: () => this.#t('confirm.rollback.description'),
+      title: () => this.#t('confirm.rollback.title', { id: this.nameOf(item), version: target.version }),
+      description: () => this.#t('confirm.rollback.description', { version: target.version }),
       label: () => this.#t('confirm.rollback.action'),
-      facts: <RollbackActivationFacts installed={item} />,
+      facts: <RollbackFacts item={item} />,
       run: async () => {
         const api = this.effectApi('packages.remove')
         if (!api || !this.can('packages.trust') || !this.can('packages.activate')) return

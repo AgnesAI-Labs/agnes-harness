@@ -109,6 +109,8 @@ export function ConfirmDialogContent({
   facts,
   actionLabel,
   actionDisabled,
+  danger = false,
+  secondaryLabel,
   onAction,
   onCancel,
 }: {
@@ -117,7 +119,12 @@ export function ConfirmDialogContent({
   facts: ReactNode | undefined
   actionLabel: string
   actionDisabled: boolean
-  onAction(): void
+  /** The action removes or revokes: the button says so in colour as well as words. */
+  danger?: boolean | undefined
+  /** An optional second path, shown apart from Cancel and the main action. */
+  secondaryLabel?: string | undefined
+  /** `secondary` is true when the second path was chosen. */
+  onAction(secondary?: boolean): void
   onCancel(): void
 }): JSX.Element {
   const { t } = useUiText(ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog)
@@ -138,15 +145,28 @@ export function ConfirmDialogContent({
         </div>
       )}
       <div className="dialog-actions">
+        {secondaryLabel && (
+          <Button
+            id="plugin-confirm-secondary"
+            className="dialog-action-aside"
+            htmlType="button"
+            appearance="ghost"
+            disabled={actionDisabled}
+            onClick={() => onAction(true)}
+          >
+            {secondaryLabel}
+          </Button>
+        )}
         <Button id="plugin-confirm-cancel" htmlType="button" appearance="secondary" onClick={onCancel}>
           {t('cancel')}
         </Button>
         <Button
           id="plugin-confirm-action"
           htmlType="button"
-          appearance="primary"
+          appearance={danger ? 'danger' : 'primary'}
+          dangerFilled={danger}
           disabled={actionDisabled}
-          onClick={onAction}
+          onClick={() => onAction()}
         >
           {actionLabel}
         </Button>

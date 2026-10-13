@@ -614,11 +614,13 @@ export function renderConfirmPluginView(this: PluginAdminViewContext): void {
         facts={pending.facts}
         actionLabel={typeof pending.label === 'function' ? pending.label() : pending.label}
         actionDisabled={this.confirmActionDisabled}
-        onAction={() => {
+        danger={pending.danger}
+        secondaryLabel={pending.secondary?.label()}
+        onAction={(secondary) => {
           if (!this.pendingConfirm) return
           this.confirmActionDisabled = true
           this.renderConfirm()
-          void this.pendingConfirm
+          void (secondary ? (this.pendingConfirm.secondary ?? this.pendingConfirm) : this.pendingConfirm)
             .run()
             .then(() => this.closeConfirm())
             .catch((error: unknown) => this.showError(error))

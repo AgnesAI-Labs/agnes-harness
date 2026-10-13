@@ -24,7 +24,7 @@ export const trustCatalog: LocaleCatalog = {
     'provenance.title': 'Source verification',
     'capability.source.path': 'Folder or archive path',
     'capability.source.url': 'Archive HTTPS URL',
-    'capability.title': 'Requested capabilities',
+    'capability.title': 'What it gets',
     'capability.undeclared':
       'No capabilities declared. Undeclared activity will be recorded when it can be observed.',
     'capability.none': 'No capabilities requested.',
@@ -76,7 +76,7 @@ export const trustCatalog: LocaleCatalog = {
     'provenance.title': '来源验证',
     'capability.source.path': '文件夹或归档路径',
     'capability.source.url': '归档 HTTPS 地址',
-    'capability.title': '请求的能力',
+    'capability.title': '它会获得什么',
     'capability.undeclared': '尚未声明能力；可观察到的未声明活动会被记录。',
     'capability.none': '未请求额外能力。',
     'capability.community': '社区插件执行受信任的代码。这些声明用于审核；现有沙箱和网络策略仍然适用。',

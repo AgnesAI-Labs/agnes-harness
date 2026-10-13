@@ -382,7 +382,7 @@ it('groups real catalog releases and carries the selected version source through
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-diagnostics"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('install-source')).toBeNull())
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install preview'),
+    expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install “'),
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain(selected.integrity)
   expect(document.querySelector('[aria-label="Source verification"]')?.textContent).toContain(
@@ -390,7 +390,10 @@ it('groups real catalog releases and carries the selected version source through
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain('examples/hot-tool')
 
-  document.getElementById('plugin-confirm-action')?.click()
+  // The main action installs and enables what was just reviewed; this path installs only.
+  expect(document.getElementById('plugin-confirm-action')?.textContent).toBe('Install and enable')
+  expect(document.getElementById('plugin-confirm-secondary')?.textContent).toBe('Install only')
+  document.getElementById('plugin-confirm-secondary')?.click()
   await vi.waitFor(() => expect(installed).toHaveLength(1))
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-plugins"]')?.click()
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
@@ -1641,6 +1644,6 @@ it('closes an open detail dialog so disable and rollback confirms can show', asy
   expect(rollback?.getAttribute('aria-disabled')).not.toBe('true')
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(true))
-  expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Request disable')
+  expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Disable “')
   expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false)
 })

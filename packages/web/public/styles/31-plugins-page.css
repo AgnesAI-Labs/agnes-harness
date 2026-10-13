@@ -173,6 +173,16 @@
     justify-content: space-between;
     gap: var(--s8);
   }
+  /* A second path in a confirmation sits apart from Cancel and the main action. */
+  .dialog-actions > .dialog-action-aside {
+    margin-inline-end: auto;
+  }
+  .confirm-facts > section > h3 {
+    margin: 0 0 var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+  }
   @media (max-width: 720px) {
     .plugins-page-summary {
       display: none;
