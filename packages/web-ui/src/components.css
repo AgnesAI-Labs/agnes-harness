@@ -16,10 +16,10 @@
     height: var(--control-height);
     min-height: var(--control-height);
     padding: 0 var(--s12);
-    border: 1px solid var(--agnes-input-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-control);
     color: var(--agnes-text-primary);
-    background: transparent;
+    background: var(--agnes-bg-fill);
     box-shadow: none;
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
@@ -33,8 +33,8 @@
     [aria-disabled="true"]
   ) {
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-hover);
-    border-color: var(--agnes-input-border-emphasis);
+    background: var(--agnes-bg-fill-hover);
+    border-color: transparent;
   }
   :is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-button-primary-content);
@@ -65,15 +65,16 @@
   .agh-btn--link:is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]) {
     text-decoration: underline;
   }
+  /* Destructive: a soft red fill; the label carries the colour. */
   .agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-status-danger-text);
-    border-color: var(--agnes-status-danger-text);
-    background: transparent;
+    border-color: transparent;
+    background: var(--agnes-status-danger-bg);
   }
   .agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-status-danger-text);
-    border-color: var(--agnes-status-danger-text);
-    background: var(--agnes-status-danger-bg);
+    border-color: transparent;
+    background: color-mix(in srgb, var(--agnes-status-danger-text) 16%, var(--agnes-status-danger-bg));
   }
   /* Filled danger is reserved for destructive confirmation footers. */
   .agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
@@ -91,7 +92,7 @@
     width: var(--control-height-sm);
     min-width: var(--control-height-sm);
     padding: 0;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-full);
   }
   /* New icon actions retain 28px visuals even inside the legacy 32px responsive floor. */
   .agh-btn.agh-btn--icon {
@@ -99,14 +100,14 @@
     min-height: var(--control-height-sm);
   }
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-card);
-    border-color: var(--agnes-line-primary);
+    border-color: transparent;
     opacity: 1;
     cursor: not-allowed;
   }
@@ -144,8 +145,11 @@
   }
   .agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-text-primary);
-    background: transparent;
-    border-color: var(--agnes-input-border);
+    background: var(--agnes-bg-fill);
+    border-color: transparent;
+  }
+  .agh-btn--secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--agnes-bg-fill-hover);
   }
   /* Keyboard hint chip: small, quiet, never the primary label. */
   .agh-kbd {
@@ -220,8 +224,8 @@
     max-width: 100%;
   }
   .agh-tooltip-anchor:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
   :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
@@ -264,8 +268,8 @@
     background: var(--agnes-status-danger-bg);
   }
   .agh-menu-item:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: -2px;
+    outline: var(--focus-outline);
+    outline-offset: -3px;
   }
   .agh-menu-item[aria-disabled="true"] {
     color: var(--agnes-text-tertiary);
@@ -346,7 +350,19 @@
   :is(.agnes-settings-card, .config-card) {
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
     box-shadow: var(--elevation-0);
+  }
+  /* Icon tile: the small tinted square that leads a row, a card header or an empty state. */
+  .agh-icon-tile {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-chip);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
   }
   .agnes-settings-page[data-layout] {
     width: 100%;
@@ -408,20 +424,36 @@
     width: 100%;
     max-width: 420px;
     margin-inline: auto;
-    padding-block: var(--s48);
+    padding-block: var(--s32);
     color: var(--agnes-text-primary);
     text-align: center;
+  }
+  /* On a settings page the placeholder fills the card its list would occupy. */
+  :is(.agnes-settings-page, .settings-content)
+  .agh-empty-state:not(
+    :is(.agnes-settings-group, .agnes-settings-card, .agnes-settings-list, .agh-disclosure-body) *
+  ) {
+    box-sizing: border-box;
+    max-width: none;
+    padding: var(--s32) var(--s24);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
   }
   .agh-empty-state-icon {
     display: grid;
     place-items: center;
-    margin-bottom: var(--s8);
-    color: var(--agnes-text-tertiary);
+    width: 40px;
+    height: 40px;
+    margin-bottom: var(--s12);
+    border-radius: var(--radius-lg);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
   }
   /* One mark size wherever the state appears, whatever size the icon was authored at. */
   .agh-empty-state .agh-empty-state-icon > svg {
-    width: var(--s24);
-    height: var(--s24);
+    width: var(--s20);
+    height: var(--s20);
   }
   .agh-empty-state h3 {
     margin: 0;
@@ -443,7 +475,7 @@
     justify-content: center;
     gap: var(--s8);
     flex-wrap: wrap;
-    margin-top: var(--s12);
+    margin-top: var(--s16);
   }
   .agh-empty-state-help {
     margin-top: var(--s8);
@@ -452,25 +484,34 @@
   }
   .agh-banner {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--s12);
-    padding: var(--s12) var(--s16);
-    border: 1px solid var(--agnes-status-info-border);
-    border-radius: var(--radius-control);
-    color: var(--agnes-status-info-text);
+    min-height: 3rem;
+    box-sizing: border-box;
+    padding: var(--s10) var(--s16);
+    border: 0;
+    border-radius: var(--radius-card);
+    color: var(--agnes-text-primary);
     background: var(--agnes-status-info-bg);
-    font-size: var(--font-size-body);
-    line-height: var(--line-md);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  /* The tint and the icon carry the tone; the sentence stays in the reading colour. */
+  .agh-banner > .agh-icon {
+    flex: 0 0 auto;
+    color: var(--agnes-status-info-solid);
   }
   .agh-banner[data-tone="warning"] {
-    color: var(--agnes-status-warning-text);
     background: var(--agnes-status-warning-bg);
-    border-color: var(--agnes-status-warning-border);
+  }
+  .agh-banner[data-tone="warning"] > .agh-icon {
+    color: var(--agnes-status-warning-solid);
   }
   .agh-banner[data-tone="error"] {
-    color: var(--agnes-status-danger-text);
     background: var(--agnes-status-danger-bg);
-    border-color: var(--agnes-status-danger-border);
+  }
+  .agh-banner[data-tone="error"] > .agh-icon {
+    color: var(--agnes-status-danger-solid);
   }
   .agh-banner-copy {
     flex: 1;
@@ -498,6 +539,10 @@
     border-bottom: 1px solid var(--agnes-line-primary);
     color: var(--agnes-text-primary);
   }
+  .agnes-settings-list > .agh-list-row {
+    min-height: 3.25rem;
+    border-bottom: 0;
+  }
   .agh-list-row-icon {
     display: flex;
     align-items: center;
@@ -505,9 +550,9 @@
     width: var(--s32);
     height: var(--s32);
     flex: 0 0 auto;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-chip);
     color: var(--agnes-text-secondary);
-    background: var(--agnes-bg-subtle);
+    background: var(--agnes-bg-fill);
   }
   .agh-list-row-copy {
     flex: 1;
@@ -570,12 +615,12 @@
   /* Same three sizes for native modal shells and React confirmations. */
   :where(dialog:not(.agh-drawer)) {
     width: min(560px, calc(100vw - var(--s32)));
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-modal);
     box-shadow: var(--elevation-2);
   }
   .agh-dialog .ant-modal-container,
   .agh-dialog .ant-modal-content {
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-modal);
     box-shadow: var(--elevation-2);
     max-height: var(--dialog-max-height);
     display: flex;
@@ -635,8 +680,8 @@
     display: none;
   }
   .agh-table-scroll :is(.ant-table-body, .ant-table-content):focus-visible {
-    outline: 2px solid var(--agnes-brand-primary);
-    outline-offset: -2px;
+    outline: var(--focus-outline);
+    outline-offset: -3px;
   }
   .agh-sheet-handle {
     display: none;
@@ -730,7 +775,7 @@
     }
     .agh-dialog .ant-modal-container,
     .agh-dialog .ant-modal-content {
-      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
       max-height: calc(100dvh - var(--s16));
     }
     .agh-sheet-handle {
@@ -740,7 +785,7 @@
       min-height: var(--control-height-touch);
       padding: 0;
       border: 0;
-      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
       background: var(--agnes-bg-popover);
       touch-action: none;
       flex: 0 0 auto;
@@ -778,7 +823,7 @@
       max-width: 100vw !important;
       max-height: calc(100dvh - var(--s16));
       margin: 0;
-      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
     }
     dialog[open]:has(> .agh-native-sheet-handle) > .account-dialog-body {
       flex: 1 1 auto;
@@ -1255,8 +1300,8 @@
     color: var(--agnes-text-primary);
   }
   .agh-disclosure[data-variant] > .agh-disclosure-summary:focus-visible {
-    outline: 2px solid var(--agnes-brand-focus-ring);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   .agh-disclosure-chevron {
     flex: 0 0 auto;
@@ -1268,26 +1313,120 @@
   .agh-disclosure-title {
     min-width: 0;
   }
+  /* The current value, in one line, pushed to the far side of the header. */
+  .agh-disclosure-meta {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .agh-disclosure[data-variant] > .agh-disclosure-body {
     min-width: 0;
     padding-block: var(--s8);
     overflow-wrap: anywhere;
   }
-  /* A row disclosure is a divided line of its list; neighbours share one rule. */
-  .agh-disclosure[data-variant="row"] + .agh-disclosure[data-variant="row"] {
-    border-top: 1px solid var(--agnes-line-primary);
-  }
+  /* A row disclosure is a line of its list; the group that holds it draws the divider. */
   .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
-    min-height: 2.75rem;
+    min-height: 3rem;
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-medium);
   }
   .agh-disclosure[data-variant="row"] > .agh-disclosure-body {
-    padding-block: var(--s4) var(--s20);
+    padding-block: var(--s4) var(--s16);
+  }
+  /* A card disclosure is a grouped card of its own: the header names the section and states its
+   current value; the content opens inside the same outline, under one inset hairline. */
+  .agh-disclosure[data-variant="card"] {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary {
+    gap: var(--s12);
+    min-height: 3.25rem;
+    padding: var(--s12) var(--s16);
+    /* One pixel inside the card's own corner. */
+    border-radius: calc(var(--radius-card) - 1px);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary > .agh-disclosure-title {
+    flex: 0 1 auto;
+  }
+  .agh-disclosure-heading {
+    flex: 1 1 auto;
+    display: grid;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agh-disclosure-description {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.6;
+  }
+  .agh-disclosure-heading + .agh-disclosure-meta {
+    flex: 0 1 auto;
+    max-width: 45%;
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary:hover {
+    background: var(--agnes-bg-card);
+  }
+  .agh-disclosure[data-variant="card"][data-open="true"] > .agh-disclosure-summary {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-summary
+    > .agh-disclosure-title:not(:has(+ .agh-disclosure-meta)) {
+    flex: 1 1 auto;
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body {
+    position: relative;
+    box-sizing: border-box;
+    padding: var(--s16);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body::before {
+    content: "";
+    position: absolute;
+    inset: 0 var(--s16) auto;
+    border-top: 1px solid var(--agnes-line-primary);
   }
   @media (prefers-reduced-motion: no-preference) {
     .agh-disclosure-chevron {
       transition: transform var(--transition-fast);
+    }
+    /* The content grows out of its header; where the browser cannot interpolate to its natural
+     height it opens at once. */
+    .agh-disclosure[data-variant="card"] {
+      interpolate-size: allow-keywords;
+    }
+    .agh-disclosure[data-variant="card"] > .agh-disclosure-body {
+      overflow: clip;
+      transition:
+        height var(--transition),
+        padding-block var(--transition),
+        opacity var(--transition),
+        display var(--transition) allow-discrete;
+    }
+    .agh-disclosure[data-variant="card"] > .agh-disclosure-body[hidden] {
+      height: 0;
+      padding-block: 0;
+      opacity: 0;
+    }
+    @starting-style {
+      .agh-disclosure[data-variant="card"] > .agh-disclosure-body:not([hidden]) {
+        height: 0;
+        padding-block: 0;
+        opacity: 0;
+      }
     }
   }
 
@@ -1318,10 +1457,10 @@
     height: var(--control-height-form);
     min-height: var(--control-height-form);
     padding: 0 var(--s12) 0 var(--s32);
-    border: 1px solid var(--agnes-input-border);
+    border: 1px solid transparent;
     border-radius: var(--radius-control);
     color: var(--agnes-input-content-strong);
-    background: var(--agnes-input-surface);
+    background: var(--agnes-bg-fill);
     font: inherit;
     font-size: var(--agnes-ui-input-font-size);
   }
@@ -1329,12 +1468,11 @@
     color: var(--agnes-text-tertiary);
   }
   .agh-search-bar-field > input:hover {
-    border-color: var(--agnes-input-border-emphasis);
+    background: var(--agnes-bg-fill-hover);
   }
   .agh-search-bar-field > input:focus-visible {
     border-color: var(--agnes-input-border-focus);
-    outline: 2px solid var(--agnes-brand-focus-ring);
-    outline-offset: 0;
+    background: var(--agnes-input-surface);
   }
   .agh-search-bar-filters,
   .agh-search-bar-actions {
@@ -1377,7 +1515,7 @@
   .agnes-settings-section {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--s12);
+    gap: var(--s8);
     min-width: 0;
   }
   .agnes-settings-section-heading {
@@ -1397,13 +1535,16 @@
     flex-wrap: nowrap;
     white-space: nowrap;
   }
+  .agnes-settings-section-heading {
+    padding-inline: var(--s4);
+  }
   .agnes-settings-section-heading h3,
   .agnes-settings-section > h3 {
     margin: 0;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    line-height: var(--line-md);
+    line-height: var(--line-sm);
   }
   .agnes-settings-section-heading p {
     max-width: 60ch;
@@ -1417,18 +1558,25 @@
     min-width: 0;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-group);
   }
-  .agnes-settings-group > * + * {
+  /* Rows are divided by one inset hairline; the last row never draws one beneath it. */
+  .agnes-settings-group > * {
+    position: relative;
+  }
+  .agnes-settings-group > * + *::before {
+    content: "";
+    position: absolute;
+    inset: 0 var(--s16) auto;
     border-top: 1px solid var(--agnes-line-primary);
+    pointer-events: none;
   }
   .agnes-settings-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--s12) var(--s24);
+    gap: var(--s12);
     min-width: 0;
-    min-height: 3.25rem;
+    min-height: 3.5rem;
     box-sizing: border-box;
     padding: var(--s12) var(--s16);
   }
@@ -1444,7 +1592,7 @@
   }
   .agnes-settings-item-label {
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-sm);
     overflow-wrap: anywhere;
@@ -1452,7 +1600,7 @@
   .agnes-settings-item-description {
     max-width: 60ch;
     color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     line-height: 1.6;
     overflow-wrap: anywhere;
   }
@@ -1463,6 +1611,7 @@
     justify-content: flex-end;
     gap: var(--s8);
     min-width: 0;
+    margin-inline-start: var(--s12);
   }
   .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control > :is(select, .agnes-ui-select) {
     width: 14rem;
@@ -1524,7 +1673,9 @@
   }
   /* What a disclosure row reveals belongs to that row: a card directly inside it draws no second
    outline. Cards further in are objects and keep theirs. */
-  .agnes-settings-details[data-variant="row"] > .agh-disclosure-body > .agnes-settings-card {
+  .agnes-settings-details:is([data-variant="row"], [data-variant="card"])
+    > .agh-disclosure-body
+    > .agnes-settings-card {
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -1537,8 +1688,15 @@
   .confirm-review-section.agh-disclosure[data-variant] > .agh-disclosure-summary {
     padding-inline: var(--s12);
   }
-  .agnes-settings-technical {
+  .agnes-settings-technical[data-variant="plain"] {
     margin-top: calc(-1 * var(--s8));
+  }
+  /* A card disclosure met inside another outline gives its own up: one outline per group. */
+  :is(.agnes-settings-card, .config-card, .agnes-settings-group, .agnes-settings-list, .agh-disclosure-body)
+  > .agh-disclosure[data-variant="card"] {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   @media (max-width: 640px) {
     .agnes-settings-item:not([data-stacked]) {

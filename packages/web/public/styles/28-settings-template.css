@@ -50,14 +50,14 @@
   :is(#config-form, .runtime-settings) :is(.agnes-settings-group-title, .agnes-settings-page-heading h2) {
     margin: 0;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-lg);
     letter-spacing: 0;
   }
   :is(#config-form, .runtime-settings) .agnes-settings-page-heading > div > p {
     max-width: 60ch;
-    margin: var(--s2) 0 0;
+    margin: var(--s4) 0 0;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.6;
@@ -170,7 +170,7 @@
   .settings-shell .config-workspace,
   .settings-shell .agnes-settings-stack,
   .runtime-settings .agnes-settings-stack {
-    gap: var(--s32);
+    gap: var(--s24);
   }
   .settings-shell .config-workspace {
     display: grid;
@@ -201,6 +201,114 @@
     max-width: var(--settings-column);
     margin-inline: 0;
   }
+  /* ── Dialog chrome ────────────────────────────────────────────────────────
+   Navigation rail: soft filled search, small muted group labels, rounded rows; the current page
+   is a raised pill on the panel with its icon in the accent. */
+  .settings-shell .settings-rail,
+  .runtime-settings > .settings-rail {
+    gap: var(--s12);
+    padding: var(--s20) var(--s12) var(--s16);
+    border-inline-end: 1px solid var(--agnes-line-primary);
+  }
+  .settings-shell .settings-rail-heading {
+    padding-inline: var(--s8) 0;
+  }
+  .settings-shell .settings-rail-title {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  .settings-shell .settings-nav-label {
+    margin: var(--s8) var(--s8) var(--s4);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell .settings-nav-item,
+  .runtime-settings > nav .settings-nav-item {
+    gap: var(--s10);
+    padding: var(--s4) var(--s8);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+  }
+  .settings-shell .settings-nav-item .icon {
+    color: var(--agnes-text-tertiary);
+  }
+  .settings-shell .settings-nav-item:hover:not(:disabled):not([aria-current="page"]) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"],
+  .settings-shell .settings-nav-item[aria-current="page"]:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    box-shadow: var(--shadow-raised);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"] .icon {
+    color: var(--agnes-brand-primary);
+  }
+  .settings-shell #settings-advanced {
+    margin-top: var(--s8);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-summary {
+    min-height: var(--s32);
+    padding: var(--s4) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-summary:hover {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+    padding-block: var(--s4) 0;
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-body > .settings-nav-item {
+    margin-top: 0;
+  }
+  .settings-shell #config-close {
+    width: var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border-radius: var(--radius-full);
+  }
+
+  /* A page that brings its own header into the scroller (Skills) keeps it in view, on the same
+   line and at the same size as every other page header. */
+  .settings-shell #resource-list > .agnes-settings-page-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin: 0;
+    padding: var(--s24) 0 var(--s8);
+    background: var(--agnes-bg-surface);
+  }
+
+  /* Tabs under a group title: one hairline, the current tab marked in the accent. */
+  .settings-shell .agnes-settings-section-tabs,
+  .runtime-settings .agnes-settings-section-tabs {
+    margin-top: var(--s12);
+  }
+  .settings-shell .agnes-settings-section-tabs button,
+  .runtime-settings .agnes-settings-section-tabs button {
+    margin-bottom: -1px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
   /* The first row of a narrow dialog leaves room for the close button; wide dialogs never need to,
    because the column ends before it. */
   @container settings-content (max-width: 54rem) {

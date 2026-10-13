@@ -2,6 +2,7 @@ import type { McpServerDescriptor } from '@agnes/protocol'
 import { mcpConnectionCatalog } from './locales/mcp-connection.js'
 import { resourceFailureLabel } from './resource-failure.js'
 import { Button } from './ui/button.js'
+import { Icon } from './ui/icon.js'
 import { IconButton } from './ui/icon-button.js'
 import { ListRow } from './ui/list-row.js'
 import { Menu } from './ui/menu.js'
@@ -43,6 +44,7 @@ export function McpConnectionRow({
       className="resource-row"
       data-resource-id={item.resourceId}
       data-selected={String(selected)}
+      icon={<Icon name={connection.kind === 'stdio' ? 'terminal' : 'globe'} size={20} />}
       title={itemName}
       onOpen={onOpen}
       meta={`${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}

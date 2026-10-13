@@ -10,8 +10,10 @@ import { createPortal } from 'react-dom'
 
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
-import { Disclosure, type DisclosureProps } from './ui/disclosure.js'
+import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
+import { IconTile } from './ui/icon-tile.js'
+import type { IconName } from './ui/icons.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
@@ -124,14 +126,22 @@ export function SettingsSection({
   )
 }
 /** One quiet outline around a run of setting rows. */
-export function SettingsGroup(props: HTMLAttributes<HTMLDivElement> & DataAttributes) {
-  return <div {...props} className={['agnes-settings-group', props.className].filter(Boolean).join(' ')} />
+export function SettingsGroup({ children, ...props }: HTMLAttributes<HTMLDivElement> & DataAttributes) {
+  return (
+    <div {...props} className={['agnes-settings-group', props.className].filter(Boolean).join(' ')}>
+      <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
+    </div>
+  )
 }
-/** A setting row: what it is on the left, its control on the right (or below when `stacked`). */
+/**
+ * A setting row: an optional icon tile, what it is on the left, its control on the right (or
+ * below when `stacked`).
+ */
 export function SettingsItem({
   label,
   description,
   labelId,
+  icon,
   stacked = false,
   children,
   ...props
@@ -140,6 +150,7 @@ export function SettingsItem({
     label: ReactNode
     description?: ReactNode
     labelId?: string
+    icon?: IconName
     stacked?: boolean
   }) {
   return (
@@ -148,6 +159,7 @@ export function SettingsItem({
       data-stacked={stacked || undefined}
       className={['agnes-settings-item', props.className].filter(Boolean).join(' ')}
     >
+      {icon && <IconTile name={icon} />}
       <div className="agnes-settings-item-copy">
         <div className="agnes-settings-item-label" id={labelId}>
           {label}
@@ -180,12 +192,14 @@ export function SettingsCard({
         {...props}
         className={['config-card', 'agnes-settings-card', props.className].filter(Boolean).join(' ')}
       >
-        {children}
+        <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
       </section>
     )
   return (
     <SettingsSection {...props} title={title} description={description} actions={actions}>
-      <div className="config-card agnes-settings-card">{children}</div>
+      <div className="config-card agnes-settings-card">
+        <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
+      </div>
     </SettingsSection>
   )
 }
@@ -254,9 +268,13 @@ export const SettingsSelect = forwardRef<
   )
 })
 
-/** Flat settings rows keep controls and diagnostics out of nested cards. */
-export function SettingsList(props: HTMLAttributes<HTMLDivElement>) {
-  return <div {...props} className={['agnes-settings-list', props.className].filter(Boolean).join(' ')} />
+/** One grouped card of rows: accounts, plugins, servers, schedules. Rows are divided, never boxed again. */
+export function SettingsList({ children, ...props }: HTMLAttributes<HTMLDivElement> & DataAttributes) {
+  return (
+    <div {...props} className={['agnes-settings-list', props.className].filter(Boolean).join(' ')}>
+      <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
+    </div>
+  )
 }
 export function SettingsRow({
   title,
@@ -279,25 +297,48 @@ export function SettingsRow({
         </div>
         {actions && <div className="agnes-settings-actions">{actions}</div>}
       </div>
-      {children}
+      <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
     </article>
   )
 }
+/**
+ * A collapsible part of a page. `card` makes it a grouped card of its own: icon tile, title, the
+ * current value in one line, and the content opening inside the same card.
+ */
 export function SettingsDetails({
   title,
   children,
   compact = false,
+  card,
+  icon,
+  summary,
+  description,
   ...props
-}: Omit<DisclosureProps, 'title' | 'summary' | 'variant' | 'summaryProps'> & {
+}: Omit<
+  DisclosureProps,
+  'title' | 'summary' | 'variant' | 'summaryProps' | 'icon' | 'meta' | 'description'
+> & {
   title: ReactNode
   compact?: boolean
+  card?: boolean | undefined
+  icon?: IconName | undefined
+  /** One muted line under a card's title. */
+  description?: ReactNode
+  /** The current value in a few words, shown beside the title. */
+  summary?: ReactNode
   'data-testid'?: string
 }) {
+  // On the page a section is a card of its own; inside a card, a list row or another section it
+  // is one of that surface's rows.
+  const nested = useContext(NestedSurfaceContext)
   return (
     <Disclosure
       {...props}
       summary={title}
-      variant={compact ? 'plain' : 'row'}
+      variant={compact ? 'plain' : card || !nested ? 'card' : 'row'}
+      icon={icon ? <Icon name={icon} /> : undefined}
+      meta={summary}
+      description={description}
       data-compact={compact || undefined}
       className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}
       summaryProps={{ 'data-testid': props['data-testid'] ? `${props['data-testid']}-toggle` : undefined }}
@@ -312,10 +353,12 @@ export function SettingsTechnicalDetails({
   children,
   ...props
 }: Omit<DisclosureProps, 'title' | 'summary' | 'variant'> & DataAttributes & { title?: ReactNode }) {
+  const nested = useContext(NestedSurfaceContext)
   return (
     <Disclosure
       {...props}
-      variant="plain"
+      variant={nested ? 'plain' : 'card'}
+      icon={nested ? undefined : <Icon name="code" />}
       summary={title ?? fallbackT('ui.technicalDetails')}
       className={['agnes-settings-technical', props.className].filter(Boolean).join(' ')}
     >

@@ -6,7 +6,7 @@ import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/a
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
 import { PluginProvidesChips, PluginPurposeBadges } from './plugin-purpose.js'
-import { SettingsDetails } from './settings-layout.js'
+import { SettingsDetails, SettingsList } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
@@ -292,97 +292,99 @@ export function PluginList({
       {tab === 'installed' && !inventoryAuthoritative && (
         <p className="plugin-inventory-status">{t('inventory.stale')}</p>
       )}
-      {[...groups.values()].map((group) => {
-        const item = group.find((row) => row.version === versions[row.id]) ?? group[0]!
-        const alternatives = group.filter(
-          (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
-        )
-        const runtime = runtimeOf(item.id)
-        const purpose = resolvePluginMetadata(item.metadata, locale)
-        const displayName = purpose?.displayName ?? item.id
-        const description = purpose?.summary
-        return (
-          <ListRow
-            key={tab === 'discover' ? item.id : `${item.id}@${item.version}`}
-            className="plugin-row"
-            data-plugin-id={item.id}
-            data-plugin-version={item.version}
-            data-tab={tab}
-            data-highlighted={highlighted === item.id || undefined}
-            icon={<Icon name="plug" size={20} />}
-            titleClassName="plugin-details-button"
-            title={displayName}
-            titleLabel={t('row.details', { id: displayName })}
-            description={
-              description ? (
-                <span data-testid="plugin-summary">{description}</span>
-              ) : (
-                <PluginProvidesChips value={providesOf?.(item)} />
-              )
-            }
-            meta={<PluginPurposeBadges item={item} />}
-            status={
-              tab === 'discover' ? (
-                <CatalogCompatibility item={item as PackageCatalogDescriptor} />
-              ) : (
-                metadataOf?.(item)
-              )
-            }
-            onOpen={() => onOpen(item)}
-            actions={
-              <>
-                <RowControl
-                  tab={tab}
-                  item={item}
-                  runtime={runtime}
-                  primaryAction={primaryActionOf(item)}
-                  busy={pendingOf?.(item) ?? false}
-                  switchDisabled={
-                    tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
-                  }
-                  t={t}
-                  onToggleDesired={onToggleDesired}
-                />
-                <Menu
-                  label={t('row.actions')}
-                  trigger={<IconButton name="ellipsis" label={t('row.actions')} />}
-                  items={
-                    menuOf?.(item) ?? [
-                      {
-                        id: 'details',
-                        label: t('row.details', { id: displayName }),
-                        onSelect: () => onOpen(item),
-                      },
-                    ]
-                  }
-                />
-              </>
-            }
-          >
-            {alternatives.length > 1 ? (
-              <SettingsDetails
-                title={t('row.versions', { version: item.version })}
-                data-testid="plugin-other-versions"
-              >
-                <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
-                  {t('row.version')}
-                  <Select<string>
-                    id={`plugin-version-${encodeURIComponent(item.id)}`}
-                    data-testid="plugin-version-picker"
-                    className="plugin-version-picker"
-                    virtual={false}
-                    aria-label={t('row.version')}
-                    value={item.version}
-                    options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
-                    getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
-                    onChange={(value) => setVersions((prior) => ({ ...prior, [item.id]: value }))}
+      <SettingsList>
+        {[...groups.values()].map((group) => {
+          const item = group.find((row) => row.version === versions[row.id]) ?? group[0]!
+          const alternatives = group.filter(
+            (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
+          )
+          const runtime = runtimeOf(item.id)
+          const purpose = resolvePluginMetadata(item.metadata, locale)
+          const displayName = purpose?.displayName ?? item.id
+          const description = purpose?.summary
+          return (
+            <ListRow
+              key={tab === 'discover' ? item.id : `${item.id}@${item.version}`}
+              className="plugin-row"
+              data-plugin-id={item.id}
+              data-plugin-version={item.version}
+              data-tab={tab}
+              data-highlighted={highlighted === item.id || undefined}
+              icon={<Icon name="plug" size={20} />}
+              titleClassName="plugin-details-button"
+              title={displayName}
+              titleLabel={t('row.details', { id: displayName })}
+              description={
+                description ? (
+                  <span data-testid="plugin-summary">{description}</span>
+                ) : (
+                  <PluginProvidesChips value={providesOf?.(item)} />
+                )
+              }
+              meta={<PluginPurposeBadges item={item} />}
+              status={
+                tab === 'discover' ? (
+                  <CatalogCompatibility item={item as PackageCatalogDescriptor} />
+                ) : (
+                  metadataOf?.(item)
+                )
+              }
+              onOpen={() => onOpen(item)}
+              actions={
+                <>
+                  <RowControl
+                    tab={tab}
+                    item={item}
+                    runtime={runtime}
+                    primaryAction={primaryActionOf(item)}
+                    busy={pendingOf?.(item) ?? false}
+                    switchDisabled={
+                      tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
+                    }
+                    t={t}
+                    onToggleDesired={onToggleDesired}
                   />
-                </label>
-              </SettingsDetails>
-            ) : null}
-          </ListRow>
-        )
-      })}
+                  <Menu
+                    label={t('row.actions')}
+                    trigger={<IconButton name="ellipsis" label={t('row.actions')} />}
+                    items={
+                      menuOf?.(item) ?? [
+                        {
+                          id: 'details',
+                          label: t('row.details', { id: displayName }),
+                          onSelect: () => onOpen(item),
+                        },
+                      ]
+                    }
+                  />
+                </>
+              }
+            >
+              {alternatives.length > 1 ? (
+                <SettingsDetails
+                  title={t('row.versions', { version: item.version })}
+                  data-testid="plugin-other-versions"
+                >
+                  <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
+                    {t('row.version')}
+                    <Select<string>
+                      id={`plugin-version-${encodeURIComponent(item.id)}`}
+                      data-testid="plugin-version-picker"
+                      className="plugin-version-picker"
+                      virtual={false}
+                      aria-label={t('row.version')}
+                      value={item.version}
+                      options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
+                      getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
+                      onChange={(value) => setVersions((prior) => ({ ...prior, [item.id]: value }))}
+                    />
+                  </label>
+                </SettingsDetails>
+              ) : null}
+            </ListRow>
+          )
+        })}
+      </SettingsList>
       {tab === 'discover' && nextCursor && (
         <Button htmlType="button" className="plugin-more" onClick={onLoadMore}>
           {t('load-more')}

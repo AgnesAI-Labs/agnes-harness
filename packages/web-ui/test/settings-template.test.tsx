@@ -9,6 +9,7 @@ import {
   mountRegion,
   SearchBar,
   SettingsCard,
+  SettingsDetails,
   SettingsGroup,
   SettingsItem,
   SettingsPage,
@@ -207,4 +208,43 @@ it('states a switch in words in the document language', () => {
   expect(control?.getAttribute('aria-checked')).toBe('false')
   control?.click()
   expect(toggle).toHaveBeenCalledWith(true)
+})
+
+it('makes a page-level section a card of its own and a nested one a row of its surface', () => {
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(
+        SettingsDetails,
+        {
+          title: 'Memory',
+          icon: 'history',
+          description: 'What is kept between sessions.',
+          summary: 'File memory',
+          'data-testid': 'memory',
+        },
+        createElement(SettingsDetails, { title: 'History', 'data-testid': 'inner' }, 'runs'),
+      ),
+      createElement(
+        SettingsGroup,
+        null,
+        createElement(SettingsDetails, { title: 'Custom review', 'data-testid': 'grouped' }, 'rules'),
+      ),
+    ),
+  )
+  const card = host.querySelector<HTMLElement>('[data-testid="memory"]')
+  expect(card?.dataset.variant).toBe('card')
+  const summary = card?.querySelector<HTMLButtonElement>(':scope > .agh-disclosure-summary')
+  expect(summary?.querySelector('.agh-icon-tile svg')).not.toBeNull()
+  // The title alone names the section; its purpose and current value describe it.
+  const name = host.ownerDocument.getElementById(summary?.getAttribute('aria-labelledby') ?? '')
+  expect(name?.textContent).toBe('Memory')
+  expect(
+    (summary?.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((id) => host.ownerDocument.getElementById(id)?.textContent),
+  ).toEqual(['What is kept between sessions.', 'File memory'])
+  expect(host.querySelector<HTMLElement>('[data-testid="inner"]')?.dataset.variant).toBe('row')
+  expect(host.querySelector<HTMLElement>('[data-testid="grouped"]')?.dataset.variant).toBe('row')
 })

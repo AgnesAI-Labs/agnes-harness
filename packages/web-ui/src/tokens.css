@@ -459,32 +459,30 @@
     min-width: 0;
     min-height: var(--control-height);
     padding: var(--s8) var(--s12);
-    border: 1px solid var(--agnes-input-border);
-    border-radius: var(--radius-md);
-    background: var(--agnes-input-surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-fill);
     color: var(--agnes-input-content-strong);
     font: inherit;
     transition:
       border-color var(--transition-fast),
       box-shadow var(--transition-fast);
   }
-  .agnes-settings-input-surface {
-    background: var(--agnes-input-surface);
-  }
   textarea.agnes-settings-input {
     min-height: 5rem;
     resize: vertical;
   }
-  .agnes-settings-input:hover:not(:disabled) {
-    border-color: var(--agnes-input-border-emphasis);
+  .agnes-settings-input:hover:not(:disabled):not(:focus-visible) {
+    background-color: var(--agnes-bg-fill-hover);
   }
   .agnes-settings-input:focus-visible {
     outline: none;
     border-color: var(--agnes-input-border-focus);
+    background-color: var(--agnes-input-surface);
     box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
   }
   .agnes-settings-input:disabled {
-    border-color: var(--agnes-line-primary);
+    border-color: transparent;
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-card);
     cursor: not-allowed;
@@ -617,24 +615,45 @@
     overflow-wrap: anywhere;
   }
   .agnes-settings-card .agh-disclosure-summary:focus-visible {
-    outline: 2px solid var(--agnes-text-emphasis);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
+  /* A list is one grouped card; its rows round on hover inside it and share inset hairlines. */
   .agnes-settings-list {
     display: grid;
-    border-block: 1px solid var(--agnes-line-primary);
-    list-style: none;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     margin: 0;
-    padding: 0;
+    padding: var(--s4);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+    list-style: none;
   }
   .agnes-settings-list:empty {
     display: none;
   }
+  .agnes-settings-list > * {
+    position: relative;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: var(--s10) var(--s12);
+    border: 0;
+    border-radius: var(--radius-control);
+  }
+  .agnes-settings-list > * + *::before {
+    content: "";
+    position: absolute;
+    inset: 0 var(--s12) auto;
+    border-top: 1px solid var(--agnes-line-primary);
+    pointer-events: none;
+  }
+  .agnes-settings-list > :is(.agh-list-row, .agnes-settings-row):hover {
+    background: var(--agnes-bg-card);
+  }
   .agnes-settings-list > li {
     display: grid;
     gap: var(--s8);
-    padding-block: var(--s16);
-    min-width: 0;
     overflow-wrap: anywhere;
   }
   .agnes-settings-list > li > span {
@@ -644,7 +663,7 @@
     overflow: auto;
   }
   .agnes-settings-table:focus-visible {
-    outline: 2px solid var(--agnes-text-emphasis);
+    outline: var(--focus-outline);
   }
   @media (max-width: 640px) {
     .agnes-settings-card {
@@ -691,8 +710,8 @@
     color: var(--agnes-text-primary);
   }
   .agnes-settings-section-tabs button:focus-visible {
-    outline: 2px solid var(--agnes-text-emphasis);
-    outline-offset: -2px;
+    outline: var(--focus-outline);
+    outline-offset: -3px;
   }
   .agnes-conversation-card {
     min-width: 0;
@@ -758,8 +777,8 @@
     cursor: pointer;
   }
   .plugin-details-button:focus-visible {
-    outline: 2px solid var(--agnes-brand-focus-ring);
-    outline-offset: 4px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
     border-radius: var(--radius-sm);
   }
   .agnes-ui-popover .ant-popover-container,
@@ -789,12 +808,11 @@
   }
 
   .agnes-settings-row {
-    padding-block: var(--s16);
+    padding-block: var(--s12);
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  .agnes-settings-row + .agnes-settings-row,
-  .agnes-settings-list > li + li {
+  :not(.agnes-settings-list) > .agnes-settings-row + .agnes-settings-row {
     border-top: 1px solid var(--agnes-line-primary);
   }
   .agnes-settings-row-heading {

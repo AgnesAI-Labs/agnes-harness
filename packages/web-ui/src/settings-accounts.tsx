@@ -1,10 +1,11 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
 import { fallbackT, type Translate } from './locales/index.js'
-import { SettingsState } from './settings-layout.js'
+import { SettingsList, SettingsState } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
+import { IconTile } from './ui/icon-tile.js'
 import { Menu } from './ui/menu.js'
 import { Tag } from './ui/tag.js'
 import { Toast } from './ui/toast.js'
@@ -66,6 +67,7 @@ export function SettingsAccounts({
         data-selected={account.accountId === editingId}
         data-status={accountStatus(account)}
       >
+        <IconTile name="key-round" />
         <Button
           htmlType="button"
           className="config-account-select"
@@ -165,7 +167,7 @@ export function SettingsAccounts({
           <Button onClick={onRetry}>{t('accounts.retryRead')}</Button>
         </SettingsState>
       )}
-      {rows}
+      {rows.length > 0 && <SettingsList className="config-account-list">{rows}</SettingsList>}
     </>
   )
 }

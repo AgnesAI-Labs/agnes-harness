@@ -22,6 +22,18 @@ export function SettingsModelPane({
       description={t('settings-shell.modelIntro')}
       headingId="config-title"
       bodyClassName="config-workspace"
+      actions={
+        // The page's primary action sits in its header, inside the column and clear of the close button.
+        <Button
+          id="config-add-account"
+          appearance="primary"
+          htmlType="button"
+          aria-label={t('settings-shell.addAccount')}
+        >
+          <Icon name="plus" />
+          <span>{t('settings-shell.addAccount')}</span>
+        </Button>
+      }
     >
       {beforeAccounts}
       <SettingsSection
@@ -29,18 +41,6 @@ export function SettingsModelPane({
         aria-label={t('settings-shell.accountsAria')}
         title={t('settings-shell.accountsTitle')}
         description={t('settings-shell.accountsIntro')}
-        actions={
-          // The action belongs to the list it adds to, clear of the dialog's close button.
-          <Button
-            id="config-add-account"
-            appearance="primary"
-            htmlType="button"
-            aria-label={t('settings-shell.addAccount')}
-          >
-            <Icon name="plus" />
-            <span>{t('settings-shell.addAccount')}</span>
-          </Button>
-        }
       >
         <div
           id="config-accounts"

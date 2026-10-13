@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type ReactNode, useRef } from 'react'
 import { Button } from './button.js'
+import { NestedSurfaceContext } from './disclosure.js'
 
 export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   title: ReactNode
@@ -73,7 +74,7 @@ export function ListRow({
         </div>
         {description && <p>{description}</p>}
         {meta && <div className="agh-meta">{meta}</div>}
-        {children}
+        <NestedSurfaceContext.Provider value={true}>{children}</NestedSurfaceContext.Provider>
       </div>
       {actions && <div className="agh-list-row-actions">{actions}</div>}
     </article>

@@ -2,7 +2,7 @@ import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
-import { SettingsState, SettingsToolbar } from './settings-layout.js'
+import { SettingsList, SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
 import { EmptyState } from './ui/empty-state.js'
@@ -134,31 +134,35 @@ export function ResourceListContent({
           }
         />
       )}
-      {items.map((item) =>
-        item.kind === 'mcp' ? (
-          <McpConnectionRow
-            key={item.resourceId}
-            item={item}
-            itemName={itemNameOf(item)}
-            selected={item.resourceId === selectedId}
-            disabled={switchDisabled}
-            onOpen={() => onOpen(item)}
-            onToggle={(next) => onToggleDesired(item, next)}
-            actions={mcpActions?.(item)}
-          />
-        ) : (
-          <ResourceRow
-            key={item.resourceId}
-            item={item}
-            selected={item.resourceId === selectedId}
-            switchDisabled={switchDisabled}
-            itemName={itemNameOf(item)}
-            onOpen={onOpen}
-            onToggleDesired={onToggleDesired}
-            busy={busy}
-            menuItems={menuOf?.(item)}
-          />
-        ),
+      {items.length > 0 && (
+        <SettingsList>
+          {items.map((item) =>
+            item.kind === 'mcp' ? (
+              <McpConnectionRow
+                key={item.resourceId}
+                item={item}
+                itemName={itemNameOf(item)}
+                selected={item.resourceId === selectedId}
+                disabled={switchDisabled}
+                onOpen={() => onOpen(item)}
+                onToggle={(next) => onToggleDesired(item, next)}
+                actions={mcpActions?.(item)}
+              />
+            ) : (
+              <ResourceRow
+                key={item.resourceId}
+                item={item}
+                selected={item.resourceId === selectedId}
+                switchDisabled={switchDisabled}
+                itemName={itemNameOf(item)}
+                onOpen={onOpen}
+                onToggleDesired={onToggleDesired}
+                busy={busy}
+                menuItems={menuOf?.(item)}
+              />
+            ),
+          )}
+        </SettingsList>
       )}
       {nextCursor && (
         <Button htmlType="button" size="small" aria-busy={loadingMore} onClick={onLoadMore}>
