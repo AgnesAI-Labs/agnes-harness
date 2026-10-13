@@ -153,9 +153,11 @@
     border-radius: var(--radius-sm);
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-page);
-    font-family: var(--font-mono);
+    /* The UI face, not the mono one: at this size a mono capital O reads as a zero. */
+    font-family: var(--font-sans);
     font-size: 0.6875rem;
-    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.04em;
     line-height: 1.125rem;
     white-space: nowrap;
   }
