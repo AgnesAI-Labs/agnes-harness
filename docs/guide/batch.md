@@ -124,7 +124,7 @@ A file ends as `done`, `invalid` (answer did not match the schema), `failed`, `s
 | `job_<status>` | The run failed in the daemon's queue, which retries a failed run up to two more times first |
 | `prompt_too_long` | The prompt with your schema exceeds the 64 KiB job limit |
 
-If no file has succeeded and five have failed or been marked `invalid`, the batch stops as `failed` and the rest are cancelled; a wrong prompt, schema or model should not burn the whole folder. The status gives the most common error as the reason, without the model's reply, which is only in `errors.jsonl`. Fix the cause and start a new batch.
+If no file has succeeded and five have failed or been marked `invalid`, the batch stops as `failed` and the rest are cancelled; a wrong prompt, schema or model should not burn the whole folder. The status gives the most common error as the reason, naming only the kind of problem (such as `invalid_output: must be number`). Nothing the model wrote, neither its reply nor the keys and places in it that broke the schema, appears in the reason or in `summary.md`; those details are only in `errors.jsonl`. Fix the cause and start a new batch.
 
 `agh batch cancel <id>` (or `batch_cancel`) stops a running batch: running files are aborted, files not yet started are marked `cancelled`, the result files are still written, and what running files had already cost stays in the total.
 
