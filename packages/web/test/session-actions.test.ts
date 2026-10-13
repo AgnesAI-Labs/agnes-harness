@@ -116,6 +116,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   )
   expect(nav.querySelectorAll('button.session')).toHaveLength(1)
   expect(nav.querySelector('.session')?.classList.contains('agnes-ui-button')).toBe(true)
+  expect(nav.querySelector('.workspace-heading')?.classList.contains('agnes-ui-button')).toBe(true)
   expect(nav.querySelector('button button')).toBeNull()
   const trigger = nav.querySelector('.session-menu-trigger') as HTMLButtonElement
   const rowElement = nav.querySelector('.session-row') as HTMLElement
@@ -161,21 +162,13 @@ it.each([
     picker = document.createElement('div')
   picker.dataset.pickerFixture = ''
   document.body.append(nav, picker)
-  // Rows name their workspace once more than one is registered.
-  const other = { ...workspace, path: '/another-workspace', name: 'other' }
   renderSessionNavigation(
-    {
-      nav,
-      workspaces: [workspace, other],
-      sessions: [{ ...row('one'), cwd: path }],
-      labels: new Map(),
-      newSession() {},
-      open() {},
-    },
+    { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
     zhT,
   )
   renderWorkspaceOptions(picker, [workspace], () => {})
-  expect(nav.querySelector('.session-workspace')?.textContent).toBe(label)
+  expect(nav.querySelector('.workspace-name')?.textContent).toBe(label)
+  expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain(label)
   expect(picker.querySelector('.workspace-option-name')?.textContent).toBe(label)
 })
 

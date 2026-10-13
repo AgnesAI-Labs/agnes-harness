@@ -1,8 +1,9 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, EmptyState, Icon, renderRegion } from '@agnes/web-ui'
+import { Button, EmptyState, Icon, IconButton, renderRegion } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
-import { groupSessionsByTime, type SidebarNavigationOptions } from '@agnes/web-units'
+import { type SidebarNavigationOptions, sortSessionsByRecency } from '@agnes/web-units'
+import { useState } from 'react'
 import { SessionMenu } from './session-menu.js'
 
 const FOLDER_CLOSED =
@@ -74,12 +75,41 @@ export function renderWorkspaceOptions(
   renderRegion(container, <WorkspaceOptions workspaces={workspaces} select={select} />)
 }
 
+const COLLAPSED_KEY = 'agnes.sidebar.collapsed-workspaces.v1'
+
+function readCollapsedGroups(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return new Set(Array.isArray(saved) ? saved.filter((path) => typeof path === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+// Folder collapse outlives navigation rebuilds (module state) and reloads (local storage).
+const collapsedGroups = readCollapsedGroups()
+
+function saveCollapsedGroups(): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups]))
+  } catch {
+    /* the in-memory record keeps working */
+  }
+}
+
+export function resetCollapsedGroups(): void {
+  collapsedGroups.clear()
+  saveCollapsedGroups()
+}
+
 /**
- * The session list: Ant Design X Conversations grouped by the local day a session was created.
- * Rows keep our own button and action menu, so focus, `aria-current` and menu keyboard behaviour
- * are the same contracts as before; Conversations owns grouping and the list surface.
+ * The session list: one folder per workspace, newest session first inside it. A folder header
+ * collapses its sessions and carries the "new session here" action; rows are an Ant Design X
+ * Conversations list holding our own button and action menu, so focus, `aria-current` and menu
+ * keyboard behaviour are unchanged contracts.
  */
 export function SessionNavigation({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
+  const [, redraw] = useState(0)
   const menuEpoch = JSON.stringify([
     options.sessions,
     options.workspaces,
@@ -90,76 +120,114 @@ export function SessionNavigation({ options, t }: { options: SidebarNavigationOp
     options.next,
     t('session.menu.label'),
   ])
-  const sessions = options.sessions.filter((row) => !row.archived)
-  // With one workspace its name on every row is noise; with several it tells the rows apart.
-  const workspaceNames = new Map(
-    options.workspaces.length > 1
-      ? options.workspaces.map((workspace) => [workspace.path, workspaceLabel(workspace)])
-      : [],
-  )
-  const items: ConversationItemType[] = groupSessionsByTime(sessions, new Date()).flatMap(({ group, rows }) =>
-    rows.map((row) => {
-      const title =
-        row.title ||
-        options.labels.get(row.sessionId) ||
-        t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
-      const active = row.sessionId === options.currentId
-      const running = options.runningIds?.includes(row.sessionId) ?? false
-      const workspace = row.cwd ? workspaceNames.get(row.cwd) : undefined
-      return {
-        key: row.sessionId,
-        group: t(`nav.group.${group}`),
-        className: 'session-row',
-        'data-active': String(active),
-        label: (
-          <>
-            <Button
-              appearance="ghost"
-              className={active ? 'session active' : 'session'}
-              disabled={options.disabled ?? false}
-              data-session={row.sessionId}
-              aria-current={active ? 'page' : undefined}
+  // Sessions whose folder is no longer registered collect in a last, unnamed-workspace folder.
+  const groups = new Map<string, SidebarNavigationOptions['sessions']>()
+  for (const workspace of options.workspaces) groups.set(workspace.path, [])
+  groups.set('', [])
+  let count = 0
+  for (const row of options.sessions) {
+    if (row.archived) continue
+    count += 1
+    ;(groups.get(row.cwd ?? '') ?? groups.get(''))?.push(row)
+  }
+  const item = (row: SidebarNavigationOptions['sessions'][number]): ConversationItemType => {
+    const title =
+      row.title ||
+      options.labels.get(row.sessionId) ||
+      t('nav.sessionFallback', { id: row.sessionId.slice(-8) })
+    const active = row.sessionId === options.currentId
+    const running = options.runningIds?.includes(row.sessionId) ?? false
+    return {
+      key: row.sessionId,
+      className: 'session-row',
+      'data-active': String(active),
+      label: (
+        <>
+          <Button
+            appearance="ghost"
+            className={active ? 'session active' : 'session'}
+            disabled={options.disabled ?? false}
+            data-session={row.sessionId}
+            aria-current={active ? 'page' : undefined}
+            title={title}
+            onClick={() => options.open(row.sessionId)}
+          >
+            {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
+            <span className="session-title">{title}</span>
+          </Button>
+          {options.action && (
+            <SessionMenu
+              key={menuEpoch}
+              id={row.sessionId}
               title={title}
-              onClick={() => options.open(row.sessionId)}
-            >
-              {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
-              <span className="session-title">{title}</span>
-              {workspace && <span className="session-workspace">{workspace}</span>}
-            </Button>
-            {options.action && (
-              <SessionMenu
-                key={menuEpoch}
-                id={row.sessionId}
-                title={title}
-                disabled={options.disabled ?? false}
-                t={t}
-                action={options.action}
-              />
-            )}
-          </>
-        ),
-      }
-    }),
-  )
+              disabled={options.disabled ?? false}
+              t={t}
+              action={options.action}
+            />
+          )}
+        </>
+      ),
+    }
+  }
   return (
     <>
-      {items.length === 0 ? (
+      <XProvider>
+        {[...groups].map(([path, sessions]) => {
+          if (!sessions.length && !path) return null
+          const workspace = options.workspaces.find((entry) => entry.path === path)
+          const name = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
+          const collapsed = collapsedGroups.has(path)
+          return (
+            <section key={path} className="workspace-group">
+              <div className="workspace-heading-row">
+                <Button
+                  appearance="ghost"
+                  className="workspace-heading"
+                  aria-expanded={!collapsed}
+                  title={workspace?.path ?? t('nav.noWorkspaceTitle')}
+                  onClick={() => {
+                    if (collapsed) collapsedGroups.delete(path)
+                    else collapsedGroups.add(path)
+                    saveCollapsedGroups()
+                    redraw((value) => value + 1)
+                  }}
+                >
+                  <FolderIcon className="icon icon-folder icon-folder-closed" />
+                  <FolderIcon open className="icon icon-folder icon-folder-open" />
+                  <span className="workspace-name">{name}</span>
+                </Button>
+                {workspace && (
+                  <IconButton
+                    name="plus"
+                    className="workspace-new-session"
+                    data-workspace-new-session={path}
+                    label={t('nav.newSessionInWorkspace', { name })}
+                    title={t('nav.newSessionInWorkspace', { name })}
+                    disabled={(options.newDisabled ?? false) || !workspace.available}
+                    onClick={() => options.newSession(workspace)}
+                  />
+                )}
+              </div>
+              <div className="workspace-sessions" hidden={collapsed}>
+                {sessions.length > 0 && (
+                  <Conversations
+                    className="session-conversations"
+                    {...(options.currentId ? { activeKey: options.currentId } : {})}
+                    items={sortSessionsByRecency(sessions).map(item)}
+                  />
+                )}
+              </div>
+            </section>
+          )
+        })}
+      </XProvider>
+      {count === 0 && (
         <EmptyState
           className="session-list-empty"
           icon={<Icon name="message-square" />}
           title={t('nav.empty.title')}
           description={t('nav.empty.description')}
         />
-      ) : (
-        <XProvider>
-          <Conversations
-            className="session-conversations"
-            classNames={{ group: 'session-group' }}
-            {...(options.currentId ? { activeKey: options.currentId } : {})}
-            items={items}
-            groupable={{ label: (group) => <span className="session-group-label">{group}</span> }}
-          />
-        </XProvider>
       )}
       {options.next && options.loadMore && (
         <Button

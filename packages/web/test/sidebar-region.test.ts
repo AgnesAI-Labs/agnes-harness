@@ -4,6 +4,7 @@ import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resetCollapsedGroups } from '../src/navigation.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -34,9 +35,11 @@ describe('rendered sidebar region', () => {
     await runtime?.dispose()
     runtime = undefined
     resetWebDom()
+    // 折叠记录是模块级状态并写入本地存储，不清会在用例之间串。
+    resetCollapsedGroups()
   })
 
-  it('renders the component-owned navigation, time groups, menus, and actions', async () => {
+  it('renders the component-owned navigation, workspace folders, menus, and actions', async () => {
     const openSession = vi.fn()
     const sessionAction = vi.fn()
     const newSession = vi.fn()
@@ -58,14 +61,17 @@ describe('rendered sidebar region', () => {
 
     const sidebar = document.querySelector('aside.sidebar')
     expect(sidebar?.querySelector('.brand-wordmark-text')?.textContent).toBe('Agnes Harness')
-    // A row without a readable creation time belongs to the last group.
-    expect(sidebar?.querySelector('.session-group-label')?.textContent).toBe('Earlier')
-    // One registered workspace: naming it on every row would be noise.
-    expect(sidebar?.querySelector('.session-workspace')).toBeNull()
+    expect(sidebar?.querySelector('.workspace-name')?.textContent).toBe('主工作区')
     const sessionButton = sidebar?.querySelector<HTMLButtonElement>('[data-session="one"]')
     expect(sessionButton?.getAttribute('aria-current')).toBe('page')
     sessionButton?.click()
     expect(openSession).toHaveBeenCalledWith('one')
+
+    const heading = sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
+    flushSync(() => heading?.click())
+    expect((sidebar?.querySelector('.workspace-sessions') as HTMLElement | null)?.hidden).toBe(true)
+    flushSync(() => heading?.click())
+    expect((sidebar?.querySelector('.workspace-sessions') as HTMLElement | null)?.hidden).toBe(false)
 
     flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
     await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
@@ -137,7 +143,34 @@ describe('rendered sidebar region', () => {
     expect(newSession).toHaveBeenCalledOnce()
   })
 
-  it('groups sessions by the day they were created and refreshes group labels with the locale', async () => {
+  it('starts a new session in the selected workspace without toggling the folder', async () => {
+    const newSession = vi.fn()
+    const selectedWorkspace = workspace('/workspace', '主工作区')
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [session('one', selectedWorkspace.path)],
+          workspaces: [selectedWorkspace],
+          labels: new Map(),
+          currentId: 'one',
+          sessionPending: false,
+          newDisabled: false,
+        },
+        actions: { newSession },
+      },
+    })
+
+    const heading = document.querySelector<HTMLButtonElement>('.workspace-heading')
+    const create = document.querySelector<HTMLButtonElement>('.workspace-new-session')
+    expect(create?.getAttribute('aria-label')).toBe('New session in “主工作区”')
+
+    create?.click()
+
+    expect(newSession).toHaveBeenCalledWith(selectedWorkspace)
+    expect(heading?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('files sessions under their workspace folder, newest first, and follows the locale', async () => {
     const day = (offset: number) => {
       const now = new Date()
       return new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 0, 0, 1).toISOString()
@@ -148,8 +181,13 @@ describe('rendered sidebar region', () => {
         { ...session('today', '/workspace'), createdAt: day(0) },
         { ...session('yesterday', '/other'), createdAt: day(1) },
         { ...session('archived', '/workspace'), createdAt: day(0), archived: true },
+        { ...session('stray', '/removed'), createdAt: day(2) },
       ],
-      workspaces: [workspace('/workspace', '主工作区'), workspace('/other', '另一个')],
+      workspaces: [
+        workspace('/workspace', '主工作区'),
+        workspace('/other', '另一个'),
+        workspace('/empty', '空目录'),
+      ],
       labels: new Map<string, string>(),
       currentId: 'today',
       sessionPending: false,
@@ -158,48 +196,64 @@ describe('rendered sidebar region', () => {
     }
     runtime = await mountRenderedIndex({ sidebar: { state } })
     const sidebar = document.querySelector('aside.sidebar')
-    const groups = () =>
-      [...(sidebar?.querySelectorAll('.session-group') ?? [])].map((group) => [
-        group.querySelector('.session-group-label')?.textContent,
+    const folders = () =>
+      [...(sidebar?.querySelectorAll('.workspace-group') ?? [])].map((group) => [
+        group.querySelector('.workspace-name')?.textContent,
         [...group.querySelectorAll<HTMLElement>('[data-session]')].map((row) => row.dataset.session),
       ])
-    expect(groups()).toEqual([
-      ['Today', ['today']],
-      ['Yesterday', ['yesterday']],
-      ['Earlier', ['old']],
+    // A registered workspace keeps its folder while empty; a session whose folder is gone is unassigned.
+    expect(folders()).toEqual([
+      ['主工作区', ['today', 'old']],
+      ['另一个', ['yesterday']],
+      ['空目录', []],
+      ['Unassigned', ['stray']],
     ])
     expect(sidebar?.querySelector('[data-session="today"]')?.getAttribute('aria-current')).toBe('page')
     expect(sidebar?.querySelector('.session-row[data-active="true"] [data-session]')).toBe(
       sidebar?.querySelector('[data-session="today"]'),
     )
-    // Several workspaces: each row names its own.
-    expect(sidebar?.querySelector('[data-session="yesterday"] .session-workspace')?.textContent).toBe(
-      '另一个',
-    )
+    // The folder says which workspace a row belongs to; rows do not repeat it.
+    expect(sidebar?.querySelector('[data-session="yesterday"]')?.textContent).toBe('会话 yesterday')
+    const shortcuts = () => sidebar?.querySelectorAll<HTMLButtonElement>('.workspace-new-session')
+    expect(shortcuts()).toHaveLength(3)
+    expect(shortcuts()?.[1]?.getAttribute('aria-label')).toBe('New session in “另一个”')
 
     runtime.locale.setLocale('zh-CN')
     runtime.sidebar?.update({ ...state, locale: 'zh-CN' })
-    expect(groups().map(([label]) => label)).toEqual(['今天', '昨天', '更早'])
+    expect(folders().at(-1)?.[0]).toBe('未分类')
+    expect(shortcuts()?.[1]?.getAttribute('aria-label')).toBe('在“另一个”中新建会话')
   })
 
-  it('teaches the next step when there is no session yet', async () => {
+  it('disables unavailable workspace shortcuts and omits one for unassigned sessions', async () => {
+    const unavailable = { ...workspace('/workspace', '不可用工作区'), available: false }
     runtime = await mountRenderedIndex({
       sidebar: {
         state: {
-          sessions: [],
-          workspaces: [],
+          sessions: [session('one', '/unassigned')],
+          workspaces: [unavailable],
           labels: new Map(),
           sessionPending: false,
           newDisabled: false,
         },
       },
     })
-    const nav = document.querySelector('aside.sidebar #sessions')
-    expect(nav?.querySelector('.session-list-empty h3')?.textContent).toBe('No sessions yet')
-    expect(nav?.querySelector('[data-session]')).toBeNull()
+
+    const shortcuts = document.querySelectorAll<HTMLButtonElement>('.workspace-new-session')
+    expect(shortcuts).toHaveLength(1)
+    expect(shortcuts[0]?.disabled).toBe(true)
+
+    runtime.sidebar?.update({
+      sessions: [session('one', '/unassigned')],
+      workspaces: [{ ...unavailable, available: true }],
+      labels: new Map(),
+      sessionPending: false,
+      newDisabled: true,
+    })
+    expect(document.querySelector<HTMLButtonElement>('.workspace-new-session')?.disabled).toBe(true)
   })
 
-  it('keeps keyboard focus on a session row after the navigation rebuilds', async () => {
+  // 回归：导航区随状态更新重绘，折叠态必须活过重绘，也要活过重新加载（本地存储）。
+  it('keeps a collapsed workspace folder across a rebuild and a reload', async () => {
     const state = {
       sessions: [session('one', '/workspace')],
       workspaces: [workspace('/workspace', '主工作区')],
@@ -209,7 +263,63 @@ describe('rendered sidebar region', () => {
       newDisabled: false,
     }
     runtime = await mountRenderedIndex({ sidebar: { state } })
-    const shortcut = () => document.querySelector<HTMLButtonElement>('[data-session="one"]')
+
+    const sidebar = document.querySelector('aside.sidebar')
+    const heading = () => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
+    const children = () => sidebar?.querySelector('.workspace-sessions') as HTMLElement | null
+
+    flushSync(() => heading()?.click())
+    expect(children()?.hidden).toBe(true)
+    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.collapsed-workspaces.v1') ?? '[]')).toEqual([
+      '/workspace',
+    ])
+
+    // 数据真的变了（新会话入列）⇒ 导航区必然重绘，折叠态必须活下来。
+    runtime.sidebar?.update({
+      ...state,
+      sessions: [session('one', '/workspace'), session('two', '/workspace')],
+    })
+
+    expect(children()?.hidden).toBe(true)
+    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
+
+    // 收起状态不得变成「点不开」：再点一次应当恢复展开。
+    flushSync(() => heading()?.click())
+    expect(children()?.hidden).toBe(false)
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.collapsed-workspaces.v1') ?? '[]')).toEqual([])
+  })
+
+  it('teaches the next step when there is no session yet', async () => {
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [],
+          workspaces: [workspace('/workspace', '主工作区')],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+    const nav = document.querySelector('aside.sidebar #sessions')
+    // The folder stays so a session can be started in it; the empty state explains the list.
+    expect(nav?.querySelector('.workspace-name')?.textContent).toBe('主工作区')
+    expect(nav?.querySelector('.session-list-empty h3')?.textContent).toBe('No sessions yet')
+    expect(nav?.querySelector('[data-session]')).toBeNull()
+  })
+
+  it('restores keyboard focus to a workspace shortcut after the navigation rebuilds', async () => {
+    const state = {
+      sessions: [session('one', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区')],
+      labels: new Map<string, string>(),
+      currentId: 'one',
+      sessionPending: false,
+      newDisabled: false,
+    }
+    runtime = await mountRenderedIndex({ sidebar: { state } })
+    const shortcut = () => document.querySelector<HTMLButtonElement>('.workspace-new-session')
     shortcut()?.focus()
     expect(document.activeElement).toBe(shortcut())
 
@@ -247,15 +357,15 @@ describe('rendered sidebar region', () => {
       sidebar: { state: sidebarState([session('one', '/workspace')]) },
     })
     const sidebar = document.querySelector('aside.sidebar')
-    const before = sidebar?.querySelector('.session-conversations')
+    const before = sidebar?.querySelector('.workspace-sessions')
 
     // 等价数据：内容一致，只有对象引用不同（app.ts 每次 update 都会新建外层对象）。
     runtime.sidebar?.update(sidebarState([session('one', '/workspace')]))
-    expect(sidebar?.querySelector('.session-conversations')).toBe(before)
+    expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
 
     // React reconciles changed rows without discarding the focused navigation subtree.
     runtime.sidebar?.update(sidebarState([session('one', '/workspace'), session('two', '/workspace')]))
-    expect(sidebar?.querySelector('.session-conversations')).toBe(before)
+    expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
     expect(sidebar?.querySelectorAll('.session-row')).toHaveLength(2)
   })
 

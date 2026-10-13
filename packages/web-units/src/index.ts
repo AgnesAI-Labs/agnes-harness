@@ -75,12 +75,9 @@ export {
   webUnitsLocaleCatalog,
 } from './locales/index.js'
 export {
-  groupSessionsByTime,
   isNewSessionShortcut,
   newSessionShortcutLabel,
-  SESSION_TIME_GROUPS,
-  type SessionTimeGroup,
-  sessionTimeGroup,
+  sortSessionsByRecency,
 } from './session-groups.js'
 export type {
   SettingsDshSlotName,

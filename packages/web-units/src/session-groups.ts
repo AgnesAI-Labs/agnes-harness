@@ -1,27 +1,16 @@
-/** Sidebar sessions are grouped by the local day they were created on. */
-export type SessionTimeGroup = 'today' | 'yesterday' | 'earlier'
-
-export const SESSION_TIME_GROUPS: readonly SessionTimeGroup[] = ['today', 'yesterday', 'earlier']
-
-export function sessionTimeGroup(createdAt: string | undefined, now: Date): SessionTimeGroup {
-  const created = createdAt ? Date.parse(createdAt) : Number.NaN
-  if (Number.isNaN(created)) return 'earlier'
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  if (created >= today) return 'today'
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
-  return created >= yesterday ? 'yesterday' : 'earlier'
-}
-
-/** Stable partition: groups appear in calendar order, rows keep the backend's order inside a group. */
-export function groupSessionsByTime<Row extends { createdAt?: string }>(
-  rows: readonly Row[],
-  now: Date,
-): { group: SessionTimeGroup; rows: Row[] }[] {
-  const buckets = new Map<SessionTimeGroup, Row[]>(SESSION_TIME_GROUPS.map((group) => [group, []]))
-  for (const row of rows) buckets.get(sessionTimeGroup(row.createdAt, now))?.push(row)
-  return SESSION_TIME_GROUPS.map((group) => ({ group, rows: buckets.get(group) ?? [] })).filter(
-    (entry) => entry.rows.length > 0,
-  )
+/**
+ * Newest first by creation time, the only time a session row carries. Stable: rows without a
+ * readable time keep the backend's order after the dated ones.
+ */
+export function sortSessionsByRecency<Row extends { createdAt?: string }>(rows: readonly Row[]): Row[] {
+  const time = (row: Row) => {
+    const created = row.createdAt ? Date.parse(row.createdAt) : Number.NaN
+    return Number.isNaN(created) ? Number.NEGATIVE_INFINITY : created
+  }
+  return rows
+    .map((row, index) => ({ row, index, time: time(row) }))
+    .sort((left, right) => (left.time === right.time ? left.index - right.index : right.time - left.time))
+    .map((entry) => entry.row)
 }
 
 /** The chip shown beside "New session"; browsers reserve ⌘N/Ctrl+N, so the page binds this chord. */

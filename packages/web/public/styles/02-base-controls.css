@@ -130,6 +130,13 @@
     stroke-width: 0.1953;
     display: none;
   }
+  /* 工作区分组标题的展开/收起两态，对应客户端 AgnesProjectFolderIcon 的 expanded 属性。 */
+  .workspace-heading[aria-expanded="true"] .icon-folder-open {
+    display: block;
+  }
+  .workspace-heading[aria-expanded="true"] .icon-folder-closed {
+    display: none;
+  }
   .skip-link {
     position: fixed;
     z-index: 100;
