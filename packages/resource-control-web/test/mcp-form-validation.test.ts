@@ -1,6 +1,6 @@
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
-import { formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
+import { deriveMcpName, formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 
 const base: McpFormFieldSnapshot = {
@@ -128,5 +128,38 @@ describe('MCP form live validation mirrors the runtime schema', () => {
     expect(messages({ ...http(''), secretKind: 'http-bearer', secretText: '' }, submit).join('\n')).toContain(
       'credential reference',
     )
+  })
+})
+
+describe('MCP wizard reads the name from what was pasted', () => {
+  it.each([
+    ['npx --yes @playwright/mcp@0.0.83 --headless', 'playwright'],
+    ['npx -y @modelcontextprotocol/server-github', 'github'],
+    ['uvx mcp-server-sqlite --db-path "/tmp/a b.db"', 'sqlite'],
+    ['pnpm dlx jira-mcp@1.2.3', 'jira'],
+    ['/usr/local/bin/notes-server.py --stdio', 'notes'],
+    ['node', 'node'],
+    ['npx "unterminated', ''],
+    ['', ''],
+  ])('local command %s -> %s', (command, name) => {
+    expect(deriveMcpName('stdio', command)).toBe(name)
+  })
+
+  it.each([
+    ['https://mcp.example.com/mcp', 'example'],
+    ['https://api.githubcopilot.com/mcp/', 'githubcopilot'],
+    ['http://localhost:8080/sse', 'localhost'],
+    ['http://127.0.0.1:3000/mcp', '127-0-0-1'],
+    ['not a url', ''],
+  ])('remote address %s -> %s', (url, name) => {
+    expect(deriveMcpName('remote', url)).toBe(name)
+  })
+})
+
+describe('an OAuth sign-in needs no saved secret', () => {
+  it('accepts a remote server whose credential is an OAuth sign-in, with or without a client ID', () => {
+    const remote = { ...http('https://mcp.example.com/mcp'), secretKind: 'oauth' }
+    expect(messages(remote, submit)).toEqual([])
+    expect(messages({ ...remote, secretText: 'client-123' }, submit)).toEqual([])
   })
 })

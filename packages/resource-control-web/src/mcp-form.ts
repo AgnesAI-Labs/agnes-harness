@@ -133,17 +133,21 @@ export function createMcpForm(input: {
     }
     const url = $('mcp-url', 'input').value.trim()
     if (!url) throw new McpFormValidationError(t('error.form.url'))
-    if (secretKind !== 'none' && !secret) throw new McpFormValidationError(t('error.form.secret'))
+    if (secretKind !== 'none' && secretKind !== 'oauth' && !secret)
+      throw new McpFormValidationError(t('error.form.secret'))
     const secretBinding =
       secretKind === 'none'
         ? { kind: 'none' as const }
-        : secretKind === 'http-bearer'
-          ? { kind: 'http-bearer' as const, credentialRef: secret }
-          : {
-              kind: 'http-header' as const,
-              headerName: $('mcp-header-name', 'select').value as 'x-api-key' | 'x-api-token',
-              credentialRef: secret,
-            }
+        : secretKind === 'oauth'
+          ? // Sign-in happens after saving; an existing client ID is optional.
+            { kind: 'oauth' as const, ...(secret ? { staticClientId: secret } : {}) }
+          : secretKind === 'http-bearer'
+            ? { kind: 'http-bearer' as const, credentialRef: secret }
+            : {
+                kind: 'http-header' as const,
+                headerName: $('mcp-header-name', 'select').value as 'x-api-key' | 'x-api-token',
+                credentialRef: secret,
+              }
     if (mcpTransport.value === 'http') {
       return {
         serverId,

@@ -2,7 +2,7 @@ import { validateMethod } from '@agnes/protocol'
 import { createSelectPicker, type LocaleTranslator } from '@agnes/web-ui'
 import { $ } from './admin-dom.js'
 import { CREDENTIALS_CHANGED, CredentialsApi } from './credentials-api.js'
-import { formatMcpCommand, parseMcpCommand } from './mcp-command.js'
+import { deriveMcpName, formatMcpCommand, parseMcpCommand } from './mcp-command.js'
 import { mountMcpCredentialCreate } from './mcp-credentials.js'
 
 /** A presentation adapter over the existing form: managed definitions and confirmation are unchanged. */
@@ -18,6 +18,42 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   const credential = $('mcp-credential', 'select')
   let picker = createSelectPicker(credential, { label: text()('wizard.credential'), includeEmpty: true })
   let manualId = false
+  let manualName = false
+  const url = $('mcp-url', 'input')
+  const step = document.getElementById('mcp-step')
+  const named = document.getElementById('mcp-named')
+  const oauth = document.getElementById('mcp-oauth') as HTMLInputElement | null
+  const oauthClient = document.getElementById('mcp-oauth-client') as HTMLInputElement | null
+  /** The name and ID follow what was pasted until the user names the server themselves. */
+  function deriveName() {
+    if (!manualName && !editingMode) {
+      name.value = deriveMcpName(
+        transport.value === 'stdio' ? 'stdio' : 'remote',
+        transport.value === 'stdio' ? command.value : url.value,
+      )
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+      manualName = false
+    }
+    if (named) {
+      named.textContent = name.value ? text()('wizard.named', { name: name.value }) : ''
+      named.hidden = !name.value || editingMode
+    }
+  }
+  function syncOAuth() {
+    const remote = transport.value !== 'stdio'
+    const row = document.getElementById('mcp-oauth-row')
+    if (row) row.hidden = !remote
+    if (!remote && oauth) oauth.checked = false
+    const on = !!oauth?.checked
+    const client = document.getElementById('mcp-oauth-client-row')
+    if (client) client.hidden = !on
+    credential.disabled = on
+    // A saved credential and an OAuth sign-in are alternatives: show one at a time.
+    const saved = credential.closest('label')
+    if (saved) saved.hidden = on
+    $('mcp-credential-status', 'p').hidden = on
+    picker.sync()
+  }
   let editingMode = false
   let fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
   let known: string[] = []
@@ -27,6 +63,10 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   const submit = $('mcp-form', 'form').querySelector<HTMLButtonElement>('[type="submit"]')!
   const back = $('mcp-back', 'button')
   function stage(editing: boolean, configuring: boolean) {
+    if (step) {
+      step.textContent = text()(configuring ? 'wizard.step2' : 'wizard.step1')
+      step.hidden = editing
+    }
     methods.hidden = configuring
     fields!.hidden = !configuring
     back.hidden = editing || !configuring
@@ -98,6 +138,13 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   function applyCredential() {
     const local = transport.value === 'stdio'
     const kind = $('mcp-secret-kind', 'select')
+    syncOAuth()
+    if (!local && oauth?.checked) {
+      kind.value = 'oauth'
+      $('mcp-secret', 'textarea').value = oauthClient?.value.trim() ?? ''
+      sync()
+      return
+    }
     kind.value = credential.value
       ? local
         ? 'stdio-env'
@@ -120,7 +167,9 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     command.disabled = kind !== 'stdio'
     $('mcp-command-row', 'label').hidden = kind !== 'stdio'
     sync()
-    name.focus()
+    syncOAuth()
+    deriveName()
+    ;(kind === 'stdio' ? command : url).focus()
   }
   const on = (element: HTMLElement, event: string, listener: EventListener) =>
     element.addEventListener(event, listener, { signal: abort.signal })
@@ -131,6 +180,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     manualId = true
   })
   on(name, 'input', () => {
+    manualName = name.value !== ''
     if (!manualId && !identity.disabled) {
       const generated = name.value
         .normalize('NFKD')
@@ -142,8 +192,12 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   })
   on(command, 'input', () => {
     updateCommand()
+    deriveName()
     sync()
   })
+  on(url, 'input', deriveName)
+  if (oauth) on(oauth, 'change', applyCredential)
+  if (oauthClient) on(oauthClient, 'input', applyCredential)
   for (const id of ['mcp-executable', 'mcp-args'] as const)
     on($(id, id === 'mcp-args' ? 'textarea' : 'input'), 'input', () => {
       command.value = formatMcpCommand([
@@ -213,7 +267,10 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   return {
     reset(editing = false) {
       manualId = editing
+      manualName = editing
       editingMode = editing
+      if (oauth) oauth.checked = false
+      if (oauthClient) oauthClient.value = ''
       fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
       command.value = ''
       command.setCustomValidity('')
@@ -221,6 +278,12 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
       stage(editing, editing)
       void loadCredentials()
       if (editing) filled()
+      if (oauth && editing) {
+        oauth.checked = $('mcp-secret-kind', 'select').value === 'oauth'
+        if (oauthClient && oauth.checked) oauthClient.value = $('mcp-secret', 'textarea').value
+      }
+      syncOAuth()
+      deriveName()
     },
     filled,
     localize,

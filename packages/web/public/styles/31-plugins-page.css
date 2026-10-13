@@ -173,6 +173,25 @@
     justify-content: space-between;
     gap: var(--s8);
   }
+  .dialog-step,
+  .form-hint {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.78125rem;
+    line-height: 1.6;
+  }
+  .dialog-step:empty,
+  .dialog-step[hidden],
+  .form-hint[hidden] {
+    display: none;
+  }
+  .resource-oauth {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+  }
   /* A second path in a confirmation sits apart from Cancel and the main action. */
   .dialog-actions > .dialog-action-aside {
     margin-inline-end: auto;

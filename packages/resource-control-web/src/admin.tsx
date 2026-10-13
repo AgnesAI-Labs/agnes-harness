@@ -895,10 +895,10 @@ function syncTransport(t: LocaleTranslator = activeResourceText): void {
   $('mcp-executable-row', 'label').hidden = !stdio
   $('mcp-args-row', 'label').hidden = !stdio
   $('mcp-url-row', 'label').hidden = stdio
-  const allowed = stdio ? ['none', 'stdio-env'] : ['none', 'http-bearer', 'http-header']
+  const allowed = stdio ? ['none', 'stdio-env'] : ['none', 'http-bearer', 'http-header', 'oauth']
   for (const option of mcpSecretKind.options) option.hidden = !allowed.includes(option.value)
   if (!allowed.includes(mcpSecretKind.value)) mcpSecretKind.value = 'none'
-  $('mcp-secret-row', 'label').hidden = mcpSecretKind.value === 'none'
+  $('mcp-secret-row', 'label').hidden = ['none', 'oauth'].includes(mcpSecretKind.value)
   $('mcp-header-row', 'label').hidden = mcpSecretKind.value !== 'http-header'
   $('mcp-secret', 'textarea').placeholder =
     mcpSecretKind.value === 'stdio-env' ? t('placeholder.env') : 'secret://namespace/name'

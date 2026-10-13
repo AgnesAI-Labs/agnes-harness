@@ -253,6 +253,25 @@ export function McpDetailContent({
       />
       <div className="admin-detail-scroll">
         <FactList className="resource-facts" items={[[t('mcp.fact.source'), server.source]]} />
+        {server.secretBindingKind === 'oauth' && (
+          <div className="resource-oauth" data-testid="mcp-oauth" data-status={server.authorizationStatus}>
+            <FactList
+              className="resource-facts"
+              items={[[t('mcp.oauth.label'), t(`mcp.oauth.${server.authorizationStatus ?? 'pending'}`)]]}
+            />
+            {/* Signing in is a top-level visit to the provider; this page stays open behind it. */}
+            <Button
+              size="small"
+              appearance={server.authorizationStatus === 'authorized' ? 'secondary' : 'primary'}
+              data-testid="mcp-oauth-authorize"
+              href={`/oauth/${encodeURIComponent(server.serverId)}/start`}
+              target="_blank"
+              rel="noopener"
+            >
+              {t(server.authorizationStatus === 'authorized' ? 'mcp.oauth.again' : 'mcp.oauth.authorize')}
+            </Button>
+          </div>
+        )}
         {server.lastSafeError && (
           <SettingsState tone="error" className="resource-safe-error">
             {t('safe-error', {

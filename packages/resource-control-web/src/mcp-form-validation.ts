@@ -169,7 +169,7 @@ function stdioIssues(executable: string, argsText: string, t: LocaleTranslator):
   return issues
 }
 function secretIssues(secretKind: string, secretText: string, t: LocaleTranslator): McpFormFieldIssue[] {
-  if (secretKind === 'none') return []
+  if (secretKind === 'none' || secretKind === 'oauth') return []
   if (secretKind === 'stdio-env') {
     for (const [index, line] of lines(secretText).entries()) {
       const at = line.indexOf('=')
@@ -265,7 +265,7 @@ export function mcpFormIssues(
         })
     } else issues.push(...urlIssues(snapshot.url, t))
   }
-  if (!snapshot.secretText && snapshot.secretKind !== 'none' && options.requireFilled)
+  if (!snapshot.secretText && !['none', 'oauth'].includes(snapshot.secretKind) && options.requireFilled)
     issues.push({ field: 'mcp-secret', message: t('error.form.secret') })
   else issues.push(...secretIssues(snapshot.secretKind, snapshot.secretText, t))
   issues.push(...toolIssues(snapshot.toolsText, t))

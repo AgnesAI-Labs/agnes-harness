@@ -7,6 +7,7 @@ import {
   Icon,
   ListRow,
   renderRegion,
+  SettingsCheckbox,
   SettingsInput,
   SettingsSelect,
   SettingsTextArea,
@@ -100,6 +101,7 @@ function McpDialogScaffold() {
         <h2 id="mcp-dialog-title">{t('index-shell.mcpHeading')}</h2>
       </div>
       <p className="dialog-intro">{t('shell.dialog.description')}</p>
+      <p id="mcp-step" className="dialog-step" role="status"></p>
       <section className="agnes-settings-stack" id="mcp-methods" aria-label={t('wizard.choose')}>
         <ListRow
           icon={<Icon name="terminal" size={20} />}
@@ -130,16 +132,6 @@ function McpDialogScaffold() {
         />
       </section>
       <section className="agnes-settings-stack" id="mcp-connection-fields" hidden>
-        <label className="form-field" htmlFor="mcp-name">
-          <span>{t('index-shell.mcpNameLabel')}</span>
-          <SettingsInput
-            id="mcp-name"
-            required
-            maxLength={128}
-            autoComplete="off"
-            placeholder={t('shell.form.name-placeholder')}
-          />
-        </label>
         <label id="mcp-url-row" className="form-field" hidden htmlFor="mcp-url">
           <span>{t('index-shell.mcpUrlLabel')}</span>
           <SettingsInput id="mcp-url" type="url" autoComplete="off" placeholder="https://example.com/mcp" />
@@ -152,6 +144,15 @@ function McpDialogScaffold() {
             placeholder={t('index-shell.mcpCommandPlaceholder')}
           />
         </label>
+        <p id="mcp-named" className="form-hint" hidden></p>
+        <div id="mcp-oauth-row" className="agnes-settings-stack" hidden>
+          <SettingsCheckbox id="mcp-oauth" label={t('wizard.oauth')} />
+          <p className="form-hint">{t('wizard.oauthHelp')}</p>
+          <label id="mcp-oauth-client-row" className="form-field" hidden htmlFor="mcp-oauth-client">
+            <span>{t('wizard.oauthClient')}</span>
+            <SettingsInput id="mcp-oauth-client" maxLength={256} autoComplete="off" />
+          </label>
+        </div>
         <label className="form-field" htmlFor="mcp-credential">
           <span>{t('wizard.credential')}</span>
           <SettingsSelect id="mcp-credential">
@@ -172,11 +173,19 @@ function McpDialogScaffold() {
               <span>{t('wizard.env')}</span>
               <SettingsInput id="mcp-token-env" defaultValue="TOKEN" autoComplete="off" />
             </label>
+            <label className="form-field" htmlFor="mcp-name">
+              <span>{t('index-shell.mcpNameLabel')}</span>
+              <SettingsInput
+                id="mcp-name"
+                maxLength={128}
+                autoComplete="off"
+                placeholder={t('shell.form.name-placeholder')}
+              />
+            </label>
             <label className="form-field" htmlFor="mcp-id">
               <span>{t('index-shell.mcpIdLabel')}</span>
               <SettingsInput
                 id="mcp-id"
-                required
                 maxLength={128}
                 autoComplete="off"
                 placeholder={t('index-shell.mcpIdPlaceholder')}
@@ -222,6 +231,7 @@ function McpDialogScaffold() {
                 <option value="stdio-env">{t('index-shell.mcpSecretStdioEnv')}</option>
                 <option value="http-bearer">{t('index-shell.mcpSecretHttpBearer')}</option>
                 <option value="http-header">{t('index-shell.mcpSecretHttpHeader')}</option>
+                <option value="oauth">{t('wizard.oauthKind')}</option>
               </SettingsSelect>
             </label>
             <label id="mcp-header-row" className="form-field" hidden htmlFor="mcp-header-name">
@@ -249,7 +259,7 @@ function McpDialogScaffold() {
       </section>
       <p id="mcp-error" className="plugin-form-error" role="alert"></p>
       <div className="dialog-actions">
-        <Button id="mcp-back" htmlType="button" appearance="ghost">
+        <Button id="mcp-back" className="dialog-action-aside" htmlType="button" appearance="ghost">
           {t('wizard.back')}
         </Button>
         <Button id="mcp-cancel" htmlType="button" appearance="secondary">
