@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundledExtensionManifest } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
 import { referenceResolversPlugin } from '../extensions/references/src/index.js'
@@ -38,7 +39,13 @@ describe('bundled extensions declare what they use', () => {
     })
     expect(existsSync(join(extensionsDir, 'references/src/index.ts'))).toBe(true)
     const declaration = pkg.agnes?.plugins?.find((entry) => entry.id === 'reference-resolvers:default')
-    expect(normalizePluginExport(referenceResolversPlugin, declaration).inject).toEqual({ providers: null })
+    const plugin = {
+      ...referenceResolversPlugin,
+      apply(ctx: Context) {
+        return referenceResolversPlugin.apply(ctx)
+      },
+    }
+    expect(normalizePluginExport(plugin, declaration).inject).toEqual({ providers: null })
     const provider = usedCapabilities(join(extensionsDir, 'references/src'))
     expect([...provider.tools, ...provider.hooks, ...provider.slots, ...provider.resources]).toEqual([])
   })
