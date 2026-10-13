@@ -249,7 +249,8 @@ describe('enumerateItems', () => {
     },
   )
 
-  it('lists names that are not UTF-8 as skipped under distinct escaped paths', async () => {
+  // The real file below is named with a literal backslash, which Windows treats as a path separator.
+  it.skipIf(!posix)('lists names that are not UTF-8 as skipped under distinct escaped paths', async () => {
     write('images/a.png')
     write('images/b\\xff.png')
     const bytes = (...parts: Array<string | number[]>) =>
