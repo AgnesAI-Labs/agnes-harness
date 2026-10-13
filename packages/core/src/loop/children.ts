@@ -122,7 +122,7 @@ export class LoopChildren {
   }
   /** A running child is the turn's own work: the step deadline does not run while it is awaited. */
   private async awaited<T>(work: () => Promise<T>): Promise<T> {
-    const waited = this.s.beginLoopWait()
+    const waited = this.s.loopScope.beginWait()
     try {
       return await work()
     } finally {

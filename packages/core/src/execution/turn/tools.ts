@@ -1292,7 +1292,7 @@ export async function approveAndExecute(
         // them to hold a lease still has to be able to watch a tool run out of time.
         dispatched = invokeAttempt(attempt)
         // Bounded by its own timeout, so the loop step deadline does not run under it.
-        const waited = s.beginLoopWait()
+        const waited = s.loopScope.beginWait()
         try {
           observation = await withTimeout(dispatched, timeoutMs, call.name, ac.signal)
         } finally {

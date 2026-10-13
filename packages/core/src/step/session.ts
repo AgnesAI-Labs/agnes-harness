@@ -170,7 +170,7 @@ import {
   type TurnBudgetOverride,
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
-import { withLoopDeadline } from './loop-deadline.js'
+import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
@@ -574,7 +574,6 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
   }
 }
 
-const DEFAULT_LOOP_STEP_IDLE_MS = 30 * 60_000
 const DEFAULT_CLOSE_DRAIN_MS = 30_000
 
 export class SessionImpl {
@@ -599,10 +598,7 @@ export class SessionImpl {
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
   private readonly activeWork = new Set<Promise<unknown>>()
-  // Port calls the current driver scope has in flight, and the platform-owned waits among them.
-  private readonly loopOperations = new Set<() => void>()
-  private readonly loopWaits = new Set<symbol>()
-  private loopActivity = 0
+  readonly loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
@@ -1907,36 +1903,10 @@ export class SessionImpl {
       done = resolve
     })
     this.activeWork.add(work)
-    const finish = () => {
-      this.loopOperations.delete(finish)
+    return this.loopScope.own(() => {
       this.activeWork.delete(work)
       done()
-    }
-    this.loopOperations.add(finish)
-    return finish
-  }
-
-  /** A sign of life that never reaches the ledger, such as a streamed model event. */
-  noteLoopActivity(): void {
-    this.loopActivity++
-  }
-
-  /**
-   * Marks a wait whose end the platform owns: a child agent, a tool inside its own timeout, a
-   * platform timer. The step deadline does not run during it, and its end counts as activity.
-   */
-  beginLoopWait(): () => void {
-    const wait = Symbol()
-    this.loopWaits.add(wait)
-    return () => {
-      if (this.loopWaits.delete(wait)) this.loopActivity++
-    }
-  }
-
-  /** The revoked driver scope owns nothing any more: close must not wait on calls it left hanging. */
-  private revokeLoopOperations(): void {
-    for (const finish of [...this.loopOperations]) finish()
-    this.loopWaits.clear()
+    })
   }
 
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
@@ -1973,46 +1943,13 @@ export class SessionImpl {
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {
-      return drivenOutcome(await this.stepWithinDeadline(), this.op()?.phase.kind)
+      return drivenOutcome(await stepWithinLoopDeadline(this, this.loopDriver), this.op()?.phase.kind)
     } catch (error) {
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
         return { outcome: 'parked', phase: 'paused', reason: 'parked' }
       throw error
     }
   }
-
-  private stepWithinDeadline(): Promise<LoopStepOutcome> {
-    const driver = this.loopDriver
-    return withLoopDeadline({
-      loop: this.loop,
-      idleMs: this.loopStepIdleMs(),
-      progress: () => this.lastSeq + this.loopActivity,
-      waiting: () => this.decisions.waiting > 0 || this.loopWaits.size > 0,
-      run: () => driver.step(this.ac.signal),
-      expire: () => {
-        this.loopStepExpired = true
-        this.decisions.revokeScope()
-        this.ac.abort()
-        this.revokeLoopOperations()
-        void Promise.resolve()
-          .then(() => driver.cancel())
-          .catch(() => undefined)
-      },
-    })
-  }
-
-  /**
-   * Never shorter than a model request's own timeout: a request may be silent that long before its
-   * first event. Tool calls and the other platform-owned waits suspend the window instead.
-   */
-  private loopStepIdleMs(): number {
-    const silent = this.preset.model.timeoutMs
-    return this.d.loopStepTimeoutMs === undefined
-      ? Math.max(DEFAULT_LOOP_STEP_IDLE_MS, silent + 60_000)
-      : Math.max(this.d.loopStepTimeoutMs, silent)
-  }
-
-  private loopStepExpired = false
 
   async drainCancelledTurn(): Promise<void> {
     if (this.running) await this.running
@@ -2165,8 +2102,7 @@ export class SessionImpl {
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
           // still records and closes the turn.
-          const expired = this.loopStepExpired
-          this.loopStepExpired = false
+          const expired = this.loopScope.takeExpired()
           if (this.ac.signal.aborted && !expired) {
             try {
               await this.abort()

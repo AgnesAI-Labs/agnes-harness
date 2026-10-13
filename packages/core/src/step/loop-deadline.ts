@@ -1,5 +1,98 @@
 import { CoreError } from '@agnes/core-common/types'
 import { armTimeout } from '@agnes/core-effects/effects/wrap'
+import type { LoopDriver, LoopStepOutcome } from '@agnes/extension-api'
+import type { SessionImpl } from './session.js'
+
+const DEFAULT_LOOP_STEP_IDLE_MS = 30 * 60_000
+
+/**
+ * What the current driver scope has in flight: the port calls `close()` waits for, the waits whose
+ * end the platform owns, and the signs of life that never reach the ledger.
+ */
+export class LoopScope {
+  private readonly operations = new Set<() => void>()
+  private readonly waits = new Set<symbol>()
+  private activity = 0
+  private expired = false
+
+  /** Registers a port call; the returned function ends it, and so does revoking the scope. */
+  own(end: () => void): () => void {
+    const finish = () => {
+      if (this.operations.delete(finish)) end()
+    }
+    this.operations.add(finish)
+    return finish
+  }
+
+  /** A sign of life that never reaches the ledger, such as a streamed model event. */
+  note(): void {
+    this.activity++
+  }
+
+  /**
+   * Marks a wait whose end the platform owns: a child agent, a tool inside its own timeout, a
+   * platform timer. The step deadline does not run during it, and its end counts as activity.
+   */
+  beginWait(): () => void {
+    const wait = Symbol()
+    this.waits.add(wait)
+    return () => {
+      if (this.waits.delete(wait)) this.activity++
+    }
+  }
+
+  get progress(): number {
+    return this.activity
+  }
+
+  get waiting(): boolean {
+    return this.waits.size > 0
+  }
+
+  /** The revoked scope owns nothing any more: close must not wait on calls it left hanging. */
+  expire(): void {
+    this.expired = true
+    for (const finish of [...this.operations]) finish()
+    this.waits.clear()
+  }
+
+  /** Whether the deadline revoked the scope since this was last asked. */
+  takeExpired(): boolean {
+    const expired = this.expired
+    this.expired = false
+    return expired
+  }
+}
+
+/**
+ * The window is never shorter than a model request's own timeout: a request may be silent that long
+ * before its first event. Tool calls and the other platform-owned waits suspend the window instead.
+ */
+function loopStepIdleMs(s: SessionImpl): number {
+  const silent = s.preset.model.timeoutMs
+  return s.d.loopStepTimeoutMs === undefined
+    ? Math.max(DEFAULT_LOOP_STEP_IDLE_MS, silent + 60_000)
+    : Math.max(s.d.loopStepTimeoutMs, silent)
+}
+
+/** One driver step of `s` under its idle deadline. */
+export function stepWithinLoopDeadline(s: SessionImpl, driver: LoopDriver): Promise<LoopStepOutcome> {
+  return withLoopDeadline({
+    loop: s.loop,
+    idleMs: loopStepIdleMs(s),
+    progress: () => s.lastSeq + s.loopScope.progress,
+    waiting: () => s.decisions.waiting > 0 || s.loopScope.waiting,
+    run: () => driver.step(s.ac.signal),
+    expire: () => {
+      s.decisions.revokeScope()
+      s.ac.abort()
+      s.loopScope.expire()
+      void Promise.resolve()
+        .then(() => driver.cancel())
+        .catch(() => undefined)
+    },
+  })
+}
 
 /**
  * A driver that ignores both its signal and `cancel()` would hold the run lane and `close()` for ever.
