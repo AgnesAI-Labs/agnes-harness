@@ -9,7 +9,11 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol'
-import { decodeSafeImageBytes } from '@agnes/protocol-validation'
+import {
+  decodeSafeImageBytes,
+  imageHeaderDimensions,
+  USER_IMAGE_SEND_BUDGET,
+} from '@agnes/protocol-validation'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
 import {
   createUploads,
@@ -77,19 +81,37 @@ type Params =
 
 const refusal = (code: string) => rpcError('SEMANTIC_REJECTED', { code, reason: code })
 
-/** Reads a committed image whole and checks its header. */
-async function storedImage(
+/** The most of a committed image read at finish to find its header. */
+const IMAGE_HEADER_BYTES = 256 * 1024
+const PNG_MAGIC = [137, 80, 78, 71, 13, 10, 26, 10]
+
+/**
+ * The format and size a committed image's header declares, read from a bounded prefix: the whole
+ * image is checked when it is sent. Undefined when the header lies past the prefix (a JPEG with large
+ * metadata segments), so the upload is sent on as a file; an object that is no PNG or JPEG of the
+ * declared type, or whose size cannot be an image's, is refused.
+ */
+async function storedImageHeader(
   store: AttachmentStore,
   object: StoredObject,
   mimeType: string,
-  limits: Parameters<typeof decodeSafeImageBytes>[1],
-) {
-  const bytes = await store.read(object.sha256)
-  try {
-    return decodeSafeImageBytes({ bytes, mimeType }, limits)
-  } catch {
-    throw new UploadRefused('UPLOAD_NOT_IMAGE')
+): Promise<{ mime: string; width: number; height: number } | undefined> {
+  const prefix = Math.min(object.bytes, IMAGE_HEADER_BYTES)
+  const head = await store.read(object.sha256, { offset: 0, length: prefix })
+  const mime = PNG_MAGIC.every((b, i) => head[i] === b)
+    ? 'image/png'
+    : head[0] === 0xff && head[1] === 0xd8
+      ? 'image/jpeg'
+      : undefined
+  if (mime !== mimeType) throw new UploadRefused('UPLOAD_NOT_IMAGE')
+  const size = imageHeaderDimensions(head)
+  if (!size) {
+    if (prefix === object.bytes || mime === 'image/png') throw new UploadRefused('UPLOAD_NOT_IMAGE')
+    return undefined
   }
+  if (size.width > Math.floor(USER_MESSAGE_IMAGE_LIMITS.maxPixelsPerImage / size.height))
+    throw new UploadRefused('UPLOAD_NOT_IMAGE')
+  return { mime, ...size }
 }
 
 const THUMBNAIL_EDGE = USER_ATTACHMENT_THUMBNAIL.maxEdge
@@ -154,15 +176,17 @@ async function finished(
     return { sha256: object.sha256, bytes: object.bytes, width: image.width, height: image.height }
   }
   const attachment = { sha256: object.sha256, bytes: object.bytes }
-  // A PNG or JPEG is an image reference when it can be one; a larger one is sent on as a file.
-  if (NATIVE_IMAGE.has(mimeType) && object.bytes <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage) {
-    let image: Awaited<ReturnType<typeof storedImage>>
+  // A PNG or JPEG is an image reference when a message may carry it to the model; a larger one is
+  // sent on as a file, which is not held to the image budget.
+  let image: Awaited<ReturnType<typeof storedImageHeader>>
+  if (NATIVE_IMAGE.has(mimeType) && object.bytes <= USER_IMAGE_SEND_BUDGET.maxBytesPerImage)
     try {
-      image = await storedImage(service.store, object, mimeType, USER_MESSAGE_IMAGE_LIMITS)
+      image = await storedImageHeader(service.store, object, mimeType)
     } catch (error) {
       await discardRefused(service.store, object, done.existed)
       throw error
     }
+  if (image) {
     await service.store.markUserAttachment(object, { mimeType: image.mime, receiptFor: sessionId })
     return {
       type: 'image',

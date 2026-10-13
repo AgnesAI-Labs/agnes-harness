@@ -810,8 +810,8 @@ export function registerAgnes(
         }
       }
       const candidates = indexed ? [indexed] : cx.registry.keys()
-      // An index miss retains Task 11's compatibility fallback over open sessions. Refuse ambiguity
-      // rather than choosing whichever registry key happens to enumerate first.
+      // An index miss keeps the older fallback of scanning open sessions for the ticket. Refuse
+      // ambiguity rather than choosing whichever registry key happens to enumerate first.
       for (const sessionId of candidates) {
         try {
           requireOwner('approval.decide', sessionId, c)

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { domainFailureFromUnknown } from '@agnes/error-sanitization'
 import {
   type AttachmentStore,
   attachmentReceiptFor,
@@ -377,7 +378,8 @@ describe('_agnes/v1/attachment.upload', () => {
       height: 8,
       name: 'shot.png',
     })
-    const broken = Buffer.concat([PNG8.subarray(0, 40), Buffer.alloc(20)])
+    // Only the header is read at finish (the whole image is checked when it is sent): this one has none.
+    const broken = Buffer.concat([PNG8.subarray(0, 12), Buffer.alloc(48)])
     expect(codeOf(await f.uploadAll(broken, { name: 'bad.png', mimeType: 'image/png' }))).toBe(
       'UPLOAD_NOT_IMAGE',
     )
@@ -814,14 +816,21 @@ describe('more of the upload method', () => {
         name: 'notes.txt',
       })
     }
-    // A worker forwards only the message; the name is read from it.
-    expect(
-      attachmentRefusal({
-        code: 'E_ENVELOPE',
-        reason: 'attachment-missing',
-        message: 'The attachment “notes.txt” is no longer stored. Upload it again.',
-      }),
-    ).toMatchObject({ data: { code: 'ATTACHMENT_MISSING', name: 'notes.txt' } })
+    // A worker forwards only the code, reason and message of core's refusal; the name is read from the
+    // message, so core's own wording is what is checked here.
+    const session = f.h.host.kernel.get(f.sessionId)
+    if (!session) throw new Error('session missing')
+    const raw = await session
+      .enqueue('next-step', { actor: session.d.actor, content: [{ type: 'text', text: 'see' }, block] })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+    const forwarded = domainFailureFromUnknown(raw)
+    expect(forwarded).not.toHaveProperty('detail')
+    expect(attachmentRefusal(forwarded)).toMatchObject({
+      data: { code: 'ATTACHMENT_MISSING', name: 'notes.txt' },
+    })
   })
 
   it('types a refused followUp', async () => {
@@ -891,4 +900,85 @@ describe('more of the upload method', () => {
     expect(await f.store.stat(sha(bytes))).toEqual({ sha256: sha(bytes), bytes: bytes.length })
     expect((await f.store.userAttachment(sha(bytes)))?.receipts).toHaveLength(1)
   })
+
+  it('drops an upload whose staged write failed: its slot and quota room come back and a retry restarts it', async () => {
+    let failing = true
+    const f = await fixture({
+      limits: { 'attachments.global_quota_bytes': 1000 },
+      wrapStore: (store) => ({
+        ...store,
+        root: store.root,
+        stage: async (meta) => {
+          const staging = await store.stage(meta)
+          return {
+            get bytes() {
+              return staging.bytes
+            },
+            // The disk fills up mid-upload: the store closes the stage, as its own write does.
+            write: async (chunk, signal) => {
+              if (!failing) return staging.write(chunk, signal)
+              await staging.abort()
+              throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })
+            },
+            commit: (expected) => staging.commit(expected),
+            abort: () => staging.abort(),
+          }
+        },
+      }),
+    })
+    const part = Buffer.alloc(200, 7)
+    const chunk = (uploadId: string) =>
+      f.upload({ operation: 'chunk', uploadId, offset: 0, data: part.toString('base64'), sha256: sha(part) })
+    const failed: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const uploadId = randomUUID()
+      await f.upload({ operation: 'start', uploadId, name: 'a', mimeType: 'a/b', size: 200 })
+      expect(codeOf(await chunk(uploadId))).toBe('UPLOAD_UNAVAILABLE')
+      failed.push(uploadId)
+    }
+    expect(f.service.uploads.size).toBe(0)
+    expect(f.stagingFiles()).toEqual([])
+    // Retrying the chunk finds no upload to keep alive: the client starts it again.
+    expect(codeOf(await chunk(failed[0] as string))).toBe('UPLOAD_EXPIRED')
+    failing = false
+    // Neither a session slot nor the 800 bytes the four held are still taken.
+    const big = Buffer.alloc(900, 9)
+    const done = await f.uploadAll(big, { name: 'big', mimeType: 'a/b' })
+    expect(done.result, JSON.stringify(done.error)).toBeDefined()
+    // Starting a failed upload again begins at its first byte.
+    const again = await f.upload({
+      operation: 'start',
+      uploadId: failed[1],
+      name: 'a',
+      mimeType: 'a/b',
+      size: 50,
+    })
+    expect(again.result).toEqual({ offset: 0 })
+  })
+
+  it('returns a PNG over the image send budget as a file, reading at most a bounded prefix of any image', async () => {
+    const reads: Array<number | 'whole'> = []
+    const f = await fixture({
+      wrapStore: (store) => ({
+        ...store,
+        root: store.root,
+        read: (sha256, range, signal) => {
+          reads.push(range ? range.length : 'whole')
+          return store.read(sha256, range, signal)
+        },
+      }),
+    })
+    const poster = Buffer.concat([PNG8, Buffer.alloc(40 * MIB - PNG8.length)])
+    const done = await f.uploadAll(poster, { name: 'poster.png', mimeType: 'image/png' })
+    expect(done.result?.attachment).toEqual({
+      type: 'file',
+      mimeType: 'image/png',
+      name: 'poster.png',
+      attachment: { sha256: sha(poster), bytes: poster.length },
+    })
+    const shot = await f.uploadAll(PNG8, { name: 'shot.png', mimeType: 'image/png' })
+    expect(shot.result?.attachment).toMatchObject({ type: 'image', width: 8, height: 8 })
+    expect(reads.length).toBeGreaterThan(0)
+    for (const read of reads) expect(read !== 'whole' && read <= 256 * 1024, String(read)).toBe(true)
+  }, 120_000)
 })

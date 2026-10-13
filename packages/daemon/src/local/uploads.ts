@@ -95,6 +95,14 @@ export function createUploads(o: {
     u.settle()
     await u.staging.abort().catch(() => undefined)
   }
+  /** Drops an upload from inside one of its own steps, which must not wait for its own tail. */
+  const failed = (sessionId: string, id: string, u: Upload) => {
+    const k = key(sessionId, id)
+    if (uploads.get(k) === u) uploads.delete(k)
+    u.cancelled = true
+    u.settle()
+    void u.staging.abort().catch(() => undefined)
+  }
   const sweep = async () => {
     const now = clock()
     for (const [k, u] of uploads)
@@ -167,7 +175,9 @@ export function createUploads(o: {
       let settle: (stored?: number) => void = () => undefined
       let staging: AttachmentStaging
       try {
-        // The session's bytes already referenced are not known here; admission checks again with them.
+        // The session's bytes already referenced are not known here, so the per-session quota is enforced
+        // only when the upload is sent (admission checks again with them): a session near its quota can
+        // still stage an upload that its send then refuses. The global quota and free space hold here.
         if (o.reserve)
           try {
             settle = await o.reserve(i.size)
@@ -232,7 +242,16 @@ export function createUploads(o: {
           if (createHash('sha256').update(bytes).digest('hex') !== i.sha256)
             throw new UploadRefused('UPLOAD_HASH_MISMATCH')
           if (u.staging.bytes + bytes.byteLength > u.size) throw new UploadRefused('UPLOAD_SIZE_LIMIT')
-          await u.staging.write(bytes)
+          try {
+            await u.staging.write(bytes)
+          } catch (error) {
+            // The store closed the stage (a full disk, an I/O error, the write's deadline): the upload
+            // cannot go on, so it is dropped here, giving back its room and its slot, rather than kept
+            // alive by the client's retries. This chunk is answered `UPLOAD_UNAVAILABLE`, later steps
+            // `UPLOAD_EXPIRED`; the client starts the upload again from its first byte.
+            failed(i.sessionId, i.uploadId, u)
+            throw error
+          }
           u.buffered?.push(bytes)
           u.hash.update(bytes)
           u.lastChunk = { offset: i.offset, sha256: i.sha256 }

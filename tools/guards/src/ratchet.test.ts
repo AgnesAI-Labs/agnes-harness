@@ -2005,7 +2005,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: one typed mapping for integrity refusals, the in-process integrity notice and a typed interrupted open; reviewed exact countLines packages/daemon/src 27564; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/daemon/src 27613; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/daemon/src 28203; no exclusions or spare allocation.
-  'packages/daemon/src': 28203,
+  // 2026-10-13 attachments by reference: a failed staged write drops its upload, and a finished image is classified by the send budget from a bounded header read; reviewed exact countLines packages/daemon/src 28231; no exclusions or spare allocation.
+  'packages/daemon/src': 28231,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
