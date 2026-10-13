@@ -138,13 +138,24 @@ export async function fullAccess(page: Page, locale = 'en') {
 
 export async function send(page: Page, input: string) {
   const turns = page.getByTestId('conversation-turn')
-  const before = await turns.count()
+  const before = await turns.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-turn-id')))
   const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
   await expect(composer).toBeEnabled()
   await composer.fill(input)
   await composer.press('Enter')
-  await expect(turns).toHaveCount(before + 1)
-  const id = await turns.last().getAttribute('data-turn-id')
+  // Child receipts can add a system turn while the prompt is being submitted. Follow
+  // the new user input, rather than treating the next turn count as its identity.
+  const submitted = turns.filter({
+    has: page.locator('.turn-user [data-node-kind="user"]').filter({ hasText: input.trim() }),
+  })
+  const ids = () =>
+    submitted.evaluateAll(
+      (nodes, previous) =>
+        nodes.map((node) => node.getAttribute('data-turn-id')).filter((id) => id && !previous.includes(id)),
+      before,
+    )
+  await expect.poll(ids).toHaveLength(1)
+  const [id] = await ids()
   if (!id) throw new Error('New conversation turn is missing its identity')
   return turns.and(page.locator(`[data-turn-id=${JSON.stringify(id)}]`))
 }
