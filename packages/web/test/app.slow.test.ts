@@ -258,6 +258,19 @@ function submit(text: string): void {
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
+/** Leave the selected task before opening it again; selecting the current row now keeps its live view. */
+async function leaveCurrentSession(): Promise<void> {
+  document.getElementById('new')?.click()
+  await vi.waitFor(() =>
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true),
+  )
+  document.getElementById('new-session-cancel')?.click()
+  await vi.waitFor(() =>
+    expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
+  )
+  await vi.waitFor(() => expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false))
+}
+
 /** The model trigger opens the complete model list; the popover mounts with the render after the click. */
 async function openModelList(): Promise<void> {
   await vi.waitFor(() => {
@@ -277,6 +290,8 @@ afterEach(async () => {
   await Promise.resolve()
   vi.resetModules()
   vi.clearAllMocks()
+  binding.loadWebSession.mockReset()
+  binding.bindWebSession.mockReset()
   traceBridge.options = undefined
   traceBridge.transcriptOptions = undefined
   traceBridge.claim = undefined
@@ -514,6 +529,7 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(2))
     expect(label()).toBe('完全访问')
     freshReady.resolve()
+    await leaveCurrentSession()
     const opened = old.projectUIOpening.mock.calls.length
     document.querySelector<HTMLButtonElement>('[data-session="old"]')?.click()
     await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
@@ -1324,6 +1340,7 @@ describe('web session selection', () => {
       )
       expect(notice.textContent).toBe('')
       expect(create).not.toHaveBeenCalled()
+      await leaveCurrentSession()
       binding.loadWebSession.mockRejectedValueOnce(error)
       // Reload the same historical task explicitly; preserve recovery rather than deleting its row.
       const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
@@ -1997,7 +2014,9 @@ describe('web session selection', () => {
     expect(document.querySelector('[data-workspace-label]')?.textContent).toBe('agnes')
     expect(document.getElementById('composer-workspace')?.title).toBe(workspace.path)
 
-    document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')?.click()
+    const locale = document.querySelector<HTMLSelectElement>('#locale-select')!
+    locale.value = 'en'
+    locale.dispatchEvent(new Event('change', { bubbles: true }))
     composer.value = '成功后的第二条消息'
     composer.dispatchEvent(new Event('input', { bubbles: true }))
     await vi.waitFor(() =>
@@ -3027,7 +3046,7 @@ describe('incremental opening', () => {
 
 it('renders Computer Use in the application and retires its late operation reply on pagehide', async () => {
   installPublicFixture()
-  history.replaceState(null, '', '/#test-launcher-token')
+  history.replaceState(null, '', '/?page=plugins&tab=plugins.computer-use#test-launcher-token')
   let finish!: (value: unknown) => void
   const pending = new Promise<unknown>((resolvePromise) => {
     finish = resolvePromise
@@ -3057,21 +3076,20 @@ it('renders Computer Use in the application and retires its late operation reply
   })
   await import('../src/app.js')
   await vi.waitFor(() =>
-    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
+    expect(document.querySelector('[data-testid=computer-use-capability]')).not.toBeNull(),
   )
-  document.querySelector<HTMLButtonElement>('#computer-use-management')?.click()
+  document.querySelector<HTMLButtonElement>('[data-testid=computer-use-more-toggle]')?.click()
   await vi.waitFor(() =>
-    expect(document.querySelector<HTMLElement>('#computer-use-settings-pane')?.hidden).toBe(false),
+    expect(document.querySelector<HTMLButtonElement>('[data-testid=computer-use-update]')?.disabled).toBe(
+      false,
+    ),
   )
-  await vi.waitFor(() =>
-    expect(document.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
-  )
-  document.querySelector<HTMLButtonElement>('#computer-use-update')?.click()
+  document.querySelector<HTMLButtonElement>('[data-testid=computer-use-update]')?.click()
   await vi.waitFor(() =>
     expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.start', { kind: 'update' }),
   )
   window.dispatchEvent(new Event('pagehide'))
-  const pane = document.getElementById('computer-use-settings-pane')
+  const pane = document.querySelector('[data-testid=computer-use-capability]')
   const before = pane?.innerHTML
   const requests = call.mock.calls.length
   finish({ status: 'found', operationId: 'retired', kind: 'update', state: 'running', phase: 'installing' })
