@@ -70,4 +70,4 @@ CSS 片段保留原来的级联顺序，同一领域的后置覆盖仍在后面�
 
 `RemoteTransport` 纯类型合同位于 [extension-api](../../packages/extension-api/src/remote-transport.ts)，Core 导出同一类型。Ledger 测试助手位于 [core-ledger/testkit](../../packages/core-ledger/testkit)。
 
-会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点](../../packages/web/src/timeline)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。
+会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点宿主](../../packages/web/src/timeline-node-host.tsx)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。
