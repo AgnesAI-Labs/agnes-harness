@@ -191,7 +191,6 @@ import {
   type WorkspaceRuntimeFence,
 } from './session-workspace-runtime.js'
 import { createTrajectoryLifecycle } from './trajectory-lifecycle.js'
-import { createUserAttachmentReader } from './user-attachment-cache.js'
 import { createUserAttachmentPort } from './user-attachments.js'
 import type { WorkspaceBinding } from './workspace-authority.js'
 import { WorkspaceHookLoader } from './workspace-hook-loader.js'
@@ -1706,17 +1705,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const attachmentStore = createAttachmentStore({ dataDir })
     const attachments =
       profile.attachments.storeByReference && profile.seams.artifacts === '@agnes/base'
-        ? {
-            ...createUserAttachmentPort({
-              store: attachmentStore,
-              limits: profile.limits,
-              storeByReference: true,
-            }),
-            ...createUserAttachmentReader({
-              store: attachmentStore,
-              cacheInline: profile.seams.artifacts === '@agnes/base',
-            }),
-          }
+        ? createUserAttachmentPort({
+            store: attachmentStore,
+            limits: profile.limits,
+            storeByReference: true,
+            cacheInline: profile.seams.artifacts === '@agnes/base',
+          })
         : undefined
     kernel = Kernel.create({
       storage: adapters.storage,

@@ -56,6 +56,28 @@ describe('user attachment port', () => {
     expect(await port.usage()).toBe(1000)
   })
 
+  it('reads through the user attachment reader: unmarked objects are missing, and the inline cache is offered on request', async () => {
+    const store = createAttachmentStore({ dataDir: fresh() })
+    const port = createUserAttachmentPort({ store, limits: {}, storeByReference: false, diskFree: plenty })
+    const generic = await store.put(bytes(64), { kind: 'request-version', mimeType: 'text/plain' })
+    expect(await port.isUserAttachment(generic.sha256)).toBe(false)
+    await expect(port.read(generic.sha256)).rejects.toMatchObject({ code: 'ATTACHMENT_MISSING' })
+    await expect(port.read(generic.sha256, { offset: 0, length: 8 })).rejects.toMatchObject({
+      code: 'ATTACHMENT_MISSING',
+    })
+    expect(port.cacheInline).toBeUndefined()
+    expect(port.cachedInline).toBeUndefined()
+    const cached = createUserAttachmentPort({
+      store,
+      limits: {},
+      storeByReference: false,
+      cacheInline: true,
+      diskFree: plenty,
+    })
+    expect(typeof cached.cacheInline).toBe('function')
+    expect(typeof cached.cachedInline).toBe('function')
+  })
+
   it('authorizes only the session holding an upload receipt, or one that already references it', async () => {
     const store = createAttachmentStore({ dataDir: fresh() })
     const port = createUserAttachmentPort({ store, limits: {}, storeByReference: true, diskFree: plenty })

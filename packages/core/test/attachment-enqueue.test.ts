@@ -61,6 +61,9 @@ function fakePort(over: Partial<UserAttachmentPort> = {}) {
       calls.authorize.push({ sha256, sessionKey })
       return sha256 === 'a'.repeat(64) ? 'ok' : 'unauthorized'
     },
+    async isUserAttachment() {
+      return true
+    },
     async read() {
       return new Uint8Array()
     },
@@ -165,6 +168,69 @@ describe('enqueue stores inline attachments by reference', () => {
       { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: receipted },
     ])
     expect(await formatVersion(storage)).toBe(2)
+  })
+
+  it('authorizes a reference, or a thumbnail, the session history already names, and charges the session for them', async () => {
+    const tiny = noisePng(2, 2)
+    const seen: Array<{ sha256: string; referenced: boolean }> = []
+    const sessionBytes: number[] = []
+    const { port } = fakePort({
+      async authorize({ sha256, referenced }) {
+        seen.push({ sha256, referenced })
+        return referenced ? 'ok' : 'unauthorized'
+      },
+      async store({ bytes, sessionBytes: charged }) {
+        sessionBytes.push(charged)
+        return { sha256: 'e'.repeat(64), bytes: bytes.byteLength }
+      },
+      read: async () => tiny,
+    })
+    const { session } = await imageSession(port)
+    const file = { sha256: 'c'.repeat(64), bytes: 9000 }
+    const image = { sha256: 'd'.repeat(64), bytes: tiny.byteLength }
+    const thumbnail = { sha256: '7'.repeat(64), bytes: tiny.byteLength, width: 2, height: 2 }
+    await session.d.log.append([
+      session.ev('user/message', {
+        kind: 'prompt',
+        content: [
+          { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: file },
+          { type: 'image', mimeType: 'image/png', attachment: image, width: 2, height: 2, thumbnail },
+        ],
+      }),
+    ])
+    // The thumbnail is named again under an image the history does not hold: the thumbnail digest
+    // alone authorizes it, the image does not.
+    const resend = {
+      type: 'image' as const,
+      mimeType: 'image/png',
+      attachment: { sha256: '8'.repeat(64), bytes: tiny.byteLength },
+      width: 2,
+      height: 2,
+      thumbnail,
+    }
+    await expect(
+      session.enqueue('next-step', { content: [resend], actor, kind: 'steer' }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' } })
+    await session.enqueue('next-step', {
+      content: [
+        { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: file },
+        { ...resend, attachment: image },
+      ],
+      actor,
+      kind: 'steer',
+    })
+    expect(seen).toEqual([
+      { sha256: '8'.repeat(64), referenced: false },
+      { sha256: 'c'.repeat(64), referenced: true },
+      { sha256: 'd'.repeat(64), referenced: true },
+      { sha256: '7'.repeat(64), referenced: true },
+    ])
+    // Every distinct object the session references, thumbnails included, counts toward its quota.
+    await session.enqueue('next-turn', {
+      content: [{ type: 'file', mimeType: 'application/zip', name: 'b.zip', data: 'UEsDBA==' }],
+      actor,
+    })
+    expect(sessionBytes).toEqual([9000 + 2 * tiny.byteLength])
   })
 
   it('refuses a reference when the runtime has no attachment store', async () => {

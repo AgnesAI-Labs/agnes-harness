@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { type AttachmentReadPort, type FsOps, ToolRegistry } from '@agnes/core'
+import { type FsOps, ToolRegistry, type UserAttachmentPort } from '@agnes/core'
 import {
   actor,
   fakeProvider,
@@ -54,7 +54,13 @@ async function atSaveTo(o: {
 }) {
   const asks: unknown[] = []
   const objects = new Map([[hex(ZIP), new Uint8Array(ZIP)]])
-  const attachments: AttachmentReadPort = {
+  // Admission is not under test: it keeps inline attachments inline and refuses references.
+  const attachments: UserAttachmentPort = {
+    storeByReference: false,
+    store: async () => {
+      throw new Error('not used')
+    },
+    authorize: async () => 'unauthorized',
     isUserAttachment: async (sha256) => objects.has(sha256),
     read: async (sha256) => {
       const b = objects.get(sha256)

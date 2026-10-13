@@ -18,6 +18,9 @@ function port(over: Partial<UserAttachmentPort> = {}): UserAttachmentPort & { st
     async authorize() {
       return 'ok' as const
     },
+    async isUserAttachment() {
+      return true
+    },
     async read() {
       return new Uint8Array()
     },
@@ -248,12 +251,9 @@ describe('admitAttachments', () => {
   })
 
   it('reports a file system failure as unavailable without its message', async () => {
-    const leak = Object.assign(
-      new Error('ENOSPC: no space left, open /srv/agh/data/artifacts/staging/x'),
-      {
-        code: 'ENOSPC',
-      },
-    )
+    const leak = Object.assign(new Error('ENOSPC: no space left, open /srv/agh/data/artifacts/staging/x'), {
+      code: 'ENOSPC',
+    })
     const failure = await admitAttachments({
       ...base,
       port: port({ store: async () => Promise.reject(leak) }),

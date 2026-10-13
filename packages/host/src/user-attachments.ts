@@ -3,6 +3,7 @@ import { readdir, statfs } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { UserAttachmentPort } from '@agnes/core'
 import { type AttachmentStore, attachmentReceiptFor } from './attachment-store.js'
+import { createUserAttachmentReader } from './user-attachment-cache.js'
 
 const GIB = 1024 ** 3
 /** The `profile.limits` keys for user attachments and their defaults. */
@@ -52,8 +53,9 @@ export type HostUserAttachmentPort = UserAttachmentPort & {
 }
 
 /**
- * The host side of attachment admission: one store, a global byte count, and the sessions' upload
- * receipts.
+ * The host's user attachments for sessions: the reader every attachment read goes through (only
+ * marked user attachments are served; see the reader), and admission, with one store, a global byte
+ * count, and the sessions' upload receipts.
  *
  * The count is kept per process: it is rebuilt from the markers when first needed and then advanced by
  * this process's own writes, so writes from another process are seen at the next start. The quota is a
@@ -65,6 +67,8 @@ export function createUserAttachmentPort(o: {
   store: AttachmentStore
   limits: Readonly<Record<string, number>>
   storeByReference: boolean
+  /** Keep copies of old inline attachments in the store as they are read; off, they are decoded from their row on every read. */
+  cacheInline?: boolean
   diskFree?: (dir: string) => Promise<number>
 }): HostUserAttachmentPort {
   let counted: Promise<number> | undefined
@@ -115,6 +119,7 @@ export function createUserAttachmentPort(o: {
     ;(await reserve(add, sessionBytes))()
   }
   return {
+    ...createUserAttachmentReader({ store: o.store, cacheInline: o.cacheInline === true }),
     storeByReference: o.storeByReference,
     usage,
     checkQuota,
@@ -148,6 +153,5 @@ export function createUserAttachmentPort(o: {
       const object = await o.store.stat(sha256)
       return object && object.bytes === bytes ? 'ok' : 'missing'
     },
-    read: (sha256, range, signal) => o.store.read(sha256, range, signal),
   }
 }

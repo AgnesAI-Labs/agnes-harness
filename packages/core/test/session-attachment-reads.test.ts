@@ -10,6 +10,7 @@ import type { AttachmentReadPort } from '../src/request/attachment-bytes.js'
 import { sha256Hex } from '../src/request/hash.js'
 import { readSessionAttachment } from '../src/request/session-files.js'
 import { readSessionImages } from '../src/request/session-images.js'
+import type { UserAttachmentPort } from '../src/step/attachment-admission.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -81,13 +82,23 @@ function fakePort(over: Partial<AttachmentReadPort> = {}) {
   return { port, objects, unmarked, cache, calls }
 }
 
+/** The reads under test as a session's port: its admission keeps inline attachments inline and refuses references. */
+const sessionPort = (port: AttachmentReadPort): UserAttachmentPort => ({
+  storeByReference: false,
+  store: async () => {
+    throw new Error('not used')
+  },
+  authorize: async () => 'unauthorized',
+  ...port,
+})
+
 async function opened(port: AttachmentReadPort | undefined) {
   const artifacts = new Map<string, Uint8Array>()
   const provider = fakeProvider([])
   provider.models = () => [model]
   const out = await openSession({
     provider,
-    ...(port ? { attachments: port } : {}),
+    ...(port ? { attachments: sessionPort(port) } : {}),
     seams: fakeSeams({
       artifacts: {
         put: async (bytes, meta) => {
