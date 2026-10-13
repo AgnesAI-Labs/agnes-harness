@@ -86,9 +86,18 @@ it('keeps message controls in the card and session controls in the row under it'
   const meta = host.querySelector('.composer-meta')
   expect(card?.getAttribute('data-agnes-region')).toBe('composer')
   expect(card?.nextElementSibling).toBe(meta)
-  for (const id of ['#prompt', '#composer-attach', '#fixture-model', '#send', '#cancel', '#composer-hint'])
+  // The approval mode sits beside the add button, inside the card.
+  for (const id of [
+    '#prompt',
+    '#composer-attach',
+    '#fixture-permission',
+    '#fixture-model',
+    '#send',
+    '#cancel',
+    '#composer-hint',
+  ])
     expect(host.querySelector(id)?.closest('#composer'), id).toBe(card)
-  for (const id of ['#composer-workspace', '#session-usage', '#fixture-permission']) {
+  for (const id of ['#composer-workspace', '#session-usage']) {
     expect(host.querySelector(id)?.closest('.composer-meta'), id).toBe(meta)
     expect(host.querySelector(id)?.closest('#composer'), id).toBeNull()
   }
@@ -148,19 +157,13 @@ it('submits on Enter only: Shift+Enter and an active IME composition leave the d
   expect(props.onSubmit).toHaveBeenCalledTimes(2)
 })
 
-it('shows the shortcut reminder when idle and the reason when sending is unavailable', () => {
+it('keeps the shortcut in the send tooltip when idle and shows the reason when sending is unavailable', () => {
   const { host, handle } = mount()
   const hint = () => host.querySelector('#composer-hint')
   expect(hint()?.textContent).toBe('Enter 发送，Shift+Enter 换行')
-  const shortcuts = host.querySelector('.composer-shortcuts')
-  expect(shortcuts?.getAttribute('aria-hidden')).toBe('true')
-  expect([...(shortcuts?.querySelectorAll('kbd') ?? [])].map((chip) => chip.textContent)).toEqual([
-    '↵',
-    '⇧',
-    '↵',
-  ])
-  expect(shortcuts?.textContent).toContain('发送')
-  expect(shortcuts?.textContent).toContain('换行')
+  // No shortcut chips inside the card: the send button's tooltip carries the contract.
+  expect(host.querySelector('#composer kbd')).toBeNull()
+  expect(host.querySelector('#send')?.getAttribute('title')).toBe('Enter 发送，Shift+Enter 换行')
 
   handle.render({
     ...idle,
@@ -170,7 +173,7 @@ it('shows the shortcut reminder when idle and the reason when sending is unavail
   })
   expect(hint()?.getAttribute('data-kind')).toBe('state')
   expect(hint()?.textContent).toBe('这个会话在这里只读，无法发送消息。请新开会话继续工作。')
-  expect(host.querySelector('.composer-shortcuts')).toBeNull()
+  expect(host.querySelector('#send')?.getAttribute('title')).not.toBe('Enter 发送，Shift+Enter 换行')
   expect(host.querySelector<HTMLTextAreaElement>('#prompt')?.disabled).toBe(true)
   expect(host.querySelector<HTMLButtonElement>('#send')?.disabled).toBe(true)
 })

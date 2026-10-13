@@ -96,19 +96,19 @@
   [data-agnes-region="composer"] {
     /* 输入卡的 backdrop-filter 必须声明在区域钩子上，供皮肤覆盖（R1 不变量）。 */
     border: 0;
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-composer);
     background: var(--agnes-bg-surface);
-    /* One quiet edge and a 1px lift; real elevation is reserved for floating surfaces. */
+    /* A hairline edge and a soft, diffuse lift: the card is the calm centre of the page. */
     box-shadow:
-      0 0 0 1px var(--agnes-line-emphasis),
-      var(--shadow-hairline);
+      0 0 0 1px var(--agnes-line-primary),
+      var(--shadow-elevation-soft);
     backdrop-filter: none;
   }
-  /* Focus belongs to the whole card, since the textarea itself draws no ring. */
+  /* Focus is quiet: the edge firms up and nothing else moves. The caret shows where typing goes. */
   #composer:focus-within {
     box-shadow:
-      0 0 0 1px var(--agnes-input-border-focus),
-      0 0 0 4px var(--agnes-focus-ring-soft);
+      0 0 0 1px var(--agnes-line-emphasis),
+      var(--shadow-elevation-soft);
   }
   /* 队列是输入卡上方的一张独立卡片。排队的消息和正在写的草稿是两件事，早先把它塞在输入卡
    内部，两者读起来是一件事。现在它是 form 的前一个兄弟节点：宽度和居中与输入卡对齐，
@@ -256,11 +256,12 @@
   .composer-writing {
     min-height: 0;
   }
+  /* Insets follow the card's larger radius, so text and controls clear its corners. */
   .composer-content {
-    padding: var(--s12) 0.875rem var(--s4);
+    padding: var(--s16) var(--s20) var(--s4);
   }
   .composer-footer {
-    padding: var(--s4) var(--s8) var(--s8);
+    padding: var(--s4) var(--s10) var(--s10);
   }
   #prompt {
     min-height: 0;
@@ -285,7 +286,7 @@
   .composer-image-attachments {
     display: grid;
     gap: var(--s8);
-    padding: var(--s12) 0.875rem 0;
+    padding: var(--s16) var(--s20) 0;
   }
   /* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
    否则这段上边距会把输入框整体顶下去。 */
@@ -366,11 +367,12 @@
     font-size: var(--font-size-xs);
   }
 
-  /* Card footer: add on the left, the model and the send/stop action on the right. */
+  /* Card footer: add and the approval mode on the left, the model and the send/stop action on
+   the right. */
   .composer-controls {
     display: flex;
     align-items: center;
-    gap: var(--s4);
+    gap: var(--s8);
     min-width: 0;
     container-type: inline-size;
   }
@@ -382,7 +384,8 @@
     min-height: 2rem;
     padding: 0;
     border-radius: 50%;
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
   }
   #composer-attach:hover {
     color: var(--agnes-text-primary);
@@ -415,32 +418,6 @@
     white-space: nowrap;
     clip-path: inset(50%);
   }
-  /* The shortcut reminder appears only while the card has focus. */
-  .composer-shortcuts {
-    flex: 1 1 0;
-    min-width: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s4);
-    padding: 0 var(--s4);
-    overflow: hidden;
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    white-space: nowrap;
-    visibility: hidden;
-  }
-  #composer:focus-within .composer-shortcuts {
-    visibility: visible;
-  }
-  /* The second chord (new line) stands apart from the first (send). */
-  .composer-shortcuts kbd:nth-of-type(2) {
-    margin-inline-start: var(--s8);
-  }
-  @container (max-width: 30rem) {
-    .composer-shortcuts {
-      display: none;
-    }
-  }
   [data-testid="composer-paused"] {
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
@@ -451,30 +428,31 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 2rem;
-    min-width: 2rem;
-    height: 2rem;
-    min-height: 2rem;
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
     padding: 0;
     border-radius: var(--radius-full);
     box-shadow: none;
   }
-  /* The one filled action on the card. Text-on-ground inverts with the theme: dark on light, light on dark. */
+  /* The one filled action on the card, in the accent: full strength when there is something to
+   send, a soft tint of the same colour while there is not. */
   #send {
     border-color: transparent;
-    color: var(--agnes-text-inverse);
-    background: var(--agnes-text-primary);
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
     transition: background-color var(--transition-fast);
   }
   #send:hover:not(:disabled) {
     border-color: transparent;
-    color: var(--agnes-text-inverse);
-    background: color-mix(in srgb, var(--agnes-text-primary) 86%, var(--agnes-bg-surface));
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg-hover);
   }
   #send:disabled {
     border-color: transparent;
-    color: var(--agnes-text-inverse);
-    background: color-mix(in srgb, var(--agnes-text-primary) 24%, var(--agnes-bg-surface));
+    color: var(--agnes-button-primary-content);
+    background: color-mix(in srgb, var(--agnes-button-primary-bg) 38%, var(--agnes-bg-surface));
   }
   /* Submitting: the arrow gives way to a small ring until the host confirms. */
   #send[data-mode="pending"] .icon {
@@ -510,8 +488,8 @@
   /* While the agent runs and there is nothing to send, Stop is the card's one filled action. */
   #composer[data-busy="true"] #cancel:not([hidden]):has(~ #send:disabled) {
     border-color: transparent;
-    color: var(--agnes-text-inverse);
-    background: var(--agnes-text-primary);
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
   }
   #composer[data-busy="true"] #cancel:not([hidden]) ~ #send:disabled {
     display: none;
@@ -549,7 +527,8 @@
     flex: none;
     margin-inline-start: auto;
   }
-  .composer-meta :is(.composer-workspace, .composer-permission, .composer-agent.agnes-ui-button) {
+  :is(.composer-meta, .composer-controls)
+    :is(.composer-workspace, .composer-permission, .composer-agent.agnes-ui-button) {
     display: inline-flex;
     align-items: center;
     gap: var(--s4);
@@ -567,9 +546,10 @@
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-regular);
   }
-  .composer-meta
+  :is(.composer-meta, .composer-controls)
     :is(.composer-workspace, .composer-permission, .composer-agent.agnes-ui-button):hover:not(:disabled),
-  .composer-meta :is(.composer-workspace, .composer-permission, .composer-agent)[aria-expanded="true"] {
+  :is(.composer-meta, .composer-controls)
+    :is(.composer-workspace, .composer-permission, .composer-agent)[aria-expanded="true"] {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
@@ -580,7 +560,7 @@
     white-space: nowrap;
   }
   /* Full access skips approvals; the chip says so in words and in the warning colour. */
-  .composer-meta #composer-permission[data-permission="full"] {
+  #composer-permission[data-permission="full"] {
     color: var(--agnes-status-warning-text);
   }
   #composer-workspace[hidden],

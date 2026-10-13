@@ -1,5 +1,5 @@
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { Button, Icon, Kbd, Menu, SettingsInput } from '@agnes/web-ui'
+import { Button, Icon, Menu, SettingsInput } from '@agnes/web-ui'
 import { Sender, type SenderInputAttributes, type SenderRef, XProvider } from '@agnes/web-ui/x'
 import {
   type ChangeEvent,
@@ -349,18 +349,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ) : (
                   addButton
                 )}
+                {slots?.permission}
+                <dependencies.PermissionPicker
+                  state={view.permission}
+                  onError={onError}
+                  onSelect={onPermissionSelect}
+                />
                 <p id="composer-hint" data-kind={view.hint.kind}>
                   {view.hint.text}
                 </p>
-                {view.hint.kind === 'shortcut' ? (
-                  <span className="composer-shortcuts" aria-hidden="true">
-                    <Kbd>↵</Kbd>
-                    {t('composer.shortcut.send')}
-                    <Kbd>⇧</Kbd>
-                    <Kbd>↵</Kbd>
-                    {t('composer.shortcut.newline')}
-                  </span>
-                ) : null}
                 {slots?.model}
                 <div className="model-field">
                   <dependencies.ModelPicker
@@ -416,7 +413,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   disabled={view.send.disabled}
                   data-mode={view.send.mode}
                   aria-label={view.send.label}
-                  title={view.send.title}
+                  // The keyboard contract lives in the button's tooltip, not as chips inside the card.
+                  title={view.hint.kind === 'shortcut' ? view.hint.text : view.send.title}
                 >
                   <span className="visually-hidden">{view.send.label}</span>
                   <Icon name="arrow-up" size={18} />
@@ -470,12 +468,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>
             <dependencies.UsagePanel usage={view.usage} connected={view.connected} t={t} />
           </section>
-          {slots?.permission}
-          <dependencies.PermissionPicker
-            state={view.permission}
-            onError={onError}
-            onSelect={onPermissionSelect}
-          />
           {slots?.dock}
         </div>
       </div>

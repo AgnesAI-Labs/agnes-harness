@@ -19,11 +19,11 @@
     overflow: hidden;
     border: 0;
     border-radius: var(--radius-control);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-primary);
     background: transparent;
     box-shadow: none;
     font-size: var(--font-size-sm);
-    font-weight: 500;
+    font-weight: var(--font-weight-regular);
   }
   #model:hover:not(:disabled),
   #model[aria-expanded="true"] {

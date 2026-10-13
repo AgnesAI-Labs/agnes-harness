@@ -92,10 +92,9 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     }
     await act(async () => handle.current?.render(view))
 
-    // The model stays with the message controls in the card; session-wide controls sit in the row below.
+    // The model and the approval mode sit in the card; usage and the workspace in the row below.
     expect(host.querySelector('#fixture-model')?.closest('#composer .composer-controls')).toBeTruthy()
-    expect(host.querySelector('#fixture-permission')?.closest('.composer-meta')).toBeTruthy()
-    expect(host.querySelector('#fixture-permission')?.closest('#composer')).toBeNull()
+    expect(host.querySelector('#fixture-permission')?.closest('#composer .composer-controls')).toBeTruthy()
     const usage = host.querySelector<HTMLElement>('#session-usage')
     expect(usage?.closest('.composer-meta')).toBeTruthy()
     expect(usage?.hidden).toBe(false)
@@ -124,7 +123,7 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     // The reason sending is unavailable stays readable in the card and describes the input.
     expect(host.querySelector('#composer-hint')?.textContent).toBe('disconnected')
     expect(host.querySelector('#prompt')?.getAttribute('aria-describedby')).toBe('composer-hint')
-    expect(host.querySelector('.composer-shortcuts')).toBeNull()
+    expect(host.querySelector('#composer kbd')).toBeNull()
   } finally {
     await act(async () => root.unmount())
     host.remove()
