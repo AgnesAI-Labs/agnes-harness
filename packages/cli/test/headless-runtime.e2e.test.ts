@@ -96,7 +96,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
   const bundle = join(root, 'bundle.json')
   await writeFile(
     bundle,
-    JSON.stringify({ profile: { loop: { provider: 'agnes.default', version: '1.0.0' } } }),
+    JSON.stringify({ profile: { providers: { loop: { provider: 'agnes.default', version: '1.0.0' } } } }),
   )
   let boot: Awaited<ReturnType<typeof bootHeadless>> | undefined
   let registry: ReturnType<typeof createClientModuleRegistry> | undefined
