@@ -30,6 +30,8 @@ async function ledger(rows: number): Promise<MemoryStorage> {
   for (let i = 0; i < rows; i += 100)
     await writer.append(Array.from({ length: Math.min(100, rows - i) }, (_, j) => note(i + j)))
   await writer.close()
+  // A clean close leaves a verified-head checkpoint; these cases open with a full verification.
+  await storage.deleteVerifiedHead('k')
   return storage
 }
 
@@ -52,6 +54,26 @@ describe('open progress', () => {
     const seen: OpenProgress[] = []
     const log = await SessionLogImpl.open({ ...base(storage, 'w2'), progress: (p) => seen.push(p) })
     expect(seen.at(-1)).toEqual({ phase: 'verify', done: 300, total: 300 })
+    await log.close()
+  })
+
+  it('reports the prefix a checkpoint vouches for as folded, and the rows after it as verified', async () => {
+    const storage = await ledger(1200)
+    const first = await SessionLogImpl.open(base(storage, 'w2'))
+    await first.fullVerified()
+    await first.append(Array.from({ length: 100 }, (_, j) => note(1200 + j)))
+    // A crash after the append: the checkpoint still ends at 1200, the ledger at 1300.
+    expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(1200)
+    await storage.release('k', 'w2')
+    const seen: OpenProgress[] = []
+    const log = await SessionLogImpl.open({ ...base(storage, 'w3'), progress: (p) => seen.push(p) })
+    expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 1200 })
+    expect(seen.every((p) => p.total === 1300)).toBe(true)
+    for (let i = 1; i < seen.length; i++) expect(seen[i]?.done).toBeGreaterThan(seen[i - 1]?.done as number)
+    expect(seen.filter((p) => p.phase === 'fold').at(-1)?.done).toBe(1200)
+    expect(seen.filter((p) => p.phase === 'verify').every((p) => p.done > 1200)).toBe(true)
+    expect(seen.at(-1)).toEqual({ phase: 'verify', done: 1300, total: 1300 })
+    await log.fullVerified()
     await log.close()
   })
 
