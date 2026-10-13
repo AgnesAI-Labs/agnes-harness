@@ -897,7 +897,7 @@
       "properties": {
         "dir": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "prompt": { "type": "string", "minLength": 1, "maxLength": 16384 },
-        "schema": { "type": "object", "additionalProperties": true },
+        "schema": { "$ref": "#/$defs/JsonValue" },
         "ext": {
           "type": "array",
           "maxItems": 32,
