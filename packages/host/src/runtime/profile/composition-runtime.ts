@@ -659,8 +659,12 @@ export async function createCompositionHost(
             live: previous.live || item.live,
           })
         }
+      const blocked = [
+        ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((i) => [i.file, i])).values(),
+      ]
       return {
         ...statuses[0]!,
+        ...(blocked.length ? { blocked } : {}),
         generations: [...all.values()],
         plugins: [
           ...new Map(

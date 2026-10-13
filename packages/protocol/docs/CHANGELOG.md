@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `PluginGenerationStatus.blocked` (optional, additive): `{ file, reason }[]` for the durable pin or head records the Host cannot read, with `file` relative to the profile directory. Present only while one is damaged; generation collection removes nothing while it is.
 - `SessionRuntimeDescriptor.loaded` (required): false for a session no container has open. Such a descriptor is built from the durable generation pin and composition record only; `preset`, `loop`, `resources` and `policy` are now optional and absent when they cannot be derived without loading the session, and `providers` is empty. Nothing is read from the current Host's configuration.
 - `SessionViewResult.history.scan` (optional): `{ reason: 'events' | 'bytes' | 'time' | 'cancelled', throughSeq }`. Present when `session.view` stopped scanning at its event, byte or time budget, or because the caller cancelled; the timeline then covers only the rows up to `throughSeq`.
 - `_agnes/v1/session.view` (client tier): reads a session's recorded conversation without opening it, so a session this build cannot continue (newer or older version, missing pinned provider, damaged ledger) stays viewable. Adds `SessionViewParams`, `SessionViewResult` and `SessionViewNotice`. Nothing is restored, locked or written; a damaged ledger returns the rows that decoded safely plus a `notice`.

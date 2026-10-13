@@ -1714,6 +1714,25 @@
             },
             "required": ["id", "state", "boundSessions", "drainingSessions", "historicalSessions"]
           }
+        },
+        "blocked": {
+          "type": "array",
+          "maxItems": 256,
+          "description": "Durable pin or head records that cannot be read. Generation collection removes nothing while any is listed.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "description": "Path of the damaged record relative to the profile directory."
+              },
+              "reason": { "type": "string", "maxLength": 512 }
+            },
+            "required": ["file", "reason"]
+          }
         }
       },
       "required": ["generations", "plugins"]
