@@ -247,7 +247,7 @@ const SidebarBuiltin = forwardRef<
         <p className="section-label">{t('sidebar.sectionHeading')}</p>
         <IconButton
           id="workspace-add"
-          name="plus"
+          name="folder-plus"
           label={t('sidebar.addWorkspace')}
           title={t('sidebar.addWorkspace')}
           onClick={actions.addWorkspace}
