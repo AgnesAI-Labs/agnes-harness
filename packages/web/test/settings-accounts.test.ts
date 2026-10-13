@@ -115,6 +115,39 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
 const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 10))
 }
+it.each(['resolve', 'reject'] as const)(
+  'ignores a test that %ss after the account draft is discarded',
+  async (outcome) => {
+    const h = await setup()
+    await h.click('.config-account-select')
+    let resolve!: (value: { verified: boolean; models: ConfigAccount['models'] }) => void
+    let reject!: (reason: Error) => void
+    const pending = {
+      promise: new Promise<{ verified: boolean; models: ConfigAccount['models'] }>((yes, no) => {
+        resolve = yes
+        reject = no
+      }),
+    }
+    h.config.test.mockReturnValueOnce(pending.promise)
+    h.input('config-api-key').value = 'synthetic-discarded-key'
+    await h.click('#config-test')
+    expect(h.input('config-test').disabled).toBe(true)
+    await h.click('#account-dialog-close')
+    expect(h.input('config-api-key').value).toBe('')
+    // Discard releases the account controls immediately; an old RPC need not finish first.
+    expect(h.input('config-add-account').disabled).toBe(false)
+    await h.click('button[aria-label="编辑 personal"]')
+    h.input('config-api-key').value = 'synthetic-new-draft'
+    if (outcome === 'reject') reject(new Error('Rejected synthetic-discarded-key'))
+    else resolve({ verified: true, models: [{ id: 'stale-model', name: 'Stale model' }] })
+    await settle()
+    expect(h.doc.body.textContent).not.toContain('synthetic-discarded-key')
+    expect(h.doc.querySelector('#config-model')?.textContent).not.toContain('Stale model')
+    expect(h.input('config-api-key').value).toBe('synthetic-new-draft')
+    expect(h.config.save).not.toHaveBeenCalled()
+    h.controller.close()
+  },
+)
 it('puts Agnes AI first in the Provider picker for a new account', async () => {
   const h = await setup()
   h.controller.close()

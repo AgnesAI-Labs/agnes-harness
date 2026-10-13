@@ -754,12 +754,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const closeAccountDialog = (): void => {
     autoTest.cancel()
     providerPicker.close()
-    if (oauth.operation() || (testPending && isOAuth())) {
-      oauth.clear()
-      testPending = false
-      resetTest()
-      updateButtons()
-    }
+    if (oauth.operation() || (testPending && isOAuth())) oauth.clear()
+    // Closing this draft invalidates API-key tests as well as OAuth. The settings shell can
+    // remain open, so its lifecycle alone cannot reject a late response (which may echo a key).
+    revision += 1
+    testGeneration += 1
+    testPending = false
+    updateButtons()
     if (accountDialog) setDialogOpen(accountDialog, false)
   }
   const accountAction = async (row: ConfigAccount, action: ConfigAccountInput['action']): Promise<void> => {
