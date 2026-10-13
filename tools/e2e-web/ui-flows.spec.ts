@@ -298,9 +298,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   const childKey = receipt?.type === 'text' ? /^started (\S+);/.exec(receipt.text)?.[1] : undefined
   if (!childKey) throw new Error('Child spawn must return a durable child key')
   await expect(page.getByTestId('child-agent-card')).toBeVisible()
-  const collectInput = `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`
-  const collected = await turn(page, collectInput)
-  await expect(collected.locator('[data-node-kind="user"]')).toContainText(collectInput)
+  await turn(page, `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`)
   expect(JSON.stringify(await toolResult(session, 'subagent_collect'))).toContain('Synthetic delivery')
   await quality(page, info, 'child-card')
   await page.getByTestId('goal-toggle').click()

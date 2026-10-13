@@ -157,7 +157,9 @@ export async function send(page: Page, input: string) {
   await expect.poll(ids).toHaveLength(1)
   const [id] = await ids()
   if (!id) throw new Error('New conversation turn is missing its identity')
-  return turns.and(page.locator(`[data-turn-id=${JSON.stringify(id)}]`))
+  const submittedTurn = turns.and(page.locator(`[data-turn-id=${JSON.stringify(id)}]`))
+  await expect(submittedTurn.locator('[data-node-kind="user"]')).toContainText(input.trim())
+  return submittedTurn
 }
 
 export async function turn(page: Page, input: string) {
