@@ -7,6 +7,7 @@ import {
   Icon,
   ListRow,
   MetaText,
+  Segmented,
   SettingsDetails,
   SettingsInput,
   SettingsList,
@@ -279,30 +280,16 @@ export function SchedulesPage({
         </SettingsState>
       )}
       <div className="agnes-settings-filters">
-        <fieldset
-          className="agnes-settings-actions"
-          data-testid="schedules-scope"
-          aria-label={t('schedulesScope')}
-        >
-          <Button
-            htmlType="button"
-            data-testid="schedules-scope-session"
-            aria-pressed={scope === 'session'}
-            appearance="ghost"
-            onClick={() => setScope('session')}
-          >
-            {t('schedulesSession')}
-          </Button>
-          <Button
-            htmlType="button"
-            data-testid="schedules-scope-all"
-            aria-pressed={scope === 'all'}
-            appearance="ghost"
-            onClick={() => setScope('all')}
-          >
-            {t('schedulesAll')}
-          </Button>
-        </fieldset>
+        <Segmented<'session' | 'all'>
+          label={t('schedulesScope')}
+          testId="schedules-scope"
+          value={scope}
+          onChange={setScope}
+          options={[
+            { value: 'session', label: t('schedulesSession'), testId: 'schedules-scope-session' },
+            { value: 'all', label: t('schedulesAll'), testId: 'schedules-scope-all' },
+          ]}
+        />
         <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
           <StateSwitch
             id="schedules-include-archived"

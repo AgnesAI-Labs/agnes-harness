@@ -34,13 +34,6 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
-  .agent-gallery-filter {
-    margin: 0;
-    padding: 0;
-    border: 0;
-    min-width: 0;
-    font-variant-numeric: tabular-nums;
-  }
   .agent-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));

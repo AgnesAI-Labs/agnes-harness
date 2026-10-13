@@ -8,6 +8,7 @@ import {
   PLUGIN_PRESENTATION_NAMESPACE,
   pluginPresentationCatalog,
   SearchBar,
+  Segmented,
   SettingsState,
   StatusDot,
   Tag,
@@ -16,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import type { AdminContext } from '../admin/plugins/types.js'
+import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 import {
   type BusinessAgent,
   type BusinessAgentState,
@@ -23,7 +25,6 @@ import {
   businessAgentView,
   readBusinessAgents,
 } from './catalog.js'
-import { AGENTS_NAMESPACE, agentsCatalog } from './locale.js'
 import { type StartedSession, useBusinessAgentStart } from './start-dialog.js'
 
 type Loaded = {
@@ -225,26 +226,24 @@ export function BusinessAgentGallery({
           onChange={setQuery}
           inputProps={{ 'data-testid': 'business-agents-search' }}
           filters={
-            <fieldset className="agnes-settings-actions agent-gallery-filter" aria-label={t('filter')}>
-              <Button
-                size="small"
-                appearance="ghost"
-                aria-pressed={!readyOnly}
-                data-testid="business-agents-filter-all"
-                onClick={() => setReadyOnly(false)}
-              >
-                {t('filterAll', { count: data.agents.length })}
-              </Button>
-              <Button
-                size="small"
-                appearance="ghost"
-                aria-pressed={readyOnly}
-                data-testid="business-agents-filter-ready"
-                onClick={() => setReadyOnly(true)}
-              >
-                {t('filterReady', { count: readyCount })}
-              </Button>
-            </fieldset>
+            <Segmented
+              label={t('filter')}
+              testId="business-agents-filter"
+              value={readyOnly ? 'ready' : 'all'}
+              onChange={(value) => setReadyOnly(value === 'ready')}
+              options={[
+                {
+                  value: 'all',
+                  label: t('filterAll', { count: data.agents.length }),
+                  testId: 'business-agents-filter-all',
+                },
+                {
+                  value: 'ready',
+                  label: t('filterReady', { count: readyCount }),
+                  testId: 'business-agents-filter-ready',
+                },
+              ]}
+            />
           }
         />
       )}

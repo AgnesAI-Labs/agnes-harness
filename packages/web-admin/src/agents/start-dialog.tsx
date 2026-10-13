@@ -14,8 +14,8 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { sessionStartUrl } from '../settings/runtime-panels.js'
+import { AGENTS_NAMESPACE, agentsCatalog } from './agents-locale.js'
 import type { BusinessAgent } from './catalog.js'
-import { AGENTS_NAMESPACE, agentsCatalog } from './locale.js'
 import {
   planBlocked,
   planBusinessAgentStart,

@@ -39,7 +39,7 @@ export const triggersCatalog = {
     generic: 'Generic',
     auth: 'Authentication',
     secretLabel: 'Secret',
-    secret: 'Secret reference',
+    refLabel: 'Secret reference (advanced)',
     refHelp:
       'Select an existing reference, or enter an environment secret reference. Secret values never enter this form.',
     workspace: 'Workspace',
@@ -123,7 +123,7 @@ export const triggersCatalog = {
     generic: '通用',
     auth: '认证方式',
     secretLabel: '密钥',
-    secret: '密钥引用',
+    refLabel: '密钥引用（高级）',
     refHelp: '选择已有引用，或填写环境变量密钥引用。此表单不接收密钥值。',
     workspace: '工作区',
     agent: 'Agent 预设',

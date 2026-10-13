@@ -611,7 +611,7 @@ export function TriggersPanel({
                 onChange={(event) => setFilters(event.target.value)}
               />
             </Field>
-            {input('secretRef', 'secret')}
+            {input('secretRef', 'refLabel')}
             <p className="automation-note">{t('refHelp')}</p>
             {input('timestampPath', 'timestamp')}
             {rule.provider === 'github' && <p className="automation-note">{t('githubTime')}</p>}

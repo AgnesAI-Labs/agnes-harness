@@ -4,8 +4,6 @@ export const AGENTS_NAMESPACE = '@agnes/web-admin/agents'
 /** Business agent gallery and one-click start. Keys are identical in both locales. */
 export const agentsCatalog: LocaleCatalog = {
   en: {
-    title: 'Business agents',
-    subtitle: 'FDE',
     description: 'Ready-made business workflow examples; all use demo data and connect to no real system.',
     refresh: 'Refresh',
     search: 'Search business agents',
@@ -102,8 +100,6 @@ export const agentsCatalog: LocaleCatalog = {
     'blocker.unknown-contribution': 'it contains something this version does not recognise',
   },
   'zh-CN': {
-    title: '业务 Agent',
-    subtitle: 'FDE',
     description: '装好就能用的业务流程示例；都是演示数据，不连接真实业务系统。',
     refresh: '刷新',
     search: '搜索业务 Agent',

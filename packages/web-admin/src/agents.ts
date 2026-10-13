@@ -1,4 +1,6 @@
 /** Business agents (FDE): the gallery page and the one-click start other surfaces reuse. */
+
+export { AGENTS_NAMESPACE, agentsCatalog } from './agents/agents-locale.js'
 export {
   type BusinessAgent,
   type BusinessAgentState,
@@ -15,7 +17,6 @@ export {
   type BusinessAgentsSource,
   useBusinessAgents,
 } from './agents/gallery.js'
-export { AGENTS_NAMESPACE, agentsCatalog } from './agents/locale.js'
 export {
   type BusinessAgentStart,
   openStartedSession,
