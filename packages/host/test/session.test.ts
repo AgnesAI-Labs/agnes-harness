@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -69,6 +69,7 @@ describe('createSession', () => {
 
   it('opens a session with the default preset and a host-minted actor', async () => {
     const dataDir = tmp()
+    expect(existsSync(join(dataDir, 'profiles'))).toBe(false)
     const { host } = await createTestHost({ dataDir })
     const s = await host.createSession({ cwd: dataDir })
     expect(s.key).toMatch(/^agnes:local:local-dev:cli:workspace:[0-9a-f]{16}$/)
