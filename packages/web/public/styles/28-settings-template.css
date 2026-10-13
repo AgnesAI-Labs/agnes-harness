@@ -251,9 +251,12 @@
   .settings-shell .settings-nav-item[aria-current="page"] .icon {
     color: var(--agnes-brand-primary);
   }
-  /* The current item's raised shadow gives way to the focus line while it holds keyboard focus. */
+  /* The current item is only ever the raised pill; keyboard focus adds the focus line to it. */
   .settings-shell .settings-nav-item:focus-visible {
     box-shadow: var(--focus-line);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"]:focus-visible {
+    box-shadow: var(--focus-line), var(--shadow-raised);
   }
   .settings-shell #settings-advanced {
     margin-top: var(--s8);

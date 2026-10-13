@@ -93,7 +93,7 @@
     --agnes-brand-focus-ring: var(--agnes-color-indigo-500);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-50);
     /* Soft halo around a focused field or card; the solid ring stays for outlines. */
-    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 32%, transparent);
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 24%, transparent);
     /* Thin scrollbar thumb for long scroll regions; the track stays transparent. */
     --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
 
@@ -172,9 +172,9 @@
     /* Shadow —— 边框优先于阴影：只有浮层（菜单、弹窗、抽屉）使用高程。
      阴影内含颜色，必须随主题切换，故归语义层而不是尺度层。 */
     --shadow-elevation: var(--elevation-1);
-    /* The one keyboard focus ring, following the element's own radius: a 1px solid line at the
-     element's edge (3:1 against every surface) inside a soft 3px halo. */
-    --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    /* The one keyboard focus ring, following the element's own radius: a crisp 1px solid line at
+     the element's edge (3:1 against every surface) inside a thin 2px soft ring. */
+    --focus-outline: 2px solid var(--agnes-focus-ring-soft);
     --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
     --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
     /* The current item of a navigation rail: a raised pill, barely lifted. */
@@ -227,7 +227,7 @@
     --agnes-brand-mark: var(--agnes-color-brand-blue-400);
     --agnes-brand-focus-ring: var(--agnes-color-indigo-300);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-900);
-    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 44%, transparent);
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 36%, transparent);
     --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
 
     /* Text */
@@ -298,7 +298,7 @@
 
     /* Shadow —— 深色用近黑的两层投影；边框由卡片自身声明。 */
     --shadow-elevation: var(--elevation-1);
-    --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    --focus-outline: 2px solid var(--agnes-focus-ring-soft);
     --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
     --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
     --shadow-raised: 0 0 0 1px rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 30%);
@@ -432,6 +432,14 @@
     :root {
       --control-height-form: var(--control-height-touch);
     }
+  }
+
+  /* The ring belongs to keyboard navigation. After a pointer action nothing draws it, including on
+   a control that script focused in response to the click; text fields keep their own focus style. */
+  :root[data-agnes-input="pointer"] {
+    --focus-outline: 0 solid transparent;
+    --focus-line: 0 0 0 0 transparent;
+    --focus-line-inset: inset 0 0 0 0 transparent;
   }
 
   /* Private application layers: outside the semantic skin vocabulary (second :root). */

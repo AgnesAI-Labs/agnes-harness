@@ -1,3 +1,4 @@
+import { trackInputModality } from '@agnes/web-foundation/input-modality'
 import {
   applyDocumentLocale,
   isUiLocale,
@@ -85,6 +86,9 @@ const paint = (): void => {
 }
 
 paint()
+
+// The focus ring is for keyboard navigation: remember how the user last acted, on all three pages.
+trackInputModality(document)
 
 // 无条件订阅：用户中途从「浅色」切到「跟随系统」时无需重新订阅即可生效。
 watchSystemTheme(window, paint)

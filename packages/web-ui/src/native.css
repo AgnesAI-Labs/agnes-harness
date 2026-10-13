@@ -35,7 +35,6 @@
       background-color var(--transition-fast),
       border-color var(--transition-fast),
       color var(--transition-fast),
-      box-shadow var(--transition-fast),
       transform var(--transition-fast);
   }
   button:hover:not(:disabled) {
@@ -54,6 +53,13 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
     box-shadow: var(--focus-line);
+  }
+
+  /* After a pointer action no control draws a ring, whichever rule or library would have: a
+   control focused from script in response to a click is not keyboard navigation. */
+  :root[data-agnes-input="pointer"]
+  :is(button, a, summary, [role], [tabindex]):focus-visible:not(input, textarea, select, [contenteditable]) {
+    outline: none;
   }
 
   /* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。

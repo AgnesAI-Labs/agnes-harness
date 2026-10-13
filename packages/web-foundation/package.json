@@ -10,6 +10,7 @@
     "./diagnostics-redact": "./src/diagnostics-redact.ts",
     "./locale-bridge": "./src/locale-bridge.ts",
     "./locale-catalog": "./src/locale-catalog.ts",
+    "./input-modality": "./src/input-modality.ts",
     "./locale-preference": "./src/locale-preference.ts",
     "./locales/app": "./src/locales/app.ts",
     "./locales/composer": "./src/locales/composer.ts",

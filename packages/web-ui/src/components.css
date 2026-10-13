@@ -26,8 +26,9 @@
     font-weight: var(--font-weight-medium);
     line-height: var(--line-sm);
     cursor: pointer;
-    /* Surface and text change together, including when enabled under the pointer. */
-    transition: box-shadow var(--transition-fast);
+    /* Surface and text change together, including when enabled under the pointer; the focus ring
+     appears at once, never as a growing glow. */
+    transition: none;
   }
   :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):hover:not(:disabled):not(
     [aria-disabled="true"]

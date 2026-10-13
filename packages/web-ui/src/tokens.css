@@ -815,7 +815,7 @@
   /* A control can become enabled beneath the pointer; its text and surface must change together. */
   .agnes-ui-button,
   button {
-    transition-property: box-shadow, transform;
+    transition-property: transform;
   }
 
   .agnes-settings-row {
