@@ -4,6 +4,7 @@ import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SessionService, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -185,9 +186,9 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     const toolElement = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
     expect(toolElement?.textContent).toContain('正在执行')
     expect(toolElement?.querySelector('svg.icon.tool-icon')?.getAttribute('aria-hidden')).toBe('true')
-    const details = item('cost')?.querySelector<HTMLDetailsElement>('details.call-usage')
+    const details = item('cost')?.querySelector<HTMLElement>('.agh-disclosure.call-usage')
     expect(details?.textContent).toContain('费用未提供')
-    if (details) details.open = true
+    if (details) setDisclosureOpen(details, true)
     const off = registry.register(
       { name: 'tool.call.toolview', key: 'read_file', id: 'toolview' },
       ({ owner }: { owner?: { block: { status: string } } }) =>
@@ -206,7 +207,7 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     expect(item('assistant')?.querySelector('.node-body [data-agnes-markdown-leaf]')).toBe(markdownHost)
     expect(item('assistant')?.textContent).toContain('second')
     expect(item('tool')?.querySelector('#custom-toolview')?.textContent).toBe('failed')
-    expect(details?.open).toBe(true)
+    expect(details?.dataset.open).toBe('true')
     expect(details?.textContent).toContain('1.25 credits（网关记录）')
     await act(async () => {
       off()
@@ -290,10 +291,10 @@ it('uses the complete shared cost contract through the real adapter without an i
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: [cost] })
   await mount(store)
   const article = item('cost')
-  const details = article?.querySelector('details')
-  const summary = article?.querySelector('summary')
+  const details = article?.querySelector<HTMLElement>('.agh-disclosure')
+  const summary = article?.querySelector<HTMLElement>('.agh-disclosure-summary')
   if (!details || !summary) throw new Error('missing cost disclosure')
-  details.open = true
+  setDisclosureOpen(details, true)
   summary.focus()
   const gateway = {
     ...cost,
@@ -306,9 +307,9 @@ it('uses the complete shared cost contract through the real adapter without an i
   for (const next of [gateway, { ...gateway }]) {
     await update(store, [user, next])
     expect(item('cost')).toBe(article)
-    expect(article?.querySelector('details')).toBe(details)
-    expect(article?.querySelector('summary')).toBe(summary)
-    expect(details.open).toBe(true)
+    expect(article?.querySelector<HTMLElement>('.agh-disclosure')).toBe(details)
+    expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
+    expect(details.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
     expect(summary.textContent).toBe(costSummary(next, zhT))
     const rows = Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
@@ -376,7 +377,7 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
   )
   expect(error?.closest('.turn-process, .turn-process-body')).toBeNull()
   expect(error?.querySelector('img, strong')).toBeNull()
-  expect(host.querySelector<HTMLDetailsElement>('.turn-process')?.open).toBe(false)
+  expect(host.querySelector<HTMLElement>('.turn-process')?.dataset.open).toBe('false')
   await act(async () =>
     root.render(
       createElement(FailedTurn, { current: { ...turn, status: 'completed', reason: 'completed' } }),
@@ -442,12 +443,12 @@ it('keeps each React action footer through replay and history prepend, then reti
   await act(async () => root.render(createElement(TurnHarness, { turns: [first, second] })))
   const firstFooter = host.querySelector<HTMLElement>('[data-turn-id="turn:1"] footer.turn-footer')
   const secondFooter = host.querySelector<HTMLElement>('[data-turn-id="turn:2"] footer.turn-footer')
-  const secondDetails = secondFooter?.querySelector<HTMLDetailsElement>('.turn-usage')
-  const secondSummary = secondDetails?.querySelector<HTMLElement>('summary')
+  const secondDetails = secondFooter?.querySelector<HTMLElement>('.turn-usage')
+  const secondSummary = secondDetails?.querySelector<HTMLElement>('.agh-disclosure-summary')
   expect(secondFooter).not.toBeNull()
   expect(secondDetails).not.toBeNull()
   if (!secondDetails || !secondSummary) throw new Error('missing second turn disclosure')
-  secondDetails.open = true
+  setDisclosureOpen(secondDetails, true)
   secondSummary.focus()
 
   const prepended: UINode[] = [
@@ -463,7 +464,7 @@ it('keeps each React action footer through replay and history prepend, then reti
     Array.from(host.querySelectorAll('[data-turn-id]')).map((item) => item.getAttribute('data-turn-id')),
   ).toEqual(['turn:0', 'turn:1', 'turn:2'])
   expect(host.querySelector('[data-turn-id="turn:2"] footer.turn-footer')).toBe(secondFooter)
-  expect(secondDetails.open).toBe(true)
+  expect(secondDetails.dataset.open).toBe('true')
   expect(document.activeElement).toBe(secondSummary)
   await act(async () => {
     store.update({ sessionId: 'session', nodes: prepended, turns: [earlier, first, second] })
@@ -558,7 +559,7 @@ it('keeps installed cards, jobs and children visible when settled process histor
     })
   }
   await act(async () => root.render(createElement(CardsHarness)))
-  expect(host.querySelector<HTMLDetailsElement>('.turn-process')?.open).toBe(false)
+  expect(host.querySelector<HTMLElement>('.turn-process')?.dataset.open).toBe('false')
   expect(item('tool')?.parentElement?.hidden).toBe(true)
   for (const id of ['question', 'files', 'jobs', 'children', 'approval']) {
     expect(item(id)?.parentElement?.className).toBe('turn-attention')
@@ -629,11 +630,11 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   expect(item('receipt')?.getAttribute('data-node-kind')).toBe('system-input')
   expect(item('receipt')?.querySelector('[role=status]')?.textContent).toBe('已提交：choice')
   expect(item('receipt')?.querySelector('[data-agnes-assistant-ui-target]')).toBeNull()
-  const trace = item('receipt')?.querySelector('details')
-  expect(trace?.open).toBe(false)
+  const trace = item('receipt')?.querySelector<HTMLElement>('.agh-disclosure')
+  expect(trace?.dataset.open).toBe('false')
   expect(trace?.querySelector('pre')?.textContent).toContain('machine-only')
-  trace?.setAttribute('open', '')
-  expect(trace?.open).toBe(true)
+  if (trace) setDisclosureOpen(trace, true)
+  expect(trace?.dataset.open).toBe('true')
   const present: UINode = {
     ...tool('completed'),
     id: 'present',

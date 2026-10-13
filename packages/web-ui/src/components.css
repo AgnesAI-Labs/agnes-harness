@@ -868,8 +868,8 @@
     :is(
         .agnes-settings-checkbox,
         .appearance-option,
-        .agnes-settings-details > summary,
-        .agnes-settings-card summary,
+        .agnes-settings-details > :is(summary, .agh-disclosure-summary),
+        .agnes-settings-card :is(summary, .agh-disclosure-summary),
         .ant-tabs-tab,
         .agnes-settings-section-tabs button
       ) {
@@ -1180,17 +1180,64 @@
   }
 
   /* ── Settings template parts ─────────────────────────────────────────────── */
-  /* Disclosure with a variant: one shared chevron in place of the browser marker. Without a
-   variant the caller keeps styling its own summary. */
+  /* Disclosure: a button that names a section and the region it shows. The summary starts from a
+   plain text row with a small marker; a caller may restyle it, and a variant swaps the marker for
+   the shared chevron. The content box is transparent to layout unless a variant gives it a body. */
+  .agh-disclosure-summary {
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: start;
+    justify-content: flex-start;
+    cursor: default;
+    transition: none;
+  }
+  .agh-disclosure-summary:hover:not(:disabled) {
+    background: none;
+  }
+  .agh-disclosure-summary:active:not(:disabled) {
+    translate: none;
+  }
+  .agh-disclosure-summary::before {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-inline-end: 0.4em;
+    border-block: 0.3em solid transparent;
+    border-inline-start: 0.5em solid currentColor;
+    vertical-align: 0.05em;
+  }
+  .agh-disclosure[data-open="true"] > .agh-disclosure-summary::before {
+    transform: rotate(90deg);
+  }
+  .agh-disclosure-content {
+    display: contents;
+  }
+  .agh-disclosure-content.agh-disclosure-body {
+    display: block;
+  }
+  .agh-disclosure-content[hidden] {
+    display: none;
+  }
   .agh-disclosure[data-variant] {
     min-width: 0;
   }
-  .agh-disclosure[data-variant] > summary {
+  .agh-disclosure[data-variant] > .agh-disclosure-summary {
     display: flex;
     align-items: center;
     gap: var(--s8);
     min-height: var(--control-height-sm);
-    list-style: none;
     border-radius: var(--radius-control);
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
@@ -1199,16 +1246,13 @@
     user-select: none;
     overflow-wrap: anywhere;
   }
-  .agh-disclosure[data-variant] > summary::-webkit-details-marker {
-    display: none;
+  .agh-disclosure[data-variant] > .agh-disclosure-summary::before {
+    content: none;
   }
-  .agh-disclosure[data-variant] > summary::marker {
-    content: "";
-  }
-  .agh-disclosure[data-variant] > summary:hover {
+  .agh-disclosure[data-variant] > .agh-disclosure-summary:hover {
     color: var(--agnes-text-primary);
   }
-  .agh-disclosure[data-variant] > summary:focus-visible {
+  .agh-disclosure[data-variant] > .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-brand-focus-ring);
     outline-offset: 2px;
   }
@@ -1216,7 +1260,7 @@
     flex: 0 0 auto;
     color: var(--agnes-text-tertiary);
   }
-  .agh-disclosure[data-variant][open] > summary > .agh-disclosure-chevron {
+  .agh-disclosure[data-variant][data-open="true"] > .agh-disclosure-summary > .agh-disclosure-chevron {
     transform: rotate(90deg);
   }
   .agh-disclosure-title {
@@ -1231,7 +1275,7 @@
   .agh-disclosure[data-variant="row"] + .agh-disclosure[data-variant="row"] {
     border-top: 1px solid var(--agnes-line-primary);
   }
-  .agh-disclosure[data-variant="row"] > summary {
+  .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
     min-height: 2.75rem;
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-medium);

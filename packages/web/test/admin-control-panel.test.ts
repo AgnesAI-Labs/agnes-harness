@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+
 import type { PackageInstalledDescriptor, RuntimeAdminSnapshot } from '@agnes/protocol'
 import { PluginAdminApi } from '@agnes/web-admin/admin/plugins/api'
 import {
@@ -16,6 +17,7 @@ import { GenerationsPanel, PublicationPanel } from '@agnes/web-admin/settings/ru
 import { SecurityStatusPanel } from '@agnes/web-admin/settings/security-status'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { SessionToolsPanel } from '@agnes/web-admin/settings/session-tools'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -76,8 +78,10 @@ it('shows actual session tool groups and their activation reasons in both langua
     expect(host.querySelector('[data-testid=session-tool-groups] summary')?.textContent).toBe(
       text('sessionToolSession').replace('{number}', '1'),
     )
-    expect(host.querySelector('[data-testid=session-tool-groups] details')?.hasAttribute('open')).toBe(false)
-    expect(host.querySelector('[data-testid=session-tool-groups] details')?.textContent).toContain(
+    expect(
+      host.querySelector('[data-testid=session-tool-groups] .agh-disclosure')?.getAttribute('data-open'),
+    ).toBe('false')
+    expect(host.querySelector('[data-testid=session-tool-groups] .agh-disclosure')?.textContent).toContain(
       'fixture-session',
     )
     expect(host.textContent).toContain(text('toolReason.official-default'))
@@ -455,7 +459,7 @@ it('navigates runtime capabilities and never offers a disallowed security preset
     ).toBe(host.querySelector(`[data-testid="settings-nav-${page}-tab"]`) ? 'true' : 'page')
     if (page === 'diagnostics') {
       await act(async () => {
-        host.querySelector<HTMLDetailsElement>('[data-testid="plugin-diagnostics"]')!.open = true
+        setDisclosureOpen(host.querySelector<HTMLElement>('[data-testid="plugin-diagnostics"]')!, true)
       })
       await vi.waitFor(() => expect(host.querySelector('[data-testid="providers-loop"]')).not.toBeNull())
       expect(host.textContent).toContain('@acme/loop')

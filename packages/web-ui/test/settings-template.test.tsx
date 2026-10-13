@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import { createElement } from 'react'
+import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   Button,
@@ -117,7 +118,7 @@ it('keeps a card heading outside its outline and rows inside one group', () => {
   expect(items[1]?.querySelector('.agnes-settings-item-control')).toBeNull()
 })
 
-it('keeps the native disclosure contract under the shared chevron', () => {
+it('gives a variant disclosure the shared chevron, a named region and a reported toggle', () => {
   const toggled = vi.fn()
   const host = render(
     createElement(
@@ -130,23 +131,35 @@ it('keeps the native disclosure contract under the shared chevron', () => {
           variant: 'plain',
           id: 'advanced',
           'data-testid': 'advanced',
-          onToggle: toggled,
+          onOpenChange: toggled,
         },
         'Hidden content',
       ),
       createElement(SettingsTechnicalDetails, null, 'probe: l1'),
     ),
   )
-  const details = host.querySelector<HTMLDetailsElement>('#advanced')
-  expect(details).toBeInstanceOf(HTMLDetailsElement)
-  expect(details?.open).toBe(false)
+  const details = host.querySelector<HTMLElement>('#advanced')
+  expect(details?.dataset.open).toBe('false')
   expect(details?.getAttribute('data-testid')).toBe('advanced')
-  const summary = details?.querySelector('summary')
+  const summary = details?.querySelector<HTMLButtonElement>('button.agh-disclosure-summary')
   expect(summary?.textContent).toBe('Advanced')
+  expect(summary?.getAttribute('aria-expanded')).toBe('false')
   expect(summary?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
-  expect(details?.querySelector('.agh-disclosure-body')?.textContent).toBe('Hidden content')
+  const body = details?.querySelector<HTMLElement>('.agh-disclosure-body')
+  expect(body?.textContent).toBe('Hidden content')
+  expect(body?.id).toBe(summary?.getAttribute('aria-controls'))
+  expect(body?.hidden).toBe(true)
+  flushSync(() => summary?.click())
+  expect(toggled).toHaveBeenCalledExactlyOnceWith(true)
+  expect([details?.dataset.open, summary?.getAttribute('aria-expanded'), body?.hidden]).toEqual([
+    'true',
+    'true',
+    false,
+  ])
   // Diagnostics are kept on the page under one fixed, localized name.
-  expect(host.querySelector('.agnes-settings-technical summary')?.textContent).toBe('Technical details')
+  expect(host.querySelector('.agnes-settings-technical .agh-disclosure-summary')?.textContent).toBe(
+    'Technical details',
+  )
 })
 
 it('submits a search with Enter without submitting a host form, and names its field', () => {

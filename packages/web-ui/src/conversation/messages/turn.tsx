@@ -27,7 +27,6 @@ export function Turn({
   ownerByNodeId: Map<string, string>
   props: ConversationMessagesProps
 }) {
-  const details = useRef<HTMLDetailsElement>(null)
   const thinkingHost = useRef<HTMLDivElement>(null)
   // Final thinking changes parents. Delay that handover while its existing subtree is in use.
   const thinkingFinalId = useInteractionSnapshot(thinkingHost, turn.finalAssistantId)
@@ -49,9 +48,7 @@ export function Turn({
   useLayoutEffect(() => {
     if (wasActive.current && !shownProcessActive) preference.current = false
     wasActive.current = shownProcessActive
-    const open = preference.current ?? shownProcessActive
-    if (details.current) details.current.open = open
-    setProcessOpen(open)
+    setProcessOpen(preference.current ?? shownProcessActive)
   }, [shownProcessActive])
 
   const members = turn.nodeIds.flatMap((id) => {
@@ -122,8 +119,8 @@ export function Turn({
         {statusText}
       </p>
       <Disclosure
-        ref={details}
         className="turn-process"
+        open={processOpen}
         hidden={processCount === 0}
         onOpenChange={(open) => {
           preference.current = open

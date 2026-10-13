@@ -30,8 +30,6 @@ export interface ConversationTurnActionsProps {
   /** Current locale tag for date formatting; defaults to en-US. */
   localeTag?: string
   onFork?: (turn: UITurn) => Promise<void>
-  /** The legacy bridge may supply its existing disclosure binding. */
-  bindAutoDismiss?: (element: HTMLDetailsElement) => void
   feedbackRef?: Ref<ConversationTurnFeedback>
 }
 
@@ -124,11 +122,10 @@ export function ConversationTurnActions({
   t = fallbackT,
   localeTag = 'en-US',
   onFork,
-  bindAutoDismiss,
   feedbackRef,
 }: ConversationTurnActionsProps) {
-  const details = useRef<HTMLDetailsElement>(null)
-  const summary = useRef<HTMLElement>(null)
+  const [usageOpen, setUsageOpen] = useState(false)
+  const summary = useRef<HTMLButtonElement>(null)
   const usage = useRef<HTMLDListElement>(null)
   const footer = useRef<HTMLElement>(null)
   const currentId = useRef(turn.id)
@@ -179,25 +176,11 @@ export function ConversationTurnActions({
     clear()
     pending.current = undefined
     setPendingId(undefined)
-    if (details.current) details.current.open = false
+    setUsageOpen(false)
   }, [turn.id, clear])
+  // The panel is fixed to the viewport: place it against its trigger whenever it is showing.
   useLayoutEffect(() => {
-    const element = details.current
-    if (!element) return
-    if (bindAutoDismiss) {
-      bindAutoDismiss(element)
-      return
-    }
-    const doc = element.ownerDocument
-    const dismiss = (event: Event) => {
-      if (element.isConnected && element.open && !event.composedPath().includes(element)) element.open = false
-    }
-    doc.addEventListener('click', dismiss)
-    return () => doc.removeEventListener('click', dismiss)
-  }, [bindAutoDismiss])
-  useLayoutEffect(() => {
-    if (details.current?.open && summary.current && usage.current)
-      positionUsage(summary.current, usage.current)
+    if (usageOpen && summary.current && usage.current) positionUsage(summary.current, usage.current)
   })
 
   const copy = () => {
@@ -370,12 +353,11 @@ export function ConversationTurnActions({
       <footer ref={footer} className="turn-footer" hidden={!settled}>
         <Actions className="turn-actions" items={actions} />
         <Disclosure
-          ref={details}
           className="turn-usage"
           hidden={!settled}
-          onOpenChange={(open) => {
-            if (open && summary.current && usage.current) positionUsage(summary.current, usage.current)
-          }}
+          open={usageOpen}
+          onOpenChange={setUsageOpen}
+          dismissible
           summaryRef={summary}
           summaryProps={{
             className: 'turn-meta',

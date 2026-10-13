@@ -24,6 +24,7 @@ import {
   SettingsSection,
   SettingsState,
   StateSwitch,
+  setDisclosureOpen,
   Tag,
   useUiText,
 } from '@agnes/web-ui'
@@ -208,8 +209,8 @@ export function SearchPanel({
       const field = Object.entries(searchConfigSchema.properties).find(
         ([name]) => validation[0]?.path === `/${name}`,
       )?.[1]['x-ui'].id
-      const advanced = document.querySelector<HTMLDetailsElement>('[data-testid="search-advanced"]')
-      if (advanced) advanced.open = true
+      const advanced = document.querySelector('[data-testid="search-advanced"]')
+      if (advanced) setDisclosureOpen(advanced, true)
       if (field) document.getElementById(field)?.focus()
       return
     }

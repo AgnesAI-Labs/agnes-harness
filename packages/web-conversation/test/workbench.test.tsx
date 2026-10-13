@@ -74,8 +74,12 @@ it('loads directories lazily, previews text and mentions a relative path without
     expect(host.querySelector('textarea')).toBeNull()
     expect(header.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh workspace files')
     expect(header.querySelector('button')?.textContent).toBe('')
-    expect(host.querySelector('.workbench-files-footer summary')?.textContent).toBe('File visibility rules')
-    expect(host.querySelector('.workbench-file-preview summary')?.textContent).not.toContain('2026-10-08T')
+    expect(host.querySelector('.workbench-files-footer .agh-disclosure-summary')?.textContent).toBe(
+      'File visibility rules',
+    )
+    expect(host.querySelector('.workbench-file-preview .agh-disclosure-summary')?.textContent).not.toContain(
+      '2026-10-08T',
+    )
     expect(host.querySelector('time')?.dateTime).toBe('2026-10-08T00:00:00Z')
   } finally {
     removeAction()
@@ -153,9 +157,9 @@ it('clears fact records on session changes and ignores an old response while kee
     await Promise.resolve()
     await Promise.resolve()
     expect(host.textContent).not.toContain('OLD_PRIVATE')
-    expect(host.querySelector('details')?.open).toBe(false)
+    expect(host.querySelector<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
     expect(host.querySelector('ol')?.textContent).not.toContain('a'.repeat(64))
-    expect(host.querySelector('summary')?.textContent).toBe('技术详情')
+    expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe('技术详情')
     // Historical records without author presentation retain the public package-name fallback.
     expect(host.querySelector('ol')?.textContent).toContain('document-reader \u00b7 0.1.2')
   } finally {

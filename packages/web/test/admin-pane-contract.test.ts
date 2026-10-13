@@ -45,8 +45,9 @@ function embeddedIds(html: string, roots: readonly string[], selfIds: readonly s
   for (const id of roots) {
     const root = parsed.getElementById(id)
     expect(root, `#${id} is missing from the embedded host`).not.toBeNull()
+    // React-generated ids (`:r1:`) only pair a control with its region; they are not surface ids.
     for (const node of root?.querySelectorAll('[id]') ?? [])
-      if (!node.id.startsWith('settings-dsh-slot-')) found.add(node.id)
+      if (!node.id.startsWith('settings-dsh-slot-') && !node.id.startsWith(':')) found.add(node.id)
   }
   return [...found].sort()
 }

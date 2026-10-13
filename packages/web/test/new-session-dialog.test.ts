@@ -89,7 +89,7 @@ it('preserves picker selectors, workspace availability, manual entry and localiz
   expect(actions.submit).toHaveBeenCalledOnce()
   controller.update({ error: 'Directory unavailable', pickerReady: false })
   expect(button('workspace-pick').hidden).toBe(true)
-  expect((document.getElementById('workspace-manual') as HTMLDetailsElement).open).toBe(true)
+  expect((document.getElementById('workspace-manual') as HTMLElement).dataset.open).toBe('true')
   expect(document.getElementById('new-session-error')?.textContent).toBe('Directory unavailable')
   locale('zh-CN')
   expect(document.getElementById('new-session-title')?.textContent).toBe(

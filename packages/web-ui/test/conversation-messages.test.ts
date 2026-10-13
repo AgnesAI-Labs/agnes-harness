@@ -403,8 +403,8 @@ describe('W3b projected message DOM', () => {
     await act(async () => toolButton?.click())
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')
     expect(item('tool')?.dataset.expanded).toBe('true')
-    const cost = item('cost')?.querySelector<HTMLDetailsElement>('details.call-usage')
-    if (cost) cost.open = true
+    const cost = item('cost')?.querySelector<HTMLElement>('.agh-disclosure.call-usage')
+    await act(async () => cost?.querySelector<HTMLElement>('.agh-disclosure-summary')?.click())
 
     const settled: UINode[] = nodes.map((node): UINode => {
       switch (node.kind) {
@@ -456,7 +456,7 @@ describe('W3b projected message DOM', () => {
     expect(item('approval')?.getAttribute('aria-label')).toBe('无人审批，未执行')
     expect(item('approval')?.querySelectorAll('button')).toHaveLength(0)
     expect(item('cost')?.textContent).toContain('1.25 credits（网关记录）')
-    expect(cost?.open).toBe(true)
+    expect(cost?.dataset.open).toBe('true')
     expect(item('artifact')?.textContent).toContain('final.md')
     expect(item('compaction')?.textContent).toContain('已归档早期记录')
     expect(item('conflict')?.textContent).toContain('policy：remove')

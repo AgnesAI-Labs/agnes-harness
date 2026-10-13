@@ -103,7 +103,7 @@
   }
 
   /* The shared card stack owns spacing; legacy runtime margins must not accumulate. */
-  .runtime-settings .agnes-settings-card details {
+  .runtime-settings .agnes-settings-card :is(details, .agh-disclosure) {
     margin-block: 0;
   }
   #plugin-settings-pane:has(.runtime-settings) #admin-notice:empty,

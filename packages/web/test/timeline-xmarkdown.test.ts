@@ -230,13 +230,13 @@ it.each(['failed', 'cancelled'] as const)(
     await act(async () => mount.render([user, assistant('terminal **partial', '', false)], [turn(status)]))
     expect(body?.closest('[hidden]')).toBeNull()
     expect(selection?.toString()).toBe('selected process')
-    expect(host.querySelector('.turn-process')?.hasAttribute('open')).toBe(true)
+    expect(host.querySelector('.turn-process')?.getAttribute('data-open')).toBe('true')
     await act(async () => {
       selection?.removeAllRanges()
       document.dispatchEvent(new Event('selectionchange'))
     })
     expect(body?.textContent).toContain('terminal **partial')
-    expect(host.querySelector('.turn-process')?.hasAttribute('open')).toBe(false)
+    expect(host.querySelector('.turn-process')?.getAttribute('data-open')).toBe('false')
   },
 )
 

@@ -34,7 +34,7 @@
     margin: var(--s4) 0 var(--s12);
     overflow-wrap: anywhere;
   }
-  .runtime-settings details {
+  .runtime-settings :is(details, .agh-disclosure) {
     margin-block: var(--s16);
   }
   /* A page made of collapsible sections reads as one divided list: rows touch, hairlines separate. */
@@ -45,15 +45,18 @@
   .runtime-settings .agnes-settings-stack > .agnes-settings-details + .agnes-settings-details {
     margin-top: calc(-1 * var(--s16));
   }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details > summary {
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details > .agh-disclosure-summary {
     padding-block: var(--s12);
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-medium);
   }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details[open] > summary {
+  .runtime-settings
+    .agnes-settings-stack
+    > .agnes-settings-details[data-open="true"]
+    > .agh-disclosure-summary {
     font-weight: var(--font-weight-semibold);
   }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details > div {
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details > .agh-disclosure-content {
     padding-block: 0 var(--s20);
   }
   .runtime-settings table {
@@ -259,7 +262,7 @@
     gap: var(--s4);
     overflow: visible;
   }
-  /* <details> does not lay its children out as a grid: restore the rail's 4px rhythm by hand. */
+  /* The advanced group is not a grid: restore the rail's 4px rhythm by hand. */
   .settings-shell #settings-advanced > .settings-nav-item {
     margin-top: var(--s4);
   }
@@ -292,8 +295,8 @@
     box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
     font-weight: var(--font-weight-medium);
   }
-  .settings-shell #settings-advanced > summary,
-  .runtime-settings > nav details > summary {
+  .settings-shell #settings-advanced > .agh-disclosure-summary,
+  .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary) {
     min-height: var(--control-height);
     padding: var(--s8);
     border-radius: var(--radius-control);
@@ -306,15 +309,15 @@
   @media (max-width: 900px) {
     .settings-shell .settings-nav-item,
     .runtime-settings > nav .settings-nav-item,
-    .settings-shell #settings-advanced > summary,
-    .runtime-settings > nav details > summary {
+    .settings-shell #settings-advanced > .agh-disclosure-summary,
+    .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary) {
       min-height: var(--control-height-touch);
       padding: var(--s8) var(--s12);
       font-size: var(--font-size-body);
     }
   }
-  .settings-shell #settings-advanced > summary:focus-visible,
-  .runtime-settings > nav details > summary:focus-visible {
+  .settings-shell #settings-advanced > .agh-disclosure-summary:focus-visible,
+  .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary):focus-visible {
     outline: 2px solid var(--agnes-brand-focus-ring);
     outline-offset: -2px;
     border-radius: var(--radius-control);
@@ -427,7 +430,7 @@
   .runtime-settings .agnes-settings-row > .agnes-settings-details {
     margin: 0.375rem 0 0;
   }
-  .runtime-settings .agnes-settings-row > .agnes-settings-details > summary {
+  .runtime-settings .agnes-settings-row > .agnes-settings-details > .agh-disclosure-summary {
     padding-block: var(--s4);
   }
 

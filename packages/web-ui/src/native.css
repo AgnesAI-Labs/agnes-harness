@@ -146,7 +146,7 @@
       align-content: center;
     }
   }
-  .runtime-settings summary {
+  .runtime-settings :is(summary, .agh-disclosure-summary) {
     cursor: pointer;
     padding-block: var(--s8);
   }

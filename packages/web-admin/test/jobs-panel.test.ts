@@ -50,7 +50,9 @@ it('selects a valid session by title, reads output and confirms only human-owned
     expect(localStorage.getItem('agnes.jobs.session')).toBeNull()
     expect(host.querySelector('[data-testid="jobs-session"]')?.textContent).toContain('Release review')
     expect(host.textContent).not.toContain('session-a')
-    expect(host.querySelector<HTMLDetailsElement>('[data-testid="jobs-session-context"]')?.open).toBe(false)
+    expect(host.querySelector<HTMLElement>('[data-testid="jobs-session-context"]')?.dataset.open).toBe(
+      'false',
+    )
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="session-job-human-job"] button')?.click(),
     )

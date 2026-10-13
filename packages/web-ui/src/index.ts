@@ -133,7 +133,12 @@ export { ConfirmDialog, type ConfirmDialogProps } from './ui/confirm-dialog.js'
 export { CopyButton, type CopyButtonProps } from './ui/copy-button.js'
 export { DataList, type DataListProps } from './ui/data-list.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
-export { Disclosure, type DisclosureProps } from './ui/disclosure.js'
+export {
+  Disclosure,
+  type DisclosureProps,
+  isDisclosureOpen,
+  setDisclosureOpen,
+} from './ui/disclosure.js'
 export { Drawer, type DrawerProps } from './ui/drawer.js'
 export { EmptyState, type EmptyStateProps } from './ui/empty-state.js'
 export { Field, type FieldProps } from './ui/field.js'

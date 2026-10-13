@@ -55,7 +55,9 @@ function rows() {
 }
 it('renders the complete per-call contract with compact summary and exact detail values', async () => {
   await mount(call)
-  expect(host.querySelector('summary')?.textContent).toBe('输入 1.2K · 输出 50 · $0.000125（估算）')
+  expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe(
+    '输入 1.2K · 输出 50 · $0.000125（估算）',
+  )
   expect(rows()).toEqual([
     ['记录范围', '模型调用'],
     ['模型', 'model'],
@@ -72,11 +74,11 @@ it('renders the complete per-call contract with compact summary and exact detail
 })
 it('keeps expansion, summary focus and nodes through gateway updates, replay and optional-field removal', async () => {
   const update = await mount(call)
-  const details = host.querySelector('details')
-  const summary = host.querySelector('summary')
+  const details = host.querySelector<HTMLElement>('.agh-disclosure')
+  const summary = host.querySelector<HTMLElement>('.agh-disclosure-summary')
   const list = host.querySelector('dl')
   if (!details || !summary || !list) throw new Error('missing cost disclosure')
-  details.open = true
+  summary.click()
   summary.focus()
   const gateway: CostNode = {
     ...call,
@@ -89,10 +91,10 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
   }
   for (const next of [gateway, { ...gateway }]) {
     await update(next)
-    expect(host.querySelector('details')).toBe(details)
-    expect(host.querySelector('summary')).toBe(summary)
+    expect(host.querySelector('.agh-disclosure')).toBe(details)
+    expect(host.querySelector('.agh-disclosure-summary')).toBe(summary)
     expect(host.querySelector('dl')).toBe(list)
-    expect(details.open).toBe(true)
+    expect(details.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
     expect(summary.textContent).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
     expect(rows()).toContainEqual(['模型', gateway.model])
@@ -100,7 +102,7 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
     expect(rows()).toContainEqual(['推理 Token（输出的子集）', '未提供'])
     expect(rows()).toContainEqual(['状态', '已中断；用量可能不完整或包含估算'])
     expect(host.querySelector('img, a, strong, script')).toBeNull()
-    expect(host.querySelectorAll('details.call-usage')).toHaveLength(1)
+    expect(host.querySelectorAll('.agh-disclosure.call-usage')).toHaveLength(1)
   }
   await update({ kind: 'cost', id: 'call', seq: 2, source: 'estimated' })
   expect(summary.textContent).toBe('费用未提供')
@@ -109,7 +111,7 @@ it('keeps expansion, summary focus and nodes through gateway updates, replay and
     ['Token 明细', '未提供'],
     ['额度', '未提供'],
   ])
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(document.activeElement).toBe(summary)
 })
 it('uses credit-only zero and interrupted values without inventing dollar or token detail', async () => {
@@ -121,12 +123,12 @@ it('uses credit-only zero and interrupted values without inventing dollar or tok
     credits: 0,
     interrupted: true,
   })
-  expect(host.querySelector('summary')?.textContent).toBe('0 credits（估算） · 已中断')
+  expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe('0 credits（估算） · 已中断')
   expect(rows()).toContainEqual(['额度', '0 credits · 估算'])
   expect(rows()).toContainEqual(['Token 明细', '未提供'])
   expect(host.textContent).not.toContain('$')
   await update({ kind: 'cost', id: 'call', seq: 2, source: 'estimated', model: call.model ?? '' })
-  expect(host.querySelector('summary')?.textContent).toBe('费用未提供')
+  expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe('费用未提供')
   expect(rows()).not.toContainEqual(['美元费用', expect.anything()])
 })
 

@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import { createElement } from 'react'
+import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   Button,
@@ -307,7 +308,7 @@ it('spells shortcuts for the platform and renders them as an untranslated hint c
   expect(chip?.textContent).toBe('⌘N')
   expect(chip?.getAttribute('translate')).toBe('no')
 })
-it('keeps a disclosure native, reports each change and leaves an uncontrolled one to the reader', () => {
+it('toggles a disclosure from its button, names the region it controls and keeps closed content mounted', () => {
   const changes: boolean[] = []
   const host = render(
     createElement(
@@ -324,22 +325,64 @@ it('keeps a disclosure native, reports each change and leaves an uncontrolled on
         createElement('p', null, 'body'),
       ),
       createElement(Disclosure, { id: 'initial', summary: 'Source', defaultOpen: true }, 'source'),
+      createElement(Disclosure, { id: 'held', summary: 'Held', open: false }, 'held'),
     ),
   )
-  const details = host.querySelector<HTMLDetailsElement>('details.agh-disclosure.facts')
-  const summary = details?.querySelector('summary')
-  expect(summary?.textContent).toBe('Details')
-  expect(summary?.getAttribute('data-testid')).toBe('facts-toggle')
-  expect(summary?.getAttribute('aria-label')).toBe('Show details')
-  expect(details?.open).toBe(false)
-  if (!details) throw new Error('missing disclosure')
-  details.open = true
-  details.dispatchEvent(new Event('toggle'))
-  expect(changes.at(-1)).toBe(true)
-  details.open = false
-  details.dispatchEvent(new Event('toggle'))
-  expect(changes.at(-1)).toBe(false)
-  expect(host.querySelector<HTMLDetailsElement>('#initial')?.open).toBe(true)
+  const root = host.querySelector<HTMLElement>('div.agh-disclosure.facts')
+  const summary = root?.querySelector<HTMLButtonElement>(':scope > button.agh-disclosure-summary')
+  if (!root || !summary) throw new Error('missing disclosure')
+  expect(host.querySelector('details, summary')).toBeNull()
+  expect(summary.textContent).toBe('Details')
+  expect(summary.type).toBe('button')
+  expect(summary.getAttribute('data-testid')).toBe('facts-toggle')
+  expect(summary.getAttribute('aria-label')).toBe('Show details')
+  const region = document.getElementById(summary.getAttribute('aria-controls') ?? '')
+  expect(region?.parentElement).toBe(root)
+  expect(region?.textContent).toBe('body')
+  expect([root.dataset.open, summary.getAttribute('aria-expanded'), region?.hidden]).toEqual([
+    'false',
+    'false',
+    true,
+  ])
+  flushSync(() => summary.click())
+  expect([root.dataset.open, summary.getAttribute('aria-expanded'), region?.hidden]).toEqual([
+    'true',
+    'true',
+    false,
+  ])
+  flushSync(() => summary.click())
+  expect(root.dataset.open).toBe('false')
+  expect(changes).toEqual([true, false])
+  // Escape belongs to dismissible panels only; a section stays as the reader left it.
+  flushSync(() => summary.click())
+  flushSync(() => key(summary, 'Escape'))
+  expect(root.dataset.open).toBe('true')
+  expect(host.querySelector<HTMLElement>('#initial')?.dataset.open).toBe('true')
+  // A controlled disclosure reports the request and waits for its owner.
+  flushSync(() => host.querySelector<HTMLElement>('#held > .agh-disclosure-summary')?.click())
+  expect(host.querySelector<HTMLElement>('#held')?.dataset.open).toBe('false')
+})
+it('closes a dismissible disclosure on Escape or a click outside and returns focus to its button', () => {
+  const host = render(
+    createElement(
+      Disclosure,
+      { id: 'panel', summary: 'Usage', dismissible: true },
+      createElement('p', null, 'x'),
+    ),
+  )
+  const root = host.querySelector<HTMLElement>('#panel')
+  const summary = root?.querySelector<HTMLButtonElement>('.agh-disclosure-summary')
+  const inside = root?.querySelector('p')
+  if (!root || !summary || !inside) throw new Error('missing disclosure')
+  flushSync(() => summary.click())
+  flushSync(() => inside.click())
+  expect(root.dataset.open).toBe('true')
+  flushSync(() => document.body.click())
+  expect(root.dataset.open).toBe('false')
+  flushSync(() => summary.click())
+  flushSync(() => key(inside, 'Escape'))
+  expect(root.dataset.open).toBe('false')
+  expect(document.activeElement).toBe(summary)
 })
 it('names a status dot only when no adjacent text states the status', () => {
   const host = render(

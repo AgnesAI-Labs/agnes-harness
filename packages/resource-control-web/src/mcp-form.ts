@@ -1,5 +1,5 @@
 import type { McpServerDefinitionInput } from '@agnes/protocol'
-import type { LocaleTranslator } from '@agnes/web-ui'
+import { type LocaleTranslator, setDisclosureOpen } from '@agnes/web-ui'
 import { $ } from './admin-dom.js'
 import { parseMcpCommand } from './mcp-command.js'
 import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
@@ -67,8 +67,9 @@ export function createMcpForm(input: {
       const field = issues[0].field
       if (command && (field === 'mcp-executable' || field === 'mcp-args')) command.focus()
       else {
-        const advanced = document.getElementById('mcp-advanced') as HTMLDetailsElement | null
-        if (advanced && document.getElementById(field)?.closest('#mcp-advanced')) advanced.open = true
+        const advanced = document.getElementById('mcp-advanced')
+        if (advanced && document.getElementById(field)?.closest('#mcp-advanced'))
+          setDisclosureOpen(advanced, true)
         document.getElementById(field)?.focus()
       }
     }

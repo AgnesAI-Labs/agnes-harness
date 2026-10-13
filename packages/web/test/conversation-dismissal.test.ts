@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -57,32 +58,33 @@ it('keeps the React adapter disclosure through replay and retires its binding on
   try {
     await act(async () => root.render(createElement(Harness)))
     expect(host.querySelector('[data-agnes-turn-actions]')).toBeNull()
-    const old = required<HTMLDetailsElement>(host, '.turn-usage')
-    const summary = required<HTMLElement>(old, 'summary')
+    const old = required<HTMLElement>(host, '.turn-usage')
+    const summary = required<HTMLElement>(old, '.agh-disclosure-summary')
+    setDisclosureOpen(old, true)
+    // The panel listens for outside clicks while it is open.
     const click = add.mock.calls.find(([type]) => type === 'click')?.[1]
     expect(click).toBeDefined()
-    old.open = true
     summary.focus()
     await act(async () => store.update({ sessionId: 'session', nodes, turns: [turn] }))
     expect(host.querySelector('.turn-usage')).toBe(old)
-    expect(old.open).toBe(true)
+    expect(old.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
     required<HTMLElement>(old, 'dl').click()
-    expect(old.open).toBe(true)
+    expect(old.dataset.open).toBe('true')
     document.body.click()
-    expect(old.open).toBe(false)
-    await act(async () => root.render(null))
+    expect(old.dataset.open).toBe('false')
     expect(remove.mock.calls.some(([type, listener]) => type === 'click' && listener === click)).toBe(true)
+    await act(async () => root.render(null))
     await act(async () => root.render(createElement(Harness)))
     expect(host.querySelectorAll('.turn-usage')).toHaveLength(1)
     expect(host.querySelector('.turn-usage')).not.toBe(old)
     expect(
       [...host.querySelectorAll('[data-node-id]')].map((node) => node.getAttribute('data-node-id')),
     ).toEqual(['u1', 'a1'])
-    const next = required<HTMLDetailsElement>(host, '.turn-usage')
-    next.open = true
+    const next = required<HTMLElement>(host, '.turn-usage')
+    setDisclosureOpen(next, true)
     document.body.click()
-    expect(next.open).toBe(false)
+    expect(next.dataset.open).toBe('false')
   } finally {
     await act(async () => root.unmount())
   }

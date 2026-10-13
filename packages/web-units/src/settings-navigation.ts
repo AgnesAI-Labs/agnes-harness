@@ -1,3 +1,4 @@
+import { setDisclosureOpen } from '@agnes/web-ui'
 import type { SettingsNavigationEntry } from './settings.js'
 
 const merged: Readonly<Record<string, readonly [string, string]>> = {
@@ -77,6 +78,9 @@ export function revealSettingsAnchor(anchor: string): void {
   if (!node) return
   for (let current: HTMLElement | null = node; current; current = current.parentElement)
     if (current instanceof HTMLDetailsElement) current.open = true
+    else if (current.classList.contains('agh-disclosure')) setDisclosureOpen(current, true)
   node.scrollIntoView?.({ block: 'start' })
-  ;(node.querySelector<HTMLElement>('summary') ?? node).focus({ preventScroll: true })
+  ;(node.querySelector<HTMLElement>('summary, .agh-disclosure-summary') ?? node).focus({
+    preventScroll: true,
+  })
 }

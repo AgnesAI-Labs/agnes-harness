@@ -8,7 +8,7 @@ import { settingsSections } from '@agnes/web-client'
 import '../src/settings/registry.js'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { zhT } from '@agnes/web-foundation/testkit/locale'
-import { unmountRegion } from '@agnes/web-ui'
+import { setDisclosureOpen, unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -105,7 +105,7 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelectorAll('[data-testid="settings-nav-skills"]')).toHaveLength(1)
   const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
   expect(everyday).toHaveLength(8)
-  expect(dialog.querySelector<HTMLDetailsElement>('#settings-advanced')?.open).toBe(false)
+  expect(dialog.querySelector<HTMLElement>('#settings-advanced')?.dataset.open).toBe('false')
   for (const id of ['mcp', 'search', 'mcp', 'skills', 'feedback', 'mcp']) {
     flushSync(() =>
       dialog
@@ -134,7 +134,7 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull()
   const onPage = vi.fn()
   dialog.addEventListener('agnes:settings-page', onPage)
-  dialog.querySelector<HTMLDetailsElement>('#settings-advanced')!.open = true
+  setDisclosureOpen(dialog.querySelector<HTMLElement>('#settings-advanced')!, true)
   flushSync(() => dialog.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.click())
   expect(onPage.mock.calls[0]?.[0].detail).toBe('models')
   const paneSlot = dialog.querySelector<HTMLElement>('#settings-pane-slot-model')
@@ -421,9 +421,12 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
     expect(occupancy.closest('[data-testid="runtime-occupancy"]')).not.toBeNull()
-    expect(occupancy.closest('details')?.open).toBe(false)
+    expect(occupancy.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
-    expect(host.querySelector('[data-testid="settings-refresh"]')?.closest('details')?.open).toBe(false)
+    expect(
+      host.querySelector('[data-testid="settings-refresh"]')?.closest<HTMLElement>('.agh-disclosure')?.dataset
+        .open,
+    ).toBe('false')
     expect(settingsSections.get('doctor')).toBeUndefined()
     expect(host.querySelector('.agnes-settings-section')?.getAttribute('data-testid')).toBe(
       'diagnostics-doctor',

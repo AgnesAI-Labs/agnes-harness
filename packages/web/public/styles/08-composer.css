@@ -573,7 +573,7 @@
   .session-usage {
     position: relative;
   }
-  .session-usage > summary {
+  .session-usage > .agh-disclosure-summary {
     height: 1.75rem;
     display: inline-flex;
     align-items: center;
@@ -583,15 +583,16 @@
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
-    list-style: none;
+    width: auto;
+    cursor: pointer;
   }
-  .session-usage > summary:hover,
-  .session-usage[open] > summary {
+  .session-usage > .agh-disclosure-summary:hover,
+  .session-usage[data-open="true"] > .agh-disclosure-summary {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
-  .session-usage > summary::-webkit-details-marker {
-    display: none;
+  .session-usage > .agh-disclosure-summary::before {
+    content: none;
   }
   /* The ring takes the status colour through currentColor; the percentage keeps the text colour. */
   .session-usage .usage-ring {
@@ -700,17 +701,17 @@
 
   .composer-dsh-control,
   .composer-extras,
-  .composer-extras[data-overflow="false"] details,
-  .composer-extras[data-overflow="false"] details > div {
+  .composer-extras[data-overflow="false"] .agh-disclosure,
+  .composer-extras[data-overflow="false"] .agh-disclosure > .agh-disclosure-content {
     display: contents;
   }
-  .composer-extras[data-overflow="false"] summary {
+  .composer-extras[data-overflow="false"] .agh-disclosure-summary {
     display: none;
   }
-  .composer-extras[data-overflow="true"] details {
+  .composer-extras[data-overflow="true"] .agh-disclosure {
     position: relative;
   }
-  .composer-extras[data-overflow="true"] details > div {
+  .composer-extras[data-overflow="true"] .agh-disclosure > .agh-disclosure-content {
     position: absolute;
     bottom: calc(100% + var(--s8));
     left: 0;

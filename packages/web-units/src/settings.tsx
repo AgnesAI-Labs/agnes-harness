@@ -1,4 +1,10 @@
-import { SettingsAccountDialog, SettingsModelPane, Toast } from '@agnes/web-ui'
+import {
+  isDisclosureOpen,
+  SettingsAccountDialog,
+  SettingsModelPane,
+  setDisclosureOpen,
+  Toast,
+} from '@agnes/web-ui'
 import {
   forwardRef,
   type ReactNode,
@@ -205,11 +211,11 @@ function SettingsBuiltinImpl(
       }
       const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
       const search = root.querySelector<HTMLInputElement>('#settings-search')
-      let advanced = root.querySelector<HTMLDetailsElement>('#settings-advanced')
+      let advanced = root.querySelector<HTMLElement>('#settings-advanced')
       let searchWasAdvanced = false
       const filter = () => {
         const query = search?.value.trim() ?? ''
-        if (query && !root.dataset.settingsSearching) searchWasAdvanced = advanced?.open ?? false
+        if (query && !root.dataset.settingsSearching) searchWasAdvanced = isDisclosureOpen(advanced)
         const wasSearching = !!root.dataset.settingsSearching
         root.dataset.settingsSearching = query ? 'true' : ''
         let count = 0
@@ -234,8 +240,8 @@ function SettingsBuiltinImpl(
           if (match) count++
         }
         if (advanced) {
-          if (query) advanced.open = true
-          else if (wasSearching) advanced.open = searchWasAdvanced
+          if (query) setDisclosureOpen(advanced, true)
+          else if (wasSearching) setDisclosureOpen(advanced, searchWasAdvanced)
           advanced.hidden = ![...advanced.querySelectorAll<HTMLButtonElement>('button')].some(
             (button) => !button.hidden,
           )
@@ -301,7 +307,7 @@ function SettingsBuiltinImpl(
           if (active) button.setAttribute('aria-current', 'page')
           else button.removeAttribute('aria-current')
         }
-        if (notify && advancedSettings(selected.group) && advanced) advanced.open = true
+        if (notify && advancedSettings(selected.group) && advanced) setDisclosureOpen(advanced, true)
         if (tabs) {
           const current = navigation.snapshot()
           // The initial layout effect already has this snapshot; later controller events commit
@@ -476,11 +482,11 @@ function SettingsBuiltinImpl(
         const tabFocused = focused && tabs?.contains(focused)
         const entries = navigationEntries()
         const query = search?.value ?? ''
-        const wasAdvanced = advanced?.open ?? false
+        const wasAdvanced = isDisclosureOpen(advanced)
         // React reconciles the navigation while retaining search, native controls and outlets.
         flushSync(() => navigation.update({ entries, selected: root.dataset.settingsSection ?? 'model' }))
-        const nextAdvanced = rail.querySelector<HTMLDetailsElement>('#settings-advanced')
-        if (nextAdvanced) nextAdvanced.open = wasAdvanced
+        const nextAdvanced = rail.querySelector<HTMLElement>('#settings-advanced')
+        if (nextAdvanced) setDisclosureOpen(nextAdvanced, wasAdvanced)
         advanced = nextAdvanced
         if (search) search.value = query
         const selected = root.dataset.settingsSection ?? 'model'

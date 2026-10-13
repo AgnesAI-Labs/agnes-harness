@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
+
 import type { UINode, UsageView } from '@agnes/protocol'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
-import { createRegionRenderer } from '@agnes/web-ui'
+import { createRegionRenderer, setDisclosureOpen } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -87,21 +88,23 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
   // 量表只显示占比；完整读数在提示与无障碍名称里。
   expect(container.querySelector('.usage-percent')?.textContent).toBe('1%')
   expect(container.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
-  expect(container.querySelector('summary')?.title).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  expect(container.querySelector<HTMLElement>('.agh-disclosure-summary')?.title).toBe(
+    '上下文约 1.5K / 128.0K · 1.2%',
+  )
   expect(container.textContent).toContain('上下文占用')
   expect(container.textContent).toContain('1,500 Token')
   expect(container.textContent).toContain('128,000 Token')
   expect(container.textContent).toContain('8,192 Token')
   expect(container.textContent).toContain('已启用')
-  const details = container.querySelector('details')
+  const details = container.querySelector<HTMLElement>('.agh-disclosure')
   if (!details) throw new Error('missing details')
-  details.open = true
+  setDisclosureOpen(details, true)
   update(usage, false)
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
   expect(details.hidden).toBe(true)
-  expect(details.open).toBe(false)
+  expect(details.dataset.open).toBe('false')
 })
 
 it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用户要求隐藏）', () => {
@@ -109,9 +112,9 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   document.body.append(container)
   const update = mountUsage(container)
   update(usage, true)
-  const details = container.querySelector('details')
+  const details = container.querySelector<HTMLElement>('.agh-disclosure')
   if (!details) throw new Error('missing details')
-  expect(container.querySelectorAll('details')).toHaveLength(1)
+  expect(container.querySelectorAll('.agh-disclosure')).toHaveLength(1)
   const popover = container.querySelector('.usage-popover')
   // 弹窗只剩上下文口径：头部 + 分段条 + 上下文明细 + 说明。
   expect(popover?.querySelector('.usage-popover-head')).not.toBeNull()
@@ -125,13 +128,13 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   }
   expect(text).not.toContain('0.000206')
   expect(text).not.toContain('account-acct-private')
-  details.open = true
+  setDisclosureOpen(details, true)
   update(usage, false)
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
   expect(details.hidden).toBe(true)
-  expect(details.open).toBe(false)
+  expect(details.dataset.open).toBe('false')
 })
 
 it('preserves zero and missing values and separate dollar/credit provenance in pure cost formatting', () => {
@@ -165,21 +168,21 @@ it('treats unknown and object-prototype purpose names as the generic single-call
   }
 })
 
-it('hides before first data and releases its dismiss listener when unmounted', () => {
+it('hides before first data and releases its dismiss listener once closed', () => {
   const container = document.createElement('section')
   document.body.append(container)
   const removed = vi.spyOn(document, 'removeEventListener')
   const added = vi.spyOn(document, 'addEventListener')
   const update = mountUsage(container)
-  expect(required(container.querySelector('details')).hidden).toBe(true)
+  expect(required(container.querySelector<HTMLElement>('.agh-disclosure')).hidden).toBe(true)
   update(usage, true)
-  const details = required(container.querySelector('details'))
+  const details = required(container.querySelector<HTMLElement>('.agh-disclosure'))
   expect(details.hidden).toBe(false)
-  details.open = true
+  setDisclosureOpen(details, true)
   required(container.querySelector<HTMLElement>('.usage-popover')).click()
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   document.body.click()
-  expect(details.open).toBe(false)
+  expect(details.dataset.open).toBe('false')
   update.dispose()
   const click = added.mock.calls.find(([event]) => event === 'click')
   expect(click).toBeDefined()

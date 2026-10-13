@@ -95,8 +95,8 @@ function Subsection({
       id={`settings-subsection-${id}`}
       title={title}
       data-testid={`settings-subsection-${id}`}
-      onToggle={(event) => {
-        if (event.currentTarget.open) setVisited(true)
+      onOpenChange={(open) => {
+        if (open) setVisited(true)
       }}
     >
       {visited && children}
@@ -153,7 +153,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       id="settings-subsection-providers"
       title={t('runtimeDetails')}
       data-testid="plugin-diagnostics"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onOpenChange={setOpen}
     >
       <RuntimeOccupancy />
       <Button

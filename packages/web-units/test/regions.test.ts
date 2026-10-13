@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode } from '@agnes/protocol'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -198,10 +199,10 @@ describe('independent core web-unit implementations', () => {
     }
     const nav = () => host.querySelectorAll('.settings-nav-group button[data-settings-group]')
     expect(nav()).toHaveLength(3)
-    expect(host.querySelector<HTMLDetailsElement>('#settings-advanced')?.open).toBe(false)
-    const initialAdvanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')
+    expect(host.querySelector<HTMLElement>('#settings-advanced')?.dataset.open).toBe('false')
+    const initialAdvanced = host.querySelector<HTMLElement>('#settings-advanced')
     if (!initialAdvanced) throw new Error('Missing Advanced settings')
-    initialAdvanced.open = true
+    setDisclosureOpen(initialAdvanced, true)
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
     host
       .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
@@ -368,12 +369,12 @@ describe('independent core web-unit implementations', () => {
       roots.push(paneRoot)
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
-    const advanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')
+    const advanced = host.querySelector<HTMLElement>('#settings-advanced')
     const search = host.querySelector<HTMLInputElement>('#settings-search')
     const form = host.querySelector<HTMLFormElement>('#config-form')
     if (!advanced || !search || !form) throw new Error('Missing settings navigation controls')
     form.dataset.settingsView = 'detail'
-    expect(advanced.open).toBe(false)
+    expect(advanced.dataset.open).toBe('false')
     expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Example plugin')
     host
       .querySelector('#config-form')
@@ -382,7 +383,7 @@ describe('independent core web-unit implementations', () => {
     expect(form.dataset.settingsView).toBe('detail')
     search.value = 'agt bvr'
     search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(advanced.open).toBe(true)
+    expect(advanced.dataset.open).toBe('true')
     expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
     expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
     search.value = 'memory'
@@ -394,13 +395,13 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(false)
     search.value = ''
     search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(advanced.open).toBe(false)
+    expect(advanced.dataset.open).toBe('false')
     expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(true)
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'memory', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
     expect(new URL(location.href).searchParams.get('settings')).toBe('models')
     expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
-    expect(advanced.open).toBe(true)
+    expect(advanced.dataset.open).toBe('true')
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
     history.replaceState(history.state, '', '?settings=memory')

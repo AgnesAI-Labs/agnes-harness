@@ -1,65 +1,146 @@
-import { type DetailsHTMLAttributes, forwardRef, type HTMLAttributes, type ReactNode, type Ref } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  forwardRef,
+  type HTMLAttributes,
+  type ReactNode,
+  type Ref,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
+import { flushSync } from 'react-dom'
 import { Icon } from './icon.js'
 
-export type DisclosureProps = Omit<DetailsHTMLAttributes<HTMLDetailsElement>, 'open' | 'summary'> & {
+const REQUEST = 'agh:disclosure-request'
+
+/** Whether the disclosure rendered at this element is showing its content. */
+export const isDisclosureOpen = (root: Element | null | undefined): boolean =>
+  root?.getAttribute('data-open') === 'true'
+
+/**
+ * Ask the disclosure rendered at this element to open or close, for a controller that must reveal
+ * a field before it moves focus there. The change is committed before this returns.
+ */
+export function setDisclosureOpen(root: Element, open: boolean): void {
+  root.dispatchEvent(new CustomEvent(REQUEST, { detail: open }))
+}
+
+export type DisclosureProps = Omit<HTMLAttributes<HTMLDivElement>, 'summary'> & {
   [key: `data-${string}`]: string | number | boolean | undefined
 } & {
   /** The always-visible row that opens and closes the content. */
   summary: ReactNode
-  /** Attributes of the summary row, such as its accessible name, class or test id. */
-  summaryProps?: HTMLAttributes<HTMLElement> & { [key: `data-${string}`]: string | undefined }
-  summaryRef?: Ref<HTMLElement>
+  /** Attributes of the summary button, such as its accessible name, class or test id. */
+  summaryProps?: ButtonHTMLAttributes<HTMLButtonElement> & { [key: `data-${string}`]: string | undefined }
+  summaryRef?: Ref<HTMLButtonElement>
   /** Controlled state. Without it the disclosure keeps whatever the reader last chose. */
   open?: boolean | undefined
   /** Initial state of an uncontrolled disclosure. */
   defaultOpen?: boolean
-  /** Reports every change of the open state, whether the reader or the owner caused it. */
+  /** Reports each change the reader makes: the summary, Escape or a click outside. */
   onOpenChange?: (open: boolean) => void
+  /** A floating panel rather than a section: a click outside or Escape closes it. */
+  dismissible?: boolean
   /**
-   * Shared presentation: one chevron in place of the browser marker, as a quiet text toggle
-   * (`plain`) or a divided list row (`row`). Without it the summary is rendered as written and
-   * the caller styles it.
+   * Shared presentation: one chevron beside the title, as a quiet text toggle (`plain`) or a
+   * divided list row (`row`). Without it the summary is rendered as written and the caller
+   * styles it.
    */
   variant?: 'plain' | 'row'
 }
 
 /**
- * The one collapsible section of the product. It keeps the native disclosure semantics: the
- * summary is focusable, Enter and Space toggle it, and find-in-page can open it.
+ * The one collapsible section of the product: a button that names the section and the region it
+ * shows. The root carries `data-open`; the content stays mounted while closed, so what the reader
+ * typed or selected inside survives a collapse.
  */
-export const Disclosure = forwardRef<HTMLDetailsElement, DisclosureProps>(function Disclosure(
+export const Disclosure = forwardRef<HTMLDivElement, DisclosureProps>(function Disclosure(
   {
     className,
     summary,
     summaryProps,
     summaryRef,
-    open,
-    defaultOpen,
+    open: controlled,
+    defaultOpen = false,
     onOpenChange,
-    onToggle,
+    dismissible = false,
     variant,
     children,
     ...props
   },
-  ref,
+  forwarded,
 ) {
+  const [own, setOwn] = useState(defaultOpen)
+  const open = controlled ?? own
+  const contentId = useId()
+  const root = useRef<HTMLDivElement | null>(null)
+  const setRoot = useCallback(
+    (node: HTMLDivElement | null) => {
+      root.current = node
+      if (typeof forwarded === 'function') forwarded(node)
+      else if (forwarded) forwarded.current = node
+    },
+    [forwarded],
+  )
+  const change = useCallback(
+    (next: boolean) => {
+      setOwn(next)
+      onOpenChange?.(next)
+    },
+    [onOpenChange],
+  )
+  useEffect(() => {
+    const element = root.current
+    if (!element) return
+    const request = (event: Event) => {
+      const next = (event as CustomEvent<unknown>).detail
+      if (event.target === element && typeof next === 'boolean' && next !== open)
+        flushSync(() => change(next))
+    }
+    element.addEventListener(REQUEST, request)
+    return () => element.removeEventListener(REQUEST, request)
+  }, [open, change])
+  useEffect(() => {
+    if (!dismissible || !open) return
+    const doc = root.current?.ownerDocument
+    if (!doc) return
+    const outside = (event: Event) => {
+      // Committed at once: whatever the click lands on next sees the panel already closed.
+      if (root.current && !event.composedPath().includes(root.current)) flushSync(() => change(false))
+    }
+    doc.addEventListener('click', outside)
+    return () => doc.removeEventListener('click', outside)
+  }, [dismissible, open, change])
   return (
-    <details
+    // biome-ignore lint/a11y/noStaticElementInteractions: Escape from anywhere inside closes a dismissible panel.
+    <div
       {...props}
-      ref={ref}
+      ref={setRoot}
       data-variant={variant}
+      data-open={String(open)}
       className={['agh-disclosure', className].filter(Boolean).join(' ')}
-      open={open ?? (defaultOpen || undefined)}
-      onToggle={
-        onToggle || onOpenChange
-          ? (event) => {
-              onToggle?.(event)
-              onOpenChange?.(event.currentTarget.open)
-            }
-          : undefined
-      }
+      onKeyDown={(event) => {
+        props.onKeyDown?.(event)
+        if (!dismissible || !open || event.key !== 'Escape' || event.defaultPrevented) return
+        event.stopPropagation()
+        change(false)
+        root.current?.querySelector<HTMLElement>(':scope > .agh-disclosure-summary')?.focus()
+      }}
     >
-      <summary {...summaryProps} ref={summaryRef}>
+      <button
+        type="button"
+        {...summaryProps}
+        ref={summaryRef}
+        className={['agh-disclosure-summary', summaryProps?.className].filter(Boolean).join(' ')}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={(event) => {
+          summaryProps?.onClick?.(event)
+          if (!event.defaultPrevented) change(!open)
+        }}
+      >
         {variant ? (
           <>
             <Icon name="chevron-right" className="agh-disclosure-chevron" />
@@ -68,8 +149,14 @@ export const Disclosure = forwardRef<HTMLDetailsElement, DisclosureProps>(functi
         ) : (
           summary
         )}
-      </summary>
-      {variant ? <div className="agh-disclosure-body">{children}</div> : children}
-    </details>
+      </button>
+      <div
+        id={contentId}
+        className={variant ? 'agh-disclosure-content agh-disclosure-body' : 'agh-disclosure-content'}
+        hidden={!open}
+      >
+        {children}
+      </div>
+    </div>
   )
 })

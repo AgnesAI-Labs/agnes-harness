@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -370,7 +371,7 @@ it('closes a published review, links to the skill, and keeps terminal history wi
       ),
     )
     expect(host.querySelector('[data-testid="candidate-list"]')?.querySelectorAll('li')).toHaveLength(1)
-    expect(host.querySelector<HTMLDetailsElement>('[data-testid="candidate-history"]')?.open).toBe(false)
+    expect(host.querySelector<HTMLElement>('[data-testid="candidate-history"]')?.dataset.open).toBe('false')
     await act(async () =>
       host
         .querySelector<HTMLButtonElement>('[data-testid="candidate-list"] [data-testid="candidate-open"]')
@@ -383,10 +384,10 @@ it('closes a published review, links to the skill, and keeps terminal history wi
     expect(host.querySelector<HTMLAnchorElement>('[data-testid="candidate-published-link"]')?.href).toContain(
       'settings=skills',
     )
-    const history = host.querySelector<HTMLDetailsElement>('[data-testid="candidate-history"]')
-    expect(history?.open).toBe(false)
+    const history = host.querySelector<HTMLElement>('[data-testid="candidate-history"]')
+    expect(history?.dataset.open).toBe('false')
     await act(async () => {
-      if (history) history.open = true
+      if (history) setDisclosureOpen(history, true)
       host
         .querySelector<HTMLButtonElement>('[data-candidate-id="history"] [data-testid="candidate-open"]')
         ?.click()

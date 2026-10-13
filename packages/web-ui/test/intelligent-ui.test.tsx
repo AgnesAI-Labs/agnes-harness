@@ -796,7 +796,7 @@ it.each(['bar', 'line', 'area', 'pie'] as const)(
       )
       expect(host.querySelector('svg title')?.textContent).toBe('Measurements')
       expect([...host.querySelectorAll('tbody td')].map((cell) => cell.textContent)).toEqual(['2', '4'])
-      expect(host.querySelector('summary')?.textContent).toBe('Source data')
+      expect(host.querySelector('.agh-disclosure-summary')?.textContent).toBe('Source data')
       expect(host.querySelector('svg')?.innerHTML).not.toMatch(/NaN|Infinity/)
     } finally {
       await act(async () => root.unmount())

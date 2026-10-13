@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
-import { webUiLocaleCatalog } from '@agnes/web-ui'
+import { setDisclosureOpen, webUiLocaleCatalog } from '@agnes/web-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createConversationAttachmentsRenderer,
@@ -55,90 +55,51 @@ function required<T extends Element>(parent: ParentNode, selector: string): T {
 }
 
 describe('conversation leaf renderers', () => {
-  it('owns outside-click dismissal without an injected binding and preserves the disclosure on updates', () => {
+  it('dismisses its usage panel on an outside click and preserves the open panel on updates', async () => {
     const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
     expect(actions.element.querySelector('footer.turn-footer')).not.toBeNull()
-    const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
-    const summary = required<HTMLElement>(details, 'summary')
-    const process = document.createElement('details')
-    process.open = true
-    document.body.append(process)
+    const details = required<HTMLElement>(actions.element, '.turn-usage')
+    const summary = required<HTMLElement>(details, '.turn-meta')
     try {
       actions.update({ turn: completedTurn(), finalText: 'answer', settled: true })
-      details.open = true
+      setDisclosureOpen(details, true)
       summary.focus()
       actions.update({ turn: completedTurn({ durationMs: 4000 }), finalText: 'answer', settled: true })
       expect(actions.element.querySelector('.turn-usage')).toBe(details)
-      expect(details.open).toBe(true)
+      expect(details.dataset.open).toBe('true')
       expect(document.activeElement).toBe(summary)
       required<HTMLElement>(details, 'dl').click()
-      expect(details.open).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve))
+      expect(details.dataset.open).toBe('true')
       document.body.click()
-      expect(details.open).toBe(false)
-      expect(process.open).toBe(true)
+      await vi.waitFor(() => expect(details.dataset.open).toBe('false'))
     } finally {
       actions.dispose()
     }
   })
 
-  it('releases its document click listener on disposal, including repeated disposal', () => {
+  it('releases its document click listener on disposal, including repeated disposal', async () => {
     const add = vi.spyOn(document, 'addEventListener')
     const remove = vi.spyOn(document, 'removeEventListener')
     const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
-    const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
-    const clicks = add.mock.calls.filter(([type]) => type === 'click')
     try {
-      expect(clicks).toHaveLength(1)
+      actions.update({ turn: completedTurn(), finalText: 'answer', settled: true })
+      setDisclosureOpen(required<HTMLElement>(actions.element, '.turn-usage'), true)
+      await vi.waitFor(() => expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(1))
+      const listener = add.mock.calls.find(([type]) => type === 'click')?.[1]
       actions.dispose()
       actions.dispose()
-      expect(
-        remove.mock.calls.filter(([type, listener]) => type === 'click' && listener === clicks[0]?.[1]),
-      ).toHaveLength(1)
-      details.open = true
-      document.body.click()
-      expect(details.open).toBe(true)
+      await vi.waitFor(() =>
+        expect(
+          remove.mock.calls.filter(([type, removed]) => type === 'click' && removed === listener),
+        ).toHaveLength(1),
+      )
     } finally {
       actions.dispose()
       add.mockRestore()
       remove.mockRestore()
-    }
-  })
-
-  it('ignores a detached disclosure while another mounted action renderer still dismisses', () => {
-    const first = createConversationMessageActions({ t: zhT })
-    const second = createConversationMessageActions({ t: zhT })
-    document.body.append(first.element, second.element)
-    const detached = required<HTMLDetailsElement>(first.element, '.turn-usage')
-    const live = required<HTMLDetailsElement>(second.element, '.turn-usage')
-    try {
-      first.element.remove()
-      detached.open = true
-      live.open = true
-      document.body.click()
-      expect(detached.open).toBe(true)
-      expect(live.open).toBe(false)
-      first.dispose()
-      live.open = true
-      document.body.click()
-      expect(live.open).toBe(false)
-    } finally {
-      first.dispose()
-      second.dispose()
-    }
-  })
-
-  it('keeps the caller-supplied dismissal binding as a compatibility override', () => {
-    const bindAutoDismiss = vi.fn()
-    const add = vi.spyOn(document, 'addEventListener')
-    const actions = createConversationMessageActions({ bindAutoDismiss, t: zhT })
-    try {
-      expect(bindAutoDismiss).toHaveBeenCalledExactlyOnceWith(actions.element.querySelector('.turn-usage'))
-      expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(0)
-    } finally {
-      actions.dispose()
-      add.mockRestore()
     }
   })
 
@@ -252,13 +213,13 @@ describe('conversation leaf renderers', () => {
     try {
       first.update({ turn: firstTurn, finalText: 'first answer', settled: true })
       second.update({ turn: secondTurn, finalText: 'second answer', settled: true })
-      const firstDetails = required<HTMLDetailsElement>(first.element, '.turn-usage')
-      const secondDetails = required<HTMLDetailsElement>(second.element, '.turn-usage')
-      firstDetails.open = true
+      const firstDetails = required<HTMLElement>(first.element, '.turn-usage')
+      const secondDetails = required<HTMLElement>(second.element, '.turn-usage')
+      setDisclosureOpen(firstDetails, true)
       first.update({ turn: { ...firstTurn, durationMs: 4000 }, finalText: 'first answer+', settled: true })
       first.update({ turn: firstTurn, finalText: 'first answer+', settled: true })
       expect(required(first.element, '.turn-usage')).toBe(firstDetails)
-      expect(firstDetails.open).toBe(true)
+      expect(firstDetails.dataset.open).toBe('true')
       expect(required(second.element, '.turn-usage')).toBe(secondDetails)
 
       const fork = required<HTMLButtonElement>(first.element, '[aria-label="分支到新聊天"]')

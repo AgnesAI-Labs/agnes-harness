@@ -17,7 +17,7 @@
     margin: 0 0 var(--s8);
     color: var(--agnes-text-tertiary);
   }
-  .turn-process > summary {
+  .turn-process > .agh-disclosure-summary {
     width: fit-content;
     max-width: 100%;
     min-height: var(--s32);
@@ -133,7 +133,7 @@
       transform var(--transition),
       color var(--transition-fast);
   }
-  .turn-process[open] .process-chevron {
+  .turn-process[data-open="true"] .process-chevron {
     transform: rotate(0deg);
   }
   /* Each process step is a quiet card; the answer that follows keeps a clear gap. */
@@ -143,12 +143,12 @@
   .turn-process-body + .turn-final {
     margin-top: var(--s16);
   }
-  .turn-process > summary:hover,
-  .turn-process > summary:focus-visible {
+  .turn-process > .agh-disclosure-summary:hover,
+  .turn-process > .agh-disclosure-summary:focus-visible {
     color: var(--agnes-text-primary);
   }
-  .turn-process > summary:hover .process-chevron,
-  .turn-process > summary:focus-visible .process-chevron {
+  .turn-process > .agh-disclosure-summary:hover .process-chevron,
+  .turn-process > .agh-disclosure-summary:focus-visible .process-chevron {
     color: var(--agnes-text-secondary);
   }
   /* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
@@ -352,11 +352,12 @@
   .turn-usage {
     position: relative;
   }
-  .turn-usage > summary {
-    list-style: none;
+  .turn-usage > .agh-disclosure-summary {
+    width: auto;
   }
-  .turn-usage > summary::-webkit-details-marker {
-    display: none;
+  .turn-usage > .agh-disclosure-summary::before,
+  .turn-process > .agh-disclosure-summary::before {
+    content: none;
   }
   .turn-usage-grid {
     position: fixed;
@@ -388,7 +389,7 @@
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
-  .turn-usage[open] .turn-usage-grid {
+  .turn-usage[data-open="true"] .turn-usage-grid {
     display: grid;
   }
 
@@ -453,7 +454,7 @@
     border: 0;
     background: transparent;
   }
-  .call-usage > summary {
+  .call-usage > .agh-disclosure-summary {
     width: fit-content;
     padding: var(--s4) 0;
     color: var(--agnes-text-tertiary);
@@ -470,7 +471,7 @@
     -webkit-mask: radial-gradient(circle, transparent 46%, #000 50%);
     mask: radial-gradient(circle, transparent 46%, #000 50%);
   }
-  .session-usage > .usage-popover {
+  .session-usage > .agh-disclosure-content > .usage-popover {
     position: absolute;
     right: 0;
     bottom: calc(100% + 0.5rem);

@@ -4,6 +4,7 @@ import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { act, createElement, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
@@ -244,7 +245,7 @@ describe('W4a opt-in transcript node host', () => {
     const shell = transcript.querySelector<HTMLElement>('.conversation-turn')
     expect(shell?.dataset.turnId).toBe(running.id)
     expect(shell?.dataset.status).toBe('running')
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('等待审批')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain('等待审批')
     expect(shell?.querySelector('.turn-attention')?.textContent).toContain('需要授权')
     expect(transcript.querySelector('.timeline-unassigned')?.textContent).toContain('游离消息')
     expect(
@@ -256,11 +257,13 @@ describe('W4a opt-in transcript node host', () => {
         [turn({ status: 'waiting', nodeIds: ['user', 'assistant', 'tool'] })],
       ),
     )
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('等待处理')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain('等待处理')
     await act(async () =>
       mount.render([user, assistant, tool('running')], [turn({ nodeIds: ['user', 'assistant', 'tool'] })]),
     )
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('正在执行工具')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain(
+      '正在执行工具',
+    )
     for (const status of ['completed', 'failed', 'cancelled'] as const) {
       await act(async () =>
         mount.render(
@@ -321,13 +324,13 @@ describe('W4a opt-in transcript node host', () => {
     await act(async () => mount.render([user, assistant], [running]))
     const article = item(transcript, 'assistant')
     const paragraph = article?.querySelector('.node-body p')
-    const summary = transcript.querySelector<HTMLElement>('.turn-process summary')
-    const details = transcript.querySelector<HTMLDetailsElement>('.turn-process')
-    expect(details?.open).toBe(true)
+    const summary = transcript.querySelector<HTMLElement>('.turn-process .agh-disclosure-summary')
+    const details = transcript.querySelector<HTMLElement>('.turn-process')
+    expect(details?.dataset.open).toBe('true')
     await act(async () => summary?.click())
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     await act(async () => mount.render([user, assistant], [running]))
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     const range = document.createRange()
     range.selectNodeContents(paragraph?.firstChild ?? transcript)
     document.getSelection()?.removeAllRanges()
@@ -343,7 +346,7 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelector('.turn-final .node-body p')).toBe(paragraph)
     expect(document.getSelection()?.toString()).toBe('稳定段落')
     expect(document.activeElement).toBe(summary)
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     await act(async () => summary?.click())
     await act(async () =>
       mount.render(
@@ -351,7 +354,7 @@ describe('W4a opt-in transcript node host', () => {
         [turn({ status: 'completed', finalAssistantId: 'assistant' })],
       ),
     )
-    expect(details?.open).toBe(true)
+    expect(details?.dataset.open).toBe('true')
   })
 
   it('holds selected thinking in the final article until the reader releases it', async () => {
@@ -879,10 +882,10 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     usage: usageFor(call),
   }
   await act(async () => mount.render([user, say('assistant', 2, 'final answer'), cost], [completed]))
-  const details = transcript.querySelector<HTMLDetailsElement>('details.call-usage')
-  const summary = details?.querySelector('summary')
+  const details = transcript.querySelector<HTMLElement>('.agh-disclosure.call-usage')
+  const summary = details?.querySelector<HTMLElement>('.agh-disclosure-summary')
   if (!details || !summary) throw new Error('missing cost disclosure')
-  details.open = true
+  setDisclosureOpen(details, true)
   summary.focus()
   const gateway = {
     ...call,
@@ -899,10 +902,10 @@ it('preserves complete React cost details, focus and order through the opt-in ti
         [{ ...completed, usage: usageFor(next) }],
       ),
     )
-    const article = transcript.querySelector('details.call-usage')
+    const article = transcript.querySelector('.agh-disclosure.call-usage')
     expect(article).toBe(details)
-    expect(article?.querySelector('summary')).toBe(summary)
-    expect(details.open).toBe(true)
+    expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
+    expect(details.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
     expect(summary.textContent).toBe(costSummary(disclosed(next, next.creditSource), zhT))
     expect(
@@ -922,16 +925,16 @@ it('preserves complete React cost details, focus and order through the opt-in ti
       [{ ...completed, usage: { ...usageFor(call), calls: [] } }],
     ),
   )
-  expect(transcript.querySelector('details.call-usage')).toBeNull()
+  expect(transcript.querySelector('.agh-disclosure.call-usage')).toBeNull()
   expect(details.isConnected).toBe(false)
   await act(async () => {
     registry.setSession('session-b')
     mount.reset()
     mount.render([cost])
   })
-  const fresh = item(transcript, 'cost')?.querySelector('details')
+  const fresh = item(transcript, 'cost')?.querySelector<HTMLElement>('.agh-disclosure')
   expect(fresh).not.toBe(details)
-  expect(fresh?.open).toBe(false)
+  expect(fresh?.dataset.open).toBe('false')
   await act(async () => mount.dispose())
   expect(fresh?.isConnected).toBe(false)
 })

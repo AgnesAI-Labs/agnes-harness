@@ -27,12 +27,12 @@
     margin-top: var(--s12);
     color: var(--agnes-text-secondary);
   }
-  .workspace-manual > summary {
+  .workspace-manual > .agh-disclosure-summary {
     width: fit-content;
     cursor: pointer;
     font-size: var(--font-size-sm);
   }
-  .workspace-manual > .form-field {
+  .workspace-manual > .agh-disclosure-content > .form-field {
     margin-top: 0.625rem;
   }
   .workspace-option-items {

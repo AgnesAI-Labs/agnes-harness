@@ -618,11 +618,11 @@
     border-top: 1px solid var(--agnes-line-primary);
     min-width: 0;
   }
-  .agnes-settings-card summary {
+  .agnes-settings-card :is(summary, .agh-disclosure-summary) {
     cursor: pointer;
     overflow-wrap: anywhere;
   }
-  .agnes-settings-card summary:focus-visible {
+  .agnes-settings-card :is(summary, .agh-disclosure-summary):focus-visible {
     outline: 2px solid var(--agnes-text-emphasis);
     outline-offset: 2px;
   }
@@ -1015,13 +1015,16 @@
     margin: 0 0 var(--s16);
   }
   /* Vertical rhythm for whatever a step shows: buttons, disclosure, fields and states never touch. */
-  .agnes-first-run [data-testid="first-run-guide"] > :is(.agh-btn, details, .agnes-settings-state, p) + * {
+  .agnes-first-run
+    [data-testid="first-run-guide"]
+    > :is(.agh-btn, .agh-disclosure, .agnes-settings-state, p)
+    + * {
     margin-top: var(--s12);
   }
   .agnes-first-run-choices + * {
     margin-top: var(--s12);
   }
-  .agnes-first-run details > .agh-btn {
+  .agnes-first-run .agh-disclosure > .agh-disclosure-content > .agh-btn {
     margin-top: var(--s12);
   }
   .agnes-first-run [data-testid="first-run-workspace"] {

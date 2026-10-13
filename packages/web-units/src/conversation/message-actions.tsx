@@ -23,8 +23,6 @@ export interface ConversationMessageActionOptions {
   onFork?(turn: UITurn): Promise<void>
   /** Locale-bound translator supplied by the owning transcript. */
   t?: Translate
-  /** Compatibility override; otherwise the renderer owns outside-click dismissal and cleanup. */
-  bindAutoDismiss?(element: HTMLDetailsElement): void
 }
 
 // The legacy factory exposes its disclosure before the first update. This hidden placeholder is
@@ -56,16 +54,6 @@ export function createConversationMessageActions(
   const root = createRegionRenderer(element)
   const feedbackRef: { current: ConversationTurnFeedback | null } = { current: null }
   let disposed = false
-  let stopDismiss: (() => void) | undefined
-  const bindAutoDismiss = (details: HTMLDetailsElement) => {
-    if (options.bindAutoDismiss) return options.bindAutoDismiss(details)
-    const doc = details.ownerDocument
-    const dismiss = (event: Event) => {
-      if (details.isConnected && details.open && !event.composedPath().includes(details)) details.open = false
-    }
-    doc.addEventListener('click', dismiss)
-    stopDismiss = () => doc.removeEventListener('click', dismiss)
-  }
   const render = ({ turn, finalText, settled, localeTag }: ConversationMessageActionState) =>
     flushSync(() =>
       root.render(
@@ -76,7 +64,6 @@ export function createConversationMessageActions(
           {...(options.t ? { t: options.t } : {})}
           {...(localeTag ? { localeTag } : {})}
           {...(options.onFork ? { onFork: options.onFork } : {})}
-          bindAutoDismiss={bindAutoDismiss}
           feedbackRef={feedbackRef}
         />,
       ),
@@ -104,8 +91,6 @@ export function createConversationMessageActions(
     dispose() {
       if (disposed) return
       disposed = true
-      stopDismiss?.()
-      stopDismiss = undefined
       // Cancel the component's timer now, even when its root must unmount after an outer commit.
       feedbackRef.current?.clear()
       // The default Transcript can retire this bridge from another React root's layout cleanup.

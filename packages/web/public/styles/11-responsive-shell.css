@@ -233,7 +233,7 @@
       min-width: 32px;
       min-height: 32px;
     }
-    summary {
+    :is(summary, .agh-disclosure-summary) {
       align-content: center;
     }
     .topbar-row {

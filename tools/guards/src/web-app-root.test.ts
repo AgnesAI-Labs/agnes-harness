@@ -66,6 +66,12 @@ it('keeps the admin addresses as aliases of the workbench with no shell of their
   }
 })
 
+// Settings and admin pages are redesigned on one template in their own change. These files keep
+// a native <details> until then; delete a path here when its file moves to Disclosure, which is
+// a button and a region and contains no native disclosure itself.
+const NATIVE_DISCLOSURE_PENDING = new Set([
+])
+
 it('keeps collapsible sections on the one Disclosure primitive', () => {
   const root = repoRoot()
   const native = /<details\b|\bcreateElement\s*\(\s*['"]details['"]/
@@ -73,7 +79,7 @@ it('keeps collapsible sections on the one Disclosure primitive', () => {
   for (const pkg of listPackages(root).filter((pkg) => /web/.test(pkg.name))) {
     for (const file of listSourceFiles(join(pkg.dir, 'src')).filter((file) => !isTestFile(file))) {
       const path = relative(root, file)
-      if (path === 'packages/web-ui/src/ui/disclosure.tsx') continue
+      if (NATIVE_DISCLOSURE_PENDING.has(path)) continue
       if (native.test(readFileSync(file, 'utf8'))) offenders.push(path)
     }
   }

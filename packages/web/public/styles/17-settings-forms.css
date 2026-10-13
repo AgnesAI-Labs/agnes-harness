@@ -693,11 +693,11 @@
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
-  .usage-disclosure summary {
+  .usage-disclosure .agh-disclosure-summary {
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }
-  .usage-disclosure summary:focus-visible {
+  .usage-disclosure .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-input-border-focus);
     outline-offset: 2px;
   }
@@ -929,14 +929,14 @@
   }
   #config-account-advanced > summary,
   .account-key-help > summary,
-  .agnes-first-run summary {
+  .agnes-first-run .agh-disclosure-summary {
     cursor: pointer;
     color: var(--agnes-text-secondary);
     min-height: var(--control-height);
   }
   #config-account-advanced > summary:focus-visible,
   .account-key-help > summary:focus-visible,
-  .agnes-first-run summary:focus-visible {
+  .agnes-first-run .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-brand-primary);
     outline-offset: 2px;
   }
@@ -964,7 +964,7 @@
     }
     #config-account-advanced > summary,
     .account-key-help > summary,
-    .agnes-first-run summary {
+    .agnes-first-run .agh-disclosure-summary {
       min-height: var(--control-height-touch);
     }
     #config-add-account {

@@ -32,8 +32,8 @@ export function ComposerExtras({ children, label }: { children?: ReactNode; labe
         title={label}
         data-testid="composer-extra-controls"
         open={!overflow || open}
-        onToggle={(event) => {
-          if (overflow) setOpen(event.currentTarget.open)
+        onOpenChange={(next) => {
+          if (overflow) setOpen(next)
         }}
       >
         {children}

@@ -188,7 +188,7 @@
   .workbench-files-footer p {
     margin: 0.4rem 0 0;
   }
-  .workbench-file-preview > details {
+  .workbench-file-preview > .agh-disclosure {
     margin: 0 var(--s12) var(--s8);
     font-size: var(--font-size-xs);
     color: var(--agnes-text-secondary);

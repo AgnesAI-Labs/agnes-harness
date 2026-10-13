@@ -10,7 +10,7 @@ import { createPortal } from 'react-dom'
 
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
-import { Disclosure } from './ui/disclosure.js'
+import { Disclosure, type DisclosureProps } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
 import { Skeleton } from './ui/skeleton.js'
 
@@ -288,7 +288,7 @@ export function SettingsDetails({
   children,
   compact = false,
   ...props
-}: Omit<import('react').DetailsHTMLAttributes<HTMLDetailsElement>, 'title'> & {
+}: Omit<DisclosureProps, 'title' | 'summary' | 'variant' | 'summaryProps'> & {
   title: ReactNode
   compact?: boolean
   'data-testid'?: string
@@ -311,8 +311,7 @@ export function SettingsTechnicalDetails({
   title,
   children,
   ...props
-}: Omit<import('react').DetailsHTMLAttributes<HTMLDetailsElement>, 'title'> &
-  DataAttributes & { title?: ReactNode }) {
+}: Omit<DisclosureProps, 'title' | 'summary' | 'variant'> & DataAttributes & { title?: ReactNode }) {
   return (
     <Disclosure
       {...props}

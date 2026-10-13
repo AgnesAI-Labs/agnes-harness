@@ -1,5 +1,5 @@
 import type { UsageView } from '@agnes/protocol'
-import { type CSSProperties, Fragment, useLayoutEffect, useRef } from 'react'
+import { type CSSProperties, Fragment, useLayoutEffect, useState } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
 import { Disclosure } from '../ui/disclosure.js'
 
@@ -13,21 +13,11 @@ const compact = (n: number) =>
   n < 1000 ? String(n) : `${(n / (n >= 1e6 ? 1e6 : 1000)).toFixed(1)}${n >= 1e6 ? 'M' : 'K'}`
 const count = (n: number) => n.toLocaleString('en-US')
 
-/** The host owns visibility; native disclosure state belongs to the reader until usage clears. */
+/** The host owns visibility; the open state belongs to the reader until usage clears. */
 export function ConversationUsage({ usage, connected, t = fallbackT }: ConversationUsageProps) {
-  const details = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
   useLayoutEffect(() => {
-    const element = details.current
-    if (!element) return
-    const doc = element.ownerDocument
-    const dismiss = (event: Event) => {
-      if (element.open && !event.composedPath().includes(element)) element.open = false
-    }
-    doc.addEventListener('click', dismiss)
-    return () => doc.removeEventListener('click', dismiss)
-  }, [])
-  useLayoutEffect(() => {
-    if (!usage && details.current) details.current.open = false
+    if (!usage) setOpen(false)
   }, [usage])
 
   const pct = usage ? ((usage.context.tokens / usage.context.window) * 100).toFixed(1) : ''
@@ -60,8 +50,10 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
     : []
   return (
     <Disclosure
-      ref={details}
       className="usage-disclosure session-usage"
+      open={open}
+      onOpenChange={setOpen}
+      dismissible
       hidden={!usage}
       data-pressure={usage ? (Number(pct) > 90 ? 'high' : Number(pct) > 70 ? 'medium' : 'normal') : undefined}
       summaryProps={{

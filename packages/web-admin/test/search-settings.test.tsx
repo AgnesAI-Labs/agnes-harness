@@ -90,8 +90,10 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   )
   expect(panel.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search service')
   expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
-  expect(panel.querySelector<HTMLDetailsElement>('[data-testid="search-other-services"]')?.open).toBe(false)
-  expect(panel.querySelector<HTMLDetailsElement>('[data-testid="search-technical-exa"]')?.open).toBe(false)
+  expect(panel.querySelector<HTMLElement>('[data-testid="search-other-services"]')?.dataset.open).toBe(
+    'false',
+  )
+  expect(panel.querySelector<HTMLElement>('[data-testid="search-technical-exa"]')?.dataset.open).toBe('false')
   expect(panel.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
   expect(settingsCatalog.en.searchApiKeyHint).not.toContain('secret://')
   expect(panel.querySelector('[data-testid="search-secret-exa"]')?.textContent).toContain(

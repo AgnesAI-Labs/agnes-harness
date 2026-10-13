@@ -10,6 +10,7 @@ import type {
   RuntimePinDescriptor,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
@@ -316,7 +317,7 @@ it('groups real catalog releases and carries the selected version source through
   )
   expect(document.querySelector('.plugin-tabs')).toBeNull()
   expect(document.querySelector('[data-testid=plugin-diagnostics]')).toBeNull()
-  document.querySelector<HTMLDetailsElement>('[data-testid="settings-advanced"]')!.open = true
+  setDisclosureOpen(document.querySelector<HTMLElement>('[data-testid="settings-advanced"]')!, true)
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-diagnostics"]')?.click()
   await vi.waitFor(() =>
     expect(document.querySelector('[data-testid=plugin-diagnostics]')?.hasAttribute('open')).toBe(false),
@@ -368,7 +369,7 @@ it('groups real catalog releases and carries the selected version source through
   check?.click()
   // The shared shell can move away from the installed header while inspection is pending.
   // Advanced settings has no source-install button; in-flight review remains owned by its modal.
-  document.querySelector<HTMLDetailsElement>('[data-testid="settings-advanced"]')!.open = true
+  setDisclosureOpen(document.querySelector<HTMLElement>('[data-testid="settings-advanced"]')!, true)
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-diagnostics"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('install-source')).toBeNull())
   await vi.waitFor(() =>

@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import { type UsageView, userImagePolicy } from '@agnes/protocol'
+import { setDisclosureOpen } from '@agnes/web-ui'
 import type { ComposerView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -175,25 +176,25 @@ describe('rendered composer region', () => {
       const host = () => required(document.querySelector<HTMLElement>('#session-usage'))
       expect(host().hidden).toBe(true)
       render({})
-      const details = required(host().querySelector('details'))
-      const summary = required(details.querySelector('summary'))
-      details.open = true
+      const details = required(host().querySelector<HTMLElement>('.agh-disclosure'))
+      const summary = required(details.querySelector<HTMLElement>('.agh-disclosure-summary'))
+      setDisclosureOpen(details, true)
       summary.focus()
       render({ connected: false, sending: true })
       render({ connected: false })
-      expect(host().querySelector('details')).toBe(details)
-      expect(details.open).toBe(true)
+      expect(host().querySelector<HTMLElement>('.agh-disclosure')).toBe(details)
+      expect(details.dataset.open).toBe('true')
       expect(document.activeElement).toBe(summary)
       expect(host().textContent).toContain('上次同步')
       required(host().querySelector<HTMLElement>('.usage-popover')).click()
-      expect(details.open).toBe(true)
+      expect(details.dataset.open).toBe('true')
       document.body.click()
-      expect(details.open).toBe(false)
-      details.open = true
+      expect(details.dataset.open).toBe('false')
+      setDisclosureOpen(details, true)
       render({ usage: undefined })
       runtime.registry.setSession('another-session')
       expect(host().hidden).toBe(true)
-      expect(details.open).toBe(false)
+      expect(details.dataset.open).toBe('false')
       expect(host().querySelectorAll('dt')).toHaveLength(0)
       render({
         usage: {
@@ -205,28 +206,23 @@ describe('rendered composer region', () => {
       expect(host().hidden).toBe(false)
       expect(host().textContent).toContain('0 Token')
       expect(host().textContent).not.toContain('1,024')
-      expect(details.open).toBe(false)
+      expect(details.dataset.open).toBe('false')
       const removeShadow = runtime.registry.register(
         { name: COMPOSER_SLOT as string, id: 'usage-shadow', owner: 'fixture', priority: -1 },
         () => createElement('div', null, 'shadow'),
       )
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(details.isConnected).toBe(false)
-      details.open = true
-      document.body.click()
-      expect(details.open).toBe(true)
       removeShadow()
       await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(host().querySelector('details')).not.toBe(details)
+      expect(host().querySelector<HTMLElement>('.agh-disclosure')).not.toBe(details)
       expect(host().textContent).toContain('0 Token')
-      const restored = required(host().querySelector('details'))
-      expect(restored.open).toBe(false)
+      const restored = required(host().querySelector<HTMLElement>('.agh-disclosure'))
+      expect(restored.dataset.open).toBe('false')
       await runtime.dispose()
       runtime = undefined
       expect(restored.isConnected).toBe(false)
-      restored.open = true
-      document.body.click()
-      expect(restored.open).toBe(true)
+      // Each open panel listened for outside clicks, and none of those listeners outlives it.
       const clicks = added.mock.calls.filter(([event]) => event === 'click')
       expect(clicks.length).toBeGreaterThanOrEqual(2)
       for (const [, listener] of clicks)
@@ -313,14 +309,12 @@ describe('rendered composer region', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('.composer-extras')?.getAttribute('data-overflow')).toBe('true'),
     )
-    const extras = required(
-      document.querySelector<HTMLDetailsElement>('[data-testid="composer-extra-controls"]'),
-    )
+    const extras = required(document.querySelector<HTMLElement>('[data-testid="composer-extra-controls"]'))
     const extraDraft = required(document.querySelector<HTMLInputElement>('#fixture-extra-draft'))
-    extras.open = true
+    setDisclosureOpen(extras, true)
     extraDraft.value = 'unfinished plugin input'
-    extras.open = false
-    extras.open = true
+    setDisclosureOpen(extras, false)
+    setDisclosureOpen(extras, true)
     expect(document.querySelector('#fixture-extra-draft')).toBe(extraDraft)
     expect(extraDraft.value).toBe('unfinished plugin input')
     removeLeft()

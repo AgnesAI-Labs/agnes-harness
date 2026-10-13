@@ -104,8 +104,8 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
     },
   })
   await render({ turn: current, finalText: 'answer', settled: true })
-  const details = required<HTMLDetailsElement>('details.turn-usage')
-  const summary = required<HTMLElement>('summary')
+  const details = required<HTMLElement>('.agh-disclosure.turn-usage')
+  const summary = required<HTMLElement>('.turn-meta')
   const list = required<HTMLElement>('dl')
   expect(summary.textContent).toContain(model)
   expect(summary.textContent).toContain('继承历史')
@@ -120,38 +120,38 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   expect(host.querySelector('img, strong')).toBeNull()
   expect(host.querySelectorAll('.call-usage')).toHaveLength(1)
   expect(host.querySelector('.call-usage')?.textContent).toContain('输入 1')
-  details.open = true
+  await act(async () => summary.click())
   summary.focus()
   await render({
     turn: { ...current, finalModel: 'final', durationMs: 4000 },
     finalText: 'answer',
     settled: true,
   })
-  expect(required('details.turn-usage')).toBe(details)
-  expect(required('summary')).toBe(summary)
+  expect(required('.agh-disclosure.turn-usage')).toBe(details)
+  expect(required('.turn-meta')).toBe(summary)
   expect(required('dl')).toBe(list)
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(document.activeElement).toBe(summary)
   expect(summary.textContent).toContain('final')
   expect(rows()).toContainEqual(['用时', '4.0 秒'])
   await render({ turn: turn('one'), finalText: 'answer', settled: true })
   expect(rows()).toHaveLength(3)
-  expect(required('summary').textContent).toContain('输入 12')
-  expect(required('summary').textContent).toContain('输出 4')
+  expect(required('.turn-meta').textContent).toContain('输入 12')
+  expect(required('.turn-meta').textContent).toContain('输出 4')
   expect(host.textContent).not.toContain('$')
 })
 
 it('dismisses only its own usage on an outside click, retaining inside clicks and process disclosure', async () => {
   await render({ turn: turn(), finalText: 'answer', settled: true })
-  const details = required<HTMLDetailsElement>('details.turn-usage')
+  const details = required<HTMLElement>('.agh-disclosure.turn-usage')
   const process = document.createElement('details')
   process.open = true
   document.body.append(process)
-  details.open = true
-  required<HTMLElement>('dl').click()
-  expect(details.open).toBe(true)
-  document.body.click()
-  expect(details.open).toBe(false)
+  await act(async () => required<HTMLElement>('.turn-meta').click())
+  await act(async () => required<HTMLElement>('dl').click())
+  expect(details.dataset.open).toBe('true')
+  await act(async () => document.body.click())
+  expect(details.dataset.open).toBe('false')
   expect(process.open).toBe(true)
   process.remove()
 })
@@ -256,14 +256,14 @@ it('uses the latest non-adjustment inference model and omits absent costs withou
     },
   })
   await render({ turn: base, finalText: 'answer', settled: true })
-  expect(required('summary').textContent).toBe('second')
+  expect(required('.turn-meta').textContent).toBe('second')
   expect(rows().slice(0, 3)).toEqual([
     ['输入 Token', '0'],
     ['输出 Token', '0'],
     ['缓存读取 / 写入', '0 / 0'],
   ])
   await render({ turn: { ...base, finalModel: 'final' }, finalText: 'answer', settled: true })
-  expect(required('summary').textContent).toBe('final')
+  expect(required('.turn-meta').textContent).toBe('final')
 })
 
 it('does not publish an old fork failure or unlock a new turn while its fork is pending', async () => {
@@ -304,8 +304,9 @@ it('keeps feedback local and retires a timed message and owned click listener', 
     current: null as import('@agnes/web-ui/conversation').ConversationTurnFeedback | null,
   }
   await render({ turn: turn(), finalText: 'answer', settled: true, feedbackRef })
-  const details = required<HTMLDetailsElement>('details.turn-usage')
+  await act(async () => required<HTMLElement>('.turn-meta').click())
   const ownedClick = add.mock.calls.find(([event]) => event === 'click')?.[1]
+  expect(ownedClick).toBeDefined()
   await act(async () => feedbackRef.current?.report('temporary', 1600))
   expect(required('.turn-feedback').textContent).toBe('temporary')
   await act(async () => vi.advanceTimersByTime(1600))
@@ -316,9 +317,6 @@ it('keeps feedback local and retires a timed message and owned click listener', 
   expect(remove.mock.calls.some(([event, listener]) => event === 'click' && listener === ownedClick)).toBe(
     true,
   )
-  details.open = true
-  document.body.click()
-  expect(details.open).toBe(true)
   add.mockRestore()
   remove.mockRestore()
 })
@@ -355,12 +353,11 @@ it('keeps timed feedback independent across mounted turns', async () => {
   }
 })
 
-it('uses a supplied disclosure binding without adding its own outside-click listener', async () => {
+it('listens for outside clicks only while its usage panel is open', async () => {
   const add = vi.spyOn(document, 'addEventListener')
-  const bindAutoDismiss = vi.fn()
-  await render({ turn: turn(), finalText: 'answer', settled: true, bindAutoDismiss })
-  const details = required<HTMLDetailsElement>('details.turn-usage')
-  expect(bindAutoDismiss).toHaveBeenCalledExactlyOnceWith(details)
+  await render({ turn: turn(), finalText: 'answer', settled: true })
   expect(add.mock.calls.filter(([event]) => event === 'click')).toHaveLength(0)
+  await act(async () => required<HTMLElement>('.turn-meta').click())
+  expect(add.mock.calls.filter(([event]) => event === 'click')).toHaveLength(1)
   add.mockRestore()
 })

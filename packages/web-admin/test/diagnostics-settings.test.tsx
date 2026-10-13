@@ -70,13 +70,13 @@ it.each([false, true])(
     )
     const errorCode = host.querySelector('[data-testid="diagnostics-error-code"]')!
     expect(errorCode.textContent).toBe('-32602')
-    expect(errorCode.closest<HTMLDetailsElement>('details')?.open).toBe(false)
+    expect(errorCode.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
     expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
     expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
       'No Worker is currently running',
     )
-    expect(host.querySelector<HTMLDetailsElement>('[data-testid="diagnostics-runtime-details"]')?.open).toBe(
-      false,
+    expect(host.querySelector<HTMLElement>('[data-testid="diagnostics-runtime-details"]')?.dataset.open).toBe(
+      'false',
     )
     expect(!!host.querySelector('[data-testid="diagnostics-doctor"]')).toBe(doctorAvailable)
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()

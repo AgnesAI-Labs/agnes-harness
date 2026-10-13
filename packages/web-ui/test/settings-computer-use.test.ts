@@ -46,7 +46,7 @@ it('renders one summary with folded maintenance, safe text and snapshot controls
   try {
     render(view)
     expect(host.querySelectorAll('.agnes-settings-stack > .agnes-settings-group')).toHaveLength(1)
-    expect(host.querySelector<HTMLDetailsElement>('[data-testid="computer-use-more"]')?.open).toBe(false)
+    expect(host.querySelector<HTMLElement>('[data-testid="computer-use-more"]')?.dataset.open).toBe('false')
     expect(host.querySelector('#computer-use-state')?.getAttribute('role')).toBe('status')
     expect(host.querySelector('#computer-use-summary')?.textContent).toBe('<script>unsafe</script>')
     expect(host.querySelector('script')).toBeNull()

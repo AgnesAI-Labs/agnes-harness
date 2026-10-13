@@ -76,7 +76,7 @@
   }
 
   /* One chain per turn: the summary is its head, the steps continue the same bordered box. */
-  .turn-process > summary {
+  .turn-process > .agh-disclosure-summary {
     gap: var(--s8);
   }
   .turn-done-check {

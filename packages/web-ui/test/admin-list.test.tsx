@@ -147,7 +147,9 @@ it('groups catalog versions and reviews the selected version without opening the
   await act(async () => option?.click())
   expect(chosen).toBeUndefined()
   expect(host.querySelector('.plugin-source')).toBeNull()
-  expect(host.querySelector('[data-testid="plugin-other-versions"] summary')?.textContent).toContain('2.0.0')
+  expect(
+    host.querySelector('[data-testid="plugin-other-versions"] .agh-disclosure-summary')?.textContent,
+  ).toContain('2.0.0')
   expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('Unsupported')
   host.querySelector<HTMLButtonElement>('.agh-list-row-actions button')?.click()
   expect(chosen).toBe('2.0.0')
