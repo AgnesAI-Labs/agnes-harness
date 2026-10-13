@@ -63,17 +63,9 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
         lock.policySnapshot.capabilityCeiling = ['ui']
         lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
         lock.seams = Object.fromEntries(
-          [
-            'approval',
-            'checkpoint',
-            'billing',
-            'sandbox',
-            'verifier',
-            'repair',
-            'artifacts',
-            'principals',
-            'platform',
-          ].map((name) => [name, '@agnes/base']),
+          ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map(
+            (name) => [name, { provider: 'local' }],
+          ),
         )
         const runtimeSources: RuntimePluginSnapshot[] = []
         for (let index = 0; index < count; index++) {
@@ -88,8 +80,7 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
               license: 'MIT',
               exports: './index.mjs',
               agnes: {
-                capabilities: { ui: true },
-                plugins: [{ export: 'main', apiRange: '^4.0.0' }],
+                plugins: [{ export: 'main', apiRange: '^4.0.0', capabilities: { ui: true } }],
                 clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }],
               },
             }),
