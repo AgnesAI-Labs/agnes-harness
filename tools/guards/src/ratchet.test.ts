@@ -1101,7 +1101,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28595; no exclusions or spare allocation.
-  'packages/core/src': 28595,
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/core/src 28630; no exclusions or spare allocation.
+  'packages/core/src': 28630,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1339,7 +1340,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/assemble 4223; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src/assemble 4250; no exclusions or spare allocation.
-  'packages/host/src/assemble': 4250,
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/host/src/assemble 4260; no exclusions or spare allocation.
+  'packages/host/src/assemble': 4260,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2256,7 +2258,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web/src 17033; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src 17193; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src 17239; no exclusions or spare allocation.
-  'packages/web/src': 17239,
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/web/src 17242; no exclusions or spare allocation.
+  'packages/web/src': 17242,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2753,7 +2756,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src 40215; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/host/src 40352; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src 40380; no exclusions or spare allocation.
-  'packages/host/src': 40380,
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/host/src 40651; no exclusions or spare allocation.
+  'packages/host/src': 40651,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
