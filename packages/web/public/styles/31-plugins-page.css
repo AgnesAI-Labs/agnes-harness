@@ -84,13 +84,6 @@
     flex: 1;
     margin: 0;
   }
-  .plugins-page-choice {
-    display: inline-flex;
-    gap: var(--s2);
-    padding: var(--s2);
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--agnes-text-primary) 6%, transparent);
-  }
   .plugins-page-resources {
     min-width: 0;
     display: grid;

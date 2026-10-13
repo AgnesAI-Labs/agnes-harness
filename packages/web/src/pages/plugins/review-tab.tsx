@@ -1,42 +1,11 @@
 import { CandidateInbox } from '@agnes/web-admin/admin/plugins/candidates'
 import { FeedbackAdminPanel } from '@agnes/web-admin/settings/feedback'
-import { Button, Count, SettingsState } from '@agnes/web-ui'
+import { Count, Segmented, SettingsState } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginView, useCandidateSources } from './admin-view.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
-type Kind = 'plugin' | 'skill' | undefined
-
-function Choice<T extends string | undefined>({
-  label,
-  value,
-  options,
-  onChange,
-  testId,
-}: {
-  label: string
-  value: T
-  options: readonly (readonly [T, React.ReactNode])[]
-  onChange(value: T): void
-  testId: string
-}) {
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: a pressed-button group, not a form fieldset.
-    <div className="plugins-page-choice" role="group" aria-label={label} data-testid={testId}>
-      {options.map(([option, text]) => (
-        <Button
-          key={option ?? 'all'}
-          size="small"
-          appearance={option === value ? 'secondary' : 'ghost'}
-          aria-pressed={option === value}
-          onClick={() => onChange(option)}
-        >
-          {text}
-        </Button>
-      ))}
-    </div>
-  )
-}
+type Kind = 'all' | 'plugin' | 'skill'
 
 /** Everything the agent drafted, plugins and skills in one list; your ratings sit beside it. */
 export function ReviewTab({
@@ -53,36 +22,38 @@ export function ReviewTab({
   onPendingCount(count: number): void
 }) {
   const [showing, setShowing] = useState<'candidates' | 'feedback'>('candidates')
-  const [kind, setKind] = useState<Kind>(undefined)
+  const [kind, setKind] = useState<Kind>('all')
   return (
     <>
       <div className="plugins-page-toolbar">
-        <Choice<'candidates' | 'feedback'>
+        <Segmented<'candidates' | 'feedback'>
           label={t('review.view')}
           testId="review-view"
           value={showing}
           onChange={setShowing}
           options={[
-            [
-              'candidates',
-              <>
-                {t('review.candidates')}
-                <Count value={pending} label={t('tab.reviewCount', { count: pending })} />
-              </>,
-            ],
-            ['feedback', t('review.feedback')],
+            {
+              value: 'candidates',
+              label: (
+                <>
+                  {t('review.candidates')}
+                  <Count value={pending} label={t('tab.reviewCount', { count: pending })} />
+                </>
+              ),
+            },
+            { value: 'feedback', label: t('review.feedback') },
           ]}
         />
         {showing === 'candidates' && (
-          <Choice<Kind>
+          <Segmented<Kind>
             label={t('review.type')}
             testId="review-type"
             value={kind}
             onChange={setKind}
             options={[
-              [undefined, t('review.all')],
-              ['plugin', t('review.plugin')],
-              ['skill', t('review.skill')],
+              { value: 'all', label: t('review.all') },
+              { value: 'plugin', label: t('review.plugin') },
+              { value: 'skill', label: t('review.skill') },
             ]}
           />
         )}
@@ -92,7 +63,7 @@ export function ReviewTab({
       ) : view.api ? (
         <CandidateInbox
           merged
-          type={kind}
+          type={kind === 'all' ? undefined : kind}
           api={view.api}
           canReview={
             view.canEffect('packages.trust') &&
