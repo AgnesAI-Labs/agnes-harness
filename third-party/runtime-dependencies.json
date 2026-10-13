@@ -233,7 +233,7 @@
       "source": "https://github.com/ajv-validator/ajv",
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/host", "packages/mhs", "packages/protocol"]
+      "consumers": ["packages/base", "packages/daemon", "packages/host", "packages/mhs", "packages/protocol"]
     },
     {
       "name": "three",
@@ -243,6 +243,15 @@
       "purpose": "Render the 3D demo world of Agnes MHS in the browser.",
       "rationale": "The standard WebGL scene graph, with the loaders and post-processing the demo needs.",
       "consumers": ["examples/mars-world"]
+    },
+    {
+      "name": "sharp",
+      "version": "0.34.5",
+      "license": "Apache-2.0",
+      "source": "https://github.com/lovell/sharp",
+      "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
+      "rationale": "The shared safe-image validator does not decode raster pixels or resize images. sharp loads the prebuilt codec for the host: on macOS and Linux @img/sharp-<platform> (Apache-2.0) with a separate @img/sharp-libvips-<platform> (LGPL-3.0-or-later); on Windows one @img/sharp-win32-<arch> (Apache-2.0 AND LGPL-3.0-or-later) that carries the libvips DLLs. sharp's install script is neither needed nor run; the codec and its license files and licensing tables ship with the runtime.",
+      "consumers": ["packages/base"]
     }
   ]
 }

@@ -17,6 +17,7 @@ import {
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
 
+import { batchItemConfinementLive } from './batch-confinement.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -665,6 +666,9 @@ export async function handleServiceCommand(
   switch (cmd.method) {
     case 'ping':
       return { ok: true }
+    // The batch engine asks before it writes item jobs; a Host-free worker runs no item sessions.
+    case 'batch.confinement':
+      return { ready: host ? batchItemConfinementLive(host) : false }
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}

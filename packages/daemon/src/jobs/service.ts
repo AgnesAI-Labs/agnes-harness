@@ -11,6 +11,12 @@ type JobsServiceOptions = {
   onCancel?: (jobId: string) => void
 }
 type JobResult = Exclude<JobStatus['result'], undefined>
+/**
+ * Job ids the daemon writes for its own work, batch items (`batch:<id>:<ordinal>:<run>`), are
+ * protected names: a remote client cannot enqueue one first, for a session of its own, and so take
+ * an item's place.
+ */
+const isDaemonJobName = (spec: JobSpec): boolean => spec.idempotencyKey.startsWith('batch:')
 
 export class JobsService implements JobsPort {
   constructor(private readonly options: JobsServiceOptions) {}
@@ -19,7 +25,8 @@ export class JobsService implements JobsPort {
     const validated = validateJobSpec(raw)
     if (!validated.ok) throw toRpcError(validated.errors)
     const spec = validated.value
-    const isProtected = spec.protected === true || this.options.protectedNames?.(spec) === true
+    const isProtected =
+      spec.protected === true || isDaemonJobName(spec) || this.options.protectedNames?.(spec) === true
     if (isProtected && !context.local) {
       throw rpcError('CAPABILITY_DENIED', { reason: 'protected jobs are local-only' })
     }

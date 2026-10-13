@@ -83,6 +83,8 @@ import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 export type WorkerHostSkillResources = Readonly<{
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
+  /** The bundled batch tools' bridge to the daemon batch engine. */
+  batch?: NonNullable<HostOptions['batch']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
   /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
   requestMedia: NonNullable<HostOptions['requestMedia']>
@@ -237,6 +239,22 @@ export async function runWorker(
       throw new Error('plugins management session mismatch')
     return sharedChannel.request('plugin-manage', input, signal)
   }
+  // The daemon takes the session from this channel's frame; the request's own key only lets a call
+  // made outside its session's context be refused here.
+  const batch: NonNullable<HostOptions['batch']> = async (input, signal) => {
+    if (input.sessionKey !== sharedChannel.currentSessionKey()) throw new Error('batch session mismatch')
+    try {
+      return (await sharedChannel.request('batch', input, signal)) as Awaited<
+        ReturnType<NonNullable<HostOptions['batch']>>
+      >
+    } catch (error) {
+      // The daemon answers a refusal as { code, message }; the tool shows the message.
+      const message = (error as { message?: unknown } | null)?.message
+      throw new Error(typeof message === 'string' ? message : 'the batch request failed')
+    }
+  }
+  // The same daemon bridges reach the Host on both assembly paths below.
+  const daemonBridges = { skillInstall, mcpManage, pluginManage, batch } as const
   const prompter: Prompter = {
     ask(req, opts) {
       return sharedChannel.ask(req, opts)
@@ -396,9 +414,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
-          skillInstall,
-          mcpManage,
-          pluginManage,
+          ...daemonBridges,
           requestMedia,
           runtimePluginSources,
           ...bootPackageSnapshots,
@@ -426,9 +442,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            skillInstall,
-            mcpManage,
-            pluginManage,
+            ...daemonBridges,
             requestMedia,
             // Browser/surface service calls are executed by the shared Host-bearing session worker.
             // The `service` kind is reserved for the resource-control lifecycle worker and does not

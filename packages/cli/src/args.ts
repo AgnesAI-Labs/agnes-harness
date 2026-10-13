@@ -11,6 +11,7 @@ const COMMANDS = new Set<string>([
   'import',
   'doctor',
   'computer-use',
+  'batch',
   'profile',
   'package',
   'packages',
@@ -29,7 +30,7 @@ const COMMANDS = new Set<string>([
 ])
 
 /** These four hand their tail on to another program or another grammar; we do not read it. */
-const FORWARDED = new Set<string>(['daemon', 'ext', 'mcp', 'resources', 'skills', 'serve'])
+const FORWARDED = new Set<string>(['daemon', 'ext', 'mcp', 'resources', 'skills', 'serve', 'batch'])
 
 // Both tables are null-prototype maps read through Object.hasOwn. A plain object literal read with
 // `in` answers true for toString, constructor, hasOwnProperty and __proto__, which would make an
@@ -213,6 +214,7 @@ export function usage(): string {
     'agh computer-use operation [operationId] [--json] | cancel <operationId> [--json]',
     'agh computer-use permissions status|grant [--json]',
     'agh doctor subagents [--json] [--repair]',
+    'agh batch start <dir> --prompt <text>|--prompt-file <file> [...] | status <id> [--watch] | results <id> | cancel <id> | list',
     'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
     'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> <integrity> <capabilityHash>',
     '              enable|disable|rollback|remove <id> | operation|cancel <operationId>',

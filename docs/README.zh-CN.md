@@ -27,6 +27,7 @@
 | [CLI 与 TUI](guide/cli.zh-CN.md) | 运行终端任务、使用交互会话、处理审批 |
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
+| [批量处理](guide/batch.zh-CN.md) | 让模型逐个读文件夹里的文件，每个文件得到一行结果 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |

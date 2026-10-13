@@ -39,6 +39,13 @@ following material retains its original notices and license terms:
   Source: https://github.com/lucide-icons/lucide; retrieved through Iconify.
   See packages/web-units/LUCIDE-LICENSE.
 
+- The local and single-executable runtimes bundle sharp (Apache License 2.0) and
+  its platform libvips binaries (LGPL-3.0-or-later, loaded as separate shared
+  libraries, with the further libraries they contain listed in that package's
+  README). The upstream license files and licensing tables are retained beside
+  the codec in the distributed node_modules payload. See
+  third-party/runtime-dependencies.json.
+
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.

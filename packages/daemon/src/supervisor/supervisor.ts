@@ -50,6 +50,14 @@ import {
 } from '@agnes/resource-control-daemon'
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { BatchEngine, batchJobsPort } from '../batch/engine.js'
+import { BatchRepo } from '../batch/repo.js'
+import {
+  createBatchPort,
+  createBatchRequests,
+  createItemSessions,
+  workerItemConfinement,
+} from '../batch/requests.js'
 import { rebuildDesiredFromInventory, reconcileDesiredWebRows } from '../composite-desired.js'
 import { CompositeRuntimeDelivery, deliverDesiredToWorkers } from '../composite-runtime-delivery.js'
 import {
@@ -1097,6 +1105,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
       owner: (key) => sessionOwnership.resolve(key),
     })
+    // Set once the batch engine exists; until then (and without job tables) the tools are refused.
+    let batchRequests: ((sessionKey: string, params: unknown) => Promise<unknown>) | undefined
     const mcpManageRequests = createMcpManageRequests({
       directory: resourceControlDirectory,
       profile: o.profile.name,
@@ -1134,6 +1144,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       },
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f) => {
+        // The session is the one this worker channel stamped on the frame, never one in the params.
+        if (f.method === 'batch') {
+          if (!batchRequests) throw new Error('Batch processing is unavailable in this daemon.')
+          return batchRequests(sessionKey, f.params)
+        }
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
           return pluginManageRequests(sessionKey, f.requestId, f.method, f.params)
         if (f.method === 'mcp-manage' || f.method === 'mcp-manage-abort')
@@ -1602,6 +1617,43 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           })
         : undefined
     const selectedJobs = o.ports?.jobs ?? jobs
+    // Each file of a batch is one durable prompt job in its own item session; the engine follows
+    // them on the scheduler's beat. Item sessions run in the shared worker, which is also what is
+    // asked whether the hook that keeps them to the read tool is live there.
+    const batchEngine =
+      jobsRepo && jobs && jobTables
+        ? new BatchEngine({
+            repo: new BatchRepo(jobTables.table('batches'), clock),
+            jobs: batchJobsPort(jobs),
+            sessions: createItemSessions({
+              ownership: sessionOwnership,
+              workspaces: workspaceCatalog,
+              registry: {
+                get: (key) => supervisorRegistry.get(key),
+                open: (opening) => supervisorRegistry.open(opening),
+                close: (key) => supervisorRegistry.close(key),
+              },
+            }),
+            host: workerItemConfinement(() => pool.acquireSharedWorker()),
+            profileName: o.profile.name,
+            clock,
+            tickMs: o.config.limits.jobsTickMs,
+            ...(o.audit ? { audit: o.audit } : {}),
+            log: (message) => console.error(`agnesd batch: ${message}`),
+          })
+        : undefined
+    batchRequests = batchEngine
+      ? createBatchRequests({
+          engine: batchEngine,
+          ownership: sessionOwnership,
+          workspaces: workspaceCatalog,
+          log: (message) => console.error(`agnesd batch: ${message}`),
+        })
+      : undefined
+    const batchPort = batchEngine
+      ? createBatchPort({ engine: batchEngine, workspaces: workspaceCatalog })
+      : undefined
+    if (batchEngine) startupCleanup.push(() => batchEngine.stop())
 
     // The listener is live before restart recovery can acquire a resource-only worker.
     if (localResourceStore) await resourceControl.service.recover()
@@ -1745,6 +1797,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         journal,
         claims,
         ...(selectedJobs ? { jobs: selectedJobs } : {}),
+        ...(batchPort ? { batch: batchPort } : {}),
         lister,
         ...(o.ports?.directory ? { directory: o.ports.directory } : {}),
         resolveActor,
@@ -1934,7 +1987,26 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     startupCleanup.push(() => clearInterval(evict))
     const stopClaimsGc = persistentClaims ? startClaimsGc(persistentClaims, clock) : undefined
     if (stopClaimsGc) startupCleanup.push(stopClaimsGc)
-    scheduler?.start()
+    // Before any job can be claimed: items left in flight get fresh limits, a clean-up a stopped
+    // daemon left half done is completed, and the item confinement is checked. That first round may
+    // wait on the session worker, so the daemon is ready and serving (a cancel included) without
+    // waiting for it; only the job scheduler waits. A failure here is logged rather than fatal: the
+    // worker still refuses to run an item session without its hook.
+    let scheduling = true
+    startupCleanup.push(() => {
+      scheduling = false
+    })
+    const schedulingStarted = (
+      batchEngine
+        ? batchEngine.ready().catch((error: unknown) => {
+            console.error(`agnesd batch: ${error instanceof Error ? error.message : String(error)}`)
+          })
+        : Promise.resolve()
+    ).then(() => {
+      if (!scheduling) return
+      scheduler?.start()
+      batchEngine?.start()
+    })
 
     // From this point the returned handle owns every resource. Startup cleanup must not race a
     // successful handle's close path.
@@ -1945,6 +2017,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       (closePromise ??= shutdownLadder({
         graceMs: o.config.limits.shutdownGraceMs,
         stopAccepting: async () => {
+          scheduling = false
           reclaimIntake = false
           reclaimAbort.abort(new Error('daemon shutdown'))
           stopClientModuleNotices?.()
@@ -1959,6 +2032,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(watcher ? [Promise.resolve().then(() => watcher.close())] : []),
             Promise.resolve().then(() => stopClaimsGc?.()),
             Promise.resolve().then(() => scheduler?.stopIntake()),
+            Promise.resolve().then(() => batchEngine?.stop()),
             ...[...conns].map(({ ep }) => Promise.resolve().then(() => ep.stopIntake())),
             Promise.resolve().then(() => server.stopAccepting()),
             ...(wsServer ? [Promise.resolve().then(() => wsServer.stopAccepting())] : []),
@@ -1992,6 +2066,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           await run(() => registry.closeAll())
           if (signal.aborted) return
           await run(() => pool.closeAll(graceMs))
+          // With its worker gone, a first batch round still in progress ends at once; it must not
+          // write after the owner lock is released.
+          await run(() => schedulingStarted)
           if (errors.length) throw new AggregateError(errors, 'failed to close daemon workers')
         },
         killWorkers: () => pool.killAll(),
@@ -2383,7 +2460,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }),
   }
 
-  // Failed requests only; process lifecycle and daemon errors go to the runtime log beside it.
+  // Failed requests and started batches; process lifecycle and daemon errors go to the runtime log beside it.
   const requestAudit = createFileAudit(join(scope.dataDir, 'audit', 'daemon.jsonl'))
   const runtimeLog = openRuntimeLog(scope.dataDir)
   const flushAudit = async () => {
@@ -2396,7 +2473,11 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   const sup = await (deps.startProduction ?? startProductionSupervisor)({
     audit: (record) => {
       if (!record || typeof record !== 'object' || !('kind' in record)) return
-      if (record.kind === 'daemon.request_failed' || record.kind === 'plugin.tree.reverted')
+      if (
+        record.kind === 'daemon.request_failed' ||
+        record.kind === 'plugin.tree.reverted' ||
+        record.kind === 'batch.started'
+      )
         requestAudit.write({
           kind: record.kind,
           ...('detail' in record ? { detail: record.detail as Record<string, unknown> } : {}),

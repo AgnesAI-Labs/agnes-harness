@@ -11,6 +11,7 @@ import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { prepareDocumentReader } from './document-reader.js'
+import { copyImageRuntime } from './image-runtime.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -295,6 +296,8 @@ async function buildLocal(out: string, nativeOutput?: string): Promise<void> {
     : join(repoPackages, 'daemon', 'src', 'worker', 'main.ts')
   await bundle(workerSource, join(out, 'worker.mjs'), defines)
   await copySystemRuntime(repoPackages, out, nativeOutput)
+  // The image tool loads sharp through createRequire at run time; the bundles never inline it.
+  await copyImageRuntime(out)
   if (isDarwin()) {
     execFileSync(
       process.execPath,

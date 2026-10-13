@@ -32,6 +32,10 @@ Find commands by session execution, administration, or extensions. For an end-to
 
 Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
+### `agh batch`
+
+`agh batch start <dir> (--prompt <text> | --prompt-file <file>) [--schema <file.json>] [--ext jpg,png] [--concurrency <1-8>] [--max-edge <256-1456>] [--budget <credits>] [--out <dir>] [--item-timeout <seconds>]` starts a batch in the daemon and prints its id. `agh batch status <id> [--watch]`, `agh batch results <id>`, `agh batch cancel <id>` and `agh batch list` follow it. All accept `--json`, `--cwd` and `--profile`. `status` exits 0 for a completed or running batch and 1 for a failed, budget-exhausted or cancelled one. Starting needs the shared daemon and no approval. See [Batch processing](../guide/batch.md).
+
 <a id="控制面"></a>
 
 ## Control plane

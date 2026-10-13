@@ -206,7 +206,11 @@ export class WorkerPool {
       },
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
-      onRequest: (f) => this.o.onRequest(f.sessionKey, f),
+      // A batch request acts for its session's owner, so it must come from the worker hosting it.
+      onRequest: (f) =>
+        f.method === 'batch' && !this.hosts(link, f.sessionKey)
+          ? Promise.reject(new Error('A batch request must come from the session that makes it.'))
+          : this.o.onRequest(f.sessionKey, f),
       onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {

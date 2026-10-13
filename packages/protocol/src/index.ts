@@ -42,6 +42,12 @@ export type {
   Auth,
   AuthClaimParams,
   AuthClaimResult,
+  BatchCounts,
+  BatchIdParams,
+  BatchList,
+  BatchSpec,
+  BatchStartParams,
+  BatchStatus,
   CommandAckParams,
   CompactOutcome,
   ComputerUseDoctorParams,
@@ -422,6 +428,8 @@ export type {
   WorkerGeneration,
 } from '../gen/ts/worker.js'
 export * from './attachments.js'
+export type { BatchRequest } from './batch.js'
+export { BATCH_ITEM_SESSION_PATTERN } from './batch.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'

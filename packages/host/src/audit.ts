@@ -63,6 +63,8 @@ export const AUDIT_KINDS = [
   'worker.start_failed',
   'worker.log',
   'session.interrupted',
+  // A batch of files handed to the model; the one record of who started it and with what limits.
+  'batch.started',
 ] as const
 export type AuditKind = (typeof AUDIT_KINDS)[number]
 export type AuditEvent = { kind: string; detail?: Record<string, unknown>; at?: string }

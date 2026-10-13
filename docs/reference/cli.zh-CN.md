@@ -28,6 +28,10 @@
 
 Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
 
+### `agh batch`
+
+`agh batch start <目录> (--prompt <文字> | --prompt-file <文件>) [--schema <file.json>] [--ext jpg,png] [--concurrency <1-8>] [--max-edge <256-1456>] [--budget <积分>] [--out <目录>] [--item-timeout <秒>]` 在 daemon 里发起批次并打印 id；`agh batch status <id> [--watch]`、`agh batch results <id>`、`agh batch cancel <id>`、`agh batch list` 用来跟进。都接受 `--json`、`--cwd`、`--profile`。`status` 在批次完成或仍在运行时退出 0，失败、预算用尽或被取消时退出 1。发起需要共享 daemon，不需要批准。见[批量处理](../guide/batch.zh-CN.md)。
+
 ## 控制面
 
 | 语法 | 用途 |
