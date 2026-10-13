@@ -27,7 +27,7 @@ The built-in sidebar renders workspace headings, session buttons and action menu
 | Need | Public web-ui component | Contract to retain |
 | --- | --- | --- |
 | Text, search, URL, password, numeric input | `SettingsInput` | `type`, ID, ref, autocomplete, limits, validation and change handler |
-| Multiline text, Markdown and command drafts | `SettingsTextArea` | Selection, IME, keyboard shortcuts, ref and draft ownership; `presentation="plain"` retains specialized composer/terminal surfaces |
+| Multiline text, Markdown and command drafts | `SettingsTextArea` | Selection, IME, keyboard shortcuts, ref and draft ownership; `presentation="plain"` retains specialized terminal surfaces. The composer draft uses `Sender` from `@agnes/web-ui/x` |
 | Select with existing native form/controller semantics | `SettingsSelect` / `SettingsOptionSelect` | Native value, options, form submission and events |
 | Searchable or rich picker | `Select`; `createSelectPicker` for its supported DOM bridge | Accessible name, keyboard selection, caller-owned state and popup lifecycle |
 | Boolean setting | `Switch` or `StateSwitch` | Controlled checked/disabled state; `StateSwitch` retains row propagation semantics |

@@ -64,7 +64,7 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | 面板 / `request-trace` | 所属页 / 注册面板 | `packages/web-units/src/trace-request.tsx` | Button; SettingsCode | 列表/表格/元数据需统一呈现；间距、字段或专用内容需视觉复核，保留行为 |
 | 面板 / `transcript` | 所属页 / 注册面板 | `packages/web-units/src/transcript.ts` | React DOM | 标题/骨架/动作位置需统一；空态、加载、错误或状态反馈需统一 |
 | 面板 / `computer-use-session` | 所属页 / 注册面板 | `packages/web-conversation/src/computer-use-pane.tsx` | Button; shared screen region | 间距、字段或专用内容需视觉复核，保留行为；空态、加载、错误或状态反馈需统一 |
-| 面板 / `composer` | 所属页 / 注册面板 | `packages/web-units/src/composer.tsx` | Composer; SettingsTextArea/SettingsInput/Button; ReferencePicker | 已使用 JSX 与共享控件；保留文件选择器和键盘语义，待视觉复核 |
+| 面板 / `composer` | 所属页 / 注册面板 | `packages/web-units/src/composer.tsx` | Composer; Sender (`@agnes/web-ui/x`); SettingsInput/Button/Menu/Kbd; ReferencePicker | 已使用 JSX 与共享控件；保留文件选择器和键盘语义，待视觉复核 |
 | 面板 / `child-controls` | 所属页 / 注册面板 | `packages/web-units/src/composer/child-controls.tsx` | React input/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
 | 面板 / `queue-editor` | 所属页 / 注册面板 | `packages/web-units/src/composer/queue-editor.tsx` | React textarea/Button | 原生控件或静态回退壳需归并；间距、字段或专用内容需视觉复核，保留行为 |
 | 面板 / `sidebar` | 所属页 / 注册面板 | `packages/web-units/src/sidebar.ts` | React DOM | 手写动作/选择呈现需复用共享组件；标题/骨架/动作位置需统一 |
@@ -78,8 +78,8 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | 对话框族 / `setup-guide` | / → 首次使用 | `packages/web-ui/src/first-run.tsx` | Dialog; Field; Select; SettingsState; Button | 间距、字段或专用内容需视觉复核，保留行为 |
 | 对话框族 / `account` | 设置 → model → add/edit | `packages/web-ui/src/settings-account-dialog.tsx` | SettingsOptionSelect; native fields/buttons | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件；对话框正文/页脚需统一 |
 | 对话框族 / `oauth` | Account → auth method | `packages/web-admin/src/oauth-controls.ts` | React password input; Button | 原生控件或静态回退壳需归并；空态、加载、错误或状态反馈需统一 |
-| 对话框族 / `model-picker` | composer → model | `packages/web/src/model-picker.ts` | React input; custom menu | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件 |
-| 对话框族 / `agent-options` | composer → agent | `packages/web-admin/src/permission-picker.ts` | Select; Popover; React DOM | 间距、字段或专用内容需视觉复核，保留行为 |
+| 对话框族 / `model-picker` | composer → model | `packages/web/src/model-picker.tsx` | Popover; Button; SettingsInput; SessionAuxiliaryModels | 已是 React 浮层：搜索、按服务商分组、会话设置；保留列表键盘操作与焦点归还 |
+| 对话框族 / `permission-picker` | composer → 批准方式 | `packages/web-admin/src/permission-picker.tsx` | Popover; Button | 已是 React 浮层列表；保留键盘操作、焦点归还与设置入口 |
 | 对话框族 / `reference-picker` | composer → attach reference | `packages/web-units/src/reference-picker.tsx` | Popover; Button; SettingsInput | 间距、字段或专用内容需视觉复核，保留行为 |
 | 对话框族 / `session-rename` | sidebar → rename | `packages/web/src/session-actions.ts` | native dialog + innerHTML | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件；对话框正文/页脚需统一 |
 | 对话框族 / `plugin-source` | plugin page → install source | `packages/web-ui/src/admin-dialogs.tsx` | SourceDialogContent; SettingsInput; SettingsSelect | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件；对话框正文/页脚需统一 |
