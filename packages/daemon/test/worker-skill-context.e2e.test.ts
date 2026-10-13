@@ -19,7 +19,8 @@ const roots: string[] = []
 // The write description also includes the incremental-generation guidance shipped with the tools.
 // The read description names session-file attachments and what this runtime can read natively.
 // Background shell jobs add the job tool and reword the shell and write descriptions.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'd6d6f7653c7f1f55f9535c4f2da7b49ac854c15305dfa8cd78f4b51abcbbda74'
+// The read tool also reads stored attachments by range and saves originals into the workspace.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '3e3336a6a734dd21afff06755b4ef30c7a5500c50d8435bd4c82bac1196aff2a'
 const expectedToolNames = [
   'compact',
   'edit',
