@@ -121,6 +121,8 @@ export interface AppServerMethods {
   "_agnes/v1/computerUse.operation.cancel": { params: Static<typeof import("./agnes-v1.js").ComputerUseOperationIdParams>; result: Static<typeof import("./agnes-v1.js").ComputerUseOperationResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/approvalGrants.list": { params: Static<typeof import("./agnes-v1.js").ApprovalGrantListParams>; result: Static<typeof import("./agnes-v1.js").ApprovalGrantListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/approvalGrants.revoke": { params: Static<typeof import("./agnes-v1.js").ApprovalGrantRevokeParams>; result: Static<typeof import("./agnes-v1.js").ApprovalGrantRecord>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/approvalGrants.forSession": { params: Static<typeof import("./agnes-v1.js").ApprovalGrantSessionParams>; result: Static<typeof import("./agnes-v1.js").ApprovalGrantSessionResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/approvalGrants.revokeForSession": { params: Static<typeof import("./agnes-v1.js").ApprovalGrantSessionRevokeParams>; result: Static<typeof import("./agnes-v1.js").SessionApprovalGrant>; direction: "c2s"; kind: "request" }
   "_agnes/v1/artifact.read": { params: Static<typeof import("./agnes-v1.js").ArtifactReadParams>; result: Static<typeof import("./agnes-v1.js").ArtifactReadResult>; direction: "c2s"; kind: "request" }
   "initialize": { params: Static<typeof import("./acp.js").InitializeRequest>; result: Static<typeof import("./acp.js").InitializeResponse>; direction: "c2s"; kind: "request" }
   "session/new": { params: Static<typeof import("./acp.js").NewSessionRequest>; result: Static<typeof import("./acp.js").NewSessionResponse>; direction: "c2s"; kind: "request" }

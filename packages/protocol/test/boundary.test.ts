@@ -91,6 +91,7 @@ describe('protocol src boundary', () => {
         'RuntimeAdminEmpty',
         'RuntimeAdminSnapshot',
         'AuxiliaryModelTarget',
+        'AutomaticModelTarget',
         'AuxiliaryModelSlots',
         'ModelSlotsSnapshot',
         'RuntimePublicationReport',

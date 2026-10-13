@@ -117,6 +117,19 @@ Model records optionally carry pi-ai `inputLimits`: `maxRequestBytes` and `image
 
 The default Host filesystem authorizes canonical names and executes reads, writes, metadata queries, enumeration, creation and removal through no-follow directory/file handles. An allowed symlink is resolved before authorization; a component replaced with a link afterwards is refused, with no path-based fallback. Local operations require the current `@agnes/system-node` native artifact. On POSIX, native entry points and the remote adapter reject paths containing unpaired Unicode surrogates with `EINVAL` before UTF-8 encoding can change the filename. The POSIX remote adapter requires Python 3 descriptor-relative filesystem operations and uses the transport's `exec` port, including stdin for binary writes, rather than path-based upload/download. Custom filesystem providers own the same boundary. Recursive removal refuses ancestors of hard-denied paths, including under full file access. This boundary covers filesystem tools; commands and MCP processes retain their separate sandbox contracts.
 
+## Session approval grants
+
+`client.approval.sessionGrants(sessionId)` (`_agnes/v1/approvalGrants.forSession`) lists every grant that lets the session's tools run without asking, for the session's owner. No tool, scope or policy version is named:
+
+```json
+{ "grants": [
+  { "grantId": "dec-41", "lifetime": "session", "toolId": "shell", "scope": "tool:shell:execute", "createdAt": "2026-10-14T02:11:09.000Z", "issuer": { "id": "local", "org": "local", "role": "user", "deptPath": [], "attrs": {} } },
+  { "grantId": "grant-9f2c", "lifetime": "always", "toolId": "write", "scope": "tool:write:execute", "policyVersion": "v1", "createdAt": "2026-10-12T08:00:00.000Z", "issuer": { "id": "local", "org": "local", "role": "user", "deptPath": [], "attrs": {} } }
+] }
+```
+
+A `session` grant is an "allow for this session" answer still in force; an `always` grant belongs to the session's actor under its policy and also applies to that actor's other sessions. `client.approval.revokeSessionGrant(sessionId, grantId)` (`_agnes/v1/approvalGrants.revokeForSession`) revokes either kind by the listed id and returns the grant with `revokedAt`; an id that is not listed is refused with `APPROVAL_REJECTED`. Revocation is durable, including for a session grant after the session is reopened, and applies to later calls: the tool asks again. The fully-bound `approvalGrants.list` and `approvalGrants.revoke` remain for callers that already hold a tool, scope and policy version.
+
 ## Auxiliary model defaults
 
 The local Node SDK exposes `client.config.modelSlots.get()` and `client.config.modelSlots.save({ revision, slots })`. Both return `{ revision, slots, auto? }`; `slots` accepts only `fast` and `verifier`, each an explicit `{ route, model }` or `null` (none). An omitted `verifier` retains preset-defined behavior. The save replaces the auxiliary-default map, checks the shared configuration revision and validates the exact route/model against the live Host catalog. Unsupported models and stale revisions are refused.

@@ -1759,6 +1759,51 @@
         }
       }
     },
+    "SessionApprovalGrant": {
+      "description": "One allowance that lets a session's tool run without asking. A session grant ends with the session; an always grant belongs to the session's actor under its policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grantId", "lifetime", "toolId", "scope", "createdAt"],
+      "properties": {
+        "grantId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "lifetime": { "enum": ["session", "always"] },
+        "toolId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "issuer": { "$ref": "#/$defs/Actor" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ApprovalGrantSessionParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "ApprovalGrantSessionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grants"],
+      "properties": {
+        "grants": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/SessionApprovalGrant" }
+        }
+      }
+    },
+    "ApprovalGrantSessionRevokeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "grantId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "grantId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
     "Empty": {
       "type": "object",
       "additionalProperties": false,

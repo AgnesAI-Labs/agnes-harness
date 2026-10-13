@@ -8,6 +8,7 @@ import {
   type ApisListResult,
   type ApprovalGrantListResult,
   type ApprovalGrantRecord,
+  type ApprovalGrantSessionResult,
   type AttachFilter,
   type ChildEnginesSaveParams,
   type ChildEnginesState,
@@ -36,6 +37,7 @@ import {
   parseSessionBundles,
   projectClientModuleRows,
   rpcError,
+  type SessionApprovalGrant,
   type SessionDefaultsSnapshot,
   type SessionListParams,
   type SessionPreferences,
@@ -566,6 +568,11 @@ export class Client {
       grantId: string,
     ): Promise<ApprovalGrantRecord> =>
       this.call('_agnes/v1/approvalGrants.revoke', { sessionId, ...binding, grantId }),
+    /** Every grant in force for the session: "this session" answers and the actor's "always" grants. */
+    sessionGrants: (sessionId: string): Promise<ApprovalGrantSessionResult> =>
+      this.call('_agnes/v1/approvalGrants.forSession', { sessionId }),
+    revokeSessionGrant: (sessionId: string, grantId: string): Promise<SessionApprovalGrant> =>
+      this.call('_agnes/v1/approvalGrants.revokeForSession', { sessionId, grantId }),
   }
 
   /**

@@ -42,10 +42,20 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
       canonicalJson(next.request) !== canonicalJson(previous.request)
     )
       fail('immutable request or revision changed')
+    // "Allow for this session" outlives the call that consumed it. Withdrawing that allowance is the
+    // one write a consumed decision accepts; its answer and its consumption stay exactly as they were.
+    const revokesGrant =
+      previous.consumption !== null &&
+      previous.invalidation === null &&
+      previous.result?.reason === 'answered' &&
+      previous.result.response.option === 'allowed-session' &&
+      next.invalidation?.code === 'grant-revoked' &&
+      canonicalJson(next.consumption) === canonicalJson(previous.consumption)
     if (
-      previous.consumption !== null ||
-      previous.invalidation !== null ||
-      (previous.result !== null && previous.result.reason !== 'answered')
+      !revokesGrant &&
+      (previous.consumption !== null ||
+        previous.invalidation !== null ||
+        (previous.result !== null && previous.result.reason !== 'answered'))
     )
       fail('terminal state')
     if (
@@ -59,7 +69,7 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
       next.consumption !== null,
       next.invalidation !== null,
     ].filter(Boolean).length
-    if (changed !== 1) fail('one transition required')
+    if (changed !== (revokesGrant ? 2 : 1)) fail('one transition required')
   }
   if (next.result?.reason === 'answered') {
     if (Date.parse(next.result.at) < Date.parse(next.request.createdAt)) fail('answer before request')

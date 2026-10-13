@@ -280,6 +280,7 @@ export type {
 } from './runtime/current.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
+export { listSessionGrants, revokeSessionGrant, type SessionGrantEntry } from './step/approval-grants.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
 export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, stopGate } from './step/gate.js'

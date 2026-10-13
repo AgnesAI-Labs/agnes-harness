@@ -54,8 +54,13 @@ type GrantRow = {
 export type ApprovalGrantBinding = ApprovalGrantQuery
 
 /** Safe management surface. Grant activation remains private to the Core seam adapter below. */
+/** Whose grants, under which policy: everything a grant is bound to except the tool it names. */
+export type ApprovalGrantHolder = Pick<ApprovalGrantBinding, 'policyDigest' | 'actorId' | 'actorOrg'>
+
 export interface ApprovalGrantStore {
   list(binding: ApprovalGrantBinding): ApprovalGrant[]
+  /** Every active grant one actor holds under one policy, so a client need not probe tool by tool. */
+  listHolder(holder: ApprovalGrantHolder): ApprovalGrant[]
   /** Authenticated management path: every security binding is required and matched before revoke. */
   revoke(binding: ApprovalGrantBinding, grantId: string, revokedAt: string): ApprovalGrant | null
 }
@@ -117,6 +122,16 @@ function binding(input: unknown): ApprovalGrantBinding {
     toolId: text(value.toolId, 'toolId', 128),
     scope: text(value.scope, 'scope', 256),
     policyVersion: text(value.policyVersion, 'policyVersion', 64),
+  }
+}
+
+function holder(input: ApprovalGrantHolder): ApprovalGrantHolder {
+  const policyDigest = text(input.policyDigest, 'policyDigest', 71)
+  if (!POLICY_DIGEST.test(policyDigest)) throw new TypeError('invalid approval grant policyDigest')
+  return {
+    policyDigest,
+    actorId: text(input.actorId, 'actorId', 256),
+    actorOrg: text(input.actorOrg, 'actorOrg', 256),
   }
 }
 
@@ -382,6 +397,15 @@ function createSqlApprovalGrantRuntimeStore(tables: TableStore): ApprovalGrantRu
         )
         .map(fromRow)
     },
+    listHolder(input) {
+      const query = holder(input)
+      return table()
+        .all<GrantRow>(
+          'SELECT grant_id, policy_digest, actor_id, actor_org, tool_id, scope, policy_version, created_at, revoked_at, source_decision_id, issuer, definition_fingerprint, policy_binding FROM approval_grants WHERE policy_digest = ? AND actor_id = ? AND actor_org = ? AND revoked_at IS NULL ORDER BY created_at, grant_id',
+          [query.policyDigest, query.actorId, query.actorOrg],
+        )
+        .map(fromRow)
+    },
     put(input) {
       const grant = checked(input)
       if (grant.revokedAt !== undefined)
@@ -470,6 +494,23 @@ function createApprovalGrantRuntimeStore(storage: GrantStorage): ApprovalGrantRu
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.grantId.localeCompare(b.grantId)),
       )
     },
+    listHolder(input) {
+      const query = holder(input)
+      return transaction(() =>
+        ns
+          .entries()
+          .filter(({ key }) => key.startsWith('grant:'))
+          .map(({ value }) => checked(value))
+          .filter(
+            (grant) =>
+              grant.revokedAt === undefined &&
+              grant.policyDigest === query.policyDigest &&
+              grant.actorId === query.actorId &&
+              grant.actorOrg === query.actorOrg,
+          )
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.grantId.localeCompare(b.grantId)),
+      )
+    },
     put(input) {
       const grant = checked(input)
       if (grant.revokedAt !== undefined)
@@ -513,7 +554,7 @@ export function migrateApprovalGrants(tables: TableStore, ns: PersistenceMetadat
 /** Opens only the fully-bound management surface; activation and id-only revoke stay in Host/Core. */
 export function createApprovalGrantStore(tables: GrantStorage): ApprovalGrantStore {
   const backend = createApprovalGrantRuntimeStore(tables)
-  return Object.freeze({ list: backend.list, revoke: backend.revoke })
+  return Object.freeze({ list: backend.list, listHolder: backend.listHolder, revoke: backend.revoke })
 }
 
 export function createApprovalGrantControlPlane(
@@ -534,6 +575,7 @@ export function createApprovalGrantControlPlane(
   }
   const management: ApprovalGrantManagement = Object.freeze({
     list: store.list,
+    listHolder: store.listHolder,
     revoke(input: ApprovalGrantBinding, grantId: string, revokedAt: string) {
       const result = store.revokeBound(input, grantId, revokedAt)
       if (result.changed && result.grant) emit(result.grant)

@@ -25,6 +25,8 @@ export type SessionMethod =
   | 'projectUIOpening'
   | 'projectUIHistory'
   | 'toolCatalog'
+  | 'approvalGrants'
+  | 'revokeApprovalGrant'
   | 'readToolDetail'
   | 'feedback.draft'
   | 'ui.action'

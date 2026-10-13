@@ -377,6 +377,24 @@ describe('permanent approval grant RPC', () => {
           params: binding,
         }),
       ).resolves.toMatchObject({ result: { grants: [grant] } })
+      // The session listing needs no tool, scope or policy version: the grant shows up by itself.
+      const summary = {
+        grantId: grant.grantId,
+        lifetime: 'always',
+        toolId: grant.toolId,
+        scope: grant.scope,
+        policyVersion: grant.policyVersion,
+        createdAt: grant.createdAt,
+        issuer: grant.issuer,
+      }
+      await expect(
+        endpoint.handle({
+          jsonrpc: '2.0',
+          id: 80,
+          method: '_agnes/v1/approvalGrants.forSession',
+          params: { sessionId: created.result.sessionId },
+        }),
+      ).resolves.toEqual({ jsonrpc: '2.0', id: 80, result: { grants: [summary] } })
       const revoked = (await endpoint.handle({
         jsonrpc: '2.0',
         id: 9,
@@ -403,6 +421,25 @@ describe('permanent approval grant RPC', () => {
       ).resolves.toMatchObject({
         error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'grant unavailable' } },
       })
+      // Revoking through the session needs only the listed id, and takes effect in the bound store.
+      await session.d.runtime.approvalPutGrant({ ...grant, grantId: 'grant-2' }, new AbortController().signal)
+      const forSession = (id: number, method: string, params: Record<string, unknown> = {}) =>
+        endpoint.handle({
+          jsonrpc: '2.0',
+          id,
+          method: `_agnes/v1/approvalGrants.${method}`,
+          params: { sessionId: created.result.sessionId, ...params },
+        })
+      await expect(forSession(81, 'revokeForSession', { grantId: 'missing-grant' })).resolves.toMatchObject({
+        error: { code: -32009, data: { reason: 'grant unavailable' } },
+      })
+      await expect(forSession(82, 'revokeForSession', { grantId: 'grant-2' })).resolves.toMatchObject({
+        result: { ...summary, grantId: 'grant-2', revokedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) },
+      })
+      await expect(forSession(83, 'forSession')).resolves.toMatchObject({ result: { grants: [] } })
+      await expect(
+        endpoint.handle({ jsonrpc: '2.0', id: 84, method: '_agnes/v1/approvalGrants.list', params: binding }),
+      ).resolves.toMatchObject({ result: { grants: [] } })
       const listing = (await endpoint.handle({
         jsonrpc: '2.0',
         id: 12,
@@ -410,7 +447,12 @@ describe('permanent approval grant RPC', () => {
         params: {},
       })) as { result: { families: Array<{ methods: string[] }> } }
       expect(listing.result.families.flatMap((family) => family.methods)).toEqual(
-        expect.arrayContaining(['_agnes/v1/approvalGrants.list', '_agnes/v1/approvalGrants.revoke']),
+        expect.arrayContaining([
+          '_agnes/v1/approvalGrants.list',
+          '_agnes/v1/approvalGrants.revoke',
+          '_agnes/v1/approvalGrants.forSession',
+          '_agnes/v1/approvalGrants.revokeForSession',
+        ]),
       )
     } finally {
       await endpoint.close()
@@ -448,6 +490,18 @@ describe('permanent approval grant RPC', () => {
       ).resolves.toMatchObject({
         error: { code: -32006, data: { code: 'CAPABILITY_DENIED' } },
       })
+      for (const [method, extra] of [
+        ['forSession', {}],
+        ['revokeForSession', { grantId: 'grant-1' }],
+      ] as const)
+        await expect(
+          stranger.handle({
+            jsonrpc: '2.0',
+            id: 4,
+            method: `_agnes/v1/approvalGrants.${method}`,
+            params: { sessionId: created.result.sessionId, ...extra },
+          }),
+        ).resolves.toMatchObject({ error: { code: -32006, data: { code: 'CAPABILITY_DENIED' } } })
     } finally {
       await stranger.close()
       await owner.close()

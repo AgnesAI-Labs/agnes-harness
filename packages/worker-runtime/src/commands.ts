@@ -28,6 +28,7 @@ import {
 } from '@agnes/resource-control-worker'
 import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
+import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { sessionReferences } from './references.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -288,6 +289,7 @@ export async function handleCommand(
   },
 ): Promise<unknown> {
   const p = cmd.params
+  if (cmd.method in GRANT_COMMANDS) return grantCommand(o.host, session, cmd)
   switch (cmd.method) {
     case 'ui.action': {
       if (!session.intelligentUi || !p.credential || Object.hasOwn(p, 'actor'))

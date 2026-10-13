@@ -1,6 +1,8 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
+import { reduceDecision } from '../../core-ledger/src/reduce/decision.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { listSessionGrants, revokeSessionGrant } from '../src/step/approval-grants.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, shellTool } from './helpers/open-session.js'
@@ -118,6 +120,75 @@ describe('durable session approval grants', () => {
     await reopen(h, nextActor)
     expect(h.asks()).toBe(2)
     expect(h.executed()).toBe(1)
+  })
+  it.each(['sync', 'callback'] as const)(
+    'lists a %s session grant and revokes it for this and every later opening',
+    async (mode) => {
+      const h = await initial(mode)
+      const grants = listSessionGrants(h.session)
+      expect(grants).toEqual([
+        {
+          grantId: expect.any(String),
+          toolId: 'shell',
+          scope: expect.any(String),
+          createdAt: new Date(h.clock()).toISOString(),
+          issuer: actor,
+        },
+      ])
+      const grantId = grants[0]?.grantId as string
+      expect(await revokeSessionGrant(h.session, 'not-a-grant')).toBe(false)
+      expect(await revokeSessionGrant(h.session, grantId)).toBe(true)
+      expect(listSessionGrants(h.session)).toEqual([])
+      expect(await revokeSessionGrant(h.session, grantId)).toBe(false)
+      // The next call of the same tool asks again; the fixture's second answer is a rejection.
+      await reopen(h)
+      expect(h.asks()).toBe(2)
+      expect(h.executed()).toBe(1)
+    },
+  )
+  it('accepts no other write to a consumed decision', async () => {
+    const consumed = async (verdict: 'allowed-session' | 'allowed-once') => {
+      const h = await initial('sync', verdict)
+      const [cell] = [...h.session.state.registers.decisionStates.values()]
+      await h.session.close()
+      if (!cell?.value.consumption) throw new Error('fixture decision was not consumed')
+      return cell.value
+    }
+    const write = (previous: Awaited<ReturnType<typeof consumed>>, change: Record<string, unknown>) =>
+      reduceDecision(previous, {
+        origin: 'system',
+        trust: 'trusted',
+        register: 'decision/state',
+        lane: previous.request.lane,
+        seq: 999,
+        data: { ...previous, revision: previous.revision + 1, ...change },
+      } as never)
+    const at = '2025-09-07T00:00:01.000Z'
+    const session = await consumed('allowed-session')
+    expect(write(session, { invalidation: { at, code: 'grant-revoked' } }).invalidation?.code).toBe(
+      'grant-revoked',
+    )
+    // Any other invalidation, a rewritten consumption, or a single-call answer stays terminal.
+    expect(() => write(session, { invalidation: { at, code: 'stopped' } })).toThrow('terminal state')
+    expect(() =>
+      write(session, {
+        invalidation: { at, code: 'grant-revoked' },
+        consumption: { ...session.consumption, effectId: 'another-effect' },
+      }),
+    ).toThrow('terminal state')
+    expect(() =>
+      write(
+        { ...session, invalidation: { at, code: 'grant-revoked' } },
+        { invalidation: { at, code: 'grant-revoked' } },
+      ),
+    ).toThrow('terminal state')
+    const once = await consumed('allowed-once')
+    expect(() => write(once, { invalidation: { at, code: 'grant-revoked' } })).toThrow('terminal state')
+  })
+  it('lists nothing for an answer that allowed a single call', async () => {
+    const h = await initial('sync', 'allowed-once')
+    expect(listSessionGrants(h.session)).toEqual([])
+    await h.session.close()
   })
   it('restores the scope grant for different arguments after reopening', async () => {
     const h = await initial('sync')

@@ -466,10 +466,12 @@ export {
 } from './runtime/adapters/index.js'
 export {
   type ApprovalGrantBinding,
+  type ApprovalGrantHolder,
   type ApprovalGrantManagement,
   type ApprovalGrantStore,
   createApprovalGrantStore,
 } from './runtime/approval/grants.js'
+export { revokeSessionApprovalGrant, sessionApprovalGrants } from './runtime/approval/session-grants.js'
 export {
   ASSEMBLY_STEPS,
   type AssembleDeps,

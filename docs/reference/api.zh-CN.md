@@ -105,6 +105,19 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 默认 Host 文件系统对 canonical 名称授权，再通过不跟随链接的目录或文件句柄执行读、写、元数据查询、列举、创建和删除。允许的符号链接在授权前解析；授权后被替换为链接的路径组件会被拒绝，没有按路径重新打开的后备实现。本地操作需要当前版本的 `@agnes/system-node` 原生产物。POSIX 原生入口和远端适配器对含有未配对 Unicode 代理码元的路径返回 `EINVAL`，避免 UTF-8 编码改变文件名。POSIX 远端适配器要求 Python 3 支持相对描述符的文件操作，通过 transport 的 `exec` 端口执行，包括用 stdin 传输二进制写入，不再调用基于路径的 upload/download。自定义文件系统 provider 负责同样的边界。递归删除拒绝硬拒绝路径的祖先目录，即使会话具有完全文件权限。此边界覆盖文件工具；命令和 MCP 进程仍遵循各自的沙箱合同。
 
+## 会话的授权
+
+`client.approval.sessionGrants(sessionId)`（`_agnes/v1/approvalGrants.forSession`）向会话所有者列出让该会话的工具不再询问的全部授权，不需要给出工具、范围或策略版本：
+
+```json
+{ "grants": [
+  { "grantId": "dec-41", "lifetime": "session", "toolId": "shell", "scope": "tool:shell:execute", "createdAt": "2026-10-14T02:11:09.000Z", "issuer": { "id": "local", "org": "local", "role": "user", "deptPath": [], "attrs": {} } },
+  { "grantId": "grant-9f2c", "lifetime": "always", "toolId": "write", "scope": "tool:write:execute", "policyVersion": "v1", "createdAt": "2026-10-12T08:00:00.000Z", "issuer": { "id": "local", "org": "local", "role": "user", "deptPath": [], "attrs": {} } }
+] }
+```
+
+`session` 是仍然有效的「本会话允许」；`always` 属于该会话的操作者及其策略，对这个操作者的其他会话同样生效。`client.approval.revokeSessionGrant(sessionId, grantId)`（`_agnes/v1/approvalGrants.revokeForSession`）按列表里的 id 撤销任一种授权，返回带 `revokedAt` 的授权；不在列表里的 id 以 `APPROVAL_REJECTED` 拒绝。撤销是持久的，会话授权在会话重新打开后也不会恢复；它对之后的调用生效，工具会再次询问。已经掌握工具、范围和策略版本的调用方仍可使用完整绑定的 `approvalGrants.list` 与 `approvalGrants.revoke`。
+
 ## 辅助模型默认值
 
 本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots, auto? }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（不使用）；省略 `verifier` 时保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。

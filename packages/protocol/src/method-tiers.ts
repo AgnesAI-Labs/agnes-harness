@@ -129,6 +129,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/computerUse.operation.cancel': 'admin',
   '_agnes/v1/approvalGrants.list': 'admin',
   '_agnes/v1/approvalGrants.revoke': 'admin',
+  '_agnes/v1/approvalGrants.forSession': 'admin',
+  '_agnes/v1/approvalGrants.revokeForSession': 'admin',
   '_agnes/v1/artifact.read': 'client',
   initialize: 'client',
   'session/new': 'client',

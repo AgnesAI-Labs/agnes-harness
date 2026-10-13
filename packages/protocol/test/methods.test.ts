@@ -135,7 +135,9 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/decision.list',
         '_agnes/v1/approval.withdraw',
         '_agnes/v1/approvalGrants.list',
+        '_agnes/v1/approvalGrants.forSession',
         '_agnes/v1/approvalGrants.revoke',
+        '_agnes/v1/approvalGrants.revokeForSession',
         '_agnes/v1/artifact.job.status',
         '_agnes/v1/artifact.read',
         '_agnes/v1/auth.claim',
@@ -286,7 +288,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(188)
+    expect(Object.keys(METHODS)).toHaveLength(190)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

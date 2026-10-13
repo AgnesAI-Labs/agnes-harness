@@ -314,6 +314,19 @@ export class RemoteSession {
     }
   }
 
+  approvalGrants(): Promise<import('@agnes/protocol').ApprovalGrantSessionResult> {
+    return this.link.command('approvalGrants', {}) as Promise<
+      import('@agnes/protocol').ApprovalGrantSessionResult
+    >
+  }
+  revokeApprovalGrant(
+    grantId: string,
+    revokedAt: string,
+  ): Promise<import('@agnes/protocol').SessionApprovalGrant | null> {
+    return this.link.command('revokeApprovalGrant', { grantId, revokedAt }) as Promise<
+      import('@agnes/protocol').SessionApprovalGrant | null
+    >
+  }
   toolCatalog(): Promise<import('@agnes/protocol').SessionToolsResult> {
     return this.link.command('toolCatalog', {}) as Promise<import('@agnes/protocol').SessionToolsResult>
   }

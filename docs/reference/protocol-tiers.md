@@ -250,6 +250,8 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 - `_agnes/v1/approvalGrants.list`
 - `_agnes/v1/approvalGrants.revoke`
+- `_agnes/v1/approvalGrants.forSession`
+- `_agnes/v1/approvalGrants.revokeForSession`
 
 ### Scheduling and jobs
 

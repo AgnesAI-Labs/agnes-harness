@@ -262,6 +262,32 @@ export class DecisionCommands {
       return detached(next)
     })
   }
+  /**
+   * Ends a session-wide allowance. Its decision was consumed by the call it was first given for,
+   * so this is the one invalidation written after consumption: the grant is what is withdrawn,
+   * and the call that already ran keeps its receipt.
+   */
+  revokeSessionGrant(id: string): Promise<boolean> {
+    return this.s.transact(async () => {
+      this.live()
+      const value = this.s.readDecisions().get(id)?.value
+      if (
+        !value?.consumption ||
+        value.invalidation ||
+        value.request.lane !== this.s.lane ||
+        value.result?.reason !== 'answered' ||
+        value.result.response.option !== 'allowed-session'
+      )
+        return false
+      const at = new Date(this.s.clock()).toISOString()
+      await this.write({
+        ...value,
+        revision: value.revision + 1,
+        invalidation: { at, code: 'grant-revoked' },
+      })
+      return true
+    })
+  }
   get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {
       this.live()

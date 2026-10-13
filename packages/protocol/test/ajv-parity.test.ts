@@ -584,6 +584,10 @@ const AGNES_DEFS: Record<string, TSchema> = {
   ApprovalGrantRecord: AgnesGen.ApprovalGrantRecord,
   ApprovalGrantRevokeParams: AgnesGen.ApprovalGrantRevokeParams,
   ApprovalGrantListResult: AgnesGen.ApprovalGrantListResult,
+  SessionApprovalGrant: AgnesGen.SessionApprovalGrant,
+  ApprovalGrantSessionParams: AgnesGen.ApprovalGrantSessionParams,
+  ApprovalGrantSessionResult: AgnesGen.ApprovalGrantSessionResult,
+  ApprovalGrantSessionRevokeParams: AgnesGen.ApprovalGrantSessionRevokeParams,
   Empty: AgnesGen.Empty,
   ComputerUseLockedPackageMutationStatus: AgnesGen.ComputerUseLockedPackageMutationStatus,
   ComputerUseStatusResult: AgnesGen.ComputerUseStatusResult,
@@ -3532,6 +3536,53 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { grants: [] },
     invalid: [{}, { grants: [{}] }],
     note: 'grant listing is a closed array of fully bound durable records',
+  },
+  SessionApprovalGrant: {
+    valid: {
+      grantId: 'grant-1',
+      lifetime: 'always',
+      toolId: 'shell',
+      scope: 'tool:shell:execute',
+      policyVersion: 'v1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    invalid: [
+      {
+        grantId: 'grant-1',
+        lifetime: 'forever',
+        toolId: 'shell',
+        scope: 's',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      { grantId: 'grant-1', lifetime: 'session', toolId: 'shell', createdAt: '2026-01-01T00:00:00.000Z' },
+      { grantId: 'grant-1', lifetime: 'session', toolId: 'shell', scope: 's', createdAt: 'yesterday' },
+    ],
+    note: 'a grant in force for a session names its lifetime, tool and scope',
+  },
+  ApprovalGrantSessionParams: {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', toolId: 'shell' }],
+    note: 'the session alone selects its grants; no tool is named',
+  },
+  ApprovalGrantSessionResult: {
+    valid: {
+      grants: [
+        {
+          grantId: 'decision-1',
+          lifetime: 'session',
+          toolId: 'shell',
+          scope: 'tool:shell:execute',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    },
+    invalid: [{}, { grants: [{}] }],
+    note: 'session and always grants share one closed listing',
+  },
+  ApprovalGrantSessionRevokeParams: {
+    valid: { sessionId: 's', grantId: 'grant-1' },
+    invalid: [{ sessionId: 's' }, { grantId: 'grant-1' }, { sessionId: 's', grantId: '' }],
+    note: 'revoking needs only the session and the listed grant id',
   },
   Empty: {
     valid: {},
@@ -8028,6 +8079,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ApprovalGrantRevokeParams',
     result: 'ApprovalGrantRecord',
   },
+  '_agnes/v1/approvalGrants.forSession': {
+    fileId: AGNES_ID,
+    params: 'ApprovalGrantSessionParams',
+    result: 'ApprovalGrantSessionResult',
+  },
+  '_agnes/v1/approvalGrants.revokeForSession': {
+    fileId: AGNES_ID,
+    params: 'ApprovalGrantSessionRevokeParams',
+    result: 'SessionApprovalGrant',
+  },
 
   '_agnes/v1/session.budget': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'SessionBudgetResult' },
   '_agnes/v1/session.projectUI': { fileId: AGNES_ID, params: 'SessionProjectUIParams', result: 'UITimeline' },
@@ -8798,6 +8859,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/computerUse.operation.cancel': AGNES_SAMPLES.ComputerUseOperationIdParams as Sample,
   '_agnes/v1/approvalGrants.list': AGNES_SAMPLES.ApprovalGrantListParams as Sample,
   '_agnes/v1/approvalGrants.revoke': AGNES_SAMPLES.ApprovalGrantRevokeParams as Sample,
+  '_agnes/v1/approvalGrants.forSession': AGNES_SAMPLES.ApprovalGrantSessionParams as Sample,
+  '_agnes/v1/approvalGrants.revokeForSession': AGNES_SAMPLES.ApprovalGrantSessionRevokeParams as Sample,
 
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.SessionProjectUIParams as Sample,
@@ -9416,6 +9479,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/computerUse.operation.cancel': AGNES_SAMPLES.ComputerUseOperationResult as Sample,
   '_agnes/v1/approvalGrants.list': AGNES_SAMPLES.ApprovalGrantListResult as Sample,
   '_agnes/v1/approvalGrants.revoke': AGNES_SAMPLES.ApprovalGrantRecord as Sample,
+  '_agnes/v1/approvalGrants.forSession': AGNES_SAMPLES.ApprovalGrantSessionResult as Sample,
+  '_agnes/v1/approvalGrants.revokeForSession': AGNES_SAMPLES.SessionApprovalGrant as Sample,
 
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionBudgetResult as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.UITimeline as Sample,

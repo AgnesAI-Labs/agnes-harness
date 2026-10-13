@@ -236,3 +236,77 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
     )
   }
 }
+
+/** A session-wide allowance as a person can read it; `grantId` is the decision that granted it. */
+export type SessionGrantEntry = {
+  grantId: string
+  toolId: string
+  scope: string
+  createdAt: string
+  issuer?: Actor
+}
+
+/** The allowances in force, each with the key Core checks before asking again. */
+function activeSessionGrants(s: SessionImpl): Array<{ key: string; entry: SessionGrantEntry }> {
+  const active: Array<{ key: string; entry: SessionGrantEntry }> = []
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== TOOL_DECISION_OWNER ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.lane !== s.lane ||
+      !value.consumption ||
+      value.invalidation ||
+      value.result?.reason !== 'answered' ||
+      value.result.response.option !== 'allowed-session'
+    )
+      continue
+    const subject = value.request.spec.subject as {
+      scope?: string
+      policyBinding?: string
+      call?: { name?: string; definitionFingerprint?: string }
+    }
+    if (
+      !subject.scope ||
+      !subject.policyBinding ||
+      !subject.call?.name ||
+      !subject.call.definitionFingerprint
+    )
+      continue
+    const key = sessionGrantKey({
+      actor: s.d.actor,
+      sessionKey: s.key,
+      toolId: subject.call.name,
+      scope: subject.scope,
+      definitionFingerprint: subject.call.definitionFingerprint,
+      policyBinding: subject.policyBinding,
+    })
+    // Only what is actually honoured: a record this session could not restore is not a grant.
+    if (!s.sessionAllows.has(key)) continue
+    active.push({
+      key,
+      entry: {
+        grantId: value.handle.id,
+        toolId: subject.call.name,
+        scope: subject.scope,
+        createdAt: value.result.at,
+        ...(value.result.answeredBy ? { issuer: value.result.answeredBy } : {}),
+      },
+    })
+  }
+  return active
+}
+
+export function listSessionGrants(s: SessionImpl): SessionGrantEntry[] {
+  return activeSessionGrants(s).map(({ entry }) => structuredClone(entry))
+}
+
+/** Durable: the revoked decision is skipped when a reopened session restores its allowances. */
+export async function revokeSessionGrant(s: SessionImpl, grantId: string): Promise<boolean> {
+  const active = activeSessionGrants(s)
+  const target = active.find(({ entry }) => entry.grantId === grantId)
+  if (!target || !(await s.decisions.revokeSessionGrant(grantId))) return false
+  // The same tool and scope may have been allowed again by a later decision; that one still stands.
+  if (!active.some(({ key, entry }) => key === target.key && entry.grantId !== grantId))
+    s.sessionAllows.delete(target.key)
+  return true
+}

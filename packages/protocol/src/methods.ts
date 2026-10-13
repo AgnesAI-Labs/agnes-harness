@@ -109,6 +109,8 @@ export type MethodName =
   | '_agnes/v1/computerUse.operation.cancel'
   | '_agnes/v1/approvalGrants.list'
   | '_agnes/v1/approvalGrants.revoke'
+  | '_agnes/v1/approvalGrants.forSession'
+  | '_agnes/v1/approvalGrants.revokeForSession'
   | '_agnes/v1/artifact.read'
   | 'initialize'
   | 'session/new'
@@ -225,6 +227,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/approvalGrants.list': clientRequest(A.ApprovalGrantListParams, A.ApprovalGrantListResult),
   '_agnes/v1/approvalGrants.revoke': clientRequest(A.ApprovalGrantRevokeParams, A.ApprovalGrantRecord),
+  '_agnes/v1/approvalGrants.forSession': clientRequest(
+    A.ApprovalGrantSessionParams,
+    A.ApprovalGrantSessionResult,
+  ),
+  '_agnes/v1/approvalGrants.revokeForSession': clientRequest(
+    A.ApprovalGrantSessionRevokeParams,
+    A.SessionApprovalGrant,
+  ),
   '_agnes/v1/artifact.read': clientRequest(A.ArtifactReadParams, A.ArtifactReadResult),
   initialize: {
     kind: 'request',

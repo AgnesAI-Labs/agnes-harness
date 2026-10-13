@@ -81,6 +81,7 @@ import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 import { registerIntelligentUi } from './intelligent-ui.js'
+import { registerSessionGrants } from './session-grants.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
@@ -470,6 +471,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.setPreset',
       'session.setModel',
       'session.setYolo',
+      'approvalGrants.forSession',
+      'approvalGrants.revokeForSession',
     ].map((m) => `_agnes/v1/${m}`),
     guidance: 'attach before reading events; submit kind=steer while a turn runs, kind=followUp to queue',
   },
@@ -644,6 +647,7 @@ export function registerAgnes(
   registerWorkspaceFiles(ep, cx, requireOwner)
   registerFileUpload(ep, cx, requireOwner)
   registerSessionJobs(ep, cx.sessionServices, requireOwner)
+  registerSessionGrants(ep, cx, requireOwner)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {
     sessionId: string

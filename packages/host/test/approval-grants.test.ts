@@ -92,6 +92,28 @@ describe('Host approval grant store', () => {
         { policyVersion: 'v2' },
       ])
         expect(second.store.list({ ...query, ...changed })).toEqual([])
+      // One holder's grants across every tool, and nobody else's: no tool has to be named.
+      const holder = { policyDigest: query.policyDigest, actorId: query.actorId, actorOrg: query.actorOrg }
+      const other = {
+        ...grant,
+        grantId: 'grant-2',
+        toolId: 'other-tool',
+        createdAt: '2026-09-18T00:00:00.000Z',
+      }
+      await activate(second, other)
+      await activate(second, { ...grant, grantId: 'grant-3', actorId: 'actor-2' })
+      expect(second.store.listHolder(holder)).toEqual([grant, other])
+      for (const changed of [
+        { actorId: 'actor-3' },
+        { actorOrg: 'org-2' },
+        { policyDigest: `sha256-${'b'.repeat(64)}` },
+      ])
+        expect(second.store.listHolder({ ...holder, ...changed })).toEqual([])
+      expect(() => second.store.listHolder({ ...holder, policyDigest: 'not-a-digest' })).toThrow(
+        /invalid approval grant policyDigest/,
+      )
+      second.store.revoke({ ...query, toolId: 'other-tool' }, 'grant-2', '2026-09-19T00:00:00.000Z')
+      expect(second.store.listHolder(holder)).toEqual([grant])
     } finally {
       second.storage.close()
     }
@@ -247,7 +269,7 @@ describe('Host approval grant store', () => {
         await expect(activate(opened, { ...grant, ...changed } as ApprovalGrant)).rejects.toThrow(
           /invalid approval grant/,
         )
-      expect(Object.keys(opened.store).sort()).toEqual(['list', 'revoke'])
+      expect(Object.keys(opened.store).sort()).toEqual(['list', 'listHolder', 'revoke'])
       expect('put' in opened.store).toBe(false)
       expect('revokeById' in opened.store).toBe(false)
       expect(opened.store.list(query)).toEqual([])
