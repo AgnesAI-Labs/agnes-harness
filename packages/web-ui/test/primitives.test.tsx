@@ -153,6 +153,23 @@ it('announces success without stealing focus and cleans up the expiry on unmount
   expect(dismiss).toHaveBeenCalledTimes(1)
 })
 
+it('draws a toast as one card: an outcome icon beside text that only viewport lengths bound', async () => {
+  render(createElement(Toast, { open: true, duration: 0, tone: 'error', onDismiss: () => {} }, 'Not saved'))
+  await vi.waitFor(() => expect(document.querySelector('.agh-toast--error')).toBeTruthy())
+  const toast = document.querySelector('.agh-toast--error')!
+  expect(toast.querySelector('svg.agh-toast-icon')?.getAttribute('aria-hidden')).toBe('true')
+  expect(toast.querySelector('.agh-toast-text')?.textContent).toBe('Not saved')
+  const { readFileSync } = await import('node:fs')
+  const { resolve } = await import('node:path')
+  const css = readFileSync(resolve(import.meta.dirname, '../src/components.css'), 'utf8')
+  const rule = /\n {2}\.agh-toast \{([^}]+)\}/.exec(css)![1]!
+  // The message layer shrinks to fit its content, so a percentage bound would collapse the card.
+  expect(rule).toContain('min-width: min(15rem, calc(100vw - var(--s32)))')
+  expect(rule).toContain('max-width: min(26.25rem, calc(100vw - var(--s32)))')
+  expect(rule).not.toMatch(/(?:min-|max-)?width:[^;]*%/)
+  expect(rule).not.toContain('position: fixed')
+})
+
 it('shares Lucide geometry between native and React icons and labels icon actions', async () => {
   const { Icon, IconButton, createSettingsIcon, icons } = await import('../src/index.js')
   for (const name of Object.keys(icons) as (keyof typeof icons)[]) {

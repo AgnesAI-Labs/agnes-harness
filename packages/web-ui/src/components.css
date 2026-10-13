@@ -285,23 +285,36 @@
     margin-block: var(--s4);
     background: var(--agnes-line-primary);
   }
+  /* One toast shape product-wide: a single-line card with an outcome icon, top-centre below the
+   top bar. It sizes to its text between the two bounds and wraps only when the text is long. Both
+   bounds are viewport lengths: the message layer shrinks to fit, so a percentage would collapse. */
   .agh-toast {
-    position: fixed;
-    z-index: var(--agh-z-notification);
-    bottom: max(var(--s24), env(safe-area-inset-bottom));
-    left: 50%;
-    transform: translateX(-50%);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+    box-sizing: border-box;
     width: max-content;
-    max-width: calc(100% - var(--s32));
-    padding: var(--s12) var(--s16);
+    min-width: min(15rem, calc(100vw - var(--s32)));
+    max-width: min(26.25rem, calc(100vw - var(--s32)));
+    margin-inline: auto;
+    padding: var(--s8) var(--s16) var(--s8) var(--s12);
     border: 1px solid var(--agnes-status-success-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-lg);
     background: var(--agnes-status-success-bg);
     color: var(--agnes-status-success-text);
-    box-shadow: none;
+    box-shadow: var(--shadow-elevation-soft);
     font-size: var(--font-size-body);
     overflow-wrap: anywhere;
     line-height: 1.6;
+    text-align: start;
+    pointer-events: auto;
+  }
+  .agh-toast-icon {
+    flex: 0 0 auto;
+    margin-block: calc((1.6em - 1rem) / 2);
+  }
+  .agh-toast-text {
+    min-width: 0;
   }
   /* Outcome modifiers change colour only; placement and timing are shared by every toast. */
   .agh-toast--info {
@@ -320,11 +333,6 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .agh-toast {
-      left: var(--s16);
-      right: var(--s16);
-      margin-inline: auto;
-    }
     :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
       inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
     }
@@ -1070,21 +1078,16 @@
   .agh-toast-host {
     display: contents;
   }
+  /* The message layer only places and animates; the toast draws the whole card. The layer's own
+   styles are unlayered, so these few resets need the important flag to reach it. */
   .agh-toast-host .ant-message {
-    top: auto !important;
-    bottom: max(var(--s24), env(safe-area-inset-bottom));
+    top: calc(2.75rem - var(--s12)) !important;
   }
-  .agh-toast-host .ant-message-notice-content,
-  .agh-toast-host .ant-message-notice-wrapper,
   .agh-toast-host .ant-message-notice {
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  .agh-toast-host .agh-toast {
-    position: static;
-    transform: none;
-    margin-inline: auto;
+    padding: 0 !important;
+    border-radius: var(--radius-lg) !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
   .agh-table-scroll {
     min-width: 0;

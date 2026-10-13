@@ -1,5 +1,6 @@
 import { message } from 'antd'
 import { createContext, type HTMLAttributes, useContext, useEffect, useId, useRef } from 'react'
+import { Icon } from './icon.js'
 
 export type ToastProps = HTMLAttributes<HTMLDivElement> & {
   open: boolean
@@ -7,9 +8,11 @@ export type ToastProps = HTMLAttributes<HTMLDivElement> & {
   duration?: number
   tone?: 'success' | 'info' | 'error'
 }
-const ToastContent = createContext<HTMLAttributes<HTMLDivElement>>({})
+type ToastTone = NonNullable<ToastProps['tone']>
+const toneIcon = { success: 'circle-check', info: 'info', error: 'circle-alert' } as const
+const ToastContent = createContext<HTMLAttributes<HTMLDivElement> & { tone: ToastTone }>({ tone: 'success' })
 function ToastBody() {
-  const { children, className, ...props } = useContext(ToastContent)
+  const { children, className, tone, ...props } = useContext(ToastContent)
   return (
     <div
       {...props}
@@ -17,7 +20,8 @@ function ToastBody() {
       aria-live="polite"
       className={['agh-toast', className].filter(Boolean).join(' ')}
     >
-      {children}
+      <Icon name={toneIcon[tone]} className="agh-toast-icon" />
+      <span className="agh-toast-text">{children}</span>
     </div>
   )
 }
@@ -72,6 +76,7 @@ export function Toast({
     <ToastContent.Provider
       value={{
         ...props,
+        tone,
         className: [tone !== 'success' && `agh-toast--${tone}`, className].filter(Boolean).join(' '),
         children,
       }}

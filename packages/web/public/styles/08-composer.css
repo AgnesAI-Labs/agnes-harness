@@ -68,6 +68,12 @@
     border-bottom: 0;
     background: transparent;
   }
+  /* The bar is out of flow here, so a notice would start at the very top and be drawn across its
+   controls. While one is showing, the notice region starts below the bar instead. */
+  body:has(#empty-state:not([hidden]))
+  main:has(> #notice:not(:empty), > #reconnect-notice:not([hidden]), > .agh-banner) {
+    padding-top: 2.75rem;
+  }
   body:has(#empty-state:not([hidden])) .topbar .task-heading,
   body:has(#empty-state:not([hidden])) .session-tabs-bar {
     display: none;
