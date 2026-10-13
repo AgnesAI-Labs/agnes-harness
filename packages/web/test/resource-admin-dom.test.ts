@@ -440,6 +440,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-transport-listbox-1').click()
   expect(byId('mcp-executable-row').hidden).toBe(true)
   expect(byId('mcp-url-row').hidden).toBe(false)
+  expect(byId('mcp-oauth-row').hidden).toBe(false)
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   byId('mcp-secret-kind-trigger').click()
   expect(

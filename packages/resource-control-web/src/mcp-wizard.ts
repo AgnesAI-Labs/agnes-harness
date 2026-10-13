@@ -213,6 +213,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   on(transport, 'change', () => {
     command.disabled = transport.value !== 'stdio'
     $('mcp-command-row', 'label').hidden = transport.value !== 'stdio'
+    syncOAuth()
+    deriveName()
   })
   async function loadCredentials() {
     const version = ++loadVersion
