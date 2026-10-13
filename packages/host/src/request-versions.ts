@@ -169,6 +169,8 @@ export function createRequestVersionCache(o: {
     const cached = await readEntry(id)
     if (cached) {
       let bytes: Uint8Array | undefined
+      const objectFile = join(o.store.root, 'sha256', cached.sha256.slice(0, 2), cached.sha256)
+      const seen = await stat(objectFile).catch(() => undefined)
       try {
         bytes = await o.store.read(cached.sha256, undefined, signal)
       } catch (error) {
@@ -176,8 +178,12 @@ export function createRequestVersionCache(o: {
         // The object is gone or fails its digest: forget the entry, drop a corrupt file so the redo
         // rewrites it (a same-size file would otherwise be deduplicated), and make the version again.
         await rm(entryPath(id), { force: true })
-        if (hasCode(error, 'ATTACHMENT_CORRUPT') && !(await isProtected(cached.sha256)))
-          await rm(join(o.store.root, 'sha256', cached.sha256.slice(0, 2), cached.sha256), { force: true })
+        if (hasCode(error, 'ATTACHMENT_CORRUPT') && !(await isProtected(cached.sha256))) {
+          // Only the file the failed read looked at: one a writer has replaced since is left alone.
+          const now = await stat(objectFile).catch(() => undefined)
+          if (seen && now && now.ino === seen.ino && now.mtimeMs === seen.mtimeMs && now.size === seen.size)
+            await rm(objectFile, { force: true })
+        }
       }
       if (bytes) {
         await writeEntry({ ...cached, lastUsedMs: clock() }).catch(() => undefined) // recency only
@@ -255,7 +261,8 @@ export function createRequestVersionCache(o: {
       for (const name of names) {
         if (!name.endsWith('.tmp')) continue
         const info = await stat(join(o.root, name)).catch(() => undefined)
-        if (info && info.mtimeMs < cutoff) await rm(join(o.root, name), { force: true })
+        if (info && info.mtimeMs < cutoff)
+          await rm(join(o.root, name), { force: true }).catch(() => undefined)
       }
       const ids = names
         .filter((n) => n.endsWith('.json') && ID.test(n.slice(0, -5)))

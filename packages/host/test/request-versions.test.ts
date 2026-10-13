@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -5,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -80,7 +82,6 @@ const grey = (w: number, h: number) => {
 const png = { mimeType: 'image/png' }
 const indexFiles = (root: string) => readdirSync(root).filter((n) => n.endsWith('.json'))
 const objectPath = (store: AttachmentStore, sha: string) => join(store.root, 'sha256', sha.slice(0, 2), sha)
-const nap = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const fits = requestImageTransform({
   maxWidth: 1456,
   maxHeight: 1456,
@@ -303,16 +304,77 @@ describe('request version cache', () => {
       return { encoder, calls: () => calls }
     }
 
-    it('redoes a version whose bytes no longer match their digest', async () => {
-      const { encoder, calls } = counting()
+    const fixed = () => {
+      let calls = 0
+      const encoder: ImageVersionEncoder = {
+        id: 'test',
+        async encode() {
+          calls++
+          return { bytes: Uint8Array.of(1, 2, 3, 4), mimeType: 'image/jpeg', width: 1, height: 1 }
+        },
+      }
+      return { encoder, calls: () => calls }
+    }
+
+    it('redoes a version whose bytes no longer match their digest, replacing the corrupt file', async () => {
+      const { encoder, calls } = fixed()
       const { store, cache, root } = setup(encoder)
       const src = await store.put(PNG, { kind: 'user-attachment', mimeType: 'image/png' })
       const made = await cache.getOrCreate({ ...src, ...png }, tiny)
       writeFileSync(objectPath(store, made.object.sha256), Uint8Array.of(9, 9, 9, 9))
       const again = await cache.getOrCreate({ ...src, ...png }, tiny)
       expect(calls()).toBe(2)
-      expect(await store.read(again.object.sha256)).toEqual(Uint8Array.of(1, 2, 3, 2))
+      expect(again.object).toEqual(made.object)
+      expect(await store.read(again.object.sha256)).toEqual(Uint8Array.of(1, 2, 3, 4))
       expect(indexFiles(root)).toEqual([`${made.id}.json`])
+    })
+
+    it('leaves a corrupt object alone when it is also a user attachment', async () => {
+      const { encoder } = fixed()
+      const { store, cache } = setup(encoder)
+      const src = await store.put(PNG, { kind: 'user-attachment', mimeType: 'image/png' })
+      const made = await cache.getOrCreate({ ...src, ...png }, tiny)
+      await store.markUserAttachment(made.object, { mimeType: 'image/jpeg' })
+      writeFileSync(objectPath(store, made.object.sha256), Uint8Array.of(9, 9, 9, 9))
+      await cache.getOrCreate({ ...src, ...png }, tiny)
+      expect(new Uint8Array(readFileSync(objectPath(store, made.object.sha256)))).toEqual(
+        Uint8Array.of(9, 9, 9, 9),
+      )
+    })
+
+    it('does not delete an object that was replaced between the failed read and the delete', async () => {
+      const { encoder } = fixed()
+      let swapped = false
+      let presentAtRedo: boolean | undefined
+      let version: { sha256: string } | undefined
+      const { store, cache } = setup(encoder, {
+        wrap: (inner) => ({
+          ...inner,
+          async read(sha, range, signal) {
+            if (sha === version?.sha256 && !swapped) {
+              swapped = true
+              // A concurrent writer puts the correct bytes in place under a new file, then our read fails.
+              const fresh = `${objectPath(inner, sha)}.fresh`
+              writeFileSync(fresh, Uint8Array.of(1, 2, 3, 4))
+              renameSync(fresh, objectPath(inner, sha))
+              throw Object.assign(new Error('corrupt'), { code: 'ATTACHMENT_CORRUPT' })
+            }
+            return inner.read(sha, range, signal)
+          },
+          async put(bytes, meta) {
+            if (swapped)
+              presentAtRedo = existsSync(objectPath(inner, createHash('sha256').update(bytes).digest('hex')))
+            return inner.put(bytes, meta)
+          },
+        }),
+      })
+      const src = await store.put(PNG, { kind: 'user-attachment', mimeType: 'image/png' })
+      const made = await cache.getOrCreate({ ...src, ...png }, tiny)
+      version = made.object
+      writeFileSync(objectPath(store, made.object.sha256), Uint8Array.of(9, 9, 9, 9))
+      await cache.getOrCreate({ ...src, ...png }, tiny)
+      expect(presentAtRedo).toBe(true)
+      expect(await store.read(made.object.sha256)).toEqual(Uint8Array.of(1, 2, 3, 4))
     })
 
     it('redoes a version whose object is gone', async () => {
@@ -328,12 +390,19 @@ describe('request version cache', () => {
     it('keeps the entry when the read is aborted or fails for another reason', async () => {
       const { encoder, calls } = counting()
       let mode: 'ok' | 'hang' | 'timeout' = 'ok'
+      let hangStarted = () => {}
+      const hanging = new Promise<void>((resolve) => {
+        hangStarted = resolve
+      })
       const { store, cache, root } = setup(encoder, {
         wrap: (inner) => ({
           ...inner,
           async read(sha, range, signal) {
             if (mode === 'hang' && sha !== src.sha256)
-              await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason)))
+              await new Promise((_, reject) => {
+                signal?.addEventListener('abort', () => reject(signal.reason))
+                hangStarted()
+              })
             if (mode === 'timeout' && sha !== src.sha256)
               throw Object.assign(new Error('late'), { code: 'ATTACHMENT_TIMEOUT' })
             return inner.read(sha, range, signal)
@@ -345,7 +414,7 @@ describe('request version cache', () => {
       mode = 'hang'
       const controller = new AbortController()
       const pending = cache.getOrCreate({ ...src, ...png }, tiny, controller.signal)
-      await nap(5)
+      await hanging
       controller.abort()
       await expect(pending).rejects.toBeDefined()
       mode = 'timeout'
@@ -359,7 +428,7 @@ describe('request version cache', () => {
       expect(calls()).toBe(1)
     })
 
-    it.skipIf(process.platform === 'win32')(
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
       'still returns a hit when the recency stamp cannot be written',
       async () => {
         const { encoder, calls } = counting()
@@ -383,22 +452,28 @@ describe('request version cache', () => {
     const slow = () => {
       let calls = 0
       let encoderSignal: AbortSignal | undefined
+      let started = () => {}
+      const encoding = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      let release = () => {}
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
       const encoder: ImageVersionEncoder = {
         id: 'test',
         async encode(_input, _target, signal) {
           calls++
           encoderSignal = signal
+          started()
           await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(resolve, 30)
-            signal?.addEventListener('abort', () => {
-              clearTimeout(timer)
-              reject(signal.reason)
-            })
+            gate.then(resolve)
+            signal?.addEventListener('abort', () => reject(signal.reason))
           })
           return { bytes: Uint8Array.of(1, 2, 3), mimeType: 'image/jpeg', width: 1, height: 1 }
         },
       }
-      return { encoder, calls: () => calls, signal: () => encoderSignal }
+      return { encoder, encoding, release, calls: () => calls, signal: () => encoderSignal }
     }
 
     it('lets one caller abort without failing the other', async () => {
@@ -409,9 +484,10 @@ describe('request version cache', () => {
       const first = cache.getOrCreate({ ...src, ...png }, tiny, a.signal)
       const second = cache.getOrCreate({ ...src, ...png }, tiny)
       first.catch(() => undefined)
-      await nap(5)
+      await probe.encoding
       a.abort()
       await expect(first).rejects.toBeDefined()
+      probe.release()
       expect((await second).object.bytes).toBe(3)
       expect(probe.calls()).toBe(1)
       expect(probe.signal()?.aborted).toBe(false)
@@ -425,12 +501,13 @@ describe('request version cache', () => {
       const b = new AbortController()
       const one = cache.getOrCreate({ ...src, ...png }, tiny, a.signal)
       const two = cache.getOrCreate({ ...src, ...png }, tiny, b.signal)
-      await nap(5)
+      await probe.encoding
       a.abort()
       b.abort()
       await expect(one).rejects.toBeDefined()
       await expect(two).rejects.toBeDefined()
       expect(probe.signal()?.aborted).toBe(true)
+      probe.release()
       const next = await cache.getOrCreate({ ...src, ...png }, tiny)
       expect(next.object.bytes).toBe(3)
       expect(probe.calls()).toBe(2)
