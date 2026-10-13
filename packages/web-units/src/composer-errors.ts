@@ -33,6 +33,9 @@ const REFUSAL_KEYS: Readonly<Partial<Record<AttachmentRefusalCode, string>>> = {
   ATTACHMENT_DATA: 'composer.attachment.dataInvalid',
   ATTACHMENT_BYTES: 'composer.attachment.tooLarge',
   ATTACHMENT_IMAGE_TOO_LARGE: 'composer.image.overBudget',
+  ATTACHMENT_TIMEOUT: 'composer.attachment.storeTimeout',
+  ATTACHMENT_UNAVAILABLE: 'composer.attachment.storeUnavailable',
+  ATTACHMENT_TOO_LARGE: 'composer.attachment.storeTooLarge',
 }
 
 export function attachmentErrorNotice(error: unknown): AttachmentErrorNotice | undefined {

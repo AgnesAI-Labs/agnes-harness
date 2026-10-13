@@ -43,6 +43,8 @@ export type ComposerUploadEntry = Readonly<{
   status: ComposerUploadStatus
   sent: number
   total: number
+  /** True while the attachment has no session yet and so cannot start uploading. */
+  awaitingSession?: boolean
   error?: unknown
   /** The reference block to send, once ready; an image carries its thumbnail when one was made. */
   block?: ContentBlock
@@ -143,6 +145,7 @@ export function createComposerUpload(deps: {
     status: job.status,
     sent: job.sent,
     total: job.size ?? job.file.size,
+    ...(job.target ? {} : { awaitingSession: true }),
     ...(job.error !== undefined ? { error: job.error } : {}),
     ...(job.block ? { block: job.block } : {}),
   })

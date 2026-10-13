@@ -6,7 +6,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.attachment.add': 'Add attachments',
     'composer.attachment.dataInvalid': 'The attachment data is not valid Base64.',
     'composer.attachment.hint':
-      'All file types; up to 50 attachments and 100 MiB total after image processing. Images follow model limits. Some formats may be unreadable.',
+      'All file types; up to 50 attachments. Files are uploaded, up to the server’s upload limit; a server without uploads takes 8 MiB per file and 100 MiB in total. Images follow model limits. Some formats may be unreadable.',
     'composer.attachment.nameInvalid': 'The attachment name or file type is invalid.',
     'composer.attachment.remove': 'Remove attachment {index}',
     'composer.attachment.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
@@ -54,6 +54,13 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.overBudget':
       'An image is too large to send to the model (over 16 MiB, or over 8 million pixels in one message). Shrink the image and add it again.',
     'composer.upload.tooLarge': 'The attachment is larger than the upload limit.',
+    'composer.upload.tooLargeLimit': 'The attachment is larger than the upload limit of {limit}.',
+    'composer.upload.waiting': '{name} will upload when the task is sent.',
+    'composer.upload.waitingShort': 'Waiting to upload',
+    'composer.attachment.storeTimeout': 'Storing the attachment took too long. Try sending again.',
+    'composer.attachment.storeUnavailable':
+      'The attachment could not be stored right now. Try sending again.',
+    'composer.attachment.storeTooLarge': 'The attachment is too large to store.',
     'composer.upload.quota': 'There is no room for this attachment: a storage quota was reached.',
     'composer.upload.notAuthorized':
       'An attachment was not uploaded to this session. Remove it and add it again.',
@@ -67,7 +74,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.attachment.add': '添加附件',
     'composer.attachment.dataInvalid': '附件数据不是有效的 Base64。',
     'composer.attachment.hint':
-      '可上传各类文件，最多 50 个，图片处理后附件合计不超过 100 MiB。图片按模型限制；部分格式可能无法解析。',
+      '可上传各类文件，最多 50 个。文件以上传方式发送，大小不超过服务器的上传上限；不支持上传的服务器每个文件不超过 8 MiB，合计不超过 100 MiB。图片按模型限制；部分格式可能无法解析。',
     'composer.attachment.nameInvalid': '附件名称或文件类型无效。',
     'composer.attachment.remove': '移除附件 {index}',
     'composer.attachment.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
@@ -105,10 +112,18 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooMany': '一条消息最多添加 {count} 张图片。',
     'composer.image.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
     'composer.image.tooLargePixels': '图片像素过多，无法添加。请裁剪或缩小后重试。',
-    'composer.upload.unavailableLarge': '此服务器不接收附件上传，超过 8 MiB 的附件无法发送，请使用更小的文件。',
+    'composer.upload.unavailableLarge':
+      '此服务器不接收附件上传，超过 8 MiB 的附件无法发送，请使用更小的文件。',
     'composer.upload.missingNamed': '“{name}”已不在存储中，请移除后重新添加。',
-    'composer.image.overBudget': '图片太大，无法发给模型（超过 16 MiB，或一条消息合计超过 800 万像素）。请缩小图片后重新添加。',
+    'composer.image.overBudget':
+      '图片太大，无法发给模型（超过 16 MiB，或一条消息合计超过 800 万像素）。请缩小图片后重新添加。',
     'composer.upload.tooLarge': '附件超过了上传大小上限。',
+    'composer.upload.tooLargeLimit': '附件超过了上传大小上限（{limit}）。',
+    'composer.upload.waiting': '{name} 将在任务发送时上传。',
+    'composer.upload.waitingShort': '等待上传',
+    'composer.attachment.storeTimeout': '保存附件用时过长，请重新发送。',
+    'composer.attachment.storeUnavailable': '暂时无法保存附件，请重新发送。',
+    'composer.attachment.storeTooLarge': '附件太大，无法保存。',
     'composer.upload.quota': '没有空间存放这个附件：已达到存储配额。',
     'composer.upload.notAuthorized': '有附件不是上传到本会话的，请移除后重新添加。',
     'composer.upload.missing': '有附件已不在存储中，请移除后重新添加。',

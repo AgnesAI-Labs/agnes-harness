@@ -136,7 +136,7 @@ it('names a larger image without a thumbnail instead of fetching it', async () =
   const view = await render([ref(9 * MIB)], read)
   expect(reads).toEqual([])
   expect(view.article()?.textContent).toContain('shot.png')
-  expect(view.article()?.textContent).toContain('9.0 MB')
+  expect(view.article()?.textContent).toContain('9.0 MiB')
   expect(view.article()?.querySelector('img')).toBeNull()
   await view.unmount()
 })

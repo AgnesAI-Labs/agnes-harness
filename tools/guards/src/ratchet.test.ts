@@ -327,7 +327,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6290; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web-units/src 6884; no exclusions or spare allocation.
-  'packages/web-units/src': 6884,
+  // 2026-10-13 attachments by reference: a waiting-to-upload state for attachments added before the session exists, sentences for the send-time store refusals, and the known upload limit in the too-large message. Reviewed exact countLines packages/web-units/src 6918; no exclusions or spare allocation.
+  'packages/web-units/src': 6918,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.

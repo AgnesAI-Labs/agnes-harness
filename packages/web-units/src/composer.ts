@@ -285,6 +285,12 @@ type ComposerAttachment = ComposerAttachmentBlock & {
 /** One attachment kept inline, where uploads are offered but unavailable, may be at most this large. */
 const INLINE_FALLBACK_MAX_BYTES = 8 * 1024 * 1024
 
+/** An upload limit as people read it: whole GiB when it is one, MiB otherwise. */
+const formatLimit = (bytes: number): string =>
+  bytes >= 1024 ** 3 && bytes % 1024 ** 3 === 0
+    ? `${bytes / 1024 ** 3} GiB`
+    : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MiB`
+
 const MAX_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage
 const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
 const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
@@ -572,7 +578,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       const visual = policy.supported && nativeImageFile(file)
       // 源图只做粗筛：体积上限留到缩放之后再判，否则大截图会在能被缩小之前就被拒掉。
       if (!visual && target && file.size > target.maxBytes) {
-        onError(new Error(t('composer.upload.tooLarge')))
+        onError(new Error(t('composer.upload.tooLargeLimit', { limit: formatLimit(target.maxBytes) })))
         continue
       }
       if (!visual && file.size > inlineCap) {
@@ -789,6 +795,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onClick: () => uploadsRef.current?.retry(id),
         },
         dependencies.translate('composer.upload.retry'),
+      )
+    if (entry.awaitingSession)
+      return createElement(
+        'small',
+        {
+          className: 'composer-upload-waiting',
+          'data-upload-waiting': id,
+          title: dependencies.translate('composer.upload.waiting', { name: entry.name }),
+        },
+        dependencies.translate('composer.upload.waitingShort'),
       )
     const percent = entry.total > 0 ? Math.floor((entry.sent / entry.total) * 100) : 0
     return createElement('progress', {

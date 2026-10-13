@@ -457,7 +457,7 @@ describe('trace panel', () => {
     }
     panel.render([lean], [turn(undefined, ['u-lean'])])
     ;(root.querySelector('.trace-row') as HTMLButtonElement).click()
-    expect(root.querySelector('.trace-image-omitted')?.textContent).toContain('3.0 MB')
+    expect(root.querySelector('.trace-image-omitted')?.textContent).toContain('3.0 MiB')
     expect(root.querySelector('.trace-image-thumb')).toBeNull()
   })
 

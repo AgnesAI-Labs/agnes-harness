@@ -41,7 +41,7 @@ it('shows an omitted image as its size, not as a broken picture', async () => {
     await act(async () => root.render(createElement(Harness)))
     const article = host.querySelector<HTMLElement>('[data-node-id="omitted"]')
     expect(article).not.toBeNull()
-    expect(article?.textContent).toContain('3.0 MB')
+    expect(article?.textContent).toContain('3.0 MiB')
     expect(article?.querySelector('img')).toBeNull()
   } finally {
     await act(async () => root.unmount())

@@ -302,6 +302,49 @@ describe('composer uploads', () => {
     expect(m.handle.current?.hasDeferredUploads()).toBe(false)
   })
 
+  it('shows an attachment waiting for its session as waiting, not as an upload at 0%', async () => {
+    const { target, calls } = controlledTarget()
+    const m = await mount({ open: async () => 'deferred' })
+    await m.add([zipFile()])
+    expect(host.querySelector('[data-upload-progress]')).toBeNull()
+    expect(host.querySelector('[data-upload-waiting]')?.textContent).toBe(
+      translate('composer.upload.waitingShort'),
+    )
+    await act(async () => {
+      void m.handle.current?.uploadDeferred(target)
+    })
+    await m.settle()
+    expect(calls).toHaveLength(1)
+    expect(host.querySelector('[data-upload-waiting]')).toBeNull()
+    expect(host.querySelector('[data-upload-progress]')).not.toBeNull()
+  })
+
+  it('names the upload limit when a file is over it', async () => {
+    const { target } = controlledTarget()
+    const m = await mount({ open: async () => ({ ...target, maxBytes: 3 * 1024 * 1024 }) })
+    await m.add([zipFile(4 * 1024 * 1024)])
+    expect(m.errors).toEqual([translate('composer.upload.tooLargeLimit', { limit: '3 MiB' })])
+    expect(m.errors[0]).toContain('3 MiB')
+  })
+
+  it('does not promise a 100 MiB total for files that upload', () => {
+    expect(translate('composer.attachment.hint')).not.toContain('100 MiB total')
+    expect(translate('composer.attachment.hint')).toContain('8 MiB')
+  })
+
+  it.each([
+    ['ATTACHMENT_TIMEOUT', 'composer.attachment.storeTimeout'],
+    ['ATTACHMENT_UNAVAILABLE', 'composer.attachment.storeUnavailable'],
+    ['ATTACHMENT_TOO_LARGE', 'composer.attachment.storeTooLarge'],
+  ])('gives the send-time refusal %s its own sentence in both languages', (code, key) => {
+    expect(attachmentErrorNotice({ data: { code }, message: 'x (-32011)' })?.key).toBe(key)
+    for (const language of ['en', 'zh-CN'] as const) {
+      const text = webUnitsLocaleCatalog[language][key]
+      expect(text).toBeTruthy()
+      expect(text).not.toMatch(/-?\d{5}|[A-Z]{4,}_[A-Z_]+/)
+    }
+  })
+
   it('drops the uploads of a session the user leaves, cancelling those still running', async () => {
     const { target, calls } = controlledTarget()
     const m = await mount({ open: async () => target })
