@@ -7,7 +7,7 @@
   textarea {
     font: inherit;
     border: 1px solid var(--agnes-line-emphasis);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-control);
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-page);
   }

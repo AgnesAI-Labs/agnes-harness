@@ -426,7 +426,7 @@
     border: 0;
     border-radius: var(--radius-lg);
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-card);
+    background: var(--agnes-bg-user-bubble);
     font-size: var(--font-size-body);
     line-height: 1.375rem;
     white-space: pre-wrap;

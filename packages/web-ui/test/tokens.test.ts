@@ -52,6 +52,18 @@ describe('web-ui theme bridge', () => {
     expect(required.filter((name) => !bridge.includes(`${name}: var(--agnes-`))).toEqual([])
   })
 
+  it('bridges every global colour alias the static Ant Design stylesheet reads', () => {
+    const bridge = readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8')
+    const antd = readFileSync(createRequire(import.meta.url).resolve('antd/dist/antd.css'), 'utf8')
+    // Constants rather than roles: pure white on saturated fills and the transparent blur base.
+    const constants = new Set(['--ant-color-white', '--ant-color-bg-blur'])
+    const used = new Set([...antd.matchAll(/var\((--ant-color-[a-z0-9-]+)\)/g)].map((match) => match[1]!))
+    const unbridged = [...used]
+      .filter((name) => !constants.has(name) && !bridge.includes(`${name}: var(--agnes-`))
+      .sort()
+    expect(unbridged).toEqual([])
+  })
+
   it('loads the theme bridge after Ant Design CSS on every Web entry page', () => {
     for (const page of ['index', 'admin', 'resources']) {
       const html = readFileSync(resolve(root, `packages/web/public/${page}.html`), 'utf8')

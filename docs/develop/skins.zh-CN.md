@@ -180,6 +180,7 @@ textarea {
 --agnes-bg-lightbox
 --agnes-surface-glass-soft
 --agnes-surface-glass-hover
+--agnes-bg-user-bubble
 --agnes-input-surface
 --agnes-input-content-strong
 --agnes-input-placeholder
@@ -205,6 +206,10 @@ textarea {
 --agnes-status-warning-border
 --agnes-status-danger-border
 --agnes-status-info-border
+--agnes-status-success-solid
+--agnes-status-warning-solid
+--agnes-status-danger-solid
+--agnes-status-info-solid
 --shadow-elevation
 --shadow-hairline
 --shadow-dialog
@@ -250,6 +255,13 @@ textarea {
 | `--elevation-0` | 无阴影的平面区域。 |
 | `--elevation-1` | 小型浮层的阴影。 |
 | `--elevation-2` | 弹窗与较高浮层的阴影。 |
+| `--agnes-bg-user-bubble` | 用户自己消息的气泡底色；中性色，不使用强调色。 |
+| `--agnes-status-success-solid` | 成功状态的圆点、图标等非文字标记（至少 3:1）。 |
+| `--agnes-status-warning-solid` | 警告状态的非文字标记。 |
+| `--agnes-status-danger-solid` | 错误或危险状态的非文字标记。 |
+| `--agnes-status-info-solid` | 信息状态的非文字标记。 |
+
+内置主题的取值、字号与圆角尺度，以及这些 token 如何传给 Ant Design 与 Ant Design X，见[主题说明](ui-theme.zh-CN.md)。
 
 每个 token 都要**同时**给出 `light` 与 `dark` 两个值：
 

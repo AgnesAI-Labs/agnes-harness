@@ -15,8 +15,9 @@
    - 禁止用 ConfigProvider 运行时主题切色（zeroRuntime 静态 CSS 下无效）。
    - prefixCls 保持默认 ant-，本文件不与 CSS 重新编译绑定。
 
-   桥接当前使用的 Button/Modal/Select/Switch/Tabs 的全局语义变量；组件私有
-   --ant-*-* 的颜色默认值同样映射到语义 token，避免静态组件带入浅色值。
+   桥接全部全局语义变量；组件私有 --ant-*-* 的颜色默认值同样映射到语义 token，
+   避免静态组件带入浅色值。Ant Design X（@agnes/web-ui/x）的子树在运行时以同一个
+   `agnes-theme` 变量键生成样式，因此同样经由本文件取色，不需要第二套主题。
    ═══════════════════════════════════════════════════════════════════════ */
 
   :root,
@@ -32,6 +33,10 @@
     --ant-color-link: var(--agnes-brand-primary);
     --ant-color-link-hover: var(--agnes-brand-primary);
     --ant-color-link-active: var(--agnes-brand-primary);
+    --ant-color-primary-text: var(--agnes-text-emphasis);
+    --ant-color-primary-text-hover: var(--agnes-text-emphasis);
+    --ant-color-primary-text-active: var(--agnes-text-emphasis);
+    --ant-color-highlight: var(--agnes-status-danger-text);
 
     /* 文字 */
     --ant-color-text: var(--agnes-text-primary);
@@ -43,12 +48,16 @@
     --ant-color-text-description: var(--agnes-text-tertiary);
     --ant-color-text-placeholder: var(--agnes-text-tertiary);
     --ant-color-text-light-solid: var(--agnes-text-inverse);
+    --ant-color-text-base: var(--agnes-text-primary);
+    /* Ant's weakest text step still carries labels; keep it at the readable muted role. */
+    --ant-color-text-quaternary: var(--agnes-text-tertiary);
     --ant-color-icon: var(--agnes-text-tertiary);
     --ant-color-icon-hover: var(--agnes-text-primary);
 
     /* 背景层级 */
     --ant-color-bg-layout: var(--agnes-bg-page);
-    --ant-color-bg-container: var(--agnes-bg-app-content);
+    --ant-color-bg-base: var(--agnes-bg-surface);
+    --ant-color-bg-container: var(--agnes-bg-surface);
     --ant-color-bg-elevated: var(--agnes-bg-popover);
     --ant-color-bg-text-hover: var(--agnes-bg-hover);
     --ant-color-bg-text-active: var(--agnes-bg-selected);
@@ -58,6 +67,15 @@
     --ant-color-fill: var(--agnes-bg-selected);
     --ant-color-fill-secondary: var(--agnes-bg-hover);
     --ant-color-fill-tertiary: var(--agnes-bg-card);
+    --ant-color-fill-quaternary: var(--agnes-bg-card);
+    --ant-color-fill-content: var(--agnes-bg-hover);
+    --ant-color-fill-alter: var(--agnes-bg-card);
+    --ant-color-bg-spotlight: var(--agnes-text-primary);
+    --ant-control-item-bg-hover: var(--agnes-bg-hover);
+    --ant-control-item-bg-active: var(--agnes-bg-selected);
+    --ant-control-item-bg-active-hover: var(--agnes-bg-selected);
+    --ant-control-item-bg-active-disabled: var(--agnes-bg-card);
+    --ant-control-tmp-outline: var(--agnes-bg-card);
     --ant-color-bg-solid: var(--agnes-text-primary);
     --ant-color-bg-solid-hover: var(--agnes-text-primary);
     --ant-color-bg-solid-active: var(--agnes-text-primary);
@@ -66,6 +84,8 @@
     --ant-color-border: var(--agnes-line-primary);
     --ant-color-border-secondary: var(--agnes-line-primary);
     --ant-color-split: var(--agnes-line-primary);
+    --ant-color-border-disabled: var(--agnes-line-primary);
+    --ant-color-border-bg: var(--agnes-bg-surface);
     --ant-control-outline: var(--agnes-brand-focus-ring);
 
     /* 状态 */
@@ -76,22 +96,67 @@
     --ant-color-error-bg-filled-hover: var(--agnes-status-danger-bg);
     --ant-color-error-bg-active: var(--agnes-status-danger-bg);
     --ant-color-error-text: var(--agnes-status-danger-text);
+    --ant-color-error-text-hover: var(--agnes-status-danger-text);
+    --ant-color-error-text-active: var(--agnes-status-danger-text);
+    --ant-color-error-bg-hover: var(--agnes-status-danger-bg);
+    --ant-color-error-border: var(--agnes-status-danger-border);
+    --ant-color-error-border-hover: var(--agnes-status-danger-border);
+    --ant-color-error-outline: var(--agnes-status-danger-bg);
+    --ant-color-error-affix: var(--agnes-status-danger-text);
     --ant-color-success: var(--agnes-status-success-text);
+    --ant-color-success-hover: var(--agnes-status-success-text);
+    --ant-color-success-active: var(--agnes-status-success-text);
     --ant-color-success-bg: var(--agnes-status-success-bg);
+    --ant-color-success-bg-hover: var(--agnes-status-success-bg);
+    --ant-color-success-border: var(--agnes-status-success-border);
+    --ant-color-success-border-hover: var(--agnes-status-success-border);
     --ant-color-success-text: var(--agnes-status-success-text);
+    --ant-color-success-text-hover: var(--agnes-status-success-text);
+    --ant-color-success-text-active: var(--agnes-status-success-text);
     --ant-color-warning: var(--agnes-status-warning-text);
+    --ant-color-warning-hover: var(--agnes-status-warning-text);
+    --ant-color-warning-active: var(--agnes-status-warning-text);
     --ant-color-warning-bg: var(--agnes-status-warning-bg);
+    --ant-color-warning-bg-hover: var(--agnes-status-warning-bg);
+    --ant-color-warning-border: var(--agnes-status-warning-border);
+    --ant-color-warning-border-hover: var(--agnes-status-warning-border);
+    --ant-color-warning-outline: var(--agnes-status-warning-bg);
+    --ant-color-warning-affix: var(--agnes-status-warning-text);
     --ant-color-warning-text: var(--agnes-status-warning-text);
+    --ant-color-warning-text-hover: var(--agnes-status-warning-text);
+    --ant-color-warning-text-active: var(--agnes-status-warning-text);
     --ant-color-info: var(--agnes-status-info-text);
+    --ant-color-info-hover: var(--agnes-status-info-text);
+    --ant-color-info-active: var(--agnes-status-info-text);
     --ant-color-info-bg: var(--agnes-status-info-bg);
+    --ant-color-info-bg-hover: var(--agnes-status-info-bg);
+    --ant-color-info-border: var(--agnes-status-info-border);
+    --ant-color-info-border-hover: var(--agnes-status-info-border);
+    --ant-color-info-text: var(--agnes-status-info-text);
+    --ant-color-info-text-hover: var(--agnes-status-info-text);
+    --ant-color-info-text-active: var(--agnes-status-info-text);
 
     /* 尺度（无深浅维度） */
     --ant-font-size: var(--font-size-body);
     --ant-font-size-sm: var(--font-size-sm);
     --ant-font-size-lg: var(--font-size-lg);
-    --ant-border-radius: var(--radius-md);
+    --ant-font-family: var(--font-sans);
+    --ant-font-family-code: var(--font-mono);
+    /* Controls 6px, menus and cards 8px. X doubles the control radius for its sender card (12px). */
+    --ant-border-radius: var(--radius-control);
+    --ant-border-radius-xs: var(--radius-xs);
     --ant-border-radius-sm: var(--radius-sm);
-    --ant-border-radius-lg: var(--radius-lg);
+    --ant-border-radius-lg: var(--radius-card);
+    --ant-border-radius-outer: var(--radius-sm);
+    /* Borders carry structure; only floating layers are elevated. */
+    --ant-box-shadow: var(--elevation-2);
+    --ant-box-shadow-secondary: var(--elevation-1);
+    --ant-box-shadow-tertiary: var(--shadow-hairline);
+    --ant-box-shadow-card: var(--elevation-1);
+    --ant-box-shadow-drawer-left: var(--elevation-2);
+    --ant-box-shadow-drawer-right: var(--elevation-2);
+    --ant-box-shadow-drawer-up: var(--elevation-2);
+    --ant-box-shadow-drawer-down: var(--elevation-2);
     --ant-control-height: var(--control-height);
     --ant-control-height-sm: var(--control-height-sm);
     --ant-control-height-lg: var(--control-height-form);
@@ -156,7 +221,7 @@
     --ant-button-default-color: var(--agnes-text-primary);
     --ant-button-default-ghost-color: var(--agnes-text-primary);
     --ant-button-default-ghost-border-color: var(--agnes-line-primary);
-    --ant-button-default-bg: var(--agnes-bg-app-content);
+    --ant-button-default-bg: var(--agnes-bg-surface);
     --ant-button-default-border-color: var(--agnes-line-primary);
     --ant-button-default-hover-bg: var(--agnes-bg-hover);
     --ant-button-default-hover-color: var(--agnes-text-primary);
@@ -198,12 +263,61 @@
     --ant-tabs-item-selected-color: var(--agnes-text-primary);
     --ant-tabs-item-hover-color: var(--agnes-text-primary);
     --ant-tabs-item-active-color: var(--agnes-text-primary);
+    --ant-input-active-border-color: var(--agnes-input-border-focus);
+    --ant-input-hover-border-color: var(--agnes-input-border-emphasis);
+    --ant-input-active-bg: var(--agnes-input-surface);
+    --ant-input-hover-bg: var(--agnes-input-surface);
+    --ant-input-addon-bg: var(--agnes-bg-card);
+    --ant-input-active-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+    --ant-input-error-active-shadow: 0 0 0 3px var(--agnes-status-danger-bg);
+    --ant-input-warning-active-shadow: 0 0 0 3px var(--agnes-status-warning-bg);
+
+    /* Ant Design X component variables. The components themselves are restyled by their owners;
+     this block only guarantees that no X surface keeps a library light-theme colour. */
+    --ant-sender-color-bg-slot: var(--agnes-brand-emphasis-soft);
+    --ant-sender-color-bg-skill: var(--agnes-brand-emphasis-soft);
+    --ant-sender-color-bg-skill-hover: var(--agnes-brand-emphasis-soft);
+    --ant-sender-color-text-slot: var(--agnes-text-emphasis);
+    --ant-sender-color-text-slot-placeholder: var(--agnes-text-tertiary);
+    --ant-sender-color-border-slot: var(--agnes-line-primary);
+    --ant-sender-color-border-slot-hover: var(--agnes-brand-primary);
+    --ant-sender-switch-checked-bg: var(--agnes-brand-emphasis-soft);
+    --ant-sender-switch-checked-hover-bg: var(--agnes-brand-emphasis-soft);
+    --ant-sender-switch-unchecked-hover-bg: var(--agnes-bg-hover);
+    --ant-sender-color-border-input: var(--agnes-line-emphasis);
+    --ant-sender-box-shadow-input: var(--shadow-hairline);
+    --ant-sender-color-bg-actions-disabled: var(--agnes-bg-card);
+    --ant-sender-color-text-actions-disabled: var(--agnes-text-tertiary);
+    --ant-conversations-creation-bg-color: var(--agnes-bg-surface);
+    --ant-conversations-creation-border-color: var(--agnes-line-emphasis);
+    --ant-conversations-creation-hover-color: var(--agnes-bg-hover);
+    --ant-conversations-shortcut-key-text-color: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-title-disabled: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-description-disabled: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-primary-disabled: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-success-disabled: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-error-text-disabled: var(--agnes-status-danger-text);
+    --ant-thought-chain-color-error-bg-disabled: var(--agnes-status-danger-bg);
+    --ant-thought-chain-color-error-text-description: var(--agnes-status-danger-text);
+    --ant-thought-chain-color-error-text-description-disabled: var(--agnes-status-danger-text);
+    --ant-thought-chain-item-motion-description: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-text-blink-default: var(--agnes-text-tertiary);
+    --ant-thought-chain-color-text-blink: var(--agnes-text-primary);
+    --ant-thought-chain-item-solid-bg: var(--agnes-bg-card);
+    --ant-thought-chain-item-solid-hover-bg: var(--agnes-bg-hover);
+    --ant-thought-chain-item-outlined-bg: var(--agnes-bg-surface);
+    --ant-thought-chain-item-outlined-hover-bg: var(--agnes-bg-hover);
+    --ant-thought-chain-item-border-radius: var(--radius-control);
+    --ant-thought-chain-border-color: var(--agnes-line-primary);
+    --ant-thought-chain-connector-color: var(--agnes-line-primary);
+    --ant-think-color-text-blink-default: var(--agnes-text-tertiary);
+    --ant-think-color-text-blink: var(--agnes-text-primary);
+    --ant-attachments-color-bg-placeholder-hover: var(--agnes-surface-glass-soft);
   }
 
-  .dark {
-    /* 背景层级与边框在深色下的对位由 .dark 的 --agnes-* 覆盖自然传导；
-     这里只显式接走 antd 深色专用变量（浅色区未出现的名字）。 */
-    --ant-color-bg-spotlight: var(--agnes-brand-primary);
+  /* A filled X bubble is the user's own message: the neutral bubble surface, never the accent. */
+  :root .agnes-theme.ant-bubble {
+    --ant-color-fill-content: var(--agnes-bg-user-bubble);
   }
 
   /* Ant uses the primary border as a filled/text active surface; keep the label on its soft surface. */

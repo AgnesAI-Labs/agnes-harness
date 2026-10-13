@@ -218,8 +218,9 @@
     outline: 2px solid var(--agnes-input-border-focus);
     outline-offset: 2px;
   }
-  .agh-tooltip .ant-tooltip-inner,
-  .agh-tooltip .ant-tooltip-container {
+  /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-container {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-popover);
     border: 0;
@@ -228,7 +229,7 @@
     font-size: var(--font-size-sm);
     line-height: 1.6;
   }
-  .agh-tooltip .ant-tooltip-arrow {
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-arrow {
     --antd-arrow-background-color: var(--agnes-bg-popover);
   }
   .agh-menu {
@@ -340,7 +341,7 @@
   :is(.agnes-settings-card, .config-card) {
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
-    box-shadow: var(--shadow-hairline);
+    box-shadow: var(--elevation-0);
   }
   .agnes-settings-page[data-layout] {
     width: 100%;
@@ -994,6 +995,89 @@
     min-width: 0;
     color: var(--agnes-text-primary);
     font: var(--font-size-xs) var(--font-sans);
+  }
+  /* Small touches shared by every surface: keyboard hint, state dot, completion mark, copy. */
+  .agh-kbd {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    min-width: 1.25rem;
+    justify-content: center;
+    padding: 0 var(--s4);
+    border: 1px solid var(--agnes-line-emphasis);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-page);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-regular);
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
+  .agh-status-dot {
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-brand-primary);
+  }
+  .agh-status-dot[data-tone="success"] {
+    background: var(--agnes-status-success-solid);
+  }
+  .agh-status-dot[data-tone="warning"] {
+    background: var(--agnes-status-warning-solid);
+  }
+  .agh-status-dot[data-tone="danger"] {
+    background: var(--agnes-status-danger-solid);
+  }
+  .agh-status-dot[data-tone="info"] {
+    background: var(--agnes-status-info-solid);
+  }
+  .agh-status-dot[data-tone="neutral"] {
+    background: var(--agnes-text-tertiary);
+  }
+  @keyframes agh-breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-status-dot[data-running] {
+      animation: agh-breathe var(--motion-breathe) ease-in-out infinite;
+    }
+  }
+  .agh-completion {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .agh-completion > .agh-icon {
+    color: var(--agnes-status-success-solid);
+  }
+  .agh-copy[data-copied] {
+    color: var(--agnes-status-success-text);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-copy[data-copied] .agh-icon {
+      animation: agh-copy-confirm var(--motion-base) var(--motion-ease);
+    }
+  }
+  @keyframes agh-copy-confirm {
+    from {
+      opacity: 0;
+      scale: 0.9;
+    }
   }
   .agh-visually-hidden {
     position: absolute;

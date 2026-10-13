@@ -104,10 +104,12 @@
   [data-agnes-region="composer"] {
     /* 输入卡的 backdrop-filter 必须声明在区域钩子上，供皮肤覆盖（R1 不变量）。 */
     border: 0;
-    border-radius: var(--radius-card);
-    background: var(--agnes-bg-page);
-    /* The card has one quiet edge; elevation is reserved for floating surfaces. */
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--agnes-input-border) 80%, var(--agnes-bg-page));
+    border-radius: var(--radius-surface);
+    background: var(--agnes-bg-surface);
+    /* One quiet edge and a 1px lift; real elevation is reserved for floating surfaces. */
+    box-shadow:
+      0 0 0 1px var(--agnes-line-emphasis),
+      var(--shadow-hairline);
     backdrop-filter: none;
   }
   /* Focus belongs to the whole card, since the textarea itself draws no ring. */

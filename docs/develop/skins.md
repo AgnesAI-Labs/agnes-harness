@@ -187,6 +187,7 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-bg-lightbox
 --agnes-surface-glass-soft
 --agnes-surface-glass-hover
+--agnes-bg-user-bubble
 --agnes-input-surface
 --agnes-input-content-strong
 --agnes-input-placeholder
@@ -212,6 +213,10 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-status-warning-border
 --agnes-status-danger-border
 --agnes-status-info-border
+--agnes-status-success-solid
+--agnes-status-warning-solid
+--agnes-status-danger-solid
+--agnes-status-info-solid
 --shadow-elevation
 --shadow-hairline
 --shadow-dialog
@@ -257,6 +262,13 @@ Status surfaces and elevation levels added to the theme contract:
 | `--elevation-0` | Flat surfaces without a shadow. |
 | `--elevation-1` | Shadow for small floating surfaces. |
 | `--elevation-2` | Shadow for dialogs and raised surfaces. |
+| `--agnes-bg-user-bubble` | Bubble surface of the user's own message; neutral, never the accent. |
+| `--agnes-status-success-solid` | Non-text success marks such as dots and icons (at least 3:1). |
+| `--agnes-status-warning-solid` | Non-text warning marks. |
+| `--agnes-status-danger-solid` | Non-text error or danger marks. |
+| `--agnes-status-info-solid` | Non-text informational marks. |
+
+The built-in theme's values, its type and radius scales, and how these tokens reach Ant Design and Ant Design X are described in the [theme guide](ui-theme.md).
 
 Every token must provide **both** `light` and `dark` values:
 

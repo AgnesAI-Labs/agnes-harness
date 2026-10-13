@@ -100,11 +100,12 @@
     background: var(--agnes-bg-app-content);
     font-family: var(--font-sans);
     font-size: var(--font-size-body);
-    line-height: 1.6;
+    line-height: var(--line-height-body);
   }
+  /* Selection carries a tint of the accent so it reads as the user's own mark on any surface. */
   ::selection {
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-selected);
+    background: var(--agnes-focus-ring-soft);
   }
   /* ── 客户端（agnes-code）图标的绘制约定 ──────────────────────────────────────
    这些字形直接取自客户端 `ui/desktop/src/components/icons/*` 与

@@ -4,7 +4,7 @@
   /* Appended after the pinned XMarkdown core and both themes. All rules stay within this root. */
   .conversation-markdown.x-markdown-light,
   .conversation-markdown.x-markdown-dark {
-    --font-size: var(--font-size-body);
+    --font-size: var(--font-size-prose);
     --primary-color: var(--agnes-brand-primary);
     --primary-color-hover: var(--agnes-brand-primary);
     --heading-color: var(--agnes-text-primary);
@@ -27,8 +27,8 @@
     --table-margin: 0 0 1rem 0;
     --margin-pre: 0 0 1rem 0;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-body);
-    line-height: 1.5rem;
+    font-size: var(--font-size-prose);
+    line-height: var(--line-height-prose);
     white-space: normal;
   }
 
@@ -106,7 +106,7 @@
 
   /* Reading measure applies to prose; code and data keep the full message width. */
   .conversation-markdown :is(p, ul, ol, blockquote) {
-    max-width: 75ch;
+    max-width: var(--measure-prose);
   }
   .conversation-markdown :is(h1, h2, h3, h4) {
     text-wrap: balance;
