@@ -11,13 +11,7 @@ import { Prompts, Welcome, XProvider } from '@agnes/web-ui/x'
 import { type ReactElement, useRef } from 'react'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
-/** The greeting follows the reader's local clock; it is read once per render of the empty state. */
-export function greetingKey(hour: number): string {
-  if (hour >= 5 && hour < 12) return 'app.emptyState.greeting.morning'
-  if (hour >= 12 && hour < 18) return 'app.emptyState.greeting.afternoon'
-  if (hour >= 18 && hour < 23) return 'app.emptyState.greeting.evening'
-  return 'app.emptyState.greeting.night'
-}
+const APP_BRAND = 'Agnes Harness'
 
 export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => string }): ReactElement {
   const host = useRef<HTMLDivElement>(null)
@@ -51,8 +45,9 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => s
           rootClassName={'empty-state-welcome'}
           icon={<span className={'agnes-mark empty-brand-mark'} aria-hidden={'true'} />}
           title={
-            <span id={'empty-state-title'} className={'empty-state-heading'}>
-              {t(greetingKey(new Date().getHours()))}
+            // The product's name is never translated.
+            <span id={'empty-state-title'} className={'empty-state-heading'} translate={'no'}>
+              {APP_BRAND}
             </span>
           }
           description={<span className={'empty-state-copy'}>{t('app.emptyState.tagline')}</span>}
