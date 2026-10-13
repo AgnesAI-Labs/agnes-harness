@@ -86,9 +86,11 @@ it('shows the current mode on the trigger, lists the three modes and reports the
     'option',
   ])
   expect(option('可修改工作区').getAttribute('aria-selected')).toBe('true')
-  expect(option('完全访问').textContent).toContain('工作区内外文件读写')
-  expect(option('完全访问').textContent).toContain('保留安全禁令和系统权限')
-  expect(option('可修改工作区').textContent).toContain('越界需切换完全权限或选择目录')
+  // The row carries one short line; the full explanation is its tooltip.
+  expect(option('完全访问').textContent).toBe('完全访问跳过审批，谨慎使用')
+  expect(option('完全访问').getAttribute('title')).toContain('工作区内外文件读写')
+  expect(option('完全访问').getAttribute('title')).toContain('保留安全禁令和系统权限')
+  expect(option('可修改工作区').getAttribute('title')).toContain('越界需切换完全权限或选择目录')
 
   // While the host is applying a change the list stays readable and refuses another choice.
   render({ disabled: false, pending: true, selected: 'workspace' })
@@ -184,10 +186,29 @@ it('links to the permission settings from the list', async () => {
   try {
     trigger.click()
     await opened()
-    const help = [...document.querySelectorAll<HTMLButtonElement>('.permission-picker-help button')].find(
-      (button) => button.textContent === '了解权限设置',
-    )
+    const help = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        '.permission-picker-heading button.permission-picker-help',
+      ),
+    ].find((button) => button.textContent === '了解更多')
     if (!help) throw new Error('permission help is missing')
+    // Each mode: its own glyph, a name and one short line; the long explanation is the tooltip.
+    const rows = [...document.querySelectorAll<HTMLElement>('.permission-picker-option')]
+    expect(rows.map((row) => row.dataset.permission)).toEqual(['view', 'workspace', 'full'])
+    expect(rows.map((row) => row.querySelector('.permission-picker-hint')?.textContent)).toEqual([
+      '只能查看，不改文件',
+      '可改工作区内文件',
+      '跳过审批，谨慎使用',
+    ])
+    for (const row of rows) {
+      expect(row.querySelector('svg.permission-picker-icon')).not.toBeNull()
+      expect(row.getAttribute('title')?.length ?? 0).toBeGreaterThan(16)
+    }
+    expect(rows.map((row) => row.querySelector('.permission-picker-check svg') !== null)).toEqual([
+      false,
+      true,
+      false,
+    ])
     help.click()
     expect(opens).toHaveBeenCalledTimes(1)
     await closed()

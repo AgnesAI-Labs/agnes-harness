@@ -249,7 +249,7 @@
     height: var(--control-height);
     padding: 0 var(--s12);
     border: 0;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-menu-item);
     background: transparent;
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-regular);
@@ -991,7 +991,9 @@
   .agh-menu-popup .agh-menu {
     display: block;
     min-width: 180px;
+    border-radius: var(--radius-popover);
     background: var(--agnes-bg-popover);
+    box-shadow: var(--shadow-elevation);
   }
   /* Modal wrappers ignore pointers; popups portaled inside their focus scope remain interactive. */
   .ant-modal :is(.agh-menu-popup, .agnes-ui-popover, .ant-select-dropdown) {

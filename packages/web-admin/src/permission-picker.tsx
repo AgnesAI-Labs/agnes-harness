@@ -1,5 +1,5 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, Icon, Popover } from '@agnes/web-ui'
+import { Button, Icon, type IconName, Popover } from '@agnes/web-ui'
 import { type KeyboardEvent, type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
@@ -20,6 +20,23 @@ const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
   view: 'composer.permission.viewDescription',
   workspace: 'composer.permission.workspaceDescription',
   full: 'composer.permission.fullDescription',
+}
+
+const PERMISSION_OPTION_HINT_KEYS: Record<PermissionMode, string> = {
+  view: 'composer.permission.viewHint',
+  workspace: 'composer.permission.workspaceHint',
+  full: 'composer.permission.fullHint',
+}
+
+/** One glyph per mode; the trigger shows the selected mode's glyph. */
+const PERMISSION_ICONS: Record<PermissionMode, IconName> = {
+  view: 'eye',
+  workspace: 'shield-check',
+  full: 'shield-alert',
+}
+
+export function permissionIcon(mode: PermissionMode | null): IconName {
+  return mode ? PERMISSION_ICONS[mode] : 'shield'
 }
 
 /** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
@@ -129,7 +146,7 @@ export function PermissionPickerControl({ state, onSelect, onError }: Permission
           setOpen(true)
         }}
       >
-        <Icon name="shield" />
+        <Icon name={permissionIcon(state.selected)} />
         <span data-permission-label={true}>{label}</span>
         <Icon name="chevron-down" className="model-chevron" />
       </Button>
@@ -202,6 +219,21 @@ function PermissionPanel({
       className="permission-picker"
       aria-label={tr('settings.picker.aria')}
     >
+      <div className="permission-picker-heading">
+        <span>{tr('composer.permission.heading')}</span>
+        <Button
+          className="permission-picker-help"
+          appearance="ghost"
+          size="small"
+          htmlType="button"
+          onClick={() => {
+            close(false)
+            document.dispatchEvent(new CustomEvent('agnes:permission-settings'))
+          }}
+        >
+          {tr('composer.permission.help')}
+        </Button>
+      </div>
       <div
         ref={listbox}
         id="permission-listbox"
@@ -224,31 +256,22 @@ function PermissionPanel({
             aria-selected={option.id === state.selected}
             aria-disabled={busy}
             data-active={index === active}
+            data-permission={option.id}
+            // The full explanation is one hover away; the row itself stays one short line.
+            title={tr(option.description)}
             onMouseMove={() => setActive(index)}
             onClick={() => void select(index)}
           >
+            <Icon name={PERMISSION_ICONS[option.id]} className="permission-picker-icon" />
+            <span className="permission-picker-copy">
+              <span className="permission-picker-label">{tr(option.label)}</span>
+              <span className="permission-picker-hint">{tr(PERMISSION_OPTION_HINT_KEYS[option.id])}</span>
+            </span>
             <span className="permission-picker-check">
               {option.id === state.selected ? <Icon name="check" /> : null}
             </span>
-            <span className="permission-picker-copy">
-              <span className="permission-picker-label">{tr(option.label)}</span>
-              <span className="permission-picker-hint">{tr(option.description)}</span>
-            </span>
           </div>
         ))}
-      </div>
-      <div className="permission-picker-help">
-        <Button
-          appearance="ghost"
-          size="small"
-          htmlType="button"
-          onClick={() => {
-            close(false)
-            document.dispatchEvent(new CustomEvent('agnes:permission-settings'))
-          }}
-        >
-          {tr('composer.permission.help')}
-        </Button>
       </div>
     </section>
   )

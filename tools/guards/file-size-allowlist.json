@@ -26,7 +26,7 @@
   "packages/sdk/src/session.ts": 894,
   "packages/web-admin/src/admin/plugins/admin/page.tsx": 1618,
   "packages/web-admin/src/settings.ts": 1034,
-  "packages/web-ui/src/ui/icons.ts": 1325,
+  "packages/web-ui/src/ui/icons.ts": 1345,
   "packages/web-units/src/trace.tsx": 1167,
   "packages/web/src/app.ts": 2366,
   "tools/e2e-web/ui-flows.spec.ts": 1184

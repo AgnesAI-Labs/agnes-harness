@@ -766,7 +766,7 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-popover);
     border: 0;
-    border-radius: var(--radius-card);
+    border-radius: var(--radius-popover);
     box-shadow: var(--shadow-elevation);
     line-height: 1.6;
   }

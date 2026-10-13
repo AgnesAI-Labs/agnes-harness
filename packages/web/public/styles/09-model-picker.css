@@ -18,7 +18,7 @@
     padding: 0 var(--s8);
     overflow: hidden;
     border: 0;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-pill);
     color: var(--agnes-text-primary);
     background: transparent;
     box-shadow: none;
@@ -129,7 +129,7 @@
     gap: var(--s8);
     min-height: 2rem;
     padding: var(--s4) var(--s8);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-menu-item);
     cursor: pointer;
     font-size: var(--font-size-body);
     overflow-wrap: anywhere;

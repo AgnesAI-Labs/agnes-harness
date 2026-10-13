@@ -361,6 +361,9 @@
     --radius-control: 6px;
     --radius-card: var(--radius-md);
     --radius-surface: var(--radius-lg);
+    /* Menus and popovers: a soft floating surface, with rows that round inside it. */
+    --radius-popover: 14px;
+    --radius-menu-item: 10px;
     /* The composer card is the one large, soft surface the user writes in. */
     --radius-composer: var(--radius-2xl);
     --radius-pill: var(--radius-full);

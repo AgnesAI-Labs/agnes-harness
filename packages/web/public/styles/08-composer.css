@@ -539,7 +539,7 @@
     padding: 0 var(--s8);
     overflow: hidden;
     border: 0;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-pill);
     color: var(--agnes-text-secondary);
     background: transparent;
     box-shadow: none;
@@ -559,9 +559,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* Full access skips approvals; the chip says so in words and in the warning colour. */
+  /* Full access skips approvals; the chip says so in words and in the danger colour. */
   #composer-permission[data-permission="full"] {
-    color: var(--agnes-status-warning-text);
+    color: var(--agnes-status-danger-text);
   }
   #composer-workspace[hidden],
   #session-usage[hidden] {
@@ -613,30 +613,53 @@
 
   /* Approval mode list, inside the shared popover surface. */
   :is(.model-picker-surface, .permission-picker-surface) :is(.ant-popover-container, .ant-popover-inner) {
-    padding: var(--s4);
+    padding: 0.375rem;
   }
   .permission-picker {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    min-width: min(240px, calc(100vw - 32px));
-    max-width: min(360px, calc(100vw - 32px));
+    min-width: min(15rem, calc(100vw - 32px));
+    max-width: min(20rem, calc(100vw - 32px));
     max-height: min(24rem, calc(100vh - 96px));
+  }
+  /* The question the list answers, with the way to the full explanation beside it. */
+  .permission-picker-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    padding: var(--s4) var(--s4) var(--s4) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .permission-picker-heading .permission-picker-help {
+    flex: none;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0 var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .permission-picker-list {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: var(--s2);
     outline: 0;
   }
+  /* A row: the mode's own glyph, its name over one short line, and a check when it is current. */
   .permission-picker-option {
     display: grid;
-    grid-template-columns: 1rem minmax(0, 1fr);
+    grid-template-columns: 1.125rem minmax(0, 1fr) 1rem;
     gap: var(--s8);
-    align-items: start;
+    align-items: center;
     padding: var(--s8);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-menu-item);
+    color: var(--agnes-text-primary);
     cursor: pointer;
   }
   .permission-picker-option[data-active="true"] {
@@ -646,32 +669,33 @@
     cursor: progress;
     opacity: 0.6;
   }
+  .permission-picker-icon {
+    color: var(--agnes-text-secondary);
+  }
   .permission-picker-check {
     display: grid;
     place-items: center;
-    height: 1.375rem;
-    color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
   }
   .permission-picker-copy {
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 0.125rem;
   }
   .permission-picker-label {
-    color: var(--agnes-text-primary);
-    font-size: var(--font-size-body);
-    font-weight: 500;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.25rem;
   }
   .permission-picker-hint {
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-    line-height: 1.6;
+    line-height: 1.125rem;
   }
-  .permission-picker-help {
-    margin-top: var(--s4);
-    padding-top: var(--s4);
-    border-top: 1px solid var(--agnes-line-primary);
+  /* Full access skips approvals: its row says so in the danger colour, glyph and words alike. */
+  .permission-picker-option[data-permission="full"]
+  :is(.permission-picker-icon, .permission-picker-label, .permission-picker-hint) {
+    color: var(--agnes-status-danger-text);
   }
 
   .composer-dsh-control,
