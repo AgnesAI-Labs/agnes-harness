@@ -178,6 +178,40 @@ describe('seam binding', () => {
     await hollow.root.fiber.dispose()
   })
 
+  it.each([
+    [
+      'a mis-shaped instance',
+      'shape',
+      () => Promise.resolve({ close: () => new Promise<void>(() => undefined) }),
+    ],
+    [
+      'an instance that arrives once its creation is aborted',
+      'timeout',
+      (signal: AbortSignal) =>
+        new Promise<object>((resolve) =>
+          signal.addEventListener('abort', () =>
+            resolve({ close: () => new Promise<void>(() => undefined) }),
+          ),
+        ),
+    ],
+  ] as const)(
+    'refuses within the cleanup window when the close of %s never settles',
+    async (_name, reason, create) => {
+      const { root, input, register } = rig([], 20)
+      register(
+        '@agnes/base',
+        verifier({ create: ((_init: unknown, signal: AbortSignal) => create(signal)) as never }),
+      )
+      await expect.poll(() => root.providers.catalog().length).toBe(1)
+      await expect(seamBinding('verifier', { provider: 'alt' }, input)(root, preset)).rejects.toMatchObject({
+        code: 'E_SEAM_INIT',
+        message: expect.stringContaining('closing the instance did not finish'),
+        detail: { reason, closePending: true },
+      })
+      await root.fiber.dispose()
+    },
+  )
+
   it('gives only builtin packages the privileged init and closes the instance on dispose', async () => {
     const closed = vi.fn()
     const { root, input, inits, register } = rig([
