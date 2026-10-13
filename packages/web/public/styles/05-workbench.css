@@ -174,23 +174,25 @@
   }
   .session-tabs {
     display: flex;
-    gap: var(--s2);
+    gap: var(--s16);
   }
   #report-problem {
     margin-left: auto;
   }
+  /* Shared tab vocabulary: text tabs, the current one carries a 2px accent underline. */
   .session-tabs button {
-    min-height: 1.75rem;
-    padding: 0 var(--s10);
+    min-height: 2.75rem;
+    padding: 0 var(--s2);
     border: 0;
-    border-radius: var(--radius-control);
+    border-block: 2px solid transparent;
+    border-radius: 0;
     color: var(--agnes-text-secondary);
     background: transparent;
     font-size: var(--font-size-sm);
   }
   .session-tabs button[aria-selected="true"] {
+    border-bottom-color: var(--agnes-brand-primary);
     color: var(--agnes-text-primary);
-    background: var(--agnes-bg-selected);
     font-weight: var(--font-weight-medium);
   }
   .conversation-shell {

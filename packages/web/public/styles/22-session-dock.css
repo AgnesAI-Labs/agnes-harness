@@ -65,11 +65,6 @@
   .workbench-panel-tabs > .agnes-ui-button {
     flex: 0 0 auto;
   }
-  .workbench-panel-tabs [aria-selected="true"] {
-    color: var(--agnes-text-primary);
-    font-weight: 600;
-    background: var(--agnes-bg-hover);
-  }
   .workbench-panel-content {
     flex: 1;
     min-height: 0;
@@ -268,21 +263,35 @@
     }
   }
 
+  /* The dock header is a 40px tab strip: tabs sit on its hairline like the view switch above. */
   .workbench-dock-heading {
     gap: var(--s4);
-    padding: var(--s8);
+    min-height: 2.5rem;
+    padding: 0 var(--s8);
   }
   .workbench-header-actions {
     flex-shrink: 0;
   }
   .workbench-panel-tabs {
     flex: 1;
+    align-self: stretch;
+    gap: var(--s12);
+    padding-inline: var(--s4);
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    min-height: 2.5rem;
+    padding-inline: var(--s2);
+    border-block: 2px solid transparent;
+    border-radius: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
   }
   .workbench-panel-tabs [aria-selected="true"] {
-    color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
     background: transparent;
     border-bottom: 2px solid var(--agnes-brand-primary);
     border-radius: 0;
+    font-weight: var(--font-weight-medium);
   }
   @media (max-width: 767px) {
     .workbench-toggle-label {

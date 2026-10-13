@@ -324,7 +324,7 @@
   }
   .settings-shell .agnes-settings-section-tabs button[aria-selected="true"],
   .runtime-settings .agnes-settings-section-tabs button[aria-selected="true"] {
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-medium);
   }
   .runtime-settings > nav {
     width: 240px;

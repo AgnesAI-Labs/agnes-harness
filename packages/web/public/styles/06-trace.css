@@ -430,8 +430,9 @@
     font-size: var(--font-size-sm);
   }
   .trace-tab[aria-pressed="true"] {
-    border-bottom-color: var(--agnes-text-emphasis);
-    color: var(--agnes-text-emphasis);
+    border-bottom-color: var(--agnes-brand-primary);
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
   }
   .trace-field {
     display: grid;
