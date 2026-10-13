@@ -1081,8 +1081,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
-  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache; measured 26853, exact.
-  'packages/core/src': 26853,
+  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache, and ledger hashing through node:crypto; measured 26941, exact.
+  'packages/core/src': 26941,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1393,8 +1393,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+9).
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
-  // tree: 2201, exact.
-  'packages/protocol/src': 2281,
+  // tree: 2201, exact. Extended 2026-10-13 for the JCS string fast path and chunked serializer; measured 2305, exact.
+  'packages/protocol/src': 2305,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
