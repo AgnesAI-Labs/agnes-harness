@@ -4,14 +4,7 @@ import {
   ModelSlotsSnapshot,
   validateAgainst,
 } from '@agnes/protocol'
-import {
-  AuxiliaryModelFields,
-  Button,
-  SettingsCard,
-  SettingsState,
-  SettingsToolbar,
-  type Translate,
-} from '@agnes/web-ui'
+import { AuxiliaryModelFields, Button, SettingsSection, SettingsState, type Translate } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 
@@ -110,12 +103,32 @@ export function ModelSlotsPanel({ t }: { t: Translate }) {
     }
   }
   return (
-    <SettingsCard
+    <SettingsSection
       id="auxiliary-models"
       tabIndex={-1}
       title={t('modelSettings.slots.title')}
       description={t('modelSettings.slots.help')}
       data-testid="auxiliary-models"
+      actions={
+        <>
+          <Button
+            appearance="ghost"
+            data-testid="model-slots-reload"
+            disabled={busy}
+            onClick={() => void load(lifetime.current?.signal)}
+          >
+            {t('modelSettings.slots.reload')}
+          </Button>
+          <Button
+            data-testid="model-slots-save"
+            disabled={!state?.canSave || busy}
+            loading={busy}
+            onClick={() => void save()}
+          >
+            {t('modelSettings.slots.save')}
+          </Button>
+        </>
+      }
     >
       {state ? (
         <AuxiliaryModelFields
@@ -133,28 +146,11 @@ export function ModelSlotsPanel({ t }: { t: Translate }) {
       ) : (
         !message && <SettingsState tone="loading">{t('modelSettings.slots.loading')}</SettingsState>
       )}
-      <SettingsToolbar>
-        <Button
-          data-testid="model-slots-reload"
-          disabled={busy}
-          onClick={() => void load(lifetime.current?.signal)}
-        >
-          {t('modelSettings.slots.reload')}
-        </Button>
-        <Button
-          data-testid="model-slots-save"
-          disabled={!state?.canSave || busy}
-          loading={busy}
-          onClick={() => void save()}
-        >
-          {t('modelSettings.slots.save')}
-        </Button>
-      </SettingsToolbar>
       {message && (
         <SettingsState tone={message === 'saved' ? 'success' : 'error'} data-testid="model-slots-status">
           {t(`modelSettings.slots.${message}`)}
         </SettingsState>
       )}
-    </SettingsCard>
+    </SettingsSection>
   )
 }

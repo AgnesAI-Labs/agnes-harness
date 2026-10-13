@@ -1,4 +1,12 @@
-import { Button, Field, SettingsChoice, SettingsInput, SettingsPageHeader } from '@agnes/web-ui'
+import {
+  Button,
+  Icon,
+  SearchBar,
+  SettingsChoice,
+  SettingsGroup,
+  SettingsInput,
+  SettingsPageHeader,
+} from '@agnes/web-ui'
 import { useLayoutEffect, useRef } from 'react'
 import type { AdminPaneNotice, AdminPaneStore } from './admin-pane-store.js'
 import type { SettingsPane } from './settings.js'
@@ -258,19 +266,12 @@ export function SettingsStaticPane({
             }
           />
           <div className="archived-pane-body">
-            <div className="archived-toolbar agnes-settings-toolbar">
-              <Field
-                className="archived-search-field"
-                htmlFor="archived-search"
-                label={<span>{text('settings-shell.searchLabel', '搜索名称或工作区')}</span>}
-              >
-                <SettingsInput
-                  id="archived-search"
-                  type="search"
-                  placeholder={text('settings-shell.searchPlaceholder', '搜索已归档会话')}
-                />
-              </Field>
-            </div>
+            <SearchBar
+              className="archived-toolbar"
+              label={text('settings-shell.searchLabel', '搜索名称或工作区')}
+              placeholder={text('settings-shell.searchPlaceholder', '搜索已归档会话')}
+              inputProps={{ id: 'archived-search' }}
+            />
             <p
               id="archived-message"
               className="archived-message agnes-settings-state"
@@ -278,12 +279,10 @@ export function SettingsStaticPane({
               role="alert"
             />
             <div className="archived-list-shell">
-              <p
-                id="archived-empty"
-                className="archived-empty agnes-settings-state"
-                data-tone="empty"
-                role="status"
-              />
+              <div className="archived-empty-state">
+                <Icon name="history" size={20} />
+                <p id="archived-empty" className="archived-empty" data-tone="empty" role="status" />
+              </div>
               <ul id="archived-list" className="archived-sessions" />
             </div>
           </div>
@@ -413,95 +412,92 @@ export function SettingsStaticPane({
           />
           <div className="config-workspace">
             <SettingsDshHost name="settings.general.item" />
-            <section
-              className="config-card appearance-card"
-              aria-label={text('settings-shell.palette', '配色')}
-            >
-              <fieldset className="appearance-options">
+            {/* Each setting is one row: its name on the left, the choices as one segmented set. */}
+            <SettingsGroup className="appearance-group">
+              <fieldset className="appearance-options" aria-label={text('settings-shell.palette', '配色')}>
                 <legend>{text('settings-shell.palette', '配色')}</legend>
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-theme"
-                  value="system"
-                  label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
-                  hint={
-                    <span>{text('settings-shell.paletteSystemHint', '随操作系统的深浅色设置自动切换')}</span>
-                  }
-                />
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-theme"
-                  value="light"
-                  label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
-                  hint={<span>{text('settings-shell.paletteLightHint', '始终使用浅色界面')}</span>}
-                />
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-theme"
-                  value="dark"
-                  label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
-                  hint={<span>{text('settings-shell.paletteDarkHint', '始终使用深色界面')}</span>}
-                />
+                <div className="appearance-choices">
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="system"
+                    label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
+                    hint={
+                      <span>
+                        {text('settings-shell.paletteSystemHint', '随操作系统的深浅色设置自动切换')}
+                      </span>
+                    }
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="light"
+                    label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
+                    hint={<span>{text('settings-shell.paletteLightHint', '始终使用浅色界面')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-theme"
+                    value="dark"
+                    label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
+                    hint={<span>{text('settings-shell.paletteDarkHint', '始终使用深色界面')}</span>}
+                  />
+                </div>
               </fieldset>
-            </section>
-            <section className="config-card appearance-card" aria-label={text('settings-shell.skin', '皮肤')}>
-              <fieldset className="appearance-options">
+              <fieldset className="appearance-options" aria-label={text('settings-shell.skin', '皮肤')}>
                 <legend>{text('settings-shell.skin', '皮肤')}</legend>
-                <div id="skin-option-items" />
+                <div id="skin-option-items" className="appearance-choices" />
               </fieldset>
-            </section>
-            <section
-              className="config-card appearance-card"
-              aria-label={text('settings-shell.fontScale', '字号')}
-            >
-              <fieldset className="appearance-options">
+              <fieldset className="appearance-options" aria-label={text('settings-shell.fontScale', '字号')}>
                 <legend>{text('settings-shell.fontScale', '字号')}</legend>
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-font-scale"
-                  value="small"
-                  label={<span>{text('settings-shell.fontSmall', '小')}</span>}
-                  hint={<span>{text('settings-shell.fontSmallHint', '界面整体缩小一档')}</span>}
-                />
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-font-scale"
-                  value="normal"
-                  label={<span>{text('settings-shell.fontNormal', '标准')}</span>}
-                  hint={<span>{text('settings-shell.fontNormalHint', '默认字号')}</span>}
-                />
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-font-scale"
-                  value="large"
-                  label={<span>{text('settings-shell.fontLarge', '大')}</span>}
-                  hint={<span>{text('settings-shell.fontLargeHint', '界面整体放大一档')}</span>}
-                />
+                <div className="appearance-choices">
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="small"
+                    label={<span>{text('settings-shell.fontSmall', '小')}</span>}
+                    hint={<span>{text('settings-shell.fontSmallHint', '界面整体缩小一档')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="normal"
+                    label={<span>{text('settings-shell.fontNormal', '标准')}</span>}
+                    hint={<span>{text('settings-shell.fontNormalHint', '默认字号')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-font-scale"
+                    value="large"
+                    label={<span>{text('settings-shell.fontLarge', '大')}</span>}
+                    hint={<span>{text('settings-shell.fontLargeHint', '界面整体放大一档')}</span>}
+                  />
+                </div>
               </fieldset>
-            </section>
-            <section
-              className="config-card appearance-card"
-              aria-label={text('settings.appearance.language', '语言')}
-            >
-              <fieldset className="appearance-options">
+              <fieldset
+                className="appearance-options"
+                aria-label={text('settings.appearance.language', '语言')}
+              >
                 <legend>{text('settings.appearance.language', '语言')}</legend>
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-locale"
-                  value="en"
-                  defaultChecked
-                  label={<span>{text('settings.appearance.language.en', 'English')}</span>}
-                  hint={<span>{text('settings.appearance.language.en.hint', '使用英文界面')}</span>}
-                />
-                <SettingsChoice
-                  type="radio"
-                  name="agnes-locale"
-                  value="zh-CN"
-                  label={<span>{text('settings.appearance.language.zh-CN', '简体中文')}</span>}
-                  hint={<span>{text('settings.appearance.language.zh-CN.hint', '使用简体中文界面')}</span>}
-                />
+                <div className="appearance-choices">
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-locale"
+                    value="en"
+                    defaultChecked
+                    label={<span>{text('settings.appearance.language.en', 'English')}</span>}
+                    hint={<span>{text('settings.appearance.language.en.hint', '使用英文界面')}</span>}
+                  />
+                  <SettingsChoice
+                    type="radio"
+                    name="agnes-locale"
+                    value="zh-CN"
+                    label={<span>{text('settings.appearance.language.zh-CN', '简体中文')}</span>}
+                    hint={<span>{text('settings.appearance.language.zh-CN.hint', '使用简体中文界面')}</span>}
+                  />
+                </div>
               </fieldset>
-            </section>
+            </SettingsGroup>
           </div>
         </section>
       )

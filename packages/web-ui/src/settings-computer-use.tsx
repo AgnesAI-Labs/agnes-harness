@@ -1,5 +1,5 @@
 import { computerUseUiCatalog } from './locales/computer-use.js'
-import { SettingsCard, SettingsDetails, SettingsPage, SettingsToolbar } from './settings-layout.js'
+import { SettingsDetails, SettingsGroup, SettingsItem, SettingsPage } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { IconButton } from './ui/icon-button.js'
 import { useUiText } from './ui-locale.js'
@@ -68,65 +68,99 @@ export function SettingsComputerUse({
       data-agnes-region="settings-pane"
       hidden
     >
-      <SettingsCard aria-labelledby="computer-use-state">
-        <strong id="computer-use-state" role="status">
-          {view.status.label}
-        </strong>
-        <p id="computer-use-summary">{view.status.summary}</p>
-        <p id="computer-use-runtime">{view.status.runtime}</p>
-        <ul id="computer-use-blockers">
-          {view.status.blockers.map((text) => (
-            <li key={text}>{text}</li>
-          ))}
-        </ul>
-        <Button
-          id="computer-use-permission-grant"
-          appearance="primary"
-          htmlType="button"
-          hidden={view.permissions.grantHidden}
-          disabled={view.controls.grantDisabled}
-          onClick={() => void actions.grantPermissions()}
-        >
-          {label('computerUse.permissions.grant')}
-        </Button>
-        <Button
-          id="computer-use-install"
-          appearance="primary"
-          htmlType="button"
-          hidden={
-            !view.permissions.grantHidden || !view.controls.updateDisabled || view.controls.installDisabled
+      <SettingsGroup>
+        <SettingsItem
+          aria-labelledby="computer-use-state"
+          label={
+            <strong id="computer-use-state" role="status">
+              {view.status.label}
+            </strong>
           }
-          disabled={view.controls.installDisabled}
-          onClick={() => void actions.install()}
+          description={
+            <>
+              <span id="computer-use-summary">{view.status.summary}</span>
+              <span id="computer-use-runtime">{view.status.runtime}</span>
+              <ul id="computer-use-blockers">
+                {view.status.blockers.map((text) => (
+                  <li key={text}>{text}</li>
+                ))}
+              </ul>
+            </>
+          }
         >
-          {label('computerUse.action.install')}
-        </Button>
-      </SettingsCard>
-      <SettingsDetails title={label('computerUse.more')} data-testid="computer-use-more">
-        <section aria-labelledby="computer-use-permission-state">
-          <h3>{label('computerUse.permissions.eyebrow')}</h3>
-          <strong id="computer-use-permission-state">{view.permissions.label}</strong>
-          <p id="computer-use-permission-summary">{view.permissions.summary}</p>
-        </section>
-        <section aria-labelledby="computer-use-doctor-state">
-          <h3>{label('computerUse.doctor.eyebrow')}</h3>
-          <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
-          <p id="computer-use-doctor-summary">{view.doctor.summary}</p>
           <Button
-            id="computer-use-doctor-run"
-            appearance="ghost"
+            id="computer-use-permission-grant"
+            appearance="primary"
             htmlType="button"
-            disabled={view.controls.doctorDisabled}
-            onClick={() => void actions.doctor()}
+            hidden={view.permissions.grantHidden}
+            disabled={view.controls.grantDisabled}
+            onClick={() => void actions.grantPermissions()}
           >
-            {label('computerUse.doctor.run')}
+            {label('computerUse.permissions.grant')}
           </Button>
-        </section>
-        <section aria-labelledby="computer-use-operation-state">
-          <h3>{label('computerUse.operation.eyebrow')}</h3>
-          <strong id="computer-use-operation-state">{view.operation.label}</strong>
-          <p id="computer-use-operation-summary">{view.operation.summary}</p>
-          <SettingsToolbar className="config-actions">
+          <Button
+            id="computer-use-install"
+            appearance="primary"
+            htmlType="button"
+            hidden={
+              !view.permissions.grantHidden || !view.controls.updateDisabled || view.controls.installDisabled
+            }
+            disabled={view.controls.installDisabled}
+            onClick={() => void actions.install()}
+          >
+            {label('computerUse.action.install')}
+          </Button>
+        </SettingsItem>
+      </SettingsGroup>
+      <SettingsDetails title={label('computerUse.more')} data-testid="computer-use-more">
+        <SettingsGroup>
+          <SettingsItem
+            role="group"
+            aria-labelledby="computer-use-permission-title"
+            labelId="computer-use-permission-title"
+            label={label('computerUse.permissions.eyebrow')}
+            description={
+              <>
+                <strong id="computer-use-permission-state">{view.permissions.label}</strong>
+                <span id="computer-use-permission-summary">{view.permissions.summary}</span>
+              </>
+            }
+          />
+          <SettingsItem
+            role="group"
+            aria-labelledby="computer-use-doctor-title"
+            labelId="computer-use-doctor-title"
+            label={label('computerUse.doctor.eyebrow')}
+            description={
+              <>
+                <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
+                <span id="computer-use-doctor-summary">{view.doctor.summary}</span>
+              </>
+            }
+          >
+            <Button
+              id="computer-use-doctor-run"
+              appearance="ghost"
+              htmlType="button"
+              disabled={view.controls.doctorDisabled}
+              onClick={() => void actions.doctor()}
+            >
+              {label('computerUse.doctor.run')}
+            </Button>
+          </SettingsItem>
+          <SettingsItem
+            role="group"
+            stacked
+            aria-labelledby="computer-use-operation-title"
+            labelId="computer-use-operation-title"
+            label={label('computerUse.operation.eyebrow')}
+            description={
+              <>
+                <strong id="computer-use-operation-state">{view.operation.label}</strong>
+                <span id="computer-use-operation-summary">{view.operation.summary}</span>
+              </>
+            }
+          >
             <Button
               id="computer-use-update"
               appearance="ghost"
@@ -164,8 +198,8 @@ export function SettingsComputerUse({
             >
               {label('computerUse.action.cancel')}
             </Button>
-          </SettingsToolbar>
-        </section>
+          </SettingsItem>
+        </SettingsGroup>
       </SettingsDetails>
     </SettingsPage>
   )
