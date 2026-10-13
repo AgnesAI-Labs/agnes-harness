@@ -404,7 +404,11 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(byId('mcp-url-row').hidden).toBe(false)
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   byId('mcp-secret-kind-trigger').click()
-  expect(document.querySelectorAll('#mcp-secret-kind-listbox [role="option"]')).toHaveLength(3)
+  expect(
+    [...document.querySelectorAll('#mcp-secret-kind-listbox [role="option"]')].map(
+      (option) => option.querySelector('span')?.textContent,
+    ),
+  ).toEqual(['No credentials', 'HTTP Bearer', 'HTTP API Key', 'OAuth'])
   byId('mcp-secret-kind-listbox-2').click()
   expect(byId('mcp-header-row').hidden).toBe(false)
   byId('mcp-header-name-trigger').click()
@@ -483,7 +487,8 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   expect(skillsEmpty?.textContent).not.toContain('AGNES_SKILLS_IMPORT_USER')
   expect(skillsEmpty?.textContent).not.toContain('$AGH_HOME')
   expect(skillsEmpty?.querySelector('a')?.getAttribute('href')).toContain('new=1')
-  const locations = byId('resource-list').querySelector<HTMLButtonElement>('[data-testid="skill-locations"]')!
+  const locations = byId('resource-list').querySelector<HTMLButtonElement>('[data-testid="skill-locations"]')
+  if (!locations) throw new Error('missing skill locations action')
   locations.click()
   await vi.waitFor(() =>
     expect(document.querySelector('.agnes-ui-popover')?.textContent).toContain('Personal Agnes skills'),
@@ -818,6 +823,10 @@ it('offers permanent skill deletion and validates priority without submitting in
   )
   byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
+  const { setAdvancedSettingsShown } = await import('@agnes/web-ui')
+  expect(byId('resource-detail').querySelector('input[type="number"]')).toBeNull()
+  setAdvancedSettingsShown(true)
+  await settle()
   const input = byId('resource-detail').querySelector<HTMLInputElement>('input[type="number"]')
   if (!input) throw new Error('missing priority input')
   expect(input.closest('label')?.textContent).toContain('Same-name priority')
@@ -827,7 +836,7 @@ it('offers permanent skill deletion and validates priority without submitting in
     setter?.call(element, value)
     element.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  input.closest('details')?.querySelector('summary')?.click()
+  input.closest('.agh-disclosure')?.querySelector<HTMLButtonElement>('button[aria-expanded]')?.click()
   for (const invalid of ['501', '450.5', '']) {
     setNativeValue(input, invalid)
     action('Save priority')
@@ -850,6 +859,7 @@ it('offers permanent skill deletion and validates priority without submitting in
     resourceId: 'skill/user/user-agnes/example',
     expectedRevision: revision,
   })
+  setAdvancedSettingsShown(false)
 })
 
 it('enables an untrusted Skill without exposing a separate trust action', async () => {
