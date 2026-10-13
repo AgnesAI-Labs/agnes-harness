@@ -171,12 +171,15 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     tracker.apply(upto)
     const stateAtTrigger = tracker.state
     tracker.apply(after)
-    ui.apply(leanEvents(events))
+    // The surface and the UI hold the lean rows: a large inline attachment's bytes are read from its
+    // row when a request picks it, not kept in memory for the life of the session.
+    const lean = leanEvents(events)
+    ui.apply(lean)
     attachments.apply(events)
     ui.setOp(currentOp(log, lane))
     // Every registered cache is fed, not just the opened lane's: each one filters the batch down
     // to its own lane, so feeding them all is how a later-registered lane stays live.
-    for (const c of surfaces.values()) c.push(upto)
+    for (const c of surfaces.values()) c.push(cut === -1 ? lean : lean.slice(0, cut))
     if (digest !== undefined)
       forkPoint = {
         kind: 'trigger',
@@ -186,14 +189,15 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
         attachments,
         headDigest: digest,
       }
-    for (const c of surfaces.values()) c.push(after)
+    for (const c of surfaces.values()) c.push(cut === -1 ? [] : lean.slice(cut))
     o.onAppended?.(events, extra)
   }
   // Folds ledger rows into the tracker, the surface and the UI cell, every row from the first.
   const foldPage = (events: Event[]): void => {
     tracker.apply(events)
-    surface.push(events)
-    ui.apply(leanEvents(events))
+    const lean = leanEvents(events)
+    surface.push(lean)
+    ui.apply(lean)
     attachments.apply(events)
   }
   let log: SessionLogImpl
@@ -232,9 +236,10 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
       attachments.apply(own)
       tracker.apply(seed.inherited)
       tracker.apply(own)
-      surface.push(seed.inherited)
-      surface.push(own)
-      ui.apply(leanEvents(own))
+      surface.push(leanEvents(seed.inherited))
+      const leanOwn = leanEvents(own)
+      surface.push(leanOwn)
+      ui.apply(leanOwn)
     } else if (o.existing) await replay()
     ui.sealReplay()
     return await finishOpen()

@@ -96,6 +96,7 @@ import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/de
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import type { RequestImageTransform } from '../request/request-version.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
@@ -388,6 +389,15 @@ export type SessionDeps = {
    * attachments are read from it. Omitted where no store is assembled.
    */
   attachments?: UserAttachmentPort
+  /**
+   * A stored image made to fit a route's image limits, from the host's request-version cache. Omitted,
+   * an image the route cannot take as it is is left out of the request (or refused, for this turn's).
+   */
+  requestVersions?: (
+    source: Readonly<{ sha256: string; bytes: number; mimeType: string }>,
+    t: RequestImageTransform,
+    signal: AbortSignal,
+  ) => Promise<{ bytes: Uint8Array; mimeType: string; width: number; height: number }>
   registry: ToolRegistry
   /** Legacy fixed resource table used when Host does not supply a current-generation lookup. */
   resources?: ResourceRegistry

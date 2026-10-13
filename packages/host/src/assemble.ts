@@ -8,6 +8,7 @@ import {
   type HookPort,
   hasChildControl,
   Kernel,
+  type KernelOptions,
   noopHooks,
   type Operation,
   type PresetView,
@@ -76,7 +77,7 @@ import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-c
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import { createAttachmentStore } from './attachment-store.js'
+import { type AttachmentStore, createAttachmentStore } from './attachment-store.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
   evaluateFixedComputerUsePlatformAdmission,
@@ -154,6 +155,7 @@ import { PublicationDispatch } from './publication-dispatch.js'
 import { PublicationGate } from './publication-gate.js'
 import { HostQuietState } from './quiet-state.js'
 import { createProductionImageInputTokenFallback } from './request-media-runtime.js'
+import { createRequestVersionCache, identityImageEncoder } from './request-versions.js'
 import { bindSkillRuntimeToWorkspace, createSkillPromptPreloader } from './resources/skill-preload.js'
 import { safeSkillReadRoots } from './resources/skill-read-roots.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
@@ -1703,12 +1705,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // artifacts seam owns the tree: another artifacts implementation would not see the objects, so
     // they stay inline in the ledger as before, and old inline attachments are not copied into it.
     const bundledArtifacts = profile.seams.artifacts === '@agnes/base'
+    const attachmentStore = createAttachmentStore({ dataDir })
     const attachments = createUserAttachmentPort({
-      store: createAttachmentStore({ dataDir }),
+      store: attachmentStore,
       limits: profile.limits,
       storeByReference: profile.attachments.storeByReference && bundledArtifacts,
       cacheInline: bundledArtifacts,
     })
+    const requestVersions = assembleRequestVersions(attachmentStore, dataDir, clock)
     kernel = Kernel.create({
       storage: adapters.storage,
       seams,
@@ -1730,6 +1734,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
       attachments,
+      requestVersions,
       ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
       ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
       logger: deps.log,
@@ -2420,5 +2425,36 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
   } catch (e) {
     return fail(step, e)
+  }
+}
+
+const REQUEST_VERSION_CACHE_BYTES = 1024 ** 3
+const REQUEST_VERSION_TRIM_MS = 60_000
+
+/**
+ * Request versions of stored images: `<dataDir>/artifacts/request-versions/`, at most 1 GiB, trimmed
+ * after a version is used (at most once a minute). This build has no image codec, so the encoder uses
+ * an image as it is when it already fits and refuses one that would have to be made smaller; an
+ * encoder that resizes replaces it here.
+ */
+function assembleRequestVersions(
+  store: AttachmentStore,
+  dataDir: string,
+  clock: () => number,
+): NonNullable<KernelOptions['requestVersions']> {
+  const cache = createRequestVersionCache({
+    store,
+    root: join(dataDir, 'artifacts', 'request-versions'),
+    maxBytes: REQUEST_VERSION_CACHE_BYTES,
+    encoder: identityImageEncoder,
+  })
+  let lastTrim = Number.NEGATIVE_INFINITY
+  return async (source, t, signal) => {
+    const { image } = await cache.getOrCreate(source, t, signal)
+    if (clock() - lastTrim >= REQUEST_VERSION_TRIM_MS) {
+      lastTrim = clock()
+      void cache.trim().catch(() => undefined)
+    }
+    return image
   }
 }

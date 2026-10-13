@@ -124,6 +124,8 @@ export type KernelOptions = {
   /** Host attachment store: inline user attachments are stored by reference when they are queued, and
    * user attachments are read from it. Omitted, attachments stay inline and references are refused. */
   attachments?: SessionDeps['attachments']
+  /** Request versions of stored images, for routes with image size limits. */
+  requestVersions?: SessionDeps['requestVersions']
   /** Host-owned whole-wire image token bound used only when the provider cannot count images. */
   imageInputTokenFallback?: SessionDeps['imageInputTokenFallback']
   logger?: Logger
@@ -506,6 +508,7 @@ export class Kernel {
       ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
       ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
       ...(this.o.attachments ? { attachments: this.o.attachments } : {}),
+      ...(this.o.requestVersions ? { requestVersions: this.o.requestVersions } : {}),
       ...(this.o.imageInputTokenFallback ? { imageInputTokenFallback: this.o.imageInputTokenFallback } : {}),
       logger,
       invariants: this.invariants,

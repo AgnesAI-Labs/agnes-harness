@@ -48,7 +48,9 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
         say('attachments handled'),
       ],
     })
-    const h = await openTestHost({ provider })
+    // Inline storage: the case is about the bytes a client sent coming back in the projection, which a
+    // client without attachment references sees only while the attachment stays inline.
+    const h = await openTestHost({ provider, storeAttachmentsByReference: false })
     // This fixture has no installed extension manifests. Exercise the exported builtin definition.
     const reader = TOOLS_CORE.find((tool) => tool.name === 'read')
     if (!reader) throw new Error('builtin attachment reader is missing')

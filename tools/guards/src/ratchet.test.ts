@@ -1100,7 +1100,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
-  'packages/core/src': 28242,
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28609; no exclusions or spare allocation.
+  'packages/core/src': 28609,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1337,7 +1338,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/assemble 4223; no exclusions or spare allocation.
-  'packages/host/src/assemble': 4223,
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src/assemble 4250; no exclusions or spare allocation.
+  'packages/host/src/assemble': 4250,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2750,7 +2752,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: title generation and its usage recovery wait for the verified history; reviewed exact countLines packages/host/src 40004; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src 40215; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/host/src 40352; no exclusions or spare allocation.
-  'packages/host/src': 40352,
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src 40380; no exclusions or spare allocation.
+  'packages/host/src': 40380,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

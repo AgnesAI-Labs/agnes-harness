@@ -165,7 +165,7 @@ describe('lean rows in the live session', () => {
   const userNode = async (ui: Awaited<ReturnType<typeof openTracked>>['ui']) =>
     (await ui.view()).nodes.find((node) => node.kind === 'user') as { content: unknown[] } | undefined
 
-  it('folds the UI cell from lean rows while the model surface keeps the bytes, live and on reopen', async () => {
+  it('folds the UI cell and the model surface from lean rows, live and on reopen', async () => {
     const storage = new MemoryStorage()
     const block = { type: 'image', mimeType: 'image/jpeg', data: big }
     const opened = await openTracked({ ...common, storage, key: 'k', writerRunId: 'w' })
@@ -174,13 +174,19 @@ describe('lean rows in the live session', () => {
     ])
     const lean = { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: base64DecodedBytes(big) } }
     expect((await userNode(opened.ui))?.content).toEqual([lean])
-    expect(opened.surface.nodes().map((node) => (node.event.data as { content: unknown[] }).content)).toEqual(
-      [[block]],
-    )
+    // A request reads the bytes from the row when it picks the image; the surface does not hold them.
+    const surfaced = (o: typeof opened) =>
+      o.surface.nodes().map((node) => (node.event.data as { content: unknown[] }).content)
+    expect(surfaced(opened)).toEqual([[lean]])
     await opened.log.close()
 
     const reopened = await openTracked({ ...common, storage, key: 'k', writerRunId: 'w2' })
     expect((await userNode(reopened.ui))?.content).toEqual([lean])
+    expect(surfaced(reopened)).toEqual([[lean]])
+    // The row itself is untouched.
+    expect((await reopened.log.scan({ fromSeq: 1, toSeq: 1, limit: 1 }))[0]?.data).toEqual({
+      content: [block],
+    })
     expect(isLeanEvent((await reopened.log.scanLean({ fromSeq: 1, toSeq: 1, limit: 1 }))[0] as Event)).toBe(
       true,
     )

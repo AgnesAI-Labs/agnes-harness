@@ -166,11 +166,12 @@ export type TestHostOptions = {
   /** Profile `limits` this host resolves with, e.g. the deployment's `cost.credits_per_usd`. */
   limits?: Record<string, number>
   /**
-   * The profile's `attachments.storeByReference`. Off unless a case turns it on: request building
-   * and session attachment reads do not resolve references yet, so a case that sends attachments
-   * through a model turn needs them inline.
+   * The profile's `attachments.storeByReference`. On unless a case turns it off, so attachments a
+   * case sends are stored by reference and read back from the store, as a new install does.
    */
   storeAttachmentsByReference?: boolean
+  /** The trusted request-media port a worker assembles in production; omitted, a test host has none. */
+  requestMedia?: HostOptions['requestMedia']
   script?: ConstructorParameters<typeof ScriptedProvider>[0]['scripts']
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
@@ -324,7 +325,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
         ...(o.allowed ? { presets: { allowed: o.allowed } } : {}),
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...(o.limits ? { limits: o.limits } : {}),
-        attachments: { storeByReference: o.storeAttachmentsByReference ?? false },
+        attachments: { storeByReference: o.storeAttachmentsByReference ?? true },
         ...o.profileInputs?.user,
         ...(o.contract !== undefined
           ? {
@@ -390,6 +391,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),
     ...(o.disableSessionTitle ? { disableSessionTitle: true } : {}),
     ...(o.currentRuntime ? { currentRuntime: o.currentRuntime } : {}),
+    ...(o.requestMedia ? { requestMedia: o.requestMedia } : {}),
     // Omission exercises production buildProvider. A script explicitly requests the test model.
     ...(o.provider !== undefined || o.script !== undefined
       ? {
