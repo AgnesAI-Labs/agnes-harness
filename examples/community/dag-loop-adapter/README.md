@@ -2,12 +2,12 @@
 
 A standalone package combining the [checkpointed DAG loop](../../loops/dag-loop/)
 with a tiny `defineModelAdapter` implementation. The package was scaffolded from
-the model-adapter template. `dag/index.mjs` and its declarations are an unchanged
-copy of the upstream DAG example at commit 9aaa4b64; they import only the public
-extension API and Node crypto. The wrapper gives this package its own loop ID.
+the model-adapter template. `dag/index.mjs` and its declarations are a copy of the
+upstream DAG example; they import only the public extension API and Node crypto.
+The wrapper gives this package its own loop ID.
 
 Follow the [external author setup](../README.md) to install preview tarballs, build,
-and run the two short tests in `test/combined.test.mjs`. The tests connect the real
+and run the short tests in `test/combined.test.mjs`. The tests connect the real
 demo adapter, DAG driver and tools through public ports, without starting a daemon
 or model process. No workspace source imports or workspace links are needed.
 

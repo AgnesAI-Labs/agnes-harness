@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createPluginTestHost, runModelAdapter } from '@agnes/host/author-testkit'
+import { createPluginTestHost, driveLoop, runModelAdapter } from '@agnes/host/author-testkit'
 import { adapter, factory, model, modelId, route, toolPlugin } from '../dist/index.js'
 
 const config = {
@@ -19,14 +19,15 @@ const request = {
   messages: [{ role: 'user', content: [{ type: 'text', text: 'Join the demo values' }] }],
 }
 
-test('DAG uses the real demo adapter to plan, batches tools and joins before summarizing', async () => {
+/** The loop context of one turn: the real demo adapter and tools behind the public ports. */
+async function fixture(finish) {
   const host = await createPluginTestHost(toolPlugin)
   const instance = adapter.create(config)
   const events = [],
-    batches = []
-  const signal = new AbortController().signal
+    batches = [],
+    finishes = []
   let checkpoint,
-    finished = false
+    open = true
   const stream = (body, signal) =>
     instance.stream(body.route, body, {
       signal,
@@ -39,12 +40,12 @@ test('DAG uses the real demo adapter to plan, batches tools and joins before sum
     for await (const event of stream(body, signal)) result.push(event)
     return result
   }
-  const driver = factory.create({
+  const context = {
     sessionKey: 'community-demo',
     lane: 'main',
     input: {
-      accept: async () => (finished ? null : { id: 'one', content: request.messages[0].content }),
-      pending: () => !finished,
+      accept: async () => (open ? { id: 'one', content: request.messages[0].content } : null),
+      pending: () => open,
     },
     model: { complete, stream },
     tools: {
@@ -62,9 +63,12 @@ test('DAG uses the real demo adapter to plan, batches tools and joins before sum
       emit: async (type, data) => {
         events.push({ type, data })
       },
+      // Core answers a finish with the outcome the turn ended with; the driver has to return it.
       finish: async (reason) => {
-        assert.equal(reason, 'completed')
-        finished = true
+        finishes.push(reason)
+        const outcome = finish(reason)
+        open = outcome.outcome === 'running'
+        return outcome
       },
     },
     checkpoints: {
@@ -79,25 +83,59 @@ test('DAG uses the real demo adapter to plan, batches tools and joins before sum
       },
       wake() {},
     },
-  })
+  }
+  return {
+    context,
+    instance,
+    host,
+    complete,
+    events,
+    batches,
+    finishes,
+    checkpoint: () => checkpoint,
+    async dispose() {
+      await instance.dispose()
+      await host.dispose()
+    },
+  }
+}
+
+test('DAG uses the real demo adapter to plan, batches tools and joins before summarizing', async () => {
+  const f = await fixture((reason) => ({ outcome: 'turn-ended', phase: 'terminal', reason }))
   try {
-    for (let i = 0; i < 10 && !finished; i++) await driver.step(signal)
-    assert.equal(finished, true)
-    assert.deepEqual(batches, [['community_echo', 'community_echo'], ['community_join']])
-    assert.deepEqual(events.at(-1), {
+    // driveLoop schedules by the same rule as the Host: a step without a valid outcome fails here.
+    const run = await driveLoop(factory, { context: f.context, maxSteps: 10 })
+    assert.deepEqual(
+      run.steps.map((step) => step.outcome),
+      ['running', 'running', 'running', 'running', 'running', 'turn-ended'],
+    )
+    assert.deepEqual(run.steps.at(-1), { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' })
+    assert.deepEqual(f.finishes, ['completed'])
+    assert.deepEqual(f.batches, [['community_echo', 'community_echo'], ['community_join']])
+    assert.deepEqual(f.events.at(-1), {
       type: 'assistant/message',
       data: { content: [{ type: 'text', text: 'left + right' }], stopReason: 'end_turn' },
     })
-    assert.equal(checkpoint.state.stage, 'done')
+    assert.equal(f.checkpoint().state.stage, 'done')
     assert.equal(factory.id, 'community.dag')
-    await instance.dispose()
-    await assert.rejects(complete(request, signal))
+    await f.instance.dispose()
+    await assert.rejects(f.complete(request, new AbortController().signal))
   } finally {
-    await driver.dispose()
-    await instance.dispose()
-    await host.dispose()
+    await f.dispose()
   }
-  assert.equal(host.tools.size, 0)
+  assert.equal(f.host.tools.size, 0)
+})
+
+test('DAG hands back a completion the stop gate parked, without running its tools again', async () => {
+  const f = await fixture(() => ({ outcome: 'parked', phase: 'terminal', reason: 'parked' }))
+  try {
+    const run = await driveLoop(factory, { context: f.context, maxSteps: 10 })
+    assert.deepEqual(run.steps.at(-1), { outcome: 'parked', phase: 'terminal', reason: 'parked' })
+    assert.deepEqual(f.finishes, ['completed'])
+    assert.deepEqual(f.batches, [['community_echo', 'community_echo'], ['community_join']])
+  } finally {
+    await f.dispose()
+  }
 })
 
 test('adapter exposes configured models and refuses cancellation and unsupported selections', async () => {
