@@ -277,11 +277,19 @@ export async function runBusinessAgentStart(
     }
     const loop = loops.find((item) => item.sourcePackage === id)
     if (!loop) throw new StartError({ step: 'session', code: 'loop-missing' })
-    // Session bundles are optional: a daemon that lists none still starts the loop.
-    const bundles = await api
-      .runtime()
-      .then((snapshot) => (snapshot.bundles ?? []).filter((bundle) => bundle.sourcePackage === id))
-      .catch(() => [])
+    // The package's bundle carries its presets and tool policy into the session. A package that
+    // ships one may take a moment to list it after enabling; a daemon that never lists it still
+    // starts the loop, without that policy.
+    const expected = plan.entry.kinds?.includes('bundle') === true
+    let bundles: { id: string }[] = []
+    for (let attempt = 0; attempt < (expected ? 8 : 1); attempt++) {
+      if (attempt > 0) await sleep(options.pollMs ?? 400, options.signal)
+      bundles = await api
+        .runtime()
+        .then((snapshot) => (snapshot.bundles ?? []).filter((bundle) => bundle.sourcePackage === id))
+        .catch(() => [])
+      if (bundles.length) break
+    }
     return { loop: { id: loop.id, version: loop.version }, bundles: bundles.map((bundle) => bundle.id) }
   })
 }

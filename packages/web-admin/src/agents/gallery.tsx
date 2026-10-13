@@ -5,8 +5,6 @@ import {
   hasPermission,
   Icon,
   MetaText,
-  PLUGIN_PRESENTATION_NAMESPACE,
-  pluginPresentationCatalog,
   SearchBar,
   Segmented,
   SettingsState,
@@ -123,7 +121,6 @@ function AgentCard({
   onStart(): void
 }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
-  const { t: presentation } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const ready = state === 'ready'
   const blocked = !ready && disabledReason !== undefined
   return (
@@ -134,7 +131,6 @@ function AgentCard({
         </span>
         <div className="agent-card-heading">
           <h3>{agent.name}</h3>
-          {agent.category && <MetaText>{presentation(`category.${agent.category}`)}</MetaText>}
         </div>
       </header>
       {agent.summary && <p className="agent-card-summary">{agent.summary}</p>}

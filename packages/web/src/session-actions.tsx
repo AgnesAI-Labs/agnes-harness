@@ -27,6 +27,8 @@ export function createSessionActions(options: {
   /** A session left the list for the archive; the host says where it went. */
   archived?(id: string): void
   translate: Translate
+  /** Names a loop for the runtime info dialog; ids are shown when it knows none. */
+  loopLabel?: ((id: string) => string | undefined) | undefined
 }) {
   const t = options.translate
   let runtimeDialog: ReturnType<typeof createRuntimeDialog> | undefined
@@ -338,7 +340,12 @@ export function createSessionActions(options: {
         return
       }
       if (action === 'runtime') {
-        runtimeDialog ??= createRuntimeDialog({ client: options.client, translate: t, error: options.error })
+        runtimeDialog ??= createRuntimeDialog({
+          client: options.client,
+          translate: t,
+          error: options.error,
+          loopLabel: options.loopLabel,
+        })
         return runtimeDialog.open(id, trigger)
       }
       if (busy.has(id)) return

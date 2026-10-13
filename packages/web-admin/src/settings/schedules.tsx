@@ -499,7 +499,16 @@ export function SchedulesPage({
                 data-status={row.status}
                 icon={<Icon name="clock" size={16} />}
                 title={row.title}
-                description={describeSchedule(row.selector, t, ux)}
+                description={
+                  <>
+                    {describeSchedule(row.selector, t, ux)}
+                    {' · '}
+                    <span data-testid="schedules-next">
+                      {t('schedulesNext')}{' '}
+                      {row.nextRunAt === null ? t('schedulesNone') : moment(row.nextRunAt)}
+                    </span>
+                  </>
+                }
                 onOpen={() => {
                   setFormOpen(true)
                   setEditing(row.id)
@@ -527,12 +536,6 @@ export function SchedulesPage({
                   // What differs from the defaults is shown, not left for the user to find.
                   setAdvancedOpen(selected === 'cron' || rowZone !== zoneDefault)
                 }}
-                meta={
-                  <span data-testid="schedules-next">
-                    {t('schedulesNext')}:{' '}
-                    {row.nextRunAt === null ? t('schedulesNone') : moment(row.nextRunAt)}
-                  </span>
-                }
                 status={
                   row.status === 'failed' || row.status === 'paused' ? (
                     <Tag tone={row.status === 'failed' ? 'bad' : 'warn'}>

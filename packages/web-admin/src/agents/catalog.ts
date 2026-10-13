@@ -3,15 +3,6 @@ import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 
 type Locale = 'en' | 'zh-CN'
-/**
- * Package-level fields a newer daemon adds to catalog rows. They are read defensively: a daemon
- * that does not send them simply shows a card without the sample line or the marker.
- */
-type BusinessFields = {
-  category?: unknown
-  samplePrompt?: unknown
-  agnes?: { category?: unknown; samplePrompt?: unknown }
-}
 
 export type BusinessAgent = {
   entry: PackageCatalogDescriptor
@@ -19,8 +10,7 @@ export type BusinessAgent = {
   slug: string
   name: string
   summary: string | undefined
-  /** Plugin category of the package metadata, when the author declared one. */
-  category: string | undefined
+  /** Present only when the package carries one; the card then shows a "try" line. */
   samplePrompt: string | undefined
   /** One or two characters for the letter tile, and a stable tint out of eight. */
   glyph: string
@@ -31,24 +21,16 @@ export type BusinessAgentState = 'available' | 'installed' | 'starting' | 'ready
 const FDE_PREFIX = '@agnes-fde/'
 const TINTS = 8
 
-const fields = (row: PackageCatalogDescriptor): BusinessFields => row as unknown as BusinessFields
-
-/** A business agent is marked by its package; until daemons send the marker, by the FDE scope. */
+/**
+ * A business agent is a package whose metadata says so. The FDE scope stays as a fallback: a copy
+ * installed before the category existed still carries its old metadata.
+ */
 export function isBusinessAgent(row: PackageCatalogDescriptor): boolean {
-  const value = fields(row)
-  const category = value.category ?? value.agnes?.category
-  if (typeof category === 'string') return category === 'business-agent'
-  return row.id.startsWith(FDE_PREFIX)
+  return row.metadata?.category === 'business-agent' || row.id.startsWith(FDE_PREFIX)
 }
 
 export function samplePromptOf(row: PackageCatalogDescriptor, locale: Locale): string | undefined {
-  const value = fields(row)
-  const prompt = value.samplePrompt ?? value.agnes?.samplePrompt
-  if (typeof prompt === 'string') return prompt.trim() || undefined
-  if (!prompt || typeof prompt !== 'object') return undefined
-  const localized = prompt as Record<string, unknown>
-  const text = localized[locale] ?? localized.en
-  return typeof text === 'string' && text.trim() ? text.trim() : undefined
+  return resolvePluginMetadata(row.metadata, locale)?.samplePrompt?.trim() || undefined
 }
 
 const hash = (text: string) => {
@@ -80,7 +62,6 @@ export function businessAgentView(entry: PackageCatalogDescriptor, locale: Local
     slug,
     name,
     summary: metadata?.summary,
-    category: metadata?.category,
     samplePrompt: samplePromptOf(entry, locale),
     glyph: glyphOf(name, slug),
     tint: hash(entry.id) % TINTS,

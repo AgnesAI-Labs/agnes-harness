@@ -29,6 +29,19 @@ type Pending = NonNullable<SessionRuntimeDescriptor['providers'][number]['pendin
 const effectKey = (effect: Pending['effect']) =>
   effect === 'restart-required' ? 'session.runtime.effect.restart' : 'session.runtime.effect.newSessions'
 
+/** What else the session's capability snapshot lists; tools have their own section above. */
+const CAPABILITY_KINDS = [
+  'mcp',
+  'skills',
+  'modelAdapters',
+  'childEngines',
+  'childModels',
+  'uiModules',
+  'surfaces',
+  'packages',
+  'plugins',
+] as const
+
 const PRESET_KEYS: Record<string, string> = {
   'read-only': 'session.runtime.permission.view',
   'workspace-write': 'session.runtime.permission.workspace',
@@ -174,6 +187,21 @@ export function RuntimeInfo({
               status={pendingTag(provider.pending)}
             />
           ))}
+          {CAPABILITY_KINDS.map((kind) => {
+            const items = capabilities?.[kind] ?? []
+            const off = items.filter((item) => !item.enabled).length
+            return items.length ? (
+              <ListRow
+                key={`capability:${kind}`}
+                data-testid={`session-runtime-capability-${kind}`}
+                title={t(`session.runtime.capability.${kind}`, { count: items.length })}
+                description={items.map((item) => item.id).join(' · ')}
+                meta={
+                  off ? <MetaText>{t('session.runtime.capabilityOff', { count: off })}</MetaText> : undefined
+                }
+              />
+            ) : undefined
+          })}
           <ListRow
             title={t('session.runtime.resources')}
             description={
@@ -197,6 +225,8 @@ export function createRuntimeDialog(options: {
   client: Client
   translate: Translate
   error(error: unknown): void
+  /** The display name of a loop, when the host knows one. */
+  loopLabel?: ((id: string) => string | undefined) | undefined
 }) {
   const t = options.translate
   const host = createRegionHost(document.body, 'div')
@@ -206,7 +236,6 @@ export function createRuntimeDialog(options: {
   let toolsBusy = false
   let grants: SessionGrants
   let revoking: string | undefined
-  let loopLabels: Promise<Map<string, string>> | undefined
   let loopLabel: string | undefined
   let opened = false
   let version = 0
@@ -264,21 +293,6 @@ export function createRuntimeDialog(options: {
     )
   }
   const render = () => renderRegion(host, <RuntimeDialog />)
-  /** Loop names come from the same public catalog the composer's picker reads; ids remain the fallback. */
-  const readLoopLabels = () => {
-    loopLabels ??= fetch('/admin/api/loops', { credentials: 'same-origin', cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : undefined))
-      .then((value: { loops?: unknown } | undefined) => {
-        const labels = new Map<string, string>()
-        for (const loop of Array.isArray(value?.loops) ? value.loops : []) {
-          const { id, label } = (loop ?? {}) as { id?: unknown; label?: unknown }
-          if (typeof id === 'string' && typeof label === 'string' && label) labels.set(id, label)
-        }
-        return labels
-      })
-      .catch(() => new Map<string, string>())
-    return loopLabels
-  }
   const readGrants = async (mine: number, id: string, value: SessionToolsResult) => {
     const next = await readSessionGrants(value.tools, (binding) =>
       options.client.approval.listGrants(id, binding),
@@ -348,15 +362,10 @@ export function createRuntimeDialog(options: {
         const value = await options.client.session.runtime(id)
         if (mine !== version) return
         runtime = value
+        // The composer's catalog names loops; an id it does not know is shown as it is.
+        loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
         render()
         void readTools(mine)
-        const loop = value.loop?.id
-        if (loop)
-          void readLoopLabels().then((labels) => {
-            if (mine !== version) return
-            loopLabel = labels.get(loop)
-            render()
-          })
       } catch (failure) {
         if (mine !== version) return
         close()

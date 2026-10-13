@@ -130,23 +130,24 @@ const record = () => {
 }
 
 describe('business agent catalog', () => {
-  it('recognises a business agent by its package marker, and by the FDE scope until daemons send one', () => {
+  it('recognises a business agent by its metadata category, and by the FDE scope for older copies', () => {
     expect(isBusinessAgent(entry())).toBe(true)
     expect(isBusinessAgent(entry({}, '@agnes-example/react-loop'))).toBe(false)
-    expect(isBusinessAgent(entry({ category: 'business-agent' }, '@acme/billing'))).toBe(true)
-    expect(isBusinessAgent(entry({ agnes: { category: 'business-agent' } }, '@acme/billing'))).toBe(true)
-    // An explicit other category wins over the scope fallback.
-    expect(isBusinessAgent(entry({ category: 'developer' }))).toBe(false)
+    const marked = { ...entry().metadata, category: 'business-agent' }
+    expect(isBusinessAgent(entry({ metadata: marked }, '@acme/billing'))).toBe(true)
+    expect(isBusinessAgent(entry({ metadata: undefined }, '@acme/billing'))).toBe(false)
   })
 
   it('shows a sample line only when the package carries one, in the reader’s language', () => {
     expect(samplePromptOf(entry(), 'zh-CN')).toBeUndefined()
-    const row = entry({ samplePrompt: { en: 'Summarise the CSV.', 'zh-CN': '汇总这份 CSV。' } })
-    expect(samplePromptOf(row, 'zh-CN')).toBe('汇总这份 CSV。')
-    expect(samplePromptOf(entry({ samplePrompt: { en: 'Summarise the CSV.' } }), 'zh-CN')).toBe(
-      'Summarise the CSV.',
-    )
-    expect(samplePromptOf(entry({ agnes: { samplePrompt: { en: ' ' } } }), 'en')).toBeUndefined()
+    const both = {
+      ...entry().metadata,
+      samplePrompt: { en: 'Summarise the CSV.', 'zh-CN': '汇总这份 CSV。' },
+    }
+    expect(samplePromptOf(entry({ metadata: both }), 'zh-CN')).toBe('汇总这份 CSV。')
+    const english = { ...entry().metadata, samplePrompt: { en: 'Summarise the CSV.' } }
+    expect(samplePromptOf(entry({ metadata: english }), 'zh-CN')).toBe('Summarise the CSV.')
+    expect(businessAgentView(entry({ metadata: both }), 'en').samplePrompt).toBe('Summarise the CSV.')
   })
 
   it('names the card from localized package metadata with a stable tile', () => {
@@ -218,6 +219,25 @@ describe('one-click start', () => {
     expect(progress.last()).toEqual({ install: 'done', trust: 'done', enable: 'done', session: 'done' })
     // Steps report in order: nothing later starts before the earlier one is done.
     expect(progress.seen.find((value) => value.trust === 'running')?.install).toBe('done')
+  })
+
+  it('waits briefly for the package bundle, then starts the loop alone if none is listed', async () => {
+    const d = daemon(installed({ trusted: true, desired: 'enabled', actual: 'running' }))
+    let reads = 0
+    const api = {
+      ...d.api,
+      runtime: async () => {
+        reads += 1
+        return { bundles: reads < 3 ? [] : [{ id: `${ID}#data-report`, sourcePackage: ID }] }
+      },
+    } as unknown as StartApi
+    const plan = await planBusinessAgentStart(api, entry(), options)
+    expect((await runBusinessAgentStart(api, plan, () => {}, options)).bundles).toEqual([`${ID}#data-report`])
+    expect(reads).toBe(3)
+
+    const none = { ...d.api, runtime: async () => ({ bundles: [] }) } as unknown as StartApi
+    const target = await runBusinessAgentStart(none, plan, () => {}, options)
+    expect(target).toEqual({ loop: { id: 'fde.data-report', version: '5.0.0' }, bundles: [] })
   })
 
   it('skips the steps a package already satisfies', async () => {

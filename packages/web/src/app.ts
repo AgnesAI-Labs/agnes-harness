@@ -1302,6 +1302,7 @@ const firstRun = createFirstRunController({
 clientModules.locale.subscribe(() => firstRun.refreshLocale())
 const sessionActions = createSessionActions({
   client,
+  loopLabel: (id) => newSessionCatalog?.loops.find((loop) => loop.id === id)?.label,
   changed: () => list(),
   fork: forkSidebar,
   error: (error) => {
