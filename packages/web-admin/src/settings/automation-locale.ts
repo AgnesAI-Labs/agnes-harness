@@ -27,8 +27,7 @@ export const automationCatalog: LocaleCatalog = {
     openSession: 'Open session',
     archiveLabel: 'Archive “{title}”',
     historyCount: 'History · {count}',
-    missedNote:
-      'A repeating reminder missed while this computer was off is made up once, for the latest run.',
+    missedNote: 'A repeating task missed while this computer was off is made up once, for the latest run.',
   },
   'zh-CN': {
     newSchedule: '新建定时任务',
@@ -55,6 +54,6 @@ export const automationCatalog: LocaleCatalog = {
     openSession: '打开会话',
     archiveLabel: '归档「{title}」',
     historyCount: '历史 · {count}',
-    missedNote: '电脑没开时错过的重复提醒，只补最近一次。',
+    missedNote: '电脑没开时错过的重复任务，只补最近一次。',
   },
 }
