@@ -50,7 +50,7 @@ import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
-import { homeNavigation, settingsSections } from '@agnes/web-client'
+import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
 
@@ -85,7 +85,7 @@ import {
 import type { ModelPickerOption } from './model-picker.js'
 import { mountNewSessionDialog } from './new-session-dialog.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
-import { bindHomeRouting, mountHomePages } from './pages/host.js'
+import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSettingsAdminPaneStore } from './region-slots.js'
@@ -1244,12 +1244,22 @@ function updateSidebar(): void {
     workspaces: workspaceRows,
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
-    ...(current ? { currentId: current.id } : readOnly ? { currentId: readOnly.id } : {}),
+    // While a home page shows, the page's entry is the selected item, not the session behind it.
+    ...(activeHomeEntry()
+      ? {}
+      : current
+        ? { currentId: current.id }
+        : readOnly
+          ? { currentId: readOnly.id }
+          : {}),
     ...(sessionNext ? { next: sessionNext } : {}),
     sessionPending,
     newDisabled: !connected || sending || sessionPending || newSessionCreating,
   })
 }
+
+// Opening or leaving a home page, or losing its entry, moves the sidebar's selection.
+const stopHomeSelection = [homeNavigation.subscribe(updateSidebar), homeEntries.subscribe(updateSidebar)]
 
 const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
@@ -1283,9 +1293,8 @@ const firstRun = createFirstRunController({
   },
   closeSettings: () => settings.close(),
   examples: async () => {
-    settingsRegion.open('model')
-    await settings.open()
-    settingsRegion.route('examples')
+    settings.close()
+    homeNavigation.open('agents')
   },
   details: async () => {
     settingsRegion.open('model')
@@ -2209,6 +2218,7 @@ onPageHide(() => {
   stopConnectionEvents()
   stopSettingsTerminal()
   stopHomeRouting()
+  for (const stop of stopHomeSelection) stop()
   sessionSearch.dispose()
   homePages.dispose()
   removeHomeEntries()

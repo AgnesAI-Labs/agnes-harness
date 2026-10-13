@@ -63,7 +63,18 @@
 
   /* A home page takes the main area: the session's own surfaces step aside while it shows. */
   main[data-home-page] > :is(.workbench-split, #approval, #composer-mount, .agh-banner),
-  main[data-home-page] > .topbar-row :is(.task-heading, .session-tabs-bar) {
+  main[data-home-page]
+    > .topbar-row
+    :is(
+      .task-heading,
+      .session-tabs-bar,
+      #session-view-controls,
+      #session-goal-host,
+      #workbench-controls,
+      .workbench-controls,
+      #session-runtime,
+      .topbar-workspace
+    ) {
     display: none;
   }
   main[data-home-page] > .topbar-row {
@@ -532,6 +543,11 @@
   .connection-bar-text {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  /* On a home page the bar already says the connection dropped; the session's own notice about
+   its unfinished task belongs to the conversation behind the page. */
+  main[data-home-page]:has(> .connection-bar:not([hidden])) > #notice {
+    display: none;
   }
   /* A new session floats the top bar over the hero; with the bar showing it returns to the flow. */
   body:has(#empty-state:not([hidden])) main:has(> .connection-bar:not([hidden])) > .topbar-row {
