@@ -137,7 +137,6 @@ export async function startClientModules(options: {
     | undefined
   transcriptContainer?: HTMLElement | undefined
   transcript?: {
-    nodeHost?: 'react'
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
   }

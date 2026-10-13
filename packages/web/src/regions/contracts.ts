@@ -8,22 +8,14 @@ import {
   type ConversationHandle,
   downscaleImageFile,
   type SettingsPane,
-  type TranscriptDependencies,
 } from '@agnes/web-units'
-import { observeSlotCards } from '../client-modules/timeline-slot.js'
 import { ModelPickerControl } from '../model-picker.js'
 import { bindSidebar } from '../shell.js'
-import { createTimelineRenderer } from '../timeline.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
 
 export const SIDEBAR_DEPENDENCIES_BASE = {
   bindSidebar,
-}
-
-export const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
-  createRenderer: createTimelineRenderer,
-  observeCards: observeSlotCards,
 }
 
 export const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {

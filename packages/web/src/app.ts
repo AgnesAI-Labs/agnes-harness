@@ -77,7 +77,6 @@ import { mountAppShell } from './app-shell.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
-import { bindSlotCardContext } from './client-modules/timeline-slot.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
@@ -893,7 +892,7 @@ const clientModules = await startClientModules({
         }),
     },
   },
-  transcript: { nodeHost: 'react', onFork: forkTurn },
+  transcript: { onFork: forkTurn },
   conversationContainer: conversation,
   topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,
   approvalContainer: document.getElementById('approval') ?? undefined,
@@ -984,7 +983,6 @@ const conversationRuntime = clientModules.conversation as NonNullable<typeof cli
 if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
-bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
 const unmountIntelligentUi = mountIntelligentUi({
   resources: clientModules.resources,
   customModules: {

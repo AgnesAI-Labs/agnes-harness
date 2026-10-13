@@ -3,7 +3,6 @@
 import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSlotCardContext } from '../src/client-modules/timeline-slot.js'
 import { TRANSCRIPT_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -37,8 +36,7 @@ describe('rendered transcript region', () => {
   })
 
   it('mounts slot cards within the application and restores the buffered view after shadow unload', async () => {
-    runtime = await mountRenderedIndex()
-    bindSlotCardContext({ registry: runtime.registry, claim: () => true })
+    runtime = await mountRenderedIndex({ claim: () => true })
     const slot: UINode = {
       kind: 'slot',
       id: 'slot-1',
@@ -77,7 +75,6 @@ describe('rendered transcript region', () => {
 
   it('renders a claimed plugin card through the default React region bootstrap', async () => {
     runtime = await mountRenderedIndex({
-      transcript: { nodeHost: 'react' },
       claim: (entry, extId) => entry.owner === extId,
     })
     const remove = runtime.registry.register(

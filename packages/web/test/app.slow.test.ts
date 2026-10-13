@@ -56,14 +56,6 @@ const binding = vi.hoisted(() => ({
   bindWebSession: vi.fn(),
   loadWebSession: vi.fn(),
 }))
-const timelineRenderer = vi.hoisted(() => ({
-  createTimelineRenderer: vi.fn(() => ({
-    render: vi.fn(),
-    reset: vi.fn(),
-    pinToBottom: vi.fn(),
-  })),
-  nearBottom: vi.fn(() => true),
-}))
 const originalCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
 const originalRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL')
 
@@ -90,10 +82,6 @@ beforeEach(() => {
 vi.mock('../src/session-binding.js', () => ({
   bindWebSession: binding.bindWebSession,
   loadWebSession: binding.loadWebSession,
-}))
-vi.mock('../src/timeline.js', () => ({
-  createTimelineRenderer: timelineRenderer.createTimelineRenderer,
-  nearBottom: timelineRenderer.nearBottom,
 }))
 
 type Deferred<T> = {
@@ -764,7 +752,7 @@ describe('web session selection', () => {
     }))
 
     await import('../src/app.js')
-    expect(traceBridge.transcriptOptions).toMatchObject({ nodeHost: 'react' })
+    expect(traceBridge.transcriptOptions).toMatchObject({ onFork: expect.any(Function) })
     expect(traceBridge.claim).toEqual(expect.any(Function))
     await vi.waitFor(() => expect(traceBridge.metas.at(-1)).toMatchObject({ sessionId: 'old' }))
     const reportProblem = document.getElementById('report-problem') as HTMLButtonElement

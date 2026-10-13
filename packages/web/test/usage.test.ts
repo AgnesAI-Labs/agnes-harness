@@ -5,8 +5,7 @@ import { createRegionRenderer } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createTimelineRenderer } from '../src/timeline.js'
-import { zhLocaleService, zhT } from './helpers/locale.js'
+import { zhT } from './helpers/locale.js'
 
 type UsagePanel = ((usage: UsageView | undefined, connected: boolean) => void) & { dispose(): void }
 const panels: UsagePanel[] = []
@@ -72,24 +71,6 @@ it('shows per-call values and known timing, without double counting reasoning or
   expect(costSummary(legacy, zhT)).toBe('2 credits（估算）')
   expect(costDetails(legacy, zhT)).toContainEqual(['Token 明细', '未提供'])
   expect(costDetails(legacy, zhT).flat().join(' ')).not.toContain('$')
-})
-it('keeps a call disclosure open on replacement and renders model names as text', () => {
-  const transcript = document.createElement('section')
-  const timeline = createTimelineRenderer({
-    locale: zhLocaleService(),
-    transcript,
-    newContentButton: document.createElement('button'),
-  })
-  document.body.append(transcript)
-  timeline.render([call])
-  const disclosure = transcript.querySelector('details')
-  if (!disclosure) throw new Error('missing details')
-  disclosure.open = true
-  timeline.render([{ ...call, model: '<img src=x onerror=alert(1)>', interrupted: true }])
-  expect(transcript.querySelector('details')).toBe(disclosure)
-  expect(disclosure.open).toBe(true)
-  expect(transcript.querySelector('img')).toBeNull()
-  expect(transcript.textContent).toContain('已中断')
 })
 it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量分区', () => {
   const container = document.createElement('section')

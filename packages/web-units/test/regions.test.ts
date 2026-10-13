@@ -14,8 +14,6 @@ import {
   type SettingsPane,
   SettingsPaneBuiltin,
   Sidebar,
-  Transcript,
-  type TranscriptHandle,
 } from '../src/index.js'
 import type { SettingsNavigationEntry, SettingsRegionHandle } from '../src/settings.js'
 
@@ -542,55 +540,6 @@ describe('independent core web-unit implementations', () => {
     expect(rendered).toBeGreaterThan(0)
     root.unmount()
     expect(disposed).toBe(1)
-  })
-
-  it('keeps transcript rendering and cleanup behind an injected renderer contract', () => {
-    const host = document.createElement('section')
-    host.id = 'transcript'
-    const button = document.createElement('button')
-    document.body.append(host, button)
-    const ref = createRef<TranscriptHandle>()
-    let rendered: readonly UINode[] = []
-    let reset = 0
-    let observed = 0
-    let stopped = 0
-    const root = createRoot(host)
-    roots.push(root)
-
-    flushSync(() =>
-      root.render(
-        createElement(Transcript, {
-          ref,
-          newContentButton: button,
-          dependencies: {
-            createRenderer: () => ({
-              render: (nodes) => {
-                rendered = nodes
-              },
-              reset: () => {
-                reset++
-              },
-              pinToBottom: () => undefined,
-            }),
-            observeCards: () => {
-              observed++
-              return () => {
-                stopped++
-              }
-            },
-          },
-        }),
-      ),
-    )
-
-    const node: UINode = { kind: 'assistant', id: 'assistant-1', seq: 1, text: 'hello' }
-    ref.current?.render([node])
-    expect(host.querySelector('#transcript-content')).toBeTruthy()
-    expect(rendered).toEqual([node])
-    expect(observed).toBe(1)
-    root.unmount()
-    expect(reset).toBe(1)
-    expect(stopped).toBe(1)
   })
 
   it('renders plugin and resource pane templates with translated controls', () => {

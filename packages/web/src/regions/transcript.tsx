@@ -7,21 +7,17 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import { Transcript, type TranscriptHandle } from '@agnes/web-units'
+import type { TranscriptHandle } from '@agnes/web-units'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
-import { createTimelineRenderer } from '../timeline.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'
-import { type EmptyStateRegionMount, TRANSCRIPT_DEPENDENCIES, TRANSCRIPT_SLOT } from './contracts.js'
+import { type EmptyStateRegionMount, TRANSCRIPT_SLOT } from './contracts.js'
 /** Render the transcript component behind a session-scoped, replaceable SlotOutlet. */
 export interface TranscriptRegionMount extends EmptyStateRegionMount, TranscriptHandle {}
 export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
   options: {
-    /** Select the React host; callers that omit it retain the legacy renderer. */
-    nodeHost?: 'react'
-    /** XMarkdown is available only with the explicit React host probe. */
     markdownRenderer?: 'legacy' | 'xmarkdown'
     claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
@@ -62,37 +58,19 @@ export function mountTranscriptRegion(
         'tool.call.toolview': { kind: 'keyed', scope: 'session' },
       },
     },
-    () =>
-      options.nodeHost === 'react' ? (
-        <TimelineNodeHost
-          ref={setHandle}
-          registry={registry}
-          {...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {})}
-          {...(options.claim ? { claim: options.claim } : {})}
-          {...(options.newContentButton ? { newContentButton: options.newContentButton } : {})}
-          {...(options.onFork ? { onFork: options.onFork } : {})}
-          {...(options.session ? { session: options.session } : {})}
-          {...(options.locale ? { locale: options.locale } : {})}
-          {...(options.resources ? { resources: options.resources } : {})}
-        />
-      ) : (
-        <Transcript
-          ref={setHandle}
-          dependencies={{
-            ...TRANSCRIPT_DEPENDENCIES,
-            createRenderer(rendererOptions) {
-              return createTimelineRenderer({
-                ...rendererOptions,
-                registry,
-                ...(options.session ? { session: options.session } : {}),
-                ...(options.locale ? { locale: options.locale } : {}),
-                ...(options.resources ? { resources: options.resources } : {}),
-              })
-            },
-          }}
-          {...options}
-        />
-      ),
+    () => (
+      <TimelineNodeHost
+        ref={setHandle}
+        registry={registry}
+        {...(options.markdownRenderer ? { markdownRenderer: options.markdownRenderer } : {})}
+        {...(options.claim ? { claim: options.claim } : {})}
+        {...(options.newContentButton ? { newContentButton: options.newContentButton } : {})}
+        {...(options.onFork ? { onFork: options.onFork } : {})}
+        {...(options.session ? { session: options.session } : {})}
+        {...(options.locale ? { locale: options.locale } : {})}
+        {...(options.resources ? { resources: options.resources } : {})}
+      />
+    ),
   )
   const removeViewBuiltin = registry.register(
     {

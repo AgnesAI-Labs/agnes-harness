@@ -21,8 +21,6 @@
     "./presentation": "./src/presentation.ts",
     "./tool-icon": "./src/tool-icon.ts",
     "./trace-panel": "./src/trace-panel.ts",
-    "./transcript": "./src/transcript.ts",
-    "./turns": "./src/turns.tsx",
     "./usage": "./src/usage.tsx",
     "./conversation-registry": "./src/conversation-registry.tsx",
     "./workbench": "./src/workbench/register.tsx"

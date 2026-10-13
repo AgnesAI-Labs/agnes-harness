@@ -30,7 +30,6 @@ async function setup() {
   host.id = 'transcript'
   document.body.append(host)
   const mount = mountTranscriptRegion(registry, host, {
-    nodeHost: 'react',
     markdownRenderer: 'xmarkdown',
     locale: zhLocaleService(),
   })

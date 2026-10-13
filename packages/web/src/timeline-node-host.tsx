@@ -2,12 +2,11 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
-import type { TranscriptHandle } from '@agnes/web-units'
+import type { TranscriptHandle, TranscriptMeta } from '@agnes/web-units'
 import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { WebConversationMessages } from './conversation-message-adapter.js'
-import type { TimelineMeta } from './timeline.js'
 
 const nearBottom = (element: HTMLElement) =>
   element.scrollHeight - element.scrollTop - element.clientHeight <= 80
@@ -23,14 +22,14 @@ export interface TimelineNodeHostProps {
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }
 
-/** The opt-in transcript root is the sole owner of every node article and history control. */
+/** The transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
   { registry, claim, newContentButton, session, locale, resources, onFork, markdownRenderer },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
   const earlier = useRef<HTMLDivElement>(null)
-  const metaRef = useRef<TimelineMeta | undefined>(undefined)
+  const metaRef = useRef<TranscriptMeta | undefined>(undefined)
   const scroll = useRef({
     follow: true,
     expectedTop: 0,
@@ -47,16 +46,22 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
     [],
   )
+  // A skin may enable smooth reader scrolling. Programmatic positioning must not animate: a
+  // streaming frame would never catch up with the bottom, and anchoring after a prepend would
+  // visibly slide the whole transcript.
+  const jumpTo = useCallback((element: HTMLElement, top: number) => {
+    const previousBehavior = element.style.scrollBehavior
+    element.style.scrollBehavior = 'auto'
+    element.scrollTop = top
+    element.style.scrollBehavior = previousBehavior
+    scroll.current.expectedTop = element.scrollTop
+  }, [])
   const scrollToBottom = useCallback(() => {
     const element = viewport()
     if (!element) return
-    const previousBehavior = element.style.scrollBehavior
-    element.style.scrollBehavior = 'auto'
-    element.scrollTop = element.scrollHeight
-    element.style.scrollBehavior = previousBehavior
-    scroll.current.expectedTop = element.scrollTop
+    jumpTo(element, element.scrollHeight)
     if (newContentButton) newContentButton.hidden = true
-  }, [viewport, newContentButton])
+  }, [viewport, jumpTo, newContentButton])
   const loadEarlier = useCallback(() => {
     const state = scroll.current
     const meta = metaRef.current
@@ -124,7 +129,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   useImperativeHandle(
     ref,
     () => ({
-      render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TimelineMeta) {
+      render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TranscriptMeta) {
         const element = viewport()
         const state = scroll.current
         if (state.awaitingRender) {
@@ -148,10 +153,8 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           }),
         )
         if (element && state.follow) scrollToBottom()
-        else if (element && prepended) {
-          element.scrollTop = element.scrollHeight - fromBottom
-          state.expectedTop = element.scrollTop
-        } else if (element && newContentButton) newContentButton.hidden = nearBottom(element)
+        else if (element && prepended) jumpTo(element, element.scrollHeight - fromBottom)
+        else if (element && newContentButton) newContentButton.hidden = nearBottom(element)
       },
       reset() {
         metaRef.current = undefined
@@ -169,7 +172,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         scrollToBottom()
       },
     }),
-    [registry, store, newContentButton, viewport, scrollToBottom],
+    [registry, store, newContentButton, viewport, jumpTo, scrollToBottom],
   )
   return (
     <div

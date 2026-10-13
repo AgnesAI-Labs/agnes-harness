@@ -2,12 +2,10 @@
 
 import type { UINode, UITurn } from '@agnes/protocol'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
-import { act, createElement, useLayoutEffect } from 'react'
+import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
-import { createTimelineRenderer } from '../src/timeline.js'
-import { zhLocaleService } from './helpers/locale.js'
 
 const nodes: UINode[] = [
   { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'question' }] },
@@ -43,36 +41,6 @@ function required<T extends Element>(parent: ParentNode, selector: string): T {
   if (!element) throw new Error(`missing ${selector}`)
   return element
 }
-
-it('retires legacy turn actions when the projection loses its turn list, then supports another turn', () => {
-  const host = document.createElement('section')
-  document.body.append(host)
-  const add = vi.spyOn(document, 'addEventListener')
-  const remove = vi.spyOn(document, 'removeEventListener')
-  const timeline = createTimelineRenderer({
-    locale: zhLocaleService(),
-    transcript: host,
-    newContentButton: document.createElement('button'),
-  })
-  try {
-    timeline.render(nodes, [turn])
-    const click = add.mock.calls.find(([type]) => type === 'click')?.[1]
-    expect(click).toBeDefined()
-    const old = required<HTMLDetailsElement>(host, '.turn-usage')
-    timeline.render(nodes, [])
-    expect(host.querySelector('.turn-usage')).toBeNull()
-    expect(remove.mock.calls.some(([type, listener]) => type === 'click' && listener === click)).toBe(true)
-    timeline.render(nodes, [turn])
-    const next = required<HTMLDetailsElement>(host, '.turn-usage')
-    expect(next).not.toBe(old)
-    expect(host.textContent).toContain('answer')
-    next.open = true
-    document.body.click()
-    expect(next.open).toBe(false)
-  } finally {
-    timeline.dispose?.()
-  }
-})
 
 it('keeps the React adapter disclosure through replay and retires its binding on unmount/remount', async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
@@ -117,44 +85,5 @@ it('keeps the React adapter disclosure through replay and retires its binding on
     expect(next.open).toBe(false)
   } finally {
     await act(async () => root.unmount())
-  }
-})
-
-it('retires the legacy action root after a parent React commit without nested-root warnings', async () => {
-  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
-  const host = document.createElement('section')
-  document.body.append(host)
-  const timeline = createTimelineRenderer({
-    locale: zhLocaleService(),
-    transcript: host,
-    newContentButton: document.createElement('button'),
-  })
-  timeline.render([], [turn])
-  const details = required<HTMLDetailsElement>(host, '.turn-usage')
-  const add = vi.spyOn(document, 'addEventListener')
-  const remove = vi.spyOn(document, 'removeEventListener')
-  const parent = createRoot(document.body.appendChild(document.createElement('div')))
-  function Owner() {
-    useLayoutEffect(() => () => timeline.reset(), [])
-    return null
-  }
-  await act(async () => parent.render(createElement(Owner)))
-  const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-  try {
-    await act(async () => parent.unmount())
-    expect(errors.mock.calls.map(([message]) => String(message))).not.toContainEqual(
-      expect.stringContaining('synchronously unmount a root'),
-    )
-    expect(errors.mock.calls.map(([message]) => String(message))).not.toContainEqual(
-      expect.stringContaining('flushSync was called from inside a lifecycle method'),
-    )
-    expect(details.isConnected).toBe(false)
-    expect(remove.mock.calls.filter(([type]) => type === 'click')).toHaveLength(1)
-    expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(0)
-  } finally {
-    errors.mockRestore()
-    add.mockRestore()
-    remove.mockRestore()
-    timeline.dispose?.()
   }
 })

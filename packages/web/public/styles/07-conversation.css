@@ -342,21 +342,6 @@
     background: transparent;
     font-size: var(--font-size-sm);
   }
-  .thinking > summary {
-    width: fit-content;
-    height: 1.5rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0;
-    border-radius: 0;
-    color: var(--agnes-text-secondary);
-    background: transparent;
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    line-height: 1.5rem;
-    cursor: pointer;
-  }
   .thinking-content {
     margin-top: var(--s4);
     padding: 0.125rem 0 0.125rem var(--s12);

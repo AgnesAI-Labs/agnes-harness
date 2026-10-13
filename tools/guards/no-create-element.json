@@ -14,7 +14,6 @@
     "packages/web-conversation/src/computer-use-pane.tsx",
     "packages/web-conversation/src/document-preview.tsx",
     "packages/web-conversation/src/markdown.tsx",
-    "packages/web-conversation/src/turns.tsx",
     "packages/web-conversation/src/usage.tsx",
     "packages/web-foundation/src/appearance.ts",
     "packages/web-ui/src/conversation/document-preview.tsx",
@@ -52,10 +51,8 @@
     "packages/web/src/app-shell.tsx",
     "packages/web/src/app.ts",
     "packages/web/src/client-modules/boot.tsx",
-    "packages/web/src/client-modules/timeline-slot.tsx",
     "packages/web/src/conversation-message-adapter.tsx",
     "packages/web/src/diagnostics-dialog.tsx",
-    "packages/web/src/message-feedback.tsx",
     "packages/web/src/model-picker.tsx",
     "packages/web/src/navigation.tsx",
     "packages/web/src/new-session-dialog.tsx",
@@ -72,9 +69,6 @@
     "packages/web/src/regions/transcript.tsx",
     "packages/web/src/session-actions.tsx",
     "packages/web/src/session-menu.tsx",
-    "packages/web/src/timeline.tsx",
-    "packages/web/src/timeline/dsh-node.tsx",
-    "packages/web/src/timeline/native-entry.tsx",
     "packages/web/src/workbench/dock.tsx"
   ]
 }

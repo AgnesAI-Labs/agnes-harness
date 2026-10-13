@@ -58,7 +58,6 @@ it.each(['legacy', 'xmarkdown'] as const)(
     transcript.id = 'transcript'
     document.body.append(transcript)
     const mounted = mountTranscriptRegion(registry, transcript, {
-      nodeHost: 'react',
       markdownRenderer,
       locale: zhLocaleService(),
     })

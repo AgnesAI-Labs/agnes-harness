@@ -17,7 +17,6 @@ export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
   composer?: Partial<ComposerRegionOptions>
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
-  transcript?: { nodeHost: 'react' }
   claim?: ClaimResolver
 }
 
@@ -60,7 +59,6 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     panelContainer: document.getElementById('workbench-plugin-panels') ?? undefined,
     sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
     ...(options.sidebar ? { sidebar: options.sidebar } : {}),
-    ...(options.transcript ? { transcript: options.transcript } : {}),
     ...(options.claim ? { claim: options.claim } : {}),
     conversationContainer: document.getElementById('conversation-shell') ?? undefined,
     topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,

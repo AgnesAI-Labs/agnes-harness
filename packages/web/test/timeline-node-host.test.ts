@@ -24,7 +24,6 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   const button = document.createElement('button')
   document.body.append(transcript, button)
   const mount = mountTranscriptRegion(registry, transcript, {
-    nodeHost: 'react',
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,
     locale: zhLocaleService(),
@@ -683,6 +682,31 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelectorAll('[data-node-id]')).toHaveLength(5)
     expect(transcript.scrollTop).toBe(220)
     expect(button.hidden).toBe(false)
+  })
+
+  it('restores the reader position after a prepend without a smooth-scroll animation', async () => {
+    const { transcript, mount } = await setup()
+    measureTranscript(transcript)
+    // A skin may enable smooth scrolling on the transcript.
+    transcript.style.scrollBehavior = 'smooth'
+    const measured = Object.getOwnPropertyDescriptor(transcript, 'scrollTop')
+    const writes: { top: number; behavior: string }[] = []
+    Object.defineProperty(transcript, 'scrollTop', {
+      configurable: true,
+      get: () => measured?.get?.call(transcript),
+      set(value: number) {
+        writes.push({ top: value, behavior: transcript.style.scrollBehavior })
+        measured?.set?.call(transcript, value)
+      },
+    })
+    const tail = [say('c', 3), say('d', 4), say('e', 5)]
+    await act(async () => mount.render(tail, [], { hasEarlier: true, loadEarlier: vi.fn() }))
+    transcript.scrollTop = 20
+    transcript.dispatchEvent(new Event('scroll'))
+    writes.length = 0
+    await act(async () => mount.render([say('a', 1), say('b', 2), ...tail], [], { hasEarlier: false }))
+    expect(writes).toEqual([{ top: 220, behavior: 'auto' }])
+    expect(transcript.style.scrollBehavior).toBe('smooth')
   })
 
   it('keeps a new history request locked when a pre-reset request settles', async () => {
