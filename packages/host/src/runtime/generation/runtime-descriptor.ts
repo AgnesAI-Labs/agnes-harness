@@ -179,12 +179,32 @@ export type ColdSessionInput = Readonly<{
     loop?: Readonly<{ id: string; version: string }>
     seams?: readonly Readonly<{ kind: string; provider: string; version: string }>[]
   }>
-  /** Id of the generation new sessions open on. */
-  headId?: string
+  /** Where the head of the session's composition is found. */
+  head: ColdHeadInput
   failed: boolean
   /** The session's recorded composition intent. */
   composition?: Readonly<{ hash: string; preset: string; bundles: readonly string[] }>
 }>
+
+type ColdHeadInput = Readonly<{
+  /** This host serves one composition among several, rather than being the whole deployment. */
+  scoped: boolean
+  ownKey: string
+  ownHeadId?: string
+  durableHeadId(compositionHash: string): string | undefined
+}>
+
+/**
+ * The generation new sessions open on for the composition a cold session belongs to. Inside a
+ * composition container this host may only be the fallback owner of a session of another composition,
+ * so its own head answers only for its own composition; another composition's head is read from the
+ * durable record. With no readable composition record the head is unknown and none is claimed.
+ */
+export function coldHeadId(input: ColdHeadInput & { compositionHash?: string }): string | undefined {
+  if (!input.scoped) return input.ownHeadId
+  if (input.compositionHash === undefined) return undefined
+  return input.compositionHash === input.ownKey ? input.ownHeadId : input.durableHeadId(input.compositionHash)
+}
 
 /**
  * Describes a session no container has open from its durable records alone. Providers, resources and
@@ -192,7 +212,11 @@ export type ColdSessionInput = Readonly<{
  * may not be the configuration this session was written under.
  */
 export function describeColdSession(input: ColdSessionInput): SessionRuntimeDescriptor {
-  const { pin, headId } = input
+  const { pin } = input,
+    headId = coldHeadId({
+      ...input.head,
+      ...(input.composition ? { compositionHash: input.composition.hash } : {}),
+    })
   const current = !pin || headId === undefined || pin.generationId === headId
   return {
     sessionKey: input.sessionKey,

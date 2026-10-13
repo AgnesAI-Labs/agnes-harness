@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { resolve as resolvePath } from 'node:path'
+import { relative, resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
@@ -63,6 +63,8 @@ import { assertGenerationTrust } from './trust.js'
 
 export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string
+  /** Damaged durable records, located relative to the profile directory; collection stands down while any exists. */
+  blocked?: readonly Readonly<{ file: string; reason: string }>[]
   generations: readonly Readonly<{
     id: string
     state: 'active' | 'draining' | 'historical' | 'failed'
@@ -615,8 +617,13 @@ export async function createRuntimeGenerationHost(
         error,
       })
     }
+    const blocked = store.scanDamage().map((problem) => ({
+      file: relative(options.profileDir, problem.file),
+      reason: problem.reason.slice(0, 512),
+    }))
     return Object.freeze({
       ...(current ? { currentGenerationId: current.snapshot.id } : {}),
+      ...(blocked.length ? { blocked: Object.freeze(blocked.slice(0, 256)) } : {}),
       generations: Object.freeze(
         generations.map((item) => ({
           ...item,
@@ -953,27 +960,18 @@ export async function createRuntimeGenerationHost(
       if (!host) {
         const pin = store.session(key)
         // A record this build cannot read leaves the composition unknown; a query never fails on it.
-        const binding = (() => {
-          try {
-            return new CompositionSessionStore(options.profileDir).read(key)
-          } catch {
-            return undefined
-          }
-        })()
+        const binding = new CompositionSessionStore(options.profileDir).readIfValid(key)
         return describeColdSession({
           sessionKey: key,
           ...(pin ? { pin } : {}),
-          ...(current ? { headId: current.snapshot.id } : {}),
+          ...(binding ? { composition: binding.tree } : {}),
+          head: {
+            scoped: options.compositionPin !== undefined,
+            ownKey: headKey,
+            ...(current ? { ownHeadId: current.snapshot.id } : {}),
+            durableHeadId: (hash) => store.headId(hash),
+          },
           failed: pin ? failures.has(pin.generationId) : false,
-          ...(binding
-            ? {
-                composition: {
-                  hash: binding.tree.hash,
-                  preset: binding.tree.preset,
-                  bundles: binding.tree.bundles,
-                },
-              }
-            : {}),
         })
       }
       const id = store.session(key)?.generationId ?? bindings.get(host)?.id
