@@ -66,24 +66,6 @@ it('keeps the admin addresses as aliases of the workbench with no shell of their
   }
 })
 
-// Settings and admin pages are redesigned on one template in their own change. These files keep
-// their native disclosures until then; delete a path here when its file moves to Disclosure.
-const NATIVE_DISCLOSURE_PENDING = new Set([
-  'packages/web-admin/src/admin/plugins/candidate-review.tsx',
-  'packages/web-admin/src/admin/plugins/config-panel.tsx',
-  'packages/web-admin/src/admin/plugins/plugin-badges.tsx',
-  'packages/web-admin/src/settings/account-network.tsx',
-  'packages/web-admin/src/settings/context.tsx',
-  'packages/web-admin/src/settings/hub.tsx',
-  'packages/web-admin/src/settings/runtime-panels.tsx',
-  'packages/web-admin/src/settings/session-tools.tsx',
-  'packages/web-ui/src/admin-confirmation.tsx',
-  'packages/web-ui/src/resource-detail.tsx',
-  'packages/web-ui/src/resource-list.tsx',
-  'packages/web-ui/src/settings-account-dialog.tsx',
-  'packages/web-units/src/settings-fixture.tsx',
-])
-
 it('keeps collapsible sections on the one Disclosure primitive', () => {
   const root = repoRoot()
   const native = /<details\b|\bcreateElement\s*\(\s*['"]details['"]/
@@ -91,7 +73,7 @@ it('keeps collapsible sections on the one Disclosure primitive', () => {
   for (const pkg of listPackages(root).filter((pkg) => /web/.test(pkg.name))) {
     for (const file of listSourceFiles(join(pkg.dir, 'src')).filter((file) => !isTestFile(file))) {
       const path = relative(root, file)
-      if (path === 'packages/web-ui/src/ui/disclosure.tsx' || NATIVE_DISCLOSURE_PENDING.has(path)) continue
+      if (path === 'packages/web-ui/src/ui/disclosure.tsx') continue
       if (native.test(readFileSync(file, 'utf8'))) offenders.push(path)
     }
   }

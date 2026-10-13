@@ -633,9 +633,6 @@
     .settings-content {
       overflow-y: auto;
     }
-    #config-accounts {
-      max-height: 15rem;
-    }
     .config-detail-grid {
       overflow: visible;
     }

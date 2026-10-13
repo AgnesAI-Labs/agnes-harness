@@ -2,6 +2,7 @@ import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protoc
 import {
   Badge,
   Button,
+  Disclosure,
   Field,
   MetaText,
   SettingsDetails,
@@ -152,8 +153,7 @@ export function GenerationsPanel({
     }
   }
   return (
-    <details data-testid="plugin-generations">
-      <summary>{t('generation')}</summary>
+    <Disclosure variant="plain" data-testid="plugin-generations" summary={t('generation')}>
       {!status?.generations.length && <p>{t('noGenerations')}</p>}
       {status?.currentGenerationId && (
         <p>
@@ -236,7 +236,7 @@ export function GenerationsPanel({
           </p>
         )}
       </section>
-    </details>
+    </Disclosure>
   )
 }
 export function PublicationPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
@@ -298,8 +298,12 @@ export function LocalPluginsPanel({
     }
   }
   return (
-    <details data-testid="local-plugins">
-      <summary data-testid="local-plugins-toggle">{t('local')}</summary>
+    <Disclosure
+      variant="plain"
+      data-testid="local-plugins"
+      summary={t('local')}
+      summaryProps={{ 'data-testid': 'local-plugins-toggle' }}
+    >
       <p>{t('localHelp')}</p>
       <dl>
         <dt>{t('home')}</dt>
@@ -320,7 +324,7 @@ export function LocalPluginsPanel({
         {t('reloadLocal')}
       </Button>
       {message && <p role={failed ? 'alert' : 'status'}>{t(message)}</p>}
-    </details>
+    </Disclosure>
   )
 }
 export const sessionStartUrl = (

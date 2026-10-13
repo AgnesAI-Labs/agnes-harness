@@ -2,6 +2,7 @@ import type { PluginConfigSnapshot } from '@agnes/protocol'
 import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
   Button,
+  Disclosure,
   type PluginFormIssue,
   type PluginSchema,
   PluginSchemaFields,
@@ -229,8 +230,7 @@ export function PluginConfigPanel({
               </Button>
             </SettingsToolbar>
           </form>
-          <details data-testid="plugin-config-history">
-            <summary>{t('audit')}</summary>
+          <Disclosure variant="plain" data-testid="plugin-config-history" summary={t('audit')}>
             {snapshot.audit
               .filter((fact) => fact.rowId === rowId)
               .map((fact) => (
@@ -239,7 +239,7 @@ export function PluginConfigPanel({
                   <pre>{JSON.stringify({ before: fact.before, after: fact.after }, null, 2)}</pre>
                 </article>
               ))}
-          </details>
+          </Disclosure>
         </>
       )}
     </section>

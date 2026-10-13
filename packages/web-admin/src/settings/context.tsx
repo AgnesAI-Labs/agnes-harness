@@ -1,6 +1,7 @@
 import {
   appServerErrorMessage,
   Button,
+  Disclosure,
   Field,
   SettingsCard,
   SettingsInput,
@@ -251,12 +252,17 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         <div data-testid="context-rule-files">
           {!snapshot.rules.files.length && <SettingsState>{t('contextNoRules')}</SettingsState>}
           {snapshot.rules.files.map((file) => (
-            <details key={file.path}>
-              <summary>
-                {file.path} · {file.scope} · {file.trust}
-              </summary>
+            <Disclosure
+              variant="plain"
+              key={file.path}
+              summary={
+                <>
+                  {file.path} · {file.scope} · {file.trust}
+                </>
+              }
+            >
               <pre>{file.content}</pre>
-            </details>
+            </Disclosure>
           ))}
           {snapshot.rules.skipped.length > 0 && (
             <SettingsState>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 import { SettingsDetails, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
+import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
 import { IconButton } from './ui/icon-button.js'
 import { useUiText } from './ui-locale.js'
@@ -125,8 +126,11 @@ export function SkillDetailContent({
             ]}
           />
           {skill.resolution.shadowed.length > 0 && (
-            <details className="confirm-review-section">
-              <summary>{t('shadowed', { count: skill.resolution.shadowed.length })}</summary>
+            <Disclosure
+              variant="plain"
+              className="confirm-review-section"
+              summary={t('shadowed', { count: skill.resolution.shadowed.length })}
+            >
               <ul>
                 {skill.resolution.shadowed.map((candidate) => (
                   <li
@@ -136,7 +140,7 @@ export function SkillDetailContent({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </SettingsDetails>
         {skill.lastSafeError && (
@@ -279,8 +283,12 @@ export function McpDetailContent({
           </Button>
         )}
         {catalog && (
-          <details className="confirm-review-section" open>
-            <summary>{t('mcp.tools.title', { count: catalog.names.length })}</summary>
+          <Disclosure
+            variant="plain"
+            className="confirm-review-section"
+            defaultOpen
+            summary={t('mcp.tools.title', { count: catalog.names.length })}
+          >
             <div>
               {catalog.names.map((name) => (
                 <p key={name}>{name}</p>
@@ -303,7 +311,7 @@ export function McpDetailContent({
                 </Button>
               )}
             </div>
-          </details>
+          </Disclosure>
         )}
         {progress && (
           <div className="resource-operation">

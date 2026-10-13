@@ -1,6 +1,6 @@
 import type { ConfigAccount, ConfigSaveInput } from '@agnes/protocol'
 import type { ConfigSchema, Translate } from '@agnes/web-ui'
-import { configIssues, renderRegion, SchemaConfigFields, unmountRegion } from '@agnes/web-ui'
+import { configIssues, Disclosure, renderRegion, SchemaConfigFields, unmountRegion } from '@agnes/web-ui'
 
 export const accountNetworkSchema: ConfigSchema = {
   type: 'object',
@@ -32,8 +32,11 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
     if (!root) return
     renderRegion(
       root,
-      <details data-testid="account-network-details">
-        <summary>{t('accounts.network.legend')}</summary>
+      <Disclosure
+        variant="plain"
+        data-testid="account-network-details"
+        summary={t('accounts.network.legend')}
+      >
         <fieldset className="config-section" disabled={disabled} data-testid="account-network-timeouts">
           <legend>{t('accounts.network.legend')}</legend>
           <p className="field-hint form-field-wide">{t('accounts.network.hint')}</p>
@@ -49,7 +52,7 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
             t={t}
           />
         </fieldset>
-      </details>,
+      </Disclosure>,
     )
   }
   return {

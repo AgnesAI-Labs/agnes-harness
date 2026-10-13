@@ -2,6 +2,7 @@ import { fallbackT, type Translate } from './locales/index.js'
 import { SettingsInput } from './settings-layout.js'
 import { SettingsOptionSelect } from './settings-option-select.js'
 import { Button } from './ui/button.js'
+import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
 import { Icon } from './ui/icon.js'
 
@@ -44,15 +45,13 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                   aria-describedby="config-key-hint"
                 />
               </Field>
-              <details className="account-key-help">
-                <summary>{t('accounts.keyHelp')}</summary>
+              <Disclosure variant="plain" className="account-key-help" summary={t('accounts.keyHelp')}>
                 <p>{t('accounts.keyHelpText')}</p>
-              </details>
+              </Disclosure>
               <p id="config-key-hint" className="field-hint form-field-wide" />
               <div id="config-oauth-controls" className="form-field-wide" />
             </fieldset>
-            <details id="config-account-advanced">
-              <summary>{t('accounts.advanced')}</summary>
+            <Disclosure variant="plain" id="config-account-advanced" summary={t('accounts.advanced')}>
               <fieldset className="config-section">
                 <Field className="form-field" label={t('accounts.nameLabel')}>
                   <SettingsInput
@@ -102,7 +101,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               </fieldset>
               <div id="config-account-network" />
               <p id="config-account-guard">{t('accounts.guard')}</p>
-            </details>
+            </Disclosure>
             <p id="config-state" aria-live="polite" />
             <Button id="config-retry" size="small" htmlType="button" hidden>
               {t('accounts.retryRead')}

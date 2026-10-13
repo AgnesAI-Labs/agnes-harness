@@ -1,5 +1,5 @@
 import type { AuthoringCandidate } from '@agnes/protocol'
-import { Badge } from '@agnes/web-ui'
+import { Badge, Disclosure } from '@agnes/web-ui'
 import { useMemo, useState } from 'react'
 import { candidateDiff } from './candidate-diff.js'
 
@@ -109,23 +109,25 @@ export function CandidateFileDiff({
     [open, file.before, file.after],
   )
   return (
-    <details
+    <Disclosure
       className="candidate-file"
       data-testid="candidate-file-diff"
       onToggle={(event) => setOpen(event.currentTarget.open)}
+      summary={
+        <>
+          <code title={file.path}>{file.path}</code>
+          <Badge tone={file.before === null ? 'ok' : file.after === null ? 'bad' : 'off'}>
+            {t(
+              file.before === null
+                ? 'candidates.newFile'
+                : file.after === null
+                  ? 'candidates.deletedFile'
+                  : 'candidates.modifiedFile',
+            )}
+          </Badge>
+        </>
+      }
     >
-      <summary>
-        <code title={file.path}>{file.path}</code>
-        <Badge tone={file.before === null ? 'ok' : file.after === null ? 'bad' : 'off'}>
-          {t(
-            file.before === null
-              ? 'candidates.newFile'
-              : file.after === null
-                ? 'candidates.deletedFile'
-                : 'candidates.modifiedFile',
-          )}
-        </Badge>
-      </summary>
       {open && (
         <pre
           role="region"
@@ -146,13 +148,17 @@ export function CandidateFileDiff({
           ))}
         </pre>
       )}
-    </details>
+    </Disclosure>
   )
 }
 export function CandidateTechnical({ value, t }: { value: AuthoringCandidate; t: CandidateText }) {
   return (
-    <details className="candidate-technical" data-testid="candidate-technical">
-      <summary>{t('candidates.technical')}</summary>
+    <Disclosure
+      variant="plain"
+      className="candidate-technical"
+      data-testid="candidate-technical"
+      summary={t('candidates.technical')}
+    >
       <dl>
         <dt>{t('candidates.hash')}</dt>
         <dd data-testid="candidate-hash">
@@ -197,6 +203,6 @@ export function CandidateTechnical({ value, t }: { value: AuthoringCandidate; t:
           </pre>
         </>
       )}
-    </details>
+    </Disclosure>
   )
 }

@@ -14,6 +14,7 @@ import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
   adminConfirmationLocaleCatalog,
 } from './locales/admin-confirmation.js'
+import { Disclosure } from './ui/disclosure.js'
 import { type LocaleTranslator, useUiText } from './ui-locale.js'
 
 type Fact = readonly [label: string, value: string]
@@ -39,10 +40,9 @@ function Fragmented({ label, value }: { label: string; value: string }): JSX.Ele
 
 function ReviewSection({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
-    <details className="confirm-review-section">
-      <summary>{title}</summary>
+    <Disclosure variant="plain" className="confirm-review-section" summary={title}>
       <div className="confirm-review-content">{children}</div>
-    </details>
+    </Disclosure>
   )
 }
 

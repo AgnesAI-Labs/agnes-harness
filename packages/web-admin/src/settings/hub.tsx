@@ -8,6 +8,7 @@ import { settingsSections } from '@agnes/web-client'
 import {
   Banner,
   Button,
+  Disclosure,
   Icon,
   type IconName,
   SettingsInput,
@@ -269,10 +270,14 @@ export function SettingsHub({
           </label>
           <p className="settings-nav-label">{shellText('settings-shell.basicLabel')}</p>
           {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
-          <details data-testid="settings-advanced" open={query ? true : undefined}>
-            <summary>{shellText('settings-shell.advanced')}</summary>
+          <Disclosure
+            variant="plain"
+            data-testid="settings-advanced"
+            open={query ? true : undefined}
+            summary={shellText('settings-shell.advanced')}
+          >
             {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
-          </details>
+          </Disclosure>
           {!groups.some((group) =>
             group.some((entry) =>
               matchesSettings(

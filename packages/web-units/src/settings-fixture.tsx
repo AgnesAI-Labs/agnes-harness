@@ -1,6 +1,7 @@
 import {
   Button,
   createRegionRenderer,
+  Disclosure,
   mountSettingsSelectOptions,
   SettingsInput,
   SettingsSelect,
@@ -61,15 +62,21 @@ function SettingsFixture() {
                     aria-describedby="config-key-hint"
                   />
                 </label>
-                <details className="account-key-help">
-                  <summary>{text('accounts.keyHelp', '在哪里获取密钥？')}</summary>
+                <Disclosure
+                  variant="plain"
+                  className="account-key-help"
+                  summary={text('accounts.keyHelp', '在哪里获取密钥？')}
+                >
                   <p>{text('accounts.keyHelpText', '在提供商的账户控制台创建 API Key，然后粘贴到这里。')}</p>
-                </details>
+                </Disclosure>
                 <p id="config-key-hint" className="field-hint form-field-wide" />
                 <div id="config-oauth-controls" className="form-field-wide" />
               </fieldset>
-              <details id="config-account-advanced">
-                <summary>{text('accounts.advanced', '高级选项')}</summary>
+              <Disclosure
+                variant="plain"
+                id="config-account-advanced"
+                summary={text('accounts.advanced', '高级选项')}
+              >
                 <fieldset className="config-section">
                   <label className="form-field" htmlFor="config-account-name">
                     <span>{text('settings-shell.accountNameLabel', '账户名称')}</span>
@@ -135,7 +142,7 @@ function SettingsFixture() {
                     '默认账户不可停用或删除；如需调整，请先将其他已启用账户设为默认。',
                   )}
                 </p>
-              </details>
+              </Disclosure>
               <p id="config-state" aria-live="polite" />
               <Button id="config-retry" hidden htmlType="button" appearance="secondary" size="small">
                 <span>{text('settings-shell.retryRead', '重试读取配置')}</span>

@@ -4,6 +4,7 @@ import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './loc
 import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
 import { SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
+import { Disclosure } from './ui/disclosure.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
 import { IconButton } from './ui/icon-button.js'
@@ -221,14 +222,15 @@ export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }):
     unavailable: t('root.unavailable'),
   }
   return (
-    <details className="resource-roots">
-      <summary>
-        {t(`root.summary.${summaryKey}${summarySuffix}`, {
-          count: new Intl.NumberFormat(locale).format(counts.ready + counts.empty),
-          found: new Intl.NumberFormat(locale).format(counts.ready),
-          failed: new Intl.NumberFormat(locale).format(counts.failed),
-        })}
-      </summary>
+    <Disclosure
+      variant="plain"
+      className="resource-roots"
+      summary={t(`root.summary.${summaryKey}${summarySuffix}`, {
+        count: new Intl.NumberFormat(locale).format(counts.ready + counts.empty),
+        found: new Intl.NumberFormat(locale).format(counts.ready),
+        failed: new Intl.NumberFormat(locale).format(counts.failed),
+      })}
+    >
       <ul>
         {roots.map((root) => (
           <li key={`${root.scope}:${root.rootKey}`}>
@@ -238,7 +240,7 @@ export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }):
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   )
 }
 

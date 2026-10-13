@@ -1,6 +1,6 @@
 import type { PackageInstalledDescriptor, PluginGenerationStatus } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { Field, Select, Tag, type TagTone, Tooltip } from '@agnes/web-ui'
+import { Disclosure, Field, Select, Tag, type TagTone, Tooltip } from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
@@ -115,8 +115,11 @@ export function GenerationDrainSummary({
           {t('drain.historicalSummary', { sessions: historical })}
         </p>
       )}
-      <details data-testid="plugin-drain-details">
-        <summary>{t(historical && !sessions ? 'drain.historicalDetails' : 'drain.details')}</summary>
+      <Disclosure
+        variant="plain"
+        data-testid="plugin-drain-details"
+        summary={t(historical && !sessions ? 'drain.historicalDetails' : 'drain.details')}
+      >
         <ul>
           {plugins.map((plugin) => (
             <li key={plugin.id}>
@@ -145,7 +148,7 @@ export function GenerationDrainSummary({
             </li>
           ))}
         </ul>
-      </details>
+      </Disclosure>
     </div>
   )
 }

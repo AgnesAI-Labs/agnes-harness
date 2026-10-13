@@ -1,5 +1,5 @@
 import { type SessionCapability, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
-import { SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import { Disclosure, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
 
 type ToolGroup = {
   packageId: string
@@ -49,8 +49,12 @@ export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string)
       <p>{t('sessionToolHelp')}</p>
       {!sessions.length && <SettingsState>{t('sessionToolUnavailable')}</SettingsState>}
       {sessions.map((session, index) => (
-        <details key={session.sessionKey} data-testid="session-tool-groups">
-          <summary>{t('sessionToolSession').replace('{number}', String(index + 1))}</summary>
+        <Disclosure
+          variant="plain"
+          key={session.sessionKey}
+          data-testid="session-tool-groups"
+          summary={t('sessionToolSession').replace('{number}', String(index + 1))}
+        >
           <SettingsDetails title={t('technicalDetails')}>
             <dl className="agnes-settings-metadata">
               <dt>{t('sessionKey')}</dt>
@@ -80,12 +84,16 @@ export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string)
                         {t('toolReason.' + group.reason)} {group.bundles.join(', ')}
                       </td>
                       <td>
-                        <details>
-                          <summary>
-                            {group.tools.length} · {t('tools')}
-                          </summary>
+                        <Disclosure
+                          variant="plain"
+                          summary={
+                            <>
+                              {group.tools.length} · {t('tools')}
+                            </>
+                          }
+                        >
                           <p>{group.tools.join(', ')}</p>
-                        </details>
+                        </Disclosure>
                       </td>
                     </tr>
                   ))}
@@ -93,7 +101,7 @@ export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string)
               </table>
             </div>
           )}
-        </details>
+        </Disclosure>
       ))}
     </SettingsCard>
   )
@@ -142,11 +150,17 @@ function CapabilityDetails({ value, t }: { value: SessionCapabilitySet; t(key: s
         </dl>
       </SettingsDetails>
       {CATEGORIES.map((kind) => (
-        <details key={kind} data-testid={`session-capability-${kind}`}>
-          <summary>
-            {t(`capabilityCategory.${kind}`)} ·{' '}
-            {new Intl.NumberFormat(document.documentElement.lang || 'en').format(value[kind].length)}
-          </summary>
+        <Disclosure
+          variant="plain"
+          key={kind}
+          data-testid={`session-capability-${kind}`}
+          summary={
+            <>
+              {t(`capabilityCategory.${kind}`)} ·{' '}
+              {new Intl.NumberFormat(document.documentElement.lang || 'en').format(value[kind].length)}
+            </>
+          }
+        >
           {!value[kind].length ? (
             <SettingsState>{t('capabilityEmpty')}</SettingsState>
           ) : (
@@ -189,7 +203,7 @@ function CapabilityDetails({ value, t }: { value: SessionCapabilitySet; t(key: s
               </table>
             </div>
           )}
-        </details>
+        </Disclosure>
       ))}
     </div>
   )

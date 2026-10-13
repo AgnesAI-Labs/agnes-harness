@@ -1336,13 +1336,20 @@
   }
   .agnes-settings-section-heading {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--s16);
     min-width: 0;
   }
   .agnes-settings-section-heading > div:first-child {
+    flex: 1 1 12rem;
     min-width: 0;
+  }
+  .agnes-settings-section-heading > .agnes-settings-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
   }
   .agnes-settings-section-heading h3,
   .agnes-settings-section > h3 {
@@ -1476,6 +1483,13 @@
     border: 0;
     border-radius: 0;
     background: transparent;
+  }
+  /* A review section keeps its own framed layout; the shared body adds no padding to it. */
+  .confirm-review-section > .agh-disclosure-body {
+    padding: 0;
+  }
+  .confirm-review-section.agh-disclosure[data-variant] > summary {
+    padding-inline: var(--s12);
   }
   .agnes-settings-technical {
     margin-top: calc(-1 * var(--s8));
