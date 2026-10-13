@@ -48,9 +48,9 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 | 字号 | `--font-size-xs` … `--font-size-2xl` | 12、13、14（基准）、16、18、20、24 px |
 | 阅读 | `--font-size-prose`、`--line-height-prose`、`--measure-prose` | 对话正文 14px、行高 1.7、行宽 72ch；代码与表格使用整行宽度。 |
 | 正文行高 | `--line-height-body` | 1.6，中文正文的下限。 |
-| 圆角 | `--radius-control`、`--radius-card`、`--radius-surface`、`--radius-pill` | 控件 6px；卡片与菜单 8px；弹窗与输入卡 12px；胶囊形只用于小标签。 |
+| 圆角 | `--radius-control`、`--radius-card`、`--radius-surface`、`--radius-popover`、`--radius-menu-item`、`--radius-composer`、`--radius-pill` | 控件 6px；卡片 8px；弹窗 12px；菜单与浮层 14px，其中的行 10px；输入卡 24px；胶囊形只用于小标签。 |
 | 控件高度 | `--control-height`、`--control-height-sm`、`--control-height-form`、`--control-height-touch` | 按钮 36px；紧凑按钮与图标按钮 28px；文本输入框与按钮同为 36px，手机宽度下升到 44px 的触控目标。 |
-| 高程 | `--elevation-0`、`--elevation-1`、`--elevation-2`、`--shadow-hairline` | 平面；菜单与浮层；弹窗与抽屉；输入卡的 1px 抬升。 |
+| 高程 | `--elevation-0`、`--elevation-1`、`--elevation-2`、`--shadow-hairline` | 平面；菜单与浮层；弹窗与抽屉；「新会话」按钮这类安静凸起控件的 1px 抬升。 |
 | 动效 | `--motion-fast`、`--motion-base`、`--motion-ease`、`--motion-breathe` | 120ms、200ms、ease-out，以及运行中圆点 2.4s 的呼吸周期。 |
 
 设置页与管理页共用一套标题尺度，不论页面用的是哪一级标题元素：页面标题 16px，分区 14px，行 13px，均为半粗体，正文 13px。弹窗标题为 16px 半粗体。空状态由 24px 的图形、一行 14px 的状态名称和一行 13px 的下一步说明组成。
