@@ -95,14 +95,27 @@
   .sidebar-actions {
     display: grid;
   }
-  /* New session is a bordered surface button: label on the left, its shortcut chip on the right. */
+  /* New session is a soft surface button in the composer's radius family: label on the left, its
+   shortcut chip on the right. */
   .sidebar-actions :where(#new) {
     width: 100%;
     justify-content: flex-start;
     background: var(--agnes-bg-surface);
   }
+  body:not(.sidebar-collapsed) .sidebar-actions #new:not(:disabled) {
+    border-color: var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-hairline);
+  }
+  body:not(.sidebar-collapsed) .sidebar-actions #new:hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+  }
+  body:not(.sidebar-collapsed) .sidebar-actions #new:disabled {
+    border-radius: var(--radius-lg);
+  }
   .sidebar-actions :where(#new) > kbd {
     margin-left: auto;
+    border-radius: var(--radius-control);
   }
   /* A running session breathes; the motion is slow and stops under reduced motion. */
   .session-running {

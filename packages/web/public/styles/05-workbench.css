@@ -7,6 +7,11 @@
     flex-direction: column;
     background: var(--agnes-bg-app-content);
   }
+  /* The main area is focusable only as the skip link's target. A ring around the whole pane says
+   nothing about where typing goes, so it draws none; the next Tab lands on a real control. */
+  #main-content:focus {
+    outline: none;
+  }
   /* One 44px bar: session identity on the left, view and workbench controls on the right. */
   .topbar-row {
     /* The bar's own width, not the window's, decides what it can show: the sidebar and docks take
