@@ -68,6 +68,14 @@ describe('createBatchRequests', () => {
       handle('agnes:local:default:dm:x', { op: 'status', batchId: 'b0123456789ab' }),
     ).rejects.toThrow(/owner/)
     await expect(handle(user, { op: 'status' })).rejects.toThrow(/batchId/)
+    // A start or an unknown operation is not answered with a batchId complaint.
+    await expect(handle(user, { op: 'start', cwd: '/w', spec: {} })).rejects.toThrow(
+      'A batch start needs its tool call id and working directory.',
+    )
+    await expect(handle(user, { op: 'start', toolUseId: 't', spec: {} })).rejects.toThrow(/working directory/)
+    await expect(handle(user, { op: 'delete', batchId: 'b0123456789ab' })).rejects.toThrow(
+      'unknown batch request',
+    )
   })
 
   it('turns engine refusals into plain messages for the tool', async () => {

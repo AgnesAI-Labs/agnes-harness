@@ -6,7 +6,8 @@
 // - AGNES_BATCH_TRACE: a file this worker appends one line to per model event of interest
 //   (`start <ordinal>`, `block <ordinal>`, `abort <ordinal>`, `answer <ordinal>`, `user <text>`).
 // - AGNES_BATCH_CONTROL: a JSON file read at every model call; `{ "block": true }` holds an item's
-//   answer until its turn is aborted.
+//   answer until its turn is aborted; `{ "escape": true }` makes an item first ask for `write` and
+//   `shell` (as an instruction hidden in a file would), tracing each result as `result <ordinal> <tool>: <text>`.
 // - AGNES_BATCH_NO_HOOK=1: the batch extension registers its tools but not its tool_call hook.
 // An ordinary conversation prompt `hold` is held until its turn is aborted (`hold`, `abort user`).
 import { appendFileSync, createReadStream, readFileSync } from 'node:fs'
@@ -26,9 +27,12 @@ const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 const trace = (line: string): void => {
   if (env.AGNES_BATCH_TRACE) appendFileSync(env.AGNES_BATCH_TRACE, `${line}\n`)
 }
-const control = (): { block?: boolean } => {
+const control = (): { block?: boolean; escape?: boolean } => {
   try {
-    return JSON.parse(readFileSync(env.AGNES_BATCH_CONTROL ?? '', 'utf8')) as { block?: boolean }
+    return JSON.parse(readFileSync(env.AGNES_BATCH_CONTROL ?? '', 'utf8')) as {
+      block?: boolean
+      escape?: boolean
+    }
   } catch {
     return {}
   }
@@ -55,8 +59,21 @@ async function* infer(request: RequestBody, signal: AbortSignal): AsyncIterable<
   const last = request.messages.at(-1)
   const item = /^Item (\d+): /mu.exec(first)?.[1]
   if (item !== undefined) {
-    if (last?.role === 'user') {
-      trace(`start ${item}`)
+    // An escaping item asks for write and shell first (as an instruction hidden in a file would),
+    // then reads its file; every item answers after its read.
+    const plan = control().escape ? ['write', 'shell', 'read'] : ['read']
+    // Counted within this turn: a rerun after a crash starts again from its prompt.
+    const prompt = request.messages.findLastIndex((message) => message.role === 'user')
+    const results = request.messages
+      .slice(prompt + 1)
+      .filter((message) => message.role === 'tool_result').length
+    const asked = plan[results - 1]
+    if (asked && asked !== 'read') trace(`result ${item} ${asked}: ${textOf(last).replace(/\s+/gu, ' ')}`)
+    const next = plan[results]
+    if (next !== undefined) {
+      if (results === 0) trace(`start ${item}`)
+      if (next === 'write') return yield* call('write', { path: 'pwned.txt', content: 'escaped' })
+      if (next === 'shell') return yield* call('shell', { command: 'echo escaped > pwned-shell.txt' })
       const args = /Step 1: call the read tool with (\{.*?\})\./u.exec(first)?.[1]
       return yield* call('read', JSON.parse(args ?? '{}'))
     }

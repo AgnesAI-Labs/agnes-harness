@@ -1988,14 +1988,25 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     const stopClaimsGc = persistentClaims ? startClaimsGc(persistentClaims, clock) : undefined
     if (stopClaimsGc) startupCleanup.push(stopClaimsGc)
     // Before any job can be claimed: items left in flight get fresh limits, a clean-up a stopped
-    // daemon left half done is completed, and the item confinement is checked. A failure here is
-    // logged rather than fatal; the worker still refuses to run an item session without its hook.
-    if (batchEngine)
-      await batchEngine.ready().catch((error: unknown) => {
-        console.error(`agnesd batch: ${error instanceof Error ? error.message : String(error)}`)
-      })
-    scheduler?.start()
-    batchEngine?.start()
+    // daemon left half done is completed, and the item confinement is checked. That first round may
+    // wait on the session worker, so the daemon is ready and serving (a cancel included) without
+    // waiting for it; only the job scheduler waits. A failure here is logged rather than fatal: the
+    // worker still refuses to run an item session without its hook.
+    let scheduling = true
+    startupCleanup.push(() => {
+      scheduling = false
+    })
+    const schedulingStarted = (
+      batchEngine
+        ? batchEngine.ready().catch((error: unknown) => {
+            console.error(`agnesd batch: ${error instanceof Error ? error.message : String(error)}`)
+          })
+        : Promise.resolve()
+    ).then(() => {
+      if (!scheduling) return
+      scheduler?.start()
+      batchEngine?.start()
+    })
 
     // From this point the returned handle owns every resource. Startup cleanup must not race a
     // successful handle's close path.
@@ -2006,6 +2017,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       (closePromise ??= shutdownLadder({
         graceMs: o.config.limits.shutdownGraceMs,
         stopAccepting: async () => {
+          scheduling = false
           reclaimIntake = false
           reclaimAbort.abort(new Error('daemon shutdown'))
           stopClientModuleNotices?.()
@@ -2054,6 +2066,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           await run(() => registry.closeAll())
           if (signal.aborted) return
           await run(() => pool.closeAll(graceMs))
+          // With its worker gone, a first batch round still in progress ends at once; it must not
+          // write after the owner lock is released.
+          await run(() => schedulingStarted)
           if (errors.length) throw new AggregateError(errors, 'failed to close daemon workers')
         },
         killWorkers: () => pool.killAll(),

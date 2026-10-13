@@ -177,7 +177,9 @@ export function createBatchRequests(input: {
     if (isBatchPrincipal(owner.principalId))
       throw new BatchRequestRefused('A batch item cannot start or control batches.')
     const p = (params && typeof params === 'object' ? params : {}) as Record<string, unknown>
-    if (p.op === 'start' && typeof p.toolUseId === 'string' && typeof p.cwd === 'string') {
+    if (p.op === 'start') {
+      if (typeof p.toolUseId !== 'string' || typeof p.cwd !== 'string')
+        throw new BatchRequestRefused('A batch start needs its tool call id and working directory.')
       const binding = await input.workspaces.restoreBinding(sessionKey)
       return input.engine.begin({
         batchId: toolBatchId(sessionKey, p.toolUseId),
@@ -188,10 +190,10 @@ export function createBatchRequests(input: {
         origin: sessionKey,
       })
     }
+    if (p.op !== 'status' && p.op !== 'cancel') throw new BatchRequestRefused('unknown batch request')
     if (typeof p.batchId !== 'string') throw new BatchRequestRefused('batchId is required')
     if (p.op === 'status') return input.engine.status(owner.principalId, p.batchId, p.export === true)
-    if (p.op === 'cancel') return input.engine.cancel(owner.principalId, p.batchId)
-    throw new BatchRequestRefused('unknown batch request')
+    return input.engine.cancel(owner.principalId, p.batchId)
   }
   return (sessionKey, params) => handle(sessionKey, params).catch(plain)
 }

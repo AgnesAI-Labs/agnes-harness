@@ -56,6 +56,8 @@ export function startBatchDaemon(o: {
   dir: string
   tables: Pick<Tables, 'table'>
   limits?: Partial<DaemonLimits>
+  /** Another worker entry, such as one that never starts. */
+  workerEntry?: string
 }): ReturnType<typeof startSupervisor> {
   const profile = batchProfile(o.dir)
   const profileFile = join(o.dir, 'profile.json')
@@ -72,7 +74,7 @@ export function startBatchDaemon(o: {
         ? ({ state: 'alive', startId: 'batch-e2e' } as const)
         : ({ state: 'dead' } as const),
     workerExecPath: process.execPath,
-    workerEntry: batchWorkerEntry,
+    workerEntry: o.workerEntry ?? batchWorkerEntry,
     workerExecArgv: ['--import', 'tsx'],
   })
 }
@@ -124,7 +126,7 @@ export function traceOf(file: string): string[] {
   }
 }
 
-export function setControl(file: string, control: { block?: boolean }): void {
+export function setControl(file: string, control: { block?: boolean; escape?: boolean }): void {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, JSON.stringify(control))
 }

@@ -82,15 +82,37 @@ describe('batch RPC', () => {
         params: { batchId: 'b0123456789ab' },
       }),
     ).resolves.toMatchObject({ error: { code: -32006 } })
-    await expect(
-      endpoint.handle({
-        jsonrpc: '2.0',
-        id: 3,
-        method: '_agnes/v1/batch.status',
-        params: { batchId: '../x' },
-      }),
-    ).resolves.toMatchObject({ error: expect.anything() })
     await endpoint.close()
+    // With an engine, malformed params are refused by the schema before the engine is asked.
+    const batch: BatchPort = {
+      start: vi.fn(async () => status),
+      status: vi.fn(async () => status),
+      cancel: vi.fn(async () => status),
+      list: vi.fn(async () => [status]),
+    }
+    const served = opened.endpoint({ batch })
+    await served.handle(initialize)
+    const malformed = [
+      ['_agnes/v1/batch.status', { batchId: '../x' }],
+      ['_agnes/v1/batch.cancel', { batchId: 'B0123456789AB' }],
+      ['_agnes/v1/batch.status', { batchId: 'b0123456789ab', export: 'yes' }],
+      ['_agnes/v1/batch.start', { cwd: '', spec: { dir: 'images', prompt: 'x' } }],
+      ['_agnes/v1/batch.start', { cwd: opened.dataDir, spec: { dir: 'images' } }],
+      ['_agnes/v1/batch.list', { principalId: 'someone-else' }],
+    ] as const
+    let id = 10
+    for (const [method, params] of malformed)
+      await expect(
+        served.handle({ jsonrpc: '2.0', id: id++, method, params }),
+        method,
+      ).resolves.toMatchObject({
+        error: { code: -32602 },
+      })
+    expect(batch.start).not.toHaveBeenCalled()
+    expect(batch.status).not.toHaveBeenCalled()
+    expect(batch.cancel).not.toHaveBeenCalled()
+    expect(batch.list).not.toHaveBeenCalled()
+    await served.close()
     await opened.close()
   })
 
@@ -220,7 +242,7 @@ describe('batch RPC', () => {
         method: '_agnes/v1/batch.status',
         params: { batchId: 'b0123456789ab', principalId: 'someone-else' },
       }),
-    ).resolves.toMatchObject({ error: expect.anything() })
+    ).resolves.toMatchObject({ error: { code: -32602 } })
     expect(batch.status).not.toHaveBeenCalled()
     await endpoint.handle({ jsonrpc: '2.0', id: 3, method: '_agnes/v1/batch.list', params: {} })
     expect(batch.list).toHaveBeenCalledWith({ principalId: 'local' })

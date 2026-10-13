@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveWorkspaceDirectory } from '@agnes/host'
 import type { BatchList, BatchStatus } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -87,11 +88,12 @@ const itemJob = (ordinal: number, path: string) => ({
 async function daemon(
   names: readonly string[],
   seed?: (root: string, tables: Pick<Tables, 'table'>) => Promise<void>,
+  options: Omit<Parameters<typeof startBatchDaemon>[0], 'dir' | 'tables'> = {},
 ) {
   const root = batchWorkspace(dir, names)
   const tables = sqliteTables(join(dir, 'daemon.sqlite'))
   await seed?.(root, tables)
-  const supervisor = await startBatchDaemon({ dir: root, tables })
+  const supervisor = await startBatchDaemon({ dir: root, tables, ...options })
   const client = await batchClient(supervisor.socketPath)
   return {
     root,
@@ -230,13 +232,14 @@ describe('batch processing through the real daemon', () => {
       })
       // A folder that is not a registered workspace is not a batch root.
       expect(
-        (
-          await d.client.call('_agnes/v1/batch.start', {
-            cwd: join(d.root, 'items'),
-            spec: { dir: '.', prompt: 'x' },
-          })
-        ).error,
-      ).toBeDefined()
+        await d.client.call('_agnes/v1/batch.start', {
+          cwd: join(d.root, 'items'),
+          spec: { dir: '.', prompt: 'x' },
+        }),
+      ).toMatchObject({
+        error: { code: -32011, data: { code: 'WORKSPACE_NOT_FOUND', reason: 'workspace is not registered' } },
+      })
+      expect(((await d.client.call('_agnes/v1/batch.list', {})).result as BatchList).items).toHaveLength(1)
     } finally {
       await d.close()
     }
@@ -274,6 +277,30 @@ describe('batch processing through the real daemon', () => {
       expect(JSON.stringify(d.client.seen)).toContain(
         'Batch request failed: No batch with this id belongs to you.',
       )
+    } finally {
+      await d.close()
+    }
+  }, 60_000)
+
+  it('refuses every tool but read inside a real item turn, and nothing is written', async () => {
+    // The model does what an instruction hidden in a file could make it do.
+    setControl(controlFile, { escape: true })
+    const d = await daemon(['a.txt'])
+    try {
+      const started = await d.client.call('_agnes/v1/batch.start', {
+        cwd: d.root,
+        spec: { dir: 'items', prompt: 'Look at {{name}}', schema: SCHEMA },
+      })
+      const { batchId } = started.result as BatchStatus
+      const done = await d.finished(batchId)
+      // The item still settles from its read.
+      expect(done).toMatchObject({ status: 'completed', counts: { done: 1 } })
+      const lines = traceOf(trace)
+      expect(lines).toContain('result 1 write: A batch item may only use the read tool.')
+      expect(lines).toContain('result 1 shell: A batch item may only use the read tool.')
+      expect(existsSync(join(d.root, 'pwned.txt'))).toBe(false)
+      expect(existsSync(join(d.root, 'items', 'pwned.txt'))).toBe(false)
+      expect(existsSync(join(d.root, 'pwned-shell.txt'))).toBe(false)
     } finally {
       await d.close()
     }
@@ -457,6 +484,8 @@ describe('batch processing through the real daemon', () => {
         t.batches.setStatus(B, 'cancelled', 'cancelled by request')
       })
       try {
+        // The daemon serves at once; the scheduler starts only once the first round is done.
+        await vi.waitFor(() => expect(order).toContain('scheduler.start'), { timeout: 30_000, interval: 50 })
         expect(order.slice(0, 3)).toEqual(['engine.ready', 'engine.ready done', 'scheduler.start'])
         const t = tablesOf(d.tables)
         expect(t.job(`batch:${B}:1:0`)).toMatchObject({ status: 'cancelled', attempts: 0 })
@@ -472,7 +501,7 @@ describe('batch processing through the real daemon', () => {
     }
   }, 60_000)
 
-  it('sends a nearly spent budget to the item turn as 0', async () => {
+  it('starts nothing under a budget a job would carry as 0', async () => {
     const d = await daemon(['a.txt'])
     try {
       const started = await d.client.call('_agnes/v1/batch.start', {
@@ -480,18 +509,59 @@ describe('batch processing through the real daemon', () => {
         spec: { dir: 'items', prompt: 'Look at {{name}}', budgetCredits: 0.000001 },
       })
       const { batchId } = started.result as BatchStatus
-      await d.finished(batchId)
-      // What the turn then does is pinned in batch-turn-budget.test.ts: with a price it ends at once
-      // (turn_budget); this test model is free, so the turn runs.
-      expect(
-        d.tables
-          .table('jobs')
-          .get<{ budget: number }>('SELECT budget FROM jobs WHERE idempotency_key = ?', [
-            `batch:${batchId}:1:0`,
-          ]),
-      ).toEqual({ budget: 0 })
+      // A job's budget has 4 decimals; what a turn would do with 0 is pinned in
+      // batch-turn-budget.test.ts (with a price it ends at once, turn_budget).
+      expect(await d.finished(batchId)).toMatchObject({
+        status: 'budget_exhausted',
+        counts: { cancelled: 1, done: 0 },
+      })
+      expect(tablesOf(d.tables).job(`batch:${batchId}:1:0`)).toBeUndefined()
+      expect(traceOf(trace).filter((line) => line.startsWith('start '))).toEqual([])
     } finally {
       await d.close()
     }
   }, 60_000)
+
+  it('serves, and cancels a batch, while the session worker never starts', async () => {
+    const B = 'b00000000000c'
+    const started = Date.now()
+    const d = await daemon(
+      ['x.txt'],
+      async (root, tables) => {
+        const t = tablesOf(tables)
+        await t.workspaces.add(root)
+        t.batches.create(
+          {
+            id: B,
+            principalId: 'local',
+            root,
+            spec: { dir: 'items', prompt: 'Look at {{name}}' },
+            dirRel: 'items',
+            outRel: `agh-batch/${B}`,
+            concurrency: 1,
+            itemTimeoutMs: 600_000,
+            createdAt: Date.now(),
+          },
+          [{ path: 'items/x.txt', kind: 'text', bytes: 16 }],
+        )
+      },
+      {
+        workerEntry: fileURLToPath(new URL('./fixtures/hanging-worker.mjs', import.meta.url)),
+        limits: { workerStartupMs: 8_000 },
+      },
+    )
+    try {
+      // Up and serving well before the worker's start-up limit, which the engine's first round
+      // (it asks the worker about the item confinement) has to wait out.
+      expect(Date.now() - started).toBeLessThan(5_000)
+      expect((await d.client.call('_agnes/v1/batch.list', {})).result).toMatchObject({
+        items: [{ batchId: B, status: 'running' }],
+      })
+      const cancelled = await d.client.call('_agnes/v1/batch.cancel', { batchId: B })
+      expect(cancelled.result).toMatchObject({ status: 'cancelled', counts: { cancelled: 1 } })
+      expect(tablesOf(d.tables).batches.get(B)?.status).toBe('cancelled')
+    } finally {
+      await d.close()
+    }
+  }, 90_000)
 })

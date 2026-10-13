@@ -465,8 +465,9 @@ export class BatchEngine {
       )
     if (confinement.kind === 'pause') return this.report(id, confinement.reason)
     // A spent budget stops items from starting; a batch with none left to start simply completes.
+    // A remainder that a job would carry as 0 is spent too.
     const budget = batch.spec.budgetCredits
-    if (budget !== undefined && batch.spent >= budget && counts.pending > 0) {
+    if (budget !== undefined && round(budget - batch.spent) <= 0 && counts.pending > 0) {
       if (counts.running === 0)
         await this.finish(batch, 'budget_exhausted', `spent ${round(batch.spent)} of ${budget} credits`)
       return
@@ -623,7 +624,7 @@ export class BatchEngine {
       // with nothing left of the budget (the answer stands as invalid).
       if (!send) return
       const budget = batch.spec.budgetCredits
-      if (budget !== undefined && budget - (this.o.repo.get(batch.id)?.spent ?? batch.spent) <= 0)
+      if (budget !== undefined && round(budget - (this.o.repo.get(batch.id)?.spent ?? batch.spent)) <= 0)
         return this.settle(batch, item, 'invalid', {
           error: `budget_exhausted_before_repair: ${verdict.problem}`,
           credits: verdict.credits,

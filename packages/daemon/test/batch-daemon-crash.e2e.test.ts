@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,31 @@ afterEach(() => {
   for (const daemon of running.splice(0)) daemon.kill('SIGKILL')
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
+
+/** The worker processes a daemon process started (its direct children). */
+const workersOf = (daemon: ChildProcess): number[] =>
+  execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/u).map(Number))
+    .filter(([, ppid]) => ppid === daemon.pid)
+    .map(([pid]) => pid as number)
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+/** Kills a daemon the hard way and waits until the workers it left behind have exited on their own. */
+async function killDaemon(daemon: ChildProcess): Promise<void> {
+  const workers = workersOf(daemon)
+  expect(workers.length).toBeGreaterThan(0)
+  daemon.kill('SIGKILL')
+  await once(daemon, 'exit')
+  await vi.waitFor(() => expect(workers.filter(alive)).toEqual([]), { timeout: 15_000, interval: 100 })
+}
 
 /** One daemon process; resolves with its socket once it serves. */
 async function startDaemon(
@@ -74,8 +99,8 @@ it('finishes every item once after the daemon is killed mid-turn and started aga
     { timeout: 30_000, interval: 50 },
   )
   client.close()
-  first.process.kill('SIGKILL')
-  await once(first.process, 'exit')
+  // Its workers lose their daemon link and exit: none keeps running a turn of the old daemon.
+  await killDaemon(first.process)
 
   // The restarted daemon resumes the batch on its own: the two interrupted jobs are reclaimed when
   // their lease runs out and run again in the same item sessions; the rest start as slots free up.
@@ -107,4 +132,5 @@ it('finishes every item once after the daemon is killed mid-turn and started aga
   expect([1, 2, 3, 4].map((n) => times(`start ${n}`))).toEqual([2, 2, 1, 1])
   expect([1, 2, 3, 4].map((n) => times(`answer ${n}`))).toEqual([1, 1, 1, 1])
   again.close()
+  await killDaemon(second.process)
 }, 120_000)

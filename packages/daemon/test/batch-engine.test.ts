@@ -161,6 +161,20 @@ describe('BatchEngine', () => {
     ])
   })
 
+  it('treats a remaining budget that a job would carry as 0 as spent', async () => {
+    files(['a.txt', 'b.txt'])
+    const h = batchHarness({ root, model: () => ({ reply: 'ok', credits: 0.99996 }) })
+    // Nothing starts under a budget below the job budget's precision.
+    await begin(h, { concurrency: 1, budgetCredits: 0.00004 })
+    expect(await h.run(id)).toMatchObject({ status: 'budget_exhausted', counts: { cancelled: 2 } })
+    expect(h.jobsRepo.get(`batch:${id}:1:0`)).toBeUndefined()
+    // After one item, 0.00004 is left: rounded to 0, so the second item does not start.
+    const next = 'b0000000000b2'
+    await begin(h, { concurrency: 1, budgetCredits: 1 }, next)
+    expect(await h.run(next)).toMatchObject({ status: 'budget_exhausted', counts: { done: 1, cancelled: 1 } })
+    expect(h.jobsRepo.get(`batch:${next}:2:0`)).toBeUndefined()
+  })
+
   it('completes a batch whose last items carry the spend past the budget', async () => {
     files(['a.txt', 'b.txt'])
     const h = batchHarness({ root, model: () => ({ reply: 'ok', credits: 1 }) })

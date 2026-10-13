@@ -190,7 +190,16 @@ describe('HostedSessions and batch item sessions', () => {
     const f = fixture()
     await f.hosted.open(f.open(ITEM))
     f.setLive(false)
-    for (const method of ['enqueue', 'run', 'resume', 'sendQueuedNow', 'append', 'manualCompact'] as const)
+    for (const method of [
+      'enqueue',
+      'run',
+      'resume',
+      'sendQueuedNow',
+      'append',
+      'manualCompact',
+      'fork',
+      'decideApproval',
+    ] as const)
       await expect(f.hosted.dispatch(f.command(ITEM, method))).rejects.toThrow(/not active/)
     await expect(f.hosted.dispatch(f.command(ITEM, 'abort'))).resolves.toBeDefined()
   })
