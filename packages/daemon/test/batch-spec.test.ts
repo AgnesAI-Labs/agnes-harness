@@ -8,6 +8,7 @@ import {
   itemPrincipal,
   itemSessionKey,
   resolveSpec,
+  UNSUPPORTED_SCHEMA_KEYWORDS,
 } from '../src/batch/spec.js'
 
 const root = resolve(tmpdir(), 'agh-batch-spec-root')
@@ -77,6 +78,41 @@ describe('resolveSpec', () => {
       expect(() => resolveSpec({ root, cwd: root, batchId, spec: base })).toThrow(BatchSpecError)
   })
 
+  it('copies the spec once, before validating it, and refuses values that are not plain data', () => {
+    let reads = 0
+    const spec = {
+      ...base,
+      get concurrency() {
+        reads += 1
+        return reads === 1 ? 4 : 99
+      },
+    }
+    expect(resolveSpec({ root, cwd: root, batchId: id, spec }).concurrency).toBe(4)
+    expect(reads).toBe(1)
+    expect(() =>
+      resolveSpec({
+        root,
+        cwd: root,
+        batchId: id,
+        spec: { ...base, schema: { type: 'object', f: () => 1 } },
+      }),
+    ).toThrow(BatchSpecError)
+  })
+
+  it('refuses an output schema with a keyword that could stall the check', () => {
+    expect(() =>
+      resolveSpec({
+        root,
+        cwd: root,
+        batchId: id,
+        spec: {
+          ...base,
+          schema: { type: 'object', properties: { a: { type: 'string', pattern: '^(a+)+$' } } },
+        },
+      }),
+    ).toThrow(/"pattern" is not supported in batch output schemas/)
+  })
+
   it('keeps its own copy of the spec', () => {
     const spec = { ...base, schema: { type: 'object' } }
     const resolved = resolveSpec({ root, cwd: root, batchId: id, spec })
@@ -126,6 +162,52 @@ describe('compileOutputSchema', () => {
     let deep: unknown = 1
     for (let index = 0; index < 100_000; index++) deep = [deep]
     expect(nested({ a: deep })).toEqual(expect.any(String))
+  })
+
+  it('refuses pattern, patternProperties and uniqueItems: true wherever they are compiled', () => {
+    const refused: Array<[string, unknown]> = [
+      ['pattern', { type: 'object', properties: { a: { type: 'string', pattern: '^(a+)+$' } } }],
+      ['patternProperties', { type: 'object', patternProperties: { '^x': { type: 'integer' } } }],
+      ['pattern', { type: 'object', propertyNames: { pattern: '^[a-z]+$' } }],
+      ['uniqueItems', { type: 'object', properties: { a: { type: 'array', uniqueItems: true } } }],
+      [
+        'pattern',
+        { type: 'object', properties: { a: { $ref: '#/$defs/s' } }, $defs: { s: { pattern: 'x' } } },
+      ],
+    ]
+    for (const [keyword, schema] of refused)
+      expect(() => compileOutputSchema(schema)).toThrow(
+        new RegExp(`"${keyword}" is not supported in batch output schemas`),
+      )
+    expect(UNSUPPORTED_SCHEMA_KEYWORDS).toEqual(['pattern', 'patternProperties', 'uniqueItems'])
+  })
+
+  it('still compiles uniqueItems: false, properties named after refused keywords, and formats', () => {
+    const check = compileOutputSchema({
+      type: 'object',
+      properties: {
+        pattern: { type: 'string' },
+        uniqueItems: { type: 'array', uniqueItems: false },
+        patternProperties: { type: 'object' },
+        when: { type: 'string', format: 'date-time' },
+      },
+      required: ['pattern'],
+    })
+    expect(
+      check({ pattern: 'x', uniqueItems: [1, 1], patternProperties: {}, when: 'not a date' }),
+    ).toBeUndefined()
+    expect(check({ pattern: 1 })).toContain('/pattern')
+  })
+
+  it('does not let inherited names satisfy required', () => {
+    const check = compileOutputSchema({ type: 'object', required: ['constructor', 'toString'] })
+    expect(check({})).toContain('constructor')
+    expect(check({ constructor: 1, toString: 2 })).toBeUndefined()
+  })
+
+  it('keeps invisible characters out of problem lines', () => {
+    const check = compileOutputSchema({ type: 'object', additionalProperties: { type: 'integer' } })
+    expect(check({ 'a\u200b\ufeff\u{e0041}b': 'x' })).toMatch(/^\/a {3}b /u)
   })
 })
 

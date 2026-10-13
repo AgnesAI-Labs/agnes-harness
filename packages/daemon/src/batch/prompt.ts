@@ -1,6 +1,7 @@
+import { sep } from 'node:path'
 import { type EventEnvelope, inspectJsonData } from '@agnes/protocol'
 import type { ItemKind } from './enumerate.js'
-import { singleLine } from './spec.js'
+import { singleLine, UNSAFE_TEXT } from './spec.js'
 
 export type ItemRef = Readonly<{ ordinal: number; path: string; kind: ItemKind }>
 export type ItemOutcome =
@@ -12,13 +13,17 @@ export const MAX_REPLY_BYTES = 1024 * 1024
 const MAX_PROBLEM_LENGTH = 2000
 
 /**
- * JSON for a prompt line. JSON.stringify leaves line separators, C1 controls and direction overrides
- * as they are; escaping them keeps a hostile file name on its own line and readable as written.
+ * JSON for a prompt line. JSON.stringify leaves line separators, C1 controls, invisible and direction
+ * characters and tag characters as they are; escaping them (as UTF-16 `\\uXXXX` units, two for a
+ * character beyond the BMP) keeps a hostile file name on its own line, visible, and decodable to the
+ * exact name.
  */
 const quote = (value: unknown): string =>
-  JSON.stringify(value).replace(
-    /[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu,
-    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  JSON.stringify(value).replace(UNSAFE_TEXT, (char) =>
+    Array.from(
+      { length: char.length },
+      (_unit, index) => `\\u${char.charCodeAt(index).toString(16).padStart(4, '0')}`,
+    ).join(''),
   )
 
 /**
@@ -92,14 +97,19 @@ export function parseReply(text: string): { ok: true; value: unknown } | { ok: f
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return { ok: false, problem: 'the reply is not a single JSON object' }
   if (!inspectJsonData(value, MAX_REPLY_BYTES).ok)
-    return { ok: false, problem: 'the reply is nested more than 32 levels deep' }
+    return { ok: false, problem: 'the reply is not plain bounded JSON' }
   return { ok: true, value }
 }
 
-/** Item sessions run in the workspace root, so a relative path is the item path; absolute ones are trimmed. */
+/**
+ * Item sessions run in the workspace root, so a relative path is the item path; absolute ones are
+ * trimmed. A backslash separates folders only where the platform's paths do (Windows); elsewhere it
+ * is part of a file name.
+ */
 export function samePath(given: string, itemPath: string, root: string): boolean {
-  const path = given.replaceAll('\\', '/')
-  const base = root.replaceAll('\\', '/').replace(/\/+$/u, '')
+  const posix = (path: string) => (sep === '\\' ? path.replaceAll('\\', '/') : path)
+  const path = posix(given)
+  const base = posix(root).replace(/\/+$/u, '')
   const rel = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path.replace(/^\.\//u, '')
   return rel === itemPath
 }
@@ -123,20 +133,24 @@ export function creditsOf(transcript: readonly EventEnvelope[]): number {
  */
 export function readOutcome(transcript: readonly EventEnvelope[], item: ItemRef, root: string): ItemOutcome {
   const credits = creditsOf(transcript)
-  const reads = new Set<string>()
+  // Tool-use ids are expected to be unique but are not trusted to be: a result pairs with the most
+  // recent call of its id, and only once.
+  const calls = new Map<string, boolean>()
   let read = false
   let answer: string | undefined
   let ended: string | undefined
   for (const event of transcript) {
     const data = record(event.data)
-    if (event.type === 'tool/call' && data.name === 'read' && typeof data.toolUseId === 'string') {
+    if (event.type === 'tool/call' && typeof data.toolUseId === 'string') {
       const path = record(data.args).path
-      if (typeof path === 'string' && samePath(path, item.path, root)) reads.add(data.toolUseId)
-    } else if (
-      event.type === 'tool/result' &&
-      typeof data.toolUseId === 'string' &&
-      reads.has(data.toolUseId)
-    ) {
+      calls.set(
+        data.toolUseId,
+        data.name === 'read' && typeof path === 'string' && samePath(path, item.path, root),
+      )
+    } else if (event.type === 'tool/result' && typeof data.toolUseId === 'string') {
+      const ofItem = calls.get(data.toolUseId) === true
+      calls.delete(data.toolUseId)
+      if (!ofItem) continue
       const content = Array.isArray(data.content) ? data.content.map(record) : []
       const pixels = content.some((block) => block.type === 'resource_link' && block.name === 'image')
       if (data.isError !== true && (item.kind !== 'image' || pixels)) read = true

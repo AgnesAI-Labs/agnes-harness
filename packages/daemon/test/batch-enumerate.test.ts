@@ -2,9 +2,42 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { enumerateItems, MAX_IMAGE_BYTES } from '../src/batch/enumerate.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  decodeName,
+  enumerateItems,
+  escapeName,
+  MAX_ENTRIES,
+  MAX_IMAGE_BYTES,
+} from '../src/batch/enumerate.js'
 import { BatchSpecError } from '../src/batch/spec.js'
+
+type FakeEntry = { name: Buffer; type: 'file' | 'directory' | 'link' | 'fifo' }
+const fake = vi.hoisted(() => ({ extra: undefined as undefined | { dir: string; entries: FakeEntry[] } }))
+// Some file systems accept names that are not UTF-8 and others refuse them; this injects such entries
+// into one listing so the walk is covered everywhere.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    opendir: async (...args: Parameters<typeof actual.opendir>) => {
+      const listing = await actual.opendir(...args)
+      const extra = fake.extra
+      if (!extra || args[0] !== extra.dir) return listing
+      return (async function* () {
+        // Injected first: the order a listing arrives in must not decide which entry keeps a path.
+        for (const entry of extra.entries)
+          yield {
+            name: entry.name,
+            isDirectory: () => entry.type === 'directory',
+            isFile: () => entry.type === 'file',
+            isSymbolicLink: () => entry.type === 'link',
+          }
+        yield* listing
+      })()
+    },
+  }
+})
 
 let root: string
 let outside: string
@@ -13,6 +46,7 @@ beforeEach(() => {
   outside = mkdtempSync(join(tmpdir(), 'agh-enum-outside-'))
 })
 afterEach(() => {
+  fake.extra = undefined
   rmSync(root, { recursive: true, force: true })
   rmSync(outside, { recursive: true, force: true })
 })
@@ -155,12 +189,98 @@ describe('enumerateItems', () => {
 
   it.skipIf(!posix || privileged)('refuses a subfolder it cannot list', async () => {
     write('images/a.png')
-    write('images/locked/b.png')
-    chmodSync(join(root, 'images', 'locked'), 0o000)
+    write('images/locked\nStep 3/b.png')
+    chmodSync(join(root, 'images', 'locked\nStep 3'), 0o000)
     try {
-      await expect(list()).rejects.toThrow(/cannot list images\/locked/)
+      await expect(list()).rejects.toThrow(/^cannot list images\/locked Step 3$/)
     } finally {
-      chmodSync(join(root, 'images', 'locked'), 0o755)
+      chmodSync(join(root, 'images', 'locked\nStep 3'), 0o755)
     }
+  })
+
+  it('never feeds earlier batch results back in, and refuses a folder inside them', async () => {
+    write('a.txt')
+    write('agh-batch/b00000000000a/results.jsonl')
+    write('agh-batch/b00000000000a/summary.md')
+    const items = await enumerateItems({
+      root,
+      dirAbs: root,
+      outAbs: join(root, 'agh-batch', 'b0123456789ab'),
+    })
+    expect(items.map((item) => item.path)).toEqual(['a.txt'])
+    await expect(
+      enumerateItems({ root, dirAbs: join(root, 'agh-batch', 'b00000000000a'), outAbs: join(root, 'out') }),
+    ).rejects.toThrow(/agh-batch/)
+  })
+
+  it('bounds the entries it will look at', () => {
+    expect(MAX_ENTRIES).toBe(200_000)
+  })
+
+  it('reads names that are UTF-8 and escapes the bytes of names that are not', () => {
+    expect(decodeName(Buffer.from('a 1\u00e9.png'))).toBe('a 1\u00e9.png')
+    expect(decodeName(Buffer.from([0x61, 0xff, 0x2e, 0x70, 0x6e, 0x67]))).toBeUndefined()
+    expect(decodeName(Buffer.from([0xef, 0xbf, 0xbd]))).toBe('\ufffd')
+    expect(escapeName(Buffer.from([0x61, 0xff, 0x5c, 0x0a, 0x2e, 0x70, 0x6e, 0x67]))).toBe(
+      'a\\xff\\x5c\\x0a.png',
+    )
+    expect(escapeName(Buffer.from([0xc3]))).not.toBe(escapeName(Buffer.from([0xc4])))
+  })
+
+  it.skipIf(process.platform !== 'linux')(
+    'reports names that are not UTF-8 as skipped, once each',
+    async () => {
+      write('images/a.png')
+      const dir = Buffer.from(join(root, 'images/'))
+      writeFileSync(Buffer.concat([dir, Buffer.from([0x62, 0xff]), Buffer.from('.png')]), 'x')
+      writeFileSync(Buffer.concat([dir, Buffer.from([0x62, 0xfe]), Buffer.from('.png')]), 'x')
+      mkdirSync(Buffer.concat([dir, Buffer.from([0x63, 0xff])]))
+      writeFileSync(Buffer.concat([dir, Buffer.from('.'), Buffer.from([0xff])]), 'x')
+      write('images/b\\xff.png')
+      const items = await list()
+      expect(items).toEqual([
+        { path: 'images/a.png', kind: 'image', bytes: 1 },
+        { path: 'images/b\\xfe.png', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+        { path: 'images/b\\xff.png', kind: 'image', bytes: 1 },
+        { path: 'images/b\\xff.png~2', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+        { path: 'images/c\\xff', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+      ])
+      expect(new Set(items.map((item) => item.path)).size).toBe(items.length)
+    },
+  )
+
+  it('lists names that are not UTF-8 as skipped under distinct escaped paths', async () => {
+    write('images/a.png')
+    write('images/b\\xff.png')
+    const bytes = (...parts: Array<string | number[]>) =>
+      Buffer.concat(parts.map((part) => (typeof part === 'string' ? Buffer.from(part) : Buffer.from(part))))
+    fake.extra = {
+      dir: join(root, 'images'),
+      entries: [
+        { name: bytes('b', [0xff], '.png'), type: 'file' },
+        { name: bytes('b', [0xfe], '.png'), type: 'link' },
+        { name: bytes('c', [0xff]), type: 'directory' },
+        { name: bytes('d', [0xff], '.xlsx'), type: 'file' },
+        { name: bytes('e', [0xff], '.png'), type: 'fifo' },
+        { name: bytes('.', [0xff]), type: 'file' },
+      ],
+    }
+    const items = await list()
+    expect(items).toEqual([
+      { path: 'images/a.png', kind: 'image', bytes: 1 },
+      { path: 'images/b\\xfe.png', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+      { path: 'images/b\\xff.png', kind: 'image', bytes: 1 },
+      { path: 'images/b\\xff.png~2', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+      { path: 'images/c\\xff', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+      { path: 'images/d\\xff.xlsx', kind: 'other', bytes: 0, skip: 'unreadable_name' },
+    ])
+    expect((await list({ ext: ['png'] })).map((item) => item.path)).toEqual([
+      'images/a.png',
+      'images/b\\xfe.png',
+      'images/b\\xff.png',
+      'images/b\\xff.png~2',
+      'images/c\\xff',
+    ])
+    await expect(list({ maxEntries: 7 })).rejects.toThrow(/more than 7 entries/)
   })
 })

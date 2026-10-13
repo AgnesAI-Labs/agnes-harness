@@ -10,6 +10,14 @@ export const MAX_SCHEMA_BYTES = 32 * 1024
 /** With no success yet, this many failed or invalid items stop the batch. */
 export const FAIL_FAST_ITEMS = 5
 
+/**
+ * Keywords an output schema may not use: the check runs on the daemon's event loop against replies a
+ * file's content can steer, and these can take seconds to minutes on one reply (`pattern` and
+ * `patternProperties` by regex backtracking, `uniqueItems: true` by comparing every pair of items).
+ * `uniqueItems: false` is allowed. Properties that merely carry these names are fine.
+ */
+export const UNSUPPORTED_SCHEMA_KEYWORDS = ['pattern', 'patternProperties', 'uniqueItems'] as const
+
 const BATCH_ID = /^b[0-9a-f]{12}$/u
 const MAX_PROBLEMS = 5
 const MAX_PROBLEM_PATH = 200
@@ -40,15 +48,17 @@ export const itemPrincipal = (batchId: string): string => `batch:${batchId}`
 export const toPosix = (path: string): string => path.split(sep).join('/')
 
 /**
- * Text that came from a file name or a model reply, made safe to place on one prompt line: control
- * characters, line and paragraph separators and bidirectional overrides become `replacement`.
+ * Characters that break a prompt line or hide text from a reader: C0 and C1 controls, zero-width and
+ * invisible formatting characters, line and paragraph separators, bidirectional controls, the byte
+ * order mark and Unicode tag characters. One code point per match (the `u` flag).
  */
+export const UNSAFE_TEXT =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point.
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}]/gu
+
+/** Text that came from a file name or a model reply, made safe to place on one prompt line. */
 export const singleLine = (text: string, replacement = ' '): string =>
-  text.replace(
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: removing control characters is the point.
-    /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu,
-    replacement,
-  )
+  text.replace(UNSAFE_TEXT, () => replacement)
 
 /** Lexical containment; callers that care about links compare real paths. */
 export function inside(root: string, target: string): boolean {
@@ -60,6 +70,27 @@ export function inside(root: string, target: string): boolean {
  * Compiles a caller's output schema: JSON data only (no getters, cycles or deep nesting), at most
  * 32 KiB, top-level object, synchronous, and every `$ref` resolvable without loading anything.
  */
+/**
+ * An Ajv whose refused keywords throw at compile time. The meta-schema itself uses `pattern`, so it is
+ * compiled first, with the stock keywords; schemas compiled afterwards get the overrides.
+ * `ownProperties` keeps inherited names such as `constructor` from satisfying `required`.
+ */
+function outputSchemaCompiler(): Ajv2020 {
+  const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false, ownProperties: true })
+  ajv.validateSchema({})
+  for (const keyword of UNSUPPORTED_SCHEMA_KEYWORDS) {
+    ajv.removeKeyword(keyword)
+    ajv.addKeyword({
+      keyword,
+      compile: (value: unknown) => {
+        if (keyword === 'uniqueItems' && value === false) return () => true
+        throw new Error(`"${keyword}" is not supported in batch output schemas`)
+      },
+    })
+  }
+  return ajv
+}
+
 export function compileOutputSchema(schema: unknown): OutputCheck {
   const inspected = inspectJsonData(schema, MAX_SCHEMA_BYTES)
   if (!inspected.ok) throw new BatchSpecError('the output schema must be JSON of at most 32 KiB')
@@ -71,7 +102,7 @@ export function compileOutputSchema(schema: unknown): OutputCheck {
   delete copy.$schema
   let validate: ValidateFunction
   try {
-    validate = new Ajv2020({ strict: false, allErrors: true, validateFormats: false }).compile(copy)
+    validate = outputSchemaCompiler().compile(copy)
   } catch (error) {
     throw new BatchSpecError(
       `the output schema does not compile: ${singleLine(error instanceof Error ? error.message : 'invalid schema')}`,
@@ -104,7 +135,14 @@ export function resolveSpec(input: {
   batchId: string
 }): ResolvedSpec {
   if (!BATCH_ID.test(input.batchId)) throw new BatchSpecError('malformed batch id')
-  const checked = validateMethod('_agnes/v1/batch.start', 'params', { cwd: input.cwd, spec: input.spec })
+  // Copied first and only the copy is checked and used: getters run once, later changes stay out.
+  let spec: BatchSpec
+  try {
+    spec = structuredClone(input.spec) as BatchSpec
+  } catch {
+    throw new BatchSpecError('invalid batch spec: it is not plain JSON data')
+  }
+  const checked = validateMethod('_agnes/v1/batch.start', 'params', { cwd: input.cwd, spec })
   if (!checked.ok)
     throw new BatchSpecError(
       `invalid batch spec: ${checked.errors
@@ -112,8 +150,6 @@ export function resolveSpec(input: {
         .map((error) => `${error.path || '/'} ${error.message}`)
         .join('; ')}`,
     )
-  // Validated above as plain JSON; the copy keeps later changes to the caller's object out.
-  const spec = structuredClone(input.spec) as BatchSpec
   for (const path of [input.cwd, spec.dir, spec.outDir])
     if (path?.includes('\0')) throw new BatchSpecError('folder names must not contain NUL bytes')
   const root = resolve(input.root)
