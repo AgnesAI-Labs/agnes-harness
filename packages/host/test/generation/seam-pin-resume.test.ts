@@ -97,7 +97,7 @@ it('resumes an old session on the implementation it was bound to after the confi
     dataDir: root,
     disableSessionTitle: true,
     packages: { '@agnes/code': altPackage as never },
-    profileInputs: { user: { name: 'local-dev', seams: { approval: { provider: 'alt' } } } },
+    profileInputs: { user: { name: 'local-dev', providers: { approval: { provider: 'alt' } } } },
   })
   try {
     // The old session is rebuilt from its generation's recorded selection, not from today's profile.
@@ -173,7 +173,7 @@ it('migrates a session to the current generation only when the request names the
     dataDir: root,
     disableSessionTitle: true,
     packages: { '@agnes/code': altPackage as never },
-    profileInputs: { user: { name: 'local-dev', seams: { approval: { provider: 'alt' } } } },
+    profileInputs: { user: { name: 'local-dev', providers: { approval: { provider: 'alt' } } } },
   })
   try {
     const migrate = second.host.migrateSessionGeneration

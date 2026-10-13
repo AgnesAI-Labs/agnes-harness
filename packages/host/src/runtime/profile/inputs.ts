@@ -109,7 +109,7 @@ export async function readConfigurationProfileInputs(
   const adminBundles = readBundleSelection(profileDir).bundles
   let userLayer = mergeConfiguration(profile, user, options.configuration)
   const adapterSelected = (layer: Partial<RuntimeProfileManifest> | undefined) =>
-    layer?.packages?.some((pkg) => pkg.enabled !== false && pkg.config?.['model-adapter'] !== undefined)
+    layer?.providers?.['model-adapter'] !== undefined
   if (
     options.demoFallback &&
     profile === 'local-dev' &&

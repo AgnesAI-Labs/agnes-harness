@@ -73,7 +73,7 @@ describe('seam binding', () => {
     const { root, input } = rig()
     await expect(seamBinding('verifier', { provider: 'ghost' }, input)(root, preset)).rejects.toMatchObject({
       code: 'E_SEAM_MISSING',
-      message: expect.stringContaining('seams.verifier.provider'),
+      message: expect.stringContaining('providers.verifier.provider'),
     })
     await root.fiber.dispose()
   })

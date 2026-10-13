@@ -72,13 +72,7 @@ export async function runtime(check, limits = {}) {
         JSON.stringify({
           name: 'local-dev',
           limits,
-          packages: [
-            {
-              id: '@agnes/ai',
-              source: 'builtin',
-              config: { 'model-adapter': { provider: ['@agnes/ai', 'scripted'] } },
-            },
-          ],
+          providers: { 'model-adapter': { provider: ['@agnes/ai', 'scripted'] } },
           provider: {
             package: '@agnes/ai',
             routes: [

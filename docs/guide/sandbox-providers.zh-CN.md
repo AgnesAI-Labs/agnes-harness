@@ -11,15 +11,15 @@
 写在 profile 里：
 
 ```yaml
-sandbox:
-  provider: local
+providers:
+  sandbox: { provider: local }
 ```
 
 `local` 是默认值，也是当前的宿主沙箱：macOS 使用 Seatbelt，Linux 使用 bubblewrap，Windows 保持现有姿态。省略该字段即使用这个默认值。`docker` 是 `examples/sandbox/docker` 里的示例提供者，只有插件注册之后才会出现。
 
 这个选择在进程的整个生命周期内保持不变。`catalog()` 给每条记录标上 `restartRequired: true`。修改 profile 不会搬走已经在跑的命令，也不会改换当前进程的目标。要换 id，需要重新启动进程。
 
-`sandbox: { provider }` 是选择沙箱的唯一写法。`seams.sandbox` 已删除，`seams.platform` 同样：平台后端归宿主所有，在提供者目录里显示为 `platform`，authority 为 `host`，任何包都不能注册或选择它。
+`providers.sandbox: { provider }` 是选择沙箱的唯一写法；顶层 `sandbox` 块只放该提供者的 `options`。`platform` 不能被选择：平台后端归宿主所有，在提供者目录里显示为 `platform`，authority 为 `host`，任何包都不能注册或选择它。
 
 ## 远程提供者
 
@@ -50,7 +50,7 @@ sandbox:
 
 Host 向所有提供者（包括 `local`）的 `exec` 传递本次已授权的 `policy`：工作区根、策略摘要、读取/写入允许与拒绝目录、网络模式与主机、最低 enforcement。提供者不能落实策略时必须在启动命令前拒绝；结果必须报告实际 `enforcement`，Host 不会从 id 推断隔离成功。Base 的本地 OS 编译器先生成隔离 argv，再由同一 public instance 入口执行。
 
-启动配置支持 `sandbox: { provider: docker, options: { image: alpine:3.21 } }`；options 是提供者字符串映射。相同 provider、工作区根和有效 options 共享实例；不同工作区或 options 不复用首个实例。每个实例负责取消并排空自己的命令；底层本地 spawner 由 Host 持有。
+启动配置支持 `providers.sandbox: { provider: docker }` 加上 `sandbox: { options: { image: alpine:3.21 } }`；options 是提供者字符串映射。相同 provider、工作区根和有效 options 共享实例；不同工作区或 options 不复用首个实例。每个实例负责取消并排空自己的命令；底层本地 spawner 由 Host 持有。
 
 Docker 示例仅展示进程/网络隔离，没有完整的 Host 文件拒绝策略，因此不能替换默认必需的 L1。其能力不足或策略不支持时拒绝，不退回本地执行。
 

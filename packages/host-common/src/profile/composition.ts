@@ -367,8 +367,9 @@ export function prepareProfileComposition(
   patch = mergeComposition(patch, direct)
   applySource(sources, direct, { layer: 'profile', name: manifest.name })
   for (const key of ['persistence', 'sandbox'] as const) {
-    if (manifest[key] !== undefined && (key !== 'sandbox' || manifest.sandbox?.provider !== undefined)) {
-      patch = mergeComposition(patch, { [key]: manifest[key] })
+    const chosen = manifest.providers?.[key]
+    if (chosen !== undefined) {
+      patch = mergeComposition(patch, { [key]: { provider: chosen.provider } })
       sources[key] = { layer: 'profile', name: manifest.name }
     }
   }
@@ -384,8 +385,6 @@ export function prepareProfileComposition(
   return {
     manifest: {
       ...manifest,
-      ...(patch.persistence ? { persistence: patch.persistence } : {}),
-      ...(patch.sandbox ? { sandbox: patch.sandbox } : {}),
       ...(patch.packages ? { packages: patch.packages } : {}),
       presets: {
         ...manifest.presets,

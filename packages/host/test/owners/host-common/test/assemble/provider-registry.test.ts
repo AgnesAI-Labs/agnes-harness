@@ -229,7 +229,7 @@ it('derives the source package from the calling row for every kind, without a cl
   await root.fiber.dispose()
 })
 
-it('accepts only canonical selections, ignores resolved identities and rejects conflicting config', () => {
+it('accepts only canonical selections, ignores resolved identities and reads them from the one table', () => {
   expect(readProviderSelection('loop', { provider: 'echo', version: '1.0.0' })).toEqual({
     provider: 'echo',
     version: '1.0.0',
@@ -239,12 +239,8 @@ it('accepts only canonical selections, ignores resolved identities and rejects c
   expect(() => readProviderSelection('loop', { provider: 'one', id: 'two' })).toThrow('requires')
   const profile = {
     loop: { id: 'pinned', version: '1.0.0' },
-    packages: [
-      {
-        enabled: true,
-        config: { loop: { provider: 'echo' }, 'tool-policy': { provider: 'read-only', version: '1.0.0' } },
-      },
-    ],
+    packages: [],
+    providers: { loop: { provider: 'echo' }, 'tool-policy': { provider: 'read-only', version: '1.0.0' } },
   }
   const selections = readProviderSelections(profile as never)
   expect(selections.loop).toEqual({ provider: 'echo' })
@@ -253,6 +249,7 @@ it('accepts only canonical selections, ignores resolved identities and rejects c
       'model-adapter'
     ],
   ).toBeUndefined()
+  // A composition layer that chose a kind overrides the table; the default layer does not.
   expect(
     readProviderSelections({
       ...profile,
@@ -262,38 +259,49 @@ it('accepts only canonical selections, ignores resolved identities and rejects c
   ).toEqual({ provider: 'session', version: '2.0.0' })
   expect(
     readProviderSelections({
-      packages: [{ enabled: true, config: { 'model-adapter': { provider: ['chat', '@test/wire'] } } }],
+      ...profile,
+      composition: { loop: { provider: 'builtin', version: '1.0.0' } },
+      compositionSources: { loop: { layer: 'default', name: 'default' } },
+    } as never).loop,
+  ).toEqual({ provider: 'echo' })
+  expect(
+    readProviderSelections({
+      packages: [],
+      providers: { 'model-adapter': { provider: ['chat', '@test/wire'] } },
     } as never)['model-adapter'],
   ).toEqual({ provider: ['chat', '@test/wire'] })
   expect(() =>
     readProviderSelections({
-      packages: [{ config: { 'model-adapter': { provider: ['chat', 'chat'] } } }],
+      packages: [],
+      providers: { 'model-adapter': { provider: ['chat', 'chat'] } },
     } as never),
   ).toThrow('unique ids')
   expect(
     readProviderSelections({
-      packages: [{ enabled: true, config: { memory: { provider: 'enterprise', version: '2.0.0' } } }],
+      packages: [],
+      providers: { memory: { provider: 'enterprise', version: '2.0.0' } },
     } as never).memory,
   ).toEqual({ provider: 'enterprise', version: '2.0.0' })
   expect(
     readProviderSelections({
       composition: { compaction: null },
-      packages: [{ enabled: true, config: { compaction: { provider: 'default' } } }],
+      packages: [],
+      providers: { compaction: { provider: 'default' } },
     } as never).compaction,
   ).toBeUndefined()
   expect(applyProviderPreset({ name: 'standard', approval: { timeout_ms: 10 } }, selections)).toMatchObject({
     approval: { timeout_ms: 10 },
     'tool-policy': { provider: 'read-only' },
   })
-  for (const kind of ['sandbox', 'memory'])
-    expect(() =>
-      readProviderSelections({
-        packages: [
-          { enabled: true, config: { [kind]: { provider: 'one' } } },
-          { enabled: true, config: { [kind]: { provider: 'two' } } },
-        ],
-      } as never),
-    ).toThrow('at most one')
+  // An enabled package's own config is its plugin's data: it selects nothing.
+  expect(
+    readProviderSelections({
+      packages: [
+        { enabled: true, config: { memory: { provider: 'one' }, loop: { provider: 'one' } } },
+        { enabled: true, config: { memory: { provider: 'two' }, loop: { provider: 'two' } } },
+      ],
+    } as never),
+  ).toEqual({})
 })
 
 it.each(['loop', 'sandbox', 'persistence'] as const)(

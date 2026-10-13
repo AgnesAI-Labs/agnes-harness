@@ -407,6 +407,7 @@ export type {
   PackageRef,
   Policy,
   ProfileFragment,
+  ProviderSelection,
   ReconcilePoint,
   ReconcilePolicy,
   ResolvedComputerUseProfile,

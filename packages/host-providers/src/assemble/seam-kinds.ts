@@ -11,7 +11,7 @@ import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 
 /**
  * The seven seam kinds are ordinary provider kinds: a package registers an implementation through
- * `ctx.providers.register`, the profile selects one with `seams.<kind>: { provider, version? }`, and
+ * `ctx.providers.register`, the profile selects one with `providers.<kind>: { provider, version? }`, and
  * the Host's binding row creates the instance. `required` makes a missing selection a startup error.
  */
 export function installSeamKinds(root: Context, origins?: RowOriginLookup): void {

@@ -149,20 +149,17 @@ async function fixture(
       user: {
         name: 'local-dev',
         ...(bundle ? { composition: {} } : {}),
-        packages: installedAfterBoot
-          ? []
-          : [
-              {
-                id: source.snapshot.packageId,
-                source: `file:${directory}`,
-                config: {
-                  ...(childModule ? { 'child-agent': { provider: 'public-fixture' } } : {}),
-                  ...(profileLoop
-                    ? { loop: { provider: loopSelection.id, version: loopSelection.version } }
-                    : {}),
-                },
+        packages: installedAfterBoot ? [] : [{ id: source.snapshot.packageId, source: `file:${directory}` }],
+        ...(installedAfterBoot
+          ? {}
+          : {
+              providers: {
+                ...(childModule ? { 'child-agent': { provider: 'public-fixture' } } : {}),
+                ...(profileLoop
+                  ? { loop: { provider: loopSelection.id, version: loopSelection.version } }
+                  : {}),
               },
-            ],
+            }),
       },
     },
     runtimePluginSnapshots: installedAfterBoot ? [] : [source],
@@ -269,13 +266,7 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
         profileInputs: {
           user: {
             name: 'local-dev',
-            packages: [
-              {
-                id: '@agnes/base',
-                source: 'builtin:base',
-                config: { loop: { provider: 'missing', version: '1.0.0' } },
-              },
-            ],
+            providers: { loop: { provider: 'missing', version: '1.0.0' } },
           },
         },
       }),

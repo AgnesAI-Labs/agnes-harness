@@ -36,7 +36,11 @@ it('runs the fresh local-dev demo through registry and provider without credenti
   expect(routes.primary).toEqual({ route: 'demo', model: 'demo-model' })
   const root = new Context()
   installModelAdapters(root)
-  builtinModelAdaptersPlugin.apply(root)
+  // Every fiber of this bare tree stands for a bundled @agnes/ai row.
+  root.providers.verifyRows({
+    lookup: () => ({ trustTier: 'builtin', packageId: 'builtin', ownerPackage: '@agnes/ai' }),
+  } as never)
+  await root.plugin((ctx) => builtinModelAdaptersPlugin.apply(ctx))
   expect(root.modelAdapters.catalog().some((row) => row.id === 'scripted')).toBe(true)
   const built = await buildProvider(profile, routes, {
     modelAdapters: root.modelAdapters,
@@ -201,14 +205,8 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
     for (const override of [
       { profile: 'enterprise' },
       { lock: { packages: {} } },
-      { configuration: { composition: { loop: { provider: 'custom', version: '1' } } } },
-      {
-        configuration: {
-          packages: [
-            { id: '@agnes/ai', source: 'builtin:ai', config: { 'model-adapter': { provider: 'custom' } } },
-          ],
-        },
-      },
+      { configuration: { composition: { compaction: null } } },
+      { configuration: { providers: { 'model-adapter': { provider: 'custom' } } } },
     ]) {
       const inputs = await readConfigurationProfileInputs({ ...options, demoFallback: true, ...override })
       expect(inputs.user?.provider?.routes).toBeUndefined()

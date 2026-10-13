@@ -17,20 +17,20 @@ import type {
   CompositionSource,
   ResolvedComposition,
 } from './composition.js'
+import type { ProviderSelections } from './provider-selection.js'
 
 /** `^[a-z][a-z0-9.-]{0,63}$` in the profile schema; kept as a string alias here. */
 /**
- * `sandbox` is selected as a provider (`sandbox: { provider }`) and `platform` is owned by the Host;
- * neither is chosen under `seams`.
+ * The seven kinds a profile must select. `sandbox` is selected like any other provider kind and
+ * `platform` is owned by the Host.
  */
 export const PROFILE_SEAM_NAMES = SEAM_NAMES.filter(
   (name): name is ProfileSeamName => name !== 'sandbox' && name !== 'platform',
 )
 export type ProfileSeamName = Exclude<SeamName, 'sandbox' | 'platform'>
 
-/** Keys that used to name a package under `seams`, with what to write instead. */
+/** Keys that cannot be selected under `providers`, with what to do instead. */
 export const REMOVED_SEAM_KEYS = Object.freeze({
-  sandbox: 'select the sandbox with the top-level `sandbox: { provider }`',
   platform: 'platform is owned by the Host and cannot be selected; delete the key',
 } as const)
 
@@ -147,7 +147,8 @@ export type RuntimeProfileManifest = {
   schemaVersion?: number
   extends?: string
   packages?: PackageRef[]
-  seams?: Partial<Record<ProfileSeamName, ProviderSelection>>
+  /** The one selection table: `providers.<kind>: { provider, version? }` for every provider kind. */
+  providers?: ProfileProviders
   provider?: ProviderConfig
   adapters?: AdaptersConfig
   transports?: Transport[]
@@ -161,11 +162,14 @@ export type RuntimeProfileManifest = {
   computerUse?: ComputerUseProfile
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
-  /** Session store id. Only the user profile may set it. The running process keeps the store it opened. */
-  persistence?: { provider: string }
-  /** Startup sandbox provider. Omitted means the local host sandbox. Restart required. */
-  sandbox?: { provider?: string; options?: Readonly<Record<string, string>> }
+  /** Options of the selected sandbox provider. The provider itself is `providers.sandbox`. */
+  sandbox?: { options?: Readonly<Record<string, string>> }
 }
+/**
+ * What a profile layer may select. The seven seam kinds are required once layers are merged;
+ * `persistence` may only be set by the user profile; `persistence` and `sandbox` need a restart.
+ */
+export type ProfileProviders = Partial<Record<ProfileSeamName, ProviderSelection>> & ProviderSelections
 export type ProfileFragment = {
   packages?: PackageRef[]
   policy?: { capabilityCeiling?: Capability[] }
@@ -258,6 +262,8 @@ export type ResolvedProfile = Readonly<{
   chain: string[]
   packages: ResolvedPackage[]
   seams: Record<ProfileSeamName, ProviderSelection>
+  /** The selections the profile authored for the kinds that are not seams. */
+  providers?: ProviderSelections
   provider: { package: string; adapters: string[] } & Pick<ProviderConfig, 'routes' | 'catalog' | 'contract'>
   adapters: {
     storage: string

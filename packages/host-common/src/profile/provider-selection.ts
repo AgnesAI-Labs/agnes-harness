@@ -1,6 +1,20 @@
 import type { ProviderSelection } from '@agnes/extension-api'
 import { HostError } from '../errors.js'
 
+/** The provider kinds a profile selects beside the seven seam kinds. */
+export const PROVIDER_KINDS = [
+  'loop',
+  'model-adapter',
+  'compaction',
+  'persistence',
+  'sandbox',
+  'tool-runtime',
+  'tool-policy',
+  'child-agent',
+  'memory',
+] as const
+export type ProviderKindName = (typeof PROVIDER_KINDS)[number]
+
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
@@ -45,3 +59,7 @@ export function readModelAdapterSelection(value: unknown): ModelAdapterSelection
     ...(input.version === undefined ? {} : { version: input.version as string }),
   })
 }
+
+export type ProviderSelections = Partial<
+  Record<Exclude<ProviderKindName, 'model-adapter'>, ProviderSelection>
+> & { 'model-adapter'?: ModelAdapterSelection }

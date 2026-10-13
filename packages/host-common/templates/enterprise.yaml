@@ -6,7 +6,7 @@ packages:
   - { id: "@agnes/enterprise", source: "builtin" }
   - { id: "@agnes/connector-db", source: "builtin" }
   - { id: "@agnes/connector-kb", source: "builtin" }
-seams:
+providers:
   approval: { provider: "local-prompt" }
   checkpoint: { provider: "fs" }
   billing: { provider: "budget" }

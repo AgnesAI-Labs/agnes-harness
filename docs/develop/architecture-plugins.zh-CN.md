@@ -59,20 +59,17 @@ tool-policy 与 tool-runtime 只通过 `providers` 注册和读取目录；类�
 
 ## 选择与兼容
 
-统一配置块是 `<kind>: { provider: id, version?: version }`，放在一个已启用 profile 包的 `config` 中，复用现有 JSON 扩展点：
+统一配置块是 `<kind>: { provider: id, version?: version }`，写在配置档的 `providers` 表里：
 
 ```yaml
-packages:
-  - id: '@example/workflow'
-    source: './workflow'
-    config:
-      loop: { provider: 'example.research', version: '1.0.0' }
-      tool-policy: { provider: 'read-only' }
-      compaction: { provider: 'default' }
-      child-agent: { provider: 'in-process' }
+providers:
+  loop: { provider: 'example.research', version: '1.0.0' }
+  tool-policy: { provider: 'read-only' }
+  compaction: { provider: 'default' }
+  child-agent: { provider: 'in-process' }
 ```
 
-Provider 选择统一使用包的 `config.<kind>: { provider, version? }`。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。Preset 通过 `tool-runtime` 和 `tool-policy` 的 `{ provider }` 选择。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。同一 kind 的多个包选择会拒绝。根 persistence 和 sandbox 块已使用 `{ provider }`。
+配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。Preset 仍为使用它的会话保留自己的 `tool-runtime` 和 `tool-policy: { provider }`，bundle 的 composition patch 也保留自己的 provider 块；两者是叠在这张表之上的层，不是配置档选择的另一个写法。
 
 `child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register(childAgentKind, provider)`，注册清理由平台绑定到插件生命周期。
 

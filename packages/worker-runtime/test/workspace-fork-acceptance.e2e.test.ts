@@ -102,7 +102,7 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
     profileInputs: {
       user: {
         name: 'local-dev',
-        sandbox: { provider: 'fork-remote' },
+        providers: { sandbox: { provider: 'fork-remote' } },
         packages: [
           {
             id: '@agnes/base',

@@ -115,6 +115,8 @@ describe('runtime target candidate claims', () => {
     })
     expect(claims.privateInput.builtinClaims).toHaveLength(1)
     expect(claims.privateInput.builtinClaims?.[0]?.row).toStrictEqual(selectedRow)
+    // A republished bundled row keeps the package its registrations are attributed to.
+    expect(claims.privateInput.builtinClaims?.[0]?.ownerPackage).toBe(selected.snapshot.packageId)
     expect(await claims.pluginImporter(mounts())(selectedRow)).toBeUndefined()
   })
 

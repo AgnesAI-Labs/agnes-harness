@@ -43,7 +43,7 @@ const setup = async (over: { config?: typeof config; vault?: boolean } = {}) => 
       builtinPackages: ['@agnes/base', '@agnes/code', '@agnes/ai', vendor],
       user: {
         name: 'p',
-        sandbox: { provider: vendorProvider },
+        providers: { sandbox: { provider: vendorProvider } },
         packages: [{ id: vendor, source: 'test', config: over.config ?? config }],
         adapters: { secrets: { kind: over.vault ? 'vault' : 'env' } },
       },

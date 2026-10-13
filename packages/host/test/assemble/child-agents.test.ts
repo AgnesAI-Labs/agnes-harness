@@ -86,7 +86,8 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
 
 it('registers through the shared service and selects the configured default without overriding explicit ids', async () => {
   const selections = readProviderSelections({
-    packages: [{ enabled: true, config: { 'child-agent': { provider: 'demo', version: '1.0.0' } } }],
+    packages: [],
+    providers: { 'child-agent': { provider: 'demo', version: '1.0.0' } },
   } as never)
   const root = new Context()
   const registry = installChildAgents(root, undefined, selections['child-agent'])

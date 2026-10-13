@@ -53,7 +53,7 @@ export const main = {
 配置里每个种类只有一种写法：
 
 ```yaml
-seams:
+providers:
   approval:   { provider: local-prompt }
   principals: { provider: local }
   billing:    { provider: budget }
@@ -63,7 +63,7 @@ seams:
   repair:     { provider: default }
 ```
 
-七个键都必填。选中的实现没有任何已安装的包注册时，装配以 `E_SEAM_MISSING` 失败；工厂抛错或卡死则以 `E_SEAM_INIT` 失败。seam 不会被静默跳过或补默认值。旧的包 id 字符串写法、`seams.ledger`（现为 `seams.billing`）和 `seams.harness`（不再是 seam）都是配置错误，报错会给出改法。工作区配置不能写 `seams`。
+七个键都必填。选中的实现没有任何已安装的包注册时，装配以 `E_SEAM_MISSING` 失败；工厂抛错或卡死则以 `E_SEAM_INIT` 失败。seam 不会被静默跳过或补默认值。这七个种类和其他 provider 种类共用 `providers` 这一张表。旧的包 id 字符串写法、`seams` 键（现为 `providers`）、`ledger`（现为 `billing`）和 `harness`（不再是种类）都是配置错误，报错会给出改法。工作区配置不能写 `providers`。
 
 ## 固定、升级与恢复
 

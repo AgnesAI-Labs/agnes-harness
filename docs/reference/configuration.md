@@ -42,11 +42,10 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | --- | --- |
 | `name`, `schemaVersion`, `extends` | Identity, version, inheritance; current templates use schemaVersion 1 |
 | `packages` | Sources, enablement, configuration; PackageManager still owns installation and trust |
-| `packages[].config` | Provider selections: `<kind>: { provider, version? }` |
-| `seams` | One `{ provider, version? }` selection per seam kind; see [Seams](../extend/seams.md) |
+| `packages[].config` | The package's own configuration. It selects nothing |
+| `providers` | The one selection table: `<kind>: { provider, version? }` for every provider kind. The seven seam kinds are required; see [Seams](../extend/seams.md). `persistence` (default `sqlite`) may only be set by the user profile, and it and `sandbox` (default `local`) need a restart; see [Sandbox providers](../guide/sandbox-providers.md) |
 | `provider` | package/routes/catalog/contract; route name `default` is a reserved sentinel |
 | `adapters` | storage/fs/exec/platform/secrets selection |
-| `persistence` | `{ provider: id }`. Default `sqlite`, and that default is omitted from the resolved profile. User profile only. Changing it is restart-required. The profile schema and Host user-layer validation accept this field. |
 | `transports` | stdio/unix/ws-tls; remote configuration also needs certificates and authentication |
 | `dataDir`, `cacheDir` | Data/cache locations; a running canonical-home daemon rejects incompatible profile/data-directory configuration |
 | `presets` | default and allowed; the default must be allowed |
@@ -57,9 +56,9 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | `computerUse` | Enablement, application access, capture, and retention limits |
 | `extensionIsolation` | Isolation requests and unavailable behavior; declaration alone does not prove enforcement |
 | `limits` | Supported dotted keys for daemon/worker/jobs/shutdown and other limits |
-| `sandbox.provider` | Startup sandbox provider id, default `local`. Changing it requires a process restart. See [Sandbox providers](../guide/sandbox-providers.md) |
+| `sandbox.options` | String options for the selected sandbox provider |
 
-Provider choices live in enabled package `config.<kind>: { provider, version? }`; `model-adapter.provider` accepts one registration/source package or a unique list. Presets use `tool-runtime` / `tool-policy: { provider }`. Bundle composition uses the same provider blocks, with an exact loop version. Root `loop`, `compaction`, `provider.adapters` and preset `tools.runtime` / `approval.policy` are rejected.
+A profile selects every provider in one table, `providers.<kind>: { provider, version? }`: the seven seam kinds and `loop`, `compaction`, `model-adapter`, `persistence`, `sandbox`, `tool-runtime`, `tool-policy`, `child-agent` and `memory`. Nothing else in a profile carries a selection: `seams`, top-level `persistence` / `sandbox.provider` / `memory` / `child-agent`, profile `composition.<kind>` and package `config.<kind>` are refused with the sentence that names the table. `model-adapter.provider` accepts one registration/source package or a unique list. Presets use `tool-runtime` / `tool-policy: { provider }` for their sessions. Bundle composition uses the same provider blocks, with an exact loop version.
 
 Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host-common/src/profile/types.ts), [local-dev template](../../packages/host-common/templates/local-dev.yaml), and [enterprise template](../../packages/host-common/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 

@@ -52,7 +52,7 @@ composition:
     deny: ["network_search"]
 ```
 
-The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. Root `persistence.provider` and `sandbox.provider` override the corresponding profile composition fields. Select loops and compaction through canonical provider blocks in package config or composition; root `loop` and `compaction` are rejected. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
+The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. The profile's `providers.persistence` and `providers.sandbox` override the corresponding bundle composition fields. A profile selects loops and compaction in its `providers` table and a bundle in its composition patch; a profile's own `composition` cannot carry a provider block. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
 
 | Patch field | Meaning |
 | --- | --- |

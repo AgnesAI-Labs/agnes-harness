@@ -2,6 +2,7 @@
   "Capability": "tools.invoke",
   "SeamName": "approval",
   "SeamSelection": { "provider": "local-prompt", "version": "1.0.0" },
+  "ProviderSelection": { "provider": "agnes.default", "version": "1.0.0" },
   "PackageRef": {
     "id": "@agnes/base",
     "source": "builtin",

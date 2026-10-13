@@ -37,7 +37,7 @@ For your own summary policy, call `model.summarize({ range, system, instruction,
 Install and enable the engine package through [plugin management](../guide/packages.md), then select its registered id in the runtime profile:
 
 ```json
-{ "packages": [{ "id": "@agnes-example/compaction-sliding-window", "source": "file:./examples/compaction/sliding-window", "config": { "compaction": { "provider": "sliding-window" } } }] }
+{ "packages": [{ "id": "@agnes-example/compaction-sliding-window", "source": "file:./examples/compaction/sliding-window" }], "providers": { "compaction": { "provider": "sliding-window" } } }
 ```
 
 Omitting this field selects `default`. An explicit missing id fails Host startup with `compaction engine is not registered: <id>`. Selection happens during Host assembly; reassemble after changing it. Existing preset controls such as `compaction.enabled`, reserve size and agent-callable compaction continue to apply.

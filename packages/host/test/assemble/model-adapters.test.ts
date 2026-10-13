@@ -210,13 +210,8 @@ async function fixture(selected: string, missingCredential = false) {
         name: 'local-dev',
         presets: { default: 'standard', allowed: ['standard'] },
         adapters: { secrets: { kind: 'file', path: secretPath } },
-        packages: [
-          {
-            id: source.snapshot.packageId,
-            source: `file:${directory}`,
-            config: { 'model-adapter': { provider: ['@agnes/ai', selected] } },
-          },
-        ],
+        packages: [{ id: source.snapshot.packageId, source: `file:${directory}` }],
+        providers: { 'model-adapter': { provider: ['@agnes/ai', selected] } },
         provider: {
           package: '@agnes/ai',
           catalog: { include: [] },

@@ -1374,7 +1374,7 @@ describe('assemble', () => {
         user: {
           name: 'p',
           provider: { package: '@agnes/ai', routes: [ROUTE] },
-          sandbox: { provider: 'vendor-remote' },
+          providers: { sandbox: { provider: 'vendor-remote' } },
           packages: [
             {
               id: vendor,
@@ -1559,7 +1559,7 @@ describe('assemble', () => {
         },
       ],
     }
-    const profile = await profileFor({ seams: { checkpoint: { provider: 'alt' } } })
+    const profile = await profileFor({ providers: { checkpoint: { provider: 'alt' } } })
     const a = await assemble(
       profile,
       deps({ '@agnes/base': baseModule(), '@agnes/code': vendor, '@agnes/ai': aiModule }),

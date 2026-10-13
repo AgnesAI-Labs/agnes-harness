@@ -11,15 +11,15 @@ A sandbox provider runs a command and owns its processes. The host picks one pro
 Put this in the profile:
 
 ```yaml
-sandbox:
-  provider: local
+providers:
+  sandbox: { provider: local }
 ```
 
 `local` is the default and the current host sandbox: Seatbelt on macOS, bubblewrap on Linux, and the current Windows posture. Omit the field to keep that default. `docker` is the example provider in `examples/sandbox/docker`. It is not loaded until a plugin registers it.
 
 The choice is fixed for the life of the process. `catalog()` marks every entry `restartRequired: true`. Editing the profile does not move a command that is already running, and it does not retarget the running process. Start the process again to select a different id.
 
-`sandbox: { provider }` is the only way to choose a sandbox. `seams.sandbox` was removed, and `seams.platform` too: the platform backend belongs to the Host. It is listed in the provider catalog as `platform` with authority `host`, and no package can register or select it.
+`providers.sandbox: { provider }` is the only way to choose a sandbox; the top-level `sandbox` block carries only the provider's `options`. `platform` cannot be selected: the platform backend belongs to the Host. It is listed in the provider catalog as `platform` with authority `host`, and no package can register or select it.
 
 ## Remote providers
 
@@ -53,8 +53,9 @@ Every selected provider, including `local`, uses the same public `exec` entry. T
 Provider-specific options are a string mapping:
 
 ```yaml
+providers:
+  sandbox: { provider: docker }
 sandbox:
-  provider: docker
   options:
     image: alpine:3.21
 ```

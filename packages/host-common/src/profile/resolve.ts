@@ -9,8 +9,13 @@ import { canonicalJson, sha256hex } from './canonical.js'
 import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
-import { readModelAdapterSelection, readProviderSelection } from './provider-selection.js'
-import { seamSelectionProblems, selectionOf } from './seam-selection.js'
+import {
+  PROVIDER_KINDS,
+  type ProviderSelections,
+  readModelAdapterSelection,
+  readProviderSelection,
+} from './provider-selection.js'
+import { providerSelectionProblems, relocatedSelection, selectionOf } from './seam-selection.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
 import {
   type PackageRef,
@@ -135,13 +140,15 @@ function mergeManifest(
       case 'packages':
         out.packages = mergePackages(base.packages ?? [], v as PackageRef[], layer)
         break
-      case 'seams':
-        // NonNullable, not the property type itself: the property is optional, so its type includes
-        // undefined, and under exactOptionalPropertyTypes an assignment of that union is refused.
-        out.seams = {
-          ...(base.seams ?? {}),
-          ...(v as Record<string, string>),
-        } as NonNullable<RuntimeProfileManifest['seams']>
+      case 'providers':
+        // A later layer replaces a kind's selection whole; kinds it does not name are kept.
+        out.providers = {
+          ...(base.providers ?? {}),
+          ...(v as NonNullable<RuntimeProfileManifest['providers']>),
+        }
+        break
+      case 'sandbox':
+        out.sandbox = { ...(base.sandbox ?? {}), ...(v as NonNullable<RuntimeProfileManifest['sandbox']>) }
         break
       case 'limits':
         out.limits = { ...(base.limits ?? {}), ...(v as Record<string, number>) }
@@ -270,15 +277,15 @@ const PERSISTENCE_PROVIDER_ID = /^[a-z][a-z0-9._-]{0,63}$/
 
 function assertPersistence(value: unknown, layer: Layer): { provider: string } {
   if (value === null || typeof value !== 'object' || Array.isArray(value))
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence must be an object', {
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'providers.persistence must be an object', {
       source: { layer },
-      detail: { field: 'persistence' },
+      detail: { field: 'providers.persistence' },
     })
   const provider = (value as { provider?: unknown }).provider
   if (typeof provider !== 'string' || !PERSISTENCE_PROVIDER_ID.test(provider))
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider id is invalid', {
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'providers.persistence.provider id is invalid', {
       source: { layer },
-      detail: { field: 'persistence.provider' },
+      detail: { field: 'providers.persistence.provider' },
     })
   return { provider }
 }
@@ -297,10 +304,10 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     ['flags', inputs.flags],
     ['managed', inputs.managed],
   ] as const)
-    if (manifest && Object.hasOwn(manifest, 'persistence'))
-      throw new HostError('E_PROFILE_FRAGMENT_KEY', 'persistence.provider is selected by the user profile', {
+    if (manifest && Object.hasOwn((manifest as { providers?: object }).providers ?? {}, 'persistence'))
+      throw new HostError('E_PROFILE_FRAGMENT_KEY', 'providers.persistence is selected by the user profile', {
         source: { layer },
-        detail: { field: 'persistence.provider', effect: 'restart-required' },
+        detail: { field: 'providers.persistence', effect: 'restart-required' },
       })
   const layers = collectLayers(inputs)
   if (
@@ -319,19 +326,8 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
       }
   }
   for (const l of layers) {
-    if (l.manifest.provider && Object.hasOwn(l.manifest.provider, 'adapters'))
-      throw new HostError(
-        'E_PROFILE_FRAGMENT_KEY',
-        'provider.adapters was removed; use package config.model-adapter: { provider }',
-        { source: { layer: l.layer } },
-      )
-    for (const field of ['loop', 'compaction'])
-      if (Object.hasOwn(l.manifest, field))
-        throw new HostError(
-          'E_PROFILE_FRAGMENT_KEY',
-          `${field} selection belongs in an enabled package config as { provider }`,
-          { source: { layer: l.layer } },
-        )
+    const relocated = relocatedSelection(l.manifest)
+    if (relocated) throw new HostError('E_PROFILE_FRAGMENT_KEY', relocated, { source: { layer: l.layer } })
     assertRouteNames((l.manifest.provider as { routes?: RouteDecl[] } | undefined)?.routes, l.layer)
     if (Object.hasOwn(l.manifest, 'commandHooks')) {
       if (l.layer === 'workspace' || !validateCommandHooksPolicy(l.manifest.commandHooks).ok)
@@ -353,17 +349,17 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     }
     if (Object.hasOwn(l.manifest, 'reconcile'))
       resolveReconcilePolicy((l.manifest as { reconcile?: unknown }).reconcile, l.layer)
-    if (Object.hasOwn(l.manifest, 'persistence')) {
+    if (Object.hasOwn(l.manifest.providers ?? {}, 'persistence')) {
       if (l.layer !== 'user')
         throw new HostError(
           'E_PROFILE_FRAGMENT_KEY',
-          'persistence.provider is selected by the user profile',
+          'providers.persistence is selected by the user profile',
           {
             source: { layer: l.layer },
-            detail: { field: 'persistence.provider', effect: 'restart-required' },
+            detail: { field: 'providers.persistence', effect: 'restart-required' },
           },
         )
-      l.manifest = { ...l.manifest, persistence: assertPersistence(l.manifest.persistence, l.layer) }
+      assertPersistence(l.manifest.providers?.persistence, l.layer)
     }
   }
   const first = layers[0] as LayerInput
@@ -536,16 +532,16 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
       ...(st.provides ? { provides: [...st.provides] } : {}),
     })
   }
-  const problems = seamSelectionProblems(m.seams, false)
+  const problems = providerSelectionProblems(m.providers, false)
   if (problems.length)
     throw new HostError('E_PROFILE_FRAGMENT_KEY', problems.join('; '), {
-      detail: { field: 'seams', problems },
+      detail: { field: 'providers', problems },
     })
   const seams = {} as Record<ProfileSeamName, ProviderSelection>
   for (const name of PROFILE_SEAM_NAMES) {
-    const chosen = m.seams?.[name]
+    const chosen = m.providers?.[name]
     if (!chosen)
-      throw new HostError('E_SEAM_MISSING', `seam ${name} has no selected implementation`, {
+      throw new HostError('E_SEAM_MISSING', `providers.${name} has no selected implementation`, {
         detail: { seam: name },
       })
     seams[name] = selectionOf(chosen)
@@ -554,34 +550,36 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     throw new HostError('E_SEAM_MISSING', 'provider.package is required', {
       detail: { seam: 'provider' },
     })
-  // Provider selections are authored in enabled package config, never through root aliases.
-  const selected = (kind: 'loop' | 'compaction') => {
-    const choices = packages
-      .filter((pkg) => pkg.enabled !== false)
-      .flatMap((pkg) => (pkg.config?.[kind] === undefined ? [] : [pkg.config[kind]]))
-    if (choices.length > 1)
-      throw new HostError('E_PROFILE_FRAGMENT_KEY', `select at most one package config.${kind} provider`)
-    return readProviderSelection(kind, choices[0])
+  // Bundles and the composition layers contribute their own choices; the profile's are the table.
+  const providers: ProviderSelections = {}
+  const startup: Pick<ProviderSelections, 'persistence' | 'sandbox'> = {}
+  for (const kind of PROVIDER_KINDS) {
+    if (kind === 'model-adapter') {
+      const chosen = readModelAdapterSelection(m.providers?.[kind])
+      if (chosen) providers[kind] = chosen
+    } else {
+      const chosen = readProviderSelection(kind, m.providers?.[kind])
+      // The two startup kinds resolve into `persistence` and `sandbox`, with the composition layers.
+      if (chosen && (kind === 'persistence' || kind === 'sandbox')) startup[kind] = chosen
+      else if (chosen) providers[kind] = chosen
+    }
   }
-  const adapterChoices = packages
-    .filter((pkg) => pkg.enabled !== false)
-    .flatMap((pkg) =>
-      pkg.config?.['model-adapter'] === undefined
-        ? []
-        : [readModelAdapterSelection(pkg.config['model-adapter'])!],
-    )
-  if (adapterChoices.length > 1)
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'select at most one package config.model-adapter provider')
-  const adapterSelection = adapterChoices[0]
+  const adapterSelection = providers['model-adapter']
   const loop =
-    selected('loop') ??
+    providers.loop ??
     (m.composition?.loop
       ? { provider: m.composition.loop.provider, version: m.composition.loop.version }
       : undefined)
   const compaction =
-    selected('compaction') ??
+    providers.compaction ??
     (m.composition?.compaction ? { provider: m.composition.compaction.provider } : undefined)
-  const sandbox = readSandboxStartupConfig(m.sandbox)
+  const persistence = m.composition?.persistence ?? startup.persistence
+  const sandbox = readSandboxStartupConfig({
+    ...((m.composition?.sandbox ?? startup.sandbox)
+      ? { provider: (m.composition?.sandbox ?? startup.sandbox)?.provider }
+      : {}),
+    ...(m.sandbox?.options ? { options: m.sandbox.options } : {}),
+  })
   const draftProfile: Omit<ResolvedProfile, 'hash'> = {
     name: m.name,
     schemaVersion: m.schemaVersion ?? 1,
@@ -591,6 +589,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     chain: draft.chain,
     packages,
     seams,
+    ...(Object.keys(providers).length ? { providers } : {}),
     provider: {
       package: m.provider.package,
       adapters:
@@ -632,8 +631,8 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     ...(m.extensionIsolation ? { extensionIsolation: m.extensionIsolation } : {}),
     ...(m.commandHooks ? { commandHooks: structuredClone(m.commandHooks) } : {}),
     ...(compaction ? { compaction: { engine: compaction.provider } } : {}),
-    ...(m.persistence && m.persistence.provider !== 'sqlite'
-      ? { persistence: { provider: m.persistence.provider } }
+    ...(persistence && persistence.provider !== 'sqlite'
+      ? { persistence: { provider: persistence.provider } }
       : {}),
     ...(sandbox === undefined ? {} : { sandbox }),
     runtimes: [],

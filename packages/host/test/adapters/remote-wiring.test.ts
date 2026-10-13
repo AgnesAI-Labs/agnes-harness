@@ -93,7 +93,7 @@ const remoteSeamProfile = (
       },
       user: {
         name: 'p',
-        sandbox: { provider: 'remote-test' },
+        providers: { sandbox: { provider: 'remote-test' } },
         packages: [{ id: '@agnes/sandbox-remote', source: 'test', config }],
       },
     },

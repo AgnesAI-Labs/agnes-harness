@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [无界面运行与回放](headless.zh-CN.md) · [配置](../reference/configuration.zh-CN.md)
 
-可选包 `@agnes/model-adapters` 导出 modelAdaptersPlugin，注册 local-openai。在源码 runtime 中安装、信任该包，或将其注册入口纳入自己的插件。包的 `config['model-adapter'].provider` 选择 local-openai，默认不会选中。推理复用现有 pi-ai OpenAI-compatible wire adapter，包含流式输出、工具和多模态转换。
+可选包 `@agnes/model-adapters` 导出 modelAdaptersPlugin，注册 local-openai。在源码 runtime 中安装、信任该包，或将其注册入口纳入自己的插件。在配置档的 `providers.model-adapter.provider` 选择 local-openai，默认不会选中。推理复用现有 pi-ai OpenAI-compatible wire adapter，包含流式输出、工具和多模态转换。
 
 提前下载模型，启动本地服务，再使用其 OpenAI-compatible endpoint：
 

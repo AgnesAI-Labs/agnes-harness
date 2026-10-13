@@ -50,13 +50,7 @@ it('retains profile selection in its immutable result and hash and refuses inval
       builtin: 'local-dev',
       user: {
         name: 'test',
-        packages: [
-          {
-            id: '@agnes/base',
-            source: 'builtin:base',
-            config: { compaction: { provider: 'sliding-window' } },
-          },
-        ],
+        providers: { compaction: { provider: 'sliding-window' } },
       },
     },
     env,
@@ -68,7 +62,7 @@ it('retains profile selection in its immutable result and hash and refuses inval
       { builtin: 'local-dev', user: { name: 'test', compaction: { engine: 'sliding-window' } } as never },
       env,
     ),
-  ).rejects.toThrow('compaction selection belongs')
+  ).rejects.toThrow('compaction is selected with providers.compaction')
 })
 
 it('drains late creates before instance disposal and reports both disposal and cleanup failures', async () => {

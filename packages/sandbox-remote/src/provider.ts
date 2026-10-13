@@ -1,7 +1,7 @@
 import { type SandboxCapabilities, type SandboxProvider, sandboxUnavailable } from '@agnes/extension-api'
 
 export type RemoteSandboxProviderOptions = Readonly<{
-  /** Provider id deployments select with `sandbox: { provider }`. */
+  /** Provider id deployments select with `providers.sandbox: { provider }`. */
   id: string
   version: string
   /** Opens the one channel to the machine that runs commands. The Host keeps and closes it. */

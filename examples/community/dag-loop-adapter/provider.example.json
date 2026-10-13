@@ -33,12 +33,12 @@
   "packages": [
     {
       "id": "@community/dag-loop-adapter",
-      "source": "file:./examples/community/dag-loop-adapter",
-      "config": {
-        "model-adapter": {
-          "provider": "community-dag"
-        }
-      }
+      "source": "file:./examples/community/dag-loop-adapter"
     }
-  ]
+  ],
+  "providers": {
+    "model-adapter": {
+      "provider": "community-dag"
+    }
+  }
 }

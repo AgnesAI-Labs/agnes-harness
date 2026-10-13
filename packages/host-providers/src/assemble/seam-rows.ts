@@ -184,7 +184,7 @@ export function seamBinding(kind: SeamKind, selection: ProviderSelection, input:
     } catch (cause) {
       throw new HostError(
         'E_SEAM_MISSING',
-        `seam ${kind}: provider ${selection.provider}${selection.version ? `@${selection.version}` : ''} is not registered; install and enable its package, or change seams.${kind}.provider`,
+        `seam ${kind}: provider ${selection.provider}${selection.version ? `@${selection.version}` : ''} is not registered; install and enable its package, or change providers.${kind}.provider`,
         {
           detail: {
             seam: kind,

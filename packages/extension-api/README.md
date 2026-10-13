@@ -8,7 +8,7 @@ with `ctx.providers.register(loopKind, factory)`. The platform owns cleanup.
 `ctx.providers.catalog()` returns installed identities,
 capabilities and source packages for administration. New sessions select an exact
 identity through `Kernel.session(key, { ...options, loop: { id, version } })`.
-For a profile default, set `config.loop: { provider, version }` on one enabled package
+For a profile default, set `providers.loop: { provider, version }` in the profile
 entry  An assembled `PresetView.loop` overrides the Kernel default; an explicit
 session choice overrides the preset. Existing sessions keep their persisted identity. Legacy sessions use
 `agnes.default@1.0.0`. A missing pinned loop is an error.

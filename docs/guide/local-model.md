@@ -4,7 +4,7 @@ English | [简体中文](local-model.zh-CN.md)
 
 [Documentation](../README.md) · [Headless and replay](headless.md) · [Configuration](../reference/configuration.md)
 
-The optional `@agnes/model-adapters` package exposes `modelAdaptersPlugin`, which registers `local-openai`. Install and trust that package in your source runtime, or include its registration in your own plugin. Select `local-openai` in `config['model-adapter'].provider`; it is not selected by default. Inference uses the existing pi-ai OpenAI-compatible wire adapter, including its streaming, tool and multimodal translation.
+The optional `@agnes/model-adapters` package exposes `modelAdaptersPlugin`, which registers `local-openai`. Install and trust that package in your source runtime, or include its registration in your own plugin. Select `local-openai` in the profile's `providers.model-adapter.provider`; it is not selected by default. Inference uses the existing pi-ai OpenAI-compatible wire adapter, including its streaming, tool and multimodal translation.
 
 Start your local server with a model already downloaded, then use its OpenAI-compatible endpoint:
 

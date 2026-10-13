@@ -5675,6 +5675,11 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   Capability: helperSample('Capability', ['', 'A', 'a'.repeat(65), 'tools/invoke']),
   SeamName: helperSample('SeamName', ['provider', 'unknown']),
   SeamSelection: helperSample('SeamSelection', [{}, { provider: 'Bad Id' }, { provider: 'a', extra: 1 }]),
+  ProviderSelection: helperSample('ProviderSelection', [
+    {},
+    { provider: 'bad id' },
+    { provider: 'a', extra: 1 },
+  ]),
   PackageRef: helperSample('PackageRef', [
     { id: '@agnes/base' },
     { id: 'x', source: 'builtin', tombstone: 'true' },
@@ -5894,6 +5899,7 @@ const ProfileDefs: Record<string, TSchema> = {
   Capability: ProfileGen.Capability,
   SeamName: ProfileGen.SeamName,
   SeamSelection: ProfileGen.SeamSelection,
+  ProviderSelection: ProfileGen.ProviderSelection,
   PackageRef: ProfileGen.PackageRef,
   SecretRef: ProfileGen.SecretRef,
   Transport: ProfileGen.Transport,

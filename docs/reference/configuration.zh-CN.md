@@ -36,11 +36,10 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | --- | --- |
 | `name`、`schemaVersion`、`extends` | 配置身份/版本/继承；现有模板 schemaVersion 为 1 |
 | `packages` | 包来源、启用与配置；实际安装/信任仍由 PackageManager 管理 |
-| `packages[].config` | Provider 选择：`<kind>: { provider, version? }` |
-| `seams` | 每个 seam 种类一个 `{ provider, version? }` 选择；见 [Seam](../extend/seams.zh-CN.md) |
+| `packages[].config` | 包自己的配置，不承担任何选择 |
+| `providers` | 唯一的选择表：每个 provider 种类一个 `<kind>: { provider, version? }`。七个 seam 种类必填，见 [Seam](../extend/seams.zh-CN.md)。`persistence`（默认 `sqlite`）只能由用户配置档设置，它和 `sandbox`（默认 `local`）更改后需要重启，见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
 | `provider` | package/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
-| `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 与 Host 用户层校验均支持该字段。 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
 | `dataDir`, `cacheDir` | 数据/缓存位置；规范化 home 的运行中 daemon 拒绝不兼容的配置档或数据目录配置 |
 | `presets` | default 与 allowed；默认必须在允许集合中 |
@@ -51,10 +50,10 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `computerUse` | 启用、应用访问范围、捕获与保留限制 |
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
-| `sandbox.provider` | 启动时的沙箱提供者 id，默认 `local`。更改需要重启进程。见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
+| `sandbox.options` | 所选沙箱提供者的字符串选项 |
 
 
-Provider 选择放在启用包的 `config.<kind>: { provider, version? }`；`model-adapter.provider` 可选单个注册/来源包或唯一列表。Preset 使用 `tool-runtime` / `tool-policy: { provider }`。Bundle composition 使用相同的 provider 块，Loop 要求精确版本。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 会拒绝。
+配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 可选单个注册/来源包或唯一列表。Preset 为自己的会话使用 `tool-runtime` / `tool-policy: { provider }`。Bundle composition 使用相同的 provider 块，Loop 要求精确版本。
 
 完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/host-common/templates/local-dev.yaml)及[enterprise 模板](../../packages/host-common/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 

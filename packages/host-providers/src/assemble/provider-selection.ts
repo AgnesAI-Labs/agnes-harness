@@ -5,78 +5,57 @@ import {
   type ProviderSelection,
 } from '@agnes/extension-api'
 import { SEAM_KINDS, type SeamKind } from '@agnes/extension-api/seams'
-import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import {
-  type ModelAdapterSelection,
+  PROVIDER_KINDS,
+  type ProviderKindName,
+  type ProviderSelections,
   readModelAdapterSelection,
   readProviderSelection,
 } from '@agnes/host-common/profile/provider-selection'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
-export const PROVIDER_KINDS = [
-  'loop',
-  'model-adapter',
-  'compaction',
-  'persistence',
-  'sandbox',
-  'tool-runtime',
-  'tool-policy',
-  'child-agent',
-  'memory',
-] as const
-export type ProviderKindName = (typeof PROVIDER_KINDS)[number]
-export type ProviderSelections = Partial<
-  Record<Exclude<ProviderKindName, 'model-adapter'>, ProviderSelection>
-> & { 'model-adapter'?: ModelAdapterSelection }
+export {
+  PROVIDER_KINDS,
+  type ProviderKindName,
+  type ProviderSelections,
+  readProviderSelection,
+} from '@agnes/host-common/profile/provider-selection'
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
-export { readProviderSelection } from '@agnes/host-common/profile/provider-selection'
-
-/** Package config is the existing JSON extension point; the profile parser stays with its owner. */
+/**
+ * The selections in force for the kinds that are not seams: the profile's `providers` table,
+ * overridden per kind by a composition layer (bundle, admin or session) that chose one.
+ */
 export function readProviderSelections(
   profile: Pick<ResolvedProfile, 'packages'> & object,
 ): ProviderSelections {
   const selected: ProviderSelections = {}
   const top = profile as Record<string, unknown>
+  const table = record(top.providers)
   const composition = record(top.composition)
   const sources = record(top.compositionSources)
-  const authored = (kind: string) => {
+  const composed = (kind: string) => {
     const source = record(sources?.[kind === 'model-adapter' ? 'modelAdapters' : kind])
     return source?.layer === 'default' ? undefined : composition?.[kind]
   }
-  const adapters = profile.packages
-    .filter((pkg) => pkg.enabled !== false)
-    .flatMap((pkg) =>
-      pkg.config?.['model-adapter'] === undefined
-        ? []
-        : [readModelAdapterSelection(pkg.config['model-adapter'])!],
-    )
-  if (adapters.length > 1)
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'select at most one package config.model-adapter provider')
-  const composedAdapters = readModelAdapterSelection(authored('model-adapter'))
+  const composedAdapters = readModelAdapterSelection(composed('model-adapter'))
   const adapterChoice =
     (Array.isArray(composedAdapters?.provider) && composedAdapters.provider.length === 0
       ? undefined
-      : composedAdapters) ?? adapters[0]
+      : composedAdapters) ?? readModelAdapterSelection(table?.['model-adapter'])
   if (adapterChoice) selected['model-adapter'] = adapterChoice
   for (const kind of PROVIDER_KINDS) {
     if (kind === 'model-adapter') continue
-    if (kind === 'compaction' && record(top.composition)?.compaction === null) continue
-    const direct = readProviderSelection(
-      kind,
-      kind === 'loop' || kind === 'compaction' ? authored(kind) : top[kind],
-    )
-    const candidates = profile.packages
-      .filter((pkg) => pkg.enabled !== false)
-      .flatMap((pkg) =>
-        pkg.config?.[kind] === undefined ? [] : [readProviderSelection(kind, pkg.config[kind])!],
-      )
-    if (candidates.length > 1)
-      throw new HostError('E_PROFILE_FRAGMENT_KEY', `select at most one package config.${kind} provider`)
-    const chosen = direct ?? candidates[0]
+    if (kind === 'compaction' && composition?.compaction === null) continue
+    // The resolved persistence and sandbox already carry the composition layers.
+    const resolved = kind === 'persistence' || kind === 'sandbox' ? record(top[kind])?.provider : undefined
+    const chosen =
+      (typeof resolved === 'string' ? { provider: resolved } : undefined) ??
+      readProviderSelection(kind, kind === 'loop' || kind === 'compaction' ? composed(kind) : undefined) ??
+      readProviderSelection(kind, table?.[kind])
     if (chosen) selected[kind] = chosen
   }
   return selected

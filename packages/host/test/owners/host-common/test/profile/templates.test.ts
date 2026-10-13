@@ -16,7 +16,7 @@ describe('templates', () => {
   })
   it('local-dev names the seven seam kinds, lists the provider package, and defaults to workspace-write', () => {
     const t = loadTemplate('local-dev')
-    expect(Object.keys(t.seams ?? {}).sort()).toEqual([
+    expect(Object.keys(t.providers ?? {}).sort()).toEqual([
       'approval',
       'artifacts',
       'billing',
@@ -34,7 +34,7 @@ describe('templates', () => {
   })
   it('enterprise routes principals at the governance package and demands a sandbox', () => {
     const t = loadTemplate('enterprise')
-    expect(t.seams?.principals).toEqual({ provider: 'enterprise' })
+    expect(t.providers?.principals).toEqual({ provider: 'enterprise' })
     expect(t.limits?.['sandbox.required']).toBe(1)
     expect(t.transports).toEqual([{ kind: 'unix' }])
     expect(t.computerUse).toMatchObject({ enabled: false, appAccess: 'allowlist' })
@@ -53,7 +53,7 @@ describe('checkTemplateShape says which rule fired', () => {
   const ok = () => ({
     name: 't',
     schemaVersion: 1,
-    seams: {
+    providers: {
       approval: { provider: 'a' },
       checkpoint: { provider: 'a' },
       billing: { provider: 'a' },
@@ -85,13 +85,13 @@ describe('checkTemplateShape says which rule fired', () => {
     ['a schemaVersion that is not 1', { ...ok(), schemaVersion: 2 }, /schemaVersion must be 1/],
     [
       'a missing seam',
-      { ...ok(), seams: { ...ok().seams, verifier: undefined } },
-      /seams\.verifier is required/,
+      { ...ok(), providers: { ...ok().providers, verifier: undefined } },
+      /providers\.verifier is required/,
     ],
     [
       'the string seam form',
-      { ...ok(), seams: { ...ok().seams, approval: '@a' } },
-      /seams\.approval must be \{ provider/,
+      { ...ok(), providers: { ...ok().providers, approval: '@a' } },
+      /providers\.approval must be \{ provider/,
     ],
     ['no provider package', { ...ok(), provider: {} }, /provider\.package is required/],
     ['no presets block', { ...ok(), presets: undefined }, /presets\.default and presets\.allowed/],

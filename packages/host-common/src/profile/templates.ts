@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { HostError, type Layer } from '../errors.js'
-import { seamSelectionProblems } from './seam-selection.js'
+import { providerSelectionProblems } from './seam-selection.js'
 import type { RouteDecl, RuntimeProfileManifest } from './types.js'
 
 export const TEMPLATE_NAMES = ['local-dev', 'enterprise'] as const
@@ -27,7 +27,7 @@ const TOP_LEVEL_KEYS = new Set([
   'schemaVersion',
   'extends',
   'packages',
-  'seams',
+  'providers',
   'provider',
   'adapters',
   'transports',
@@ -41,7 +41,6 @@ const TOP_LEVEL_KEYS = new Set([
   'computerUse',
   'extensionIsolation',
   'sandbox',
-  'persistence',
   'bundles',
   'composition',
   'commandHooks',
@@ -72,19 +71,14 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
   for (const k of Object.keys(m)) if (!TOP_LEVEL_KEYS.has(k)) bad(`unknown top-level key ${k}`)
   if (typeof m.name !== 'string' || m.name !== name) bad('name must equal the file name')
   if (m.schemaVersion !== 1) bad('schemaVersion must be 1')
-  const sandbox = m.sandbox as { provider?: unknown } | undefined
+  const sandbox = m.sandbox
   if (sandbox !== undefined) {
     if (typeof sandbox !== 'object' || sandbox === null || Array.isArray(sandbox))
       bad('sandbox must be a mapping')
-    if (Object.keys(sandbox).some((key) => key !== 'provider')) bad('sandbox only accepts provider')
-    if (
-      sandbox.provider !== undefined &&
-      (typeof sandbox.provider !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(sandbox.provider))
-    )
-      bad('sandbox.provider must be a provider id')
+    if (Object.keys(sandbox as object).some((key) => key !== 'options')) bad('sandbox only accepts options')
   }
-  const seamProblems = seamSelectionProblems(m.seams, true)
-  if (seamProblems.length) bad(seamProblems.join('; '))
+  const selectionProblems = providerSelectionProblems(m.providers, true)
+  if (selectionProblems.length) bad(selectionProblems.join('; '))
   if (typeof (m.provider as { package?: unknown } | undefined)?.package !== 'string')
     bad('provider.package is required')
   const presets = m.presets as { default?: unknown; allowed?: unknown } | undefined

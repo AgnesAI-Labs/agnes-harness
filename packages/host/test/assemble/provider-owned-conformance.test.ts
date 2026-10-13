@@ -409,7 +409,9 @@ it.each([sqlitePersistenceProvider, jsonlProvider])(
                         { type: 'done', reason: 'stop' },
                       ],
                     ],
-                    profileInputs: { user: { name: 'local-dev', persistence: { provider: provider.id } } },
+                    profileInputs: {
+                      user: { name: 'local-dev', providers: { persistence: { provider: provider.id } } },
+                    },
                     packages: { '@agnes/code': { persistenceProvider: selected } },
                   })
                 const first = await boot()

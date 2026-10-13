@@ -9,7 +9,7 @@ import type { ChildControlStore } from './child-control.js'
  * provider's files. Selecting a different id applies on the next process start.
  */
 
-/** Built-in provider id. Host uses it when config omits `persistence.provider`. */
+/** Built-in provider id. Host uses it when the profile omits `providers.persistence`. */
 export const DEFAULT_PERSISTENCE_PROVIDER_ID = 'sqlite'
 
 /**

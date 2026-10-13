@@ -82,7 +82,7 @@ export const example = {
 
 受信的普通插件可以注入 `providers` 并调用 `ctx.providers.register(modelAdapterKind, adapter)`；在 `agnes.plugins` 清单中声明相同的依赖。[公共 ModelAdapter 合同](../../packages/extension-api/src/model-adapter.ts) 包装现有 WireAdapter 形状：id、版本、`wireApi` 线路格式、能力（含图片输入），以及返回 wire 实例的 `create({ routes })`。[测试样例包](../../packages/host/test/fixtures/model-adapter/index.ts) 演示了不依赖 Host 或 Core 的注册方式。
 
-在 `config['model-adapter'].provider` 中填写注册 id 或已启用的来源包名，并将路由的 `api` 设置为注册 id。`compat` 可携带适配器专用配置。现有的 `@agnes/ai` 选择与 pi API 名继续有效，API-key 和托管订阅 OAuth 路径保持兼容。
+在配置档的 `providers.model-adapter.provider` 中填写注册 id 或已启用的来源包名，并将路由的 `api` 设置为注册 id。`compat` 可携带适配器专用配置。现有的 `@agnes/ai` 选择与 pi API 名继续有效，API-key 和托管订阅 OAuth 路径保持兼容。
 
 实例输出 wire 事件；现有 AI facade 继续负责 stamp、工具调用恢复与用量计费。有凭据的结构化实例须实现 `bindCredential`，Host 在推理前解析密钥。实例的 `dispose()` 释放实例资源，可选的注册级 `cleanup()` 释放共享资源；插件卸载时均会执行。重复 id 与不可用的选择会被拒绝。
 
@@ -90,7 +90,7 @@ export const example = {
 
 ## 持久化提供者
 
-完整 Host 提供器实现账本、metadata、子任务控制、回收与完整性五个端口，SQL 可选。内置 `sqlite` 与 [JSONL 示例](../../examples/persistence/)均提供这些端口。安装包后在用户配置档选择 `persistence: { provider: jsonl }`。缺少必要能力会拒绝启动，子任务控制不会回退 SQLite。选择需要重启，不迁移文件。合同、一致性验证及受支持的导出/导入迁移见[持久化作者指南](../extend/persistence.zh-CN.md)。
+完整 Host 提供器实现账本、metadata、子任务控制、回收与完整性五个端口，SQL 可选。内置 `sqlite` 与 [JSONL 示例](../../examples/persistence/)均提供这些端口。安装包后在用户配置档选择 `providers.persistence: { provider: jsonl }`。缺少必要能力会拒绝启动，子任务控制不会回退 SQLite。选择需要重启，不迁移文件。合同、一致性验证及受支持的导出/导入迁移见[持久化作者指南](../extend/persistence.zh-CN.md)。
 
 ## 子代理提供者
 
@@ -158,4 +158,4 @@ Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 
 
 遵守取消信号，dispose 必须幂等。会话关闭先停止准入，再取消并等待活跃驱动/工具工作，允许最终写入，然后关闭 hooks、账本与工作区租约。释放非活跃的账本续点会保留其恢复能力。
 
-新会话选择优先级为显式参数、管理端默认值、启用包的 `config.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[计划-执行示例](../../examples/loops/plan-execute-loop/README.md)：非 ReAct 状态机，声明为 `GenericLoopFactory`，通过 `DecisionPort` 请求真人批准，吸收结构化 child-completed `system` 输入，并在拒绝、取消或结果未知时如实结束，其测试是通用端口的一致性参照。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。
+新会话选择优先级为显式参数、管理端默认值、配置档的 `providers.loop: { provider, version? }`、`agnes.default@1.0.0`。SDK 使用 `client.createSession({ cwd, loop })` 或 `client.session.new({ cwd, loop })`，CLI 使用 `agh -p "提示词" --loop example.dag@1.0.0`。开始记录固定循环身份；默认值变更仅影响新会话。旧会话映射到默认身份，缺失时明确失败，不会替换循环。参见[计划-执行示例](../../examples/loops/plan-execute-loop/README.md)：非 ReAct 状态机，声明为 `GenericLoopFactory`，通过 `DecisionPort` 请求真人批准，吸收结构化 child-completed `system` 输入，并在拒绝、取消或结果未知时如实结束，其测试是通用端口的一致性参照。参见[独立 DAG 示例](../../examples/loops/dag-loop/README.md)：模型规划、并行波次、依赖汇合与恢复均只依赖公共端口。

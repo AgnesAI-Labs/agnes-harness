@@ -20,7 +20,7 @@ declare const enterpriseMemory: MemoryProvider
 
 实现 `open({ home, workspaceRoot, sessionKey })` 返回 `MemorySession`。`snapshot(turn)` 通过普通请求 section 贡献有预算的索引，同轮重复调用必须使用同一修订。实时关闭策略不再贡献内容，并拒绝 Agent 后续读写。`files(fallback, source, signal, approve)` 包装普通文件工具：工作区路径交给 fallback，记忆路径执行受限读取、验证与原子写入。可选 `revision(path)` 为快照读取标记修订。`inspect/configure/readFile/editFile` 是明确的人工管理方法，独立于 Agent 关闭权限；`inspect` 只返回元数据，不返回正文。
 
-包 `config.memory: { provider: "enterprise", version: "1.0.0" }` 替换默认实现。多个包同时选择记忆会拒绝；明确选择不存在或无效实现时 fail closed，不回退文件 provider。安装多个实现不代表同时使用多个 store。知识库仍是多个独立 MCP、工具、Skill、FDE 能力，可与所选记忆共存。
+配置档的 `providers.memory: { provider: enterprise, version: 1.0.0 }` 替换默认实现。明确选择不存在或无效实现时 fail closed，不回退文件 provider。安装多个实现不代表同时使用多个 store。知识库仍是多个独立 MCP、工具、Skill、FDE 能力，可与所选记忆共存。
 
 `approve` 回调返回 `MemoryApprovalResult`：`{ status: 'approved' }`、真人拒绝的 `{ status: 'rejected' }`，或使用已有审批原因的 `{ status: 'unanswered', reason }`。询问模式要求已验证真人的一次性回答；缺少身份、agent 回答或未提供的 session/permanent 选项均无效。文件 provider 用 `MEMORY_APPROVAL_UNANSWERED` 保留原原因，不把断线变成拒绝或授权。
 

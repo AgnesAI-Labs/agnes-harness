@@ -286,11 +286,19 @@ describe('persistence provider', () => {
   it('reads persistence.provider from the user profile and omits the sqlite default', async () => {
     const omitted = await resolveProfile({ builtin: 'local-dev', lock, user: { name: 'local-dev' } }, env)
     const explicit = await resolveProfile(
-      { builtin: 'local-dev', lock, user: { name: 'local-dev', persistence: { provider: 'sqlite' } } },
+      {
+        builtin: 'local-dev',
+        lock,
+        user: { name: 'local-dev', providers: { persistence: { provider: 'sqlite' } } },
+      },
       env,
     )
     const selected = await resolveProfile(
-      { builtin: 'local-dev', lock, user: { name: 'local-dev', persistence: { provider: 'jsonl' } } },
+      {
+        builtin: 'local-dev',
+        lock,
+        user: { name: 'local-dev', providers: { persistence: { provider: 'jsonl' } } },
+      },
       env,
     )
     expect(omitted.persistence).toBeUndefined()
@@ -303,7 +311,7 @@ describe('persistence provider', () => {
         {
           builtin: 'local-dev',
           lock,
-          user: { name: 'local-dev', persistence: { provider: 'Bad' } },
+          user: { name: 'local-dev', providers: { persistence: { provider: 'Bad' } } },
         },
         env,
       ),
@@ -313,7 +321,9 @@ describe('persistence provider', () => {
         {
           builtin: 'local-dev',
           lock: { ...lock, workspace: { path: '/work', hash: 'sha256-workspace', manifestId: 'fixture' } },
-          workspaceOverlay: { persistence: { provider: 'jsonl' } } as unknown as ProfileFragment,
+          workspaceOverlay: {
+            providers: { persistence: { provider: 'jsonl' } },
+          } as unknown as ProfileFragment,
         },
         env,
       ),

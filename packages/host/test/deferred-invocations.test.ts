@@ -1102,13 +1102,8 @@ it.each(['allowed-once', 'rejected'] as const)(
       profileInputs: {
         user: {
           name: 'local-dev',
-          packages: [
-            {
-              id: packageId,
-              source: `file:${directory}`,
-              config: { loop: { provider: loop.id, version: loop.version } },
-            },
-          ],
+          packages: [{ id: packageId, source: `file:${directory}` }],
+          providers: { loop: { provider: loop.id, version: loop.version } },
         },
       },
       runtimePluginSnapshots: [source],

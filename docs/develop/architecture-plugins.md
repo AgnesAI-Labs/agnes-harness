@@ -59,20 +59,17 @@ Tool policies and runtimes register and appear in catalogs only through `provide
 
 ## Selection and compatibility
 
-The canonical block is `<kind>: { provider: id, version?: version }`. Use these blocks in one enabled profile package's `config`, the existing JSON extension point. For example:
+The canonical block is `<kind>: { provider: id, version?: version }`. Write these blocks in the profile's `providers` table. For example:
 
 ```yaml
-packages:
-  - id: '@example/workflow'
-    source: './workflow'
-    config:
-      loop: { provider: 'example.research', version: '1.0.0' }
-      tool-policy: { provider: 'read-only' }
-      compaction: { provider: 'default' }
-      child-agent: { provider: 'in-process' }
+providers:
+  loop: { provider: 'example.research', version: '1.0.0' }
+  tool-policy: { provider: 'read-only' }
+  compaction: { provider: 'default' }
+  child-agent: { provider: 'in-process' }
 ```
 
-Provider selection uses package `config.<kind>: { provider, version? }`. Root `loop`, `compaction`, `provider.adapters` and preset `tools.runtime` / `approval.policy` are removed. Presets select `tool-runtime` and `tool-policy` with `{ provider }`. `model-adapter.provider` accepts an id, a source package or a list of either, preserving multiple wire transports. Multiple package selections for one kind are refused. Root persistence and sandbox blocks already use `{ provider }`.
+A profile selects every provider in one table, `providers.<kind>: { provider, version? }`: the seven seam kinds and `loop`, `compaction`, `model-adapter`, `persistence`, `sandbox`, `tool-runtime`, `tool-policy`, `child-agent` and `memory`. Nothing else in a profile carries a selection: `seams`, top-level `persistence` / `sandbox.provider` / `memory` / `child-agent`, profile `composition.<kind>` and package `config.<kind>` are refused with the sentence that names the table. `model-adapter.provider` accepts an id, a source package or a list of either, preserving multiple wire transports. A preset keeps its own `tool-runtime` and `tool-policy: { provider }` for the sessions that use it, and a bundle's composition patch keeps its provider blocks; both are layers over the table, not other places to write the profile's choice.
 
 `child-agent: { provider, version? }` selects the default for `childAgents.start(undefined, task, options)`. An explicit provider id still selects that provider. Omitting configuration keeps `in-process`; a missing configured provider fails instead of falling back. Existing in-process subagent tools retain their explicit in-process path. When fitted, `LoopContext.children` uses the parent-bound `ChildAgentSessionService` facade and configured provider selection. Providers register through `ctx.providers.register(childAgentKind, provider)`; the platform owns registration cleanup.
 

@@ -173,7 +173,9 @@ export async function loadRuntimeTargetClaims(
   const thirdParty = new Map<string, Claim>()
   for (const claim of claims.values()) {
     if (claim.trust === 'builtin') {
-      builtinClaims.push(Object.freeze({ row: claim.row, entry: claim.entry }))
+      builtinClaims.push(
+        Object.freeze({ row: claim.row, entry: claim.entry, ownerPackage: claim.snapshot.packageId }),
+      )
     } else {
       thirdParty.set(claim.row.id, claim)
     }

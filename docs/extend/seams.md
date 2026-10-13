@@ -53,7 +53,7 @@ Pinned kinds must be re-openable: after an idle container is reclaimed, `create`
 Profiles choose one provider per kind with a single syntax:
 
 ```yaml
-seams:
+providers:
   approval:   { provider: local-prompt }
   principals: { provider: local }
   billing:    { provider: budget }
@@ -63,7 +63,7 @@ seams:
   repair:     { provider: default }
 ```
 
-All seven keys are required. A selection that no installed package registers fails assembly with `E_SEAM_MISSING`; a factory that throws or hangs fails it with `E_SEAM_INIT`. Seams are never silently skipped or defaulted. The older package-id string form, `seams.ledger` (now `seams.billing`) and `seams.harness` (no longer a seam) are configuration errors that name the fix. Workspace configuration cannot write `seams`.
+All seven keys are required. A selection that no installed package registers fails assembly with `E_SEAM_MISSING`; a factory that throws or hangs fails it with `E_SEAM_INIT`. Seams are never silently skipped or defaulted. These seven share the `providers` table with every other provider kind. The older package-id string form, the `seams` key (now `providers`), `ledger` (now `billing`) and `harness` (no longer a kind) are configuration errors that name the fix. Workspace configuration cannot write `providers`.
 
 ## Pinning, upgrades and resuming
 

@@ -95,13 +95,8 @@ async function runExampleTurn(kind: keyof typeof cases) {
     profileInputs: {
       user: {
         name: 'local-dev',
-        packages: [
-          {
-            id: spec.packageId,
-            source: `file:${directory}`,
-            config: { loop: { provider: spec.selection.id, version: spec.selection.version } },
-          },
-        ],
+        packages: [{ id: spec.packageId, source: `file:${directory}` }],
+        providers: { loop: { provider: spec.selection.id, version: spec.selection.version } },
       },
     },
     runtimePluginSnapshots: [source],
@@ -240,13 +235,8 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
     profileInputs: {
       user: {
         name: 'local-dev',
-        packages: [
-          {
-            id: spec.packageId,
-            source: `file:${directory}`,
-            config: { loop: { provider: spec.selection.id, version: spec.selection.version } },
-          },
-        ],
+        packages: [{ id: spec.packageId, source: `file:${directory}` }],
+        providers: { loop: { provider: spec.selection.id, version: spec.selection.version } },
       },
     },
     runtimePluginSnapshots: [source],

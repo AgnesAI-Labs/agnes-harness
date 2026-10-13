@@ -18,19 +18,13 @@ it('assembles the bundled default policy row before opening a real Host session'
     profileInputs: {
       user: {
         name: 'local-dev',
-        packages: [
-          {
-            id: '@agnes/code',
-            source: 'builtin',
-            config: {
-              loop: { provider: 'agnes.default' },
-              'tool-runtime': { provider: 'default' },
-              'tool-policy': { provider: 'default' },
-              compaction: { provider: 'default' },
-              'child-agent': { provider: 'in-process' },
-            },
-          },
-        ],
+        providers: {
+          loop: { provider: 'agnes.default' },
+          'tool-runtime': { provider: 'default' },
+          'tool-policy': { provider: 'default' },
+          compaction: { provider: 'default' },
+          'child-agent': { provider: 'in-process' },
+        },
       },
     },
   })

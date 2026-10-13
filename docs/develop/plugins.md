@@ -94,7 +94,7 @@ A value published by `ctx.provide('name', value)` belongs to the current Context
 
 An ordinary trusted plugin can inject `providers` and call `ctx.providers.register(modelAdapterKind, adapter)`. Declare the same injection in `agnes.plugins`. The [public ModelAdapter contract](../../packages/extension-api/src/model-adapter.ts) wraps the existing WireAdapter shape: id, version, `wireApi` wire format, capabilities (including image input), and `create({ routes })` returning a wire instance. The [fixture package](../../packages/host/test/fixtures/model-adapter/index.ts) shows registration without depending on Host or Core.
 
-Configure `config['model-adapter'].provider` with the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
+Set `providers.model-adapter.provider` in the profile to the registration id or its enabled source package, and set the route's `api` to that registration id. Route `compat` carries adapter-specific configuration. Existing `@agnes/ai` selections and pi API names keep working, including API-key and managed subscription OAuth routes.
 
 The instance streams wire events; the existing AI facade continues to own stamps, tool-call recovery and usage accounting. Credentialed structural instances implement `bindCredential`; Host resolves secrets before inference. `dispose()` releases instance resources, and optional registration `cleanup()` releases shared resources. Both run when the owning plugin unloads. Duplicate ids and unavailable selections are refused.
 
@@ -102,7 +102,7 @@ Admin integrations can call Host's `modelAdapterCatalog(root)` or the assembled 
 
 ## Persistence providers
 
-A full Host provider implements ledger, metadata, child control, reclaim and integrity; SQL is optional. The built-in `sqlite` and [JSONL example](../../examples/persistence/) supply these ports. Select `persistence: { provider: jsonl }` in the user profile after installing its package. Missing required capabilities refuse startup; there is no fallback to SQLite for child control. Selection requires restart and does not migrate files. Use the [persistence author guide](../extend/persistence.md) for contracts, conformance and supported export/import migration.
+A full Host provider implements ledger, metadata, child control, reclaim and integrity; SQL is optional. The built-in `sqlite` and [JSONL example](../../examples/persistence/) supply these ports. Select `providers.persistence: { provider: jsonl }` in the user profile after installing its package. Missing required capabilities refuse startup; there is no fallback to SQLite for child control. Selection requires restart and does not migrate files. Use the [persistence author guide](../extend/persistence.md) for contracts, conformance and supported export/import migration.
 
 ## Child agent providers
 
@@ -174,7 +174,7 @@ For continuable children, read events through `idle` to delimit a reply; `result
 
 Honor abort signals and make disposal idempotent. Session close stops admission, cancels and drains active driver/tool work, allows final writes, then shuts down hooks, the log and workspace lease. Releasing an inactive ledger continuation preserves it for later resume.
 
-Choose a loop for a new session with an enabled package's `config.loop: { "provider": "example.dag", "version": "1.0.0" }`, the admin defaults API, SDK `client.createSession({ cwd, loop })` (also `client.session.new({ cwd, loop })`), or `agh -p "prompt" --loop example.dag@1.0.0`. Explicit selection wins over the persisted admin default, which wins over the resolved profile and `agnes.default@1.0.0`. Session start pins the identity; changes to defaults affect new sessions. Legacy sessions map to the default identity. Missing selected or persisted loops fail before session start; resume never substitutes another loop.
+Choose a loop for a new session with the profile's `providers.loop: { provider: example.dag, version: 1.0.0 }`, the admin defaults API, SDK `client.createSession({ cwd, loop })` (also `client.session.new({ cwd, loop })`), or `agh -p "prompt" --loop example.dag@1.0.0`. Explicit selection wins over the persisted admin default, which wins over the resolved profile and `agnes.default@1.0.0`. Session start pins the identity; changes to defaults affect new sessions. Legacy sessions map to the default identity. Missing selected or persisted loops fail before session start; resume never substitutes another loop.
 
 [The plan-execute example](../../examples/loops/plan-execute-loop/README.md) is a non-ReAct state machine typed as `GenericLoopFactory`: it plans, asks a person through `DecisionPort`, executes steps, absorbs a structured child-completed `system` input and finishes honestly on rejection, cancellation or an unknown outcome. Its test is the conformance reference for the generic surface.
 

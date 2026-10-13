@@ -14,8 +14,8 @@ pnpm exec vitest run examples/persistence/test/contract.test.ts packages/host/te
 For a built package, point its root export to `./dist/src/index.js`, then install, inspect, trust and enable it using [package management](../../docs/guide/packages.md). The source example points to TypeScript for workspace development. Add this to the user profile, then restart:
 
 ```yaml
-persistence:
-  provider: jsonl
+providers:
+  persistence: { provider: jsonl }
 ```
 
 Settings → Providers shows the selected provider, its capabilities and the restart requirement. The Host smoke uses a scripted model, the default accounting/refinement factories and real session creation, a complete turn, pinned-generation restoration and cold resume. The public conformance runner also verifies admission, catalog immutability and unload draining; cancellation is explicitly unsupported by the persistence contract.

@@ -57,7 +57,7 @@ export function compileRunPlan(
       : template && sameSelection(template, selection)
         ? 'template'
         : layerOf(profile)
-    explain.push({ key: `seams.${kind}`, value: selection, source })
+    explain.push({ key: `providers.${kind}`, value: selection, source })
     return Object.freeze({
       kind,
       selection: Object.freeze({ ...selection }),

@@ -7,8 +7,8 @@ When `docker version` fails, the provider's capabilities stay `available: false`
 Select it at startup with:
 
 ```yaml
-sandbox:
-  provider: docker
+providers:
+  sandbox: { provider: docker }
 ```
 
-Changing `sandbox.provider` requires a process restart. A plugin row injects `sandboxProviders` and calls `register` with `dockerSandboxProvider`, or applies `sandboxProvidersPlugin`.
+Changing `providers.sandbox` requires a process restart. A plugin row injects `sandboxProviders` and calls `register` with `dockerSandboxProvider`, or applies `sandboxProvidersPlugin`.

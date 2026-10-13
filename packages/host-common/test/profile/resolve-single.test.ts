@@ -32,13 +32,13 @@ const lock: LockState = {
 }
 
 /** The code a rejection actually carried, so a refusal cannot be credited to the wrong check. */
-async function refusal(p: Promise<unknown>): Promise<{ code: string; detail: unknown }> {
+async function refusal(p: Promise<unknown>): Promise<{ code: string; detail: unknown; message: string }> {
   try {
     await p
     expect.unreachable('should have refused')
   } catch (e) {
     if (!isHostError(e)) throw e
-    return { code: e.code, detail: e.detail }
+    return { code: e.code, detail: e.detail, message: e.message }
   }
   throw new Error('unreachable')
 }
@@ -80,7 +80,7 @@ describe('resolveProfile (single layer)', () => {
       user: {
         name: 'mine',
         dataDir: '/tmp/agnes',
-        seams: { approval: { provider: 'other' } },
+        providers: { approval: { provider: 'other' } },
         transports: [{ kind: 'unix' }],
         presets: { default: 'code', allowed: ['code'] },
       },
@@ -115,7 +115,7 @@ describe('resolveProfile (single layer)', () => {
   it('hash moves when any resolved field moves, identity and directories included', async () => {
     const base = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const moves: Array<[string, RuntimeProfileManifest]> = [
-      ['seams', { name: 'local-dev', seams: { approval: { provider: 'other' } } }],
+      ['providers', { name: 'local-dev', providers: { approval: { provider: 'other' } } }],
       ['name', { name: 'beta' }],
       ['dataDir', { name: 'local-dev', dataDir: '/var/lib/elsewhere' }],
       ['cacheDir', { name: 'local-dev', cacheDir: '/elsewhere' }],
@@ -195,17 +195,85 @@ describe('resolveProfile (single layer)', () => {
     expect(r.detail).toEqual({ id: '@agnes/ai' })
   })
   it.each([
-    ['the package-id string form', { approval: '@agnes/base' }, /seams\.approval must be \{ provider/],
-    ['the renamed ledger key', { ledger: { provider: 'budget' } }, /use seams\.billing/],
-    ['the removed harness key', { harness: { provider: 'x' } }, /harness is no longer a seam/],
-    ['an unknown key', { invented: { provider: 'x' } }, /not a seam kind/],
+    ['the package-id string form', { approval: '@agnes/base' }, /providers\.approval must be \{ provider/],
+    ['the renamed ledger key', { ledger: { provider: 'budget' } }, /use providers\.billing/],
+    ['the removed harness key', { harness: { provider: 'x' } }, /harness is no longer a provider kind/],
+    ['an unknown key', { invented: { provider: 'x' } }, /not a provider kind/],
     ['an extra field', { approval: { provider: 'x', extra: 1 } }, /only accepts provider and version/],
-  ])('rejects %s in seams with a message that names the fix', async (_name, seams, message) => {
+    ['an extra field on a named kind', { loop: { provider: 'x', id: 'y' } }, /providers\.loop requires/],
+  ])('rejects %s in providers with a message that names the fix', async (_name, providers, message) => {
     const r = await refusal(
-      resolveProfile({ builtin: 'local-dev', lock, user: { name: 'x', seams: seams as never } }, env),
+      resolveProfile({ builtin: 'local-dev', lock, user: { name: 'x', providers: providers as never } }, env),
     )
     expect(r.code).toBe('E_PROFILE_FRAGMENT_KEY')
     expect((r.detail as { problems: string[] }).problems.join('; ')).toMatch(message)
+  })
+  it('selects every provider kind in the one table, kind by kind over the template', async () => {
+    const p = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock,
+        user: {
+          name: 'x',
+          providers: {
+            approval: { provider: 'other' },
+            loop: { provider: 'echo', version: '2.0.0' },
+            compaction: { provider: 'short' },
+            'model-adapter': { provider: ['wire-a', 'wire-b'] },
+            'tool-policy': { provider: 'read-only' },
+            memory: { provider: 'notes', version: '1.0.0' },
+            sandbox: { provider: 'acme-remote' },
+            persistence: { provider: 'jsonl' },
+          },
+          sandbox: { options: { region: 'eu' } },
+        },
+      },
+      env,
+    )
+    // The user layer replaces one seam kind and leaves the template's others.
+    expect(p.seams).toMatchObject({ approval: { provider: 'other' }, billing: { provider: 'budget' } })
+    // Persistence and sandbox are startup choices, kept in their resolved fields below.
+    expect(p.providers).toEqual({
+      loop: { provider: 'echo', version: '2.0.0' },
+      compaction: { provider: 'short' },
+      'model-adapter': { provider: ['wire-a', 'wire-b'] },
+      'tool-policy': { provider: 'read-only' },
+      memory: { provider: 'notes', version: '1.0.0' },
+    })
+    expect(p.loop).toEqual({ id: 'echo', version: '2.0.0' })
+    expect(p.compaction).toEqual({ engine: 'short' })
+    expect(p.provider.adapters).toEqual(['wire-a', 'wire-b'])
+    expect(p.sandbox).toEqual({ provider: 'acme-remote', options: { region: 'eu' } })
+    expect(p.persistence).toEqual({ provider: 'jsonl' })
+  })
+  it.each([
+    ['seams', { seams: { approval: { provider: 'x' } } }, /seams was replaced by providers/],
+    ['top-level persistence', { persistence: { provider: 'jsonl' } }, /providers\.persistence/],
+    ['top-level memory', { memory: { provider: 'notes' } }, /providers\.memory/],
+    ['top-level child-agent', { 'child-agent': { provider: 'acp' } }, /providers\.child-agent/],
+    ['top-level loop', { loop: { provider: 'echo' } }, /providers\.loop/],
+    ['sandbox.provider', { sandbox: { provider: 'acme' } }, /providers\.sandbox/],
+    [
+      'provider.adapters',
+      { provider: { package: '@agnes/ai', adapters: ['x'] } },
+      /providers\.model-adapter/,
+    ],
+    [
+      'a composition selection',
+      { composition: { loop: { provider: 'echo', version: '1.0.0' } } },
+      /composition\.loop is selected with providers\.loop/,
+    ],
+    [
+      'a package config selection',
+      { packages: [{ id: '@agnes/base', source: 'builtin', config: { loop: { provider: 'echo' } } }] },
+      /package config\.loop no longer selects a provider; use providers\.loop/,
+    ],
+  ])('refuses a selection written as %s and says where it goes', async (_name, manifest, message) => {
+    const r = await refusal(
+      resolveProfile({ builtin: 'local-dev', lock, user: { name: 'x', ...manifest } as never }, env),
+    )
+    expect(r.code).toBe('E_PROFILE_FRAGMENT_KEY')
+    expect(r.message).toMatch(message)
   })
   it('rejects an env without agnesVersion instead of quietly ignoring it', async () => {
     const r = await refusal(resolveProfile({ builtin: 'local-dev', lock }, { ...env, agnesVersion: '' }))
@@ -507,17 +575,11 @@ describe('resolveProfile, the fields finalize decides', () => {
         lock,
         user: {
           name: 'x',
-          packages: [
-            {
-              id: '@agnes/ai',
-              source: 'builtin',
-              config: {
-                'model-adapter': { provider: ['chat', 'messages'] },
-                loop: { provider: 'custom', version: '2.0.0' },
-                compaction: { provider: 'short' },
-              },
-            },
-          ],
+          providers: {
+            'model-adapter': { provider: ['chat', 'messages'] },
+            loop: { provider: 'custom', version: '2.0.0' },
+            compaction: { provider: 'short' },
+          },
         },
       },
       env,
@@ -535,7 +597,7 @@ describe('resolveProfile, the fields finalize decides', () => {
           },
           env,
         ),
-      ).rejects.toThrow('enabled package config')
+      ).rejects.toThrow('is selected with providers.')
     await expect(
       resolveProfile(
         {

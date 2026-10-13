@@ -3,7 +3,7 @@ import { HostError } from '../errors.js'
 
 export const PROVIDER_ID = /^[a-z][a-z0-9-]{0,63}$/
 
-/** Profile field `sandbox: { provider }`. An omitted provider means the local host sandbox. */
+/** `providers.sandbox` with the `sandbox.options` of the profile. An omitted provider means the local host sandbox. */
 export function readSandboxStartupConfig(
   value: unknown,
 ): Readonly<{ provider: string; options?: Readonly<Record<string, string>> }> | undefined {
@@ -30,8 +30,8 @@ export function readSandboxStartupConfig(
   if (record.provider === undefined && record.options === undefined) return undefined
   const provider = record.provider ?? LOCAL_SANDBOX_PROVIDER_ID
   if (typeof provider !== 'string' || !PROVIDER_ID.test(provider))
-    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'sandbox.provider must be a provider id', {
-      detail: { field: 'sandbox.provider' },
+    throw new HostError('E_PROFILE_FRAGMENT_KEY', 'providers.sandbox.provider must be a provider id', {
+      detail: { field: 'providers.sandbox.provider' },
     })
   return Object.freeze({
     provider,

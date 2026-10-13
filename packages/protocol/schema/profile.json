@@ -270,8 +270,15 @@
       "additionalProperties": false,
       "required": ["provider"],
       "properties": {
-        "provider": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" },
-        "version": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
       }
     },
     "SeamName": {
@@ -732,31 +739,18 @@
         "composition": {
           "$ref": "#/$defs/CompositionPatch"
         },
-        "persistence": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "provider": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          },
-          "required": ["provider"]
-        },
         "sandbox": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "provider": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            "options": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 4096
+              }
             }
-          },
-          "required": ["provider"]
+          }
         },
         "name": {
           "type": "string",
@@ -776,18 +770,88 @@
             "$ref": "#/$defs/PackageRef"
           }
         },
-        "seams": {
+        "providers": {
           "type": "object",
           "additionalProperties": false,
           "required": [],
           "properties": {
-            "approval": { "$ref": "#/$defs/SeamSelection" },
-            "checkpoint": { "$ref": "#/$defs/SeamSelection" },
-            "billing": { "$ref": "#/$defs/SeamSelection" },
-            "verifier": { "$ref": "#/$defs/SeamSelection" },
-            "repair": { "$ref": "#/$defs/SeamSelection" },
-            "artifacts": { "$ref": "#/$defs/SeamSelection" },
-            "principals": { "$ref": "#/$defs/SeamSelection" }
+            "approval": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "checkpoint": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "verifier": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "repair": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "artifacts": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "principals": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "loop": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "compaction": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "persistence": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "sandbox": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "tool-runtime": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "tool-policy": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "child-agent": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "memory": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "model-adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "array",
+                      "maxItems": 256,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  ]
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            }
           }
         },
         "provider": {
@@ -1246,13 +1310,27 @@
           "additionalProperties": false,
           "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
-            "approval": { "$ref": "#/$defs/SeamSelection" },
-            "checkpoint": { "$ref": "#/$defs/SeamSelection" },
-            "billing": { "$ref": "#/$defs/SeamSelection" },
-            "verifier": { "$ref": "#/$defs/SeamSelection" },
-            "repair": { "$ref": "#/$defs/SeamSelection" },
-            "artifacts": { "$ref": "#/$defs/SeamSelection" },
-            "principals": { "$ref": "#/$defs/SeamSelection" }
+            "approval": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "checkpoint": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "verifier": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "repair": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "artifacts": {
+              "$ref": "#/$defs/SeamSelection"
+            },
+            "principals": {
+              "$ref": "#/$defs/SeamSelection"
+            }
           }
         },
         "provider": {
@@ -1557,6 +1635,24 @@
           }
         }
       ]
+    },
+    "ProviderSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
     }
   }
 }

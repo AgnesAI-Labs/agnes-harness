@@ -52,7 +52,11 @@ describe('sandbox provider resolution', () => {
 
   it('treats the probe supplier and the selected provider package as immutable backend code', async () => {
     const profile = await resolveProfile(
-      { builtin: 'local-dev', lock, user: { name: 'p', sandbox: { provider: 'acme-remote' } } },
+      {
+        builtin: 'local-dev',
+        lock,
+        user: { name: 'p', providers: { sandbox: { provider: 'acme-remote' } } },
+      },
       env,
     )
     const modules = new Map<string, PackageModule>([
@@ -81,22 +85,23 @@ describe('sandbox provider resolution', () => {
 })
 
 describe('removed seam keys', () => {
-  it('refuses seams.sandbox and seams.platform with the replacement', async () => {
-    await expect(
-      resolveProfile(
-        { builtin: 'local-dev', lock, user: { name: 'p', seams: { sandbox: '@agnes/base' } as never } },
-        env,
-      ),
-    ).rejects.toThrow(/seams\.sandbox was removed; select the sandbox with the top-level/)
-    await expect(
-      resolveProfile(
-        { builtin: 'local-dev', lock, user: { name: 'p', seams: { platform: '@agnes/host' } as never } },
-        env,
-      ),
-    ).rejects.toThrow(/seams\.platform was removed/)
+  it('selects the sandbox in the providers table and refuses the places it was written before', async () => {
+    const resolve = (user: object) => resolveProfile({ builtin: 'local-dev', lock, user: user as never }, env)
+    await expect(resolve({ name: 'p', sandbox: { provider: 'acme-remote' } })).rejects.toThrow(
+      /sandbox\.provider is selected with providers\.sandbox/,
+    )
+    await expect(resolve({ name: 'p', seams: { approval: { provider: 'x' } } })).rejects.toThrow(
+      /seams was replaced by providers/,
+    )
+    await expect(resolve({ name: 'p', providers: { sandbox: '@agnes/base' } })).rejects.toThrow(
+      /providers\.sandbox requires \{ provider/,
+    )
+    await expect(resolve({ name: 'p', providers: { platform: { provider: 'host' } } })).rejects.toThrow(
+      /providers\.platform was removed/,
+    )
     expect(() =>
-      checkTemplateShape({ name: 't', schemaVersion: 1, seams: { sandbox: '@agnes/base' } }, 't'),
-    ).toThrow(/seams\.sandbox was removed/)
+      checkTemplateShape({ name: 't', schemaVersion: 1, providers: { platform: { provider: 'host' } } }, 't'),
+    ).toThrow(/providers\.platform was removed/)
   })
 
   it('does not expose either key on a resolved profile', async () => {
