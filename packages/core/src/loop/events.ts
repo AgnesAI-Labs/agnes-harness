@@ -9,11 +9,15 @@ import type {
   LoopEventPayloadMap,
   LoopEventRegistryPort,
   LoopEventReturnMap,
+  ToolResult,
 } from '@agnes/extension-api'
+import { inspectJsonData } from '@agnes/protocol'
 import { authorHookReturn } from '../hooks/returns.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
 import type { SessionImpl } from '../step/session.js'
+
+const LOOP_RESULT_MAX_BYTES = 16_777_216
 
 const EVENTS: Record<LoopEventName, true> = {
   before_model_request: true,
@@ -42,6 +46,7 @@ export class LoopEventRegistry implements LoopEventRegistryPort {
     event: E,
     payload: LoopEventPayloadMap[E],
     context: LoopEventContext,
+    resultMaxBytes = Number.POSITIVE_INFINITY,
   ): Promise<LoopEventReturnMap[E]> {
     let value: unknown =
       event === 'before_tool_call'
@@ -99,15 +104,23 @@ export class LoopEventRegistry implements LoopEventRegistryPort {
           } as LoopEventPayloadMap[E]
         }
       } else if (event === 'after_tool_result') {
-        const result = (next as HookReturnMap['tool_result'])?.result
-        if (result && isToolResult(result)) {
-          value = { result: structuredClone(result) }
-          current = { ...current, result: structuredClone(result) }
+        const result = boundedLoopResult(next, resultMaxBytes)
+        if (result) {
+          value = { result }
+          current = { ...current, result }
         }
       }
     }
     return value as LoopEventReturnMap[E]
   }
+}
+
+/** Copies a handler's replacement under a ceiling and cuts it to the budget before it is validated or fanned out. */
+function boundedLoopResult(next: unknown, resultMaxBytes: number): ToolResult | undefined {
+  const inspected = inspectJsonData(next, LOOP_RESULT_MAX_BYTES)
+  const result = inspected.ok ? (inspected.value as { result?: unknown } | null)?.result : undefined
+  const bounded = result === undefined ? undefined : boundToolResult(result, resultMaxBytes)
+  return isToolResult(bounded) ? bounded : undefined
 }
 
 export const loopEventContext = (s: SessionImpl, signal: AbortSignal): LoopEventContext => ({
@@ -181,6 +194,7 @@ export async function dispatchLoopEvent<E extends LoopEventName>(
       'after_tool_result',
       hooked?.result ? { ...p, result: hooked.result } : p,
       loopEventContext(s, signal),
+      s.preset.tools.outputMaxBytes,
     )
     const final = result.result ? result : (hooked ?? {})
     // A hook may replace the result; the replacement meets the same budget as the tool's own.

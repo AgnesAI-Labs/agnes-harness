@@ -330,6 +330,7 @@ export class Kernel {
         },
         eventsPerTurn: preset.ext.eventsPerTurn,
         platform: this.platform,
+        toolResultMaxBytes: preset.tools.outputMaxBytes,
         ...(this.o.hookLeaseFor ? { leaseFor: this.o.hookLeaseFor } : {}),
         ...(this.o.retainSessionRefIdentity
           ? { retainSessionRefIdentity: this.o.retainSessionRefIdentity }

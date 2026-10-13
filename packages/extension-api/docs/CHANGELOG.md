@@ -29,6 +29,11 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 
 ### Changed
 
+- The tool result budget counts UTF-8 bytes (text) and encoded JSON bytes (`structured`, `details`),
+  and stops walking a wide array or object at the node ceiling instead of enumerating it. A cut
+  result keeps what fits plus one marker block; blocks and refs past the budget are dropped, so a
+  result that must stay whole is returned as an artifact ref. A `tool_result` hook return over
+  16 MiB is refused as an invalid hook return.
 - Replay of an installed plugin's tool. A tool that does not state `meta.replay` is `never`
   replayed (`defineTool` fills it in, and so does the Host for a plain object). `replay: 'safe'`
   is refused with `E_TOOLDEF_META` unless the tool is `isReadOnly`, and a `classify` result that
@@ -38,6 +43,9 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
 
 ### Added
 
+- `LoopEventRegistryPort.dispatch` takes an optional `resultMaxBytes`: an `after_tool_result`
+  replacement is cut to that many UTF-8 text bytes (and the shared block, depth and size ceilings)
+  before the next handler receives it.
 - `@agnes/plugin-runtime` re-exports the root of this package, so a plugin imports helpers and
   contracts from one package.
 - A plugin export without `inject` takes the `inject` list of its `agnes.plugins` manifest entry.

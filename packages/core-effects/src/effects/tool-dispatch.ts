@@ -128,21 +128,36 @@ function isContentBlock(value: unknown): boolean {
   }
 }
 
-/** Approximate encoded size of a JSON-ish value, or undefined once it is over the depth, node or byte ceiling. */
+/**
+ * Encoded size of a JSON-ish value, or undefined once it is over the depth, node or byte ceiling. Container
+ * width is checked while children are queued, so a huge array or object is never enumerated in full.
+ */
 function boundedJsonSize(root: unknown): number | undefined {
   const { maxJsonBytes, maxJsonDepth, maxJsonNodes } = TOOL_RESULT_LIMITS
   let bytes = 0
   let nodes = 0
   const stack: Array<[unknown, number]> = [[root, 1]]
+  const push = (child: unknown, depth: number): boolean => {
+    stack.push([child, depth])
+    return nodes + stack.length <= maxJsonNodes
+  }
   for (let item = stack.pop(); item; item = stack.pop()) {
     const [value, depth] = item
     if (++nodes > maxJsonNodes || depth > maxJsonDepth) return undefined
-    if (typeof value === 'string') bytes += value.length + 2
-    else if (typeof value !== 'object' || value === null) bytes += 8
-    else {
-      for (const [key, child] of Object.entries(value)) {
-        bytes += key.length + 4
-        stack.push([child, depth + 1])
+    if (typeof value === 'string') {
+      if (value.length > maxJsonBytes) return undefined
+      bytes += Buffer.byteLength(JSON.stringify(value), 'utf8')
+    } else if (typeof value !== 'object' || value === null) bytes += String(value).length
+    else if (Array.isArray(value)) {
+      bytes += 2 + value.length
+      for (let i = 0; i < value.length; i++) if (!push(value[i], depth + 1)) return undefined
+    } else {
+      bytes += 2
+      for (const key in value) {
+        if (!Object.hasOwn(value, key)) continue
+        if (key.length > maxJsonBytes) return undefined
+        bytes += Buffer.byteLength(JSON.stringify(key), 'utf8') + 2
+        if (!push((value as Record<string, unknown>)[key], depth + 1)) return undefined
       }
     }
     if (bytes > maxJsonBytes) return undefined
@@ -152,14 +167,18 @@ function boundedJsonSize(root: unknown): number | undefined {
 
 function truncateUtf8(text: string, maxBytes: number): string {
   if (maxBytes <= 0) return ''
-  const cut = Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8')
+  // A UTF-16 unit encodes to at least one byte, so the first `maxBytes` units hold every byte that can survive.
+  const cut = Buffer.from(text.slice(0, maxBytes), 'utf8').subarray(0, maxBytes).toString('utf8')
   return cut.endsWith('\uFFFD') ? cut.slice(0, -1) : cut
 }
 
 /**
  * Enforce the result budget on a value that has not been validated, cloned, hooked or persisted yet:
- * total text bytes (`outputMaxBytes`), block count, and the size and depth of `structured`/`details`.
- * An over-budget result keeps what fits and says what was dropped; a value that is not result-shaped is
+ * total UTF-8 text bytes (`outputMaxBytes`), block count, and the encoded size and depth of
+ * `structured`/`details`. An over-budget result keeps what fits and gains one text marker saying what was
+ * dropped (at most 256 bytes beyond the budget, and the block count still includes it). The cut is lossy:
+ * dropped blocks and refs are gone, and a replaced `structured`/`details` becomes `{ truncated: true }`,
+ * so a result that must stay whole belongs behind an artifact ref. A value that is not result-shaped is
  * returned untouched for validation to refuse.
  */
 export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
@@ -169,9 +188,11 @@ export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
     ? Math.max(0, Math.floor(outputMaxBytes))
     : Number.POSITIVE_INFINITY
   let remaining = limit
-  const blocks = value.content.slice(0, TOOL_RESULT_LIMITS.maxBlocks)
-  if (value.content.length > blocks.length)
-    omitted.push(`${value.content.length - blocks.length} blocks over the ${blocks.length}-block limit`)
+  const { maxBlocks } = TOOL_RESULT_LIMITS
+  const tooMany = value.content.length > maxBlocks
+  const blocks = value.content.slice(0, tooMany ? maxBlocks - 1 : maxBlocks)
+  if (tooMany)
+    omitted.push(`${value.content.length - blocks.length} blocks over the ${maxBlocks}-block limit`)
   let droppedText = 0
   const content: unknown[] = []
   for (const block of blocks) {
@@ -179,7 +200,7 @@ export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
       content.push(block)
       continue
     }
-    const size = block.text.length > remaining ? Buffer.byteLength(block.text, 'utf8') : block.text.length
+    const size = Buffer.byteLength(block.text, 'utf8')
     if (size <= remaining) {
       remaining -= size
       content.push(block)
@@ -198,6 +219,7 @@ export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
     }
   }
   if (!omitted.length) return value
+  if (content.length >= maxBlocks) content.pop()
   content.push({ type: 'text', text: `[output truncated: ${omitted.join('; ')}]` })
   return { ...value, ...json, content } as T
 }

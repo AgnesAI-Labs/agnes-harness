@@ -373,9 +373,54 @@ describe('tool result budget', () => {
     })
     expect(observation.phase).toBe('responded')
     if (observation.phase !== 'responded') return
-    expect(observation.result.content.length).toBeLessThanOrEqual(257)
+    expect(observation.result.content.length).toBeLessThanOrEqual(256)
     expect(observation.result.structured).toEqual({ truncated: true })
     expect(observation.result.details).toEqual({ truncated: true })
+  })
+
+  it('counts multi-byte text as UTF-8 bytes, not characters', async () => {
+    const observation = await dispatchWorkspace(
+      {
+        content: [
+          { type: 'text', text: '中'.repeat(4096) },
+          { type: 'text', text: '文'.repeat(4096) },
+        ],
+      },
+      4096,
+    )
+    expect(observation.phase).toBe('responded')
+    if (observation.phase !== 'responded') return
+    const [first, second] = observation.result.content
+    expect(first?.type === 'text' && Buffer.byteLength(first.text)).toBeLessThanOrEqual(4096)
+    expect(second?.type === 'text' && second.text.startsWith('[output truncated')).toBe(true)
+  })
+
+  it('replaces structured data that is over the byte cap only once JSON escaping is counted', async () => {
+    const observation = await dispatchWorkspace({
+      content: [],
+      structured: { quotes: '"'.repeat(200_000) },
+    })
+    expect(observation.phase).toBe('responded')
+    if (observation.phase !== 'responded') return
+    expect(observation.result.structured).toEqual({ truncated: true })
+  })
+
+  it('rejects a very wide array without enumerating it', async () => {
+    const wide = new Proxy([] as unknown[], {
+      get: (target, key) => (key === 'length' ? 5_000_000 : Reflect.get(target, key)),
+    })
+    let reads = 0
+    const counted = new Proxy(wide, {
+      get: (target, key, receiver) => {
+        if (typeof key === 'string' && /^\d+$/.test(key)) reads++
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    const observation = await dispatchWorkspace({ content: [], structured: counted })
+    expect(observation.phase).toBe('responded')
+    if (observation.phase !== 'responded') return
+    expect(observation.result.structured).toEqual({ truncated: true })
+    expect(reads).toBeLessThanOrEqual(50_001)
   })
 
   it('leaves an in-budget result untouched', async () => {

@@ -33,6 +33,8 @@ type EngineOptions = ConstructorParameters<typeof HookDispatch>[0] & {
   retainSessionRefIdentity?: (session: HookContext['session']) => boolean
   /** Read-only facts every hook context carries (spec 2026-09-15 §4 row 9). Required: no default platform. */
   platform: PlatformFacts
+  /** Text budget a `tool_result` return is cut to before it is validated or cloned. */
+  toolResultMaxBytes?: number
 }
 
 function freeze<T>(value: T): T {
@@ -156,7 +158,9 @@ export class HookEngine {
           const handler = registration.handler as HookHandler<E>
           const invoke = async () => {
             const value = await handler(payload, handlerContext)
-            return value === (HOOK_UNHANDLED as unknown) ? (value as never) : authorHookReturn(event, value)
+            return value === (HOOK_UNHANDLED as unknown)
+              ? (value as never)
+              : authorHookReturn(event, value, this.options.toolResultMaxBytes)
           }
           // Emit dispatches and timeout arbitration may stop awaiting a handler before its raw
           // promise settles. When a Host-fitted workspace sandbox is present, register that raw

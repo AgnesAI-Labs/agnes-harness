@@ -249,3 +249,26 @@ describe('dispatch to author validation to core18 context composition', () => {
     expect(downstream).toBe(false)
   })
 })
+
+describe('tool_result return budget', () => {
+  it('cuts an oversized text return to the session budget before it is validated', () => {
+    const returned = authorHookReturn(
+      'tool_result',
+      { result: { content: [{ type: 'text', text: '中'.repeat(100_000) }] } },
+      1024,
+    )
+    const text = returned?.result?.content.map((b) => (b.type === 'text' ? b.text : '')).join('') ?? ''
+    expect(Buffer.byteLength(text)).toBeLessThan(1024 + 256)
+    expect(text).toContain('[output truncated')
+  })
+
+  it('refuses a return over the hard copy ceiling', () => {
+    expect(() =>
+      authorHookReturn(
+        'tool_result',
+        { result: { content: [{ type: 'text', text: 'x'.repeat(20_000_000) }] } },
+        1024,
+      ),
+    ).toThrow(/invalid author hook return/)
+  })
+})

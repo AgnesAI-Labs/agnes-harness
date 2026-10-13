@@ -56,6 +56,8 @@ export interface LoopEventRegistryPort extends LoopEventRegistration {
     event: E,
     payload: LoopEventPayloadMap[E],
     context: LoopEventContext,
+    /** Text-byte budget an `after_tool_result` replacement is cut to before the next handler sees it. */
+    resultMaxBytes?: number,
   ): Promise<LoopEventReturnMap[E]>
 }
 export interface LoopEventsPluginContext {
