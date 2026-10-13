@@ -252,15 +252,16 @@
     flex: none;
     margin-top: var(--s8);
   }
+  /* Footer actions share the session rows' height, radius and type size. */
   .sidebar-footer button {
     width: 100%;
     justify-content: flex-start;
-    min-height: 2.625rem;
-    padding: 0 0.625rem 0 var(--s8);
+    min-height: 2rem;
+    padding: 0 var(--s8);
     border-color: transparent;
-    border-radius: var(--radius-lg);
-    font-size: var(--font-size-body);
+    border-radius: var(--radius-control);
+    font-size: var(--font-size-sm);
     font-weight: 400;
-    line-height: 1.375rem;
+    line-height: 1.25rem;
   }
 }

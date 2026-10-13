@@ -157,6 +157,7 @@
       min-height: 2.75rem;
     }
     .sidebar-actions :where(#new),
+    .sidebar-footer button,
     .session,
     .code-copy,
     .tool-detail,
