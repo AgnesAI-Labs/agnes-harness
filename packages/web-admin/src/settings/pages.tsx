@@ -76,6 +76,8 @@ function SettingsPageHost({
   // Nothing is read until the dialog first shows one of these pages.
   const [page, setPage] = useState<string | undefined>(() => ownedSection(requestedPage())?.id)
   const [admin, setAdmin] = useState<Admin>()
+  const [adminBusy, setAdminBusy] = useState(false)
+  const [adminFailed, setAdminFailed] = useState(false)
   const [generations, setGenerations] = useState<PluginGenerationStatus>()
   const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
   const [busy, setBusy] = useState(false)
@@ -98,28 +100,37 @@ function SettingsPageHost({
   useEffect(() => {
     if (!active) return
     let current = true
-    void load().then(
-      (value) => {
-        if (!current) return
-        // An unchanged context keeps its connection, so a refresh reads each catalog once.
-        setAdmin((known) =>
-          known && JSON.stringify(known.context) === JSON.stringify(value.context) ? known : value,
-        )
-        // The plugin version list is one optional read; the panel that shows it reports its absence.
-        void Promise.resolve()
-          .then(() => value.api.generations())
-          .then(
-            (status) => {
-              if (current) setGenerations(status)
-            },
-            () => undefined,
+    setAdminBusy(true)
+    setAdminFailed(false)
+    void load()
+      .then(
+        (value) => {
+          if (!current) return
+          // An unchanged context keeps its connection, so a refresh reads each catalog once.
+          setAdmin((known) =>
+            known && JSON.stringify(known.context) === JSON.stringify(value.context) ? known : value,
           )
-      },
-      // Each page reports its own failed reads; without the context every save stays disabled.
-      () => {
-        if (current) setAdmin(undefined)
-      },
-    )
+          // The plugin version list is one optional read; the panel that shows it reports its absence.
+          void Promise.resolve()
+            .then(() => value.api.generations())
+            .then(
+              (status) => {
+                if (current) setGenerations(status)
+              },
+              () => undefined,
+            )
+        },
+        // Each page reports its own failed reads; without the context every save stays disabled.
+        () => {
+          if (current) {
+            setAdmin(undefined)
+            setAdminFailed(true)
+          }
+        },
+      )
+      .finally(() => {
+        if (current) setAdminBusy(false)
+      })
     return () => {
       current = false
     }
@@ -199,26 +210,25 @@ function SettingsPageHost({
       <SettingsPageLayout
         title={title}
         actions={
-          needsRuntimeCatalog ? (
+          needsRuntimeCatalog || adminFailed ? (
             // The page loads on open and after each action; a manual reload stays one quiet icon.
             <IconButton
               name="refresh-cw"
               label={t('retry')}
               data-testid="settings-refresh"
-              {...(!api ? { disabledReason: t('unavailable') } : {})}
-              disabled={!api || busy}
-              aria-busy={busy}
+              disabled={adminBusy || busy}
+              aria-busy={adminBusy || busy}
               onClick={() => setRevision((value) => value + 1)}
             />
           ) : undefined
         }
       >
-        {needsRuntimeCatalog && busy && !snapshot && (
+        {needsRuntimeCatalog && (adminBusy || busy) && !snapshot && (
           <SettingsState tone="loading" data-testid="settings-catalog-state">
             {t('loading')}
           </SettingsState>
         )}
-        {needsRuntimeCatalog && failed && (
+        {(adminFailed || (needsRuntimeCatalog && failed)) && (
           <Banner tone="error" data-testid="settings-catalog-state">
             {t('unavailable')}
           </Banner>

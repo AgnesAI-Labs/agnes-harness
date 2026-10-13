@@ -262,6 +262,32 @@ it('translates static settings pane text when the pane is first mounted', () => 
   }
 })
 
+it('reports a failed admin connection and lets the settings page retry it', async () => {
+  const host = document.createElement('div')
+  host.id = 'config-form'
+  host.dataset.runtimePage = 'security'
+  document.body.append(host)
+  const root = createRoot(host)
+  const snapshot: RuntimeAdminSnapshot = {
+    providers: [],
+    presets: [],
+    localPluginFolders: { home: '/fixture/plugins', workspace: '/fixture/workspace' },
+  }
+  const load = vi.fn(adminOf({ runtime: async () => snapshot }))
+  load.mockRejectedValueOnce(new Error('Synthetic admin offline'))
+  try {
+    await act(async () => root.render(createElement(SettingsPages, { admin: load })))
+    expect(host.querySelector('[data-testid="settings-catalog-state"]')?.textContent).toContain('unavailable')
+    const retry = host.querySelector<HTMLButtonElement>('[data-testid="settings-refresh"]')!
+    expect(retry.disabled).toBe(false)
+    await act(async () => retry.click())
+    expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
+    expect(host.querySelector('[data-testid="security-default-permissions"]')).not.toBeNull()
+  } finally {
+    flushSync(() => root.unmount())
+  }
+})
+
 for (const outcome of ['success', 'failure'] as const) {
   it(`announces a pending settings refresh and clears it on ${outcome}`, async () => {
     const host = document.createElement('div')
