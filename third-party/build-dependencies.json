@@ -160,7 +160,13 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": [".", "packages/web-admin", "packages/web-conversation", "packages/web-foundation"]
+      "consumers": [
+        ".",
+        "examples/loops/plan-execute-loop",
+        "packages/web-admin",
+        "packages/web-conversation",
+        "packages/web-foundation"
+      ]
     },
     {
       "name": "postject",

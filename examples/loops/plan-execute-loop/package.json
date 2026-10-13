@@ -5,11 +5,16 @@
   "license": "Apache-2.0",
   "exports": "./index.mjs",
   "types": "./index.d.mts",
+  "scripts": {
+    "build": "node --check index.mjs",
+    "test": "vitest run plan-execute-loop.test.ts --maxWorkers=1"
+  },
   "peerDependencies": {
     "@agnes/extension-api": "*"
   },
   "devDependencies": {
-    "@agnes/plugin-runtime": "workspace:*"
+    "@agnes/plugin-runtime": "0.0.0",
+    "vitest": "5.0.0"
   },
   "agnes": {
     "plugins": [

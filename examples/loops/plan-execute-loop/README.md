@@ -12,6 +12,14 @@ State machine, checkpointed with codec 1: `input → planning → approving → 
 
 `plan-execute-loop.test.ts` is the conformance test: it drives the factory through `driveLoop` and `scriptedDecisions` from `@agnes/plugin-runtime/testkit` (whose convenience ports throw if touched) and checks the source imports only `@agnes/extension-api` and uses no convenience edge.
 
+Verify it outside the workspace from the repository root:
+
+```sh
+pnpm release:external-examples --author-only --keep --example examples/loops/plan-execute-loop
+```
+
+The command installs the built author tarballs into an isolated copy, checks the JavaScript syntax with `npm run build`, and runs the same conformance tests with `npm test`.
+
 ## 中文
 
 仅基于 `GenericLoopPorts` 编写的非 ReAct 示例（类型为 `GenericLoopFactory`）：不读取 continuation，也不调用 `model.respond`、`tools.drain`、`turn.checkpoint`、`wait.poll`，展示可替换 Loop 对 Core 的真实需求。用 `agh package add ./examples/loops/plan-execute-loop` 安装，信任并启用 `ext:example-plan-execute`，选择 `example.plan-execute@1.0.0`。
@@ -25,3 +33,5 @@ State machine, checkpointed with codec 1: `input → planning → approving → 
 - **如实结束。** 取消为 `aborted`；预算准入错误沿用 Core 的原因；最终助手消息与完成检查点在同一事务发布。
 
 `plan-execute-loop.test.ts` 是一致性测试：通过 `@agnes/plugin-runtime/testkit` 的 `driveLoop` 与 `scriptedDecisions` 驱动工厂（测试夹具中的便捷端口一经调用即抛错），并检查源码仅导入 `@agnes/extension-api`、不使用任何便捷边。
+
+在仓库根目录运行上面的 `pnpm release:external-examples` 命令，可以完成仓外验证：向隔离副本安装已构建的作者 SDK tarballs，通过 `npm run build` 检查 JavaScript 语法，再通过 `npm test` 运行同一组一致性测试。

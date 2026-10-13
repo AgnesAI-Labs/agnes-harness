@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { validateExample } from './external-examples.js'
 
@@ -21,6 +21,7 @@ it('scans nested HTML template substitutions and still refuses private and compu
     // biome-ignore lint/suspicious/noTemplateCurlyInString: deliberately test a computed module specifier.
     await writeFile(file, 'import(`@agnes/${name}`);')
     await expect(validateExample(directory)).rejects.toThrow('Nonliteral')
+    await expect(validateExample(resolve('examples/loops/plan-execute-loop'))).resolves.toBeUndefined()
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
