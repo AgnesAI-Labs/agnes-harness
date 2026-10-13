@@ -201,6 +201,7 @@ describe('protocol src boundary', () => {
         'EVENT_TYPES',
         'EXT_EVENT_PATTERN',
         'EXT_EVENT_PATTERN_SOURCE',
+        'HARNESS_VERSION',
         'HOOK_EVENTS',
         'HOOK_TABLE',
         'JSONRPC_ERRORS',

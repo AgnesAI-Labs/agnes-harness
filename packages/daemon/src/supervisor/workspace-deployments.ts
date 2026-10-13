@@ -1,15 +1,20 @@
 import { listWorkspaceDeployments, readLock } from '@agnes/package-manager'
 
-/** The version the daemon's PackageManager checks a deploy manifest's `harnessRange` against. */
+/**
+ * The build label the daemon's PackageManager stamps into a lock it creates. `0.0.0` is the
+ * placeholder every unpublished build carries; it is a label only and takes part in no
+ * compatibility check, which the harness contract version in `@agnes/protocol` decides.
+ */
 export const PACKAGE_MANAGER_VERSION = '0.0.0'
 
-/** Offered with the same lock and version `packages.trustWorkspace` will then check. */
+/** Offered from the same lock `packages.trustWorkspace` will then write. */
 export async function workspaceDeployments(
   runtime: { profileDirectory(profile: string): string | Promise<string> } | undefined,
   profile: string,
 ) {
   if (!runtime) return []
   const directory = await runtime.profileDirectory(profile)
-  const lock = () => readLock(directory, { profile, agnesVersion: PACKAGE_MANAGER_VERSION })
-  return listWorkspaceDeployments(directory, lock, PACKAGE_MANAGER_VERSION)
+  return listWorkspaceDeployments(directory, () =>
+    readLock(directory, { profile, agnesVersion: PACKAGE_MANAGER_VERSION }),
+  )
 }

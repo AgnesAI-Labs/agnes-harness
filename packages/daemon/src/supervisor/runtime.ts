@@ -189,6 +189,7 @@ import {
   type EventEnvelope,
   type ExtensionCallParams,
   type ExtensionCallResult,
+  HARNESS_VERSION,
   rpcError,
 } from '@agnes/protocol'
 import {
@@ -783,13 +784,7 @@ export type StartSupervisorOptions = {
   }
 }
 
-// No existing constant in the codebase carries these today (checked: no `harnessVersion`/
-// `surfaceApiVersion` producer outside the deploy-policy consumers themselves, and the package
-// `agnesVersion: '0.0.0'` used elsewhere for PackageManager construction would NOT satisfy the
-// example deploy manifest's `harnessRange: "^0.1"` -- `^0.1` excludes `0.0.0`). These match the
-// values every existing Surface fixture (including the removed demo-surface example)
-// already assumes; promoting them to a real release-version source is out of this task's scope.
-const DAEMON_HARNESS_VERSION = '0.1.0'
+// The surface API has no versioned source of its own yet; the harness version comes from the protocol.
 const DAEMON_SURFACE_API_VERSION = '1.0.0'
 
 type Conn = { ep: LocalEndpoint; conn: ConnectionState }
@@ -1473,7 +1468,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         profileDir: o.profileDir,
         inventory: surfaceInventory,
         controller: surfaceController,
-        harnessVersion: DAEMON_HARNESS_VERSION,
+        harnessVersion: HARNESS_VERSION,
         surfaceApiVersion: DAEMON_SURFACE_API_VERSION,
         signal: new AbortController().signal,
       })

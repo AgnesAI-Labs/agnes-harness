@@ -656,4 +656,5 @@ export {
   validateToolDef,
   validateUserAttachments,
 } from './validate.js'
+export { HARNESS_VERSION } from './version.js'
 export * from './worker-generation.js'

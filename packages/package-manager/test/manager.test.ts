@@ -302,11 +302,9 @@ describe('PackageManager project trust', () => {
       now: () => '2026-09-07T00:00:00Z',
     })
     // Read with the lock and version the manager itself trusts with.
-    const offered = (_manager: unknown, agnesVersion = '0.1.0') =>
-      listWorkspaceDeployments(
-        profileDir,
-        () => readLock(profileDir, { profile: 'enterprise', agnesVersion }),
-        agnesVersion,
+    const offered = (_manager: unknown) =>
+      listWorkspaceDeployments(profileDir, () =>
+        readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' }),
       )
     const offer = { deployDir: realpathSync(deployDir), path: 'deploy/xinwei', manifestId: 'xinwei' }
     expect(offered(manager)).toEqual([{ ...offer, state: 'untrusted' }])
@@ -331,11 +329,36 @@ describe('PackageManager project trust', () => {
     cpSync(deployDir, join(profileDir, '.hidden'), { recursive: true })
     symlinkSync(deployDir, join(profileDir, 'deploy', 'linked'))
     expect(offered(manager).map((entry) => entry.path)).toEqual(['deploy/xinwei'])
-    // A build the manifest does not support, or a policy that refuses workspace packages, offers none.
-    expect(offered(manager, '99.0.0')).toEqual([])
+    // A policy that refuses workspace packages offers none.
     const lock = readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' })
     writeLock(profileDir, { ...lock, policySnapshot: { ...lock.policySnapshot, workspacePackages: 'deny' } })
     expect(offered(manager)).toEqual([])
+  })
+
+  it('checks harnessRange against the harness contract version, whatever label the process carries', async () => {
+    // The daemon and its workers label their managers with the unpublished placeholder.
+    const manager = createPackageManager({
+      dataDir,
+      agnesVersion: '0.0.0',
+      now: () => '2026-09-07T00:00:00Z',
+    })
+    const offered = () =>
+      listWorkspaceDeployments(profileDir, () =>
+        readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.0.0' }),
+      )
+    expect(offered().map((entry) => entry.state)).toEqual(['untrusted'])
+    await expect(manager.trustWorkspace(profileDir, deployDir)).resolves.toMatchObject({
+      hash: expect.stringMatching(/^sha256-/),
+    })
+    expect(offered().map((entry) => entry.state)).toEqual(['trusted'])
+
+    // A workspace written for a harness this is not is refused by trust and never offered.
+    const manifestFile = join(deployDir, 'manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as Record<string, unknown>
+    writeFileSync(manifestFile, JSON.stringify({ ...manifest, harnessRange: '^99.0.0' }))
+    const refused = await manager.trustWorkspace(profileDir, deployDir).catch((error: unknown) => error)
+    expect(isPackageError(refused, 'E_API_RANGE')).toBe(true)
+    expect(offered()).toEqual([])
   })
 
   it('refuses identity drift, policy denial, and deploy directories outside the profile root', async () => {

@@ -1,8 +1,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
-import { satisfiesApiRange } from '@agnes/extension-api'
 import type { Lockfile } from './lockfile.js'
-import { hashWorkspace, readDeployManifest } from './workspace.js'
+import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 /** A profile directory that workspace trust accepts, and whether the lock already vouches for it. */
 export type WorkspaceDeployment = {
@@ -20,14 +19,13 @@ const MAX_DEPLOYMENTS = 64
 
 /**
  * The deploy directories a person could trust for this profile: real directories one or two levels
- * below it that hold a valid deploy manifest for this version. Trust itself re-reads and re-checks whichever
+ * below it that hold a valid deploy manifest supporting this harness. Trust itself re-reads and re-checks whichever
  * one is chosen, so this is an offer, never an admission. A profile whose policy refuses workspace
  * packages offers none.
  */
 export function listWorkspaceDeployments(
   profileDir: string,
   readLock: () => Pick<Lockfile, 'workspace' | 'policySnapshot'>,
-  agnesVersion: string,
 ): WorkspaceDeployment[] {
   let lock: Pick<Lockfile, 'workspace' | 'policySnapshot'>
   try {
@@ -69,7 +67,7 @@ export function listWorkspaceDeployments(
       // Trust refuses a symlinked directory and anything that resolves outside the profile.
       if (lstatSync(deployDir).isSymbolicLink() || realpathSync(deployDir) !== deployDir) continue
       const manifest = readDeployManifest(deployDir)
-      if (!satisfiesApiRange(manifest.harnessRange, agnesVersion)) continue
+      if (!supportsHarness(manifest)) continue
       const signed = lock.workspace?.path === path ? lock.workspace : undefined
       deployments.push({
         deployDir,

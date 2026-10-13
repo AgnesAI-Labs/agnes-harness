@@ -1,7 +1,9 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import {
   type DeployManifest,
+  HARNESS_VERSION,
   type ProfileFragment,
   validateDeployManifest,
   validateProfileFragment,
@@ -95,6 +97,14 @@ export function readDeployManifest(deployDir: string): DeployManifest {
     extensionPaths.add(extension.path)
   }
   return manifest
+}
+
+/**
+ * Whether this harness is one the workspace says it supports. Every caller asks here, against the
+ * one contract version, never against the version label a particular process was started with.
+ */
+export function supportsHarness(manifest: Pick<DeployManifest, 'harnessRange'>): boolean {
+  return satisfiesApiRange(manifest.harnessRange, HARNESS_VERSION)
 }
 
 /** Hash the signed deploy tree, excluding only generated/vendor trees fixed by the design. */

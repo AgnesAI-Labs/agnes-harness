@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
-import { type ExtensionManifest, satisfiesApiRange } from '@agnes/extension-api'
+import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
   type PackageProvenance,
@@ -77,7 +77,7 @@ import {
   recoverPackageStore,
 } from './store.js'
 import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
-import { hashWorkspace, readDeployManifest } from './workspace.js'
+import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
 
 export type PackageStatus = {
   id: string
@@ -1435,7 +1435,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       const workspace = workspacePath(profileDir, requestedDeployDir)
       const manifest = readDeployManifest(workspace.deployDir)
       const initialHash = hashWorkspace(workspace.deployDir)
-      if (!satisfiesApiRange(manifest.harnessRange, options.agnesVersion))
+      if (!supportsHarness(manifest))
         throw new PackageError('E_API_RANGE', 'workspace does not support this agnes version', {
           detail: { manifestId: manifest.id, harnessRange: manifest.harnessRange },
         })
