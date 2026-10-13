@@ -61,52 +61,104 @@ const INSTANCE_METHODS: Readonly<Record<SeamKind, readonly string[]>> = Object.f
   repair: ['decide'],
 })
 
-function failed(kind: string, reason: string, why: string): HostError {
-  return new HostError('E_SEAM_INIT', `seam ${kind} ${why}`, { detail: { seam: kind, reason } })
+function failed(kind: string, reason: string, why: string, closeFailed = false): HostError {
+  return new HostError(
+    'E_SEAM_INIT',
+    `seam ${kind} ${why}${closeFailed ? '; closing the instance also failed' : ''}`,
+    {
+      detail: { seam: kind, reason, ...(closeFailed ? { closeFailed } : {}) },
+    },
+  )
 }
 
+/** The most a refused creation may take to settle after its signal aborted before it is abandoned. */
+const SEAM_CLEANUP_GRACE_MS = 1_000
+
+type SeamInstance = object & { close?: () => void | Promise<void> }
+
 /**
- * Race `create` against a timer without trusting the provider to honour the signal. An instance
- * that arrives after the timer has fired is closed at once instead of leaking.
+ * Race `create` against a timer. Any failure aborts the signal the provider received, then waits a
+ * bounded time for the creation to settle: an instance that arrives in that window is closed, and one
+ * that never arrives is abandoned with its signal already aborted. A synchronous loop is not
+ * interruptible here; that needs process isolation.
  */
 async function createWithin(
   kind: SeamKind,
   provider: SeamProvider<object>,
   init: SeamInit,
-  signal: AbortSignal,
+  controller: AbortController,
   timeoutMs: number,
-): Promise<object & { close?: () => void | Promise<void> }> {
+): Promise<SeamInstance> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const created = Promise.resolve().then(() => provider.create(init, signal))
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(failed(kind, 'timeout', `timed out after ${timeoutMs} ms`)), timeoutMs)
+  const created = Promise.resolve().then(() => provider.create(init, controller.signal))
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs)
   })
+  let refusal: Refusal
+  let produced: unknown
   try {
-    const value: unknown = await Promise.race([created, timeout])
-    if (typeof value !== 'object' || value === null)
-      throw failed(kind, 'shape', 'factory returned a non-object')
-    const missing = INSTANCE_METHODS[kind].find(
-      (method) => typeof (value as Record<string, unknown>)[method] !== 'function',
-    )
-    if (missing) {
-      void closeQuietly(value)
-      throw failed(kind, 'shape', `instance lacks ${missing}()`)
+    const settled = await Promise.race([created, timeout])
+    if (settled === TIMED_OUT) refusal = { reason: 'timeout', why: `timed out after ${timeoutMs} ms` }
+    else {
+      produced = settled
+      const missing =
+        typeof settled !== 'object' || settled === null
+          ? undefined
+          : INSTANCE_METHODS[kind].find((m) => typeof (settled as Record<string, unknown>)[m] !== 'function')
+      if (typeof settled !== 'object' || settled === null)
+        refusal = { reason: 'shape', why: 'factory returned a non-object' }
+      else if (missing) refusal = { reason: 'shape', why: `instance lacks ${missing}()` }
+      else return settled as SeamInstance
     }
-    return value as object & { close?: () => void | Promise<void> }
   } catch (error) {
-    void created.then(closeQuietly, () => undefined)
-    if (error instanceof HostError) throw error
-    throw failed(kind, 'reject', `factory failed: ${error instanceof Error ? error.message : String(error)}`)
+    const why = error instanceof Error ? error.message : String(error)
+    refusal = controller.signal.aborted
+      ? { reason: 'cancelled', why: `creation was cancelled: ${why}` }
+      : { reason: 'reject', why: `factory failed: ${why}` }
   } finally {
     clearTimeout(timer)
   }
+  controller.abort()
+  const closeFailed =
+    produced === undefined
+      ? await settleAndClose(created, Math.min(timeoutMs, SEAM_CLEANUP_GRACE_MS))
+      : !(await closeQuietly(produced))
+  throw failed(kind, refusal.reason, refusal.why, closeFailed)
 }
 
-async function closeQuietly(value: unknown): Promise<void> {
+const TIMED_OUT = Symbol('seam-init-timeout')
+
+type Refusal = { readonly reason: string; readonly why: string }
+
+/** Wait a bounded time for a refused creation; close whatever instance it produced. True when that close failed. */
+async function settleAndClose(created: Promise<unknown>, graceMs: number): Promise<boolean> {
+  let grace: ReturnType<typeof setTimeout> | undefined
+  const abandoned = Symbol('abandoned')
+  const outcome = await Promise.race([
+    created.then(
+      (value) => value,
+      () => abandoned,
+    ),
+    new Promise<symbol>((resolve) => {
+      grace = setTimeout(() => resolve(abandoned), SEAM_CLEANUP_GRACE_MS)
+    }),
+  ])
+  clearTimeout(grace)
+  if (outcome === abandoned) {
+    // A late arrival after the grace window is still closed rather than leaked.
+    void created.then(closeQuietly, () => undefined)
+    return false
+  }
+  return !(await closeQuietly(outcome))
+}
+
+/** Close an instance; false when the close threw. */
+async function closeQuietly(value: unknown): Promise<boolean> {
   try {
     await (value as { close?: () => void | Promise<void> } | null)?.close?.()
+    return true
   } catch {
-    // A refused instance has nowhere to report a failed close.
+    return false
   }
 }
 
@@ -153,7 +205,7 @@ export function seamBinding(kind: SeamKind, selection: ProviderSelection, input:
       kind,
       provider,
       input.initFor(sourcePackage, kind, builtin, config),
-      controller.signal,
+      controller,
       input.timeoutMs,
     )
     let disposeService: (() => void | Promise<void>) | undefined

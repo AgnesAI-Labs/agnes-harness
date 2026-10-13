@@ -124,6 +124,60 @@ describe('seam binding', () => {
     await root.fiber.dispose()
   })
 
+  it('aborts the signal of a creation that times out and reports a failed close', async () => {
+    let seen: AbortSignal | undefined
+    const { root, input, register } = rig([], 20)
+    register(
+      '@agnes/base',
+      verifier({
+        create: ((_init: unknown, signal: AbortSignal) => {
+          seen = signal
+          return new Promise<object>(() => undefined)
+        }) as never,
+      }),
+    )
+    await expect.poll(() => root.providers.catalog().length).toBe(1)
+    await expect(seamBinding('verifier', { provider: 'alt' }, input)(root, preset)).rejects.toMatchObject({
+      code: 'E_SEAM_INIT',
+      detail: { reason: 'timeout' },
+    })
+    expect(seen?.aborted).toBe(true)
+    await root.fiber.dispose()
+
+    const rejecting = rig([], 20)
+    rejecting.register(
+      '@agnes/base',
+      verifier({
+        create: ((_init: unknown, signal: AbortSignal) =>
+          new Promise<object>((_, reject) =>
+            signal.addEventListener('abort', () => reject(new Error('stopped'))),
+          )) as never,
+      }),
+    )
+    await expect.poll(() => rejecting.root.providers.catalog().length).toBe(1)
+    await expect(
+      seamBinding('verifier', { provider: 'alt' }, rejecting.input)(rejecting.root, preset),
+    ).rejects.toMatchObject({ detail: { reason: 'timeout' } })
+    await rejecting.root.fiber.dispose()
+
+    const hollow = rig([], 20)
+    hollow.register(
+      '@agnes/base',
+      verifier({
+        instance: {
+          close: async () => {
+            throw new Error('close failed')
+          },
+        },
+      }),
+    )
+    await expect.poll(() => hollow.root.providers.catalog().length).toBe(1)
+    await expect(
+      seamBinding('verifier', { provider: 'alt' }, hollow.input)(hollow.root, preset),
+    ).rejects.toMatchObject({ detail: { reason: 'shape', closeFailed: true } })
+    await hollow.root.fiber.dispose()
+  })
+
   it('gives only builtin packages the privileged init and closes the instance on dispose', async () => {
     const closed = vi.fn()
     const { root, input, inits, register } = rig([
