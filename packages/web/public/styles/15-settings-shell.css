@@ -94,19 +94,13 @@
     .timeline-node.user {
       max-width: 92%;
     }
-    #composer {
+    #composer,
+    .composer-meta {
       width: calc(100% - 1rem);
-      min-height: 6.75rem;
     }
     /* 区域规则紧跟在同一媒体查询内、同一层叠位置：挪到文件末尾会反过来压掉这条响应式覆盖。 */
     [data-agnes-region="composer"] {
       border-radius: var(--radius-xl);
-    }
-    #session-usage {
-      margin-left: auto;
-    }
-    .composer-workspace {
-      max-width: 9rem;
     }
     #config {
       width: 100%;

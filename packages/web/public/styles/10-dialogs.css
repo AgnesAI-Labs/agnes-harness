@@ -1,18 +1,4 @@
 @layer app {
-  #cancel,
-  #send {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-  #send[data-mode="idle"] {
-    width: 2.125rem;
-    min-width: 2.125rem;
-    height: 2.125rem;
-    min-height: 2.125rem;
-    padding: 0;
-    border-radius: var(--radius-full);
-    transform: translateY(-2px);
-  }
   dialog {
     inset: 0;
     margin: auto;

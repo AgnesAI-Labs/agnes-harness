@@ -799,15 +799,6 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
   }
-  #send[data-mode="idle"] > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    clip-path: inset(50%);
-  }
   .turn-process-body .assistant .node-label {
     display: none;
   }

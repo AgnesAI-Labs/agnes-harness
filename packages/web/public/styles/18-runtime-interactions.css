@@ -7,20 +7,6 @@
     }
   }
 
-  #composer-attach {
-    display: grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 2rem;
-    min-height: 2rem;
-    padding: 0;
-    border-radius: 50%;
-  }
-  #composer-attach[aria-disabled="true"] {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* Runtime settings keep all existing theme and skin tokens. */
   .runtime-settings nav {
     display: flex;
