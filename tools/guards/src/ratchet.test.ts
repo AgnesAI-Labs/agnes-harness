@@ -1097,7 +1097,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/core/src 27125; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/core/src 27144; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
-  'packages/core/src': 27465,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
+  'packages/core/src': 27751,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1333,7 +1334,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
-  'packages/host/src/assemble': 4212,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/assemble 4223; no exclusions or spare allocation.
+  'packages/host/src/assemble': 4223,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1415,7 +1417,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/protocol/src 2390; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/protocol/src 2400; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/protocol/src 2402; no exclusions or spare allocation.
-  'packages/protocol/src': 2402,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/protocol/src 2404; no exclusions or spare allocation.
+  'packages/protocol/src': 2404,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2741,7 +2744,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src 39897; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src 39989; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: title generation and its usage recovery wait for the verified history; reviewed exact countLines packages/host/src 40004; no exclusions or spare allocation.
-  'packages/host/src': 40004,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src 40215; no exclusions or spare allocation.
+  'packages/host/src': 40215,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2795,7 +2799,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20 appAccess and signed application identity policy. Measured 1116; exact cap.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
-  'packages/host/src/profile': 1187,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/profile 1226; no exclusions or spare allocation.
+  'packages/host/src/profile': 1226,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
