@@ -1082,7 +1082,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 26812, exact.
-  'packages/core/src': 26812,
+  // 2026-10-13 batch processing: core image input port; reviewed exact countLines packages/core/src 26917; no exclusions or spare allocation.
+  'packages/core/src': 26917,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1514,7 +1515,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1018, exact.
-  'packages/extension-api/src': 1018, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // 2026-10-13 batch processing: core image input port; reviewed exact countLines packages/extension-api/src 1030; no exclusions or spare allocation.
+  'packages/extension-api/src': 1030, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
