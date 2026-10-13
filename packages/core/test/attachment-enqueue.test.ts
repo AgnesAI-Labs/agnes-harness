@@ -202,7 +202,7 @@ describe('enqueue stores inline attachments by reference', () => {
     // alone authorizes it, the image does not.
     const resend = {
       type: 'image' as const,
-      mimeType: 'image/png',
+      mimeType: 'image/png' as const,
       attachment: { sha256: '8'.repeat(64), bytes: tiny.byteLength },
       width: 2,
       height: 2,
