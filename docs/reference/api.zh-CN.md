@@ -107,6 +107,14 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 ## 辅助模型默认值
 
-本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（未设置）；省略的槽位保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。
+本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots, auto? }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（不使用）；省略 `verifier` 时保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。
+
+省略 `fast` 槽位时，它跟随默认账户。此时结果带有 `auto: { fast: { accountId, route, model } }`，新会话的快速模型使用该模型：
+
+```json
+{ "revision": 4, "slots": { "verifier": null }, "auto": { "fast": { "accountId": "account-1f0c", "route": "agnes-ai", "model": "agnes-2.5-flash" } } }
+```
+
+模型从默认账户自己的模型里按保存顺序选出：服务商公布价格时取输入加输出价格最低的；没有价格时取 ID 带轻量档标记（`flash`、`mini`、`lite`、`haiku`、`nano`、`fast`、`small`）的第一个。槽位已设置或为 `null`、没有已启用的默认账户、或两条规则都选不出模型时，结果不含 `auto.fast`，此时沿用预设自己的快速模型；Host 没有提供所选模型时也是如此。`auto` 只读：保存时接受并忽略它。验证模型从不自动选择。
 
 这两个方法属于部署本地管理权限，浏览器 SDK 禁止调用。Web 通过同源 `/admin/api/model-slots` GET/POST 管理桥接，沿用读取／激活权限和恢复只读检查。默认值写入新会话初始选择；已有会话通过 `Session.setModel({ slot, route, model })` 显式覆盖。参见[审查模型配置](../guide/security.zh-CN.md)。

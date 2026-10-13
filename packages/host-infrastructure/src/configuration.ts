@@ -64,6 +64,7 @@ import {
 import { createWin32Platform } from './adapters/platform.js'
 import { createFileAudit } from './audit.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
+import { automaticFastModel } from './configuration-auto-slots.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
 import {
   applyModelConfiguration,
@@ -795,6 +796,33 @@ export function createConfigurationService(
     }
   }
   const get = async (): Promise<ConfigSnapshot> => snapshot(await loadState())
+  /** An unset fast slot follows the default account; an explicit choice or `null` is left alone. */
+  const slotsSnapshot = async (state: StoredConfiguration | undefined): Promise<ModelSlotsSnapshot> => {
+    const slots = structuredClone(state?.modelSlots ?? {})
+    const row = state?.accounts.find((account) => account.accountId === state.defaultAccountId)
+    const result = { revision: state?.revision ?? 0, slots }
+    if (slots.fast !== undefined || !row?.enabled) return result
+    try {
+      const entry = providerFor(row.id, row.authType)
+      const records = new Map((await staticCatalogue(entry)).records.map((record) => [record.id, record]))
+      const api = (record: ModelRecord) =>
+        row.authType === 'oauth' && 'api' in record ? String(record.api) : entry.api
+      const primary = records.get(row.model)
+      // Only models served on the account's own route: its other transports are separate routes.
+      const fast = automaticFastModel(
+        row.models.flatMap(({ id }) => {
+          const record = records.get(id)
+          return record && primary && api(record) === api(primary) ? [record] : []
+        }),
+      )
+      return fast
+        ? { ...result, auto: { fast: { accountId: row.accountId, route: row.route, model: fast.id } } }
+        : result
+    } catch {
+      // An unavailable provider catalogue leaves the slot unset; it never blocks reading the slots.
+      return result
+    }
+  }
   const selectedAccount = (
     state: StoredConfiguration | undefined,
     input: ConfigTestInput,
@@ -1230,8 +1258,7 @@ export function createConfigurationService(
     save: (input) => serialized(() => saveInternal(input)),
     account: (input) => serialized(() => changeAccount(input)),
     async modelSlots() {
-      const state = await loadState()
-      return { revision: state?.revision ?? 0, slots: structuredClone(state?.modelSlots ?? {}) }
+      return slotsSnapshot(await loadState())
     },
     saveModelSlots: (input) =>
       serialized(async () => {
@@ -1251,7 +1278,7 @@ export function createConfigurationService(
           modelSlots: structuredClone(input.slots),
         }
         await persistState(next)
-        return { revision: next.revision, slots: structuredClone(next.modelSlots ?? {}) }
+        return slotsSnapshot(next)
       }),
     async sessionDefaults() {
       const state = await loadState()

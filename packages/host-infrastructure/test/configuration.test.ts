@@ -27,7 +27,7 @@ afterEach(async () => {
 })
 
 async function fixture(
-  model: string,
+  model: string | string[],
   status = 200,
 ): Promise<{ baseUrl: string; requests: IncomingMessage[] }> {
   const requests: IncomingMessage[] = []
@@ -39,7 +39,7 @@ async function fixture(
       return
     }
     response.writeHead(status, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ object: 'list', data: [{ id: model }] }))
+    response.end(JSON.stringify({ object: 'list', data: [model].flat().map((id) => ({ id })) }))
   })
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -726,6 +726,67 @@ it.runIf(process.getuid !== undefined).each([
   })
   expect(audit).not.toContain('private exception marker')
   expect(audit).not.toContain('sk-test-value')
+})
+
+it.each([
+  ['openai', 'the cheapest priced model'],
+  ['agnes-ai', 'the first light-tier model when the provider publishes no prices'],
+] as const)('follows %s for an unset fast slot: %s', async (providerId, _rule) => {
+  const entry = getApiKeyProvider(providerId)
+  if (!entry) throw new Error(`${providerId} registry entry missing`)
+  const records = (await entry.createAdapter()).models(entry.route)
+  const price = (id: string) => {
+    const cost = records.find((record) => record.id === id)?.cost
+    return cost ? cost.input + cost.output : 0
+  }
+  // The default model is deliberately not the expected answer.
+  const model = records.some((record) => price(record.id) > 0)
+    ? [...records].sort((a, b) => price(b.id) - price(a.id))[0]?.id
+    : records.find((record) => !record.id.includes('flash'))?.id
+  if (!model) throw new Error(`${providerId} catalogue is empty`)
+  const server = await fixture(records.map((record) => record.id))
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await service.modelSlots()).toEqual({ revision: 0, slots: {} })
+  const saved = await service.save({
+    providerId,
+    baseUrl: server.baseUrl,
+    apiKey: 'sk-test-value',
+    model,
+    expectedRevision: 0,
+  })
+  const account = saved.accounts?.[0]
+  if (!account) throw new Error('account was not saved')
+  const ids = account.models.map((row) => row.id)
+  const priced = ids.filter((id) => price(id) > 0)
+  const expected = priced.length
+    ? priced.reduce((cheapest, id) => (price(id) < price(cheapest) ? id : cheapest))
+    : ids.find((id) => id.includes('flash'))
+  if (!expected) throw new Error('the catalogue offers no model to follow')
+  expect(expected).not.toBe(model)
+  const auto = { fast: { accountId: account.accountId, route: account.route, model: expected } }
+  expect(await service.modelSlots()).toEqual({ revision: 1, slots: {}, auto })
+
+  // The verifier is never automatic, and choosing it leaves the fast slot following the account.
+  const verifier = { route: account.route, model }
+  expect(await service.saveModelSlots({ revision: 1, slots: { verifier }, auto })).toEqual({
+    revision: 2,
+    slots: { verifier },
+    auto,
+  })
+  // An explicit model and an explicit "none" are both the person's choice.
+  expect(await service.saveModelSlots({ revision: 2, slots: { fast: verifier } })).toEqual({
+    revision: 3,
+    slots: { fast: verifier },
+  })
+  expect(await service.saveModelSlots({ revision: 3, slots: { fast: null } })).toEqual({
+    revision: 4,
+    slots: { fast: null },
+  })
+  // Without a usable default account there is nothing to follow.
+  await service.saveModelSlots({ revision: 4, slots: {} })
+  await service.account?.({ accountId: account.accountId, action: 'disable', expectedRevision: 5 })
+  expect((await service.modelSlots()).auto).toBeUndefined()
 })
 
 it('persists explicit auxiliary defaults under the shared revision without changing provider selection', async () => {

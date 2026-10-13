@@ -1,7 +1,8 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProvider, type WireEvent } from '@agnes/ai'
+import { createProvider, getApiKeyProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin } from '@agnes/base'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
@@ -372,6 +373,67 @@ describe('replaySwitchesOnOpen', () => {
   })
 
   // Two Hosts and a reopen, and the file's first session open: 2 to 6 s on the Windows runner.
+  it('gives a new session the default account model for an unset fast slot, until the slot is set', async () => {
+    const dataDir = scratch()
+    const entry = getApiKeyProvider('openai')
+    if (!entry) throw new Error('openai registry entry missing')
+    const ids = (await entry.createAdapter()).models(entry.route).map((record) => record.id)
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ object: 'list', data: ids.map((id) => ({ id })) }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    unwinds.push(() => new Promise((resolve) => server.close(resolve)))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('fixture did not bind')
+    const configuration = createConfigurationService({ home: dataDir, profile: 'local-dev' })
+    await configuration.save({
+      providerId: 'openai',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      apiKey: 'sk-test-value',
+      model: ids[0] as string,
+      expectedRevision: 0,
+    })
+    const followed = (await configuration.modelSlots()).auto?.fast
+    if (!followed) throw new Error('the default account offers no fast model')
+
+    const options = (routes: RouteDecl[]): TestHostOptions => ({
+      dataDir,
+      presets: { standard: TWO_SLOT_PRESET },
+      profileInputs: { user: { name: 'local-dev', provider: { package: '@agnes/ai', routes } } },
+      provider: () =>
+        new ScriptedProvider({ models: routes.flatMap((route) => route.models ?? []), scripts: [] }),
+    })
+    const account: RouteDecl = {
+      route: followed.route,
+      api: 'openai-completions',
+      baseUrl: 'https://example.invalid/v1',
+      models: [modelRecord(followed.route, followed.model)],
+    }
+    const serving = await createTestHost(options([...TWO_ROUTES, account]))
+    try {
+      const session = await serving.host.createSession({ cwd: dataDir, key: 'fast-followed' })
+      expect(session.preset.model.route.fast).toBe(followed.route)
+      expect(session.preset.model.id.fast).toBe(followed.model)
+      expect(session.preset.model.route.verifier).toBeUndefined()
+      // "None" is an explicit choice, so nothing is followed.
+      await configuration.saveModelSlots({ revision: 1, slots: { fast: null } })
+      const none = await serving.host.createSession({ cwd: dataDir, key: 'fast-none' })
+      expect(none.preset.model.route.fast).toBeUndefined()
+      await configuration.saveModelSlots({ revision: 2, slots: {} })
+    } finally {
+      await serving.host.close()
+    }
+    // A Host that does not serve the account's model leaves the preset's own slots as they were.
+    const other = await createTestHost(options(TWO_ROUTES))
+    try {
+      const session = await other.host.createSession({ cwd: dataDir, key: 'fast-unserved' })
+      expect(session.preset.model.route.fast).toBeUndefined()
+    } finally {
+      await other.host.close()
+    }
+  })
+
   it('reopening a session with a recorded model switch lands on the switched model, not the preset default', async () => {
     const dataDir = scratch()
     const provider = () =>

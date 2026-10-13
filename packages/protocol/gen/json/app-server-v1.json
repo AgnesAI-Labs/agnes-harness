@@ -30746,6 +30746,40 @@
               ]
             }
           }
+        },
+        "auto": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "type": "string"
+                },
+                "route": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "accountId",
+                "route",
+                "model"
+              ]
+            }
+          }
         }
       },
       "required": [
@@ -30824,6 +30858,40 @@
               ]
             }
           }
+        },
+        "auto": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "type": "string"
+                },
+                "route": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "accountId",
+                "route",
+                "model"
+              ]
+            }
+          }
         }
       },
       "required": [
@@ -30899,6 +30967,40 @@
                 {
                   "type": "null"
                 }
+              ]
+            }
+          }
+        },
+        "auto": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "accountId": {
+                  "minLength": 1,
+                  "maxLength": 48,
+                  "type": "string"
+                },
+                "route": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                },
+                "model": {
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "accountId",
+                "route",
+                "model"
               ]
             }
           }

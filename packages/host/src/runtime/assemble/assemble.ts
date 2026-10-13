@@ -256,7 +256,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
     sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
     sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
-    sessionModelSlots: async () => (await sessionConfiguration.modelSlots()).slots,
+    sessionModelSlots: () => sessionConfiguration.modelSlots(),
     compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
     childAgentCatalog: () => childAgentCatalog(pluginTree.root),
     compositionForPreset: c.capabilities.compositionForPreset,

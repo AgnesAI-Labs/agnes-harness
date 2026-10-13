@@ -63,7 +63,7 @@ export type Assembled = {
   /** The implementation each seam kind was bound to when this container was built. */
   seamBindings(): readonly import('@agnes/host-providers/assemble/seam-rows').SeamBinding[]
   sessionPresetDefault?(): Promise<string | undefined>
-  sessionModelSlots?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
+  sessionModelSlots?(): Promise<Pick<import('@agnes/protocol').ModelSlotsSnapshot, 'slots' | 'auto'>>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
   /** Read-only metadata for installed child agent providers. */

@@ -16,8 +16,28 @@ export const AuxiliaryModelSlots = Type.Object(
   { additionalProperties: false },
 )
 export type AuxiliaryModelSlots = Static<typeof AuxiliaryModelSlots>
+/** The account model an unset slot follows. */
+export const AutomaticModelTarget = Type.Object(
+  {
+    accountId: Type.String({ minLength: 1, maxLength: 48 }),
+    route: AuxiliaryModelTarget.properties.route,
+    model: AuxiliaryModelTarget.properties.model,
+  },
+  { additionalProperties: false },
+)
+export type AutomaticModelTarget = Static<typeof AutomaticModelTarget>
 export const ModelSlotsSnapshot = Type.Object(
-  { revision: Type.Integer({ minimum: 0 }), slots: AuxiliaryModelSlots },
+  {
+    revision: Type.Integer({ minimum: 0 }),
+    slots: AuxiliaryModelSlots,
+    /**
+     * Read-only. `auto.fast` is present while the fast slot is unset and the default account has a
+     * model to follow; a save accepts and ignores it. The verifier slot is never automatic.
+     */
+    auto: Type.Optional(
+      Type.Object({ fast: Type.Optional(AutomaticModelTarget) }, { additionalProperties: false }),
+    ),
+  },
   { additionalProperties: false },
 )
 export type ModelSlotsSnapshot = Static<typeof ModelSlotsSnapshot>

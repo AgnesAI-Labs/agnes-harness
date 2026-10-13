@@ -246,6 +246,17 @@ function childSandboxes(
   })
 }
 
+/** Whether this Host serves the model; any other refusal is not this question's to answer. */
+function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): boolean {
+  try {
+    validateModelSwitch(...input)
+    return true
+  } catch (error) {
+    if (!(error instanceof HostError) || error.code !== 'E_MODEL_UNSUPPORTED') throw error
+    return false
+  }
+}
+
 export async function createSession(
   profile: ResolvedProfile,
   a: Assembled,
@@ -327,7 +338,7 @@ export async function createSession(
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
   if (!parentSession && a.sessionModelSlots) {
-    const slots = await a.sessionModelSlots()
+    const { slots, auto } = await a.sessionModelSlots()
     const model = {
       ...view.model,
       route: { ...view.model.route },
@@ -336,21 +347,20 @@ export async function createSession(
       contextWindow: { ...view.model.contextWindow },
     }
     for (const slot of ['fast', 'verifier'] as const) {
-      const target = slots[slot]
+      // An unset fast slot follows the default account's model. Where this Host does not serve
+      // that model the preset keeps its own fast slot, as it did before there was a default.
+      const followed = slot === 'fast' && slots.fast === undefined ? auto?.fast : undefined
+      if (followed && !modelSwitchAllowed(profile, a, { slot, ...followed })) continue
+      const target = followed ? { route: followed.route, model: followed.model } : slots[slot]
       if (target === undefined) continue
       delete model.route[slot]
       delete model.id[slot]
       delete model.thinking[slot]
       delete model.contextWindow[slot]
-      if (target) {
-        // A removed route must leave review unavailable, never select a different paid model.
-        try {
-          validateModelSwitch(profile, a, { slot, ...target })
-          model.route[slot] = target.route
-          model.id[slot] = target.model
-        } catch (error) {
-          if (!(error instanceof HostError) || error.code !== 'E_MODEL_UNSUPPORTED') throw error
-        }
+      // A removed route must leave review unavailable, never select a different paid model.
+      if (target && modelSwitchAllowed(profile, a, { slot, ...target })) {
+        model.route[slot] = target.route
+        model.id[slot] = target.model
       }
     }
     view = { ...view, model }

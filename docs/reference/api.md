@@ -119,6 +119,14 @@ The default Host filesystem authorizes canonical names and executes reads, write
 
 ## Auxiliary model defaults
 
-The local Node SDK exposes `client.config.modelSlots.get()` and `client.config.modelSlots.save({ revision, slots })`. Both return `{ revision, slots }`; `slots` accepts only `fast` and `verifier`, each an explicit `{ route, model }` or `null` (unset). Omitted slots retain preset-defined behavior. The save replaces the auxiliary-default map, checks the shared configuration revision and validates the exact route/model against the live Host catalog. Unsupported models and stale revisions are refused.
+The local Node SDK exposes `client.config.modelSlots.get()` and `client.config.modelSlots.save({ revision, slots })`. Both return `{ revision, slots, auto? }`; `slots` accepts only `fast` and `verifier`, each an explicit `{ route, model }` or `null` (none). An omitted `verifier` retains preset-defined behavior. The save replaces the auxiliary-default map, checks the shared configuration revision and validates the exact route/model against the live Host catalog. Unsupported models and stale revisions are refused.
+
+An omitted `fast` slot follows the default account. The result then carries `auto: { fast: { accountId, route, model } }`, and new sessions use that model for the fast slot:
+
+```json
+{ "revision": 4, "slots": { "verifier": null }, "auto": { "fast": { "accountId": "account-1f0c", "route": "agnes-ai", "model": "agnes-2.5-flash" } } }
+```
+
+The model is chosen from the default account's own models in their saved order: the lowest input plus output price when the provider publishes prices, otherwise the first model whose id names a light tier (`flash`, `mini`, `lite`, `haiku`, `nano`, `fast`, `small`). `auto.fast` is absent when the slot is set or `null`, when there is no enabled default account, or when neither rule finds a model; the preset's own fast slot then applies, as it does on a Host that does not serve the chosen model. `auto` is read-only: a save accepts and ignores it. The verifier slot is never automatic.
 
 These methods are deployment-local administration, blocked in the browser SDK. Web uses the same-origin `/admin/api/model-slots` GET/POST bridge with the existing read/activate permissions and recovery read-only checks. Defaults are captured for new sessions; existing sessions use `Session.setModel({ slot, route, model })` for explicit overrides. See [reviewer setup](../guide/security.md).
