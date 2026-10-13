@@ -23,7 +23,7 @@
 | `SettingsState` | A | 共享状态 | 空白、加载、错误和成功；live region |
 | `SettingsInput` / `SettingsTextArea` / `SettingsSelect` | A | 账户表单原生控件 | 表单语义、ref 与主题 token；不暴露外部 UI 库 |
 | `ConversationCardLayout` | A | 会话卡片布局 | 标题、操作、ready/loading/empty/error/disabled；保留调用方稳定 test id 与语义角色 |
-| `createSettingsIcon` | A | 原生设置导航图标 | 分类图标共用 `icon` 皮肤钩子和主题尺寸；装饰性图标不进入无障碍名称 |
+| `SettingsIcon` | A | 设置导航图标 | 分类图标共用 `icon` 皮肤钩子和主题尺寸；装饰性图标不进入无障碍名称 |
 
 | `SettingsList` / `SettingsRow` | A | 平面设置列表 | 同账户页标题、说明与操作对齐；无嵌套卡片 |
 | `SettingsDetails` | A | 原生 details | 默认折叠的高级信息；键盘可展开；`compact` 用于行内无嵌套卡片的技术信息 |
@@ -54,7 +54,7 @@ SettingsPage accepts `headingId` and `bodyClassName` for existing native pane ID
 | `Tag` / `MetaText` / `Count` | Shared | Contract CSS | Actionable warn/bad/info tags; descriptive metadata stays text; zero counts are omitted. |
 | `Menu` | Shared | antd Dropdown / Menu | Action menu with arrows, Home/End, typeahead, Enter/Space, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
 | `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
-| `Icon` / `createSettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
+| `Icon` / `SettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
 | `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `tone="success|info|error"` selects outcome colours; existing outcome class names remain supported. Duration remains milliseconds. |
 | `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
 | `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
@@ -67,10 +67,10 @@ The public `.agh-btn*`, `.agh-tag`, `.agh-banner` and other `.agh-*` classes liv
 `components.css`; legacy `.primary-button` / `.secondary-button` / `.icon-button` are internal aliases.
 Both Web build paths compose the component rules into the existing theme bridge asset.
 
-`bindDialogSheets(document)` adds narrow native-dialog handles after opening, preserves autofocus,
-routes dragging through the native cancel contract (including busy vetoes), updates its close label
-on locale changes, and returns a disposer. Hosts release it on pagehide; closed/removed dialogs
-release their own listeners. Existing IDs and controllers remain authoritative.
+`bindDialogSheets(document)` renders `NativeSheetHandles`, which portals the same `SheetHandle` the
+`Dialog` primitive draws into every open native dialog. It preserves autofocus, routes dragging
+through the native cancel contract (including busy vetoes), follows locale changes, and returns a
+disposer. Hosts release it on pagehide. Existing IDs and controllers remain authoritative.
 
 | `SessionPicker` | Shared | Select | Caller-owned session titles, workspace names and relative dates; identities only in values; searchable above seven choices. |
 

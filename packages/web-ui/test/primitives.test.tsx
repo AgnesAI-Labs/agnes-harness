@@ -170,17 +170,19 @@ it('draws a toast as one card: an outcome icon beside text that only viewport le
   expect(rule).not.toContain('position: fixed')
 })
 
-it('shares Lucide geometry between native and React icons and labels icon actions', async () => {
-  const { Icon, IconButton, createSettingsIcon, icons } = await import('../src/index.js')
+it('draws settings icons with the shared Icon geometry and labels icon actions', async () => {
+  const { Icon, IconButton, SettingsIcon, settingsIconName, icons } = await import('../src/index.js')
   for (const name of Object.keys(icons) as (keyof typeof icons)[]) {
-    const host = render(createElement(Icon, { name, size: 20 }))
-    const svg = host.querySelector('svg')!
-    const native = createSettingsIcon(document, name)
-    expect(svg.innerHTML).toBe(native.innerHTML)
+    const svg = render(createElement(Icon, { name, size: 20 })).querySelector('svg')!
+    const settings = render(createElement(SettingsIcon, { icon: name })).querySelector('svg')!
+    expect(settings.outerHTML).toBe(svg.outerHTML)
     expect(svg.getAttribute('data-agnes-region')).toBe('icon')
     expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
     expect(svg.getAttribute('stroke-width')).toBe('1.75')
   }
+  // A settings category maps to its glyph, and an unknown name reads as a plugin.
+  expect(settingsIconName('security')).toBe('shield-check')
+  expect(settingsIconName('no-such-icon')).toBe('plug')
   const host = render(createElement(IconButton, { name: 'refresh-cw', label: 'Refresh' }))
   expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh')
   const pending = render(createElement(Button, { 'aria-busy': true, disabled: true }, 'Refresh'))

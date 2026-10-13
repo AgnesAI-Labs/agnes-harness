@@ -1,20 +1,23 @@
-import { type MouseEvent, type PointerEvent, useRef } from 'react'
+import { forwardRef, type MouseEvent, type PointerEvent, useRef } from 'react'
 import { fallbackT } from '../locales/index.js'
 
 /** Drag begins on the handle, leaving content scrolling and field gestures untouched. */
-export function SheetHandle({
-  onDismiss,
-  label,
-}: {
-  onDismiss(event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>): void
-  label?: string
-}) {
+export const SheetHandle = forwardRef<
+  HTMLButtonElement,
+  {
+    onDismiss(event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>): void
+    label?: string
+    /** The handle of a native dialog, which lays it out itself. */
+    native?: boolean
+  }
+>(function SheetHandle({ onDismiss, label, native }, ref) {
   const start = useRef<number | undefined>(undefined)
   const dragged = useRef(false)
   return (
     <button
+      ref={ref}
       type="button"
-      className="agh-sheet-handle"
+      className={native ? 'agh-sheet-handle agh-native-sheet-handle' : 'agh-sheet-handle'}
       aria-label={label ?? fallbackT('ui.close')}
       onPointerDown={(event) => {
         start.current = event.clientY
@@ -39,4 +42,4 @@ export function SheetHandle({
       <span aria-hidden="true" />
     </button>
   )
-}
+})

@@ -816,7 +816,9 @@
       background: var(--agnes-text-secondary);
     }
   }
+  /* Portalled in after the dialog's own content, and laid out first. */
   .agh-native-sheet-handle {
+    order: -1;
     align-items: center;
     justify-content: center;
     cursor: pointer;

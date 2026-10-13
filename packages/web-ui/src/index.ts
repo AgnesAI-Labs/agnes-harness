@@ -91,7 +91,7 @@ export {
   type SettingsComputerUseView,
 } from './settings-computer-use.js'
 export * from './settings-control-templates.js'
-export { createSettingsIcon } from './settings-icon.js'
+export { SettingsIcon, settingsIconName } from './settings-icon.js'
 export {
   SettingsCard,
   SettingsCheckbox,

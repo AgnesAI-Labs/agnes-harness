@@ -52,11 +52,6 @@
     "packages/web-ui/src/conversation/markdown.tsx": {
       "intrinsic": 2
     },
-    "packages/web-ui/src/dom/dialog-sheets.ts": {
-      "dom": 2,
-      "intrinsic": 1,
-      "className": 1
-    },
     "packages/web-ui/src/intelligent-ui/form-fields.tsx": {
       "intrinsic": 2
     },
@@ -77,10 +72,6 @@
       "dom": 2,
       "intrinsic": 1,
       "className": 5
-    },
-    "packages/web-ui/src/settings-icon.ts": {
-      "dom": 2,
-      "className": 1
     },
     "packages/web-ui/src/settings-layout.tsx": {
       "intrinsic": 4,

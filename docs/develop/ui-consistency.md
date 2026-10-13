@@ -54,7 +54,7 @@ Use `Tag tone="warn|bad|info"` for actionable exceptions, at most one per row/ca
 
 Use a localized title, optional description, scrollable body, field/operation feedback, then one footer action group. Put cancel before the primary action; destructive actions retain their explicit confirmation. Existing native `<dialog>` hosts may remain: shared content can render inside them while their controller keeps `showModal()`, Escape, focus return and public skin hooks. Do not nest a second modal inside such a host. The initial setup guide keeps its existing backdrop and progress layout.
 
-Use the existing `.icon` SVG presentation and `createSettingsIcon` for settings navigation. Decorative icons are `aria-hidden`; icon-only buttons have localized accessible names. Do not replace icons with emoji or expose raw identifiers as operation labels.
+Use the existing `.icon` SVG presentation and the `SettingsIcon` component for settings navigation. Decorative icons are `aria-hidden`; icon-only buttons have localized accessible names. Do not replace icons with emoji or expose raw identifiers as operation labels.
 
 ## Scale and themes
 
