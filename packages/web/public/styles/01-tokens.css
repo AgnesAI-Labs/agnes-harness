@@ -188,6 +188,26 @@
     --elevation-1: var(--shadow-elevation-soft);
     --elevation-2: var(--shadow-dialog);
 
+    /* Refinement layer (native control proportions). A hairline is a tint of the text colour, so it
+     reads on the ground, on panels and on surfaces alike. */
+    --agnes-line-hairline: color-mix(in srgb, var(--agnes-text-primary) 12%, transparent);
+    /* The one translucent surface: menus and pickers, 94% opaque over a backdrop blur. */
+    --agnes-bg-popover-material: color-mix(in srgb, var(--agnes-bg-popover) 94%, transparent);
+    /* The highlighted row of a menu or picker: an accent fill with its own content colour. */
+    --agnes-menu-active-bg: var(--agnes-color-indigo-500);
+    --agnes-menu-active-text: var(--agnes-color-gray-0);
+    --agnes-switch-track: color-mix(in srgb, var(--agnes-text-primary) 16%, transparent);
+    --agnes-switch-knob: var(--agnes-color-gray-0);
+    --agnes-segment-track: var(--agnes-color-ink-a06);
+    /* A raised control: secondary and popup buttons, the picked segment. */
+    --agnes-bg-control: var(--agnes-color-gray-0);
+    /* A raised control (secondary button, popup button, picked segment): hairline ring, 1px lift. */
+    --shadow-control: 0 0 0 var(--hairline) rgb(27 29 34 / 10%), 0 0.5px 1.5px rgb(27 29 34 / 12%);
+    --shadow-control-primary: inset 0 0.5px 0 rgb(255 255 255 / 22%), 0 0.5px 1.5px rgb(27 29 34 / 25%);
+    --shadow-knob: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 1.5px 4px rgb(0 0 0 / 22%);
+    --shadow-popover:
+      0 0 0 var(--hairline) rgb(27 29 34 / 9%), 0 2px 6px rgb(27 29 34 / 6%), 0 14px 40px rgb(27 29 34 / 14%);
+
     /* Product-specific */
     --agnes-bg-app-sidebar: var(--agnes-color-gray-50);
     --agnes-bg-app-content: var(--agnes-bg-page);
@@ -310,6 +330,21 @@
     --elevation-1: var(--shadow-elevation-soft);
     --elevation-2: var(--shadow-dialog);
 
+    /* Refinement layer */
+    --agnes-line-hairline: color-mix(in srgb, var(--agnes-text-primary) 12%, transparent);
+    --agnes-bg-popover-material: color-mix(in srgb, var(--agnes-bg-popover) 94%, transparent);
+    /* 深色的高亮行是亮靛蓝，其上的内容是近黑。 */
+    --agnes-menu-active-bg: var(--agnes-color-indigo-300);
+    --agnes-menu-active-text: var(--agnes-color-indigo-950);
+    --agnes-switch-track: color-mix(in srgb, var(--agnes-text-primary) 16%, transparent);
+    --agnes-switch-knob: var(--agnes-color-gray-125);
+    --agnes-segment-track: var(--agnes-color-white-a06);
+    --agnes-bg-control: var(--agnes-color-gray-650);
+    --shadow-control: 0 0 0 var(--hairline) rgb(255 255 255 / 12%), 0 0.5px 1.5px rgb(0 0 0 / 40%);
+    --shadow-control-primary: inset 0 0.5px 0 rgb(255 255 255 / 30%), 0 0.5px 1.5px rgb(0 0 0 / 40%);
+    --shadow-knob: 0 0 0 0.5px rgb(0 0 0 / 20%), 0 1.5px 4px rgb(0 0 0 / 45%);
+    --shadow-popover: 0 0 0 var(--hairline) rgb(255 255 255 / 12%), 0 14px 44px rgb(0 0 0 / 55%);
+
     /* Product-specific */
     --agnes-bg-app-sidebar: var(--agnes-color-gray-925);
     --agnes-bg-app-content: var(--agnes-bg-page);
@@ -357,6 +392,12 @@
     --font-size-lg: 1.125rem;
     --font-size-xl: 1.25rem;
     --font-size-2xl: 1.5rem;
+    /* System Settings hierarchy: a large page title, a small muted label above each group and one
+     caption size for row descriptions. Size and space carry the levels, not frames or fills. */
+    --font-size-title: 1.625rem;
+    --font-size-caption: 0.78125rem;
+    --line-title: 2rem;
+    --tracking-title: -0.022em;
     /* Conversation prose: 14px at a 72ch measure; CJK body text never drops below 1.6. */
     --font-size-prose: 0.875rem;
     --line-height-body: 1.6;
@@ -377,16 +418,22 @@
     --radius-main-page: var(--radius-modal);
     --radius-modal: var(--radius-xl);
     --radius-full: 9999px;
-    /* Roles: chips 8px; buttons, inputs, navigation items and hovered rows 10px; grouped cards,
-     menus and popovers 14px; dialogs 20px; pills only for small badges and segmented controls.
-     Nested radii never exceed their parent. */
+    /* Roles: chips, buttons, inputs, popup buttons, menu rows and navigation items 8px; segmented
+     tracks and icon tiles 10px; grouped cards, menus and popovers 14px; dialogs and drawers 20px;
+     pills only for badges and switches. Nested radii never exceed their parent. */
     --radius-chip: var(--radius-sm);
-    --radius-control: var(--radius-md);
+    --radius-control: var(--radius-sm);
+    --radius-segmented: var(--radius-md);
+    --radius-tile: var(--radius-md);
+    /* Continuous corners where the engine draws them: the listed shared surfaces switch to a
+     squircle and widen their radius by this factor so the corner reads the same size. */
+    --corner-shape: round;
+    --corner-scale: 1;
     --radius-card: var(--radius-lg);
     --radius-surface: var(--radius-lg);
     /* Menus and popovers: a soft floating surface, with rows that round inside it. */
     --radius-popover: var(--radius-lg);
-    --radius-menu-item: var(--radius-md);
+    --radius-menu-item: var(--radius-sm);
     /* The composer card is the one large, soft surface the user writes in. */
     --radius-composer: var(--radius-2xl);
     --radius-pill: var(--radius-full);
@@ -408,10 +455,26 @@
     --settings-column: 47.5rem;
     --settings-gutter: var(--s32);
     --settings-frame: calc(var(--settings-column) + 2 * var(--settings-gutter));
-    --control-height: 2.25rem;
+    /* Desktop-tool density: 28px buttons, popup buttons and icon buttons, 24px compact buttons,
+     32px text fields; touch widths raise fields to the touch target. */
+    --control-height: 1.75rem;
     --control-height-sm: 28px;
-    /* Text fields match the buttons beside them; touch widths raise both to the touch target. */
-    --control-height-form: var(--control-height);
+    --control-height-xs: 1.5rem;
+    --control-height-form: 2rem;
+    --menu-item-height: 1.625rem;
+    --row-min-height: 2.875rem;
+    --switch-width: 2.375rem;
+    --switch-height: 1.375rem;
+    --switch-knob: 1.125rem;
+    /* Page rhythm: 28px between sections, 36px above a page title. */
+    --space-section: 28px;
+    --space-page-top: 36px;
+    /* Dividers and control outlines: one device pixel on dense screens (see the media query below). */
+    --hairline: 1px;
+    /* One line weight for 16px line icons; the heavier one marks the selected navigation item and
+     the icon of a primary button. */
+    --icon-stroke: 1.5;
+    --icon-stroke-strong: 1.75;
     --control-height-touch: 44px;
     --dialog-max-height: min(46rem, calc(100dvh - 3rem));
     /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
@@ -419,12 +482,39 @@
     --font-weight-regular: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
-    /* Motion is for occasional surfaces only (150–250ms, ease-out); high-frequency and keyboard
-     actions do not animate. Everything is gated by prefers-reduced-motion below. */
+    --font-weight-bold: 700;
+    /* Motion is short (160–320ms) and moves only transform and opacity. Presses and tab changes
+     ease out; disclosures, menus, dialogs, side panels and the switch knob settle on a slight
+     spring (about 8% overshoot). Exits take 60% of the entrance and never bounce. Keyboard-opened
+     surfaces do not animate, and everything is gated by prefers-reduced-motion below. */
     --motion-fast: 120ms;
     --motion-base: 200ms;
+    --motion-short: 160ms;
+    --motion-medium: 260ms;
+    --motion-long: 320ms;
+    --motion-exit: 0.6;
     --motion-breathe: 2.4s;
     --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+    --motion-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --motion-spring: linear(
+      0,
+      0.009,
+      0.035 2.1%,
+      0.141 4.4%,
+      0.723 12.9%,
+      0.938 16.7%,
+      1.017 19.4%,
+      1.067 22.9%,
+      1.079 25.6%,
+      1.075 28.6%,
+      1.021 39.4%,
+      1.003 45.8%,
+      0.997 53.3%,
+      1
+    );
+    /* A press is a slight shrink and darken; no glow, ripple or shadow animates. */
+    --press-scale: 0.97;
+    --press-dim: 0.96;
     --transition-fast: var(--motion-fast) var(--motion-ease);
     --transition: var(--motion-base) var(--motion-ease);
   }
@@ -432,6 +522,23 @@
     :root {
       --control-height-form: var(--control-height-touch);
     }
+  }
+  @media (min-resolution: 2dppx) {
+    :root {
+      --hairline: 0.5px;
+    }
+  }
+  @supports (corner-shape: squircle) {
+    :root {
+      --corner-shape: squircle;
+      --corner-scale: 1.3;
+    }
+  }
+  /* CJK text is never tightened. */
+  :root:lang(zh),
+  :root:lang(ja),
+  :root:lang(ko) {
+    --tracking-title: 0;
   }
 
   /* The ring belongs to keyboard navigation. After a pointer action nothing draws it, including on

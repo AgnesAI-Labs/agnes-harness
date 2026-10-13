@@ -54,7 +54,46 @@ const pairs: [string, string, number][] = [
   ['--agnes-brand-focus-ring', '--agnes-bg-page', 3],
   ['--agnes-brand-mark', '--agnes-bg-app-sidebar', 4.5],
   ['--agnes-brand-mark', '--agnes-bg-app-content', 4.5],
+  // Refinement layer: the highlighted menu row, the destructive row and the raised control surface.
+  ['--agnes-menu-active-text', '--agnes-menu-active-bg', 4.5],
+  ['--agnes-text-inverse', '--agnes-status-danger-text', 4.5],
+  ['--agnes-text-primary', '--agnes-bg-control', 4.5],
+  ['--agnes-text-secondary', '--agnes-bg-control', 4.5],
+  ['--agnes-menu-active-bg', '--agnes-bg-popover', 3],
+  ['--agnes-button-primary-content', '--agnes-brand-primary', 3],
 ]
+const ratio = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+describe('menu material keeps text contrast over any backdrop', () => {
+  // A menu is the popover colour at 94% over a blurred backdrop; black and white bound what the
+  // remaining 6% can contribute.
+  const material =
+    /--agnes-bg-popover-material:\s*color-mix\(in srgb, var\(--agnes-bg-popover\) (\d+)%, transparent\)/
+  const opacity = Number(material.exec(css)![1]) / 100
+  const backdrops: [string, Color][] = [
+    ['black', [0, 0, 0, 1]],
+    ['white', [255, 255, 255, 1]],
+  ]
+  for (const [theme, tokens] of Object.entries({ light, dark })) {
+    for (const [name, backdrop] of backdrops) {
+      it.each(['primary', 'secondary', 'tertiary'])(
+        `${theme}: %s text on the material over ${name} ≥ 4.5:1`,
+        (role) => {
+          const [r, g, b] = color('--agnes-bg-popover', tokens)
+          const surface = over([r, g, b, opacity], backdrop)
+          const value = ratio(
+            luminance(over(color(`--agnes-text-${role}`, tokens), surface)),
+            luminance(surface),
+          )
+          expect(value, `${theme}/${name}: ${role} = ${value.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5)
+        },
+      )
+    }
+  }
+  it('declares the same 94% material in both themes', () => {
+    expect(css.match(new RegExp(material, 'g'))).toHaveLength(2)
+    expect(opacity).toBe(0.94)
+  })
+})
 describe('default skin contrast table (pure CSS calculation)', () => {
   for (const [theme, tokens] of Object.entries({ light, dark })) {
     it.each(pairs)(`${theme}: %s on %s ≥ %s:1`, (fg, bg, floor) => {
