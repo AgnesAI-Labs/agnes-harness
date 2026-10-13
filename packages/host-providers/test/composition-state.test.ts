@@ -3,6 +3,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resolveComposition } from '@agnes/host-common/profile/composition'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CompositionSessionStore, reapDeadLiveCompositions } from '../src/profile/composition-state.js'
@@ -104,6 +106,49 @@ describe('composition binding orphan sweep', () => {
     ] as const) {
       writeFileSync(join(store.root, `${createHash('sha256').update(key).digest('hex')}.json`), content)
       expect(() => store.read(key)).toThrow(/E_COMPOSITION_BINDING_INVALID/)
+    }
+  })
+
+  it('decodes the whole record: a valid binding round-trips, every damaged field is a located refusal', async () => {
+    const profile = await resolveProfile(
+      { builtin: 'local-dev', user: { name: 'local-dev' } },
+      {
+        platform: { os: 'linux', arch: 'x64', capabilities: {} },
+        agnesVersion: '1.4.0',
+        now: '2026-10-07',
+        homeDir: '/synthetic/home',
+      },
+    )
+    const tree = resolveComposition(profile)
+    const store = new CompositionSessionStore(home())
+    const saved = store.pin({ sessionKey: 'whole', tree, profile })
+    expect(saved.tree.hash).toBe(tree.hash)
+
+    const damage: Record<string, (record: any) => void> = {
+      'profile without packages': (r) => delete r.profile.packages,
+      'null package element': (r) => (r.profile.packages = [null]),
+      'null rows': (r) => (r.tree.rows = null),
+      'null bundles': (r) => (r.tree.bundles = null),
+      'null sources': (r) => (r.tree.sources = null),
+      'bad source layer': (r) => (r.tree.sources.loop = { layer: 'nowhere', name: 'x' }),
+      'bad tool scope': (r) => (r.tree.toolScope = { bundlePackages: 3, activePackages: [] }),
+      'selection changed under the hash': (r) => (r.tree.selection.tools = ['write']),
+      'adapters not an object': (r) => (r.profile.adapters = null),
+      'legacy not true': (r) => (r.legacy = 'yes'),
+    }
+    for (const [name, mutate] of Object.entries(damage)) {
+      const record = JSON.parse(JSON.stringify({ sessionKey: 'whole', tree, profile }))
+      mutate(record)
+      const file = join(store.root, `${createHash('sha256').update('whole').digest('hex')}.json`)
+      writeFileSync(file, JSON.stringify(record))
+      let error: { code?: string; file?: string } | undefined
+      try {
+        store.read('whole')
+      } catch (caught) {
+        error = caught as typeof error
+      }
+      expect(error?.code, name).toBe('E_COMPOSITION_BINDING_INVALID')
+      expect(error?.file, name).toBe(file)
     }
   })
 

@@ -35,6 +35,7 @@
     "./profile/model-compatibility": "./src/profile/model-compatibility.ts",
     "./profile/policy-digest": "./src/profile/policy-digest.ts",
     "./profile/resolve": "./src/profile/resolve.ts",
+    "./profile/saved-profile": "./src/profile/saved-profile.ts",
     "./profile/sandbox-startup": "./src/profile/sandbox-startup.ts",
     "./profile/templates": "./src/profile/templates.ts",
     "./profile/types": "./src/profile/types.ts",
