@@ -8,6 +8,8 @@ const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
 type ReadOnlyNoticeView = {
   message: Readonly<{ en: string; 'zh-CN': string }>
   actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
+  /** Present when the record was too large to read whole: the rows that are shown, and why the rest are not. */
+  scan?: Readonly<{ fromSeq: number; throughSeq: number }>
 }
 const readOnlyStore = createExternalStore<ReadOnlyNoticeView | undefined>(undefined)
 const reconnectStore = createExternalStore<{ phase: ReconnectPhase; retry?: () => void }>({ phase: 'idle' })
@@ -100,6 +102,14 @@ export function ReadOnlyNotice() {
       ))}
     >
       <strong>{t('app.readOnly.label')}</strong> {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
+      {view.scan && (
+        <>
+          {' '}
+          <span data-testid="session-scan-truncated">
+            {t('app.readOnly.truncated', { from: view.scan.fromSeq, through: view.scan.throughSeq })}
+          </span>
+        </>
+      )}
     </Banner>
   )
 }

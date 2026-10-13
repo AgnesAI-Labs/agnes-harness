@@ -7,6 +7,8 @@ import {
 import type { AppSessionContext } from '../app.js'
 import { appReadOnly } from '../app-notices.js'
 
+type ViewScan = { fromSeq: number; throughSeq: number } | undefined
+
 const PAGE = 200
 const CODES: readonly string[] = Object.values(SESSION_VERSION_CODES)
 
@@ -50,19 +52,22 @@ export function createReadOnlyController(
   // Bumped by every request and by clear(), so only the newest request of the current selection
   // may write shared state.
   let latest = 0
+  // The scan marker of the view on screen; the banner states it next to the refusal.
+  let scan: ViewScan
 
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
   async function load(id: string, maxNodes: number, epoch: number): Promise<boolean> {
     const ticket = ++latest
     const view = await context.client.session.view(id, { maxNodes })
     if (ticket !== latest || epoch !== context.selection) return false
+    scan = view.history.scan
     context.readOnly = { id, maxNodes, hasEarlier: view.history.hasEarlier }
     context.projection = view.timeline
     context.windowAtStart = !view.history.hasEarlier
     return true
   }
 
-  function banner(notice: SessionViewNotice): void {
+  function banner(notice: SessionViewNotice, scan: ViewScan): void {
     const id = context.readOnly?.id
     if (!id) return
     // Switching to the current version is an administrator operation named per pinned kind
@@ -78,7 +83,7 @@ export function createReadOnlyController(
         id: 'new',
         onSelect: () => context.run(() => commands.beginNewDraft()),
       })
-    appReadOnly.show({ message: notice.localized, actions })
+    appReadOnly.show({ message: notice.localized, actions, ...(scan ? { scan } : {}) })
   }
 
   /**
@@ -91,7 +96,7 @@ export function createReadOnlyController(
     if (!refusal) return false
     try {
       if (!(await load(id, PAGE, epoch))) return true
-      banner(refusal)
+      banner(refusal, scan)
     } catch {
       return false
     }

@@ -3009,12 +3009,13 @@
             "startIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
             "totalNodes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
             "scan": {
-              "description": "Present when the read stopped at a scan budget; the timeline covers only the rows up to throughSeq.",
+              "description": "Present when the read stopped at a scan budget: the timeline covers only the rows fromSeq..throughSeq. A session over budget is read from its newest row backwards, so rows before fromSeq are the ones not shown.",
               "type": "object",
               "additionalProperties": false,
-              "required": ["reason", "throughSeq"],
+              "required": ["reason", "fromSeq", "throughSeq"],
               "properties": {
                 "reason": { "enum": ["events", "bytes", "time", "cancelled"] },
+                "fromSeq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
                 "throughSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
               }
             }

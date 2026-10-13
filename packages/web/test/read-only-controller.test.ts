@@ -1,13 +1,14 @@
 import { SESSION_VERSION_CODES } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { createReadOnlyController } from '../src/app/read-only-controller.js'
+import { appReadOnly } from '../src/app-notices.js'
 
 vi.mock('../src/app-notices.js', () => ({ appReadOnly: { show: vi.fn(), clear: vi.fn() } }))
 
 const refusal = { data: { code: SESSION_VERSION_CODES.older } }
-const view = (id: string, hasEarlier = true) => ({
+const view = (id: string, hasEarlier = true, scan?: { fromSeq: number; throughSeq: number }) => ({
   timeline: { sessionId: id },
-  history: { hasEarlier },
+  history: { hasEarlier, ...(scan ? { scan: { reason: 'events', ...scan } } : {}) },
 })
 
 function setup() {
@@ -67,4 +68,15 @@ it('does not let a late response resurrect read-only state after the selection w
   await a
   expect(context.readOnly).toBeUndefined()
   expect(context.projection).toBeUndefined()
+})
+
+it('states which rows a truncated record shows', async () => {
+  const { controller, pending } = setup()
+  const shown = controller.show('A', refusal, 1)
+  await tick()
+  pending.get('A:200')?.(view('A', true, { fromSeq: 901, throughSeq: 1500 }))
+  await shown
+  expect(appReadOnly.show).toHaveBeenLastCalledWith(
+    expect.objectContaining({ scan: expect.objectContaining({ fromSeq: 901, throughSeq: 1500 }) }),
+  )
 })

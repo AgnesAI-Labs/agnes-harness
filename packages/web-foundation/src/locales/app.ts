@@ -28,6 +28,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.readOnly.label': 'Read-only',
     'app.readOnly.reopen': 'Reopen after upgrading',
     'app.readOnly.new': 'Start a new session',
+    'app.readOnly.truncated':
+      'This record is too large to read whole: only events {from}–{through} are shown, and earlier events were not read.',
     'app.status.newTask': 'New task',
     'app.status.stoppingWait': 'Requesting stop; waiting for the backend to confirm',
     'app.status.awaitingApproval': 'Awaiting approval',
@@ -171,6 +173,8 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.readOnly.label': '只读',
     'app.readOnly.reopen': '升级后重新打开',
     'app.readOnly.new': '新开会话',
+    'app.readOnly.truncated':
+      '这份记录太大，无法完整读取：仅显示第 {from}–{through} 条事件，更早的事件未读取。',
     'app.status.newTask': '新任务',
     'app.status.stoppingWait': '正在请求停止，等待后台确认',
     'app.status.awaitingApproval': '等待审批',

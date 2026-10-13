@@ -31,10 +31,12 @@ function rows(count: number): Event[] {
 /** A reader over fixed rows that fails the way a damaged or foreign ledger does at one row. */
 const readerOf =
   (all: Event[], failAt?: { seq: number; code: string }): SessionRowsReader =>
-  async (_key, { fromSeq = 1, limit }) => {
-    if (failAt && fromSeq <= failAt.seq && failAt.seq < fromSeq + limit)
+  async (_key, { fromSeq = 1, toSeq = Number.POSITIVE_INFINITY, limit, order = 'asc' }) => {
+    const inRange = all.filter((row) => row.seq >= fromSeq && row.seq <= toSeq)
+    const page = (order === 'desc' ? inRange.reverse() : inRange).slice(0, limit)
+    if (failAt && page.some((row) => row.seq === failAt.seq))
       throw new HostError(failAt.code as never, `ledger ${failAt.code}`)
-    return all.filter((row) => row.seq >= fromSeq).slice(0, limit)
+    return page
   }
 
 it('projects a whole ledger read-only and never reports a running operation', async () => {
@@ -96,16 +98,22 @@ it('does not swallow a failure that is not about the record itself', async () =>
   await expect(readSessionView(reader, 'x')).rejects.toThrow('disk offline')
 })
 
-it('stops a scan at its event budget and says how far it got', async () => {
+it('shows the newest rows when the event budget is smaller than the session', async () => {
   const view = await readSessionView(readerOf(rows(1500)), 'huge', { budget: { events: 600 } })
-  expect(view.history.scan).toEqual({ reason: 'events', throughSeq: 1000 })
-  expect(view.lastSeq).toBe(1000)
+  expect(view.history.scan).toEqual({ reason: 'events', fromSeq: 901, throughSeq: 1500 })
+  expect(view.lastSeq).toBe(1500)
+  expect(view.timeline.nodes.filter((node) => node.kind === 'user').at(-1)).toBeDefined()
   expect(validateAgainst(SessionViewResult, view).ok).toBe(true)
 })
 
-it('stops a scan at its byte budget and when the caller cancels', async () => {
-  const bytes = await readSessionView(readerOf(rows(1500)), 'heavy', { budget: { bytes: 1 } })
-  expect(bytes.history.scan?.reason).toBe('bytes')
+it('counts the whole encoded event against the byte budget and keeps the newest rows', async () => {
+  const view = await readSessionView(readerOf(rows(1500)), 'heavy', { budget: { bytes: 2000 } })
+  expect(view.history.scan?.reason).toBe('bytes')
+  expect(view.history.scan?.throughSeq).toBe(1500)
+  expect(view.lastSeq - (view.history.scan?.fromSeq ?? 0)).toBeLessThan(20)
+})
+
+it('stops at once when the caller cancels', async () => {
   const cancelled = new AbortController()
   let reads = 0
   const reader: SessionRowsReader = async (key, query) => {
@@ -116,6 +124,24 @@ it('stops a scan at its byte budget and when the caller cancels', async () => {
   const view = await readSessionView(reader, 'gone', { signal: cancelled.signal })
   expect(reads).toBe(1)
   expect(view.history.scan?.reason).toBe('cancelled')
+})
+
+it('abandons a read that never returns at its deadline and at the caller cancel', async () => {
+  const hung: SessionRowsReader = () => new Promise<Event[]>(() => undefined)
+  const late = await readSessionView(hung, 'hung', { budget: { timeMs: 20 } })
+  expect(late.history.scan?.reason).toBe('time')
+  const cancelled = new AbortController()
+  const pending = readSessionView(hung, 'hung', { signal: cancelled.signal })
+  setTimeout(() => cancelled.abort(), 10)
+  expect((await pending).history.scan?.reason).toBe('cancelled')
+})
+
+it('keeps the readable newer rows when an older page cannot be decoded', async () => {
+  const view = await readSessionView(readerOf(rows(1500), { seq: 800, code: 'E_FORMAT_CORRUPT' }), 'broken', {
+    budget: { events: 600 },
+  })
+  expect(view.notice?.issue).toBe('corrupt')
+  expect(view.lastSeq).toBe(1500)
 })
 
 it('reports no scan marker when the whole history fits', async () => {

@@ -361,7 +361,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
             ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
             limit: query.limit,
-            order: 'asc',
+            order: query.order ?? 'asc',
           }),
         sessionKey,
         options,
