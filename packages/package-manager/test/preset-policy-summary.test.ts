@@ -111,6 +111,8 @@ it('reads network use from declared capabilities and omits the field set when a 
     summarizeBundlePresets('acme/kit', bundles, plugins)[0]?.network
   expect(network([plugin({ network: ['api.example.org'] }), plugin({})])).toBe('allowed')
   expect(network([plugin({ model: true })])).toBe('none')
+  expect(network([plugin({ network: [] }), plugin()])).toBe('unknown')
+  expect(network([plugin({ network: ['api.example.org'] }), plugin()])).toBe('allowed')
   expect(network([plugin()])).toBe('unknown')
   expect(network([])).toBe('unknown')
 

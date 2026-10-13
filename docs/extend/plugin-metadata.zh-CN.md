@@ -58,6 +58,8 @@
 { "bundle": "acme/research#research", "id": "research", "toolPolicy": "default", "readOnly": "yes", "confirmBeforeActions": "no", "network": "none" }
 ```
 
-所有字段都由后端从包数据推导，不运行插件代码，作者不能自己填写。组合包或 preset 设置了平台的 `toolPolicy.readOnly` 时 `readOnly` 为 `yes`（任何策略服务商下都成立）；没有设置且 preset 使用默认工具策略时为 `no`。默认工具策略下是否确认取决于会话的权限模式，preset 不作保证，所以 `confirmBeforeActions` 为 `no`。preset 选择了自己的 tool-policy 服务商时，两者都是 `unknown`，因为策略由代码决定；组合包继承了其他包的组合包时 `readOnly` 也是 `unknown`。`network` 读取包声明的能力：声明了能力且没有列出主机为 `none`，列出了主机为 `allowed`，完全没有声明为 `unknown`。客户端只应对 `yes` 和 `none` 作出承诺，其余情况列出声明的能力。 只读字段遵循运行时合并顺序：先预设，再按声明顺序应用会话组合包及其父组合包，每个父组合包只应用一次；显式的 `false` 会覆盖之前的 `true`。
+所有字段都由后端从包数据推导，不运行插件代码，作者不能自己填写。只读字段遵循运行时合并顺序：先预设，再按声明顺序应用会话组合包及其父组合包，每个父组合包只应用一次；显式的 `false` 会覆盖之前的 `true`。合并后的平台 `toolPolicy.readOnly` 为 true 时，`readOnly` 为 `yes`，任何策略服务商下都成立。否则，值已知为 false 且使用默认策略服务商时为 `no`；使用自定义服务商或遇到无法解析的外部组合包时为 `unknown`。外部组合包之后的显式设置可以重新确定该值。
+
+默认工具策略服务商下是否确认取决于会话的权限模式，preset 不作保证，所以 `confirmBeforeActions` 为 `no`；使用自定义服务商时为 `unknown`。`network` 读取包声明的能力：任何插件列出了主机时为 `allowed`，所有插件都声明了能力且没有列出主机时为 `none`，声明不完整且没有列出主机时为 `unknown`。客户端只应对 `yes` 和 `none` 作出承诺，其余情况列出声明的能力。
 
 预览、库存和目录 DTO 的可选只读 `PackagePresentation` 字段携带有界行 ID、作者 metadata、可选公开 extension source ID 与 configSchema 是否存在。库存／目录来源由后端推导。这些静态声明不是注册信息，不参与 target、能力哈希或启停。页面结合既有 runtime/provider 与 composition 工具目录、浏览器插槽、页面链接及已验证资源描述展示实际贡献。没有可读包归属的全局设置页、命令和事件不做归属推测；既有目录分页、生命周期 blockers 与 pins 保持原样。

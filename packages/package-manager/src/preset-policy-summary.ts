@@ -19,13 +19,12 @@ export function summarizeBundlePresets(
   plugins: readonly AgnesPluginManifestEntry[],
 ): PresetPolicySummary[] {
   const catalog = record(bundles) ?? {}
-  // A package that declares capabilities and names no host has declared no network. Without any
-  // declaration there is nothing to read.
+  // No network is known only when every plugin declares capabilities and names no host.
   const declared = plugins.flatMap((plugin) => (plugin.capabilities ? [plugin.capabilities] : []))
-  const network = !declared.length
-    ? 'unknown'
-    : declared.some((capabilities) => (capabilities.network?.length ?? 0) > 0)
-      ? 'allowed'
+  const network = declared.some((capabilities) => (capabilities.network?.length ?? 0) > 0)
+    ? 'allowed'
+    : !declared.length || declared.length !== plugins.length
+      ? 'unknown'
       : 'none'
   /** Session bundles apply after the preset, in DFS order with each parent applied only once. */
   const bundleReadOnly = (name: string, initial: boolean): boolean | undefined => {
