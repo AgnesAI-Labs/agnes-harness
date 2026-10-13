@@ -29,6 +29,7 @@ Components and plugins read semantic tokens only. The palette is the single plac
 | Muted text | `--agnes-text-tertiary` | `#666B76` | `#9A9EA8` |
 | Line | `--agnes-line-primary` | `#E4E4E0` | `#2C2E35` |
 | Accent | `--agnes-brand-primary` | `#4F5BD5` | `#8A93FF` |
+| Brand mark and wordmark | `--agnes-brand-mark` | `#3248AF` | `#6983FC` |
 | Accent, soft | `--agnes-brand-emphasis-soft` | `#EEF0FC` | `#252845` |
 | Success, warning, danger marks | `--agnes-status-*-solid` | `#2F8F5B` `#B7791F` `#C2413B` | `#5CC28A` `#E0A84A` `#EF7B74` |
 

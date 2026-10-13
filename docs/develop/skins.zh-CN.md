@@ -158,6 +158,7 @@ textarea {
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary
+--agnes-brand-mark
 --agnes-brand-focus-ring
 --agnes-brand-emphasis-soft
 --agnes-focus-ring-soft

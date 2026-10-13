@@ -52,6 +52,8 @@ const pairs: [string, string, number][] = [
     3,
   ]),
   ['--agnes-brand-focus-ring', '--agnes-bg-page', 3],
+  ['--agnes-brand-mark', '--agnes-bg-app-sidebar', 4.5],
+  ['--agnes-brand-mark', '--agnes-bg-app-content', 4.5],
 ]
 describe('default skin contrast table (pure CSS calculation)', () => {
   for (const [theme, tokens] of Object.entries({ light, dark })) {

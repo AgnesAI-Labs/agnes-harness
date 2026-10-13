@@ -51,6 +51,10 @@
     --agnes-color-indigo-900: #252845;
     --agnes-color-indigo-950: #14152a;
 
+    /* 品牌蓝：只给品牌图形标和字标用，与强调色分开。600 用于浅色底，400 用于深色底。 */
+    --agnes-color-brand-blue-400: #6983fc;
+    --agnes-color-brand-blue-600: #3248af;
+
     /* 状态色与强调色分离。500 用于图标、圆点等非文字标记（≥3:1）；
      700 是浅色底上的文字（≥4.5:1）；300 同时是深色的文字与标记；50/900 是软底。 */
     --agnes-color-green-50: #e6f3eb;
@@ -84,6 +88,8 @@
 
     /* Brand —— 强调色只用于主操作、当前选中和状态指示。 */
     --agnes-brand-primary: var(--agnes-color-indigo-500);
+    /* The logo mark and wordmark keep the brand's own blue; it is not an accent. */
+    --agnes-brand-mark: var(--agnes-color-brand-blue-600);
     --agnes-brand-focus-ring: var(--agnes-color-indigo-500);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-50);
     /* Soft halo around a focused field or card; the solid ring stays for outlines. */
@@ -206,6 +212,7 @@
 
     /* Brand */
     --agnes-brand-primary: var(--agnes-color-indigo-300);
+    --agnes-brand-mark: var(--agnes-color-brand-blue-400);
     --agnes-brand-focus-ring: var(--agnes-color-indigo-300);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-900);
     --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 34%, transparent);

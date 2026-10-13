@@ -1,6 +1,7 @@
 // generated from packages/web/public/style.css by tools/gen-tables.ts — do not edit
 export const THEME_TOKEN_NAMES = Object.freeze([
   "--agnes-brand-primary",
+  "--agnes-brand-mark",
   "--agnes-brand-focus-ring",
   "--agnes-brand-emphasis-soft",
   "--agnes-focus-ring-soft",

@@ -29,6 +29,7 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 | 弱化文字 | `--agnes-text-tertiary` | `#666B76` | `#9A9EA8` |
 | 分隔线 | `--agnes-line-primary` | `#E4E4E0` | `#2C2E35` |
 | 强调色 | `--agnes-brand-primary` | `#4F5BD5` | `#8A93FF` |
+| 品牌图形标与字标 | `--agnes-brand-mark` | `#3248AF` | `#6983FC` |
 | 强调色软底 | `--agnes-brand-emphasis-soft` | `#EEF0FC` | `#252845` |
 | 成功、警告、危险标记 | `--agnes-status-*-solid` | `#2F8F5B` `#B7791F` `#C2413B` | `#5CC28A` `#E0A84A` `#EF7B74` |
 

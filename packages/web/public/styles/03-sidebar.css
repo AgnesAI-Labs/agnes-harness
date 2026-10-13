@@ -44,9 +44,9 @@
     align-items: center;
     gap: 0.5rem;
   }
-  /* 品牌锁定组合沿用原 AgnesMark；图形标和字标用正文色，强调色只留给主操作、选中与状态。 */
+  /* 品牌锁定组合沿用原 AgnesMark；图形标和字标共用品牌蓝，它不是强调色。 */
   .brand-lockup {
-    color: var(--agnes-text-primary);
+    color: var(--agnes-brand-mark);
   }
   /* 原 AgnesMark 以 alpha 蒙版着色，侧栏、空态与过程行头像复用同一资产。 */
   .agnes-mark {
@@ -369,7 +369,7 @@
     height: 3.5rem;
     margin: 0 auto 1.25rem;
     border-radius: 0;
-    color: var(--agnes-brand-primary);
+    color: var(--agnes-brand-mark);
     background: currentColor;
   }
 
