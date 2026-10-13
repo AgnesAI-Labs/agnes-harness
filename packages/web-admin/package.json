@@ -15,6 +15,7 @@
     "./admin/plugins/standalone": "./src/admin/plugins/standalone.ts",
     "./admin/plugins/types": "./src/admin/plugins/types.ts",
     "./admin/resources/admin": "./src/admin/resources/admin.ts",
+    "./agents": "./src/agents.ts",
     "./admin/resources/api": "./src/admin/resources/api.ts",
     "./admin/resources/types": "./src/admin/resources/types.ts",
     "./oauth-controls": "./src/oauth-controls.ts",

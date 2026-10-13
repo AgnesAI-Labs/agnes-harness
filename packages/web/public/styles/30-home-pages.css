@@ -16,4 +16,250 @@
     gap: var(--s4);
     min-width: 0;
   }
+
+  /* ── Home pages: shared details ─────────────────────────────────────────────
+   A quiet qualifier after a page title, such as "FDE". */
+  .home-page-title-note {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0;
+  }
+
+  /* ── Business agents ────────────────────────────────────────────────────────
+   Search and filter, then a grid of cards that fills the column. */
+  .agent-gallery-page {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .agent-gallery-filter {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
+    gap: var(--s12);
+  }
+  .agent-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s10);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .agent-card > header {
+    display: flex;
+    align-items: center;
+    gap: var(--s10);
+    min-width: 0;
+  }
+  .agent-card-heading {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+  .agent-card-heading > h3 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-card-summary,
+  .agent-card-sample {
+    margin: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .agent-card-summary {
+    color: var(--agnes-text-secondary);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .agent-card-sample {
+    padding: var(--s8) var(--s10);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .agent-card > footer {
+    margin-top: auto;
+    padding-top: var(--s4);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agent-card-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+
+  /* The letter tile: one fixed tint per agent, the same in both themes, white text at AA. */
+  .agent-tile {
+    --agent-tint: 262;
+    flex: 0 0 auto;
+    width: 2.125rem;
+    height: 2.125rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: oklch(0.99 0 0);
+    background: oklch(0.5 0.13 var(--agent-tint));
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+  }
+  .agent-tile[data-tint="1"] {
+    --agent-tint: 215;
+  }
+  .agent-tile[data-tint="2"] {
+    --agent-tint: 300;
+  }
+  .agent-tile[data-tint="3"] {
+    --agent-tint: 180;
+  }
+  .agent-tile[data-tint="4"] {
+    --agent-tint: 60;
+  }
+  .agent-tile[data-tint="5"] {
+    --agent-tint: 350;
+  }
+  .agent-tile[data-tint="6"] {
+    --agent-tint: 150;
+  }
+  .agent-tile[data-tint="7"] {
+    --agent-tint: 30;
+  }
+
+  /* ── One-click start dialog ─────────────────────────────────────────────── */
+  .agent-start-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: 1.4;
+  }
+  .agent-start-body h3 {
+    margin: 0 0 var(--s8);
+    padding-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+  }
+  .agent-start-identity,
+  .agent-start-technical {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .agent-start-help {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agent-start-spacer {
+    flex: 1;
+  }
+  .agent-start-body .agh-banner-copy {
+    display: grid;
+    gap: var(--s2);
+  }
+  /* Four steps in a row; the mark carries the state, the words repeat it. */
+  .agent-start-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .agent-start-steps > li {
+    min-width: 0;
+    display: grid;
+    justify-items: start;
+    gap: var(--s4);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .agent-start-step-mark {
+    width: 1.375rem;
+    height: 1.375rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-start-step-name {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agent-start-step-state {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .agent-start-steps > li:is([data-state="done"], [data-state="skipped"]) > .agent-start-step-mark {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agent-start-steps > li[data-state="running"] {
+    border-color: var(--agnes-brand-primary);
+  }
+  .agent-start-steps > li[data-state="running"] > .agent-start-step-mark {
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+  }
+  .agent-start-steps > li[data-state="running"] > .agent-start-step-state {
+    color: var(--agnes-text-secondary);
+  }
+  .agent-start-steps > li[data-state="failed"] {
+    border-color: var(--agnes-status-danger-border);
+  }
+  .agent-start-steps > li[data-state="failed"] > .agent-start-step-mark {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agent-start-steps > li[data-state="failed"] > .agent-start-step-state {
+    color: var(--agnes-status-danger-text);
+  }
+  @media (max-width: 480px) {
+    .agent-start-steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 }
