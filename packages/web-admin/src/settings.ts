@@ -204,12 +204,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const setError = (error: unknown): void => {
     const secret = ui.apiKey.value
     const translated = configurationReason(error, tr)
-    const message = (ui.error.textContent = translated ?? errorText(error, secret, tr))
+    const message = translated ?? errorText(error, secret, tr)
+    ui.error.textContent = message
     const invalid = accountBody?.querySelector<HTMLElement>('[aria-invalid="true"]')
-    if (invalid) {
-      if (advanced) setDisclosureOpen(advanced, true)
-      invalid.focus()
-    }
+    if (invalid && advanced) setDisclosureOpen(advanced, true)
+    invalid?.focus()
     ui.state.textContent = ''
     try {
       // Provider failures can echo request details. Do not pass a raw credential to the app-level
