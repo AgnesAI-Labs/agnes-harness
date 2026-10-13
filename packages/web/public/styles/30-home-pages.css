@@ -1,6 +1,16 @@
 @layer app {
   /* ── Session runtime info ───────────────────────────────────────────────────
-   The full tool list of one source: names wrap as chips of text, never a table. */
+   Plain facts, what the session may do and its tools are separate parts of one column. */
+  .session-runtime {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s20);
+  }
+  .session-runtime > p {
+    margin: 0;
+  }
+  /* The full tool list of one source: names wrap as chips of text, never a table. */
   .session-runtime-tools {
     display: flex;
     flex-wrap: wrap;
@@ -113,7 +123,6 @@
 
   /* The letter tile: one fixed tint per agent, the same in both themes, white text at AA. */
   .agent-tile {
-    --agent-tint: 262;
     flex: 0 0 auto;
     width: 2.125rem;
     height: 2.125rem;
@@ -121,31 +130,31 @@
     place-items: center;
     border-radius: var(--radius-md);
     color: oklch(0.99 0 0);
-    background: oklch(0.5 0.13 var(--agent-tint));
+    background: oklch(0.5 0.13 262);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     line-height: 1;
   }
   .agent-tile[data-tint="1"] {
-    --agent-tint: 215;
+    background: oklch(0.5 0.13 215);
   }
   .agent-tile[data-tint="2"] {
-    --agent-tint: 300;
+    background: oklch(0.5 0.13 300);
   }
   .agent-tile[data-tint="3"] {
-    --agent-tint: 180;
+    background: oklch(0.5 0.13 180);
   }
   .agent-tile[data-tint="4"] {
-    --agent-tint: 60;
+    background: oklch(0.5 0.13 60);
   }
   .agent-tile[data-tint="5"] {
-    --agent-tint: 350;
+    background: oklch(0.5 0.13 350);
   }
   .agent-tile[data-tint="6"] {
-    --agent-tint: 150;
+    background: oklch(0.5 0.13 150);
   }
   .agent-tile[data-tint="7"] {
-    --agent-tint: 30;
+    background: oklch(0.5 0.13 30);
   }
 
   /* ── One-click start dialog ─────────────────────────────────────────────── */

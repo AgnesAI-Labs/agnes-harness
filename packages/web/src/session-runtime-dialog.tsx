@@ -78,8 +78,8 @@ export function RuntimeInfo({
         .join(' · ')
     : unknown
   return (
-    <div className="agnes-settings-stack session-runtime">
-      <SettingsGroup data-session-runtime={runtime.sessionKey} data-testid="session-runtime-summary">
+    <div className="session-runtime" data-session-runtime={runtime.sessionKey}>
+      <SettingsGroup data-testid="session-runtime-summary">
         <SettingsItem
           icon="bot"
           label={t('session.runtime.loopPlain')}
