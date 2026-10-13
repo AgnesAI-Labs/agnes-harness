@@ -253,6 +253,8 @@ export async function runWorker(
       throw new Error(typeof message === 'string' ? message : 'the batch request failed')
     }
   }
+  // The same daemon bridges reach the Host on both assembly paths below.
+  const daemonBridges = { skillInstall, mcpManage, pluginManage, batch } as const
   const prompter: Prompter = {
     ask(req, opts) {
       return sharedChannel.ask(req, opts)
@@ -412,10 +414,7 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
-          skillInstall,
-          mcpManage,
-          pluginManage,
-          batch,
+          ...daemonBridges,
           requestMedia,
           runtimePluginSources,
           ...bootPackageSnapshots,
@@ -443,10 +442,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            skillInstall,
-            mcpManage,
-            pluginManage,
-            batch,
+            ...daemonBridges,
             requestMedia,
             // Browser/surface service calls are executed by the shared Host-bearing session worker.
             // The `service` kind is reserved for the resource-control lifecycle worker and does not
