@@ -30,6 +30,9 @@ export const FILES = new Set([
   // 侧栏品牌位与过程行头像共用的客户端 AgnesMark 位图。白名单仍然逐文件放行
   // （不放宽成任意 .png），它由 packages/web/public 随 style.css 一起拷进发行目录。
   'brand-mark.png',
+  // The browser-tab icon: the brand mark in its own blue on an off-white tile, so it reads on
+  // light and dark tab strips alike. The mask above is white-on-transparent and cannot serve as one.
+  'favicon.png',
 ])
 export const MIME: Record<string, string> = {
   '.html': 'text/html',

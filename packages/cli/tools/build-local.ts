@@ -305,7 +305,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     logLevel: 'warning',
   })
   await Promise.all(
-    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png'].map((file) =>
+    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png', 'favicon.png'].map((file) =>
       copyFile(join(repoPackages, 'web', 'public', file), join(webOut, file)),
     ),
   )

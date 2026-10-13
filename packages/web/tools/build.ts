@@ -144,7 +144,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     }),
   )
   await Promise.all(
-    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png']
+    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png', 'favicon.png']
       .map((file) => cp(join(root, 'public', file), join(out, file)))
       .concat([
         writeFile(join(out, 'antd.css'), inCssLayer(await readFile(antdCss, 'utf8'), 'vendor')),

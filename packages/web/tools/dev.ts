@@ -13,6 +13,7 @@ const copiedInputs = [
   join(root, 'public', 'resources.html'),
   ...webStyleInputs(join(root, 'public', 'style.css')),
   join(root, 'public', 'brand-mark.png'),
+  join(root, 'public', 'favicon.png'),
   join(root, '..', 'web-ui', 'src', 'tokens.css'),
   join(root, '..', 'web-ui', 'src', 'components.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css'),

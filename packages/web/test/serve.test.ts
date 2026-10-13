@@ -305,6 +305,7 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     // 侧栏品牌位与过程行头像用的位图：它必须被放行并以 image/png 提供，
     // 否则 /brand-mark.png 会静默 404，mask 拿不到图，logo 与头像就是空的。
     await writeFile(join(root, 'brand-mark.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    await writeFile(join(root, 'favicon.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
     await writeFile(join(root, 'secret.png'), 'not an allowlisted asset\n')
     // Code splitting emits hashed chunks that every lazy pane imports at runtime; a 404 here would
     // break the admin panels only once the user opened them, so pin the route.
@@ -321,6 +322,10 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     const mark = await fetch(`${server.url}/brand-mark.png`)
     expect(mark.status).toBe(200)
     expect(mark.headers.get('content-type')).toBe('image/png; charset=utf-8')
+    // The tab icon is its own allowlisted file; the white mask cannot double as one.
+    const favicon = await fetch(`${server.url}/favicon.png`)
+    expect(favicon.status).toBe(200)
+    expect(favicon.headers.get('content-type')).toBe('image/png; charset=utf-8')
     // 白名单仍逐文件生效：同样后缀但未登记的文件不放行。
     expect((await fetch(`${server.url}/secret.png`)).status).toBe(404)
     // URL separators must stay portable even when disk paths use Windows backslashes.
