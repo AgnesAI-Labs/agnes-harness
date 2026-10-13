@@ -148,19 +148,30 @@ function tamper(storage: MemoryStorage, key: string, seq: Seq, text = 'tampered'
 }
 
 /** A storage whose background verification (the second read from row 1) waits for `release`. */
-function held(storage: MemoryStorage): { storage: StorageAdapter; release: () => void } {
+function held(storage: MemoryStorage): {
+  storage: StorageAdapter
+  release: () => void
+  reached: Promise<void>
+} {
   let release!: () => void
   const gate = new Promise<void>((r) => {
     release = r
   })
+  let arrive!: () => void
+  const reached = new Promise<void>((r) => {
+    arrive = r
+  })
   let folded = false
   const wrapped: StorageAdapter = Object.create(storage)
   wrapped.scanIntegrity = async (key, q) => {
-    if (q.fromSeq === 1 && folded) await gate
+    if (q.fromSeq === 1 && folded) {
+      arrive()
+      await gate
+    }
     if (q.fromSeq === 1) folded = true
     return storage.scanIntegrity(key, q)
   }
-  return { storage: wrapped, release }
+  return { storage: wrapped, release, reached }
 }
 
 describe('verified head checkpoint under attack', () => {
@@ -302,6 +313,45 @@ describe('verified head checkpoint under attack', () => {
     expect((await storage.scan('k', { fromSeq: 1, limit: 100 })).length).toBe(11)
     // The verification never finished, so the checkpoint did not move past what was verified.
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(10)
+  })
+
+  it('a write that waited is refused when the log closes while the verification passes', async () => {
+    const storage = await seeded(10)
+    const { storage: slow, release, reached } = held(storage)
+    const log = await SessionLogImpl.open(options(slow, 'b'))
+    await reached
+    const waiting = log.append([input('model-side')])
+    const closing = log.close()
+    release()
+    await closing
+    await expect(waiting).rejects.toMatchObject({ code: 'E_CLOSED' })
+    await new Promise((r) => setTimeout(r, 5))
+    expect((await storage.scan('k', { fromSeq: 1, limit: 100 })).length).toBe(10)
+  })
+
+  it('no step starts before the history is verified, and none after it fails', async () => {
+    const storage = new MemoryStorage()
+    const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
+    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await first.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    await first.session.close()
+    tamper(storage, 'k', 1)
+    const { storage: slow, release } = held(storage)
+    const second = await openSession({
+      storage: slow as MemoryStorage,
+      provider: fakeProvider([]),
+      writerRunId: 'r2',
+    })
+    let settled = false
+    // Nothing is queued, so this step would write nothing: only the step itself can hold it.
+    const step = second.session.step().finally(() => {
+      settled = true
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    release()
+    await expect(step).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await second.session.close()
   })
 
   it('a storage error during the background verify seals the log as a storage fault', async () => {
