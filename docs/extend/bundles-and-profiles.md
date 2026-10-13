@@ -86,7 +86,9 @@ A bundle can provide presets with the usual preset inheritance, plus `bundles`, 
 
 The session receives the bundle's `profile` patch and its `presets`. Those presets are allowed for this session alone. When the selected bundles offer exactly one preset and the request names none, the session uses it, which is how a bundle's `tool-policy` selection reaches a session opened this way. When they offer several, the deployment default stays in effect unless the request names one in `preset`. The composition, preset and policy are pinned with the session and restored on reopen.
 
-A bundle that is not installed, enabled and trusted is refused with `SEMANTIC_REJECTED` and `data.code: "BUNDLE_UNAVAILABLE"`. A preset that neither the deployment nor the selected bundles allow is refused with `PRESET_SWITCH_REJECTED`. The preset's model route must exist in the deployment, as for any preset.
+A bundle may name a model route the deployment does not serve, such as an example's keyless demo route. A preset brought in this way then keeps its policy and follows the model routing it inherits, like any new session, instead of being refused. Bundles selected in the profile or in admin stay strict: their routes must exist.
+
+A bundle that is not installed, enabled and trusted is refused with `SEMANTIC_REJECTED` and `data.code: "BUNDLE_UNAVAILABLE"`. A preset that neither the deployment nor the selected bundles allow is refused with `PRESET_SWITCH_REJECTED`.
 
 ## Inspect and select in admin
 

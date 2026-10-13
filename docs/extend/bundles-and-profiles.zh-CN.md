@@ -61,7 +61,9 @@ bundle 提供的 preset 使用已有继承规则，并可加入 `bundles`、`com
 
 会话会得到组合包的 `profile` 补丁和它的 `presets`，这些 preset 只对该会话开放。所选组合包恰好提供一个 preset、请求又没有指定时，会话直接使用它；组合包里的 `tool-policy` 选择就是这样作用到会话上的。提供多个时保持部署默认 preset，除非请求用 `preset` 指定其中一个。composition、preset 与策略随会话固定，重新打开时恢复。
 
-组合包未安装、未启用或未信任时，请求以 `SEMANTIC_REJECTED`、`data.code: "BUNDLE_UNAVAILABLE"` 拒绝。部署和所选组合包都不允许的 preset 以 `PRESET_SWITCH_REJECTED` 拒绝。和其他 preset 一样，preset 指定的模型路由必须在部署中存在。
+组合包可能指定了部署里没有的模型路由，例如示例包的免密钥 demo 路由。以这种方式带入的 preset 会保留它的策略，模型路由改为沿用它继承的设置，和普通新会话一样，而不是被拒绝。在 profile 或 admin 里选择的组合包仍然严格：路由必须存在。
+
+组合包未安装、未启用或未信任时，请求以 `SEMANTIC_REJECTED`、`data.code: "BUNDLE_UNAVAILABLE"` 拒绝。部署和所选组合包都不允许的 preset 以 `PRESET_SWITCH_REJECTED` 拒绝。
 
 ## 查看与管理
 

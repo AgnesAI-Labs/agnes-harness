@@ -23,7 +23,7 @@ Each `modelText` request is a tools-free prose stage with its own narrow instruc
 
 ## Start a delivery
 
-Build `agh` from the [installation guide](../../docs/guide/install.md). Open an example README, run `agh plugins add .` inside that directory, then select its installed bundle through `agh run --bundle PACKAGE#NAME` or Web’s **Admin → Plugins → Bundles** panel. Each README gives the preset, prompt, model target and expected result. Web bundle changes need a Host restart and a new session.
+Build `agh` from the [installation guide](../../docs/guide/install.md). Open an example README, run `agh plugins add .` inside that directory, then select its installed bundle through `agh run --bundle PACKAGE#NAME` or Web’s **Admin → Plugins → Bundles** panel. Each README gives the preset, prompt, model target and expected result. Web bundle changes need a Host restart and a new session. A client can instead select the bundle for one session through `session/new` with `bundles`, without a restart; that session gets the bundle's preset and policy. See [bundles and profiles](../../docs/extend/bundles-and-profiles.md#select-for-one-session).
 
 The keyless Demo route is supplied by a fresh local-dev profile. Tool evidence and support/CRM drafts are fixtures; Demo does not perform real reasoning. An existing deployment needs that route or a configured real model. Every example uses Core-prepared requests and the session primary model; `real-model.bundle.json` configures the preset primary route.
 

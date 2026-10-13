@@ -5,6 +5,28 @@ import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { type BundleCatalog, sessionBundlePresets } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 
+const routeName = (value: unknown): unknown =>
+  value && typeof value === 'object' ? (value as { route?: unknown }).route : value
+
+/** Whether every route the preset itself names is one this deployment declares. */
+function routesServed(doc: PresetDoc, served: ReadonlySet<string>): boolean {
+  const routes = (doc.model as { route?: Record<string, unknown> } | undefined)?.route ?? {}
+  return Object.values(routes).every((value) => {
+    const name = routeName(value)
+    return typeof name !== 'string' || name === 'default' || served.has(name)
+  })
+}
+
+/**
+ * A bundle picked for one session keeps its policy, but a model route the deployment does not
+ * serve cannot be honoured: the preset then follows the routing it inherits, as any new session
+ * does. Bundles an operator selects for the deployment stay strict.
+ */
+function withoutModel(doc: PresetDoc): PresetDoc {
+  const { model: _unserved, ...rest } = doc as PresetDoc & { model?: unknown }
+  return rest as PresetDoc
+}
+
 /**
  * A bundle states its policy in its presets. Selecting it for one session pins those presets into
  * this session's profile only: the deployment profile and its allowed list stay as they were, and
@@ -21,9 +43,12 @@ export function admitSessionBundlePresets<P extends ResolvedProfile>(
   scope: { bundleCatalog: BundleCatalog; presets: ResolvedProfile['presets'] }
   preset: PresetDoc
 } {
-  const offered = input.bundles?.length
-    ? sessionBundlePresets(input.bundles, admission.bundleCatalog ?? {})
-    : {}
+  const served = new Set((admission.provider.routes ?? []).map((route) => route.route))
+  const offered = Object.fromEntries(
+    Object.entries(
+      input.bundles?.length ? sessionBundlePresets(input.bundles, admission.bundleCatalog ?? {}) : {},
+    ).map(([name, doc]) => [name, routesServed(doc, served) ? doc : withoutModel(doc)]),
+  )
   const names = Object.keys(offered)
   const merged = (base: Record<string, PresetDoc> | undefined) => ({
     ...base,

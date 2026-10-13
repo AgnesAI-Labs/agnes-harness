@@ -30,6 +30,13 @@ function fixture() {
         ...parsePackageBundles('@fixture/review', {
           review: { profile: { tools: ['read'] }, presets: { strict } },
         }),
+        ...parsePackageBundles('@fixture/elsewhere', {
+          demo: {
+            presets: {
+              elsewhere: { ...strict, name: 'elsewhere', model: { route: { primary: 'not-served-here' } } },
+            },
+          },
+        }),
         ...parsePackageBundles('@fixture/pair', {
           pair: {
             presets: {
@@ -96,6 +103,18 @@ it('pins a session bundle preset and its tool policy to that session only', asyn
     await expect(host.createSession({ key: 'borrowed', cwd: root, preset: 'strict' })).rejects.toThrow(
       'presets.allowed',
     )
+
+    // A bundle written against a model route this deployment does not serve still brings its
+    // policy; the session runs on the deployment's own routing instead of being refused.
+    const elsewhere = await host.createSession({
+      key: 'elsewhere-session',
+      cwd: root,
+      bundles: ['@fixture/elsewhere#demo'],
+    })
+    expect(elsewhere.preset.name).toBe('elsewhere')
+    expect(elsewhere.preset.approval.policy).toBe('fixture.strict')
+    expect(elsewhere.preset.model.route.primary).toBe(plain.preset.model.route.primary)
+    await elsewhere.close()
 
     // The pin is durable, so a cold open restores the same preset without the request repeating it.
     const pinned = new CompositionSessionStore(join(root, 'profiles', 'local-dev')).read(review.key)

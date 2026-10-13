@@ -23,7 +23,7 @@ FDE 工程师将流程、连接器、审核策略与手册一起交付。下面�
 
 ## 开始交付
 
-按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`。打开对应 README，在目录中执行 `agh plugins add .`，通过 `agh run --bundle PACKAGE#NAME` 或 Web **Admin → Plugins → Bundles** 面板选择已安装 bundle。每份 README 提供预设、提示、模型目标与预期结果。Web bundle 变更需要重启 Host 并新建会话。
+按[安装指南](../../docs/guide/install.zh-CN.md)构建 `agh`。打开对应 README，在目录中执行 `agh plugins add .`，通过 `agh run --bundle PACKAGE#NAME` 或 Web **Admin → Plugins → Bundles** 面板选择已安装 bundle。每份 README 提供预设、提示、模型目标与预期结果。Web bundle 变更需要重启 Host 并新建会话。客户端也可以在 `session/new` 里用 `bundles` 只为一个会话选择 bundle，不需要重启；该会话会带上 bundle 的预设与策略。参见[组合包与配置](../../docs/extend/bundles-and-profiles.zh-CN.md#只为一个会话选择)。
 
 全新 local-dev 配置提供无密钥 Demo 路由。工具依据和客服/CRM 草稿来自夹具，Demo 不进行真实推理。已有部署须保留该路由或配置真实模型。所有示例使用 Core 准备的请求和会话主模型，`real-model.bundle.json` 配置预设 primary 路由。
 
