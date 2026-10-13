@@ -202,3 +202,29 @@ it('does not close the settings dialog it was opened from', async () => {
   expect(sourceDialog().open).toBe(true)
   expect(settings.open).toBe(true)
 })
+
+it('leaves the next page source dialog intact when a disposed source check settles', async () => {
+  let accept!: (value: Response) => void
+  const pending = new Promise<Response>((resolve) => {
+    accept = resolve
+  })
+  const base = backend(() => Response.json({}))
+  const fetcher = vi.fn<typeof fetch>((input, init) =>
+    String(input).endsWith('/api/inspect') ? pending : base(input, init),
+  )
+  await mount(fetcher)
+  await openSourceDialog()
+  submit('file', '/synthetic/plugin.tgz')
+  await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
+  dispose?.()
+  const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
+  const next = mountPluginAdmin()
+  dispose = next.dispose
+  await next.ready
+  await openSourceDialog()
+  accept(Response.json({ operationId: 'late-inspect', profile: 'local-dev' }))
+  await pending
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(sourceDialog().open).toBe(true)
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/operation/get'))).toBe(false)
+})

@@ -304,6 +304,7 @@ export class PluginAdminPage {
   }
 
   readonly #runtime: PluginRuntimeSource | undefined
+  readonly #lifetime = new AbortController()
   readonly #schedules: SchedulesApi | undefined
   readonly #candidateSessionTitle: PluginAdminOptions['candidateSessionTitle']
   readonly #candidateSessionTurnTime: PluginAdminOptions['candidateSessionTurnTime']
@@ -438,31 +439,49 @@ export class PluginAdminPage {
   }
 
   bind(): void {
+    const bound = { signal: this.#lifetime.signal }
     // 详情是模态框：点遮罩、按 Escape 都要走同一条收尾路径（含焦点归还与「不要立刻重开」）。
-    this.#detail.addEventListener('cancel', (event) => {
-      event.preventDefault()
-      this.closeDetail()
-    })
-    this.#detail.addEventListener('click', (event) => {
-      if (event.target === this.#detail) this.closeDetail()
-    })
+    this.#detail.addEventListener(
+      'cancel',
+      (event) => {
+        event.preventDefault()
+        this.closeDetail()
+      },
+      bound,
+    )
+    this.#detail.addEventListener(
+      'click',
+      (event) => {
+        if (event.target === this.#detail) this.closeDetail()
+      },
+      bound,
+    )
     // The registry owns navigation; remove the legacy second tab level and toolbar.
     if (!this.#surface) {
       this.#listHost.closest('.admin-main, .admin-pane-body')?.querySelector('.plugin-toolbar')?.remove()
       document.getElementById('install-source')?.remove()
       this.#listHost.removeAttribute('role')
     }
-    this.#sourceDialog.addEventListener('cancel', (event) => {
-      event.preventDefault()
-      this.closeSourceDialog()
-    })
-    this.#confirmDialog.addEventListener('cancel', (event) => {
-      event.preventDefault()
-      this.closeConfirm()
-    })
+    this.#sourceDialog.addEventListener(
+      'cancel',
+      (event) => {
+        event.preventDefault()
+        this.closeSourceDialog()
+      },
+      bound,
+    )
+    this.#confirmDialog.addEventListener(
+      'cancel',
+      (event) => {
+        event.preventDefault()
+        this.closeConfirm()
+      },
+      bound,
+    )
   }
 
   async refresh(options: { preserveError?: boolean } = {}): Promise<void> {
+    if (this.#lifetime.signal.aborted) return
     const generation = ++this.#generation
     this.#state = {
       ...this.#state,
@@ -759,6 +778,7 @@ export class PluginAdminPage {
     // where the user is looking, not in a panel that this dialog has just been closed over.
     void this.inspect(source, mode, trigger, packageId)
       .then((result) => {
+        if (this.#lifetime.signal.aborted) return
         if (result.ok) this.closeSourceDialog()
         else this.#sourceError = result.error
       })
@@ -769,7 +789,7 @@ export class PluginAdminPage {
   }
 
   async operationUpdated(operation: PackageOperation): Promise<void> {
-    if (!terminal(operation)) return
+    if (this.#lifetime.signal.aborted || !terminal(operation)) return
     const completion = this.#operationCompletions.get(operation.operationId)
     this.#operationCompletions.delete(operation.operationId)
     const previewMode = this.#operationModes.get(operation.operationId)
@@ -812,6 +832,7 @@ export class PluginAdminPage {
       }
     }
     await this.refresh({ preserveError: operation.state === 'failed' })
+    if (this.#lifetime.signal.aborted) return
     window.dispatchEvent(new CustomEvent('agnes:packages-changed'))
     if (operation.state === 'completed' && packageId) {
       const installed =
@@ -823,6 +844,7 @@ export class PluginAdminPage {
         installed === undefined || hasClientContribution(installed),
       )
     }
+    if (this.#lifetime.signal.aborted) return
     if (
       operation.state === 'completed' &&
       operation.operation === 'enable' &&
@@ -879,6 +901,7 @@ export class PluginAdminPage {
   }
 
   configureConfirm(pending: PendingConfirm): void {
+    if (this.#lifetime.signal.aborted) return
     this.#ownsDialogs(true)
     this.#pendingConfirm = pending
     this.#confirmActionDisabled = false
@@ -900,6 +923,7 @@ export class PluginAdminPage {
   }
 
   effectApi(permission: string): PluginAdminApi | undefined {
+    if (this.#lifetime.signal.aborted) return undefined
     if (!this.#api || !this.#state.context) {
       this.showError({
         code: 'ADMIN_UNAVAILABLE',
@@ -937,6 +961,7 @@ export class PluginAdminPage {
 
   canEffect(permission: string): boolean {
     return (
+      !this.#lifetime.signal.aborted &&
       !!this.#state.context &&
       !this.#state.context.readOnly &&
       !this.#state.loading &&
@@ -1018,6 +1043,7 @@ export class PluginAdminPage {
     metadata: Readonly<{ mode?: PreviewMode; packageId?: string }> = {},
     completion?: (operation: PackageOperation) => Promise<void>,
   ): void {
+    if (this.#lifetime.signal.aborted) return
     const context = this.#state.context
     if (!context) return
     if (metadata.mode) this.#operationModes.set(operationId, metadata.mode)
@@ -1048,10 +1074,11 @@ export class PluginAdminPage {
 
   async poll(operationId: string): Promise<void> {
     const api = this.#api
-    if (!api || this.#operationTimers.has(operationId)) return
+    if (this.#lifetime.signal.aborted || !api || this.#operationTimers.has(operationId)) return
     this.#operationTimers.set(operationId, -1)
     try {
       const operation = await api.operation(operationId)
+      if (this.#lifetime.signal.aborted) return
       const packageId = operation.packageId ?? this.#operationPackages.get(operationId)
       if (packageId) this.#submittingPackages.delete(packageId)
       const operations = new Map(this.#state.operations)
@@ -1074,6 +1101,7 @@ export class PluginAdminPage {
       this.#operationTimers.set(operationId, timer)
     } catch (error) {
       this.#operationTimers.delete(operationId)
+      if (this.#lifetime.signal.aborted) return
       const detail = safeMessage(error)
       this.#state = { ...this.#state, connection: 'offline', error: detail }
       this.render()
@@ -1120,6 +1148,7 @@ export class PluginAdminPage {
   }
 
   render(): void {
+    if (this.#lifetime.signal.aborted) return
     renderPluginView.call(this.viewContext())
   }
 
@@ -1137,6 +1166,7 @@ export class PluginAdminPage {
 
   /** Two controllers can be alive (settings pane and full page); only one draws the shared dialogs. */
   #ownsDialogs(claim = false): boolean {
+    if (this.#lifetime.signal.aborted) return false
     if (claim || !dialogOwner) dialogOwner = this
     return dialogOwner === this
   }
@@ -1359,6 +1389,7 @@ export class PluginAdminPage {
   }
 
   scheduleTreePoll(): void {
+    if (this.#lifetime.signal.aborted) return
     if (this.#treeTimer !== undefined) window.clearTimeout(this.#treeTimer)
     this.#treeTimer = window.setTimeout(() => {
       this.#treeTimer = undefined
@@ -1698,6 +1729,8 @@ export class PluginAdminPage {
   }
 
   dispose(): void {
+    this.#lifetime.abort()
+    this.#generation += 1
     this.#runtimeStop?.()
     this.#runtimeStop = undefined
     this.#localeStop()

@@ -24,7 +24,7 @@
   "packages/resource-control-store/src/skills.ts": 874,
   "packages/resource-control-web/src/admin.tsx": 1049,
   "packages/sdk/src/session.ts": 894,
-  "packages/web-admin/src/admin/plugins/admin/page.tsx": 1618,
+  "packages/web-admin/src/admin/plugins/admin/page.tsx": 1632,
   "packages/web-admin/src/settings.ts": 1034,
   "packages/web-ui/src/ui/icons.ts": 1345,
   "packages/web-units/src/trace.tsx": 1167,
