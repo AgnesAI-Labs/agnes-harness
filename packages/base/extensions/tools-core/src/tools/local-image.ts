@@ -18,10 +18,11 @@ function codec(): Sharp | undefined {
     // Every read is a different file, so the codec's operation cache would only hold decoded pixels
     // of images nobody asks for again: hundreds of MiB after one large original.
     sharp.cache(false)
-    return (loadedCodec = sharp)
+    loadedCodec = sharp
   } catch {
-    return undefined
+    // Not cached: a later read tries again.
   }
+  return loadedCodec
 }
 
 /** Largest workspace image read whole. Camera originals are often several MiB. */
