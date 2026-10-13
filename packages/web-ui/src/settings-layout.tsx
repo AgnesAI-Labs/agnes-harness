@@ -441,22 +441,66 @@ export function SettingsCheckbox({
 export function SettingsChoice({
   label,
   hint,
+  preview,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & {
   type: 'radio' | 'checkbox'
   label: ReactNode
   hint?: ReactNode
+  /** A small picture of the choice, shown above its name. */
+  preview?: ReactNode
 }) {
   const generatedId = useId()
   const id = props.id ?? generatedId
   return (
     <label className="appearance-option" htmlFor={id}>
       <SettingsInput {...props} id={id} />
+      {preview}
       <span className="appearance-option-copy">
         <span className="appearance-option-name">{label}</span>
         {hint && <span className="appearance-option-hint">{hint}</span>}
       </span>
     </label>
+  )
+}
+
+/** The fixed look of each scheme: a thumbnail shows what it is, whatever theme the page is in. */
+const SCHEME_LOOK = {
+  light: { page: '#fbfaf8', rail: '#ecebe6', card: '#ffffff', line: '#e4e3df' },
+  dark: { page: '#15161a', rail: '#24262c', card: '#1f2026', line: '#30323a' },
+} as const
+
+/**
+ * A thumbnail of a colour scheme: a rail and a card with a few lines of text. `system` is half
+ * light and half dark.
+ */
+export function SchemeThumbnail({ scheme }: { scheme: 'system' | 'light' | 'dark' }) {
+  const half = (look: (typeof SCHEME_LOOK)[keyof typeof SCHEME_LOOK], x: number, width: number) => {
+    const rail = width * 0.22
+    const left = x + 6 + rail + 5
+    const right = x + width - 6
+    return (
+      <>
+        <rect x={x} width={width} height="72" fill={look.page} />
+        <rect x={x + 6} y="6" width={rail} height="60" rx="4" fill={look.rail} />
+        <rect x={left} y="6" width={right - left} height="33" rx="4" fill={look.card} />
+        {[46, 55, 64].map((y) => (
+          <rect key={y} x={left} y={y} width={right - left} height="2" rx="1" fill={look.line} />
+        ))}
+      </>
+    )
+  }
+  return (
+    <svg className="agh-scheme-thumbnail" viewBox="0 0 112 72" aria-hidden="true" focusable="false">
+      {scheme === 'system' ? (
+        <>
+          {half(SCHEME_LOOK.light, 0, 56)}
+          {half(SCHEME_LOOK.dark, 56, 56)}
+        </>
+      ) : (
+        half(SCHEME_LOOK[scheme], 0, 112)
+      )}
+    </svg>
   )
 }
 

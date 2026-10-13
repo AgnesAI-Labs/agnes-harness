@@ -1,4 +1,5 @@
 import {
+  SchemeThumbnail,
   SettingsChoice,
   SettingsGroup,
   SettingsItem,
@@ -43,35 +44,39 @@ export function SettingsStaticPane({
         <SettingsDshHost name="settings.general.item" />
         {/* Each setting is one row: its name on the left, its control on the right. Skins and
          languages are lists read at run time, so they are pickers, not fixed segments. */}
+        <fieldset
+          className="appearance-options appearance-schemes"
+          aria-label={text('settings-shell.palette', '配色')}
+        >
+          <legend>{text('settings-shell.palette', '配色')}</legend>
+          <div className="appearance-thumbs">
+            <SettingsChoice
+              type="radio"
+              name="agnes-theme"
+              value="system"
+              preview={<SchemeThumbnail scheme="system" />}
+              label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
+              hint={<span>{text('settings-shell.paletteSystemHint', '随操作系统的深浅色设置自动切换')}</span>}
+            />
+            <SettingsChoice
+              type="radio"
+              name="agnes-theme"
+              value="light"
+              preview={<SchemeThumbnail scheme="light" />}
+              label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
+              hint={<span>{text('settings-shell.paletteLightHint', '始终使用浅色界面')}</span>}
+            />
+            <SettingsChoice
+              type="radio"
+              name="agnes-theme"
+              value="dark"
+              preview={<SchemeThumbnail scheme="dark" />}
+              label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
+              hint={<span>{text('settings-shell.paletteDarkHint', '始终使用深色界面')}</span>}
+            />
+          </div>
+        </fieldset>
         <SettingsGroup className="appearance-group">
-          <fieldset className="appearance-options" aria-label={text('settings-shell.palette', '配色')}>
-            <legend>{text('settings-shell.palette', '配色')}</legend>
-            <div className="appearance-choices">
-              <SettingsChoice
-                type="radio"
-                name="agnes-theme"
-                value="system"
-                label={<span>{text('settings-shell.paletteSystem', '跟随系统')}</span>}
-                hint={
-                  <span>{text('settings-shell.paletteSystemHint', '随操作系统的深浅色设置自动切换')}</span>
-                }
-              />
-              <SettingsChoice
-                type="radio"
-                name="agnes-theme"
-                value="light"
-                label={<span>{text('settings-shell.paletteLight', '浅色')}</span>}
-                hint={<span>{text('settings-shell.paletteLightHint', '始终使用浅色界面')}</span>}
-              />
-              <SettingsChoice
-                type="radio"
-                name="agnes-theme"
-                value="dark"
-                label={<span>{text('settings-shell.paletteDark', '深色')}</span>}
-                hint={<span>{text('settings-shell.paletteDarkHint', '始终使用深色界面')}</span>}
-              />
-            </div>
-          </fieldset>
           <fieldset className="appearance-options" aria-label={text('settings-shell.skin', '皮肤')}>
             <legend>{text('settings-shell.skin', '皮肤')}</legend>
             <div className="appearance-picker">

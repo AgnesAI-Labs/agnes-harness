@@ -100,6 +100,7 @@ export {
 export * from './settings-control-templates.js'
 export { SettingsIcon, settingsIconName } from './settings-icon.js'
 export {
+  SchemeThumbnail,
   SettingsAdvanced,
   SettingsCard,
   SettingsCheckbox,
