@@ -1,7 +1,11 @@
 /** @vitest-environment happy-dom */
 
-import { afterEach, expect, it } from 'vitest'
-import { movedSettingsTarget, rewriteMovedSettingsLink } from '../src/settings-redirects.js'
+import { afterEach, expect, it, vi } from 'vitest'
+import {
+  movedSettingsTarget,
+  openMovedSettingsLink,
+  rewriteMovedSettingsLink,
+} from '../src/settings-redirects.js'
 
 afterEach(() => history.replaceState(null, '', '/'))
 
@@ -37,4 +41,20 @@ it('leaves links to pages the dialog still owns, and to sidebar targets, for the
   history.replaceState(null, '', '/?session=abc')
   expect(rewriteMovedSettingsLink()).toBeUndefined()
   expect(location.search).toBe('?session=abc')
+})
+
+it('opens the sidebar search or the archived list for an old history or archive link', () => {
+  const actions = { searchSessions: vi.fn(), showArchived: vi.fn() }
+  history.replaceState(null, '', '/?settings=history&session=abc')
+  expect(openMovedSettingsLink('history', actions)).toBe(true)
+  expect(actions.searchSessions).toHaveBeenCalledOnce()
+  expect(location.search).toBe('?session=abc')
+  history.replaceState(null, '', '/?settings=archived')
+  expect(openMovedSettingsLink('archived', actions)).toBe(true)
+  expect(actions.showArchived).toHaveBeenCalledOnce()
+  expect(location.search).toBe('')
+  // Pages and sections the dialog owns are not this function's to open.
+  for (const id of ['plugins', 'security', 'nope']) expect(openMovedSettingsLink(id, actions)).toBe(false)
+  expect(actions.searchSessions).toHaveBeenCalledOnce()
+  expect(actions.showArchived).toHaveBeenCalledOnce()
 })

@@ -94,7 +94,7 @@ import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
-import { rewriteMovedSettingsLink } from './settings-redirects.js'
+import { movedSettingsTarget, openMovedSettingsLink, rewriteMovedSettingsLink } from './settings-redirects.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 
@@ -2329,7 +2329,9 @@ run(async () => {
     return
   }
   const startupSettings = startupRequest.get('settings') ?? ''
-  const startupSection = settingsSections.get(settingsRoute(startupSettings).id)
+  // A link to the old history or archive page opens the sidebar's search or archived list instead.
+  const startupMoved = movedSettingsTarget(startupSettings)
+  const startupSection = startupMoved ? undefined : settingsSections.get(settingsRoute(startupSettings).id)
   if (selected) {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page
@@ -2361,6 +2363,11 @@ run(async () => {
   }
   const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
   if (guided && !shown) await beginNewDraft(true)
+  if (startupMoved)
+    openMovedSettingsLink(startupSettings, {
+      searchSessions: () => sessionSearch.open(),
+      showArchived: () => archivedSessions.show('archived'),
+    })
   if (startupSection && new URL(location.href).searchParams.get('settings') === startupSettings) {
     settingsRegion.open('model')
     await settings.open()

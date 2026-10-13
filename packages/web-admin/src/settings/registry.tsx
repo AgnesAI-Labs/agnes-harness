@@ -22,7 +22,6 @@ import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
-import { HistorySearchPanel } from './history.js'
 import { MemoryPanel } from './memory.js'
 import { PermissionDefaults } from './permission-defaults.js'
 import {
@@ -32,12 +31,11 @@ import {
   ProvidersPanel,
   PublicationPanel,
 } from './runtime-panels.js'
-import { type SchedulesApi, SchedulesPage } from './schedules.js'
+import type { SchedulesApi } from './schedules.js'
 import { SearchPanel } from './search.js'
 import { SecurityStatusPanel } from './security-status.js'
 import { SystemPromptPanel } from './system-prompt.js'
 import { systemPromptApi } from './system-prompt-api.js'
-import { TriggersPanel } from './triggers.js'
 
 export type RuntimeSettingsContext = {
   api: PluginAdminApi | undefined
@@ -60,11 +58,10 @@ for (const [id, group, pane, navigationId, key, order] of [
   // The dialog lists three pages: General, Models & accounts, Permissions & security.
   ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 0],
   ['model', 'accounts', 'model', 'model-settings', 'modelNav', 10],
-  // Moved to the plugins page and the sidebar (see SETTINGS_MOVED); registered until those replace them.
+  // Moved to the plugins page (see SETTINGS_MOVED); registered until that page hosts them.
   ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 120],
   ['mcp', 'tools', 'resources', 'mcp-tab', 'toolsNav', 130],
   ['computer-use', 'tools', 'computer-use', 'computer-use-management', 'toolsNav', 132],
-  ['archived', 'history', 'archived', 'archived-settings', 'historyNav', 161],
 ] as const) {
   if (!settingsSections.get(id))
     settingsSections.register({
@@ -77,11 +74,9 @@ for (const [id, group, pane, navigationId, key, order] of [
           ? 'settings-shell.mcpNav'
           : id === 'computer-use'
             ? 'settings-shell.computerUseNav'
-            : id === 'archived'
-              ? 'settings-shell.archivedNav'
-              : id === 'skills'
-                ? 'settings-shell.skillsNav'
-                : `settings-shell.${key}`,
+            : id === 'skills'
+              ? 'settings-shell.skillsNav'
+              : `settings-shell.${key}`,
       groupTitleKey: `settings-shell.${key}`,
       icon: group === 'skills' ? 'sparkles' : group,
       order,
@@ -277,8 +272,8 @@ const definitions: readonly [
       </>
     ),
   ],
-  // Moved to full pages (see SETTINGS_MOVED). They stay registered, unlisted, until those pages
-  // host the same panels; a page that still links here by name keeps working meanwhile.
+  // Moved to the plugins page (see SETTINGS_MOVED). They stay registered, unlisted, until that page
+  // hosts the same panels; a page that still links here by name keeps working meanwhile.
   ['plugins', 'plugins', 110, (c) => c.children],
   [
     'plugins',
@@ -301,9 +296,6 @@ const definitions: readonly [
     ),
   ],
   ['tools', 'search', 131, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
-  ['automation', 'schedules', 140, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
-  ['automation', 'triggers', 141, (c) => <TriggersPanel canSave={c.canSave} />],
-  ['history', 'history', 160, (_, t) => <HistorySearchPanel t={t} />],
   [
     'advanced',
     'models',

@@ -32,7 +32,6 @@
     "./settings/context": "./src/settings/context.tsx",
     "./settings/examples": "./src/settings/examples.tsx",
     "./settings/feedback": "./src/settings/feedback.tsx",
-    "./settings/history": "./src/settings/history.tsx",
     "./settings/hub": "./src/settings/hub.tsx",
     "./settings/jobs-api": "./src/settings/jobs-api.ts",
     "./settings/jobs-locales": "./src/settings/jobs-locales.ts",

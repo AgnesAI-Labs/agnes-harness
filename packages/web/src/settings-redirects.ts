@@ -25,3 +25,23 @@ export function rewriteMovedSettingsLink(): SettingsMoveTarget | undefined {
   history.replaceState(history.state, '', url)
   return target
 }
+
+/**
+ * Open the sidebar target an old settings link names (`?settings=history`, `?settings=archived`)
+ * and drop the stale value from the address. Returns whether the link was one of these.
+ */
+export function openMovedSettingsLink(
+  id: string,
+  actions: { searchSessions(): void; showArchived(): void },
+): boolean {
+  const target = movedSettingsTarget(id)
+  if (!target || target.kind === 'page') return false
+  if (target.kind === 'session-search') actions.searchSessions()
+  else actions.showArchived()
+  const url = new URL(location.href)
+  if (url.searchParams.get('settings') === id) {
+    url.searchParams.delete('settings')
+    history.replaceState(history.state, '', url)
+  }
+  return true
+}
