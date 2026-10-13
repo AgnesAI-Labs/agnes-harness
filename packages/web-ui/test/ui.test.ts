@@ -143,7 +143,7 @@ it('lists only reported skill roots and explains optional user-agent imports', a
       roots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }],
     }),
   )
-  expect(help.querySelector('.resource-roots > summary')?.textContent).toBe(
+  expect(help.querySelector('.resource-roots > .agh-disclosure-summary')?.textContent).toBe(
     'Checked 1 skill directory and found no skills.',
   )
   expect(help.textContent).toContain('Workspace skill folders')

@@ -34,7 +34,7 @@
     margin: var(--s4) 0 var(--s12);
     overflow-wrap: anywhere;
   }
-  .runtime-settings :is(details, .agh-disclosure) {
+  .runtime-settings .agh-disclosure {
     margin-block: var(--s16);
   }
   /* A page made of collapsible sections reads as one divided list: rows touch, hairlines separate. */
@@ -296,7 +296,7 @@
     font-weight: var(--font-weight-medium);
   }
   .settings-shell #settings-advanced > .agh-disclosure-summary,
-  .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary) {
+  .runtime-settings > nav .agh-disclosure > .agh-disclosure-summary {
     min-height: var(--control-height);
     padding: var(--s8);
     border-radius: var(--radius-control);
@@ -310,14 +310,14 @@
     .settings-shell .settings-nav-item,
     .runtime-settings > nav .settings-nav-item,
     .settings-shell #settings-advanced > .agh-disclosure-summary,
-    .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary) {
+    .runtime-settings > nav .agh-disclosure > .agh-disclosure-summary {
       min-height: var(--control-height-touch);
       padding: var(--s8) var(--s12);
       font-size: var(--font-size-body);
     }
   }
   .settings-shell #settings-advanced > .agh-disclosure-summary:focus-visible,
-  .runtime-settings > nav :is(details > summary, .agh-disclosure > .agh-disclosure-summary):focus-visible {
+  .runtime-settings > nav .agh-disclosure > .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-brand-focus-ring);
     outline-offset: -2px;
     border-radius: var(--radius-control);

@@ -591,8 +591,8 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
-  .session-usage > .agh-disclosure-summary::before {
-    content: none;
+  .session-usage > .agh-disclosure-summary > .agh-disclosure-marker {
+    display: none;
   }
   /* The ring takes the status colour through currentColor; the percentage keeps the text colour. */
   .session-usage .usage-ring {

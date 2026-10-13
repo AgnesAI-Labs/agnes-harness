@@ -75,7 +75,7 @@ it('shows actual session tool groups and their activation reasons in both langua
         },
       }),
     )
-    expect(host.querySelector('[data-testid=session-tool-groups] summary')?.textContent).toBe(
+    expect(host.querySelector('[data-testid=session-tool-groups] .agh-disclosure-summary')?.textContent).toBe(
       text('sessionToolSession').replace('{number}', '1'),
     )
     expect(
@@ -219,7 +219,7 @@ it('shows declared kinds and observable states without guessing draining or rest
   expect(removed.querySelector('[data-testid=plugin-drain-summary]')?.textContent).toBe(
     'Updated. 3 ongoing sessions are unaffected.',
   )
-  expect(removed.querySelector('details')?.open).toBe(false)
+  expect(removed.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
   expect(removed.textContent).toContain('Friendly plugin')
   expect(removed.textContent).toContain('0.9.0')
   expect(removed.textContent).toContain('old')

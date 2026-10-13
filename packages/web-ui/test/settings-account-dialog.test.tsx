@@ -28,8 +28,8 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
         }),
       ),
     )
-    const advanced = host.querySelector<HTMLDetailsElement>('#config-account-advanced')!
-    expect(advanced.open).toBe(false)
+    const advanced = host.querySelector<HTMLElement>('#config-account-advanced')!
+    expect(advanced.dataset.open).toBe('false')
     for (const id of [
       'config-account-name',
       'config-base-url',

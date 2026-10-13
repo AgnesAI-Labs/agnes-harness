@@ -868,8 +868,8 @@
     :is(
         .agnes-settings-checkbox,
         .appearance-option,
-        .agnes-settings-details > :is(summary, .agh-disclosure-summary),
-        .agnes-settings-card :is(summary, .agh-disclosure-summary),
+        .agnes-settings-details > .agh-disclosure-summary,
+        .agnes-settings-card .agh-disclosure-summary,
         .ant-tabs-tab,
         .agnes-settings-section-tabs button
       ) {
@@ -899,14 +899,20 @@
      preserves positioned actions and the existing disclosure/choice presentation. */
     :where(
         button:not(.agh-btn, .ant-modal-close),
-        summary,
+        .agh-disclosure-summary,
         a[href],
         [role="tab"],
         .agh-tooltip-anchor[tabindex="0"]
       ) {
       position: relative;
     }
-    :where(button:not(.agh-btn), summary, a[href], [role="tab"], .agh-tooltip-anchor[tabindex="0"])::after {
+    :where(
+        button:not(.agh-btn),
+        .agh-disclosure-summary,
+        a[href],
+        [role="tab"],
+        .agh-tooltip-anchor[tabindex="0"]
+      )::after {
       content: "";
       position: absolute;
       inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
@@ -1208,8 +1214,7 @@
   .agh-disclosure-summary:active:not(:disabled) {
     translate: none;
   }
-  .agh-disclosure-summary::before {
-    content: "";
+  .agh-disclosure-marker {
     display: inline-block;
     width: 0;
     height: 0;
@@ -1218,7 +1223,7 @@
     border-inline-start: 0.5em solid currentColor;
     vertical-align: 0.05em;
   }
-  .agh-disclosure[data-open="true"] > .agh-disclosure-summary::before {
+  .agh-disclosure[data-open="true"] > .agh-disclosure-summary > .agh-disclosure-marker {
     transform: rotate(90deg);
   }
   .agh-disclosure-content {
@@ -1245,9 +1250,6 @@
     cursor: pointer;
     user-select: none;
     overflow-wrap: anywhere;
-  }
-  .agh-disclosure[data-variant] > .agh-disclosure-summary::before {
-    content: none;
   }
   .agh-disclosure[data-variant] > .agh-disclosure-summary:hover {
     color: var(--agnes-text-primary);
@@ -1532,7 +1534,7 @@
   .confirm-review-section > .agh-disclosure-body {
     padding: 0;
   }
-  .confirm-review-section.agh-disclosure[data-variant] > summary {
+  .confirm-review-section.agh-disclosure[data-variant] > .agh-disclosure-summary {
     padding-inline: var(--s12);
   }
   .agnes-settings-technical {

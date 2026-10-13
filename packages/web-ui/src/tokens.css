@@ -356,7 +356,7 @@
     line-height: var(--line-sm);
   }
   /* An icon written into a sentence stays on that sentence's line. */
-  :where(.agnes-settings-page) :where(p, li, summary) > :where(svg.agh-icon, svg.icon) {
+  :where(.agnes-settings-page) :where(p, li, .agh-disclosure-summary) > :where(svg.agh-icon, svg.icon) {
     display: inline-block;
     vertical-align: -0.15em;
   }
@@ -612,17 +612,11 @@
   :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) tr:last-child > td {
     border-bottom: 0;
   }
-  /* A disclosure inside a card is a divided row of that card, not a second box within it. */
-  .agnes-settings-card details:not(.agh-disclosure) {
-    padding-top: var(--s8);
-    border-top: 1px solid var(--agnes-line-primary);
-    min-width: 0;
-  }
-  .agnes-settings-card :is(summary, .agh-disclosure-summary) {
+  .agnes-settings-card .agh-disclosure-summary {
     cursor: pointer;
     overflow-wrap: anywhere;
   }
-  .agnes-settings-card :is(summary, .agh-disclosure-summary):focus-visible {
+  .agnes-settings-card .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-text-emphasis);
     outline-offset: 2px;
   }

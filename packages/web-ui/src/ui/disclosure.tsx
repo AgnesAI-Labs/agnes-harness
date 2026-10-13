@@ -45,8 +45,8 @@ export type DisclosureProps = Omit<HTMLAttributes<HTMLDivElement>, 'summary'> & 
   dismissible?: boolean
   /**
    * Shared presentation: one chevron beside the title, as a quiet text toggle (`plain`) or a
-   * divided list row (`row`). Without it the summary is rendered as written and the caller
-   * styles it.
+   * divided list row (`row`). Without it the summary is the small marker followed by what the
+   * caller wrote; a caller with its own indicator hides `.agh-disclosure-marker`.
    */
   variant?: 'plain' | 'row'
 }
@@ -147,7 +147,10 @@ export const Disclosure = forwardRef<HTMLDivElement, DisclosureProps>(function D
             <span className="agh-disclosure-title">{summary}</span>
           </>
         ) : (
-          summary
+          <>
+            <span className="agh-disclosure-marker" aria-hidden="true" />
+            {summary}
+          </>
         )}
       </button>
       <div

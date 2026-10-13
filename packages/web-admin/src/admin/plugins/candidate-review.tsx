@@ -112,7 +112,7 @@ export function CandidateFileDiff({
     <Disclosure
       className="candidate-file"
       data-testid="candidate-file-diff"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onOpenChange={setOpen}
       summary={
         <>
           <code title={file.path}>{file.path}</code>

@@ -17,6 +17,7 @@ import {
   parseContextBudget,
   renderRegion,
   SettingsAccounts,
+  setDisclosureOpen,
   setSettingsSelectOptions,
   unmountRegion,
 } from '@agnes/web-ui'
@@ -82,7 +83,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountDialogContext = optionalElement('config-account-context', 'p')
   const accountName = optionalElement('config-account-name', 'input')
   const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
-  const advanced = optionalElement('config-account-advanced', 'details')
+  const advanced = optionalElement('config-account-advanced', 'div')
   let inlineHost: HTMLElement | undefined
   let accountStep: 'provider' | 'connection' = 'connection'
   let draftBaseline = ''
@@ -203,11 +204,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const setError = (error: unknown): void => {
     const secret = ui.apiKey.value
     const translated = configurationReason(error, tr)
-    const message = translated ?? errorText(error, secret, tr)
-    ui.error.textContent = message
+    const message = (ui.error.textContent = translated ?? errorText(error, secret, tr))
     const invalid = accountBody?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid) {
-      if (advanced) advanced.open = true
+      if (advanced) setDisclosureOpen(advanced, true)
       invalid.focus()
     }
     ui.state.textContent = ''
@@ -689,7 +689,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       accountStep = 'connection'
       updateButtons()
       if (custom && advanced) {
-        advanced.open = true
+        setDisclosureOpen(advanced, true)
         ui.baseUrl.focus()
       } else if (!isOAuth()) ui.apiKey.focus()
     }
@@ -733,7 +733,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       suggestedAccountLabel = accountName.value
     }
     accountStep = id || inlineHost ? 'connection' : 'provider'
-    if (advanced) advanced.open = false
+    if (advanced) setDisclosureOpen(advanced, false)
     renderProviderChoices()
     resetTest()
     renderAccounts()

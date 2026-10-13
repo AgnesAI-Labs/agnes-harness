@@ -355,9 +355,9 @@
   .turn-usage > .agh-disclosure-summary {
     width: auto;
   }
-  .turn-usage > .agh-disclosure-summary::before,
-  .turn-process > .agh-disclosure-summary::before {
-    content: none;
+  .turn-usage > .agh-disclosure-summary > .agh-disclosure-marker,
+  .turn-process > .agh-disclosure-summary > .agh-disclosure-marker {
+    display: none;
   }
   .turn-usage-grid {
     position: fixed;

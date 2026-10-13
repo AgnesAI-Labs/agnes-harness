@@ -9,7 +9,7 @@
     margin-inline: 0;
     overflow-wrap: anywhere;
   }
-  .plugin-candidates summary {
+  .plugin-candidates .agh-disclosure-summary {
     cursor: pointer;
     overflow-wrap: anywhere;
   }
@@ -49,7 +49,7 @@
   .plugin-drain-notice p {
     margin-block: var(--s8);
   }
-  .plugin-drain-notice summary {
+  .plugin-drain-notice .agh-disclosure-summary {
     cursor: pointer;
   }
   .plugin-candidates .candidate-list .agnes-ui-badge {
@@ -128,21 +128,24 @@
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-md);
   }
-  .plugin-candidates .candidate-file summary {
+  .plugin-candidates .candidate-file .agh-disclosure-summary {
     display: flex;
     align-items: center;
     gap: var(--s8);
     padding: var(--s10) var(--s12);
     font-size: var(--font-size-sm);
   }
-  .plugin-candidates .candidate-file summary::before {
+  .plugin-candidates .candidate-file .agh-disclosure-marker {
+    display: none;
+  }
+  .plugin-candidates .candidate-file .agh-disclosure-summary::before {
     content: "›";
     flex-shrink: 0;
   }
-  .plugin-candidates .candidate-file[open] summary::before {
+  .plugin-candidates .candidate-file[data-open="true"] .agh-disclosure-summary::before {
     content: "⌄";
   }
-  .plugin-candidates .candidate-file summary > code {
+  .plugin-candidates .candidate-file .agh-disclosure-summary > code {
     min-width: 0;
     flex: 1;
     overflow-wrap: anywhere;
@@ -152,7 +155,7 @@
     -webkit-line-clamp: 3;
     overflow: hidden;
   }
-  .plugin-candidates .candidate-file summary > .agnes-ui-badge {
+  .plugin-candidates .candidate-file .agh-disclosure-summary > .agnes-ui-badge {
     flex: none;
   }
   .plugin-candidates .candidate-file pre {

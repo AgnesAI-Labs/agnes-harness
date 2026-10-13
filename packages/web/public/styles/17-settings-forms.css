@@ -725,7 +725,7 @@
   .turn-process-body .assistant .node-label {
     display: none;
   }
-  .confirm-review-section[open] > summary {
+  .confirm-review-section[data-open="true"] > .agh-disclosure-summary {
     border-bottom: 1px solid var(--agnes-line-primary);
   }
   /* A general setting is one row: its name, then its choices as one segmented set. The radios
@@ -927,15 +927,15 @@
   .account-key-help {
     margin-block: var(--s16);
   }
-  #config-account-advanced > summary,
-  .account-key-help > summary,
+  #config-account-advanced > .agh-disclosure-summary,
+  .account-key-help > .agh-disclosure-summary,
   .agnes-first-run .agh-disclosure-summary {
     cursor: pointer;
     color: var(--agnes-text-secondary);
     min-height: var(--control-height);
   }
-  #config-account-advanced > summary:focus-visible,
-  .account-key-help > summary:focus-visible,
+  #config-account-advanced > .agh-disclosure-summary:focus-visible,
+  .account-key-help > .agh-disclosure-summary:focus-visible,
   .agnes-first-run .agh-disclosure-summary:focus-visible {
     outline: 2px solid var(--agnes-brand-primary);
     outline-offset: 2px;
@@ -962,8 +962,8 @@
     #account-dialog #config-save {
       width: auto;
     }
-    #config-account-advanced > summary,
-    .account-key-help > summary,
+    #config-account-advanced > .agh-disclosure-summary,
+    .account-key-help > .agh-disclosure-summary,
     .agnes-first-run .agh-disclosure-summary {
       min-height: var(--control-height-touch);
     }
@@ -982,12 +982,12 @@
     }
   }
 
-  .account-key-help > summary {
+  .account-key-help > .agh-disclosure-summary {
     padding: var(--s8);
     border-radius: var(--radius-sm);
     background: var(--agnes-surface-glass-soft);
   }
-  .account-key-help > summary:hover {
+  .account-key-help > .agh-disclosure-summary:hover {
     background: var(--agnes-surface-glass-hover);
   }
 }

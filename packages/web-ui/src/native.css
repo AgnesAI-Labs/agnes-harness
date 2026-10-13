@@ -48,7 +48,7 @@
     }
   }
   button:focus-visible,
-  summary:focus-visible,
+  .agh-disclosure-summary:focus-visible,
   a[href]:focus-visible,
   [role="tab"]:focus-visible {
     outline: 2px solid var(--agnes-input-border-focus);
@@ -134,7 +134,7 @@
   }
 
   @media (max-width: 900px) {
-    body[data-agnes-region="app"] :is(button, select, summary) {
+    body[data-agnes-region="app"] :is(button, select, .agh-disclosure-summary) {
       min-width: 32px;
       min-height: 32px;
     }
@@ -146,7 +146,7 @@
       align-content: center;
     }
   }
-  .runtime-settings :is(summary, .agh-disclosure-summary) {
+  .runtime-settings .agh-disclosure-summary {
     cursor: pointer;
     padding-block: var(--s8);
   }
