@@ -483,7 +483,7 @@ export type SessionDeps = {
   hostToolDispatch?: HostToolDispatchPort
   logger: Logger
   timers?: Timers
-  /** Longest one `loopDriver.step` may run before the turn ends as an error. Defaults to 30 minutes. */
+  /** How long one `loopDriver.step` may make no ledger progress, and not be waiting on a person, before the turn ends as an error. Defaults to 30 minutes, and is never below the longest tool or model timeout. */
   loopStepTimeoutMs?: number
   hooks?: HookPort
   compaction?: CompactionPort
@@ -567,7 +567,7 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
   }
 }
 
-const DEFAULT_LOOP_STEP_TIMEOUT_MS = 30 * 60_000
+const DEFAULT_LOOP_STEP_IDLE_MS = 30 * 60_000
 
 export class SessionImpl {
   /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
@@ -1936,7 +1936,9 @@ export class SessionImpl {
     const driver = this.loopDriver
     return withLoopDeadline({
       loop: this.loop,
-      timeoutMs: this.d.loopStepTimeoutMs ?? DEFAULT_LOOP_STEP_TIMEOUT_MS,
+      idleMs: this.loopStepIdleMs(),
+      progress: () => this.lastSeq,
+      waitingOnHuman: () => this.decisions.waiting > 0,
       run: () => driver.step(this.ac.signal),
       expire: () => {
         this.loopStepExpired = true
@@ -1947,6 +1949,15 @@ export class SessionImpl {
           .catch(() => undefined)
       },
     })
+  }
+
+  /** Never shorter than the longest single call a step may legitimately sit in: a tool at its own timeout, or a model request. */
+  private loopStepIdleMs(): number {
+    const { tools, model } = this.preset
+    const longestCall = Math.max(tools.timeoutMs, ...Object.values(tools.timeouts)) + model.timeoutMs
+    return this.d.loopStepTimeoutMs === undefined
+      ? Math.max(DEFAULT_LOOP_STEP_IDLE_MS, longestCall + 60_000)
+      : Math.max(this.d.loopStepTimeoutMs, longestCall)
   }
 
   private loopStepExpired = false

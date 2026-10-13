@@ -72,6 +72,10 @@ export class DecisionCommands {
     )
   }
   private readonly waiters = new Set<() => void>()
+  /** Decision waits in flight; a run blocked on one is waiting on a person, not stuck. */
+  get waiting(): number {
+    return this.waiters.size
+  }
   private epoch = { alive: true }
   private readonly requestEpochs = new Map<string, { alive: boolean }>()
   constructor(private readonly s: DecisionAuthority) {}

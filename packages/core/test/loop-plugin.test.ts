@@ -204,7 +204,10 @@ describe('loop plugins', () => {
     }
     const loops = defaultLoops()
     loops.register('@test/stuck', stuck)
-    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30 })
+    const preset = presetDefaults()
+    preset.tools.timeoutMs = 5
+    preset.model.timeoutMs = 5
+    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset })
     k.tools.add(readTool() as ToolDef, { source: 'test', trust: 'builtin' })
     const session = await k.session('stuck-driver', { ...options, loop: stuck })
     try {
@@ -214,6 +217,31 @@ describe('loop plugins', () => {
       expect(outcome.error?.message).toContain('test.stuck@1.0.0')
       const rows = await session.scan({ fromSeq: 1, limit: 200 })
       expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
+    } finally {
+      await k.close()
+    }
+  })
+
+  it('never sets the idle window below the longest configured tool or model timeout', async () => {
+    const slow: LoopFactory = {
+      ...echo,
+      id: 'test.slow',
+      create: (ctx) => ({
+        ...echoDriver(ctx),
+        step: () =>
+          new Promise((resolve) => setTimeout(() => resolve({ outcome: 'idle', phase: 'idle' }), 120)),
+      }),
+      resume: (ctx) => slow.create(ctx, new AbortController().signal) as never,
+    }
+    const loops = defaultLoops()
+    loops.register('@test/slow', slow)
+    const preset = presetDefaults()
+    preset.tools.timeouts = { shell: 400 }
+    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30, preset })
+    const session = await k.session('slow-driver', { ...options, loop: slow })
+    try {
+      // 120 ms of silence is past the 30 ms override but inside the 400 ms tool timeout it must respect.
+      await expect(session.step()).resolves.toMatchObject({ outcome: 'idle' })
     } finally {
       await k.close()
     }
