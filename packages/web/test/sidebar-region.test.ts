@@ -4,7 +4,6 @@ import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { resetCollapsedGroups } from '../src/navigation.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -35,11 +34,9 @@ describe('rendered sidebar region', () => {
     await runtime?.dispose()
     runtime = undefined
     resetWebDom()
-    // 折叠记录是模块级状态，不清会在用例之间串。
-    resetCollapsedGroups()
   })
 
-  it('renders the component-owned navigation, workspace groups, menus, and actions', async () => {
+  it('renders the component-owned navigation, time groups, menus, and actions', async () => {
     const openSession = vi.fn()
     const sessionAction = vi.fn()
     const newSession = vi.fn()
@@ -61,14 +58,15 @@ describe('rendered sidebar region', () => {
 
     const sidebar = document.querySelector('aside.sidebar')
     expect(sidebar?.querySelector('.brand-wordmark-text')?.textContent).toBe('Agnes Harness')
-    expect(sidebar?.querySelector('.workspace-name')?.textContent).toBe('主工作区')
+    // A row without a readable creation time belongs to the last group.
+    expect(sidebar?.querySelector('.session-group-label')?.textContent).toBe('Earlier')
+    // One registered workspace: naming it on every row would be noise.
+    expect(sidebar?.querySelector('.session-workspace')).toBeNull()
     const sessionButton = sidebar?.querySelector<HTMLButtonElement>('[data-session="one"]')
     expect(sessionButton?.getAttribute('aria-current')).toBe('page')
     sessionButton?.click()
     expect(openSession).toHaveBeenCalledWith('one')
 
-    flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')?.click())
-    expect((sidebar?.querySelector('.workspace-sessions') as HTMLElement | null)?.hidden).toBe(true)
     flushSync(() => sidebar?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
     await vi.waitFor(() => expect(document.querySelector('[role=menuitem]')).not.toBeNull())
     document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
@@ -139,84 +137,69 @@ describe('rendered sidebar region', () => {
     expect(newSession).toHaveBeenCalledOnce()
   })
 
-  it('starts a new session in the selected workspace without toggling the group', async () => {
-    const newSession = vi.fn()
-    const selectedWorkspace = workspace('/workspace', '主工作区')
-    runtime = await mountRenderedIndex({
-      sidebar: {
-        state: {
-          sessions: [session('one', selectedWorkspace.path)],
-          workspaces: [selectedWorkspace],
-          labels: new Map(),
-          currentId: 'one',
-          sessionPending: false,
-          newDisabled: false,
-        },
-        actions: { newSession },
-      },
-    })
-
-    const heading = document.querySelector<HTMLButtonElement>('.workspace-heading')
-    const create = document.querySelector<HTMLButtonElement>('.workspace-new-session')
-    expect(create?.getAttribute('aria-label')).toBe('New session in “主工作区”')
-
-    create?.click()
-
-    expect(newSession).toHaveBeenCalledWith(selectedWorkspace)
-    expect(heading?.getAttribute('aria-expanded')).toBe('true')
-  })
-
-  it('refreshes the workspace shortcut label when the locale changes', async () => {
+  it('groups sessions by the day they were created and refreshes group labels with the locale', async () => {
+    const day = (offset: number) => {
+      const now = new Date()
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 0, 0, 1).toISOString()
+    }
     const state = {
-      sessions: [session('one', '/workspace')],
-      workspaces: [workspace('/workspace', '主工作区')],
+      sessions: [
+        { ...session('old', '/workspace'), createdAt: day(9) },
+        { ...session('today', '/workspace'), createdAt: day(0) },
+        { ...session('yesterday', '/other'), createdAt: day(1) },
+        { ...session('archived', '/workspace'), createdAt: day(0), archived: true },
+      ],
+      workspaces: [workspace('/workspace', '主工作区'), workspace('/other', '另一个')],
       labels: new Map<string, string>(),
-      currentId: 'one',
+      currentId: 'today',
       sessionPending: false,
       newDisabled: false,
       locale: 'en',
     }
     runtime = await mountRenderedIndex({ sidebar: { state } })
-    const shortcut = () => document.querySelector<HTMLButtonElement>('.workspace-new-session')
-    expect(shortcut()?.getAttribute('aria-label')).toBe('New session in “主工作区”')
+    const sidebar = document.querySelector('aside.sidebar')
+    const groups = () =>
+      [...(sidebar?.querySelectorAll('.session-group') ?? [])].map((group) => [
+        group.querySelector('.session-group-label')?.textContent,
+        [...group.querySelectorAll<HTMLElement>('[data-session]')].map((row) => row.dataset.session),
+      ])
+    expect(groups()).toEqual([
+      ['Today', ['today']],
+      ['Yesterday', ['yesterday']],
+      ['Earlier', ['old']],
+    ])
+    expect(sidebar?.querySelector('[data-session="today"]')?.getAttribute('aria-current')).toBe('page')
+    expect(sidebar?.querySelector('.session-row[data-active="true"] [data-session]')).toBe(
+      sidebar?.querySelector('[data-session="today"]'),
+    )
+    // Several workspaces: each row names its own.
+    expect(sidebar?.querySelector('[data-session="yesterday"] .session-workspace')?.textContent).toBe(
+      '另一个',
+    )
 
     runtime.locale.setLocale('zh-CN')
     runtime.sidebar?.update({ ...state, locale: 'zh-CN' })
-
-    expect(shortcut()?.getAttribute('aria-label')).toBe('在“主工作区”中新建会话')
+    expect(groups().map(([label]) => label)).toEqual(['今天', '昨天', '更早'])
   })
 
-  it('disables unavailable workspace shortcuts and omits one for unassigned sessions', async () => {
-    const unavailable = { ...workspace('/workspace', '不可用工作区'), available: false }
+  it('teaches the next step when there is no session yet', async () => {
     runtime = await mountRenderedIndex({
       sidebar: {
         state: {
-          sessions: [session('one', '/unassigned')],
-          workspaces: [unavailable],
+          sessions: [],
+          workspaces: [],
           labels: new Map(),
           sessionPending: false,
           newDisabled: false,
         },
       },
     })
-
-    const shortcuts = document.querySelectorAll<HTMLButtonElement>('.workspace-new-session')
-    expect(shortcuts).toHaveLength(1)
-    expect(shortcuts[0]?.disabled).toBe(true)
-
-    runtime.sidebar?.update({
-      sessions: [session('one', '/unassigned')],
-      workspaces: [{ ...unavailable, available: true }],
-      labels: new Map(),
-      sessionPending: false,
-      newDisabled: true,
-    })
-    expect(document.querySelector<HTMLButtonElement>('.workspace-new-session')?.disabled).toBe(true)
+    const nav = document.querySelector('aside.sidebar #sessions')
+    expect(nav?.querySelector('.session-list-empty h3')?.textContent).toBe('No sessions yet')
+    expect(nav?.querySelector('[data-session]')).toBeNull()
   })
 
-  // 回归：导航区每次状态更新都用 replaceChildren 整体重建，折叠态必须活过重建。
-  // 旧实现把折叠态只写在 DOM 上，重建后一律回到展开，在活跃会话下观感是「点了没反应」。
-  it('keeps a collapsed workspace group across a rebuild', async () => {
+  it('keeps keyboard focus on a session row after the navigation rebuilds', async () => {
     const state = {
       sessions: [session('one', '/workspace')],
       workspaces: [workspace('/workspace', '主工作区')],
@@ -226,40 +209,7 @@ describe('rendered sidebar region', () => {
       newDisabled: false,
     }
     runtime = await mountRenderedIndex({ sidebar: { state } })
-
-    const sidebar = document.querySelector('aside.sidebar')
-    const heading = () => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
-    const children = () => sidebar?.querySelector('.workspace-sessions') as HTMLElement | null
-
-    flushSync(() => heading()?.click())
-    expect(children()?.hidden).toBe(true)
-    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
-
-    // 数据真的变了（新会话入列）⇒ 导航区必然重建，折叠态必须活下来。
-    runtime.sidebar?.update({
-      ...state,
-      sessions: [session('one', '/workspace'), session('two', '/workspace')],
-    })
-
-    expect(children()?.hidden).toBe(true)
-    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
-
-    // 收起状态不得变成「点不开」：再点一次应当恢复展开。
-    flushSync(() => heading()?.click())
-    expect(children()?.hidden).toBe(false)
-  })
-
-  it('restores keyboard focus to a workspace shortcut after the navigation rebuilds', async () => {
-    const state = {
-      sessions: [session('one', '/workspace')],
-      workspaces: [workspace('/workspace', '主工作区')],
-      labels: new Map<string, string>(),
-      currentId: 'one',
-      sessionPending: false,
-      newDisabled: false,
-    }
-    runtime = await mountRenderedIndex({ sidebar: { state } })
-    const shortcut = () => document.querySelector<HTMLButtonElement>('.workspace-new-session')
+    const shortcut = () => document.querySelector<HTMLButtonElement>('[data-session="one"]')
     shortcut()?.focus()
     expect(document.activeElement).toBe(shortcut())
 
@@ -297,15 +247,15 @@ describe('rendered sidebar region', () => {
       sidebar: { state: sidebarState([session('one', '/workspace')]) },
     })
     const sidebar = document.querySelector('aside.sidebar')
-    const before = sidebar?.querySelector('.workspace-sessions')
+    const before = sidebar?.querySelector('.session-conversations')
 
     // 等价数据：内容一致，只有对象引用不同（app.ts 每次 update 都会新建外层对象）。
     runtime.sidebar?.update(sidebarState([session('one', '/workspace')]))
-    expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
+    expect(sidebar?.querySelector('.session-conversations')).toBe(before)
 
     // React reconciles changed rows without discarding the focused navigation subtree.
     runtime.sidebar?.update(sidebarState([session('one', '/workspace'), session('two', '/workspace')]))
-    expect(sidebar?.querySelector('.workspace-sessions')).toBe(before)
+    expect(sidebar?.querySelector('.session-conversations')).toBe(before)
     expect(sidebar?.querySelectorAll('.session-row')).toHaveLength(2)
   })
 

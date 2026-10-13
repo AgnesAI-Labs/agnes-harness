@@ -3,7 +3,6 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 侧栏导航、会话菜单与重命名/归档面板。命令式渲染时取词。 */
 export const sessionLocaleCatalog: LocaleCatalog = {
   en: {
-    'nav.noWorkspaceTitle': 'History sessions without a workspace',
     'nav.sessionFallback': 'Session {id}',
     'nav.loadMore': 'Load more tasks',
     'nav.running': 'Running',
@@ -13,7 +12,6 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'nav.empty.title': 'No sessions yet',
     'nav.empty.description': 'Start a session and it will be listed here.',
     'nav.fallbackName': 'New session',
-    'nav.newSessionInWorkspace': 'New session in “{name}”',
     'session.uncategorized': 'Unassigned',
     'session.menu.rename': 'Rename',
     'session.menu.runtime': 'Runtime info',
@@ -67,7 +65,6 @@ export const sessionLocaleCatalog: LocaleCatalog = {
       'Archived, but the list failed to refresh; reload the page: {detail}',
   },
   'zh-CN': {
-    'nav.noWorkspaceTitle': '没有工作区归属的历史会话',
     'nav.sessionFallback': '会话 {id}',
     'nav.loadMore': '加载更多任务',
     'nav.running': '运行中',
@@ -77,7 +74,6 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'nav.empty.title': '还没有会话',
     'nav.empty.description': '新建一个会话，它会出现在这里。',
     'nav.fallbackName': '新会话',
-    'nav.newSessionInWorkspace': '在“{name}”中新建会话',
     'session.uncategorized': '未分类',
     'session.menu.rename': '重命名',
     'session.menu.runtime': '运行信息',
