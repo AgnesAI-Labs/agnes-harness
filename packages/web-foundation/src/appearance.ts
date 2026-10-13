@@ -1,7 +1,20 @@
-import { Button, renderRegion, SettingsChoice, SettingsState } from '@agnes/web-ui'
+import {
+  Button,
+  createSelectPicker,
+  renderRegion,
+  SettingsState,
+  setSettingsSelectOptions,
+} from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 import { tr } from './locale-bridge.js'
-import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
+import {
+  applyLocaleText,
+  isUiLocale,
+  syncLocaleRadios,
+  UI_LOCALE_NAMES,
+  UI_LOCALES,
+  type UiLocale,
+} from './locale-preference.js'
 import { readSkinCache } from './skin.js'
 import {
   applyFontScale,
@@ -52,6 +65,16 @@ export function bindAppearance(options: {
   const themeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(THEME_INPUT)]
   const fontScaleInputs = [...options.scope.querySelectorAll<HTMLInputElement>(FONT_SCALE_INPUT)]
   const localeInputs = [...options.scope.querySelectorAll<HTMLInputElement>(LOCALE_INPUT)]
+  // The language picker lists whatever interface languages exist, each in its own name.
+  const localeSelect = options.scope.querySelector<HTMLSelectElement>('#locale-select')
+  if (localeSelect)
+    setSettingsSelectOptions(
+      localeSelect,
+      UI_LOCALES.map((value) => ({ value, label: UI_LOCALE_NAMES[value] })),
+    )
+  // The picker's accessible label is fixed when it is made, so it is remade when the language changes.
+  let localePickerLabel = tr('settings.appearance.language')
+  let localePicker = localeSelect ? createSelectPicker(localeSelect, { label: localePickerLabel }) : undefined
 
   const sync = (): void => {
     const theme = readThemePreference(options.storage)
@@ -62,6 +85,13 @@ export function bindAppearance(options: {
       syncLocaleRadios(options.scope, options.locale.current())
       if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
     }
+    const label = tr('settings.appearance.language')
+    if (localeSelect && localePicker && label !== localePickerLabel) {
+      localePicker.destroy()
+      localePickerLabel = label
+      localePicker = createSelectPicker(localeSelect, { label })
+    }
+    localePicker?.sync()
   }
 
   for (const input of themeInputs) {
@@ -90,6 +120,12 @@ export function bindAppearance(options: {
       if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
     })
   }
+
+  localeSelect?.addEventListener('change', () => {
+    if (!isUiLocale(localeSelect.value) || !options.locale) return
+    options.locale.select(localeSelect.value)
+    if (!options.locale.rendered) applyLocaleText(options.scope, options.locale.text)
+  })
 
   sync()
   return { sync }
@@ -120,28 +156,10 @@ export type SkinGroupController = { sync: () => void; refresh: () => Promise<voi
 /** 内置外观那一项的值：空串，与任何合法皮肤 id 都不冲突。 */
 const NO_SKIN = ''
 
-type SkinOptionsProps = {
-  skins: readonly SkinOption[]
-  selected: string
-  status: string | null
-  failed: boolean
-  onChoose(value: string): void
-  onRetry(): void
-}
+type SkinStatusProps = { status: string | null; failed: boolean; onRetry(): void }
 
-function skinOption(value: string, name: string, hint: string, props: SkinOptionsProps): ReactNode {
-  return createElement(SettingsChoice, {
-    type: 'radio',
-    name: 'agnes-skin',
-    value,
-    checked: value === props.selected,
-    label: name,
-    hint,
-    onChange: () => props.onChoose(value),
-  })
-}
-
-function skinOptions(props: SkinOptionsProps): ReactNode {
+/** What sits under the skin picker: nothing, a note that the choice did not apply, or a retry. */
+function skinStatus(props: SkinStatusProps): ReactNode {
   if (props.failed)
     return createElement(
       SettingsState,
@@ -150,23 +168,9 @@ function skinOptions(props: SkinOptionsProps): ReactNode {
       createElement(Button, { htmlType: 'button', onClick: props.onRetry }, tr('settings.appearance.retry')),
     )
   return createElement(
-    'div',
-    null,
-    skinOption(
-      NO_SKIN,
-      tr('settings.appearance.followTheme'),
-      tr('settings.appearance.followThemeHint'),
-      props,
-    ),
-    ...props.skins.map((skin) =>
-      skinOption(
-        skin.id,
-        skin.name,
-        tr('settings.appearance.fromPackage', { package: skin.packageName }),
-        props,
-      ),
-    ),
-    createElement('p', { className: 'appearance-option-hint', hidden: props.status === null }, props.status),
+    'p',
+    { className: 'appearance-option-hint', hidden: props.status === null },
+    props.status,
   )
 }
 
@@ -180,24 +184,37 @@ function skinOptions(props: SkinOptionsProps): ReactNode {
 export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   const container = options.scope.querySelector<HTMLElement>('#skin-option-items')
   if (container === null) throw new Error('skin options container is missing')
+  const select = options.scope.querySelector<HTMLSelectElement>('#skin-select')
+  if (select === null) throw new Error('skin select is missing')
+  let pickerLabel = tr('settings-shell.skin')
+  let picker = createSelectPicker(select, { label: pickerLabel })
   let selected = readSkinCache(options.storage)?.id ?? NO_SKIN
   let skins: readonly SkinOption[] = []
   let status: string | null = null
   let failed = false
 
+  // The list is whatever is installed right now: the built-in look first, then every skin with the
+  // package it came from. A cached skin that is no longer installed falls back to the built-in look.
   const render = (): void => {
-    renderRegion(
-      container,
-      createElement(skinOptions, {
-        skins,
-        selected,
-        status,
-        failed,
-        onChoose: choose,
-        onRetry: () => void refresh(),
-      }),
-    )
+    setSettingsSelectOptions(select, [
+      { value: NO_SKIN, label: tr('settings.appearance.followTheme') },
+      ...skins.map((skin) => ({
+        value: skin.id,
+        label: `${skin.name} · ${tr('settings.appearance.fromPackage', { package: skin.packageName })}`,
+      })),
+    ])
+    select.value = skins.some((skin) => skin.id === selected) ? selected : NO_SKIN
+    select.disabled = failed
+    const label = tr('settings-shell.skin')
+    if (label !== pickerLabel) {
+      picker.destroy()
+      pickerLabel = label
+      picker = createSelectPicker(select, { label })
+    }
+    picker.sync()
+    renderRegion(container, createElement(skinStatus, { status, failed, onRetry: () => void refresh() }))
   }
+  select.addEventListener('change', () => choose(select.value))
 
   const sync = (): void => render()
 

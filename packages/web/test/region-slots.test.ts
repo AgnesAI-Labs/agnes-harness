@@ -397,7 +397,8 @@ describe('migrated settings panes', () => {
         ),
       committed,
     )
-    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('English')
+    // The pane's own copy follows the language; language names come from the picker, filled at run time.
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('Font size')
     expect(config.querySelector('#computer-use-settings-pane')?.textContent).toContain('Computer Use')
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Model accounts')

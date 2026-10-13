@@ -1,11 +1,18 @@
 /** @vitest-environment happy-dom */
 
 import { zhT } from '@agnes/web-foundation/testkit/locale'
+import { mountSettingsSelectOptions } from '@agnes/web-ui'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { webLocaleCatalog } from '../src/locale-catalog.js'
-import { applyLocaleText, syncLocaleRadios, type UiLocale } from '../src/locale-preference.js'
+import {
+  applyLocaleText,
+  syncLocaleRadios,
+  UI_LOCALE_NAMES,
+  UI_LOCALES,
+  type UiLocale,
+} from '../src/locale-preference.js'
 import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
 import { FONT_SCALE_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/theme.js'
 
@@ -246,19 +253,29 @@ describe('bindSkinGroup', () => {
       tokens: {},
     }),
   })
+  // The picker is a select whose options are the installed skins; these helpers read it as a list.
+  let unmount: (() => void) | undefined
   function mountSkin(): void {
-    document.body.innerHTML = '<fieldset><div id="skin-option-items"></div></fieldset>'
+    unmount?.()
+    document.body.innerHTML =
+      '<fieldset><select id="skin-select"></select><div id="skin-option-items"></div></fieldset>'
+    unmount = mountSettingsSelectOptions(select())
   }
-  const inputs = (): HTMLInputElement[] => [
-    ...document.querySelectorAll<HTMLInputElement>('input[name="agnes-skin"]'),
-  ]
-  const input = (value: string): HTMLInputElement => {
+  const select = (): HTMLSelectElement => {
+    const found = document.querySelector<HTMLSelectElement>('#skin-select')
+    if (!found) throw new Error('missing skin select')
+    return found
+  }
+  const inputs = (): { value: string; checked: boolean }[] =>
+    [...select().options].map((option) => ({ value: option.value, checked: select().value === option.value }))
+  const input = (value: string): { value: string; checked: boolean } => {
     const found = inputs().find((candidate) => candidate.value === value)
-    if (!found) throw new Error(`missing skin radio ${value}`)
+    if (!found) throw new Error(`missing skin option ${value}`)
     return found
   }
   const pick = (value: string): void => {
-    input(value).click()
+    select().value = value
+    select().dispatchEvent(new Event('change', { bubbles: true }))
   }
 
   beforeEach(mountSkin)
@@ -345,14 +362,35 @@ describe('bindSkinGroup', () => {
       select: () => undefined,
     })
     await group.refresh()
-    expect(inputs()).toHaveLength(0)
+    // Nothing can be picked from a list that failed to load.
+    expect(inputs().map((entry) => entry.value)).toEqual([''])
+    expect(select().disabled).toBe(true)
     expect(document.body.textContent).toContain('皮肤清单读取失败')
-    const retry = document.querySelector('button')
+    const retry = document.querySelector<HTMLButtonElement>('#skin-option-items button')
     expect(retry).not.toBeNull()
     retry?.click()
     await Promise.resolve()
     await Promise.resolve()
     expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
+    expect(select().disabled).toBe(false)
+  })
+  it('lists whatever is installed when the list is read again', async () => {
+    let installed = skins.slice(0, 1)
+    const group = bindSkinGroup({
+      scope: document,
+      storage: fakeStorage(),
+      list: async () => installed,
+      select: () => undefined,
+    })
+    await group.refresh()
+    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight'])
+    installed = skins
+    await group.refresh()
+    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
+    installed = []
+    await group.refresh()
+    expect(inputs().map((entry) => entry.value)).toEqual([''])
+    expect(select().options[0]?.textContent).toBe('AGH 默认')
   })
 })
 
@@ -476,5 +514,44 @@ describe('bindAppearance 语言组', () => {
     })
     localeRadio('zh-CN').dispatchEvent(new Event('change'))
     expect(current).toBe('en')
+  })
+})
+
+// The language picker reads the list of interface languages; nothing about a language is written
+// into the page, so a new one needs no change here or in the settings markup.
+describe('bindAppearance language picker', () => {
+  it('lists every interface language in its own name, shows the current one and switches on change', () => {
+    document.body.innerHTML = '<section><select id="locale-select"></select></section>'
+    const select = document.querySelector<HTMLSelectElement>('#locale-select')
+    if (!select) throw new Error('missing locale select')
+    const unmount = mountSettingsSelectOptions(select)
+    let current: UiLocale = 'zh-CN'
+    const chosen: UiLocale[] = []
+    const appearance = bindAppearance({
+      scope: document,
+      root: document.documentElement,
+      storage: fakeStorage(),
+      locale: {
+        rendered: true,
+        current: () => current,
+        select: (value) => {
+          current = value
+          chosen.push(value)
+        },
+        text: (key) => key,
+      },
+    })
+    expect([...select.options].map((option) => [option.value, option.textContent])).toEqual(
+      UI_LOCALES.map((value) => [value, UI_LOCALE_NAMES[value]]),
+    )
+    expect(select.value).toBe('zh-CN')
+    select.value = 'en'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(chosen).toEqual(['en'])
+    // Another document changed the language: reopening the pane shows it.
+    current = 'zh-CN'
+    appearance.sync()
+    expect(select.value).toBe('zh-CN')
+    unmount()
   })
 })

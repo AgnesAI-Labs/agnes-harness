@@ -863,6 +863,21 @@
   .appearance-choices .appearance-option:has(input:focus-visible) {
     outline-offset: 1px;
   }
+  /* Skins and languages are lists read at run time: each is a picker in its row, with any note
+   about the choice under it. */
+  .appearance-picker {
+    display: grid;
+    justify-items: end;
+    gap: var(--s4);
+    min-width: min(14rem, 100%);
+  }
+  .appearance-picker > :is(.agnes-settings-input, .select-picker-trigger) {
+    width: min(16rem, 100%);
+  }
+  .appearance-picker p.appearance-option-hint {
+    margin: 0;
+    text-align: end;
+  }
   #config-form .appearance-choices .appearance-option input {
     position: absolute;
     inset: 0;

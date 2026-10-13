@@ -8,6 +8,12 @@
 export const UI_LOCALES = ['en', 'zh-CN'] as const
 export type UiLocale = (typeof UI_LOCALES)[number]
 
+/**
+ * Each language in its own name, which is how a language picker lists them. A new interface
+ * language is added here and in the catalogs; the picker reads this list and needs no change.
+ */
+export const UI_LOCALE_NAMES: Readonly<Record<UiLocale, string>> = { en: 'English', 'zh-CN': '简体中文' }
+
 export const LOCALE_STORAGE_KEY = 'agnes-locale'
 
 export function isUiLocale(value: unknown): value is UiLocale {
@@ -65,4 +71,6 @@ export function syncLocaleRadios(root: ParentNode, locale: UiLocale): void {
     const checked = input.value === locale
     if (input.checked !== checked) input.checked = checked
   }
+  const select = root.querySelector<HTMLSelectElement>('#locale-select')
+  if (select && select.value !== locale) select.value = locale
 }

@@ -436,11 +436,12 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('[aria-label="Font size"]')?.getAttribute('aria-label')).toBe('Font size')
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。
-    const english = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')
-    const chinese = host.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')
-    expect(english).toBeInstanceOf(HTMLInputElement)
-    expect(chinese).toBeInstanceOf(HTMLInputElement)
-    expect(english?.checked).toBe(true)
+    // The language and skin controls are pickers filled at run time, not options written here.
+    expect(host.querySelector('[aria-label="Language"] select#locale-select')).toBeInstanceOf(
+      HTMLSelectElement,
+    )
+    expect(host.querySelector('select#skin-select + #skin-option-items')).toBeTruthy()
+    expect(host.querySelector('input[name="agnes-locale"], input[name="agnes-skin"]')).toBeNull()
     expect(host.querySelector('[aria-label="Language"] legend')?.textContent).toBe('Language')
   })
 

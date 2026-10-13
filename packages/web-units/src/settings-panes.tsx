@@ -6,6 +6,7 @@ import {
   SettingsChoice,
   SettingsGroup,
   SettingsInput,
+  SettingsOptionSelect,
   SettingsPageHeader,
 } from '@agnes/web-ui'
 import { useLayoutEffect, useRef } from 'react'
@@ -418,7 +419,8 @@ export function SettingsStaticPane({
           />
           <div className="config-workspace">
             <SettingsDshHost name="settings.general.item" />
-            {/* Each setting is one row: its name on the left, the choices as one segmented set. */}
+            {/* Each setting is one row: its name on the left, its control on the right. Skins and
+             languages are lists read at run time, so they are pickers, not fixed segments. */}
             <SettingsGroup className="appearance-group">
               <fieldset className="appearance-options" aria-label={text('settings-shell.palette', '配色')}>
                 <legend>{text('settings-shell.palette', '配色')}</legend>
@@ -452,7 +454,10 @@ export function SettingsStaticPane({
               </fieldset>
               <fieldset className="appearance-options" aria-label={text('settings-shell.skin', '皮肤')}>
                 <legend>{text('settings-shell.skin', '皮肤')}</legend>
-                <div id="skin-option-items" className="appearance-choices" />
+                <div className="appearance-picker">
+                  <SettingsOptionSelect id="skin-select" />
+                  <div id="skin-option-items" />
+                </div>
               </fieldset>
               <fieldset className="appearance-options" aria-label={text('settings-shell.fontScale', '字号')}>
                 <legend>{text('settings-shell.fontScale', '字号')}</legend>
@@ -485,22 +490,8 @@ export function SettingsStaticPane({
                 aria-label={text('settings.appearance.language', '语言')}
               >
                 <legend>{text('settings.appearance.language', '语言')}</legend>
-                <div className="appearance-choices">
-                  <SettingsChoice
-                    type="radio"
-                    name="agnes-locale"
-                    value="en"
-                    defaultChecked
-                    label={<span>{text('settings.appearance.language.en', 'English')}</span>}
-                    hint={<span>{text('settings.appearance.language.en.hint', '使用英文界面')}</span>}
-                  />
-                  <SettingsChoice
-                    type="radio"
-                    name="agnes-locale"
-                    value="zh-CN"
-                    label={<span>{text('settings.appearance.language.zh-CN', '简体中文')}</span>}
-                    hint={<span>{text('settings.appearance.language.zh-CN.hint', '使用简体中文界面')}</span>}
-                  />
+                <div className="appearance-picker">
+                  <SettingsOptionSelect id="locale-select" />
                 </div>
               </fieldset>
             </SettingsGroup>

@@ -16,12 +16,8 @@ afterEach(() => {
 it('uses the same-document selection when storing the locale fails', async () => {
   localStorage.setItem(LOCALE_STORAGE_KEY, 'en')
   const runtime = await mountRenderedIndex()
-  const label = document
-    .querySelector('#appearance-settings-pane input[name="agnes-locale"]')
-    ?.closest('fieldset')
-    ?.querySelector('legend')
-  const english = document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="en"]')!
-  const chinese = document.querySelector<HTMLInputElement>('input[name="agnes-locale"][value="zh-CN"]')!
+  const picker = document.querySelector<HTMLSelectElement>('#appearance-settings-pane #locale-select')!
+  const label = picker.closest('fieldset')?.querySelector('legend')
   expect(label).not.toBeNull()
   const storage = safeThemeStorage()
   bindAppearance({
@@ -44,16 +40,16 @@ it('uses the same-document selection when storing the locale fails', async () =>
     if (key === LOCALE_STORAGE_KEY) throw new Error('storage unavailable')
     originalSetItem(key, value)
   })
-  chinese.checked = true
-  chinese.dispatchEvent(new Event('change', { bubbles: true }))
+  expect([...picker.options].map((option) => option.value)).toEqual(['en', 'zh-CN'])
+  picker.value = 'zh-CN'
+  picker.dispatchEvent(new Event('change', { bubbles: true }))
 
   expect(runtime.locale.locale).toBe('zh-CN')
   expect(document.documentElement.lang).toBe('zh-CN')
   await vi.waitFor(() =>
     expect(label?.textContent).toBe(webLocaleCatalog['zh-CN']?.['settings.appearance.language']),
   )
-  expect(chinese.checked).toBe(true)
-  expect(english.checked).toBe(false)
+  expect(picker.value).toBe('zh-CN')
 
   vi.restoreAllMocks()
   originalSetItem(LOCALE_STORAGE_KEY, 'en')

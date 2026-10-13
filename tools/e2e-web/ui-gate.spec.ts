@@ -1,3 +1,6 @@
+await expect(page.locator('#skin-select option').first()).toHaveText(en ? 'AGH default' : 'AGH 默认')
+await expect(page.locator('#skin-select')).toHaveValue('')
+
 import { copyFile, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
@@ -323,7 +326,7 @@ test('live language switching updates sidebar and cached skin options without re
   await section(page, 'general')
   for (const locale of ['zh-CN', 'en', 'zh-CN']) {
     const en = locale === 'en'
-    await page.locator(`input[name="agnes-locale"][value="${locale}"]`).check()
+    await page.locator('#locale-select').selectOption(locale)
     await expect(page.locator('html')).toHaveAttribute('lang', locale)
     await expect(page.locator('#settings')).toHaveText(en ? 'Settings' : '设置')
     await expect(page.locator('#new')).toHaveText(en ? 'New session' : '新会话')
