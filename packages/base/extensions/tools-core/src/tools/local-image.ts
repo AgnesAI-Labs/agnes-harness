@@ -1,11 +1,28 @@
 import { createRequire } from 'node:module'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 
-// Native codecs stay beside the shipped runtime instead of being inlined into a JS bundle.
-const sharp: typeof import('sharp') = createRequire(import.meta.url)('sharp')
-// Every read is a different file, so the codec's operation cache would only hold decoded pixels of
-// images nobody asks for again: hundreds of MiB after one large original.
-sharp.cache(false)
+type Sharp = typeof import('sharp')
+let loadedCodec: Sharp | undefined
+
+/**
+ * The native codec stays beside the shipped runtime instead of being inlined into a JS bundle, and
+ * is loaded on the first image read rather than with this module: on a machine where it cannot load
+ * (another C library or architecture, an install without optional dependencies), only image reads
+ * fail, as errors; the tools, and so every session, still start. A failed load is tried again on
+ * the next read.
+ */
+function codec(): Sharp | undefined {
+  if (loadedCodec) return loadedCodec
+  try {
+    const sharp: Sharp = createRequire(import.meta.url)('sharp')
+    // Every read is a different file, so the codec's operation cache would only hold decoded pixels
+    // of images nobody asks for again: hundreds of MiB after one large original.
+    sharp.cache(false)
+    return (loadedCodec = sharp)
+  } catch {
+    return undefined
+  }
+}
 
 /** Largest workspace image read whole. Camera originals are often several MiB. */
 export const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024
@@ -202,7 +219,7 @@ export async function readLocalImage(
     )
   const deadline = Date.now() + timeoutMs
   // The codec's own stop, from what is left of the budget, ends work the caller stopped waiting for.
-  const codec = () => ({ seconds: Math.max(1, Math.ceil((deadline - Date.now()) / 1000)) })
+  const stopAfter = () => ({ seconds: Math.max(1, Math.ceil((deadline - Date.now()) / 1000)) })
   try {
     ctx.signal.throwIfAborted()
     if (bytes.length > MAX_IMAGE_FILE_BYTES) return tooLarge()
@@ -210,6 +227,12 @@ export async function readLocalImage(
     if (!mimeType) return text('Only PNG and JPEG images are supported.', true)
     if (mimeType === 'image/png' && isAnimatedPng(bytes))
       return text('The image is animated; only single-frame PNG and JPEG are supported.', true)
+    const sharp = codec()
+    if (!sharp)
+      return text(
+        'Image read failed: the image library could not be loaded on this machine. Image pixels were not inspected.',
+        true,
+      )
     // 'error' rather than 'warning': camera JPEGs often carry harmless warnings such as a short tail.
     // The pixel ceiling is checked against the header before anything is decoded, and the default
     // sequential read streams rows through the resize rather than holding the whole original.
@@ -254,7 +277,7 @@ export async function readLocalImage(
     const scaled = await withDecodeSlot(ctx.signal, deadline, () =>
       decoder
         .clone()
-        .timeout(codec())
+        .timeout(stopAfter())
         .rotate()
         .resize({ width, height, fit: 'fill' })
         .raw()
@@ -266,7 +289,7 @@ export async function readLocalImage(
       attempt < MAX_ENCODE_ATTEMPTS && width >= MIN_EDGE && height >= MIN_EDGE;
       attempt++
     ) {
-      const resized = sharp(scaled.data, { raw }).timeout(codec()).resize({ width, height, fit: 'fill' })
+      const resized = sharp(scaled.data, { raw }).timeout(stopAfter()).resize({ width, height, fit: 'fill' })
       const encoded = mimeType === 'image/png' ? resized.png() : resized.jpeg({ quality: 85 })
       const output = await bounded(encoded.toBuffer(), ctx.signal, deadline)
       ctx.signal.throwIfAborted()
