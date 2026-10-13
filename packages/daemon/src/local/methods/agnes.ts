@@ -68,7 +68,13 @@ import type {
   JournalResult,
   SessionLister,
 } from '../ports.js'
-import { type Feed, type LocalContext, legacyLedgerRpcError, newerLedgerRpcError } from './acp.js'
+import {
+  type Feed,
+  isNewerLedgerFormat,
+  type LocalContext,
+  legacyLedgerRpcError,
+  newerLedgerRpcError,
+} from './acp.js'
 import { registerExportRaw } from './export-raw.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -780,9 +786,8 @@ export function registerAgnes(
       try {
         await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
       } catch (error) {
-        const code = (error as { code?: unknown } | null)?.code
-        if (code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
-        if (code === 'E_FORMAT') throw newerLedgerRpcError()
+        if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
         throw error
       }
     }

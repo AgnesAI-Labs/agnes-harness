@@ -79,7 +79,14 @@ export function ledgerFormatError(key: string, version: unknown): CoreError {
   return new CoreError(
     'E_FORMAT',
     `session ${key} was written by a newer AGH (ledger format ${String(version)}; this build reads up to ${LEDGER_FORMAT_VERSION}); upgrade AGH. Nothing was changed.`,
-    { sessionKey: key, formatVersion: version, supported: LEDGER_FORMAT_VERSION },
+    // `reason` is what survives the worker boundary; it tells this refusal apart from the other
+    // E_FORMAT, a newer child-control format, which is not about one session's ledger.
+    {
+      sessionKey: key,
+      formatVersion: version,
+      supported: LEDGER_FORMAT_VERSION,
+      reason: 'newer-ledger-format',
+    },
   )
 }
 

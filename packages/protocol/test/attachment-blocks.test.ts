@@ -35,6 +35,10 @@ describe('attachment blocks', () => {
     )
     expect(attachmentForm({ type: 'text', text: 'x' })).toBeUndefined()
     expect(containsAttachmentRef([{ type: 'text', text: 'x' }, fileRef])).toBe(true)
+    // More than one carrier is no form at all, whichever field comes first.
+    expect(attachmentForm({ ...imageRef, data: 'QUJD' })).toBeUndefined()
+    expect(attachmentForm({ ...fileRef, dataOmitted: { bytes: 1 } })).toBeUndefined()
+    expect(containsAttachmentRef([{ ...fileRef, data: 'QUJD' }])).toBe(false)
   })
 
   it('downgrades a reference to ACP-legal content an old client accepts', () => {

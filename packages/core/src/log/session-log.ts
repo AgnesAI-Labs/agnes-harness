@@ -796,7 +796,11 @@ async function verifiedRange(
   return { state, rows }
 }
 
-/** Whether a row holds an attachment reference block: user input, directly or queued in the inbox. */
+/**
+ * Whether a row holds an attachment reference block: user input, directly or queued in the inbox.
+ * Tool results are deliberately not looked at, as in protocol's `downgradeEvent`; whatever first
+ * puts a reference into a tool result must extend both.
+ */
 function carriesRefs(e: { type: string; data: unknown }): boolean {
   const data = e.data as { content?: unknown; items?: unknown } | null
   if (!data || typeof data !== 'object') return false

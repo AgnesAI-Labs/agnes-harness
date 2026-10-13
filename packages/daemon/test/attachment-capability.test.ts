@@ -70,6 +70,34 @@ async function seen(h: Awaited<ReturnType<typeof openTestHost>>, sessionId: stri
   expect(opening.error).toBeUndefined()
   const projected = await rpc(ep, '_agnes/v1/session.projectUI', { sessionId, surface: 'web' })
   expect(projected.error).toBeUndefined()
+  // An opening of one node leaves the reference message to the history page.
+  const windowed = await rpc(ep, '_agnes/v1/session.projectUIOpening', {
+    sessionId,
+    surface: 'tui',
+    maxNodes: 1,
+  })
+  const cursor = (windowed.result?.history as { cursor?: string } | undefined)?.cursor
+  if (!cursor) throw new Error(`no history cursor: ${JSON.stringify(windowed)}`)
+  const history = await rpc(ep, '_agnes/v1/session.projectUIHistory', { sessionId, cursor, limit: 50 })
+  expect(history.error).toBeUndefined()
+  const diagnostics = await rpc(ep, '_agnes/v1/diagnostics.events', {
+    sessionId,
+    afterSeq: 0,
+    limit: 500,
+    maxBytes: 1024 * 1024,
+  })
+  expect(diagnostics.error).toBeUndefined()
+  // A reference that arrives after the baseline reaches this connection as a patch.
+  const live = h.host.kernel.get(sessionId)
+  if (!live) throw new Error('session missing')
+  await live.append([live.ev('user/message', { content: [fileRef] })])
+  const patch = await rpc(ep, '_agnes/v1/session.projectUIPatch', {
+    sessionId,
+    surface: 'web',
+    after: projected.result?.upto,
+  })
+  expect(patch.error).toBeUndefined()
+  expect(JSON.stringify(patch.result)).toContain(`"insects.zip"`)
   const frames = (await drain(ep)) as Array<{ method?: string; params?: Record<string, unknown> }>
   const attached = frames
     .filter((f) => f.method === '_agnes/v1/session.event')
@@ -87,6 +115,9 @@ async function seen(h: Awaited<ReturnType<typeof openTestHost>>, sessionId: stri
     loaded,
     opening: opening.result,
     projected: projected.result,
+    history: history.result,
+    diagnostics: diagnostics.result,
+    patch: patch.result,
   }
 }
 
@@ -102,11 +133,12 @@ describe('attachment reference capability', () => {
     const session = h.host.kernel.get(sessionId)
     if (!session) throw new Error('session missing')
     await session.append([session.ev('user/message', { content: [imageRef, fileRef] })])
+    await session.append([session.ev('user/message', { content: [{ type: 'text', text: 'later' }] })])
     await setup.close()
 
     const a = await seen(h, sessionId, true)
     expect(a.init.attachmentRefs).toBe(1)
-    expect(a.attached).toEqual([[imageRef, fileRef]])
+    expect(a.attached[0]).toEqual([imageRef, fileRef])
     // ACP itself has no reference block (its image needs inline data): a load gives everyone the link.
     expect(a.loaded[0]).toEqual({
       type: 'resource_link',
@@ -116,21 +148,25 @@ describe('attachment reference capability', () => {
     })
     expect(JSON.stringify(a.opening)).toContain('"attachment"')
     expect(JSON.stringify(a.projected)).toContain('"attachment"')
+    for (const result of [a.history, a.diagnostics, a.patch])
+      expect(JSON.stringify(result)).toContain('"attachment"')
 
     const b = await seen(h, sessionId, false)
     // The server says it understands references whatever the client declared.
     expect(b.init.attachmentRefs).toBe(1)
     const link = { type: 'resource_link', uri: `artifact://${sha}`, mimeType: 'image/png', name: 'shot.png' }
-    expect(b.attached).toEqual([
-      [
-        link,
-        { type: 'text', text: '[image shot.png 640×480]' },
-        { type: 'resource_link', uri: `artifact://${sha}`, name: 'insects.zip', mimeType: 'application/zip' },
-      ],
+    expect(b.attached[0]).toEqual([
+      link,
+      { type: 'text', text: '[image shot.png 640×480]' },
+      { type: 'resource_link', uri: `artifact://${sha}`, name: 'insects.zip', mimeType: 'application/zip' },
     ])
     expect(b.loaded[0]).toEqual(link)
     expect(JSON.stringify(b.opening)).not.toContain('"attachment"')
     expect(JSON.stringify(b.opening)).toContain(`artifact://${sha}`)
     expect(JSON.stringify(b.projected)).not.toContain('"attachment"')
+    for (const result of [b.history, b.diagnostics, b.patch]) {
+      expect(JSON.stringify(result)).not.toContain('"attachment"')
+      expect(JSON.stringify(result)).toContain(`artifact://${sha}`)
+    }
   })
 })

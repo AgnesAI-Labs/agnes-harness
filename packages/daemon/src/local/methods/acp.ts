@@ -354,7 +354,7 @@ export function throwSessionOpenRpcError(error: unknown): never {
   // closed, and the caller is told so rather than handed an internal error.
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
   // The reverse: a newer build wrote it in a format this one does not read. Nothing was changed.
-  if (e?.code === 'E_FORMAT') throw newerLedgerRpcError()
+  if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
@@ -366,6 +366,15 @@ export function throwSessionOpenRpcError(error: unknown): never {
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
 export function legacyLedgerRpcError(): RpcError {
   return rpcError('SEMANTIC_REJECTED', { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' })
+}
+
+/**
+ * A session ledger in a newer format. Core marks it with a `reason` because E_FORMAT alone also
+ * means a newer child-control format; a worker forwards the reason and drops the rest of detail.
+ */
+export function isNewerLedgerFormat(error: unknown): boolean {
+  const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  return e?.code === 'E_FORMAT' && (e.reason ?? e.detail?.reason) === 'newer-ledger-format'
 }
 
 /** The refusal for a session a newer build wrote in a ledger format this one does not read; upgrade. */

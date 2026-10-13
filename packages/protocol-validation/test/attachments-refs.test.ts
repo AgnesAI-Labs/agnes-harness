@@ -1,5 +1,6 @@
 import {
   AttachmentValidationError,
+  attachmentForm,
   USER_MESSAGE_ATTACHMENT_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol-validation'
@@ -70,6 +71,19 @@ describe('reference attachments in a user message', () => {
   it('keeps the file name and MIME rules for a referenced file', () => {
     expect(refusal([fileRef({ name: '' })]).code).toBe('ATTACHMENT_NAME')
     expect(refusal([fileRef({ mimeType: 'not a mime' })]).code).toBe('ATTACHMENT_NAME')
+  })
+
+  it('refuses a block that carries both inline data and a reference', () => {
+    expect(refusal([fileRef({ data: 'eA==' })]).code).toBe('ATTACHMENT_DATA')
+    expect(refusal([{ ...imageRef(), data: 'eA==' }]).code).toBe('ATTACHMENT_DATA')
+    expect(attachmentForm({ ...imageRef(), data: 'eA==' })).toBeUndefined()
+  })
+
+  it('holds a reference image name to the file name rule', () => {
+    for (const name of ['', 'a\u0007b.png', 'line\nbreak.png', 'x'.repeat(257)])
+      expect(refusal([{ ...imageRef(), name }]).code, JSON.stringify(name)).toBe('ATTACHMENT_NAME')
+    const { name: _name, ...unnamed } = imageRef()
+    expect(() => validateUserAttachments([unnamed as Block])).not.toThrow()
   })
 
   it('refuses the lean transfer form, which is never something to submit', () => {

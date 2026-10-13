@@ -120,7 +120,12 @@ describe('ledger format version', () => {
     expect(error).toBeInstanceOf(CoreError)
     expect((error as CoreError).code).toBe('E_FORMAT')
     expect((error as CoreError).message).toContain('newer')
-    expect((error as CoreError).detail).toMatchObject({ sessionKey: 'k', formatVersion: 3, supported: 2 })
+    expect((error as CoreError).detail).toMatchObject({
+      sessionKey: 'k',
+      formatVersion: 3,
+      supported: 2,
+      reason: 'newer-ledger-format',
+    })
     expect(
       read<{ n: number; data: string }>(
         "SELECT COUNT(*) AS n, group_concat(data, '|') AS data FROM events WHERE session_key = ?",

@@ -55,6 +55,38 @@ function validReference(value: unknown): boolean {
   )
 }
 
+/**
+ * How an `image` or `file` block carries its bytes: `inline` holds them as Base64, `reference`
+ * names a stored object by digest, and `omitted` is the lean transfer form that left them in
+ * storage. A block that carries none of them, or more than one, has no form: it is malformed.
+ * Every other block type has no attachment form either.
+ */
+export type AttachmentForm = 'inline' | 'reference' | 'omitted'
+
+export function attachmentForm(block: unknown): AttachmentForm | undefined {
+  if (!block || typeof block !== 'object') return undefined
+  const b = block as Record<string, unknown>
+  if (b.type !== 'image' && b.type !== 'file') return undefined
+  const forms: AttachmentForm[] = []
+  if (b.data !== undefined) forms.push('inline')
+  if (b.attachment !== undefined) forms.push('reference')
+  if (b.dataOmitted !== undefined) forms.push('omitted')
+  if (forms.length !== 1) return undefined
+  const [form] = forms
+  if (form === 'inline') return typeof b.data === 'string' ? form : undefined
+  const carrier = form === 'reference' ? b.attachment : b.dataOmitted
+  return carrier && typeof carrier === 'object' ? form : undefined
+}
+
+function validName(name: unknown): boolean {
+  return (
+    typeof name === 'string' &&
+    name.length > 0 &&
+    name.length <= 256 &&
+    ![...name].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+  )
+}
+
 /** Applies to files and images together, independently of the model's image limits. */
 export function validateUserAttachments(
   content: readonly {
@@ -76,21 +108,22 @@ export function validateUserAttachments(
     // A reference names bytes already in the attachment store: it counts toward the number of
     // attachments, never toward the inline total. Anything else must carry its bytes inline; the
     // lean form only ever travels out of storage and is not something to submit.
-    const reference = block.attachment !== undefined
-    if (reference ? !validReference(block.attachment) : typeof block.data !== 'string')
+    // A block with more than one carrier (data and a reference, say) has no form and is refused.
+    const form = attachmentForm(block)
+    const reference = form === 'reference'
+    if (reference ? !validReference(block.attachment) : form !== 'inline')
       throw new AttachmentValidationError('ATTACHMENT_DATA', 'Attachment data must be Base64.')
     if (
       block.type === 'file' &&
-      (typeof block.name !== 'string' ||
-        block.name.length === 0 ||
-        block.name.length > 256 ||
-        [...block.name].some(
-          (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-        ) ||
+      (!validName(block.name) ||
         typeof block.mimeType !== 'string' ||
         !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu.test(block.mimeType) ||
         block.mimeType.length > 128)
     )
+      throw new AttachmentValidationError('ATTACHMENT_NAME', 'Attachment name or MIME type is invalid.')
+    // An image name reaches the model in the text that stands in for the image, so it follows the
+    // same rule as a file name.
+    if (block.type === 'image' && block.name !== undefined && !validName(block.name))
       throw new AttachmentValidationError('ATTACHMENT_NAME', 'Attachment name or MIME type is invalid.')
     if (reference || typeof block.data !== 'string') continue
     const remaining = USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes - total

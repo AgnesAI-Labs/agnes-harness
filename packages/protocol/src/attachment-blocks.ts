@@ -1,22 +1,10 @@
+import { attachmentForm } from '../../protocol-validation/src/attachments.js'
 import type { ContentBlock, EventEnvelope } from '../gen/ts/session-v1.js'
 
-/**
- * How an `image` or `file` block carries its bytes: `inline` holds them as Base64, `reference`
- * names a stored object by digest, and `omitted` is the lean transfer form that left them in
- * storage. Every other block has no attachment form.
- */
-export type AttachmentForm = 'inline' | 'reference' | 'omitted'
-type Loose = Record<string, unknown>
+// One classifier for every caller, intake validation included, so they never disagree on a block.
+export { type AttachmentForm, attachmentForm } from '../../protocol-validation/src/attachments.js'
 
-export function attachmentForm(block: unknown): AttachmentForm | undefined {
-  if (!block || typeof block !== 'object') return undefined
-  const b = block as Loose
-  if (b.type !== 'image' && b.type !== 'file') return undefined
-  if (typeof b.data === 'string') return 'inline'
-  if (b.attachment && typeof b.attachment === 'object') return 'reference'
-  if (b.dataOmitted && typeof b.dataOmitted === 'object') return 'omitted'
-  return undefined
-}
+type Loose = Record<string, unknown>
 
 export const isReferenceBlock = (block: unknown): boolean => attachmentForm(block) === 'reference'
 export const isInlineAttachment = (block: unknown): boolean => attachmentForm(block) === 'inline'
@@ -51,7 +39,11 @@ function downgradeContent(content: unknown, seq: number): unknown {
   return content.flatMap((block) => downgradeBlock(block as ContentBlock, { seq, index: ++index }))
 }
 
-/** A ledger row as a client without attachment references may see it; only user input carries them. */
+/**
+ * A ledger row as a client without attachment references may see it. Only user input carries
+ * references today, so tool results are deliberately left alone here and in core's `carriesRefs`;
+ * whatever first puts a reference into a tool result must extend both.
+ */
 export function downgradeEvent(event: EventEnvelope): EventEnvelope {
   const data = event.data as Loose | null
   if (!data || typeof data !== 'object') return event
