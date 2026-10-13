@@ -25,8 +25,6 @@ export {
   Prompts,
   type PromptsItemType,
   type PromptsProps,
-  Sender,
-  type SenderProps,
   Sources,
   type SourcesProps,
   Suggestion,
@@ -40,4 +38,5 @@ export {
   Welcome,
   type WelcomeProps,
 } from '@ant-design/x'
+export { Sender, type SenderInputAttributes, type SenderProps, type SenderRef } from '../ui/sender.js'
 export { XProvider, type XProviderProps } from './provider.js'

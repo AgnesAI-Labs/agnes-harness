@@ -1108,4 +1108,20 @@
   .agnes-ui-tabs :is(.ant-tabs-ink-bar, .ant-tabs-nav-list) {
     transition: none;
   }
+
+  /* The host region is the card (skins paint it); Sender contributes layout and the textarea only. */
+  .agnes-ui-sender.agnes-ui-sender {
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: none;
+  }
+  .agnes-ui-sender textarea {
+    color: var(--agnes-text-primary);
+    caret-color: var(--agnes-brand-primary);
+    line-height: 1.6;
+  }
+  .agnes-ui-sender textarea::placeholder {
+    color: var(--agnes-text-tertiary);
+  }
 }

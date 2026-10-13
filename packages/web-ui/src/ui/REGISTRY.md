@@ -17,6 +17,7 @@
 | `StateSwitch` | C | 不采用 antd（Switch） | `role="switch"` 行内动作语义 + `.switch` 皮肤 + stopPropagation 保真；antd Switch 的 DOM/样式/事件模型与列表行交互契约不符 |
 
 | `Popover` | A | `Popover` | Anchored picker surface; theme token bridge and caller-owned open state |
+| `Sender` (`@agnes/web-ui/x`) | Shared | Ant Design X `Sender` | Same props plus `inputAttributes` for the textarea (id, `data-*`, `aria-*`); `agnes-ui-sender` base class leaves border, fill and shadow to the host region; callers own the value, the keyboard contract (`onKeyDown` returning `false`) and the actions |
 
 | `SettingsPage` / `SettingsCard` | A | 模型与账户布局 | 标题、说明、操作区和卡片栈；共享主题间距 |
 | `SettingsState` | A | 共享状态 | 空白、加载、错误和成功；live region |
