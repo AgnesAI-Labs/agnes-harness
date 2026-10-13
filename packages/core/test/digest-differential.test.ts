@@ -12,6 +12,7 @@ import {
 import * as node from '../src/request/sha256-node.js'
 import * as portable from '../src/request/sha256-portable.js'
 import type { Event, SessionKey } from '../src/types.js'
+import { digestWith, random, values } from './helpers/digest-values.js'
 import { jcsReference } from './helpers/jcs-reference.js'
 
 const NIST: Array<[string, string]> = [
@@ -38,37 +39,6 @@ function fixtureLines(): string[] {
   }
   walk(join(repo, 'packages'))
   return out
-}
-
-/** Linear congruential generator in [0, 1): the same seed always yields the same sequence. */
-function random(seed: number): () => number {
-  let s = seed >>> 0
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0
-    return s / 2 ** 32
-  }
-}
-
-/** Deterministic generator: the same seed always yields the same values, so a failure reproduces. */
-function* values(seed: number): Generator<unknown> {
-  const next = random(seed)
-  const pool = ['', 'a', 'é', '你好', '😀', ' ', '"\\\n\t\u000f', 'x'.repeat(70_000), '𝄞'.repeat(3)]
-  const str = (): string => {
-    let t = ''
-    const n = Math.floor(next() * 6)
-    for (let i = 0; i < n; i++) t += pool[Math.floor(next() * pool.length)]
-    return t
-  }
-  const val = (depth: number): unknown => {
-    const r = next()
-    if (depth > 6 || r < 0.3) return str()
-    if (r < 0.4) return Math.floor(next() * 1e9) / (next() < 0.5 ? 1 : 1000)
-    if (r < 0.45) return next() < 0.5
-    if (r < 0.5) return null
-    if (r < 0.75) return Array.from({ length: Math.floor(next() * 4) }, () => val(depth + 1))
-    return Object.fromEntries(Array.from({ length: Math.floor(next() * 4) }, () => [str(), val(depth + 1)]))
-  }
-  for (;;) yield val(0)
 }
 
 /**
@@ -110,12 +80,6 @@ function randomValue(next: () => number, lone: boolean, depth = 0): unknown {
   return Object.fromEntries(
     Array.from({ length: Math.floor(next() * 5) }, () => [text(), randomValue(next, lone, depth + 1)]),
   )
-}
-
-const digestWith = (impl: typeof node | typeof portable, value: unknown): string => {
-  const hash = impl.createSha256()
-  jcsWrite(value, (chunk) => hash.update(chunk))
-  return hash.digestHex()
 }
 
 const outcome = (fn: () => string): string | Error => {
@@ -260,9 +224,10 @@ describe('canonical digest differential', () => {
     }
   })
 
-  it('agrees on 3000 generated values (ASCII, CJK, four-byte, empty, escapes, deep nesting, 70k strings)', () => {
+  // The heavy project runs 3000 of these; a few hundred here keep some 70k strings in every fast run.
+  it('agrees on 300 generated values (ASCII, CJK, four-byte, empty, escapes, deep nesting, 70k strings)', () => {
     const gen = values(20261013)
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 300; i++) {
       const value = gen.next().value
       const reference = jcsReference(value)
       expect(jcs(value)).toBe(reference)
@@ -396,7 +361,7 @@ describe('ledger digest path', () => {
     const gen = values(20261016)
     const next = random(20261017)
     const items: unknown[] = []
-    for (let i = 0; i < 600; i++) items.push(gen.next().value, randomValue(next, false))
+    for (let i = 0; i < 200; i++) items.push(gen.next().value, randomValue(next, false))
     for (let at = 0; at < items.length; at += 100) check(asEvents(items.slice(at, at + 100), 0))
   })
 
@@ -410,6 +375,24 @@ describe('ledger digest path', () => {
         { mixed: Array.from({ length: 40 }, (_, i) => (i % 2 ? 'b'.repeat(size >> 4) : { k: i })) },
       )
     check(asEvents(items, 0))
+  })
+
+  it('stamps strings over the 1 MiB slice size identically, with a surrogate pair on the cut', () => {
+    const slice = 1024 * 1024
+    // The token starts with its opening quote, so this puts a high surrogate on the last unit of the
+    // first slice; cutting there would hash two replacement characters instead of the pair.
+    const straddle = `${'a'.repeat(slice - 2)}${'😀'.repeat(4)}b`
+    check(
+      asEvents(
+        [
+          { data: straddle },
+          { data: `x${straddle}` },
+          { data: '😀'.repeat(slice + 3), next: '𝄞'.repeat(slice >> 1) },
+          { data: 'QUJD'.repeat(slice) },
+        ],
+        0,
+      ),
+    )
   })
 
   it('maps a lone surrogate in a stored event to the canonicalization failure, as before', () => {

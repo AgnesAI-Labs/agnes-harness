@@ -5,3 +5,6 @@ export type Sha256Stream = {
   readonly bytes: number
   digestHex(): string
 }
+
+/** Which SHA-256 `#sha256` resolved to on this host. */
+export type Sha256Implementation = 'node' | 'portable'

@@ -4,8 +4,13 @@
 // directly from this package. A canonicalization that reordered keys differently on another runtime
 // would make two identical requests hash differently.
 
-export { createSha256, SHA256_IMPLEMENTATION, sha256Hex } from '#sha256'
-export type { Sha256Stream } from './sha256-types.js'
+import { SHA256_IMPLEMENTATION as selected } from '#sha256'
+import type { Sha256Implementation } from './sha256-types.js'
+
+export { createSha256, sha256Hex } from '#sha256'
+export type { Sha256Implementation, Sha256Stream } from './sha256-types.js'
+/** Typed as the union so a comparison against either value checks under every module resolution. */
+export const SHA256_IMPLEMENTATION: Sha256Implementation = selected
 
 export function utf8(s: string): Uint8Array {
   return new TextEncoder().encode(s)

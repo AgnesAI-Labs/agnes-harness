@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { isBuiltin } from 'node:module'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -30,6 +31,32 @@ const EXT_VALUE_ALLOWED = new Set([
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
 ])
 
+/** Every module specifier a source text names: `from` clauses, side-effect `import '…'`, dynamic
+ * `import(…)` and `require(…)`, with any quote style. */
+function moduleSpecifiers(text: string): string[] {
+  return [...text.matchAll(/\b(?:from|import|require)\s*\(?\s*['"`]([^'"`]+)['"`]/g)].map(
+    (m) => m[1] as string,
+  )
+}
+
+/**
+ * The specifiers a core source file may not name. Node built-ins are limited to `node:util`, except
+ * that `request/sha256-node.ts` may also use `node:crypto`: it is reached only through the `node`
+ * condition of the `#sha256` import, and any other host resolves that import to the portable
+ * implementation instead. No file names either implementation module directly, which would bypass
+ * that selection.
+ */
+function importViolations(file: string, text: string): string[] {
+  const allowed = file.endsWith(`${sep}request${sep}sha256-node.ts`)
+    ? ['node:util', 'node:crypto']
+    : ['node:util']
+  return moduleSpecifiers(text).filter(
+    (specifier) =>
+      (isBuiltin(specifier) && !allowed.includes(specifier)) ||
+      /(^|\/)sha256-(node|portable)(\.[jt]s)?$/.test(specifier),
+  )
+}
+
 describe('core src boundary', () => {
   it('found source files to scan', () => {
     expect(files.length).toBeGreaterThan(5)
@@ -38,14 +65,7 @@ describe('core src boundary', () => {
   it('imports only @agnes/protocol, plus a named allowlist from @agnes/extension-api', () => {
     for (const f of files) {
       const text = readFileSync(f, 'utf8')
-      const nodeImports = [...text.matchAll(/from ['"](node:[^'"]+)['"]/g)].map((match) => match[1])
-      // `node:crypto` is reached only through the `node` condition of the `#sha256` import; any
-      // other host resolves that import to the portable implementation instead.
-      const allowed = f.endsWith(`${sep}request${sep}sha256-node.ts`)
-        ? ['node:util', 'node:crypto']
-        : ['node:util']
-      expect(nodeImports, f).toEqual(nodeImports.filter((specifier) => allowed.includes(specifier as string)))
-      expect(text, f).not.toMatch(/from ['"]\.[^'"]*sha256-(node|portable)\.js['"]/)
+      expect(importViolations(f, text), f).toEqual([])
       expect(text, f).not.toMatch(/from ['"]@agnes\/(ai|host|base|code|daemon|sdk|cli|channels|bridges)/)
       for (const m of text.matchAll(
         /(?<!type )import\s*\{([^}]*)\}\s*from ['"]@agnes\/extension-api[^'"]*['"]/g,
@@ -68,6 +88,39 @@ describe('core src boundary', () => {
       // biome-ignore lint/suspicious/noControlCharactersInRegex: finding one is the point of the check
       expect(text, f).not.toMatch(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/)
     }
+  })
+
+  it('sees every import form the built-in and digest-selection rules depend on', () => {
+    const sample = [
+      "import { createHash } from 'node:crypto'",
+      "import 'node:crypto'",
+      "const lazy = await import('node:crypto')",
+      'const legacy = require("crypto")',
+      'const spaced = import ( `node:fs` )',
+      "export { sha256Hex } from './sha256-node.js'",
+      "import './request/sha256-portable.js'",
+      "import { inspect } from 'node:util'",
+      "import type { Sha256Stream } from './sha256-types.js'",
+      "import { jcs } from '@agnes/protocol'",
+    ].join('\n')
+    const offending = [
+      'node:crypto',
+      'node:crypto',
+      'node:crypto',
+      'crypto',
+      'node:fs',
+      './sha256-node.js',
+      './request/sha256-portable.js',
+    ]
+    expect(importViolations(join(src, 'log', 'sample.ts'), sample)).toEqual(offending)
+    // The node implementation may use `node:crypto` in any spelling Node accepts as that module,
+    // but not the bare alias, another built-in, or the implementation modules.
+    expect(importViolations(join(src, 'request', 'sha256-node.ts'), sample)).toEqual([
+      'crypto',
+      'node:fs',
+      './sha256-node.js',
+      './request/sha256-portable.js',
+    ])
   })
 
   it('re-exports the model seam so a caller does not reach past core for it', () => {

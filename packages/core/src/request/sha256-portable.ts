@@ -1,7 +1,7 @@
-import type { Sha256Stream } from './sha256-types.js'
+import type { Sha256Implementation, Sha256Stream } from './sha256-types.js'
 
 /** Selected wherever `node:crypto` is not available; the reference the node path is tested against. */
-export const SHA256_IMPLEMENTATION = 'portable' as const
+export const SHA256_IMPLEMENTATION: Sha256Implementation = 'portable'
 
 const encoder = new TextEncoder()
 

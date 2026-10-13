@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import type { Sha256Stream } from './sha256-types.js'
+import type { Sha256Implementation, Sha256Stream } from './sha256-types.js'
 
 /** Selected by the `node` condition of `#sha256`; byte-identical to the portable implementation. */
-export const SHA256_IMPLEMENTATION = 'node' as const
+export const SHA256_IMPLEMENTATION: Sha256Implementation = 'node'
 
 export function sha256Hex(input: string | Uint8Array): string {
   return createHash('sha256').update(input).digest('hex')
