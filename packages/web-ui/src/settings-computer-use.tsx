@@ -13,6 +13,8 @@ export type SettingsComputerUseView = Readonly<{
   operation: Readonly<{ label: string; summary: string }>
   /** Which parts need the user; absent from a host that only reports labels. */
   attention?: Readonly<{ status: boolean; permissions: boolean; doctor: boolean; operation: boolean }>
+  /** The driver is ready to use. */
+  ready?: boolean
   controls: Readonly<{
     refreshDisabled: boolean
     grantDisabled: boolean
@@ -209,9 +211,17 @@ export function SettingsComputerUse({
   )
 }
 
-/** A state in words, coloured only by whether the user has something to do about it. */
-function StateMark({ attention, children }: { attention: boolean; children: string }) {
-  return attention ? <Tag tone="warn">{children}</Tag> : <Badge tone="ok">{children}</Badge>
+/** A state in words: amber when the user has something to do, green only for a confirmed good state. */
+function StateMark({
+  attention,
+  ok = false,
+  children,
+}: {
+  attention: boolean
+  ok?: boolean
+  children: string
+}) {
+  return attention ? <Tag tone="warn">{children}</Tag> : <Badge tone={ok ? 'ok' : 'off'}>{children}</Badge>
 }
 
 /**
@@ -245,7 +255,7 @@ export function ComputerUseCapability({
             <>
               <span>{label('computerUse.status.eyebrow')}</span>{' '}
               <span role="status" data-testid="computer-use-state">
-                <StateMark attention={attention.status || attention.permissions}>
+                <StateMark attention={attention.status || attention.permissions} ok={view.ready === true}>
                   {view.status.label}
                 </StateMark>
               </span>

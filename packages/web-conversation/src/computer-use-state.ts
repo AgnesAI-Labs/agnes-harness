@@ -45,6 +45,8 @@ export type ComputerUseSnapshot = Readonly<{
     }>
   /** Which parts need the user: a calm page shows one line, and opens only what is true here. */
   attention: Readonly<{ status: boolean; permissions: boolean; doctor: boolean; operation: boolean }>
+  /** The driver is ready to use; only then is a quiet page a healthy one. */
+  ready: boolean
   controls: Readonly<{
     refreshDisabled: boolean
     grantDisabled: boolean
@@ -196,6 +198,7 @@ export function createComputerUseState(
         doctor: NEEDS_USER.doctor.includes(view.doctorLabel.key),
         operation: operationPending || activeOperationId !== undefined,
       }),
+      ready: driverReady,
       controls: Object.freeze({
         refreshDisabled: statusPending || grantPending || operationPending,
         grantDisabled: grantPending,
