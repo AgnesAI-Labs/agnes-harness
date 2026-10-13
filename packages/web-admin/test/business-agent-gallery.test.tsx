@@ -77,7 +77,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
           network: ['api.example.com'],
         },
         provenance: { source: entry(ID, 'x').source, integrity: 'sha512-a', signatureVerified: false },
-      } as unknown as PackageOperation['preview'],
+      } as unknown as NonNullable<PackageOperation['preview']>,
     },
   }
   const api = {
