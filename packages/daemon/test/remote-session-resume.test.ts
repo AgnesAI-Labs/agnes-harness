@@ -57,6 +57,15 @@ describe('RemoteSession.scan resume', () => {
     expect(command).toHaveBeenCalledWith('exportRaw', { seq: 4, offset: 0 })
   })
 
+  it('reads attachment windows in the worker', async () => {
+    const page = { mimeType: 'application/zip', totalBytes: 3, base64: 'QUJD' }
+    const command = vi.fn().mockResolvedValue(page)
+    const remote = new RemoteSession('k', 'writer', 1, { alive: true, command } as never, '/test')
+    const input = { seq: 4, kind: 'file' as const, index: 1, offset: 0, length: 3 }
+    expect(await remote.attachmentRead(input)).toEqual(page)
+    expect(command).toHaveBeenCalledWith('attachmentRead', input)
+  })
+
   it('no longer splits and re-reads oversized pages', () => {
     expect(
       readFileSync(new URL('../src/supervisor/remote-session.ts', import.meta.url), 'utf8'),

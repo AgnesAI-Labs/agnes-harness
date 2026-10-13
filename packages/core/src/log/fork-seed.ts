@@ -1,5 +1,6 @@
 import type { SurfaceSnapshot } from '../project/surface.js'
 import type { LedgerState } from '../reduce/state.js'
+import type { AttachmentIndex } from '../request/attachment-index.js'
 import type { Event, Seq } from '../types.js'
 import type { SessionLogImpl } from './session-log.js'
 import type { OpWrite } from './storage.js'
@@ -37,11 +38,19 @@ export function replacePageYieldForTest(fn: PageYield): () => void {
 /**
  * What a live parent hands a delegated child it forks at `seq`: its folded state and surface at that
  * seq. A `trigger` point also carries the chain head this process committed at that seq; a `head`
- * point is the parent's current head, whose chain state the parent log holds itself.
+ * point is the parent's current head, whose chain state the parent log holds itself. `attachments`
+ * is the parent's live attachment index; the child takes its entries up to `seq` only.
  */
 export type ForkBase =
-  | { kind: 'head'; seq: Seq; state: LedgerState; surface: SurfaceSnapshot }
-  | { kind: 'trigger'; seq: Seq; state: LedgerState; surface: SurfaceSnapshot; headDigest: string }
+  | { kind: 'head'; seq: Seq; state: LedgerState; surface: SurfaceSnapshot; attachments?: AttachmentIndex }
+  | {
+      kind: 'trigger'
+      seq: Seq
+      state: LedgerState
+      surface: SurfaceSnapshot
+      attachments?: AttachmentIndex
+      headDigest: string
+    }
 
 /** Registered by a parent's tracker; answers synchronously, or not at all when it cannot seed. */
 export const forkBaseProviders = new WeakMap<

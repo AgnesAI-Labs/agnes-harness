@@ -93,6 +93,8 @@ export type {
   ParticipantParams,
   SeqResult,
   SessionArchiveParams,
+  SessionAttachmentReadParams,
+  SessionAttachmentReadResult,
   SessionAttachParams,
   SessionAttachResult,
   SessionBudgetResult,

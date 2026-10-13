@@ -89,6 +89,8 @@ import {
   hasTrustedToolCallProvenance,
 } from '../registry/tool-policy.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
+import { attachmentRange } from '../request/attachment-bytes.js'
+import type { AttachmentIndex, AttachmentKind } from '../request/attachment-index.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
@@ -351,6 +353,8 @@ export type SessionDeps = {
   surface: SurfaceCache
   ui: UIProjectionCell
   lane: string
+  /** Every user attachment of the session, kept current by the tracker that feeds `surface` and `ui`. */
+  attachmentIndex: AttachmentIndex
   runtime: SeamRuntime
   provider: Provider
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
@@ -379,7 +383,10 @@ export type SessionDeps = {
       transformImage?: AuxiliaryVisionAssemblyInput['transformImage']
     }>
   }>
-  /** Host attachment store: inline attachments become references before they are queued. */
+  /**
+   * Host attachment store: inline attachments become references before they are queued, and user
+   * attachments are read from it. Omitted where no store is assembled.
+   */
   attachments?: UserAttachmentPort
   registry: ToolRegistry
   /** Legacy fixed resource table used when Host does not supply a current-generation lookup. */
@@ -568,8 +575,6 @@ export class SessionImpl {
     this.grantsRestored = true
   }
   private lock: Promise<void> = Promise.resolve()
-  /** What the session already references; a reference already in its history needs no new receipt. */
-  attachmentIndex?: { referenced(sha256: string): boolean; referencedBytes(): number }
   /** Settles once the latest enqueue has taken its place in the lock queue, or failed before it. */
   private enqueueTail: Promise<void> = Promise.resolve()
   /**
@@ -667,6 +672,30 @@ export class SessionImpl {
   }
   get state() {
     return this.d.tracker.state
+  }
+  get attachmentIndex(): AttachmentIndex {
+    return this.d.attachmentIndex
+  }
+  /** One window of a user attachment (or its thumbnail) for a client download; never rescans the ledger. */
+  readAttachmentRange(
+    input: {
+      seq: number
+      kind: AttachmentKind
+      index: number
+      offset: number
+      length: number
+      thumbnail?: boolean
+    },
+    signal?: AbortSignal,
+  ): Promise<{ mimeType: string; totalBytes: number; bytes: Uint8Array }> {
+    const { seq, kind, index } = input
+    return attachmentRange(
+      this,
+      { seq, kind, index },
+      input,
+      this.d.attachmentIndex.get(seq, kind, index),
+      signal,
+    )
   }
 
   private initialModelSettingsRestored = false
@@ -971,8 +1000,8 @@ export class SessionImpl {
       content,
       sessionKey: this.key,
       port: this.d.attachments,
-      referenced: (sha256) => this.attachmentIndex?.referenced(sha256) ?? false,
-      sessionBytes: () => this.attachmentIndex?.referencedBytes() ?? 0,
+      referenced: (sha256) => this.attachmentIndex.referenced(sha256),
+      sessionBytes: () => this.attachmentIndex.referencedBytes(),
       signal: AbortSignal.timeout(attachmentDeadlineMs(content)),
     })
     admitted.catch(() => undefined)

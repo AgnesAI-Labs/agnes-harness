@@ -1,11 +1,11 @@
 import type { ToolResult } from '@agnes/extension-api'
 import { type ContentBlock, modelImageInputError } from '@agnes/protocol'
 import { decodeSafeImages, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
-import { scanPages } from '../log/scan-pages.js'
 import { REQUEST_MEDIA_MIN_DIMENSION } from '../orchestrator/request-media.js'
 import { resolveModel } from '../step/inference.js'
 import { resolvedModelRecord } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentBytes, attachmentFailureCode } from './attachment-bytes.js'
 import { sha256Hex } from './hash.js'
 import { sessionImageRef } from './inline-images.js'
 
@@ -30,29 +30,16 @@ export async function readSessionImages(
     const limit = Math.min(input.limit ?? 20, 100)
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1)
       return result('Invalid image list offset or limit.', true)
+    // From the session's attachment index: the ledger is not read to list what it holds.
     const lines: string[] = []
     let ordinal = 0
-    for await (const page of scanPages(
-      (q) => session.d.log.scan(q),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
-      abort()
-      for (const event of page) {
-        const content = (event.data as { content?: ContentBlock[] }).content ?? []
-        let index = 0
-        for (const block of content) {
-          if (block.type !== 'image') continue
-          index++
-          ordinal++
-          if (ordinal < offset) continue
-          if (lines.length === limit)
-            return result(
-              `${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`,
-            )
-          lines.push(`${ordinal}. ${sessionImageRef(event.seq, index)}`)
-        }
-      }
+    for (const entry of session.attachmentIndex.list('image', session.lane)) {
+      if (entry.seq > end) break
+      ordinal++
+      if (ordinal < offset) continue
+      if (lines.length === limit)
+        return result(`${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`)
+      lines.push(`${ordinal}. ${sessionImageRef(entry.seq, entry.index)}`)
     }
     return result(lines.join('\n') || 'No images at this offset in this session.')
   }
@@ -71,19 +58,27 @@ export async function readSessionImages(
     if (!match || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index))
       return result('Invalid session image reference.', true)
     abort()
-    const rows = await session.d.log.scan({
-      fromSeq: seq,
-      toSeq: seq,
-      type: 'user/message',
-      lane: session.lane,
-      limit: 1,
-    })
-    const content = (rows[0]?.data as { content?: ContentBlock[] } | undefined)?.content ?? []
-    const image = content.filter(
-      (block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image',
-    )[index - 1]
-    if (!image || !('data' in image)) return result('The image is not available in this session.', true)
-    images.push(image)
+    const entry = session.attachmentIndex.get(seq, 'image', index)
+    if (!entry || entry.lane !== session.lane)
+      return result('The image is not available in this session.', true)
+    // Too large to be admitted as an image: refused before its bytes are read.
+    if (entry.bytes > USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage)
+      return result('The requested image batch exceeds safe size or pixel limits. Read fewer images.', true)
+    let bytes: Uint8Array
+    try {
+      bytes = await attachmentBytes(session, entry, signal)
+    } catch (error) {
+      if (!attachmentFailureCode(error)) throw error
+      return result(
+        `session-image://${reference} cannot be read: ${(error as Error).message.replace(/^E_ENVELOPE: /u, '')}`,
+        true,
+      )
+    }
+    images.push({
+      type: 'image',
+      mimeType: entry.mimeType,
+      data: Buffer.from(bytes).toString('base64'),
+    } as Extract<ContentBlock, { type: 'image'; data: string }>)
   }
   const target = resolveModel(session, 'primary')
   const model = resolvedModelRecord(session.d.provider, target)

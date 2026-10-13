@@ -157,6 +157,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/resources.operation.get',
       '_agnes/v1/session.archive',
       '_agnes/v1/session.attach',
+      '_agnes/v1/session.attachmentRead',
       '_agnes/v1/session.budget',
       '_agnes/v1/session.detach',
       '_agnes/v1/session.event',
@@ -199,7 +200,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(120)
+    expect(Object.keys(METHODS)).toHaveLength(121)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
@@ -240,6 +241,32 @@ describe('methods (I1 set)', () => {
 
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
+  })
+
+  it('bounds attachment windows to one MiB and names the attachment by place', () => {
+    const method = '_agnes/v1/session.attachmentRead'
+    const ok = { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048576 }
+    expect(validateMethod(method, 'params', ok).ok).toBe(true)
+    expect(validateMethod(method, 'params', { ...ok, kind: 'image', thumbnail: true }).ok).toBe(true)
+    for (const bad of [
+      { ...ok, length: 1048577 },
+      { ...ok, length: 0 },
+      { ...ok, offset: -1 },
+      { ...ok, seq: 0 },
+      { ...ok, index: 0 },
+      { ...ok, kind: 'audio' },
+      { ...ok, thumbnail: 'yes' },
+      { ...ok, sessionId: '' },
+      { ...ok, extra: 1 },
+    ])
+      expect(validateMethod(method, 'params', bad).ok).toBe(false)
+    expect(
+      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'QUJD' }).ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'A'.repeat(1398105) })
+        .ok,
+    ).toBe(false)
   })
 
   it('bounds raw row export positions and pieces', () => {

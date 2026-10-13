@@ -191,6 +191,7 @@ import {
   type WorkspaceRuntimeFence,
 } from './session-workspace-runtime.js'
 import { createTrajectoryLifecycle } from './trajectory-lifecycle.js'
+import { createUserAttachmentReader } from './user-attachment-cache.js'
 import { createUserAttachmentPort } from './user-attachments.js'
 import type { WorkspaceBinding } from './workspace-authority.js'
 import { WorkspaceHookLoader } from './workspace-hook-loader.js'
@@ -1700,13 +1701,22 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
     // Attachments go to the bundled store only beside the bundled artifacts seam: another artifacts
     // implementation would not see the objects, so they stay inline in the ledger as before.
+    // Attachment references are read from the host's store whatever artifacts seam is selected;
+    // old inline attachments are copied into it only when the bundled artifacts seam owns that tree.
+    const attachmentStore = createAttachmentStore({ dataDir })
     const attachments =
       profile.attachments.storeByReference && profile.seams.artifacts === '@agnes/base'
-        ? createUserAttachmentPort({
-            store: createAttachmentStore({ dataDir }),
-            limits: profile.limits,
-            storeByReference: true,
-          })
+        ? {
+            ...createUserAttachmentPort({
+              store: attachmentStore,
+              limits: profile.limits,
+              storeByReference: true,
+            }),
+            ...createUserAttachmentReader({
+              store: attachmentStore,
+              cacheInline: profile.seams.artifacts === '@agnes/base',
+            }),
+          }
         : undefined
     kernel = Kernel.create({
       storage: adapters.storage,

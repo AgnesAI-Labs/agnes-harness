@@ -24,6 +24,7 @@ export type SessionMethod =
   | 'projectUIHistory'
   | 'readToolDetail'
   | 'exportRaw'
+  | 'attachmentRead'
   | 'append'
   | 'setPreset'
   | 'setModel'

@@ -121,7 +121,8 @@ export type KernelOptions = {
   hostToolDispatch?: HostToolDispatchPort
   /** Host-private artifact/media ports; auxiliary admission remains a non-root Core capability. */
   requestMedia?: SessionDeps['requestMedia']
-  /** Host attachment store for user input; omitted, attachments stay inline and references are refused. */
+  /** Host attachment store: inline user attachments are stored by reference when they are queued, and
+   * user attachments are read from it. Omitted, attachments stay inline and references are refused. */
   attachments?: SessionDeps['attachments']
   /** Host-owned whole-wire image token bound used only when the provider cannot count images. */
   imageInputTokenFallback?: SessionDeps['imageInputTokenFallback']
@@ -448,7 +449,7 @@ export class Kernel {
       await forked?.abandon().catch(() => undefined)
       throw error
     }
-    const { log, tracker, surface, ui, registersRebuilt } = tracked
+    const { log, tracker, surface, ui, attachments, registersRebuilt } = tracked
     const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
     const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
     const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
@@ -474,6 +475,7 @@ export class Kernel {
       surface,
       ui,
       lane,
+      attachmentIndex: attachments,
       runtime,
       provider: this.o.provider,
       ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),

@@ -161,7 +161,7 @@ export async function openSession(
   const ids = over.ids ?? defaultIds(clock)
   // openTracked owns the SurfaceCache and feeds it from onAppended. Building a second one here
   // would leave session.surface() empty and the model would never see the user's question.
-  const { log, tracker, surface, ui } = await openTracked({
+  const { log, tracker, surface, ui, attachments } = await openTracked({
     storage,
     key: over.key ?? 'k',
     writerRunId: over.writerRunId ?? 'r1',
@@ -190,6 +190,7 @@ export async function openSession(
     surface,
     ui,
     lane: 'main',
+    attachmentIndex: attachments,
     runtime,
     registry,
     operations: [],

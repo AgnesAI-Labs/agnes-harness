@@ -17,6 +17,7 @@ import {
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
 
+import { attachmentReadPage } from './attachment-read.js'
 import { exportRawChunk } from './export-raw.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
@@ -360,6 +361,8 @@ export async function handleCommand(
     }
     case 'exportRaw':
       return exportRawChunk(session, Number(p.seq), Number(p.offset))
+    case 'attachmentRead':
+      return attachmentReadPage(session, p)
     case 'readToolDetail':
       return readToolDetailPage(session, {
         callSeq: Number(p.callSeq),

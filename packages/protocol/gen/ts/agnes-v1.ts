@@ -78,6 +78,8 @@ export const AgnesV1 = Type.Module({
   "SessionProjectUIHistoryParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "cursor": Type.Ref('UIHistoryCursor'), "limit": Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })), "maxBytes": Type.Optional(Type.Integer({ minimum: 16384, maximum: 150990848 })) }, { additionalProperties: false }),
   "SessionReadToolDetailParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "callSeq": Type.Integer({ minimum: 1 }), "resultSeq": Type.Optional(Type.Integer({ minimum: 1 })), "offset": Type.Optional(Type.Integer({ minimum: 0 })), "maxBytes": Type.Optional(Type.Integer({ minimum: 1, maximum: 262144 })) }, { additionalProperties: false }),
   "SessionReadToolDetailResult": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "callSeq": Type.Integer({ minimum: 1 }), "resultSeq": Type.Optional(Type.Integer({ minimum: 1 })), "offset": Type.Integer({ minimum: 0 }), "totalBytes": Type.Integer({ minimum: 0 }), "data": Type.String({ maxLength: 349528, pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" }), "nextOffset": Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]) }, { additionalProperties: false }),
+  "SessionAttachmentReadParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "seq": Type.Integer({ minimum: 1 }), "kind": Type.Union([Type.Literal('image'), Type.Literal('file')]), "index": Type.Integer({ minimum: 1 }), "offset": Type.Integer({ minimum: 0 }), "length": Type.Integer({ minimum: 1, maximum: 1048576 }), "thumbnail": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "SessionAttachmentReadResult": Type.Object({ "mimeType": Type.String({ minLength: 1, maxLength: 128 }), "totalBytes": Type.Integer({ minimum: 0 }), "base64": Type.String({ maxLength: 1398104 }) }, { additionalProperties: false }),
   "SessionExportRawParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "seq": Type.Integer({ minimum: 1 }), "offset": Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
   "SessionExportRawResult": Type.Object({ "seq": Type.Integer({ minimum: 1 }), "base64": Type.String({ maxLength: 11184812 }), "nextOffset": Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]) }, { additionalProperties: false }),
   "SlotFillView": Type.Object({ "slot": Type.Union([Type.Literal('tool.card.inline'), Type.Literal('sidebar.action'), Type.Literal('status.line'), Type.Literal('notification')]), "extId": Type.String({ maxLength: 128 }), "payload": JsonValue, "requestSeq": Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }),
@@ -356,6 +358,10 @@ export const SessionReadToolDetailParams = AgnesV1.Import('SessionReadToolDetail
 export type SessionReadToolDetailParams = Static<typeof SessionReadToolDetailParams>
 export const SessionReadToolDetailResult = AgnesV1.Import('SessionReadToolDetailResult')
 export type SessionReadToolDetailResult = Static<typeof SessionReadToolDetailResult>
+export const SessionAttachmentReadParams = AgnesV1.Import('SessionAttachmentReadParams')
+export type SessionAttachmentReadParams = Static<typeof SessionAttachmentReadParams>
+export const SessionAttachmentReadResult = AgnesV1.Import('SessionAttachmentReadResult')
+export type SessionAttachmentReadResult = Static<typeof SessionAttachmentReadResult>
 export const SessionExportRawParams = AgnesV1.Import('SessionExportRawParams')
 export type SessionExportRawParams = Static<typeof SessionExportRawParams>
 export const SessionExportRawResult = AgnesV1.Import('SessionExportRawResult')

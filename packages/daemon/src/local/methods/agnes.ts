@@ -46,6 +46,7 @@ import {
 } from '@agnes/protocol'
 import { SessionRemoveQueuedParams, SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
 import {
+  attachmentReadPage,
   exportRawChunk,
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
@@ -76,6 +77,7 @@ import {
   legacyLedgerRpcError,
   newerLedgerRpcError,
 } from './acp.js'
+import { registerAttachmentRead } from './attachment-read.js'
 import { registerExportRaw } from './export-raw.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -444,6 +446,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIHistory',
       'session.readToolDetail',
       'session.exportRaw',
+      'session.attachmentRead',
       'session.list',
       'session.rename',
       'session.archive',
@@ -1067,6 +1070,7 @@ export function registerAgnes(
     return { sessionId: p.sessionId, ...outcome.page }
   })
   registerExportRaw(ep, cx, requireOwner, exportRawChunk)
+  registerAttachmentRead(ep, cx, requireOwner, attachmentReadPage)
   ep.register('_agnes/v1/session.projectUIPatch', async (params, c): Promise<UIProjectionUpdate> => {
     const p = params as SessionProjectUIPatchParams
     requireOwner('session.projectUIPatch', p.sessionId, c)

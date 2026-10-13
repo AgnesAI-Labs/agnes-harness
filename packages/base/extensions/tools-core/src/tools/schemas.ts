@@ -10,6 +10,7 @@ export const ReadParams = Type.Object(
     path: Path,
     offset: Type.Optional(Type.Integer({ minimum: 1 })),
     limit: Type.Optional(Type.Integer({ minimum: 1 })),
+    saveTo: Type.Optional(Path),
   },
   { additionalProperties: false },
 )

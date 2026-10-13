@@ -8,33 +8,35 @@ import {
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
+import type { AttachmentReadPort } from '../request/attachment-bytes.js'
 import { CoreError } from '../types.js'
 
 /** The reference blocks of one message, as JSON, stay within this; the ledger row stays small. */
 export const MAX_ATTACHMENT_ROW_BYTES = 64 * 1024
 
 /**
- * The host's attachment store as one session sees it. Every method is called before anything is
- * appended, so a refusal leaves the ledger exactly as it was.
+ * The host's attachment store as one session sees it: the reader its attachment reads go through,
+ * plus admission. Admission is called before anything is appended, so a refusal leaves the ledger
+ * exactly as it was.
  */
-export type UserAttachmentPort = Readonly<{
-  /** False keeps inline attachments inline; references a client sends are still checked. */
-  storeByReference: boolean
-  /** Writes one inline attachment's bytes; resolves to its reference. Rejects with an error whose `code` names the refusal. */
-  store(
-    input: { bytes: Uint8Array; mimeType: string; sessionKey: string; sessionBytes: number },
-    signal: AbortSignal,
-  ): Promise<{ sha256: string; bytes: number }>
-  /** 'ok' when the object exists and this session uploaded it, or the session already references it. */
-  authorize(input: {
-    sha256: string
-    bytes: number
-    mimeType: string
-    sessionKey: string
-    referenced: boolean
-  }): Promise<'ok' | 'missing' | 'unauthorized'>
-  read(sha256: string, range?: { offset: number; length: number }, signal?: AbortSignal): Promise<Uint8Array>
-}>
+export type UserAttachmentPort = AttachmentReadPort &
+  Readonly<{
+    /** False keeps inline attachments inline; references a client sends are still checked. */
+    storeByReference: boolean
+    /** Writes one inline attachment's bytes; resolves to its reference. Rejects with an error whose `code` names the refusal. */
+    store(
+      input: { bytes: Uint8Array; mimeType: string; sessionKey: string; sessionBytes: number },
+      signal: AbortSignal,
+    ): Promise<{ sha256: string; bytes: number }>
+    /** 'ok' when the object exists and this session uploaded it, or the session already references it. */
+    authorize(input: {
+      sha256: string
+      bytes: number
+      mimeType: string
+      sessionKey: string
+      referenced: boolean
+    }): Promise<'ok' | 'missing' | 'unauthorized'>
+  }>
 
 type Ref = { sha256: string; bytes: number }
 type ReferenceBlock = {

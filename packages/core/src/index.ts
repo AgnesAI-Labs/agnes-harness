@@ -194,6 +194,8 @@ export type {
   TrustTier,
 } from './registry/tools.js'
 export { ToolRegistry } from './registry/tools.js'
+export type { AttachmentReadPort } from './request/attachment-bytes.js'
+export type { AttachmentEntry, AttachmentKind } from './request/attachment-index.js'
 export type { Conflict, Contribution, Merged, PromptSection } from './request/contribute.js'
 export { harnessSections, mergeContributions } from './request/contribute.js'
 export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from './request/derive.js'

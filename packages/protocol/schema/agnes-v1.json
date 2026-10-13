@@ -1897,6 +1897,36 @@
         }
       }
     },
+    "SessionAttachmentReadParams": {
+      "description": "Read one window of a user attachment of the session (or of its thumbnail), located as session-image:// and session-file:// paths locate it: the message seq, the kind, and its 1-based place among that message's blocks of the kind. The daemon authenticates session ownership first, and nothing is served before the session's history has been verified.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "seq", "kind", "index", "offset", "length"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["image", "file"] },
+        "index": { "type": "integer", "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "thumbnail": { "type": "boolean" }
+      }
+    },
+    "SessionAttachmentReadResult": {
+      "description": "One window of the attachment's bytes. totalBytes is the size of the whole attachment (or thumbnail); read on from offset plus the decoded length until it reaches totalBytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mimeType", "totalBytes", "base64"],
+      "properties": {
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "base64": {
+          "description": "Standard base64 for at most 1048576 bytes.",
+          "type": "string",
+          "maxLength": 1398104
+        }
+      }
+    },
     "SessionExportRawParams": {
       "description": "Read one stored ledger row's envelope as one JSONL line (its UTF-8 JSON and a newline), in pieces of at most 8 MiB. Replays of worker-hosted sessions leave large inline attachment data out and name it; this returns the full row. The daemon authenticates session ownership first.",
       "type": "object",

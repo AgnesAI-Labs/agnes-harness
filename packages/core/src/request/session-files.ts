@@ -1,16 +1,14 @@
 import type { ToolContext } from '@agnes/extension-api'
-import type { ContentBlock } from '@agnes/protocol'
-import { decodeAttachmentData, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { scanPages } from '../log/scan-pages.js'
 import type { SessionImpl } from '../step/session.js'
+import { attachmentBytes } from './attachment-bytes.js'
 
-type UserFile = Extract<ContentBlock, { type: 'file' }>
-const filesOf = (data: unknown): UserFile[] =>
-  ((data as { content?: ContentBlock[] })?.content ?? []).filter(
-    (block): block is UserFile => block.type === 'file',
-  )
-
-/** Immutable log lookup, bounded to the active lane and the sequence visible at call start. */
+/**
+ * Lookups bounded to the active lane and the sequence visible at call start. Lists come from the
+ * session's attachment index; one attachment's bytes come from the attachment store or, for an old
+ * inline block, from its row (see `attachmentBytes`). `session-image://<seq>/<n>` is accepted too, so
+ * an image original can be copied out as a file; reading an image for the model goes through
+ * `readSessionImages`.
+ */
 export const readSessionAttachment = async (
   session: SessionImpl,
   input: { path: string; offset?: number; limit?: number; maxBytes?: number },
@@ -36,30 +34,22 @@ export const readSessionAttachment = async (
     const lines: string[] = []
     let used = 200
     let ordinal = 0
-    for await (const page of scanPages(
-      (query) => session.d.log.scan(query),
-      { type: 'user/message', lane: session.lane, toSeq: end },
-      10,
-    )) {
-      checkAbort()
-      for (const event of page) {
-        for (const [index, file] of filesOf(event.data).entries()) {
-          ordinal++
-          if (ordinal < offset) continue
-          const line = `${ordinal}. session-file://${event.seq}/${index + 1} ${JSON.stringify(file.name)} (${file.mimeType})`
-          const cost = new TextEncoder().encode(line).byteLength + 1
-          if (lines.length === limit || used + cost > maxBytes) {
-            lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
-            return {
-              name: 'Attachments',
-              mimeType: 'text/plain',
-              bytes: new TextEncoder().encode(lines.join('\n')),
-            }
-          }
-          lines.push(line)
-          used += cost
+    for (const file of session.attachmentIndex.list('file', session.lane)) {
+      if (file.seq > end) break
+      ordinal++
+      if (ordinal < offset) continue
+      const line = `${ordinal}. session-file://${file.seq}/${file.index} ${JSON.stringify(file.name)} (${file.mimeType})`
+      const cost = new TextEncoder().encode(line).byteLength + 1
+      if (lines.length === limit || used + cost > maxBytes) {
+        lines.push(`[read session-file://list with offset=${ordinal} to continue]`)
+        return {
+          name: 'Attachments',
+          mimeType: 'text/plain',
+          bytes: new TextEncoder().encode(lines.join('\n')),
         }
       }
+      lines.push(line)
+      used += cost
     }
     return {
       name: 'Attachments',
@@ -67,24 +57,16 @@ export const readSessionAttachment = async (
       bytes: new TextEncoder().encode(lines.join('\n') || 'No attachments at this offset.'),
     }
   }
-  const match = /^session-file:\/\/([1-9][0-9]*)\/([1-9][0-9]*)$/u.exec(input.path)
-  const seq = Number(match?.[1])
-  const index = Number(match?.[2])
-  if (!match || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index)) return undefined
-  const rows = await session.d.log.scan({
-    fromSeq: seq,
-    toSeq: seq,
-    type: 'user/message',
-    lane: session.lane,
-    limit: 1,
-  })
+  const match = /^session-(file|image):\/\/([1-9][0-9]*)\/([1-9][0-9]*)$/u.exec(input.path)
+  const kind = match?.[1] as 'file' | 'image' | undefined
+  const seq = Number(match?.[2])
+  const index = Number(match?.[3])
+  if (!match || !kind || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index))
+    return undefined
+  const entry = session.attachmentIndex.get(seq, kind, index)
+  if (!entry || entry.lane !== session.lane) return undefined
+  // Missing, damaged or oversized bytes reject with a coded error the tool reports; never other bytes.
+  const bytes = await attachmentBytes(session, entry, signal)
   checkAbort()
-  const file = filesOf(rows[0]?.data)[index - 1]
-  // A lean block keeps its place in the numbering but has no bytes here to hand out.
-  if (!file || !('data' in file)) return undefined
-  return {
-    name: file.name,
-    mimeType: file.mimeType,
-    bytes: decodeAttachmentData(file.data, USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes),
-  }
+  return { name: entry.name ?? 'image', mimeType: entry.mimeType, bytes }
 }

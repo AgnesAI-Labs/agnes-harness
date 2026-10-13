@@ -448,6 +448,7 @@ export {
   StoredOpeningError,
   type StoredOpeningReader,
 } from './stored-opening.js'
+export { createUserAttachmentReader } from './user-attachment-cache.js'
 export {
   ATTACHMENT_LIMIT_DEFAULTS,
   type AttachmentLimitKey,

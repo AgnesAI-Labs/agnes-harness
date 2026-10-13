@@ -194,6 +194,22 @@ export class RemoteSession {
     }>
   }
 
+  /** One window of a user attachment, read in the worker that hosts the session. */
+  attachmentRead(input: {
+    seq: number
+    kind: 'image' | 'file'
+    index: number
+    offset: number
+    length: number
+    thumbnail?: boolean
+  }): Promise<{ mimeType: string; totalBytes: number; base64: string }> {
+    return this.link.command('attachmentRead', input) as Promise<{
+      mimeType: string
+      totalBytes: number
+      base64: string
+    }>
+  }
+
   /** Settles once the worker has verified every stored row of the session. */
   verifyHistory(): Promise<unknown> {
     return this.link.command('verifyHistory', {})
