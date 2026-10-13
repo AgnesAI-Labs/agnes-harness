@@ -270,9 +270,11 @@ function submit(text: string): void {
   document.getElementById('composer')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 }
 
-/** The model trigger opens the complete flat model list. */
-function openModelList(): void {
-  if (!document.querySelector('#model-listbox')) throw new Error('model picker did not open')
+/** The model trigger opens the complete model list; the popover mounts with the render after the click. */
+async function openModelList(): Promise<void> {
+  await vi.waitFor(() => {
+    if (!document.querySelector('#model-listbox')) throw new Error('model picker did not open')
+  })
 }
 
 /** The model list is rendered directly in the picker. */
@@ -303,13 +305,22 @@ afterEach(async () => {
 
 describe('web permission synchronization', () => {
   const label = () => document.querySelector('[data-permission-label]')?.textContent
-  const choose = (name: string) => {
-    document.getElementById('composer-permission')?.click()
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-      (row) => row.querySelector('.permission-picker-label')?.textContent === name,
-    )
-    expect(option).toBeDefined()
-    option?.click()
+  const choose = async (name: string) => {
+    const trigger = document.getElementById('composer-permission') as HTMLButtonElement
+    // A previous choice closes the list and re-enables the trigger with the next render.
+    await vi.waitFor(() => {
+      expect(trigger.disabled).toBe(false)
+      expect(document.getElementById('permission-listbox')).toBeNull()
+    })
+    trigger.click()
+    const option = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>('#permission-listbox [role="option"]')].find(
+        (row) => row.querySelector('.permission-picker-label')?.textContent === name,
+      )
+      if (!found) throw new Error(`missing permission option: ${name}`)
+      return found
+    })
+    option.click()
   }
 
   async function boot(yolo: boolean | undefined) {
@@ -508,7 +519,7 @@ describe('web permission synchronization', () => {
       })
     publish(false)
     await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(1))
-    choose('完全访问')
+    await choose('完全访问')
     await vi.waitFor(() => expect(label()).toBe('完全访问'))
     expect(old.setYolo).toHaveBeenLastCalledWith(true)
     staleReady.resolve()
@@ -521,11 +532,11 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() => expect(label()).toBe('完全访问'))
     expect(old.setYolo.mock.calls.some(([enabled]) => enabled === false)).toBe(false)
 
-    choose('可修改工作区')
+    await choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo).toHaveBeenLastCalledWith(false))
     await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     const applied = old.setYolo.mock.calls.length
-    choose('可修改工作区')
+    await choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo.mock.calls.length).toBe(applied + 1))
     expect(old.setYolo).toHaveBeenLastCalledWith(false)
 
@@ -689,7 +700,7 @@ describe('web permission synchronization', () => {
     expect(old.prompt).not.toHaveBeenCalled()
     const applied = deferred<{ effectiveFromSeq: number }>()
     old.setYolo.mockImplementationOnce(() => applied.promise)
-    choose('可修改工作区')
+    await choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo).toHaveBeenCalledWith(false))
     submit('still waiting')
     expect(old.prompt).not.toHaveBeenCalled()
@@ -714,7 +725,7 @@ describe('web permission synchronization', () => {
     expect(old.prompt).not.toHaveBeenCalled()
     expect(old.setYolo).toHaveBeenCalledTimes(1)
     old.setYolo.mockImplementationOnce(async () => ({ effectiveFromSeq: ++timeline.upto }))
-    choose('可修改工作区')
+    await choose('可修改工作区')
     await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     submit('confirmed after reconnect')
     await vi.waitFor(() =>
@@ -859,45 +870,32 @@ describe('web session selection', () => {
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
-      // 会话参数在模型行展开的详情里：模型列表 → 详情 → 参数选项三级。
-      const row = (index: number) =>
-        document.querySelectorAll<HTMLElement>('#model-listbox [role="option"]')[index]
-      const detailRow = (id: string) => document.querySelector<HTMLElement>(`#model-settings-popover #${id}`)
-      const leafOption = (label: string) =>
-        [...document.querySelectorAll<HTMLElement>('#session-model-thinking [role="option"]')].find(
-          (option) => option.textContent?.startsWith(label),
-        )
-      const budgetOption = (label: string) =>
-        [...document.querySelectorAll<HTMLElement>('#session-model-budget [role="option"]')].find(
+      // 会话参数在模型列表下面的同一块面板里：思考强度与上下文窗口各是一组单选。
+      const settingsPanel = () => document.querySelector<HTMLElement>('#model-settings-popover')
+      const choice = (group: string, label: string) =>
+        [...document.querySelectorAll<HTMLElement>(`#${group} [role="radio"]`)].find(
           (option) => option.textContent === label,
         )
       // 提交在飞行中时触发按钮与面板会一起禁用，每次开关前等它落定。
       const openPanel = async () => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (!document.getElementById('model-listbox')) model.click()
-        await vi.waitFor(() => expect(document.getElementById('model-listbox')).not.toBeNull())
-      }
-      const openDetail = async () => {
-        await openPanel()
-        if (!document.getElementById('model-settings-popover')) row(1)?.click()
-        await vi.waitFor(() => expect(document.getElementById('model-settings-popover')).not.toBeNull())
+        await vi.waitFor(() => expect(settingsPanel()).not.toBeNull())
       }
       const closePanel = async () => {
         await vi.waitFor(() => expect(model.disabled).toBe(false))
         if (document.getElementById('model-listbox')) model.click()
         await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       }
-      await openDetail()
-      expect(detailRow('model-detail-capacity')?.textContent).toContain('128K')
-      detailRow('model-detail-thinking')?.click()
-      expect(leafOption('高')?.getAttribute('aria-selected')).toBe('true')
-      leafOption('低')?.click()
+      await openPanel()
+      expect(settingsPanel()?.textContent).toContain('128,000')
+      expect(choice('session-model-thinking', '高')?.getAttribute('aria-checked')).toBe('true')
+      choice('session-model-thinking', '低')?.click()
       await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
-      // 选完一个参数整条菜单收起，改下一个要重新展开。
+      // 选完一个参数面板收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
-      await openDetail()
-      detailRow('model-detail-budget')?.click()
-      budgetOption('32K')?.click()
+      await openPanel()
+      choice('session-model-budget', '32K')?.click()
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       draftModel.defaultSettings.contextWindow = 96000
       await configurationCallback.saved?.({
@@ -907,9 +905,9 @@ describe('web session selection', () => {
         provider: null,
         effect: 'new-sessions',
       })
-      await openDetail()
-      expect(detailRow('model-detail-thinking')?.textContent).toContain('低')
-      expect(detailRow('model-detail-budget')?.textContent).toContain('32K')
+      await openPanel()
+      expect(choice('session-model-thinking', '低')?.getAttribute('aria-checked')).toBe('true')
+      expect(choice('session-model-budget', '32K')?.getAttribute('aria-checked')).toBe('true')
       await closePanel()
       const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
       cwd.value = '/workspace/agnes'
@@ -965,9 +963,14 @@ describe('web session selection', () => {
         expect.soft(permissionCalls).toBe(reconnectDuring === 'model' ? 0 : 1)
         expect.soft(prompt.value).toBe('use the remembered selection')
         permission.click()
-        ;[...document.querySelectorAll<HTMLElement>('[role="option"]')]
-          .find((row) => row.querySelector('.permission-picker-label')?.textContent === '完全访问')
-          ?.click()
+        const full = await vi.waitFor(() => {
+          const found = [
+            ...document.querySelectorAll<HTMLElement>('#permission-listbox [role="option"]'),
+          ].find((row) => row.querySelector('.permission-picker-label')?.textContent === '完全访问')
+          if (!found) throw new Error('missing permission option')
+          return found
+        })
+        full.click()
         await vi.waitFor(() =>
           expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
         )
@@ -1090,7 +1093,7 @@ describe('web session selection', () => {
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
     control('model').click()
-    openModelList()
+    await openModelList()
     expect(modelMenu().textContent).toContain('model-b')
     control('model').click()
     control('new').click()
@@ -1138,7 +1141,7 @@ describe('web session selection', () => {
 
     const rows = () => Array.from(modelMenu().querySelectorAll<HTMLElement>('[role="option"]'))
     control('model').click()
-    openModelList()
+    await openModelList()
     rows()[0]?.click()
     await vi.waitFor(() =>
       expect(old.setModel).toHaveBeenCalledWith({
@@ -1150,11 +1153,13 @@ describe('web session selection', () => {
       }),
     )
 
-    // 模型列表仍是扁平的一段；档位与预算只是同面板的另外两段，模型那段不掺进二级菜单。
+    // 模型列表仍是一段，按服务商账户分组；档位与预算是同面板的另外两段，没有二级菜单。
     await vi.waitFor(() => expect(control('model').disabled).toBe(false))
     control('model').click()
+    await openModelList()
     expect(document.querySelector('.model-picker-entry, #model-submenu-listbox')).toBeNull()
-    expect(rows().map((row) => row.textContent?.trim())).toContain('model-a已配置账户')
+    expect(rows().map((row) => row.textContent?.trim())).toContain('model-a')
+    expect(modelMenu().querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('已配置账户')
     control('model').click()
   }, 20_000)
 
@@ -1266,7 +1271,7 @@ describe('web session selection', () => {
       expect(document.getElementById('notice')?.textContent).toContain('模型配置已更新')
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
       modelButton.click()
-      openModelList()
+      await openModelList()
       expect(modelMenu().textContent).toContain('model-b')
     },
   )
@@ -1507,7 +1512,7 @@ describe('web session selection', () => {
     prompt.dispatchEvent(new Event('input', { bubbles: true }))
 
     model.click()
-    openModelList()
+    await openModelList()
     const option = modelMenu().querySelector<HTMLElement>('[role="option"]')
     option?.click()
     await vi.waitFor(() =>
@@ -1840,7 +1845,7 @@ describe('web session selection', () => {
         ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await vi.waitFor(() => expect(dialog.open).toBe(false))
       document.getElementById('model')?.click()
-      openModelList()
+      await openModelList()
       modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
       try {
         submit('first message')
@@ -1936,7 +1941,7 @@ describe('web session selection', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(dialog.open).toBe(false))
     document.getElementById('model')?.click()
-    openModelList()
+    await openModelList()
     modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
 
     submit('保留这条首轮草稿')
@@ -2586,7 +2591,7 @@ describe('web model confirmation', () => {
     expect(model.getAttribute('aria-label')).toBe('当前会话模型：model-a')
 
     model.click()
-    openModelList()
+    await openModelList()
     modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(document.getElementById('notice')?.dataset.kind).toBe('error'))
