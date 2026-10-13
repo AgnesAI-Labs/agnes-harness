@@ -85,7 +85,7 @@
 | C2 worker 中的实时插件树 | 进程内存，由唯一的指针 `RuntimeStateCoordinator` 持有（`packages/host-providers/src/runtime-state.ts:43`） | 发布闸门之下的 `RuntimeTargetPublisher`（`packages/host-providers/src/runtime-target-publisher.ts:130`） | Kernel；会话经 `runtimeRegistryRevisionForTarget`（`runtime-target-publisher.ts:58`） | C1 中的 `acknowledged` 行与 `pluginTreeActual`（观测）（`packages/daemon-admin/src/plugin-tree-surface.ts:36`） | 从不是权威：它向 C1 收敛。纪元（epoch）检查拒绝基于过期基线的发布（`E_RUNTIME_STATE_STALE`） | 重启后为空，由 C1 重建 |
 | C3 插件配置值 | 同一存储中的 `plugin_config_values` 与 `plugin_config_audit` 表（`packages/daemon-foundation/src/storage/plugin-config-audit.ts:5`） | 发布事务内的 `PluginConfigAuditStore.stage` | `rebuildDesiredFromInventory` 构造行时读取（`packages/daemon-foundation/src/composite-desired.ts:173`） | desired 行上的 `config` 字段（投影） | 重建行时以表为准；未发布的意图在启动时删除，“崩溃留下的未发布意图不算成功变更” | 构造函数中清除 `plugin_config_intents` |
 | C4 由锁推导 desired | 派生：按包对上一个 desired 目标打补丁，依据已安装清单 | 每次 enable、disable、update、rollback、remove 的 `rebuildDesiredFromInventory`（`composite-desired.ts:173`） | C1 | 其他包沿用的旧 desired 行 | 锁决定是否合格；C1 决定行。见[缺口 G6](#缺口) | 启动只修复本地来源与 web 行（`packages/daemon/src/supervisor/runtime.ts:1450-1500`）；其他漂移依赖 B5 操作日志 |
-| C5 会话组合 | `.session-compositions/<sha256(sessionKey)>.json`：已解析的组合树加 Profile 快照（`packages/host-providers/src/profile/composition-state.ts:41,69`） | 经组合宿主的 `CompositionSessionStore.pin`（`packages/host/src/runtime/profile/composition-runtime.ts:260`） | 组合宿主、事实链绑定、客户端模块准入 | 以树哈希为键的内存容器（`composition-runtime.ts:54`，缓存） | 对该会话 pin 说了算；容器据此重建 | 基于 link 的先写者胜发布；读取时校验树哈希。绑定是意图记录：先于代次 pin（D2）写入、后于它释放；组合宿主启动时清扫没有代次 pin 且超过十分钟的绑定（已关闭缺口 G1） |
+| C5 会话组合 | `.session-compositions/<sha256(sessionKey)>.json`：已解析的组合树加 Profile 快照（`packages/host-providers/src/profile/composition-state.ts:41,69`） | 经组合宿主的 `CompositionSessionStore.pin`（`packages/host/src/runtime/profile/composition-runtime.ts:260`） | 组合宿主、事实链绑定、客户端模块准入 | 以树哈希为键的内存容器（`composition-runtime.ts:54`，缓存） | 对该会话 pin 说了算；容器据此重建 | 持久的 link 先写者胜发布（见[持久发布与损坏处理](#持久发布与损坏处理)）；读取时对整条记录解码，损坏的记录以 `E_COMPOSITION_BINDING_INVALID` 拒绝并指明文件。绑定是意图记录：先于代次 pin（D2）写入、后于它释放。绑定超过十分钟且**同一 key 摘要命名的 pin 文件确定不存在**时，组合宿主才清扫；该判断从不解析绑定本身，所以 pin 仍在的损坏绑定会被保留供检查，对应会话恢复时按损坏拒绝（已关闭缺口 G1） |
 | C6 实时组合状态 | 每个 worker 一个 `.composition-live/<uuid>.json`，带 pid 与进程启动标识（`composition-state.ts:91,119`） | `createLiveCompositionWriter` | 迁移与 bundle 选择的守卫 | 无 | 进程身份已不匹配的文件被忽略 | 下一个写入方启动时，会删除已死亡或 pid 被复用的 worker 的文件以及无法解析的文件；进程身份未知时绝不当作已死亡（已关闭缺口 G7） |
 | C7 管理员 bundle 选择 | 带 revision 的 `bundle-selection.json`（`packages/host/src/runtime/profile/bundle-selection.ts:32`） | 配置锁下的配置服务 | Profile 输入读取（`inputs.ts:109`） | 已解析 Profile 的 `adminBundles`（投影） | 文件说了算 | 持久 |
 
@@ -95,13 +95,13 @@
 
 | 状态 | 权威（位置、格式） | 修改端口 | 读取方 | 副本（类别） | 不一致规则 | 恢复 |
 | --- | --- | --- | --- | --- | --- | --- |
-| D1 代次快照 | `.runtime-generations/<uuid>/generation.json` 加包副本 `0..n`（`packages/package-manager/src/runtime-snapshots-generations.ts:48,60`） | 代次宿主调用 `RuntimeGenerationSnapshotStore.create`（`packages/host/src/runtime/generation/host.ts:187`） | 冷恢复时的代次宿主（`host.ts:406`） | 内存中的 `live` 容器（“由快照构建”的缓存） | 快照说了算；每个包副本在读取时重新哈希（`runtime-snapshots-generations.ts:111-132`）。重建前从锁重新检查信任（`packages/host/src/runtime/generation/trust.ts:6`） | 快照缺失或无效时报 `E_GENERATION_SNAPSHOT_MISSING` 或 `E_GENERATION_INTEGRITY`，pin 保留 |
-| D2 会话到代次的 pin | `.runtime-generations/sessions/<sha256(sessionKey)>.json`（`runtime-snapshots-generations.ts:189`） | `pin`（原子 link，从不覆盖）、`recordLoop`、`migrateSession`、`releaseSession`（`:193,235,247,315`） | 各处的 `store.session(key)`；`sessionGeneration` | Host 的 `bindings` 映射与 `kernel.sessions`（缓存） | pin 优先于头部代次；第二个冲突的绑定者得到 `E_GENERATION_BINDING_CONFLICT`（`host.ts:181`） | 持久；只在会话被删除之后才删除（`:315`） |
-| D3 头部代次 | `.runtime-generations/heads/<sha256(compositionKey)>.json`：`{ compositionKey, generationId }`（`RuntimeGenerationSnapshotStore.setHead`）；代次宿主内存中的 `current` 是其实时副本 | worker 启动时的 `ensureCurrent`，以及头部变更提交后 `publishTargetCore`（`host.ts` 的 `recordHead`） | 后续 worker 的 `ensureCurrent`（经 `reusableHead`）；未绑定会话的 `createSession` | 每个 worker 各自的 `current`（缓存） | 指针只是捷径：仅当所记录的快照能正常读取，且与目标摘要、兼容性指纹、包列表、资源摘要和 seam 选择都一致时才使用；否则 worker 重新做快照并覆盖它 | 临时文件加 rename 原子写；创建者消失后 `collect` 仍保留所记录的头部 |
-| D4 已接受的实时配置 | 代次目录内的 `live-config.json`（`runtime-snapshots-generations.ts:147,164`） | `publishTarget` 调用 `saveLiveConfig`，失败时补偿（`host.ts:797-850`） | `build` 把它叠加到归档目标上（`host.ts:226`） | 内存中的行配置（缓存） | 重建时记录说了算；代次缺失则拒绝保存 | 原子的临时文件加 rename |
+| D1 代次快照 | `.runtime-generations/<uuid>/generation.json` 加包副本 `0..n`（`packages/package-manager/src/runtime-snapshots-generations.ts:48,60`） | 代次宿主调用 `RuntimeGenerationSnapshotStore.create`（`packages/host/src/runtime/generation/host.ts:187`） | 冷恢复时的代次宿主（`host.ts:406`） | 内存中的 `live` 容器（“由快照构建”的缓存） | 快照说了算；每个包副本在读取时重新哈希（`runtime-snapshots-generations.ts:111-132`）。重建前从锁重新检查信任（`packages/host/src/runtime/generation/trust.ts:6`） | 使用前完整解码（每个包、来源与 seam 条目；版本 3 的快照必须选择全部 seam 类别）。快照缺失报 `E_GENERATION_SNAPSHOT_MISSING`；任何形状或哈希失败报带文件的 `E_GENERATION_INTEGRITY`；较新格式报 `E_GENERATION_SNAPSHOT_NEWER`。pin 保留 |
+| D2 会话到代次的 pin | `.runtime-generations/sessions/<sha256(sessionKey)>.json`（`runtime-snapshots-generations.ts:189`） | `pin`（原子 link，从不覆盖）、`recordLoop`、`migrateSession`、`releaseSession`（`:193,235,247,315`） | 各处的 `store.session(key)`；`sessionGeneration` | Host 的 `bindings` 映射与 `kernel.sessions`（缓存） | pin 优先于头部代次；第二个冲突的绑定者得到 `E_GENERATION_BINDING_CONFLICT`（`host.ts:181`） | 持久；只在会话被删除之后才删除。pin 使用前完整解码（key、代次 id、格式、每个固定的 seam、loop、资源摘要；文件名必须等于其 `sessionKey` 的摘要）。`seams` 必填：缺失的 pin 被拒绝而不是跳过。读改写（`recordLoop`、`migrateSession`、`pinSessionResources`、释放）在按 pin 的锁目录下进行，并发写入方不会丢失彼此的字段；超过 30 秒的锁会被接管 |
+| D3 头部代次 | `.runtime-generations/heads/<sha256(compositionKey)>.json`：`{ compositionKey, generationId }`（`RuntimeGenerationSnapshotStore.setHead`）；代次宿主内存中的 `current` 是其实时副本 | worker 启动时的 `ensureCurrent`，以及头部变更提交后 `publishTargetCore`（`host.ts` 的 `recordHead`） | 后续 worker 的 `ensureCurrent`（经 `reusableHead`）；未绑定会话的 `createSession` | 每个 worker 各自的 `current`（缓存） | 指针只是捷径：仅当所记录的快照能正常读取，且与目标摘要、兼容性指纹、包列表、资源摘要和 seam 选择都一致时才使用；否则 worker 重新做快照并覆盖它 | 持久替换；无法解码的头部不会被读取方使用，且在重新发布之前使 `collect` 停手；创建者消失后 `collect` 仍保留所记录的头部 |
+| D4 已接受的实时配置 | 代次目录内的 `live-config.json`（`runtime-snapshots-generations.ts:147,164`） | `publishTarget` 调用 `saveLiveConfig`，失败时补偿（`host.ts:797-850`） | `build` 把它叠加到归档目标上（`host.ts:226`） | 内存中的行配置（缓存） | 重建时记录说了算；代次缺失则拒绝保存 | 持久替换；记录读不出时报 `E_GENERATION_CONFIG_INTEGRITY` 并指明文件 |
 | D5 兼容性指纹 | 存于 D1（`compatibility`）；由 Profile 重新计算（`host.ts:147-166`） | 创建时固定 | `build`、`migrate` | 无 | 指纹不同则拒绝重建与迁移（`E_GENERATION_INCOMPATIBLE`） | 由 AGH 构建与 Profile 决定 |
-| D6 会话资源 pin | 被固定代次内的 `session-resources/<sha256(key)>`，摘要记在 pin 中（`runtime-snapshots-generations.ts:269-313`） | `pinSessionResources` | 该会话的技能与资源使用方 | 实时技能目录（缓存） | 对该会话 pin 说了算 | 原子的目录 rename |
-| D7 回收 | 是规则而非数据：若有 pin 或实时容器引用某代次，或其创建者 pid 仍存活，则保留（`runtime-snapshots-generations.ts:319-345`） | `collect`，在发布、释放、迁移与空闲关闭后调用（`host.ts:435`） | Host | 无 | 被引用的代次从不删除 | 空闲容器在 `worker.generation_idle_close_ms`（默认 60 秒，`host.ts:132-137`）后关闭；之后再打开即从 D1 冷恢复 |
+| D6 会话资源 pin | 被固定代次内的 `session-resources/<sha256(key)>`，摘要记在 pin 中（`runtime-snapshots-generations.ts:269-313`） | `pinSessionResources` | 该会话的技能与资源使用方 | 实时技能目录（缓存） | 对该会话 pin 说了算 | 目录 rename，随后在按 pin 的锁下重写 pin |
+| D7 回收 | 是规则而非数据：若有 pin、所记录的头部或实时容器引用某代次，或其创建者或采用者仍在运行，则保留。“在运行”同时比较 pid **与进程启动标识**（与 C6 相同），所以被复用的 pid 不会保住任何东西；没有启动标识的平台只比较裸 pid，只会多保留，绝不会提前删除 | `collect`，在发布、释放、迁移与空闲关闭后调用（`host.ts:435`） | Host | 无 | 被引用的代次从不删除；任何无法解码的 pin 或头部（由 `corruptEntries()` 列出）都会使整轮停手，因为读不出的条目无法证明某代次未被引用。采用者检查与回收者删除之间的跨进程窗口仍然存在（缺口 G11） | 空闲容器在 `worker.generation_idle_close_ms`（默认 60 秒，`host.ts:132-137`）后关闭；之后再打开即从 D1 冷恢复 |
 | D8 代次宿主的每容器状态 | `preparedRows`、`rowsByGeneration`、`latestSkills`、`failures`、`failedSnapshots`（`host.ts:105-113`） | 宿主的串行队列（`enqueue`） | 同一宿主 | **缓存**；持久对应物是 D1 的 `resources`，以及由 `restoreGenerationRows` 重建的声明（`packages/host/src/runtime/generation/resources.ts`） | 冷重建时以快照资源为准 | 重启即丢，之后重建 |
 
 ### 三种“代次”
@@ -112,16 +112,26 @@
 
 在已有会话绑定的代码容器里，改变代码的发布会分叉出新代次；只改变资源、与注册表无关、或到达时没有任何会话绑定的发布则原地更新（`host.ts:756-770`）。后端面向（backend facets）无法在运行中的进程里更改：`adapter:*` 行、`seam:sandbox`、`seam:platform` 行，以及拥有进程级 provider 的包，会被 `E_GENERATION_RESTART_REQUIRED` 拒绝（`host.ts:687-703`）。指纹另行阻止旧代次在不同的后端部署下被重建（`E_GENERATION_INCOMPATIBLE`，`host.ts:230`）。
 
-### seam-provider 切片 3 之后（目标状态）
-
-以下各行描述目标设计，代码中尚不存在。
+### Seam pin 与会话运行时描述符
 
 | 状态 | 权威 | 不一致规则 |
 | --- | --- | --- |
-| 代次的 seam 选择（approval、principals、billing、checkpoint、artifacts、verifier、repair） | 代次快照（D1）内的 `seams` 字段，记录每个选择及其解析出的 provider、版本、来源包与完整性 | 快照说了算：重建的旧容器按它解析 seam，而不是按当前 Profile。会话绑定时比较容器的实际绑定与快照，不符即拒绝（`E_SEAM_PIN_MISMATCH`） |
+| 代次的 seam 选择（approval、principals、billing、checkpoint、artifacts、verifier、repair） | 代次快照（D1）内的 `seams` 字段，记录每个选择及其解析出的 provider、版本、来源包与完整性 | 快照说了算：重建的旧容器按它解析 seam，而不是按当前 Profile。会话绑定时比较容器的实际绑定与会话 pin，不符即拒绝（`E_SEAM_PIN_MISMATCH`）；没有记录 seam 的 pin 按损坏拒绝（`seam-pins.ts`，`host.ts` 的 `bindGeneration`） |
 | seam pin 变更 | 管理员迁移，须显式列出要重新固定的类别；同时写一条 Host 审计记录 | pin 的 seam 有差异而未列出时，迁移被拒绝（`E_SEAM_PIN_CHANGE`） |
-| 会话运行时描述符 | 无：由实例管理根据会话绑定、容器绑定表与当前运行计划计算 | 描述符是投影。当前选择不同时以 `pending` 呈现，生效方式为 `new-sessions`、`restart-required` 或 `migrate` |
-| 运行计划、容器句柄、变更结果 | 纯函数编译 Profile 与清单；容器句柄来自实例管理；变更结果来自变更协调 | 它们在 Host 的三项职责之间传递显式结果，取代延迟绑定的 `live.seams` 槽 |
+| 会话运行时描述符 | 无：由会话绑定、容器绑定表与当前运行计划计算（`describeHostSession`、`sessionRuntime`） | 描述符是投影。当前选择不同时以 `pending` 呈现，生效方式为 `new-sessions`、`restart-required` 或 `migrate` |
+| 运行计划、容器句柄、变更结果 | 纯函数编译 Profile 与清单；容器句柄来自实例管理；变更结果来自变更协调 | 它们在 Host 的三项职责之间传递显式结果 |
+
+### 持久发布与损坏处理
+
+意图记录、代次 pin、头部、代次快照与已接受的实时配置都用同一个原语发布：`publishFileDurablySync`（`packages/system-node`）——在目标旁写私有临时文件并刷盘，再用 link（先写者胜）或 rename（替换）放到位，最后刷新父目录。删除（`removeFileDurablySync`，pin 释放）同样刷新父目录。新代次目录的目录项先在根目录中刷盘，之后才允许任何 pin 或头部指向它。
+
+保证。**进程崩溃**后可见的是旧文件或完整的新文件，不会是撕裂的文件；`*.tmp` 残留无害。**掉电**后已返回的调用是持久的；由于每条记录先于下一条记录持久化，依赖关系中的后一条记录不会在没有前一条的情况下存在。未返回的调用可能整体丢失。
+
+两个 pin 的恢复顺序。会话绑定依次是 (1) 组合意图，(2) 代次 pin；释放顺序相反（先代次 pin，后意图）。据此：只有意图而无 pin 是被放弃的打开，在它变旧且 pin 确定不存在后清扫；只有 pin 而无意图只会由人工删除造成，此时会话从其固定的代次重新打开并重新解析组合（pin 保住代码与 seam）；没有快照的头部被忽略并重新发布。
+
+损坏从不当作“不存在”。每个持久元数据文件都从 `unknown` 完整解码后才使用；失败即 `E_GENERATION_INTEGRITY`（或 `E_COMPOSITION_BINDING_INVALID`、`E_GENERATION_CONFIG_INTEGRITY`）并指明文件，文件保持原样，在会话拒绝边界变为 `E_SESSION_CORRUPT`，路径在 `detail.file`。较新 AGH 写的记录仍是 `E_SESSION_VERSION_NEWER`。列表与回收按条目隔离损坏（`corruptEntries()`），无法证明未被引用的内容一律不删，整轮停手。`configuration.json` 与 `bundle-selection.json` 是安全设置的权威，损坏时启动以 `CONFIG_INVALID_STATE` 失败关闭并指明文件；不存在跳过它们继续运行的模式。
+
+尚存的限制。采用与回收在进程间没有线性化（缺口 G11）。掉电行为靠构造保证，没有故障注入测试。包锁（`.agnes-lock.lock`）发布时已带所有者，仅在所有者已死或缺失且超过 30 秒后回收；它比较裸 pid。
 
 ## E. 资源目录与模型配置
 
@@ -166,7 +176,7 @@
 
 | 快照 | 来源 | 构建位置 | 过期性与规则 |
 | --- | --- | --- | --- |
-| `RuntimeAdminSnapshot`（`packages/protocol/src/runtime-admin.ts:88`） | **共享 worker** Host 的 `host.providers.catalog()`、预设、发布状态与安全状态，加本地插件根目录 | 按请求：`session.catalog` 命令（`packages/worker-runtime/src/commands.ts:805`），在 `packages/daemon/src/supervisor/runtime.ts:2414` 组装 | 实时读取，无缓存。它描述的是共享 worker 的头部，而不是某个会话的容器；见[缺口 G3](#缺口) |
+| `RuntimeAdminSnapshot`（`packages/protocol/src/runtime-admin.ts:88`） | **共享 worker** Host 的 `host.providers.catalog()`、预设、发布状态与安全状态，加本地插件根目录 | 按请求：`session.catalog` 命令（`packages/worker-runtime/src/commands.ts:805`），在 `packages/daemon/src/supervisor/runtime.ts:2414` 组装 | 实时读取，无缓存。它描述的是共享 worker 的头部，而不是某个会话的容器；每个会话的视图是会话运行时描述符（已关闭缺口 G3） |
 | `PluginGenerationStatus`（`host.ts:36,496`） | pin（D2）、实时容器、快照（D1）、`failures` | 在代次宿主中按请求计算，由组合宿主包装 | 派生。失败字符串在离开宿主前被收缩为一个 `E_` 代码 |
 | `pluginTreeActual`（`plugin-tree-surface.ts:36`） | 当前 worker 代的 C1 `acknowledged` 与 `report` 行 | daemon | 观测；没有 worker 代时报告“未运行” |
 | 配置快照的 `effect`（`packages/protocol/src/runtime-admin.ts:172`） | E7 revision 对比已应用 revision | `configurationApplication.present` | 见 E9 |
@@ -201,29 +211,32 @@
 
 ## 缺口
 
-这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办。G1、G2、G5、G7、G8、G9 已关闭（见[已关闭缺口](#已关闭缺口)）；G6 与 G10 是读取规则，不是代码改动。
+这些是代码中存在两个权威、被当作真相的未记录缓存，或缺少对账路径之处。它们按机制命名并记入待办。G1、G2、G3、G4、G5、G7、G8、G9 已关闭（见[已关闭缺口](#已关闭缺口)）；G6 与 G10 是读取规则，不是代码改动。
 
 | 编号 | 机制 | 证据 | 影响 |
 | --- | --- | --- | --- |
 | G1 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G2 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
-| G3 | 管理面目录描述的是共享 worker 的头部，而不是某个会话的实际运行时 | `session.catalog` 在 `@shared` 上执行（`runtime.ts:2414`；`commands.ts:805`） | 客户端无法得知某个会话在运行什么，也不知道变更何时到达它。由计划中的会话运行时描述符解决 |
-| G4 | 会话 pin 覆盖代码，但不覆盖 seam 选择 | 指纹不含 `seams.approval`、`principals`、`ledger`、`checkpoint`、`artifacts`、`verifier`、`repair`、`harness`（`host.ts:147-166`）；`build` 按实时 `profile` 解析（`host.ts:226`）；迁移只比较指纹与 loop（`host.ts:922-960`） | 重启并更改了选择后，旧会话以新实现重新打开；一次迁移可能悄悄换掉审批、身份或计费。由计划中的 seam pin 解决 |
+| G3 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G4 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G5 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G6 | desired 目标按包操作打补丁；启动时没有完整的锁到 desired 的差异比对 | `rebuildDesiredFromInventory` 只编辑一个包（`composite-desired.ts:173`）；启动只修复本地来源与 web 行（`runtime.ts:1450-1500`） | 带外的锁变更（离线 CLI 编辑）要等到该包下一次被操作才对账。**读取规则：**锁回答“装了什么”，组合目标（C1）回答“发布了什么”；不要由一个推断另一个，各自从自己的权威读取。只有按包操作与启动修复可以写 C4。未做穷尽审计，可能还有其他修复路径 |
 | G7 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G8 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
 | G9 | *已关闭* | 见[已关闭缺口](#已关闭缺口) | |
+| G11 | 采用代次与回收代次在进程间没有线性化 | `reusableHead` 登记采用者并重新读取快照；`collect` 检查采用者后删除（`runtime-snapshots-generations.ts`）。回收者通过检查后，采用者可以登记并成功重读，随后回收者删除 | 采用了头部的 worker 在下次打开会话时可能发现归档已不存在（`E_GENERATION_SNAPSHOT_MISSING`，按“较旧”拒绝，其余未损坏）。修复需要采用与回收共用的跨进程互斥，或删除前原子认领的 deleting 标记 |
 | G10 | 已解析 Profile 的 `packages` 是启动时锁的副本 | `inputs.ts:88` 只读一次锁；之后的安装经已发布来源到达新会话（`composition-runtime.ts:458-480`） | 启动之后读取 `profile.packages` 的代码会看到过期的安装状态。**读取规则：**`profile.packages` 只用于启动时决策与内置包身份（兼容性指纹、seam 解析）；当前安装状态来自实时清单或实时目录。组合宿主自己合并目录，其他读取方不能依赖 `profile.packages` |
 
 ### 已关闭缺口
 
 | 编号 | 修复 | 位置 |
 | --- | --- | --- |
-| G1 | 组合绑定是意图记录：先于代次 pin 写入，后于它释放。组合宿主启动时清扫没有代次 pin 且超过十分钟的绑定及其 Profile 快照；读不出的 pin 会保留其绑定。 | `CompositionSessionStore.sweepOrphans`（`composition-state.ts`），由 `createCompositionHost` 调用 |
+| G1 | 组合绑定是意图记录：先于代次 pin 写入，后于它释放。组合宿主启动时清扫超过十分钟、且按同一 key 摘要找到的 pin 文件确定不存在的绑定及其 Profile 快照。判断从不解析绑定：pin 仍在或 pin 状态读不出的损坏绑定会被保留，恢复时按损坏拒绝。 | `CompositionSessionStore.sweepOrphans`（`composition-state.ts`），由 `createCompositionHost` 调用 |
 | G5 | 已复现：切换模型路由会改变 Profile 的 `hash`，使永久授权失配。授权改为按 `policyDigest` 匹配；授权存储 schema 升为 3，旧存储报告 `reset-required`。 | `policy-digest.ts`、`approval-grants.ts`、`packages/host/src/runtime/approval/grants.ts` |
 | G7 | 写入方启动时删除已死亡或 pid 被复用的 worker 的状态文件以及无法解析的文件。 | `reapDeadLiveCompositions`（`composition-state.ts`） |
-| G8 | `generation.json` 先写临时文件再 rename，并先写 `owner.pid`。`collect` 先从 `generation.json` 读所属者，再读 `owner.pid`；两者都读不出时保留目录十分钟，之后删除。被 pin、被保留或本进程创建的代次永不删除。 | `runtime-snapshots-generations.ts` |
+| G8 | `generation.json` 在 `owner.json`（`{ pid, startId }`）之后持久发布。`collect` 从 `owner.json` 读所属者；读不出时保留目录十分钟，之后删除。被 pin、被头部引用、被保留或本进程创建的代次永不删除，损坏的 pin 或头部会使整轮停手。 | `runtime-snapshots-generations.ts` |
+| G3 | 会话运行时描述符（`sessionRuntime`、`describeHostSession`）按会话报告代次、固定的 seam 以及待生效的较新选择及其生效方式。`session.catalog` 本身仍描述共享 worker 的头部。 | `runtime-descriptor.ts`、`daemon-rpc` 的 `session-runtime` 方法 |
+| G4 | seam 选择记录在代次快照中，并按会话作为 seam pin 保存；容器据快照重建，恢复时比较绑定与 pin，迁移须显式列出重新固定的类别。损坏或缺失的 pin 按损坏拒绝。 | `seam-pins.ts`、`host.ts` |
 | G2 | 每个组合记录自己的当前头部代次；之后启动的 worker 在输入完全相同时复用它，而不是再写一个快照目录，`collect` 也会保留它。 | `runtime-snapshots-generations.ts` 的 `setHead`、`reusableHead`、`collect`；`host.ts` 的 `recordHead` |
 | G9 | 按 `seam:sandbox` 与 `seam:platform` 行 id 的检查已随这两行消失；发布时对部署指纹的比较也已删除：指纹在进程生命周期内固定，不可能不同。须重启守卫是 `publishTargetCore` 中的 `adapter:` 行差异与进程级包检查，以及冷恢复时 `build` 的指纹检查；`platform` 仅宿主可用。 | `host.ts` 的 `publishTargetCore`、`build` |
 
