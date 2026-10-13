@@ -410,11 +410,12 @@ describe('web permission synchronization', () => {
     return { old, publish, timeline, connect }
   }
 
-  describe('startup list race', () => {
+  describe.each(['ordinary', 'start link'])('startup list race %s', (entry) => {
     let pending: ReturnType<typeof deferred<{ items: { sessionId: string }[] }>>
     beforeEach(async () => {
       // Load the full application as fixture preparation; this race does not measure cold imports.
       installPublicFixture()
+      if (entry === 'start link') history.replaceState(null, '', '/?new=1#test-launcher-token')
       pending = deferred<{ items: { sessionId: string }[] }>()
       const client = {
         connectionState: 'connected',
@@ -435,13 +436,16 @@ describe('web permission synchronization', () => {
     })
 
     it('keeps a new draft when the startup session list arrives after the user chooses New', async () => {
-      document.getElementById('new')?.click()
+      const newButton = document.getElementById('new') as HTMLButtonElement
+      expect(newButton.disabled).toBe(entry === 'start link')
+      newButton.click()
       pending.resolve({ items: [{ sessionId: 'old' }] })
       // The old row proves the late response was rendered, rather than guessing at a 20ms delay.
       await vi.waitFor(() => expect(document.querySelector('[data-session="old"]')).not.toBeNull())
       expect(document.querySelector('[data-testid="goal-bar"]')).toBeNull()
       expect(binding.loadWebSession).not.toHaveBeenCalled()
-      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true)
+      await vi.waitFor(() => expect(newButton.disabled).toBe(false))
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(entry === 'ordinary')
     })
   })
 

@@ -1124,7 +1124,7 @@ let queueAction:
       error?: string
     }
   | undefined
-let sessionPending = false
+let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let newSessionCreating = false
 let workspacePickerReady: boolean | undefined
 let workspacePickerBusy = false
@@ -2230,6 +2230,7 @@ run(async () => {
   if (selection !== startupSelection) return
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
+    sessionPending = false
     await beginNewDraft(configured)
     if (requestedLoop) {
       const match = newSessionCatalog?.loops.find((entry) => `${entry.id}@${entry.version}` === requestedLoop)
