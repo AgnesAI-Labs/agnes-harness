@@ -344,10 +344,16 @@
   }
   .settings-shell .agnes-settings-section-tabs button,
   .runtime-settings .agnes-settings-section-tabs button {
-    /* With its hairline the strip is 44px, the height of the top bar and the rail heading. */
-    min-height: 43px;
+    min-height: var(--control-height-touch);
     box-shadow: none;
     font-size: var(--font-size-sm);
+  }
+  @media (min-width: 768px) {
+    .settings-shell .agnes-settings-section-tabs button,
+    .runtime-settings .agnes-settings-section-tabs button {
+      /* With its hairline the strip is 44px, the height of the top bar and the rail heading. */
+      min-height: 43px;
+    }
   }
   .settings-shell .agnes-settings-section-tabs button[aria-selected="true"],
   .runtime-settings .agnes-settings-section-tabs button[aria-selected="true"] {

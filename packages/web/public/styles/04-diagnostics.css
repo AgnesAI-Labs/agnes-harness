@@ -145,7 +145,7 @@
     margin-bottom: 0;
     min-height: 12rem;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     background: var(--agnes-bg-surface);
     overflow: hidden;
   }

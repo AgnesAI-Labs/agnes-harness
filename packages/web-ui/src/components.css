@@ -361,9 +361,9 @@
     margin-bottom: var(--s24);
   }
   .agnes-settings-page > .agnes-settings-page-heading h2 {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    line-height: var(--line-lg);
+    line-height: var(--line-md);
   }
   .agnes-settings-page > .agnes-settings-toolbar,
   .agnes-settings-page > .agh-banner {
@@ -601,6 +601,7 @@
     inset-inline-end: var(--s16);
     width: var(--control-height-sm);
     height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
     border-radius: var(--radius-control);
     color: var(--agnes-text-secondary);
   }

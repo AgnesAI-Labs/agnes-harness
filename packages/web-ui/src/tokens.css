@@ -331,14 +331,26 @@
     font-size: var(--font-size-sm);
     line-height: 1.6;
   }
+  /* Runtime facts are one list: each row already carries its own divider and padding. */
+  .agnes-settings-stack[data-session-runtime] {
+    gap: 0;
+  }
+  .agnes-settings-stack[data-session-runtime] > .agh-list-row:last-of-type {
+    border-bottom: 0;
+  }
+  /* A detail dialog reads at the same size as the page that opened it. */
+  .admin-detail-scroll {
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
   /* One heading scale for every settings page, whatever element its author reached for:
    page title 16px, section 14px, row 13px; all semibold, none at the browser default. */
-  :where(.agnes-settings-page, .settings-content) :where(h3) {
+  :where(.agnes-settings-page, .settings-content, .admin-detail-scroll) :where(h3) {
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-md);
   }
-  :where(.agnes-settings-page, .settings-content) :where(h4) {
+  :where(.agnes-settings-page, .settings-content, .admin-detail-scroll) :where(h4) {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-sm);

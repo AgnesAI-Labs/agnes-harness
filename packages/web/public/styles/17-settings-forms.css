@@ -31,7 +31,7 @@
     justify-content: flex-start;
     gap: var(--s8);
     padding: 0.5625rem var(--s16) 0.5625rem var(--s12);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-control);
     font-size: var(--font-size-body);
     font-weight: 400;
     text-align: start;
@@ -198,7 +198,7 @@
     gap: 0.125rem var(--s12);
     padding: var(--s12) 0.875rem;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     background: var(--agnes-bg-page);
     transition:
       border-color var(--transition-fast),
@@ -387,7 +387,7 @@
     scrollbar-width: thin;
     scrollbar-color: var(--agnes-line-emphasis) transparent;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-card);
     background: var(--agnes-bg-popover);
     color: var(--agnes-text-primary);
     box-shadow: var(--shadow-elevation-prominent);
