@@ -2899,7 +2899,11 @@ describe('opening a large session', () => {
     upto: 1,
     nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'stored question' }] }],
   })
-  function boot(storedOpening: (id: string) => Promise<unknown>, load = vi.fn()) {
+  function boot(
+    storedOpening: (id: string) => Promise<unknown>,
+    load = vi.fn(),
+    items = [{ sessionId: 'old', title: 'Old' }],
+  ) {
     installPublicFixture()
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
@@ -2912,7 +2916,7 @@ describe('opening a large session', () => {
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
-        list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })),
+        list: vi.fn(async () => ({ items })),
         load,
         storedOpening: vi.fn(storedOpening),
       },
@@ -2948,6 +2952,39 @@ describe('opening a large session', () => {
     await vi.waitFor(() =>
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
     )
+  })
+
+  it('drops the stored history of a failed open once another session was selected meanwhile', async () => {
+    let release!: (value: unknown) => void
+    const storedOpening = vi.fn((id: string) =>
+      id === 'old'
+        ? new Promise((resolve) => {
+            release = resolve
+          })
+        : Promise.resolve({ timeline: storedTimeline(), hasEarlier: false }),
+    )
+    boot(storedOpening, vi.fn(), [
+      { sessionId: 'old', title: 'Old' },
+      { sessionId: 'other', title: 'Other' },
+    ])
+    const other = session('other', async () => idleTimeline('other'))
+    binding.loadWebSession
+      .mockRejectedValueOnce(new Error('open failed'))
+      .mockResolvedValue({ session: other, offPermission: vi.fn() })
+    await import('../src/app.js')
+    await vi.waitFor(() => expect(storedOpening).toHaveBeenCalledWith('old'))
+    const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
+      button.textContent?.includes('Other'),
+    )
+    row?.click()
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+    release({ timeline: storedTimeline(), hasEarlier: false })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((document.getElementById('stored-history-notice') as HTMLElement).hidden).toBe(true)
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect(document.getElementById('transcript')?.textContent).not.toContain('stored question')
   })
 
   it('falls back to session recovery when the stored history cannot be read either', async () => {

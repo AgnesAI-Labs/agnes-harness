@@ -113,6 +113,25 @@ describe('stored history while a session opens', () => {
     expect(h.clear).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores a failure reported for an open that another one replaced', async () => {
+    vi.useFakeTimers()
+    let resolve!: (v: typeof view) => void
+    const h = harness((id) => (id === 's1' ? new Promise((r) => (resolve = r)) : Promise.resolve(view)))
+    h.history.started('s1')
+    const failing = h.history.failed('s1', 'open failed')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.read).toHaveBeenCalledWith('s1')
+    h.history.started('s2')
+    resolve(view)
+    expect(await failing).toBe(false)
+    expect(h.shown).toEqual([])
+    // A stale s1 failure afterwards changes nothing, and s2's own failure still shows its history.
+    expect(await h.history.failed('s1', 'late')).toBe(false)
+    expect(await h.history.failed('s2', 's2 failed')).toBe(true)
+    expect(h.shown).toEqual([{ id: 's2', ...view, reason: 's2 failed' }])
+    expect(h.clear).not.toHaveBeenCalled()
+  })
+
   it('forgets the previous session when another one starts opening', async () => {
     vi.useFakeTimers()
     const h = harness(async (id) => ({ ...view, timeline: { id } }))

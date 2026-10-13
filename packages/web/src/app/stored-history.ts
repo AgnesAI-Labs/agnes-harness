@@ -19,6 +19,8 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let shown = false
   let generation = 0
+  // The session the latest `started` is for; a failure reported for any other is stale.
+  let opening: string | undefined
   let read: { id: string; view: Promise<{ timeline: unknown; hasEarlier: boolean }> } | undefined
   const stop = () => {
     if (timer !== undefined) clearTimeout(timer)
@@ -45,6 +47,7 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
     started(id: string): void {
       stop()
       generation++
+      opening = id
       // A history shown for an earlier open stays until this open settles, like the old transcript.
       read = undefined
       timer = setTimeout(() => {
@@ -55,15 +58,21 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
     succeeded(): void {
       stop()
       generation++
+      opening = undefined
       read = undefined
       if (shown) deps.clear()
       shown = false
     },
     /** Shows the stored history with the reason the open failed; false when there is none to show. */
     async failed(id: string, reason: string): Promise<boolean> {
+      if (id !== opening) return false
       stop()
+      const mine = generation
       const ok = await reveal(id, reason)
+      // Another open began while this one read; that open owns the screen and the state now.
+      if (mine !== generation) return false
       generation++
+      opening = undefined
       read = undefined
       if (!ok && shown) {
         shown = false

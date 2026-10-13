@@ -94,6 +94,56 @@ describe('session.load idle timeout', () => {
   })
 })
 
+describe('session.load idle clock and the handshake', () => {
+  it('starts the idle clock when the request is sent, not while the client is still connecting', async () => {
+    vi.useFakeTimers()
+    const { client, server } = await clientWithScriptedServer(
+      {
+        initialize: () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  protocolVersion: 1,
+                  agentCapabilities: {},
+                  _meta: { agnes: { agnesVersion: '0' } },
+                }),
+              25_000,
+            ),
+          ),
+      },
+      { initialize: 60_000 },
+    )
+    let settled = false
+    const pending = client.session.load('s1').finally(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(server.received('session/load')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(settled).toBe(false)
+    server.reply('session/load', {})
+    await expect(pending).resolves.toBeDefined()
+    await client.close()
+  })
+
+  it('fails as the connection failure, not LoadStalled, when the handshake never completes', async () => {
+    vi.useFakeTimers()
+    const { client, server } = await clientWithScriptedServer(
+      { initialize: () => new Promise(() => undefined) },
+      {
+        initialize: 45_000,
+      },
+    )
+    const pending = client.session.load('s1')
+    const assertion = expect(pending).rejects.toSatisfy((error: unknown) => !(error instanceof LoadStalled))
+    await vi.advanceTimersByTimeAsync(45_001)
+    await assertion
+    expect(server.received('session/load')).toHaveLength(0)
+    await client.close()
+  })
+})
+
 describe('session.storedOpening', () => {
   it('asks for the stored opening of a session', async () => {
     const { client, server } = await clientWithScriptedServer()

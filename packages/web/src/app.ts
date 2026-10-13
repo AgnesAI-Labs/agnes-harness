@@ -1396,13 +1396,15 @@ async function open(
       sessionPending = false
       render()
       if (!options.created && !options.preserveSending) {
+        // The awaits above can see another session selected; this failure is then not shown at all.
+        if (epoch !== selection) return
         // What storage holds is still worth reading when the full open cannot finish.
         if (loadPending && (await storedHistory.failed(id, errorMessage(error)))) return
         if (epoch !== selection) return
         showSessionRecovery(error, id)
         return
       }
-      if (loadPending) storedHistory.succeeded()
+      if (loadPending && epoch === selection) storedHistory.succeeded()
     }
     throw error
   }

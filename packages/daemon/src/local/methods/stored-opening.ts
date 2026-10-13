@@ -1,4 +1,4 @@
-import type { StoredOpeningReader } from '@agnes/host'
+import { StoredOpeningError, type StoredOpeningReader } from '@agnes/host'
 import {
   rpcError,
   type SessionStoredOpeningParams,
@@ -25,7 +25,15 @@ export function registerStoredOpening(
     const p = params as SessionStoredOpeningParams
     deps.requireSessionOwner('session.storedOpening', p.sessionId, c)
     if (!deps.storedOpening) throw rpcError('SEMANTIC_REJECTED', { reason: 'stored-opening-unavailable' })
-    const read = await deps.storedOpening.opening(p.sessionId, p.maxNodes ?? UI_OPENING_DEFAULT_MAX_NODES)
+    let read: Awaited<ReturnType<StoredOpeningReader['opening']>>
+    try {
+      read = await deps.storedOpening.opening(p.sessionId, p.maxNodes ?? UI_OPENING_DEFAULT_MAX_NODES)
+    } catch (error) {
+      // A damaged ancestry in storage is a refusal like any other missing history, not a daemon fault.
+      if (error instanceof StoredOpeningError)
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'stored-opening-unavailable' })
+      throw error
+    }
     // Every session starts with a row; none means its ledger is not in the storage this daemon reads.
     if (read.lastSeq === 0) throw rpcError('SEMANTIC_REJECTED', { reason: 'stored-opening-unavailable' })
     // Not a live projection, so nothing will patch it: the first generation is as good as any.

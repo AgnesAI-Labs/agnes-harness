@@ -212,7 +212,11 @@ export class WorkerPool {
       onRequest: (f) => this.o.onRequest(f.sessionKey, f),
       onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
       onRecord: (sessionKey, record) => this.o.onRecord?.(sessionKey, record),
-      onProgress: (sessionKey, progress) => this.o.onProgress?.(sessionKey, progress),
+      // Same fence as previews: the session's channel is registered before its open frame is sent,
+      // so the worker opening it hosts it for the whole open, and no other link may speak for it.
+      onProgress: (sessionKey, progress) => {
+        if (this.hosts(link, sessionKey)) this.o.onProgress?.(sessionKey, progress)
+      },
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
         // No notice here: the protocol has no kind for a session-scoped interruption, and the

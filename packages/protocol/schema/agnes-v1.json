@@ -1551,7 +1551,7 @@
       }
     },
     "SessionLoadingParams": {
-      "description": "How far a session/load in progress has got. At most one a second per connection and session, and at least one every 5 s until the open ends; phase open is a heartbeat with done and total 0.",
+      "description": "How far a session/load in progress has got. At most one a second per connection and session, and at least one every 5 s until the open ends; phase open is a heartbeat with done and total 0. Advisory: a client that does not know it may ignore it.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "phase", "done", "total"],

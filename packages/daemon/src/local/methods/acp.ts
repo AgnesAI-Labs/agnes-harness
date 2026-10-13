@@ -598,46 +598,50 @@ export function registerAcp(
     requireOwner('session/load', p.sessionId)
     const loading = loadingNotifier(p.sessionId)
     // The registry relays the worker's own progress; the heartbeat covers a registry that has none
-    // and any stretch the worker goes quiet, so the client can tell slow from stuck.
+    // and any stretch the worker or the replay goes quiet, so the client can tell slow from stuck.
     const offProgress = cx.registry.onOpenProgress?.(p.sessionId, (progress) => loading(progress))
     const heartbeat = setInterval(() => loading(OPEN_HEARTBEAT, true), 1_000)
-    let entry = cx.registry.get(p.sessionId)
-    const loadStartedAt = performance.now()
     try {
-      const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
-      // Calling open for a live entry is intentional: both registries must reject a different
-      // authority binding rather than ignoring it until the next restart.
-      entry = await cx.registry.open({
-        key: p.sessionId,
-        cwd: binding.canonicalRoot,
-        binding,
-        resume: true,
-      } as Parameters<typeof cx.registry.open>[0])
-    } catch (error) {
-      cx.registry.recordLoadFailed?.(p.sessionId, { elapsedMs: performance.now() - loadStartedAt, error })
-      throwSessionOpenRpcError(error)
+      let entry = cx.registry.get(p.sessionId)
+      const loadStartedAt = performance.now()
+      try {
+        const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
+        // Calling open for a live entry is intentional: both registries must reject a different
+        // authority binding rather than ignoring it until the next restart.
+        entry = await cx.registry.open({
+          key: p.sessionId,
+          cwd: binding.canonicalRoot,
+          binding,
+          resume: true,
+        } as Parameters<typeof cx.registry.open>[0])
+      } catch (error) {
+        cx.registry.recordLoadFailed?.(p.sessionId, { elapsedMs: performance.now() - loadStartedAt, error })
+        throwSessionOpenRpcError(error)
+      } finally {
+        offProgress?.()
+      }
+      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      const feed = feedFor(entry)
+      // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
+      // silently truncate a long transcript at whatever limit was written here.
+      const lastSeq = entry.session.lastSeq
+      const replayStartedAt = performance.now()
+      for (let from = 1; from <= lastSeq; from += 500) {
+        const upto = Math.min(lastSeq, from + 499)
+        feed.replayLoad(
+          (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
+        )
+        loading({ phase: 'replay', done: upto, total: lastSeq })
+      }
+      cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
+      // Whatever is streaming now is not in the transcript yet; the snapshot says it.
+      feed.previewResync()
+      return {}
     } finally {
       clearInterval(heartbeat)
       offProgress?.()
+      loadingSentAt.delete(p.sessionId)
     }
-    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-    const feed = feedFor(entry)
-    // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
-    // silently truncate a long transcript at whatever limit was written here.
-    const lastSeq = entry.session.lastSeq
-    const replayStartedAt = performance.now()
-    for (let from = 1; from <= lastSeq; from += 500) {
-      const upto = Math.min(lastSeq, from + 499)
-      feed.replayLoad(
-        (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
-      )
-      loading({ phase: 'replay', done: upto, total: lastSeq })
-    }
-    loadingSentAt.delete(p.sessionId)
-    cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
-    // Whatever is streaming now is not in the transcript yet; the snapshot says it.
-    feed.previewResync()
-    return {}
   })
 
   ep.register('session/prompt', async (params, c) => {

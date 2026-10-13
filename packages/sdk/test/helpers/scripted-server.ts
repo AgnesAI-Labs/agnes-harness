@@ -18,6 +18,7 @@ export type ScriptedServer = {
 
 export async function clientWithScriptedServer(
   ready: Record<string, (params: unknown) => unknown> = {},
+  timeouts?: { request?: number; initialize?: number },
 ): Promise<{ client: Client; server: ScriptedServer }> {
   const waiting = new Map<string, Array<{ resolve(v: unknown): void; reject(e: unknown): void }>>()
   const seen = new Map<string, unknown[]>()
@@ -39,6 +40,7 @@ export async function clientWithScriptedServer(
     transport: { kind: 'inproc', endpoint: fake.endpoint },
     journal: memoryJournal(),
     authProviders: { local: () => localAuth() },
+    ...(timeouts ? { timeouts } : {}),
   })
   const next = (method: string) => {
     const pending = waiting.get(method)?.shift()

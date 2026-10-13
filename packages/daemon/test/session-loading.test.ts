@@ -1,4 +1,4 @@
-import { createExtensionActivationBarrier } from '@agnes/host'
+import { createExtensionActivationBarrier, StoredOpeningError } from '@agnes/host'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AttachedFeed } from '../src/local/attached.js'
@@ -35,7 +35,16 @@ const row = (seq: number): EventEnvelope =>
  * the supervisor relays a worker's progress frames. Without `progress` it has no progress channel,
  * like the in-process registry.
  */
-function slowRegistry(o: { openMs: number; lastSeq: number; progress?: boolean; fail?: Error }) {
+function slowRegistry(o: {
+  openMs: number
+  lastSeq: number
+  progress?: boolean
+  fail?: Error
+  /** Fail only the first open; later ones succeed. */
+  failOnce?: boolean
+  /** How long each replay page takes to read. */
+  scanMs?: number
+}) {
   const listeners = new Map<string, Set<(p: Progress) => void>>()
   const entry = {
     key: KEY,
@@ -46,6 +55,7 @@ function slowRegistry(o: { openMs: number; lastSeq: number; progress?: boolean; 
       lastSeq: o.lastSeq,
       latest: () => null,
       scan: async (q: { fromSeq: number; toSeq: number; limit: number }) => {
+        if (o.scanMs) await new Promise((resolve) => setTimeout(resolve, o.scanMs))
         const rows: EventEnvelope[] = []
         for (let seq = q.fromSeq; seq <= Math.min(q.toSeq, o.lastSeq); seq++) rows.push(row(seq))
         return rows.slice(0, q.limit)
@@ -53,6 +63,7 @@ function slowRegistry(o: { openMs: number; lastSeq: number; progress?: boolean; 
     },
   }
   let opened = false
+  let opens = 0
   const registry = {
     get: () => (opened ? entry : undefined),
     open: async () => {
@@ -66,7 +77,8 @@ function slowRegistry(o: { openMs: number; lastSeq: number; progress?: boolean; 
       } finally {
         clearInterval(tick)
       }
-      if (o.fail) throw o.fail
+      opens++
+      if (o.fail && (!o.failOnce || opens === 1)) throw o.fail
       opened = true
       return entry
     },
@@ -178,6 +190,51 @@ describe('session/load progress notifications', () => {
   })
 })
 
+describe('session/load progress around failures and slow replay', () => {
+  it('forgets a failed load, so the next load of the session is not throttled by it', async () => {
+    vi.useFakeTimers()
+    const registry = slowRegistry({
+      openMs: 2_500,
+      lastSeq: 0,
+      progress: false,
+      fail: new Error('open failed'),
+      failOnce: true,
+    })
+    const c = connect(registry)
+    const first = c.load()
+    await vi.advanceTimersByTimeAsync(2_600)
+    expect(await first).toHaveProperty('error')
+    expect(c.pushed.length).toBeGreaterThanOrEqual(1)
+    const retryAt = Date.now()
+    const second = c.load()
+    await vi.advanceTimersByTimeAsync(2_600)
+    expect(await second).not.toHaveProperty('error')
+    // The retry's first heartbeat goes on the first tick, not 4 s after the failed load's last notice.
+    const retried = c.pushed.filter((n) => n.at > retryAt)
+    expect(retried[0]?.at).toBeLessThanOrEqual(retryAt + 1_000)
+  })
+
+  it('keeps sending heartbeats while a slow replay page is read', async () => {
+    vi.useFakeTimers()
+    const registry = slowRegistry({ openMs: 0, lastSeq: 1_200, progress: false, scanMs: 12_000 })
+    const c = connect(registry)
+    const started = Date.now()
+    const answer = c.load()
+    await vi.advanceTimersByTimeAsync(37_000)
+    expect(await answer).not.toHaveProperty('error')
+    let last = started
+    for (const n of c.pushed) {
+      expect(n.at - last).toBeLessThanOrEqual(5_000)
+      last = n.at
+    }
+    expect(c.pushed.filter((n) => n.params.phase === 'open').length).toBeGreaterThanOrEqual(6)
+    expect(c.pushed.at(-1)?.params).toMatchObject({ phase: 'replay', done: 1_200, total: 1_200 })
+    const count = c.pushed.length
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(c.pushed.length).toBe(count)
+  })
+})
+
 describe('worker registry open progress', () => {
   it('relays progress to the listeners of that session only, until they leave', () => {
     const registry = new WorkerRegistry({} as WorkerPool)
@@ -248,6 +305,17 @@ describe('session.storedOpening', () => {
       },
     })
     expect((await empty({ sessionId: KEY })).error?.data).toMatchObject({
+      reason: 'stored-opening-unavailable',
+    })
+    const looped = endpoint({
+      storedOpening: {
+        opening: async () => {
+          throw new StoredOpeningError('stored session ancestry loops or is too deep')
+        },
+      },
+    })
+    expect((await looped({ sessionId: KEY })).error?.data).toMatchObject({
+      code: 'SEMANTIC_REJECTED',
       reason: 'stored-opening-unavailable',
     })
   })

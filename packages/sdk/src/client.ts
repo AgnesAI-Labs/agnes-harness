@@ -133,6 +133,8 @@ export type CallOptions = {
   skipInit?: boolean
   // Gives up on the request: it is dropped and rejects with the signal's reason.
   signal?: AbortSignal
+  // Called once the request goes on the wire, after the handshake (and any reconnect it waited on).
+  onSent?: () => void
 }
 
 export type SessionLoadOptions = {
@@ -142,7 +144,11 @@ export type SessionLoadOptions = {
   onPermissionRequestRegistered?: (off: () => void) => void
   /** Told each time the daemon reports how far the load has got. */
   onLoading?: (p: SessionLoadingNotice) => void
-  /** Fails the load with `LoadStalled` after this long with no word from the daemon. Default 30 s. */
+  /**
+   * Fails the load with `LoadStalled` after this long with no word from the daemon. Default 30 s.
+   * Both limits count from when the request is sent, not from while the client still connects; they
+   * replace `timeouts.request`, which does not apply to session/load.
+   */
   idleTimeoutMs?: number
   /** Fails the load with `LoadStalled` after this long whatever the progress. Default 10 min. */
   hardTimeoutMs?: number
@@ -464,11 +470,11 @@ export class Client {
     const hardMs = o.hardTimeoutMs ?? LOAD_HARD_TIMEOUT_MS
     const abort = new AbortController()
     let idle: ReturnType<typeof setTimeout> | undefined
+    let hard: ReturnType<typeof setTimeout> | undefined
     const arm = () => {
       if (idle !== undefined) clearTimeout(idle)
       idle = setTimeout(() => abort.abort(new LoadStalled(id, idleMs)), idleMs)
     }
-    const hard = setTimeout(() => abort.abort(new LoadStalled(id, hardMs)), hardMs)
     const watcher = (p: SessionLoadingNotice | undefined) => {
       arm()
       if (p) o.onLoading?.(p)
@@ -476,16 +482,24 @@ export class Client {
     const watchers = this.loadWatchers.get(id) ?? new Set()
     watchers.add(watcher)
     this.loadWatchers.set(id, watchers)
-    arm()
     try {
+      // `timeoutMs: null`: the load's own clocks below stand in for `timeouts.request`. They start
+      // when the request is sent, so time spent connecting or reconnecting first is not silence.
       await this.call(
         'session/load',
         { sessionId: id, cwd, mcpServers: [] },
-        { timeoutMs: null, signal: abort.signal },
+        {
+          timeoutMs: null,
+          signal: abort.signal,
+          onSent: () => {
+            arm()
+            hard = setTimeout(() => abort.abort(new LoadStalled(id, hardMs)), hardMs)
+          },
+        },
       )
     } finally {
       if (idle !== undefined) clearTimeout(idle)
-      clearTimeout(hard)
+      if (hard !== undefined) clearTimeout(hard)
       watchers.delete(watcher)
       if (watchers.size === 0 && this.loadWatchers.get(id) === watchers) this.loadWatchers.delete(id)
     }
@@ -651,6 +665,7 @@ export class Client {
     if (this.isClosed) throw new TransportClosed({ reason: 'closed' })
     if (!o.skipInit) await this.initialize()
     this.checkParams(method, params)
+    o.onSent?.()
     const result = await this.conn.request<T>(method, params, {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".

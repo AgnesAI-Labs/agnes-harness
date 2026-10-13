@@ -45,7 +45,7 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | Skill 删除失败/不能重新启用 | 检查 operation 与 SKILL_REMOVAL_PENDING；可能已有部分文件删除，排除占用后显式重试，不能靠重启/刷新当作撤销 |
 | MCP 目录为空或不能调用 | 检查定义 revision、信任、期望启用、连接状态、tool allow-list 与可执行程序策略；当前逐服务器会话路径跳过 OAuth 绑定，管理面测试成功不能证明会话可调用 |
 | 工具报 E_LEASE_EXPIRED | 检查当前行是否已卸载、撤权或被新版本替换，并核对运行产物版本；旧版本曾有默认 24 小时到期问题，详见[支持范围](../reference/limitations.zh-CN.md)。保留会话与错误，按实际状态重新加载 |
-| 打开旧会话一直停在"正在准备会话" / `LOAD_STALLED` | 很大的会话可能要几分钟才能打开；状态栏会显示进度，10 秒后会只读显示存储中的历史（见[打开很大的旧会话](sessions.zh-CN.md#打开很大的旧会话)）。`LOAD_STALLED` 表示后台 30 秒没有任何消息：先查看 `daemon status`，再看 `audit/runtime.jsonl` 里的 `session.open` 与 `session.load` 记录。只读历史未经校验；不要为了绕过慢打开去复制或编辑数据库 |
+| 打开旧会话一直停在"正在准备会话" / `LOAD_STALLED` | 很大的会话可能要几分钟才能打开；状态栏会显示进度，10 秒后会只读显示存储中的历史（见[打开很大的旧会话](sessions.zh-CN.md#打开很大的旧会话)）。`LOAD_STALLED` 表示后台 30 秒没有任何消息；后台仍会继续打开会话，重试会接上正在进行的打开。先查看 `daemon status`，再看 `audit/runtime.jsonl` 里的 `session.open` 与 `session.load` 记录。只读历史未经校验；不要为了绕过慢打开去复制或编辑数据库 |
 | 浏览器断线/停止后仍运行 | 关闭客户端与取消/停止后台不同；根据后台历史确认最终状态 |
 | 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
 
