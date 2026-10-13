@@ -50,6 +50,7 @@ const CURRENT_KINDS = [
   'worker.start_failed',
   'worker.log',
   'session.interrupted',
+  'batch.started',
 ] as const
 
 describe('audit kind closure', () => {

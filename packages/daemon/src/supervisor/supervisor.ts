@@ -2460,7 +2460,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }),
   }
 
-  // Failed requests only; process lifecycle and daemon errors go to the runtime log beside it.
+  // Failed requests and started batches; process lifecycle and daemon errors go to the runtime log beside it.
   const requestAudit = createFileAudit(join(scope.dataDir, 'audit', 'daemon.jsonl'))
   const runtimeLog = openRuntimeLog(scope.dataDir)
   const flushAudit = async () => {
@@ -2473,7 +2473,11 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   const sup = await (deps.startProduction ?? startProductionSupervisor)({
     audit: (record) => {
       if (!record || typeof record !== 'object' || !('kind' in record)) return
-      if (record.kind === 'daemon.request_failed' || record.kind === 'plugin.tree.reverted')
+      if (
+        record.kind === 'daemon.request_failed' ||
+        record.kind === 'plugin.tree.reverted' ||
+        record.kind === 'batch.started'
+      )
         requestAudit.write({
           kind: record.kind,
           ...('detail' in record ? { detail: record.detail as Record<string, unknown> } : {}),
