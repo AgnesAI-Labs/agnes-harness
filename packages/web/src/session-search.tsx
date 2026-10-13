@@ -103,7 +103,7 @@ export function isSessionSearchShortcut(event: KeyboardEvent | globalThis.Keyboa
 
 const workspaceName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 
-function SessionSearch({
+export function SessionSearch({
   open,
   t,
   recent,
@@ -132,7 +132,8 @@ function SessionSearch({
   const [truncated, setTruncated] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [active, setActive] = useState(0)
-  const [more, setMore] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const moreRequest = useRef<AbortController>()
   const searching = Boolean(query.trim() || title.trim() || workspace.trim())
   useEffect(() => {
     if (open) return
@@ -143,6 +144,9 @@ function SessionSearch({
   }, [open])
   // Typing replaces the results; "more" appends the next page of the same search.
   useEffect(() => {
+    moreRequest.current?.abort()
+    moreRequest.current = undefined
+    setLoadingMore(false)
     setActive(0)
     setHits([])
     setNext(undefined)
@@ -170,28 +174,36 @@ function SessionSearch({
     return () => {
       clearTimeout(timer)
       abort.abort()
+      moreRequest.current?.abort()
     }
   }, [open, searching, query, title, workspace, request])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a "more" click reads the next page.
-  useEffect(() => {
-    if (!more || !next) return
+  const loadMore = () => {
+    if (!open || !next || moreRequest.current) return
     const abort = new AbortController()
-    request(
+    moreRequest.current = abort
+    setLoadingMore(true)
+    setStatus('done')
+    void request(
       { query: query.trim(), title: title.trim(), workspace: workspace.trim(), cursor: next },
       abort.signal,
-    ).then(
-      (page) => {
-        if (abort.signal.aborted) return
-        setHits((current) => [...current, ...page.items])
-        setNext(page.next)
-        setTruncated(Boolean(page.truncated))
-      },
-      () => {
-        if (!abort.signal.aborted) setStatus('error')
-      },
     )
-    return () => abort.abort()
-  }, [more])
+      .then(
+        (page) => {
+          if (abort.signal.aborted) return
+          setHits((current) => [...current, ...page.items])
+          setNext(page.next)
+          setTruncated(Boolean(page.truncated))
+        },
+        () => {
+          if (!abort.signal.aborted) setStatus('error')
+        },
+      )
+      .finally(() => {
+        if (abort.signal.aborted) return
+        moreRequest.current = undefined
+        setLoadingMore(false)
+      })
+  }
   const rows: SessionSearchGroup[] = searching
     ? groupSessionHits(hits)
     : recent.map((row) => ({ ...row, snippets: [], matches: 0 }))
@@ -330,13 +342,14 @@ function SessionSearch({
                     : ''}
         </p>
         <div className="session-search-footer">
-          {next && status === 'done' ? (
+          {next && (status === 'done' || status === 'error') ? (
             <Button
               appearance="ghost"
               size="small"
               className="session-search-more"
               data-testid="session-search-more"
-              onClick={() => setMore((value) => value + 1)}
+              disabled={loadingMore}
+              onClick={loadMore}
             >
               {t('home.search.more')}
             </Button>

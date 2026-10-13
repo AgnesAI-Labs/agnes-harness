@@ -49,3 +49,87 @@ it('opens on the platform chord only', () => {
   expect(isSessionSearchShortcut(key({ key: 'k', metaKey: true, shiftKey: true }))).toBe(false)
   expect(isSessionSearchShortcut(key({ key: 'k', ctrlKey: true, altKey: true }))).toBe(false)
 })
+
+it('isolates pagination from later queries and closing, and permits retry after a page fails', async () => {
+  const { act, createElement } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { SessionSearch } = await import('../src/session-search.js')
+  const { vi } = await import('vitest')
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  vi.useFakeTimers()
+  const required = <T>(value: T | null | undefined): T => {
+    if (value == null) throw new Error('Missing search control or request')
+    return value
+  }
+  const pending: {
+    input: import('../src/session-search.js').SessionSearchInput
+    signal: AbortSignal
+    resolve(page: import('../src/session-search.js').SessionSearchPage): void
+    reject(error: Error): void
+  }[] = []
+  const request: import('../src/session-search.js').SessionSearchRequest = (input, signal) =>
+    new Promise((resolve, reject) => pending.push({ input, signal, resolve, reject }))
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = (open: boolean) =>
+    act(async () =>
+      root.render(
+        createElement(SessionSearch, {
+          open,
+          t: (key: string) => key,
+          recent: [],
+          titleOf: () => undefined,
+          request,
+          onOpen: () => undefined,
+          onClose: () => undefined,
+        }),
+      ),
+    )
+  const type = async (value: string) => {
+    await act(async () => {
+      const input = required(document.querySelector<HTMLInputElement>('[data-testid="session-search-input"]'))
+      required(Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set).call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+  }
+  const more = () =>
+    required(document.querySelector<HTMLButtonElement>('[data-testid="session-search-more"]'))
+  const results = () => required(document.querySelector('[data-testid="session-search-results"]')).textContent
+  try {
+    await render(true)
+    await type('first')
+    await act(async () => required(pending[0]).resolve({ items: [hit('first', 'first')], next: 'page-2' }))
+    await act(async () => more().click())
+    expect(more().disabled).toBe(true)
+    await type('second')
+    expect(required(pending[1]).signal.aborted).toBe(true)
+    await act(async () => {
+      required(pending[2]).resolve({ items: [hit('second', 'second')], next: 'second-2' })
+      required(pending[1]).resolve({ items: [hit('stale', 'stale')], next: 'stale-3' })
+    })
+    expect(results()).toContain('Session second')
+    expect(results()).not.toContain('stale')
+    await act(async () => more().click())
+    await act(async () => required(pending[3]).reject(new Error('offline')))
+    expect(document.body.textContent).toContain('home.search.unavailable')
+    expect(more().disabled).toBe(false)
+    await act(async () => more().click())
+    expect(required(pending[4]).input).toMatchObject({ query: 'second', cursor: 'second-2' })
+    await act(async () => required(pending[4]).resolve({ items: [hit('last', 'last')], next: 'second-3' }))
+    expect(results()).toContain('Session last')
+    await act(async () => more().click())
+    await render(false)
+    expect(required(pending[5]).signal.aborted).toBe(true)
+    await act(async () => required(pending[5]).resolve({ items: [hit('closed', 'closed')] }))
+    await render(true)
+    expect(results()).not.toContain('closed')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    vi.useRealTimers()
+  }
+})
