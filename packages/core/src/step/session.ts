@@ -169,6 +169,7 @@ import {
   type TurnBudgetOverride,
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
+import { withLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
 import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
@@ -1931,40 +1932,21 @@ export class SessionImpl {
     }
   }
 
-  /**
-   * A driver that ignores both its signal and `cancel()` would hold the run lane and `close()` for ever.
-   * The deadline stops the wait, cancels the driver and revokes its scope so the next run builds a fresh
-   * one; the turn then ends as an error naming the loop.
-   */
-  private async stepWithinDeadline(): Promise<LoopStepOutcome> {
+  private stepWithinDeadline(): Promise<LoopStepOutcome> {
     const driver = this.loopDriver
-    const timeoutMs = this.d.loopStepTimeoutMs ?? DEFAULT_LOOP_STEP_TIMEOUT_MS
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const expired = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
+    return withLoopDeadline({
+      loop: this.loop,
+      timeoutMs: this.d.loopStepTimeoutMs ?? DEFAULT_LOOP_STEP_TIMEOUT_MS,
+      run: () => driver.step(this.ac.signal),
+      expire: () => {
         this.loopStepExpired = true
         this.decisions.revokeScope()
         this.ac.abort()
         void Promise.resolve()
           .then(() => driver.cancel())
           .catch(() => undefined)
-        reject(
-          new CoreError(
-            'E_LOOP_TIMEOUT',
-            `loop ${this.loop.id}@${this.loop.version} did not finish a step within ${timeoutMs} ms`,
-            { loop: this.loop.id, timeoutMs },
-          ),
-        )
-      }, timeoutMs)
+      },
     })
-    const stepped = driver.step(this.ac.signal)
-    // A step that settles after the deadline has nothing left to report to.
-    stepped.catch(() => undefined)
-    try {
-      return await Promise.race([stepped, expired])
-    } finally {
-      clearTimeout(timer)
-    }
   }
 
   private loopStepExpired = false
