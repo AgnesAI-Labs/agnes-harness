@@ -48,6 +48,9 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   await expect(page.getByTestId('auto-review-enabled')).toBeChecked()
   await expect(page.getByTestId('auto-review-maxReviews')).toHaveValue('0')
   await expect(page.getByTestId('auto-review-settings')).toContainText('显式未来规则: 1')
+  // Leaving the settings application closes its transport after React has released the controls.
+  // The browser-health fixture must still observe no console errors during that teardown.
+  await page.goto('about:blank')
 })
 
 test('reviewer defaults and session overrides are configurable from Web in both locales', async ({

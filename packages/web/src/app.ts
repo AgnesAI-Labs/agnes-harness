@@ -6,6 +6,7 @@ import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
 import { settingsRoute } from '@agnes/web-units'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
+import { bindConnectionEvents } from './app/connection-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
@@ -2233,28 +2234,19 @@ const diagnostics = createDiagnosticsDialog({
 })
 const reportProblem = button('report-problem')
 reportProblem.addEventListener('click', () => diagnostics.open(reportProblem))
-client.on('reconnecting', () => setConnection('reconnecting'))
-client.on('reconnected', () => {
-  reconnect.reset()
-  setConnection('connected')
-  run(async () => {
-    // The live projection reopens the session on its own once the connection is back.
+const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
+  reconnect,
+  setConnection,
+  async refresh() {
     await modelRefresh.request()
     await list()
     scheduleClientRosterRead()
-  })
-})
-client.on('closed', () => {
-  titleRefresh.close()
-  setConnection('closed')
-  // While the page recovers by itself, the notice only states the fact; the recovery status says what happens next.
-  const message = intentionalClose ? t('app.connection.closedIntentional') : t('app.connection.lost')
-  if (sessionRecovery) renderSessionRecovery(message)
-  else {
-    notice.setText(message)
-    notice.setKind('error')
-  }
-  if (!intentionalClose) reconnect.start()
+  },
+  recover(message) {
+    if (!sessionRecovery) return false
+    renderSessionRecovery(message)
+    return true
+  },
 })
 /** Gap and generation notices name their session; another session's are not this view's concern. */
 const forCurrent = (payload: unknown): boolean =>
@@ -2331,6 +2323,8 @@ const modelRefresh = createRefreshCoordinator({
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
 window.addEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
 window.addEventListener('pagehide', () => {
+  intentionalClose = true
+  stopConnectionEvents()
   document.removeEventListener('agnes:settings-terminal', openSettingsTerminal)
   newSessionDialog.dispose()
   unbindDialogSheets()
@@ -2341,7 +2335,6 @@ window.addEventListener('pagehide', () => {
   unmountAppShell()
   modelRefresh.stop()
   window.removeEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
-  intentionalClose = true
   reconnect.cancel()
   titleRefresh.close()
   void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
