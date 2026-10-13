@@ -140,7 +140,7 @@ async function settleAndClose(created: Promise<unknown>, graceMs: number): Promi
       () => abandoned,
     ),
     new Promise<symbol>((resolve) => {
-      grace = setTimeout(() => resolve(abandoned), SEAM_CLEANUP_GRACE_MS)
+      grace = setTimeout(() => resolve(abandoned), graceMs)
     }),
   ])
   clearTimeout(grace)
