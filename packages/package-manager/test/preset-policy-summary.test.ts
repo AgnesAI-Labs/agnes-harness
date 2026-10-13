@@ -23,7 +23,7 @@ it('answers yes or no only from what the platform enforces, and unknown for a po
       presets: {
         // Inherits the platform read-only filter, which holds under any provider.
         strict: preset('strict', { providers: { 'tool-policy': { provider: 'acme.strict' } } }),
-        // A preset can lift it again for itself.
+        // The session bundle is applied after the preset, retaining its read-only filter.
         open: preset('open', { composition: { toolPolicy: { readOnly: false } } }),
       },
     },
@@ -48,7 +48,7 @@ it('answers yes or no only from what the platform enforces, and unknown for a po
       bundle: 'acme/kit#review',
       id: 'open',
       toolPolicy: 'default',
-      readOnly: 'no',
+      readOnly: 'yes',
       confirmBeforeActions: 'no',
       network: 'none',
     },
@@ -77,6 +77,32 @@ it('answers yes or no only from what the platform enforces, and unknown for a po
       network: 'none',
     },
   ])
+  // Session bundle patches win over preset patches, including an explicit false. Parent bundles
+  // apply in declaration order, once each, rather than treating false as an absent setting.
+  for (const [extends_, profile, expected] of [
+    [[], { toolPolicy: { readOnly: false } }, 'no'],
+    [['acme/kit#base', 'acme/kit#writable'], {}, 'no'],
+    [['acme/kit#writable', 'acme/kit#base'], {}, 'yes'],
+    [['acme/kit#base', 'acme/kit#writable', 'acme/kit#diamond'], {}, 'no'],
+    [['other/pkg#base'], {}, 'unknown'],
+  ] as const) {
+    expect(
+      summarizeBundlePresets(
+        'acme/kit',
+        {
+          ...bundles,
+          writable: { profile: { toolPolicy: { readOnly: false } } },
+          diamond: { extends: ['acme/kit#base'] },
+          selected: {
+            extends: extends_,
+            profile,
+            presets: { selected: preset('selected', { composition: { toolPolicy: { readOnly: true } } }) },
+          },
+        },
+        [plugin({})],
+      ).find((entry) => entry.bundle === 'acme/kit#selected')?.readOnly,
+    ).toBe(expected)
+  }
 })
 
 it('reads network use from declared capabilities and omits the field set when a package has no presets', () => {

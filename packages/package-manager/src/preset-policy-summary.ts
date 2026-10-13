@@ -27,23 +27,32 @@ export function summarizeBundlePresets(
     : declared.some((capabilities) => (capabilities.network?.length ?? 0) > 0)
       ? 'allowed'
       : 'none'
-  /** Platform read-only through the bundle's own inheritance; a parent in another package is unseen. */
-  const bundleReadOnly = (name: string, seen: Set<string>): boolean | undefined => {
-    const bundle = record(catalog[name])
-    if (!bundle || seen.has(name)) return undefined
-    seen.add(name)
-    const own = record(record(bundle.profile)?.toolPolicy)?.readOnly
-    if (typeof own === 'boolean') return own
-    let inherited: boolean | undefined = false
-    for (const parent of Array.isArray(bundle.extends) ? [...bundle.extends].reverse() : []) {
-      if (typeof parent !== 'string' || !parent.startsWith(`${packageId}#`)) return undefined
-      const value = bundleReadOnly(parent.slice(packageId.length + 1), seen)
-      if (value !== false) {
-        inherited = value
-        break
+  /** Session bundles apply after the preset, in DFS order with each parent applied only once. */
+  const bundleReadOnly = (name: string, initial: boolean): boolean | undefined => {
+    let value: boolean | undefined = initial
+    const applied = new Set<string>(),
+      visiting = new Set<string>()
+    const visit = (id: string) => {
+      if (applied.has(id)) return
+      const bundle = id.startsWith(`${packageId}#`)
+        ? record(catalog[id.slice(packageId.length + 1)])
+        : undefined
+      if (!bundle || visiting.has(id) || visiting.size >= 64) {
+        value = undefined
+        return
       }
+      visiting.add(id)
+      for (const parent of Array.isArray(bundle.extends) ? bundle.extends : []) {
+        if (typeof parent === 'string') visit(parent)
+        else value = undefined
+      }
+      visiting.delete(id)
+      applied.add(id)
+      const own = record(record(bundle.profile)?.toolPolicy)?.readOnly
+      if (typeof own === 'boolean') value = own
     }
-    return inherited
+    visit(`${packageId}#${name}`)
+    return value
   }
   const summaries: PresetPolicySummary[] = []
   for (const [name, bundle] of Object.entries(catalog)) {
@@ -52,7 +61,7 @@ export function summarizeBundlePresets(
       const provider = record(record(preset.providers)?.['tool-policy'])?.provider
       const toolPolicy = typeof provider === 'string' ? provider : 'default'
       const own = record(record(preset.composition)?.toolPolicy)?.readOnly
-      const enforced = typeof own === 'boolean' ? own : bundleReadOnly(name, new Set())
+      const enforced = bundleReadOnly(name, own === true)
       const custom = toolPolicy !== 'default'
       summaries.push({
         bundle: `${packageId}#${name}`,
