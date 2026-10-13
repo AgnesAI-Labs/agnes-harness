@@ -268,7 +268,21 @@
   },
   {
     "path": "packages/package-manager/src/runtime-snapshots-generations.ts",
-    "includes": ["'.runtime-generations'", "linkSync(temporary, path)", "ownerPid"]
+    "includes": [
+      "'.runtime-generations'",
+      "publishFileDurablySync(this.pinPath",
+      "'owner.json'",
+      "holder.startId"
+    ]
+  },
+  {
+    "path": "packages/system-node/src/index.ts",
+    "includes": [
+      "export function publishFileDurablySync(",
+      "linkSync(temporary, path)",
+      "flush: true",
+      "syncDirectorySync(dirname(resolve(path)))"
+    ]
   },
   {
     "path": "packages/daemon-foundation/src/storage/composite-target-store.ts",
