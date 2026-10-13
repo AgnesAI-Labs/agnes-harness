@@ -238,16 +238,69 @@ describe('settings controller', () => {
     })
 
     await settings.open()
-    expect(node('config-state').textContent).toBe(
-      '已加载保存的服务商与默认模型。测试连接后可更新默认模型；当前会话模型不会在此更改。',
-    )
-    expect(node('config-model').children[0]?.textContent).toBe('先测试 Provider，再选择默认模型')
+    // Nothing has happened yet, so the status line says nothing.
+    expect(node('config-state').textContent).toBe('')
+    expect(node('config-model').children[0]?.textContent).toBe('填入密钥后列出模型')
 
     node('config-test').dispatch('click')
     await vi.waitFor(() => expect(node('config-model').children).toHaveLength(3))
-    expect(node('config-state').textContent).toBe(
-      '第 3 步：连接成功，发现 2 个模型。确认或选择默认模型后保存；当前会话模型不会改变。',
-    )
+    expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+    expect(node('config-state').dataset.tone).toBe('ok')
+  })
+
+  it('tests a key once typing settles, at once after a paste, and never a superseded one', async () => {
+    installDom()
+    const test = vi.fn(async (_input: { apiKey?: string }) => testResult)
+    const onError = vi.fn()
+    const settings = createSettingsController({
+      client: client({ test }),
+      onSaved: vi.fn(async () => undefined),
+      onError,
+    })
+    await settings.open()
+    vi.useFakeTimers()
+    try {
+      const key = node('config-api-key')
+      key.value = 'half'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(600)
+      // Still typing: the earlier wait starts over, so a half-entered key is never sent.
+      key.value = 'half-then-whole'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(600)
+      expect(test).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(test).toHaveBeenCalledOnce()
+      expect(test.mock.calls[0]?.[0]).toMatchObject({ apiKey: 'half-then-whole' })
+      expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+      // A changed key after a passed test says the earlier result no longer holds, then tests again.
+      key.value = 'pasted-value'
+      key.dispatch('paste')
+      key.dispatch('input')
+      expect(node('config-state').textContent).toBe('连接信息已变更，正在重新测试；此前的模型列表已失效。')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(test).toHaveBeenCalledTimes(2)
+      expect(test.mock.calls[1]?.[0]).toMatchObject({ apiKey: 'pasted-value' })
+      // An emptied field has nothing to test.
+      key.value = ''
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(test).toHaveBeenCalledTimes(2)
+      // A failed automatic test reports on its own line, not as an app-level notice.
+      test.mockRejectedValueOnce(new Error('The provider refused this key.'))
+      key.value = 'refused-value'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(node('config-error').textContent).toBe('The provider refused this key.')
+      expect(onError).not.toHaveBeenCalled()
+      node('config-test').dispatch('click')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(test).toHaveBeenCalledTimes(4)
+      expect(node('config-error').textContent).toBe('')
+    } finally {
+      vi.useRealTimers()
+      settings.close()
+    }
   })
 
   it('loads current revision, tests the selected provider, saves the model id, and clears the key', async () => {
@@ -274,9 +327,8 @@ describe('settings controller', () => {
     node('config-api-key').dispatch('input')
     node('config-test').dispatch('click')
     await Promise.resolve()
-    expect(node('config-state').textContent).toBe(
-      '第 3 步：连接成功，发现 2 个模型。确认或选择默认模型后保存；当前会话模型不会改变。',
-    )
+    expect(node('config-state').textContent).toBe('连接成功，发现 2 个模型。')
+    expect(node('config-state').dataset.tone).toBe('ok')
     expect(node('config-api-key').value).toBe('secret-value')
     expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
       '',

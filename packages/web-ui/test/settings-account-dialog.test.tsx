@@ -34,12 +34,19 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
       'config-account-name',
       'config-base-url',
       'config-auth-method',
-      'config-model',
-      'config-thinking',
       'config-context-window',
     ])
       expect(advanced.querySelector(`#${id}`)).not.toBeNull()
-    expect(advanced.querySelector('#config-api-key')).toBeNull()
+    // The key, its test result, the default model and thinking effort are the main area.
+    for (const id of ['config-api-key', 'config-model', 'config-thinking', 'config-state', 'config-error']) {
+      expect(host.querySelector(`#${id}`)).not.toBeNull()
+      expect(advanced.querySelector(`#${id}`)).toBeNull()
+    }
+    // The status line sits between the key and the model it unlocks.
+    const order = [...host.querySelectorAll('#config-api-key, #config-state, #config-model')].map(
+      (element) => element.id,
+    )
+    expect(order).toEqual(['config-api-key', 'config-state', 'config-model'])
     expect(host.querySelectorAll('.agh-btn--primary')).toHaveLength(1)
     expect(host.querySelector('#config-provider')?.closest('label')?.textContent).toContain(
       'Provider · translated',

@@ -27,6 +27,11 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
           <p id="config-account-context">{t('accounts.context')}</p>
         </div>
         <div className="config-detail-grid">
+          {/* Two steps, named once; the line under the key says what is happening. */}
+          <ol id="config-account-steps" className="account-steps" aria-label={t('accounts.stepsAria')}>
+            <li data-step="provider">{t('accounts.stepProvider')}</li>
+            <li data-step="connection">{t('accounts.stepConnect')}</li>
+          </ol>
           <fieldset className="config-section account-provider-step">
             <legend>{t('accounts.connectionLegend')}</legend>
             <Field className="form-field" label={t('accounts.providerLabel')}>
@@ -51,7 +56,34 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               <p id="config-key-hint" className="field-hint form-field-wide" />
               <div id="config-oauth-controls" className="form-field-wide" />
             </fieldset>
-            <Disclosure variant="plain" id="config-account-advanced" summary={t('accounts.advanced')}>
+            {/* The key is tested as soon as it is entered; the result reads here, where it happened. */}
+            <div className="account-status" id="config-account-status">
+              <p id="config-state" aria-live="polite" />
+              <p id="config-error" role="alert" />
+              <Button id="config-test" appearance="ghost" size="small" htmlType="button">
+                <Icon name="refresh-cw" />
+                <span>{t('accounts.testConnection')}</span>
+              </Button>
+              <Button id="config-retry" size="small" htmlType="button" hidden>
+                {t('accounts.retryRead')}
+              </Button>
+            </div>
+            {/* What a new session starts with: shown once the connection has models to offer. */}
+            <fieldset className="config-section config-validation-section" id="config-model-fields">
+              <legend>{t('accounts.validationLegend')}</legend>
+              <Field className="form-field" label={t('accounts.defaultModelLabel')}>
+                <SettingsOptionSelect id="config-model" />
+              </Field>
+              <Field className="form-field" label={t('accounts.defaultThinkingLabel')}>
+                <SettingsOptionSelect id="config-thinking" />
+              </Field>
+            </fieldset>
+            <Disclosure
+              variant="plain"
+              id="config-account-advanced"
+              summary={t('accounts.advanced')}
+              meta={t('accounts.advancedSummary')}
+            >
               <fieldset className="config-section">
                 <Field className="form-field" label={t('accounts.nameLabel')}>
                   <SettingsInput
@@ -71,21 +103,6 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 <Field className="form-field form-field-wide" label={t('accounts.baseUrlLabel')}>
                   <SettingsInput id="config-base-url" autoComplete="url" />
                 </Field>
-              </fieldset>
-              <fieldset className="config-section config-validation-section">
-                <legend>{t('accounts.validationLegend')}</legend>
-                <div className="config-validation-controls">
-                  <Field className="form-field" label={t('accounts.defaultModelLabel')}>
-                    <SettingsOptionSelect id="config-model" />
-                  </Field>
-                  <Button id="config-test" appearance="secondary" htmlType="button">
-                    <Icon name="refresh-cw" />
-                    <span>{t('accounts.testConnection')}</span>
-                  </Button>
-                </div>
-                <Field className="form-field" label={t('accounts.defaultThinkingLabel')}>
-                  <SettingsOptionSelect id="config-thinking" />
-                </Field>
                 <Field className="form-field" label={t('accounts.contextBudgetLabel')}>
                   <SettingsInput
                     id="config-context-window"
@@ -100,13 +117,8 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 </p>
               </fieldset>
               <div id="config-account-network" />
-              <p id="config-account-guard">{t('accounts.guard')}</p>
             </Disclosure>
-            <p id="config-state" aria-live="polite" />
-            <Button id="config-retry" size="small" htmlType="button" hidden>
-              {t('accounts.retryRead')}
-            </Button>
-            <p id="config-error" role="alert" />
+            <p id="config-account-guard">{t('accounts.guard')}</p>
           </div>
         </div>
         <div className="config-detail-footer">

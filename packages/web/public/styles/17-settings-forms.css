@@ -937,13 +937,142 @@
   }
   .account-provider-choices {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s12);
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: var(--s8);
   }
   .account-provider-choices > button {
     white-space: normal;
     height: auto;
-    min-height: var(--control-height-touch);
+    min-height: 3.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--s2);
+    padding: var(--s8) var(--s12);
+    text-align: start;
+  }
+  /* In the dialog the tiles choose the provider and the title names it; the select stays for the
+   first-run guide, which shows no tiles. */
+  #account-dialog .account-provider-step {
+    display: none;
+  }
+  #account-dialog .account-key-help {
+    margin-block: 0;
+  }
+  /* A provider tile: its name, and under it how it connects. */
+  .account-provider-choices > button strong {
+    font-weight: var(--font-weight-medium);
+  }
+  .account-provider-choices > button small {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+  /* Two steps, named once above the form; the step on screen is the emphasised one. */
+  .account-steps {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: account-step;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .account-steps[hidden] {
+    display: none;
+  }
+  .account-steps > li {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    counter-increment: account-step;
+  }
+  .account-steps > li::before {
+    content: counter(account-step);
+    display: grid;
+    place-items: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .account-steps > li + li::after {
+    content: "";
+    order: -1;
+    width: var(--s24);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .account-dialog-body[data-account-step="provider"] .account-steps > li[data-step="provider"],
+  .account-dialog-body[data-account-step="connection"] .account-steps > li[data-step="connection"] {
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .account-dialog-body[data-account-step="provider"] .account-steps > li[data-step="provider"]::before,
+  .account-dialog-body[data-account-step="connection"] .account-steps > li[data-step="connection"]::before {
+    color: var(--agnes-bg-surface);
+    background: var(--agnes-brand-primary);
+  }
+  /* The test result reads where it happened: one toned line under the key, with retry on failure. */
+  .account-status {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+  }
+  :is(#config-form, #account-dialog) .account-status > :is(#config-state, #config-error) {
+    grid-column: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .account-status > :is(#config-state, #config-error):empty {
+    display: none;
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-hover);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="progress"] {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-error {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Testing is automatic; the button is only the way to try again after a failure. */
+  :is(#config-form, #account-dialog) .account-status > #config-test {
+    display: none;
+    grid-column: 2;
+    width: auto;
+    min-height: var(--control-height-sm);
+    border: 0;
+    background: transparent;
+  }
+  :is(#config-form, #account-dialog) .account-status:has(> #config-error:not(:empty)) > #config-test {
+    display: inline-flex;
+  }
+  .account-status > #config-retry:not([hidden]) {
+    grid-column: 2;
+  }
+  #config-model-fields[hidden] {
+    display: none;
   }
   #config-account-advanced,
   .account-key-help {

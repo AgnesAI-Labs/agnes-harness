@@ -112,3 +112,15 @@ export function errorText(error: unknown, secret: string, t: (key: string) => st
 export function focusable(value: Element | null): value is HTMLElement {
   return value !== null && typeof (value as HTMLElement).focus === 'function'
 }
+
+/** Open a dialog modally, or close it; a DOM without the dialog methods falls back to the attribute. */
+export function setDialogOpen(dialog: HTMLDialogElement, open: boolean): void {
+  if (dialog.open === open) return
+  try {
+    if (open) dialog.showModal()
+    else dialog.close()
+  } catch {
+    // Minimal DOM implementations and older embedders may expose only the open attribute.
+    dialog.toggleAttribute('open', open)
+  }
+}
