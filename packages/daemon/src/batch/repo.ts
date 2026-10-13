@@ -238,6 +238,17 @@ export class BatchRepo {
       .map(toBatch)
   }
 
+  /** Finished batches that still hold pending or running items: a clean-up a stopped process left undone. */
+  unsettledFinished(): BatchRow[] {
+    return this.table
+      .all<RawBatch>(
+        `SELECT * FROM batches WHERE status != 'running' AND EXISTS (
+           SELECT 1 FROM batch_items WHERE batch_items.batch_id = batches.id AND batch_items.status IN ('pending', 'running')
+         ) ORDER BY created_at, id`,
+      )
+      .map(toBatch)
+  }
+
   listFor(principalId: string, max: number): BatchRow[] {
     return this.table
       .all<RawBatch>('SELECT * FROM batches WHERE principal_id = ? ORDER BY created_at DESC, id LIMIT ?', [

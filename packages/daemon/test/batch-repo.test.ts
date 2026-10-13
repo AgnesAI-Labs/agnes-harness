@@ -91,6 +91,19 @@ describe('BatchRepo', () => {
     expect(repo.listFor('p', 5).map((batch) => batch.id)).toEqual([id])
     expect(repo.listFor('someone else', 5)).toEqual([])
   })
+
+  it('finds finished batches whose items were left pending or running', () => {
+    const { repo } = fresh()
+    expect(repo.unsettledFinished()).toEqual([])
+    repo.markRunning(id, 1, { jobId: 'j1', sessionKey: 's1', repairs: 0, startedAt: 5 })
+    expect(repo.unsettledFinished()).toEqual([])
+    repo.setStatus(id, 'cancelled', 'cancelled by request')
+    expect(repo.unsettledFinished().map((batch) => batch.id)).toEqual([id])
+    repo.settle(id, 1, { status: 'cancelled', error: 'cancelled' })
+    expect(repo.unsettledFinished().map((batch) => batch.id)).toEqual([id])
+    repo.cancelPending(id, 'cancelled')
+    expect(repo.unsettledFinished()).toEqual([])
+  })
 })
 
 describe('BatchRepo state machine', () => {
