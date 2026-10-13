@@ -16,6 +16,7 @@ import {
   copyImageRuntime,
   hostImageCodecPackage,
   IMAGE_RUNTIME_ROOTS,
+  isInsideDirectory,
   probeImageRuntime,
 } from '../tools/image-runtime.js'
 
@@ -44,10 +45,24 @@ describe('copyImageRuntime', () => {
     expect(readdirSync(modules).sort()).toEqual([...IMAGE_RUNTIME_ROOTS].sort())
     expect(existsSync(join(modules, 'sharp', 'package.json'))).toBe(true)
     expect(existsSync(join(modules, hostImageCodecPackage(), 'package.json'))).toBe(true)
-    const probe = probeImageRuntime(out)
+    // A relative directory is resolved before it reaches createRequire in the child.
+    const probe = probeImageRuntime(relative(process.cwd(), out))
     expect(probe.width).toBe(4)
     expect(relative(realpathSync(out), probe.resolved)).toBe(join('node_modules', 'sharp', 'lib', 'index.js'))
   }, 60_000)
+
+  it('reports a failed probe with the child error, not the probe script', () => {
+    const empty = temporary()
+    let message = ''
+    try {
+      probeImageRuntime(empty)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toMatch(/^Image runtime probe failed for /)
+    expect(message).toContain("Cannot find module 'sharp'")
+    expect(message).not.toContain('createRequire')
+  })
 
   it('refuses a source tree where the platform codec was not installed', async () => {
     const source = temporary()
@@ -74,6 +89,22 @@ describe('copyImageRuntime', () => {
     await expect(copyImageRuntime(temporary(), source)).rejects.toThrow(
       'Image runtime package left-pad is outside IMAGE_RUNTIME_ROOTS',
     )
+  })
+})
+
+describe('isInsideDirectory', () => {
+  // Windows: the native realpath expands 8.3 short names; the loader's JavaScript realpath keeps them.
+  const expand = (path: string): string => path.replace('/RUNNER~1/', '/runneradmin/')
+  const loaded = '/work/RUNNER~1/Temp/out/node_modules/sharp/lib/index.js'
+
+  it('canonicalises both sides with the same realpath', () => {
+    expect(isInsideDirectory('/work/RUNNER~1/Temp/out', loaded, expand)).toBe(true)
+    expect(isInsideDirectory('/work/runneradmin/Temp/out', loaded, expand)).toBe(true)
+  })
+
+  it('rejects paths outside or equal to the directory', () => {
+    expect(isInsideDirectory('/work/RUNNER~1/Temp/other', loaded, expand)).toBe(false)
+    expect(isInsideDirectory('/work/RUNNER~1/Temp/out', '/work/RUNNER~1/Temp/out', expand)).toBe(false)
   })
 })
 

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { access, cp, mkdir, readFile, realpath } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { IMAGE_RUNTIME_ROOTS } from './image-runtime-roots.mjs'
 
@@ -17,11 +18,26 @@ export function hostImageCodecPackage(): string {
   return `@img/sharp-${musl ? 'linuxmusl' : platform}-${arch}`
 }
 
+/**
+ * Whether `path` lies inside `directory`, both canonicalised by the same realpath. The module loader
+ * reports paths through the JavaScript realpath, which keeps Windows 8.3 short names that the native
+ * realpath expands, so mixing the two would put a loaded module outside its own directory.
+ */
+export function isInsideDirectory(
+  directory: string,
+  path: string,
+  canonical: (path: string) => string = realpathSync,
+): boolean {
+  const location = relative(canonical(directory), canonical(path))
+  return location !== '' && !location.startsWith('..') && !isAbsolute(location)
+}
+
 /** Load sharp from the distribution in a separate Node process and decode a generated image there. */
 export function probeImageRuntime(
   outputDirectory: string,
   node = process.execPath,
 ): { resolved: string; width: number } {
+  const directory = resolve(outputDirectory)
   const script = `
     const load = require('node:module').createRequire(require('node:path').join(process.argv[1], 'worker.mjs'))
     const sharp = load('sharp')
@@ -29,17 +45,26 @@ export function probeImageRuntime(
       .then((png) => sharp(png).metadata())
       .then((meta) => process.stdout.write(JSON.stringify({ resolved: load.resolve('sharp'), width: meta.width })))
   `
-  const output = execFileSync(node, ['-e', script, outputDirectory], {
-    encoding: 'utf8',
-    timeout: 30_000,
-    windowsHide: true,
-    env: { ...process.env, NODE_PATH: '' },
-  })
+  let output: string
+  try {
+    output = execFileSync(node, ['-e', script, directory], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      windowsHide: true,
+      env: { ...process.env, NODE_PATH: '' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (error) {
+    const stderr = String((error as { stderr?: unknown }).stderr ?? '').trim()
+    const detail = stderr ? `:\n${stderr.slice(-4000)}` : ''
+    throw new Error(`Image runtime probe failed for ${directory}${detail}`, { cause: error })
+  }
   return JSON.parse(output) as { resolved: string; width: number }
 }
 
 /** Preserve sharp's native codec, runtime dependencies and bundled license notices together. */
-export async function copyImageRuntime(outputDirectory: string, from = baseDirectory): Promise<void> {
+export async function copyImageRuntime(target: string, from = baseDirectory): Promise<void> {
+  const outputDirectory = resolve(target)
   // Native optional packages export only their binary and version subpaths, not package.json.
   // Walk the node_modules hierarchy only: NODE_PATH and global folders (pnpm sets NODE_PATH to its
   // hoisted store) must never supply a package the install did not place beside sharp.
@@ -87,7 +112,7 @@ export async function copyImageRuntime(outputDirectory: string, from = baseDirec
       if (optional) await copy(optional)
     }
   }
-  const rootManifest = await manifestFor(from, 'sharp')
+  const rootManifest = await manifestFor(resolve(from), 'sharp')
   if (!rootManifest) throw new Error(`Image runtime package sharp is not installed for ${from}`)
   await copy(rootManifest)
   // Optional platform packages are skipped silently by installs that omit them; never ship no codec.
@@ -95,7 +120,6 @@ export async function copyImageRuntime(outputDirectory: string, from = baseDirec
   if (!copied.has(codec))
     throw new Error(`Image runtime codec ${codec} is not installed; run pnpm install on this platform`)
   const probe = probeImageRuntime(outputDirectory)
-  const location = relative(await realpath(outputDirectory), probe.resolved)
-  if (probe.width !== 4 || location.startsWith('..') || isAbsolute(location))
+  if (probe.width !== 4 || !isInsideDirectory(outputDirectory, probe.resolved))
     throw new Error(`Image runtime did not load from ${outputDirectory}: ${JSON.stringify(probe)}`)
 }
