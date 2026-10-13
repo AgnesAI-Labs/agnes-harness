@@ -261,6 +261,42 @@ it('refreshes Resource Admin when reopened with the same workspace and tab', asy
   expect(submitted('mcp/list')).toHaveLength(2)
 })
 
+it('hands the shared form to the new controller before the old mount is disposed', async () => {
+  const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
+  const old = resourceMount
+  // Give the new controller a distinct authenticated client so the submitted command proves ownership.
+  const originalFetch = fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string, init?: RequestInit) =>
+      input.endsWith('/context')
+        ? Response.json({ profile: 'default', clientId: 'new-client', permissions: [], readOnly: false })
+        : originalFetch(input, init),
+    ),
+  )
+  resourceMount = mountResourceAdmin({ tab: 'mcp' })
+  await resourceMount.ready
+  byId('mcp-create').click()
+  byId('mcp-method-local').click()
+  change('mcp-command', 'fixture --new-controller')
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.clientId).toBe('new-client')
+  await settle()
+  old.dispose()
+  expect(byId('resource-list').textContent).toContain('Fixture MCP')
+  byId('mcp-create').click()
+  byId('mcp-method-local').click()
+  change('mcp-command', 'fixture --discarded')
+  byId('mcp-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(byId<HTMLDialogElement>('admin-confirm').open).toBe(true))
+  resourceMount.dispose()
+  byId('admin-confirm-action').click()
+  await settle()
+  expect(submitted('mcp/create')).toHaveLength(1)
+  expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false)
+})
+
 it('does not append a stale load-more response after switching tabs', async () => {
   let resolvePage!: (response: Response) => void
   pendingPage = {
@@ -292,6 +328,8 @@ it('does not append a stale load-more response after switching tabs', async () =
 })
 afterEach(async () => {
   resourceMount?.dispose()
+  const { setAdvancedSettingsShown } = await import('@agnes/web-ui')
+  setAdvancedSettingsShown(false)
   await workbench?.runtime.dispose()
   workbench = undefined
   document.documentElement.lang = 'en'

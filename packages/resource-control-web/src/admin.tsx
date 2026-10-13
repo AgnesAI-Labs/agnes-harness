@@ -110,6 +110,7 @@ async function confirmEffect(summary: string, t: LocaleTranslator = activeResour
 
 /** 详情三段式：头部固定 / 中段滚动 / 动作固定。操作按钮因此永远留在可视区内。 */
 class ResourceAdminPage {
+  readonly lifetime = new AbortController()
   readonly #locale: UiLocaleSource
   readonly #localeStop: () => void
   readonly #localeCleanup?: () => void
@@ -175,8 +176,10 @@ class ResourceAdminPage {
     return this.#locale.getSnapshot()
   }
 
-  confirm(summary: string): Promise<boolean> {
-    return confirmEffect(summary, this.#t)
+  async confirm(summary: string): Promise<boolean> {
+    if (this.lifetime.signal.aborted) return false
+    const confirmed = await confirmEffect(summary, this.#t)
+    return confirmed && !this.lifetime.signal.aborted
   }
 
   showError(error: unknown): void {
@@ -239,6 +242,7 @@ class ResourceAdminPage {
     await this.#ensureLoaded()
   }
   async #ensureLoaded(): Promise<void> {
+    if (this.lifetime.signal.aborted) return
     if (this.#loadedTab !== this.#tab || this.#loadedWorkspace !== this.#workspaceId) {
       this.#loadedTab = undefined
       this.#loadedWorkspace = undefined
@@ -252,6 +256,7 @@ class ResourceAdminPage {
     if (this.#loadedTab !== this.#tab || this.#loadedWorkspace !== this.#workspaceId) await this.reload()
   }
   async reload(preserveNotice = false): Promise<void> {
+    if (this.lifetime.signal.aborted) return
     if (this.#reloadPromise) return this.#reloadPromise
     this.#reloadPromise = this.#reload(preserveNotice).finally(() => {
       this.#reloadPromise = undefined
@@ -270,6 +275,7 @@ class ResourceAdminPage {
     }
     try {
       const context = this.#context ?? (await ResourceAdminApi.context())
+      if (this.lifetime.signal.aborted) return
       this.#context = context
       this.#api = new ResourceAdminApi(context, fetch, requestWorkspace)
       const result = requestTab === 'skills' ? await this.#api.skills() : await this.#api.mcp()
@@ -298,7 +304,7 @@ class ResourceAdminPage {
     }
   }
   api(): ResourceAdminApi {
-    if (!this.#api) throw new Error(this.#t('error.not-connected'))
+    if (!this.#api || this.lifetime.signal.aborted) throw new Error(this.#t('error.not-connected'))
     return this.#api
   }
   writable(): boolean {
@@ -327,13 +333,7 @@ class ResourceAdminPage {
       detail.removeAttribute('open')
     }
   }
-  /**
-   * 关闭详情并把焦点还给当初打开它的那一行。
-   *
-   * 不能用当初点击的那个行元素：`render()` 会 `replaceChildren()` 重建整个列表，那个引用
-   * 在调用点已经脱离文档（`isConnected === false`），焦点只会落回 body。与插件页一致，
-   * 按 `data-resource-id` 在**新**列表里找回对应的行。
-   */
+  /** Return focus by resource ID: rendering may have replaced the original trigger row. */
   closeDetail(): void {
     const targetId = this.#detailTrigger?.dataset.resourceId
     this.#closeDetailDialog()
@@ -390,7 +390,9 @@ class ResourceAdminPage {
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
     for (let attempt = 0; attempt < 120; attempt += 1) {
+      if (this.lifetime.signal.aborted) return false
       const op = await api.operation(receipt.operationId)
+      if (this.lifetime.signal.aborted) return false
       this.#operations.set(op.operationId, op)
       this.render()
       if (terminal.has(op.state)) {
@@ -806,6 +808,8 @@ class ResourceAdminPage {
   }
 
   dispose(): void {
+    this.lifetime.abort()
+    this.#generation += 1
     this.#localeStop()
     this.#localeCleanup?.()
     // A later mount already took the shared form, dialogs and hosts over.
@@ -964,7 +968,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
 
   // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
   // The dialogs and the form are shared between mounts: every listener leaves with its mount.
-  const stop = new AbortController()
+  const stop = page.lifetime
   const bound = { signal: stop.signal }
   detail.addEventListener(
     'cancel',
@@ -1033,7 +1037,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       try {
         confirmed = await page.confirm(summary + sandboxSummary)
       } finally {
-        if (!confirmed) dialog.showModal()
+        if (!confirmed && !stop.signal.aborted) dialog.showModal()
       }
       if (!confirmed) return
       let receipt: ResourceOperationReceipt
@@ -1042,7 +1046,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
           ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
           : await page.api().mcpCreate(definition)
       } catch (cause) {
-        dialog.showModal()
+        if (!stop.signal.aborted) dialog.showModal()
         throw cause
       }
       editing = undefined
@@ -1052,6 +1056,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         page.setNotice('notice.created', 'success', { name: definition.displayName })
     })()
       .catch((cause) => {
+        if (stop.signal.aborted) return
         if (dialog.open)
           error.textContent =
             cause instanceof McpFormValidationError
