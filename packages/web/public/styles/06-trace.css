@@ -76,14 +76,27 @@
   .rightbar-document-preview .document-preview-unavailable {
     color: var(--agnes-text-secondary);
   }
+  /* One compact strip, the height of the tab rows around it; its filters are toolbar-sized. */
   .trace-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--s12);
-    padding: 0.4rem var(--s16);
+    gap: var(--s8) var(--s12);
+    min-height: 44px;
+    padding: var(--s4) var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  @media (min-width: 768px) {
+    .trace-toolbar :is(.trace-type-filter, .trace-search) {
+      height: var(--s32);
+      min-height: var(--s32);
+      padding-block: 0;
+      font-size: var(--font-size-sm);
+    }
+  }
+  .trace-toolbar .trace-type-filter {
+    width: auto;
   }
   .trace-stats {
     display: flex;
@@ -131,10 +144,11 @@
   }
   .trace-gantt-controls select,
   .trace-gantt-clear {
-    min-height: var(--s32);
-    padding: 0.1rem 0.3rem;
+    width: auto;
+    min-height: var(--control-height-sm);
+    padding: 0 var(--s8);
     border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     background: var(--agnes-bg-app-content);
     color: var(--agnes-text-primary);
     font-size: var(--font-size-xs);
@@ -279,7 +293,8 @@
   }
   .trace-row {
     display: grid;
-    grid-template-columns: 3.4rem 3.4rem minmax(0, 1fr);
+    /* The kind column fits the longest label in either language, so a chip never runs into the text. */
+    grid-template-columns: 3.4rem 4.75rem minmax(0, 1fr);
     align-items: center;
     justify-content: start;
     gap: 0.55rem;

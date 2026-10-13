@@ -51,7 +51,9 @@
   .workbench-dock-tabs {
     display: contents;
   }
-  .workbench-dock-tabs > .ant-tabs-content-holder {
+  /* The tab strip is the only part of the tabs component the heading shows; its (empty) panel
+   holder must not take a share of the row from the tabs. */
+  .workbench-dock-tabs > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
     display: none;
   }
   .workbench-panel-tabs {
