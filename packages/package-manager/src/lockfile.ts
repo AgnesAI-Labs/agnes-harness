@@ -1,4 +1,14 @@
-import { closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import {
+  closeSync,
+  existsSync,
+  linkSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
 import { type PackageLock, type Lockfile as ValidatedLockfile, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync, syncFileSync } from '@agnes/system-node'
@@ -21,10 +31,15 @@ export type Lockfile = Omit<ValidatedLockfile, 'resolvedProfileHash' | 'seams'> 
 
 export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-lock.json')
 const STALE_LOCK_MS = 30_000
+/**
+ * Whether the lock's recorded owner is gone. A lock is published with its owner already written (see
+ * `withLock`), so a file that names no valid pid was not made by a live acquirer: callers only ask
+ * once the file is older than `STALE_LOCK_MS`, and such a file counts as abandoned.
+ */
 function ownerIsDead(file: string): boolean {
   try {
     const pid = Number(readFileSync(file, 'utf8'))
-    if (!Number.isSafeInteger(pid) || pid <= 0) return false
+    if (!Number.isSafeInteger(pid) || pid <= 0) return true
     try {
       process.kill(pid, 0)
       return false
@@ -121,12 +136,15 @@ export async function withLock<T>(
   const deadline = Date.now() + 10_000
   for (;;) {
     checkCancelled(opts.signal)
+    // The owner is written to a private file first and linked into place, so the lock never exists
+    // without its owner: a crash can leave only an inert temporary, never an unreclaimable empty lock.
+    const pending = `${lockFile}.${randomUUID()}.tmp`
     try {
-      const fd = openSync(lockFile, 'wx')
       try {
-        writeFileSync(fd, String(process.pid))
+        writeFileSync(pending, String(process.pid), { flag: 'wx', mode: 0o600, flush: true })
+        linkSync(pending, lockFile)
       } finally {
-        closeSync(fd)
+        removeLockArtifact(pending)
       }
       break
     } catch {
@@ -161,10 +179,18 @@ export async function withLock<T>(
         }
       }
       if (Date.now() > deadline)
-        throw new PackageError('E_LOCK_MISMATCH', 'could not acquire the lockfile lock', {
-          source: { file: 'agnes-lock.json' },
-          detail: { reason: 'busy' },
-        })
+        throw new PackageError(
+          'E_LOCK_MISMATCH',
+          `could not acquire the package lock ${lockFile}; if no AGH process is running, remove that file and retry`,
+          {
+            source: { file: 'agnes-lock.json' },
+            detail: {
+              reason: 'busy',
+              lockPath: lockFile,
+              recovery: 'Stop other AGH processes; if none run, delete the lock file and retry.',
+            },
+          },
+        )
       await new Promise((r) => setTimeout(r, 20))
     }
   }

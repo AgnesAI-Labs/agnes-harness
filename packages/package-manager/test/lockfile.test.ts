@@ -1,7 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import {
   emptyLock,
@@ -150,6 +159,40 @@ describe('lockfile', () => {
       }),
     ).rejects.toThrow('boom')
     expect(existsSync(join(dir, '.agnes-lock.lock'))).toBe(false)
+  })
+
+  it('never exposes a lock without its owner', async () => {
+    const lock = join(dir, '.agnes-lock.lock')
+    await withLock(dir, async () => {
+      expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
+      expect(readdirSync(dir).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    })
+  })
+
+  it('reclaims an abandoned lock that names no owner', async () => {
+    const lock = join(dir, '.agnes-lock.lock')
+    writeFileSync(lock, '')
+    const old = new Date(Date.now() - 5 * 60_000)
+    utimesSync(lock, old, old)
+    await expect(withLock(dir, async () => 'ran')).resolves.toBe('ran')
+    expect(existsSync(lock)).toBe(false)
+  })
+
+  it('names the lock file and the recovery when a live owner holds it', async () => {
+    const lock = join(dir, '.agnes-lock.lock')
+    writeFileSync(lock, String(process.pid))
+    vi.useFakeTimers()
+    try {
+      const attempt = withLock(dir, async () => 'never').catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(11_000)
+      const error = (await attempt) as { message: string; detail: Record<string, unknown> }
+      expect(error.message).toContain(lock)
+      expect(error.detail).toMatchObject({ reason: 'busy', lockPath: lock })
+      expect(String(error.detail.recovery)).toContain('delete the lock file')
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
   })
 
   it('never writes host names or absolute paths', () => {
