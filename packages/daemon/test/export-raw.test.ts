@@ -72,7 +72,8 @@ describe('_agnes/v1/session.exportRaw', () => {
     cleanup.push(() => stranger.close())
     await stranger.handle(initialize)
     const denied = await rpc(stranger, '_agnes/v1/session.exportRaw', { sessionId, seq, offset: 0 })
-    expect(['CAPABILITY_DENIED', 'SESSION_NOT_FOUND']).toContain(denied.error?.data?.code)
+    // The session has a recorded owner, so the owner gate refuses rather than reporting it missing.
+    expect(denied.error?.data?.code).toBe('CAPABILITY_DENIED')
 
     expect(
       await rpc(ep, '_agnes/v1/session.exportRaw', { sessionId, seq: seq + 100, offset: 0 }),
