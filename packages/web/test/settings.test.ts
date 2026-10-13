@@ -239,7 +239,7 @@ describe('settings controller', () => {
 
     await settings.open()
     expect(node('config-state').textContent).toBe(
-      '已加载保存的 Provider 与默认模型。测试连接后可更新默认模型；当前会话模型不会在此更改。',
+      '已加载保存的服务商与默认模型。测试连接后可更新默认模型；当前会话模型不会在此更改。',
     )
     expect(node('config-model').children[0]?.textContent).toBe('先测试 Provider，再选择默认模型')
 
@@ -367,7 +367,7 @@ describe('settings controller', () => {
     ],
     ['CONFIG_CREDENTIAL_NO_SPACE', '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。'],
     ['CONFIG_REVISION_CONFLICT', '配置已被其他客户端修改，请重新打开设置后再试。'],
-    ['CONFIG_CREDENTIAL_REJECTED', 'Provider 拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。'],
+    ['CONFIG_CREDENTIAL_REJECTED', '服务商拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。'],
   ])('translates %s into an actionable settings error', async (reason, message) => {
     installDom()
     const onError = vi.fn()
