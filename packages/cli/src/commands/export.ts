@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { DEFAULT_RULES, redact } from '@agnes/base/privacy'
 import { exportClaudeCode, exportShareGpt } from '@agnes/bridges/convert'
 import { createPlatform } from '@agnes/host'
@@ -169,18 +169,9 @@ export async function readLedger(client: Client, id: string): Promise<LedgerExpo
   }
 }
 
-/**
- * The native export is one protocol envelope per UTF-8 line, with no sdk-only `_meta` wrapper. A
- * row read back whole through `session.exportRaw` is written as the line the daemon gave.
- */
-export function formatAgnes(
-  events: EventEnvelope[],
-  lines: ReadonlyMap<number, string> = new Map(),
-): Uint8Array {
-  const text =
-    events.length > 0
-      ? `${events.map((event) => lines.get(event.seq) ?? JSON.stringify(event)).join('\n')}\n`
-      : ''
+/** The native export is one protocol envelope per UTF-8 line, with no sdk-only `_meta` wrapper. */
+export function formatAgnes(events: EventEnvelope[]): Uint8Array {
+  const text = events.length > 0 ? `${events.map((event) => JSON.stringify(event)).join('\n')}\n` : ''
   return new TextEncoder().encode(text)
 }
 
@@ -194,48 +185,137 @@ function holdsOmitted(value: unknown, depth = 0): boolean {
 
 type RawPort = Pick<Client['session'], 'exportRaw'>
 
-/** One stored row, whole, as the daemon serves it in pieces: its JSONL line without the newline. */
-async function rawLine(session: RawPort, id: string, seq: number): Promise<string> {
+/**
+ * One stored row, whole, as the daemon serves it in pieces: its JSONL line, newline included. The
+ * row is checked to be the one replayed at that seq.
+ */
+async function rawLine(session: RawPort, id: string, event: EventEnvelope): Promise<Buffer> {
   const pieces: Buffer[] = []
   let offset: number | null = 0
   while (offset !== null) {
-    const piece = await session.exportRaw(id, seq, offset)
-    if (piece.seq !== seq) throw new CommandError(`export of ${id}: row ${seq} came back as row ${piece.seq}`)
+    const piece = await session.exportRaw(id, event.seq, offset)
+    if (piece.seq !== event.seq)
+      throw new CommandError(`export of ${id}: row ${event.seq} came back as row ${piece.seq}`)
     const bytes = Buffer.from(piece.base64, 'base64')
     pieces.push(bytes)
     if (piece.nextOffset !== null && piece.nextOffset !== offset + bytes.byteLength)
-      throw new CommandError(`export of ${id}: row ${seq} was served out of order`)
+      throw new CommandError(`export of ${id}: row ${event.seq} was served out of order`)
     offset = piece.nextOffset
   }
-  const line = Buffer.concat(pieces).toString('utf8')
-  return line.endsWith('\n') ? line.slice(0, -1) : line
+  const line = Buffer.concat(pieces)
+  const full = JSON.parse(line.toString('utf8')) as EventEnvelope
+  if (full.seq !== event.seq || full.id !== event.id)
+    throw new CommandError(`export of ${id}: the stored row ${event.seq} is not the row replayed`)
+  return line.at(-1) === 0x0a ? line : Buffer.concat([line, Buffer.from('\n')])
 }
 
 /**
  * A replay leaves large old inline attachments out of the rows it sends (the lean form). A raw
- * export puts each such row back whole, read through `session.exportRaw`, which serves only rows
- * whose history has been verified.
+ * export of a converted format puts each such row back whole, read through `session.exportRaw`,
+ * which serves only rows whose history has been verified.
  */
 export async function completeLeanRows(
   session: RawPort,
   id: string,
   events: readonly EventEnvelope[],
-): Promise<{ events: EventEnvelope[]; lines: Map<number, string> }> {
-  const lines = new Map<number, string>()
+): Promise<EventEnvelope[]> {
   const out: EventEnvelope[] = []
   for (const event of events) {
     if (!holdsOmitted(event.data)) {
       out.push(event)
       continue
     }
-    const line = await rawLine(session, id, event.seq)
-    const { _meta: _ignored, ...full } = JSON.parse(line) as EventEnvelope & { _meta?: unknown }
-    if (full.seq !== event.seq || full.id !== event.id)
-      throw new CommandError(`export of ${id}: the stored row ${event.seq} is not the row replayed`)
-    lines.set(event.seq, line)
+    const { _meta: _ignored, ...full } = JSON.parse(
+      (await rawLine(session, id, event)).toString('utf8'),
+    ) as EventEnvelope & { _meta?: unknown }
     out.push(full)
   }
-  return { events: out, lines }
+  return out
+}
+
+/** Where a raw native export goes, one row at a time. */
+type RowSink = Readonly<{
+  write(bytes: Uint8Array): Promise<void>
+  commit(): Promise<void>
+  abort(): void
+}>
+
+function writeAll(fd: number, bytes: Uint8Array): void {
+  let at = 0
+  while (at < bytes.byteLength) at += writeSync(fd, bytes, at, bytes.byteLength - at)
+}
+
+/**
+ * A private temporary file beside `path`, renamed over it once every row is written; stdout without a
+ * path. An injected `writeFile` gets the rows at the end, in one buffer.
+ */
+function openRowSink(path: string | undefined, deps: ExportDeps): RowSink {
+  if (!path)
+    return {
+      write: async (bytes) => void deps.io.stdout.write(bytes),
+      commit: async () => undefined,
+      abort: () => undefined,
+    }
+  const injected = deps.writeFile
+  if (injected) {
+    const chunks: Uint8Array[] = []
+    return {
+      write: async (bytes) => void chunks.push(bytes),
+      commit: () => injected(path, Buffer.concat(chunks)),
+      abort: () => undefined,
+    }
+  }
+  const windows = createPlatform().os === 'win32'
+  const temporary = join(dirname(path), `.agnes-export-${randomUUID()}.tmp`)
+  const fd = windows ? createPrivateFileSync(temporary) : openSync(temporary, 'wx', 0o600)
+  let open = true
+  const close = () => {
+    if (open) closeSync(fd)
+    open = false
+  }
+  return {
+    write: async (bytes) => writeAll(fd, bytes),
+    async commit() {
+      fsyncSync(fd)
+      close()
+      if (windows) renameWriteThroughSync(temporary, path)
+      else renameSync(temporary, path)
+    },
+    abort() {
+      close()
+      rmSync(temporary, { force: true })
+    },
+  }
+}
+
+/**
+ * A raw native export, written one row at a time: a lean row is read back whole through
+ * `session.exportRaw`, written, and dropped before the next is read, so no session-sized string or
+ * buffer is ever built. The attachments the rows reference are written first.
+ */
+async function exportRawNative(
+  client: Client,
+  id: string,
+  events: readonly EventEnvelope[],
+  path: string | undefined,
+  deps: ExportDeps,
+): Promise<void> {
+  if (path) await exportAttachments(client.call.bind(client), id, path, events)
+  else if (storedAttachments(events).length > 0)
+    deps.io.stderr.write('warning: attachment bytes are exported only with --out\n')
+  const sink = openRowSink(path, deps)
+  try {
+    for (const event of events)
+      await sink.write(
+        holdsOmitted(event.data)
+          ? await rawLine(client.session, id, event)
+          : Buffer.from(`${JSON.stringify(event)}\n`),
+      )
+    await sink.commit()
+  } catch (error) {
+    sink.abort()
+    throw error
+  }
 }
 
 type StoredAttachment = Readonly<{
@@ -244,16 +324,28 @@ type StoredAttachment = Readonly<{
   at: Omit<SessionAttachmentReadParams, 'sessionId' | 'offset' | 'length'>
 }>
 
+/** The blocks of a user input row in order: a message's content, or every queued item's content. */
+function inputBlocks(event: EventEnvelope): unknown[] {
+  const data = event.data as { content?: unknown; items?: unknown } | null
+  if (event.type === 'user/message') return Array.isArray(data?.content) ? data.content : []
+  if (event.type !== 'inbox' || !Array.isArray(data?.items)) return []
+  return data.items.flatMap((item) => {
+    const content = (item as { content?: unknown } | null)?.content
+    return Array.isArray(content) ? content : []
+  })
+}
+
 /**
- * Every object a user message names: references and their thumbnails, located as the attachment
- * read finds them (the message seq, the kind, and the place among the message's blocks of that kind).
+ * Every object user input names: references and their thumbnails in messages and in queued input
+ * (an item still waiting, or one removed from the queue, names bytes no message does). Each is
+ * located as the attachment read finds it: the row's seq, the kind, and the place among the row's
+ * blocks of that kind.
  */
 function storedAttachments(events: readonly EventEnvelope[]): StoredAttachment[] {
   const found = new Map<string, StoredAttachment>()
   for (const event of events) {
-    if (event.type !== 'user/message') continue
-    const content = (event.data as { content?: unknown } | null)?.content
-    if (!Array.isArray(content)) continue
+    const content = inputBlocks(event)
+    if (content.length === 0) continue
     const places = { image: 0, file: 0 }
     for (const block of content as Array<Record<string, unknown>>) {
       if (block?.type !== 'image' && block?.type !== 'file') continue
@@ -380,9 +472,18 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
 
   const ledger = await readLedger(client, id)
   if (p.raw) deps.io.stderr.write('warning: --raw exports without redaction (secrets, paths, PII)\n')
+  const path = p.out ? (isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out)) : undefined
+  if (p.raw && format === 'agnes') {
+    await exportRawNative(client, id, ledger.events, path, deps)
+    return ExitCode.OK
+  }
   const rules = privacyRules(deps)
-  const raw = p.raw ? await completeLeanRows(client.session, id, ledger.events) : undefined
-  const events = raw ? raw.events : (redact(sanitizeExportValue(ledger.events), rules) as EventEnvelope[])
+  // HTML renders the timeline, so its rows are never read back whole.
+  const events = p.raw
+    ? format === 'html'
+      ? ledger.events
+      : await completeLeanRows(client.session, id, ledger.events)
+    : (redact(sanitizeExportValue(ledger.events), rules) as EventEnvelope[])
   const timeline = p.raw
     ? ledger.timeline
     : (redact(sanitizeExportValue(ledger.timeline), rules) as UITimeline)
@@ -400,15 +501,8 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
         ? exportShareGpt(events, { tools: 'role', id: sessionId })
         : format === 'claude-code'
           ? exportClaudeCode(events, { cwd: p.raw ? deps.cwd : redact(deps.cwd, rules) })
-          : formatAgnes(events, raw?.lines)
+          : formatAgnes(events)
 
-  const path = p.out ? (isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out)) : undefined
-  // The attachments are written before the rows, so an export that names them has them.
-  if (raw && format === 'agnes') {
-    if (path) await exportAttachments(client.call.bind(client), id, path, events)
-    else if (storedAttachments(events).length > 0)
-      deps.io.stderr.write('warning: attachment bytes are exported only with --out\n')
-  }
   if (path) await (deps.writeFile ?? writePrivateFile)(path, bytes)
   else deps.io.stdout.write(bytes)
   return ExitCode.OK

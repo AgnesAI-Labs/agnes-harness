@@ -361,7 +361,10 @@ describe('export', () => {
       try {
         await exportSession(parseArgs(['export', SESSION_ID, ...argv]), { cwd: '/workspace', io }, client)
         const attach = ep.calls.find((call) => call.method === '_agnes/v1/session.attach')?.params
-        const output = new TextDecoder().decode(io.stdout.write.mock.calls[0]?.[0] as Uint8Array)
+        // A raw native export is written one row at a time.
+        const output = io.stdout.write.mock.calls
+          .map((call) => new TextDecoder().decode(call[0] as Uint8Array))
+          .join('')
         return { attach, output }
       } finally {
         await client.close()

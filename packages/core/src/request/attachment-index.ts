@@ -86,10 +86,16 @@ function entryOf(
  * The numbering is the one the `session-image://` and `session-file://` paths use: the n-th block of
  * that type in the message, counted from 1. A block that no form describes keeps its number but has
  * no entry.
+ *
+ * References queued in `inbox` rows are kept apart (`queued`), numbered the same way across the row's
+ * items in order: a queued item that was removed, or is still waiting, names stored bytes no message
+ * names, and a client downloading the session's attachments must still reach them. They are in no
+ * list and change no message numbering.
  */
 export class AttachmentIndex {
   readonly #lanes = new Map<string, Lane>()
   readonly #refs = new Set<string>()
+  readonly #queued = new Map<string, AttachmentEntry>()
   #refBytes = 0
   #lastSeq = 0
   #size = 0
@@ -103,6 +109,10 @@ export class AttachmentIndex {
     for (const event of events) {
       if (event.seq <= this.#lastSeq) continue
       this.#lastSeq = event.seq
+      if (event.type === 'inbox') {
+        this.#applyQueued(event)
+        continue
+      }
       if (event.type !== 'user/message') continue
       const content = (event.data as { content?: unknown } | null)?.content
       if (!Array.isArray(content)) continue
@@ -129,7 +139,30 @@ export class AttachmentIndex {
         const list = lists[kind]
         for (const entry of list.slice(0, lowerBound(list, throughSeq + 1))) this.#add(entry, lane)
       }
+    for (const [key, entry] of parent.#queued) if (entry.seq <= throughSeq) this.#queued.set(key, entry)
     this.#lastSeq = throughSeq
+  }
+
+  /** A reference queued in the inbox row at `seq`: the n-th block of that kind across its items. */
+  queued(seq: number, kind: AttachmentKind, index: number): AttachmentEntry | undefined {
+    return this.#queued.get(`${seq}/${kind}/${index}`)
+  }
+
+  #applyQueued(event: Event): void {
+    const items = (event.data as { items?: unknown } | null)?.items
+    if (!Array.isArray(items)) return
+    const counters = { image: 0, file: 0 }
+    for (const item of items) {
+      const content = (item as { content?: unknown } | null)?.content
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue
+        const kind = (block as { type?: unknown }).type
+        if (kind !== 'image' && kind !== 'file') continue
+        const entry = entryOf(event, kind, ++counters[kind], block as Record<string, unknown>)
+        if (entry?.form === 'reference') this.#queued.set(`${event.seq}/${kind}/${entry.index}`, entry)
+      }
+    }
   }
 
   /** The lane's attachments of one kind in ledger order. The array is live and must not be changed. */

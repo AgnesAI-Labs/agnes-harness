@@ -700,7 +700,10 @@ export class SessionImpl {
   ): Promise<AttachmentWindow> {
     const { seq, kind, index } = input
     // Confined to this session's lane, as the tool readers are.
-    const entry = this.d.attachmentIndex.get(seq, kind, index)
+    // A reference only an inbox row names (a queued item, or one removed from the queue) is located
+    // the same way, by that row's seq.
+    const entry =
+      this.d.attachmentIndex.get(seq, kind, index) ?? this.d.attachmentIndex.queued(seq, kind, index)
     return attachmentRange(
       this,
       { seq, kind, index },
@@ -2052,7 +2055,15 @@ export class SessionImpl {
   async discardNewSession(): Promise<void> {
     await this.d.log.discardNewSession()
     // The key can be bound again by a new session, which must not inherit uploads made to this one.
-    await this.d.attachments?.forgetReceipts?.(this.key)
+    // The session is gone either way, so a failure here is reported, not raised as a failed discard.
+    try {
+      await this.d.attachments?.forgetReceipts?.(this.key)
+    } catch (error) {
+      this.d.logger.warn('upload receipts of a discarded session were not removed', {
+        sessionKey: this.key,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)

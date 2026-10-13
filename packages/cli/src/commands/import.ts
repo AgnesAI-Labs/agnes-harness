@@ -94,7 +94,8 @@ export class ImportAttachmentError extends CommandError {
     readonly reason: 'ATTACHMENT_MISSING' | 'ATTACHMENT_HASH_MISMATCH',
     message: string,
   ) {
-    super(message)
+    // The code leads the message: the command line prints only the message.
+    super(`${reason}: ${message}`)
     this.name = 'ImportAttachmentError'
   }
 }
@@ -156,27 +157,31 @@ async function admitImportedAttachments(
       try {
         for await (const chunk of createReadStream(side, { highWaterMark: 1024 * 1024 }))
           await staging.write(chunk as Buffer)
+        // A size the row understates is refused before anything is published: a committed object
+        // nobody marks would never be reclaimed.
+        if (staging.bytes !== object.bytes) throw mismatch(object.sha256)
         stored = await staging.commit(object.sha256)
       } catch (error) {
         await staging.abort().catch(() => undefined)
+        if (error instanceof ImportAttachmentError) throw error
         const code = (error as { code?: unknown } | null)?.code
         if (code === 'ATTACHMENT_HASH_MISMATCH' || code === 'ATTACHMENT_TOO_LARGE')
           throw mismatch(object.sha256)
         throw error
       }
-      if (stored.bytes !== object.bytes) throw mismatch(object.sha256)
       await store.markUserAttachment(stored, { mimeType: object.mimeType })
       continue
     }
-    const marked = await store.userAttachment(object.sha256).catch(() => undefined)
-    const stored = await store.stat(object.sha256)
-    if (!marked || stored?.bytes !== object.bytes)
-      throw new ImportAttachmentError(
+    const missing = () =>
+      new ImportAttachmentError(
         'ATTACHMENT_MISSING',
         `${file}: attachment ${object.sha256} is neither in ${dir} nor stored here; nothing was imported (a raw export with --out writes that directory)`,
       )
-    // Marked again so the attachment sweep counts it as seen until the rows naming it are written.
-    await store.markUserAttachment(stored, { mimeType: object.mimeType })
+    if (!(await store.userAttachment(object.sha256).catch(() => undefined))) throw missing()
+    // Seen now, before the bytes are checked: the attachment sweep re-reads the marker after setting
+    // bytes aside, so it cannot take them between this check and the rows that name them.
+    await store.markUserAttachment(object, { mimeType: object.mimeType })
+    if ((await store.stat(object.sha256))?.bytes !== object.bytes) throw missing()
   }
 }
 

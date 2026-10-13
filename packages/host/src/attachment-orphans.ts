@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readdir, readFile, rm, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
   catchUpArtifactRefIndex,
@@ -59,6 +60,21 @@ async function readCacheMaps(root: string): Promise<CacheMap[]> {
   return maps
 }
 
+/** Bytes a run set aside and never decided about (it crashed) go back where they were. */
+async function restoreSetAside(root: string, sweeping: string): Promise<void> {
+  for (const name of await readdir(sweeping).catch(() => [] as string[])) {
+    const match = /^([0-9a-f]{64})\.[0-9a-f-]+$/u.exec(name)
+    if (!match?.[1]) continue
+    const sha256 = match[1]
+    const objectPath = join(root, 'sha256', sha256.slice(0, 2), sha256)
+    if (existsSync(objectPath)) await rm(join(sweeping, name), { force: true })
+    else {
+      await mkdir(dirname(objectPath), { recursive: true, mode: 0o700 })
+      await rename(join(sweeping, name), objectPath)
+    }
+  }
+}
+
 /**
  * Deletes user attachments nobody needs any more. An object goes only when all of these hold:
  *
@@ -71,7 +87,10 @@ async function readCacheMaps(root: string): Promise<CacheMap[]> {
  * - its marker, read once more just before the delete, still says it was not seen since.
  *
  * Bytes that are also a Computer Use screenshot lose only their user-attachment marker; the
- * screenshot collection decides about them from then on. A cache map of a session that no longer
+ * screenshot collection decides about them from then on. Bytes the artifacts seam stored that only
+ * something outside the ledger keeps a reference to (no row, request header or screenshot marker
+ * names them) cannot be told apart: if they equal an orphaned user attachment, they go with it, as
+ * they would with the screenshot collection. A cache map of a session that no longer
  * exists is removed once it is older than the grace period, and its copies with it. The returned
  * counts are the objects whose bytes were deleted.
  */
@@ -82,6 +101,8 @@ export async function collectAttachmentOrphans(
   const clock = o.clock ?? Date.now
   const now = clock()
   const markers = join(o.store.root, 'user-attachment-meta')
+  const sweeping = join(o.store.root, 'sweeping')
+  await restoreSetAside(o.store.root, sweeping)
   const lastSeen = (marker: { firstSeenMs: number; lastSeenMs?: number }) =>
     Math.max(marker.firstSeenMs, marker.lastSeenMs ?? 0)
   const candidates = new Set<string>()
@@ -141,13 +162,25 @@ export async function collectAttachmentOrphans(
           continue
         }
         const object = await o.store.stat(sha256)
-        // The bytes first: a marker left behind by a crash here makes the object a candidate again.
-        await rm(join(o.store.root, 'sha256', sha256.slice(0, 2), sha256), { force: true })
-        await rm(markerPath, { force: true })
         if (object) {
+          // The bytes are moved aside first and the marker judged once more. A send touches the
+          // marker before it checks the bytes, so either it finds them gone and refuses, or this
+          // finds the marker fresh and puts them back: a reference never lands on deleted bytes.
+          const objectPath = join(o.store.root, 'sha256', sha256.slice(0, 2), sha256)
+          const aside = join(sweeping, `${sha256}.${randomUUID()}`)
+          await mkdir(sweeping, { recursive: true, mode: 0o700 })
+          await rename(objectPath, aside)
+          const again = await o.store.userAttachment(sha256).catch(() => undefined)
+          if (again && clock() - lastSeen(again) <= o.graceMs) {
+            await rename(aside, objectPath)
+            continue
+          }
+          // The bytes before the marker: a marker left behind by a crash makes them a candidate again.
+          await rm(aside, { force: true })
           deleted++
           bytes += object.bytes
         }
+        await rm(markerPath, { force: true })
       }
       for (const path of stale) await rm(path, { force: true })
       ledger.exec('COMMIT')

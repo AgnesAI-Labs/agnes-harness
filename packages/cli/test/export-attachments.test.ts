@@ -357,3 +357,150 @@ describe('agh export --raw of a session whose replay is lean', () => {
     }
   })
 })
+
+/** A worker-hosted session of `count` large old inline files, each replayed lean. */
+function manyLeanEndpoint(count: number, log: string[]) {
+  const rows = Array.from({ length: count }, (_, i) => {
+    const seq = i + 1
+    const data = randomBytes(MIB + i).toString('base64')
+    const row = {
+      ...ROW_1,
+      seq,
+      id: `01J6ZM2Q3R4S5T6V7W8X9Y0Z${String(seq).padStart(2, '0')}`,
+      data: { content: [{ type: 'file', mimeType: 'application/zip', name: `f${seq}.zip`, data }] },
+    }
+    const lean = {
+      ...row,
+      data: {
+        content: [
+          { type: 'file', mimeType: 'application/zip', name: `f${seq}.zip`, dataOmitted: { bytes: MIB + i } },
+        ],
+      },
+    }
+    return { lean, line: Buffer.from(`${JSON.stringify(row)}\n`) }
+  })
+  const ep = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: 'test' } },
+    }))
+    .on('session/load', () => ({}))
+    .on('_agnes/v1/session.verifyHistory', () => ({}))
+    .on('_agnes/v1/session.attach', (_params, endpoint) => {
+      for (const { lean } of rows)
+        endpoint.pushEvent(SESSION_ID, lean, {
+          promptTurnId: 'turn-export',
+          eventSequence: lean.seq,
+          generation: 1,
+          lane: 'main',
+          phase: 'event',
+        })
+      return { generation: 1, lastSeq: count, resolvedProfileHash: null }
+    })
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SESSION_ID,
+      upto: count,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.exportRaw', (params) => {
+      const { seq, offset } = params as { seq: number; offset: number }
+      log.push(`fetch:${seq}`)
+      const line = rows[seq - 1]?.line ?? Buffer.alloc(0)
+      const end = Math.min(line.byteLength, offset + 512 * 1024)
+      return {
+        seq,
+        base64: line.subarray(offset, end).toString('base64'),
+        nextOffset: end < line.byteLength ? end : null,
+      }
+    })
+  return { ep, lines: rows.map((r) => r.line) }
+}
+
+describe('agh export --raw writes a native export one row at a time', () => {
+  it('writes each row as soon as it is read back, never the session in one piece', async () => {
+    const log: string[] = []
+    const { ep, lines } = manyLeanEndpoint(4, log)
+    const client = await leanClient(ep)
+    const written: Buffer[] = []
+    const io = {
+      stdout: {
+        write: vi.fn((bytes: Uint8Array) => {
+          written.push(Buffer.from(bytes))
+          log.push(`write:${written.length}`)
+        }),
+      },
+      stderr: { write: vi.fn() },
+    }
+    try {
+      await exportSession(parseArgs(['export', SESSION_ID, '--raw']), { cwd: tmpdir(), io }, client)
+    } finally {
+      await client.close()
+    }
+    // One write per row, each exactly that row's stored line: the largest buffer is one row.
+    expect(written.map((b) => b.byteLength)).toEqual(lines.map((l) => l.byteLength))
+    expect(Buffer.concat(written).equals(Buffer.concat(lines))).toBe(true)
+    // Row k is written before row k + 1 is read back.
+    for (let k = 1; k < lines.length; k++)
+      expect(log.indexOf(`write:${k}`)).toBeLessThan(log.indexOf(`fetch:${k + 1}`))
+  })
+
+  it('writes the file through a private temporary file, and leaves nothing when a row fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-export-stream-'))
+    try {
+      const { ep, lines } = manyLeanEndpoint(3, [])
+      const client = await leanClient(ep)
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
+      const out = join(dir, 'x.jsonl')
+      try {
+        await exportSession(
+          parseArgs(['export', SESSION_ID, '--raw', '--out', out]),
+          { cwd: dir, io },
+          client,
+        )
+      } finally {
+        await client.close()
+      }
+      expect(readFileSync(out).equals(Buffer.concat(lines))).toBe(true)
+      expect(readdirSync(dir)).toEqual(['x.jsonl'])
+
+      const broken = manyLeanEndpoint(3, [])
+      broken.ep.on('_agnes/v1/session.exportRaw', (params) => {
+        const { seq } = params as { seq: number }
+        if (seq === 3) throw new Error('worker went away')
+        const line = broken.lines[seq - 1] as Buffer
+        return { seq, base64: line.toString('base64'), nextOffset: null }
+      })
+      const again = await leanClient(broken.ep)
+      const failed = join(dir, 'y.jsonl')
+      try {
+        await expect(
+          exportSession(parseArgs(['export', SESSION_ID, '--raw', '--out', failed]), { cwd: dir, io }, again),
+        ).rejects.toThrow()
+      } finally {
+        await again.close()
+      }
+      expect(readdirSync(dir)).toEqual(['x.jsonl'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('reads no row back whole for a raw HTML export, which renders the timeline', async () => {
+    const log: string[] = []
+    const { ep } = manyLeanEndpoint(2, log)
+    const client = await leanClient(ep)
+    const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
+    try {
+      await exportSession(parseArgs(['export', SESSION_ID, '--raw', '--html']), { cwd: tmpdir(), io }, client)
+    } finally {
+      await client.close()
+    }
+    expect(log).toEqual([])
+    expect(io.stdout.write).toHaveBeenCalledTimes(1)
+  })
+})

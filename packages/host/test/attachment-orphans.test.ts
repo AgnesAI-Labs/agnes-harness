@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // Lets one case write a ledger row while the collection holds the ledger lock, right before it
 // verifies the roots: the row a session appends between the unlocked catch-up and the locked proof.
 const hook = vi.hoisted(() => ({
-  beforeVerify: undefined as ((ledger: DatabaseSync) => void | Promise<unknown>) | undefined,
+  beforeVerify: undefined as ((ledger: DatabaseSync) => unknown) | undefined,
 }))
 vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/artifact-ref-index.js')>()
@@ -25,6 +34,7 @@ const { DDL } = await import('../src/adapters/ddl.js')
 const { collectAttachmentOrphans, scheduleAttachmentOrphans } = await import('../src/attachment-orphans.js')
 const { attachmentReceiptFor, createAttachmentStore } = await import('../src/attachment-store.js')
 const { createPrivateArtifactStore } = await import('../src/private-artifact-store.js')
+const { createUserAttachmentPort } = await import('../src/user-attachments.js')
 
 const DAY = 24 * 60 * 60 * 1000
 const GRACE = 7 * DAY
@@ -156,6 +166,64 @@ describe('collecting unreferenced user attachments', () => {
     expect(existsSync(goneMap)).toBe(false)
   })
 
+  it('never sweeps an upload a send has authorized and not yet written (authorize, sweep, append)', async () => {
+    const f = fixture()
+    const draft = await f.object('a draft uploaded long ago', T - 8 * DAY)
+    f.setNow(T - 8 * DAY)
+    await f.store.markUserAttachment(draft, { mimeType: 'application/zip', receiptFor: 's1' })
+    f.setNow(T)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'earlier' }] })
+    const port = createUserAttachmentPort({ store: f.store, limits: {}, storeByReference: true })
+    const verdict = await port.authorize({
+      sha256: draft.sha256,
+      bytes: draft.bytes,
+      mimeType: 'application/zip',
+      sessionKey: 's1',
+      referenced: false,
+    })
+    expect(verdict).toBe('ok')
+    // The sweep runs before the admitted row is appended.
+    expect(await f.collect()).toEqual({ deleted: 0, bytes: 0 })
+    f.reference('s1', draft.sha256, draft.bytes)
+    expect(f.present(draft.sha256)).toEqual({ bytes: true, marker: true })
+  })
+
+  it('puts bytes back when their marker is refreshed after they were set aside', async () => {
+    const f = fixture()
+    const b = await f.object('sent while being swept', T - 8 * DAY)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    let reads = 0
+    // The sender's touch lands just after the sweep's last look before setting the bytes aside.
+    const store = {
+      ...f.store,
+      userAttachment: async (sha256: string) => {
+        const marker = await f.store.userAttachment(sha256)
+        if (sha256 === b.sha256 && ++reads === 2)
+          await f.store.markUserAttachment(b, { mimeType: 'application/octet-stream' })
+        return marker
+      },
+    }
+    expect(
+      await collectAttachmentOrphans({ dataDir: f.dataDir, store, graceMs: GRACE, clock: () => T }),
+    ).toEqual({ deleted: 0, bytes: 0 })
+    expect(reads).toBe(3)
+    expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
+    expect(await f.store.read(b.sha256)).toEqual(new TextEncoder().encode('sent while being swept'))
+  })
+
+  it('restores bytes a crashed run had set aside', async () => {
+    const f = fixture()
+    const b = await f.object('set aside by a crashed run', T)
+    const objectPath = join(f.dataDir, 'artifacts', 'sha256', b.sha256.slice(0, 2), b.sha256)
+    const aside = join(f.dataDir, 'artifacts', 'sweeping')
+    mkdirSync(aside, { recursive: true })
+    renameSync(objectPath, join(aside, `${b.sha256}.0b7c6f1e-0000-4000-8000-000000000000`))
+    expect(f.present(b.sha256).bytes).toBe(false)
+    await f.collect()
+    expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
+    expect(readdirSync(aside)).toEqual([])
+  })
+
   it('keeps an object uploaded again while the run was deciding', async () => {
     const f = fixture()
     const b = await f.object('uploaded again meanwhile', T - 8 * DAY)
@@ -273,7 +341,11 @@ describe('collecting unreferenced user attachments', () => {
   })
 
   it('runs once a day, first five minutes after start, and stops on close', async () => {
-    vi.useFakeTimers()
+    // Only the timers are faked: a run's file reads must still finish between the ticks.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    const settle = async () => {
+      for (let i = 0; i < 50; i++) await new Promise((done) => setImmediate(done))
+    }
     const runs: number[] = []
     const store = {
       root: join(tmpdir(), 'agh-orphans-nowhere'),
@@ -293,6 +365,7 @@ describe('collecting unreferenced user attachments', () => {
     expect(runs).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(1)
     expect(runs).toHaveLength(1)
+    await settle()
     await vi.advanceTimersByTimeAsync(DAY)
     expect(runs).toHaveLength(2)
     scheduled.close()

@@ -153,12 +153,15 @@ export function createUserAttachmentPort(o: {
     async forgetReceipts(sessionKey) {
       await o.store.forgetReceipts?.(sessionKey)
     },
-    async authorize({ sha256, bytes, sessionKey, referenced }) {
+    async authorize({ sha256, bytes, mimeType, sessionKey, referenced }) {
       // Entitlement first: telling "missing" from "not yours" for an object the session has no claim
       // on would let it probe the store for content it was never given.
       if (!referenced) {
         const marker = await o.store.userAttachment(sha256).catch(() => undefined)
         if (!marker?.receipts.includes(attachmentReceiptFor(sessionKey))) return 'unauthorized'
+        // Seen now, before the bytes are checked: an upload being sent is not swept between this
+        // answer and the row that names it (the sweep re-reads the marker after setting bytes aside).
+        await o.store.markUserAttachment({ sha256, bytes }, { mimeType })
       }
       const object = await o.store.stat(sha256)
       return object && object.bytes === bytes ? 'ok' : 'missing'
