@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@agnes/protocol'
+import { type ContentBlock, USER_ATTACHMENT_THUMBNAIL } from '@agnes/protocol'
 import {
   attachmentForm,
   decodeAttachmentData,
@@ -6,8 +6,8 @@ import {
   decodeSafeImages,
   SafeImageError,
   type SafeImageLimits,
-  USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_IMAGE_SEND_BUDGET,
+  USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
 import type { AttachmentReadPort } from '../request/attachment-bytes.js'
@@ -97,16 +97,19 @@ export function checkUserImageBudget(content: readonly ContentBlock[]): void {
     } else continue
     bytes += size
   }
-  // One image is bounded as all of them are: the per-image and the per-message limits are the same.
+  // One image is bounded in bytes as all of them are: the per-image and the per-message limits are the same.
   if (bytes > budget.maxAggregateBytes || pixels > budget.maxAggregatePixels) throw imageTooLarge()
   if (inline.length === 0) return
   if (pixels >= budget.maxAggregatePixels) throw imageTooLarge()
   try {
+    // Only the aggregate limits can refuse here: an image over the per-image pixel limit is the image
+    // validation's to report, with its own reason, not this message's.
+    const pixelsLeft = budget.maxAggregatePixels - pixels
     decodeSafeImages(inline, {
       maxBytesPerImage: budget.maxBytesPerImage,
       maxAggregateBytes: budget.maxAggregateBytes,
-      maxPixelsPerImage: USER_MESSAGE_IMAGE_LIMITS.maxPixelsPerImage,
-      maxAggregatePixels: budget.maxAggregatePixels - pixels,
+      maxPixelsPerImage: pixelsLeft,
+      maxAggregatePixels: pixelsLeft,
     })
   } catch (error) {
     if (error instanceof SafeImageError && (error.code === 'BYTE_LIMIT' || error.code === 'PIXEL_LIMIT'))
@@ -125,7 +128,10 @@ const STORE_REFUSALS: Readonly<Record<string, string>> = {
   ATTACHMENT_TOO_LARGE: 'The attachment is too large to store.',
   ATTACHMENT_TIMEOUT: 'The attachment store took too long.',
 }
+// A store that outruns the admission deadline rejects with the signal's own reason, a TimeoutError.
+const isTimeout = (error: unknown): boolean => (error as { name?: unknown } | null)?.name === 'TimeoutError'
 const storeFailure = (error: unknown, fallback: 'UPLOAD_UNAVAILABLE' | 'ATTACHMENT_UNAVAILABLE') => {
+  if (isTimeout(error)) return refused('ATTACHMENT_TIMEOUT', STORE_REFUSALS.ATTACHMENT_TIMEOUT as string)
   const code = (error as { code?: unknown } | null)?.code
   return typeof code === 'string' && Object.hasOwn(STORE_REFUSALS, code)
     ? refused(code, STORE_REFUSALS[code] as string)
@@ -150,8 +156,8 @@ export function attachmentDeadlineMs(content: readonly ContentBlock[]): number {
   return Math.max(10_000, Math.ceil(bytes / MIB) * 2_000)
 }
 
-const THUMBNAIL_MAX_BYTES = 256 * 1024
-const THUMBNAIL_MAX_EDGE = 320
+const THUMBNAIL_MAX_BYTES = USER_ATTACHMENT_THUMBNAIL.maxBytes
+const THUMBNAIL_MAX_EDGE = USER_ATTACHMENT_THUMBNAIL.maxEdge
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47]
 
 const isRef = (value: unknown): value is Ref =>

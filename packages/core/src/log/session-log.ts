@@ -399,8 +399,8 @@ export class SessionLogImpl {
 
   /**
    * Hashes the whole chain up to the checkpoint the open folded from, a page at a time and behind
-   * other work, and checks it ends at the digest the checkpoint named. Failing seals the log with
-   * the integrity error and drops the checkpoint, so the next open verifies from the first row.
+   * other work, and checks it ends at the digest the checkpoint named. Failing seals the log; an
+   * integrity failure also drops the checkpoint, so the next open verifies from the first row.
    */
   private startBackgroundVerify(head: VerifiedHead): void {
     this.fullVerifyState = 'pending'
@@ -472,8 +472,10 @@ export class SessionLogImpl {
         this.markFaulted(failure)
         const seq = failure.detail?.seq
         report({ outcome: 'failed', ...(typeof seq === 'number' ? { seq } : {}) })
-        // Removing a checkpoint can only cost the next open time, never let a bad row through.
-        await this.o.storage.deleteVerifiedHead?.(this.o.key).catch(() => undefined)
+        // Only a real integrity failure drops the checkpoint; a storage error leaves the outcome unknown,
+        // and keeping the checkpoint saves the next open a full verification. Removing one can only
+        // cost time, never let a bad row through.
+        if (integrity) await this.o.storage.deleteVerifiedHead?.(this.o.key).catch(() => undefined)
         throw failure
       },
     )

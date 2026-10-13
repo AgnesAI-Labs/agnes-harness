@@ -3,6 +3,7 @@ import {
   type ModelRecord,
   modelImageInputError,
   USER_MESSAGE_IMAGE_LIMITS,
+  userImagePolicy,
 } from '@agnes/protocol'
 import { imageHeaderDimensions, USER_IMAGE_SEND_BUDGET } from '@agnes/protocol-validation'
 import { base64DecodedBytes } from '../log/lean.js'
@@ -211,9 +212,6 @@ function locate(surface: readonly SurfaceNode[], kind: 'turn' | 'summary'): Loca
   return out
 }
 
-/** The longest edge a request version is made to: the vision paths' 1456. */
-const PRODUCT_EDGE = 1456
-
 /**
  * The request version a stored image needs for this model, if any: only a route that declares
  * `resize` asks for one, and only for an image over a limit the route declares (an edge it does
@@ -227,9 +225,11 @@ function versionTarget(model: ModelRecord, entry: AttachmentEntry): RequestImage
     (resize.maxHeight !== undefined && (entry.height ?? 0) > resize.maxHeight)
   const tooBig = resize.maxBytes !== undefined && Math.ceil(entry.bytes / 3) * 4 > resize.maxBytes
   if (!tooWide && !tooBig) return undefined
+  // The edges are the product's own, held to what the route declares.
+  const policy = userImagePolicy(model)
   return requestImageTransform({
-    maxWidth: Math.min(PRODUCT_EDGE, resize.maxWidth ?? PRODUCT_EDGE),
-    maxHeight: Math.min(PRODUCT_EDGE, resize.maxHeight ?? PRODUCT_EDGE),
+    maxWidth: policy.maxWidth,
+    maxHeight: policy.maxHeight,
     maxPixels: USER_MESSAGE_IMAGE_LIMITS.maxPixelsPerImage,
     maxBytes:
       resize.maxBytes === undefined

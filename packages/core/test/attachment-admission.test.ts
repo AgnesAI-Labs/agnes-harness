@@ -1,6 +1,8 @@
+import { crc32, deflateSync } from 'node:zlib'
 import { USER_IMAGE_SEND_BUDGET } from '@agnes/protocol-validation'
 import { describe, expect, it } from 'vitest'
 import { USER_IMAGE_BUDGET } from '../src/request/user-images.js'
+import { validateUserMessageImages } from '../src/request/user-message-images.js'
 import {
   admitAttachments,
   checkUserImageBudget,
@@ -10,6 +12,23 @@ import {
 
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 const signal = new AbortController().signal
+const u32 = (n: number) => {
+  const b = Buffer.alloc(4)
+  b.writeUInt32BE(n)
+  return b
+}
+const chunk = (type: string, data: Buffer) => {
+  const typed = Buffer.concat([Buffer.from(type, 'ascii'), data])
+  return Buffer.concat([u32(data.length), typed, u32(crc32(typed))])
+}
+/** A valid 1-bit PNG of the given size. */
+const blankPng = (width: number, height: number) =>
+  Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', Buffer.concat([u32(width), u32(height), Buffer.from([1, 0, 0, 0, 0])])),
+    chunk('IDAT', deflateSync(Buffer.alloc(height * (Math.ceil(width / 8) + 1)))),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
 function port(over: Partial<UserAttachmentPort> = {}): UserAttachmentPort & { stored: number } {
   const p = {
     stored: 0,
@@ -287,6 +306,43 @@ describe('admitAttachments', () => {
     expect(read.message).not.toMatch(/srv|ENOSPC|artifacts/)
   })
 
+  it('reports a store that outran its deadline as a timeout, not as unavailable', async () => {
+    const late = new DOMException('The operation timed out.', 'TimeoutError')
+    const stored = await admitAttachments({
+      ...base,
+      port: port({ store: async () => Promise.reject(late) }),
+      content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
+    }).then(
+      () => new Error('admitted'),
+      (error: unknown) => error as Error,
+    )
+    expect(stored).toMatchObject({
+      code: 'E_ENVELOPE',
+      detail: { code: 'ATTACHMENT_TIMEOUT', reason: 'attachment-timeout' },
+    })
+    // A read cut off by the deadline rejects with the signal's reason.
+    const expired = AbortSignal.timeout(1)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const read = await admitAttachments({
+      ...base,
+      signal: expired,
+      port: port({ read: async (_sha, _range, s) => Promise.reject(s?.reason) }),
+      content: [
+        {
+          type: 'image',
+          mimeType: 'image/png',
+          attachment: { sha256: 'd'.repeat(64), bytes: 68 },
+          width: 1,
+          height: 1,
+        },
+      ],
+    }).then(
+      () => new Error('admitted'),
+      (error: unknown) => error as Error,
+    )
+    expect(read).toMatchObject({ detail: { code: 'ATTACHMENT_TIMEOUT' } })
+  })
+
   it('refuses a message whose attachment part would exceed 64 KiB', async () => {
     const refs = Array.from({ length: 200 }, (_, i) => ({
       type: 'file' as const,
@@ -340,6 +396,23 @@ describe('checkUserImageBudget', () => {
     const full = { ...ref(MIB), width: 4000, height: 2000 }
     expect(refusal([full])).toBeUndefined()
     expect(refusal([full, inline])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
+  })
+
+  it('leaves one image over the per-image pixel limit to the per-image check, not the aggregate message', () => {
+    const wide = {
+      type: 'image' as const,
+      mimeType: 'image/png',
+      data: blankPng(1600, 1600).toString('base64'),
+    }
+    // 2.56 million pixels is over one image's 2.1 million but far under the 8 million together.
+    expect(refusal([wide])).toBeUndefined()
+    expect(() => validateUserMessageImages([wide])).toThrow(/PIXEL_LIMIT/)
+    // The aggregate still trips on its own limit.
+    const full = { ...ref(MIB), width: 4000, height: 1700 }
+    expect(refusal([full, { ...wide, data: PNG_1X1 }])).toBeUndefined()
+    expect(refusal([{ ...ref(MIB), width: 4000, height: 2000 }, wide])?.code).toBe(
+      'ATTACHMENT_IMAGE_TOO_LARGE',
+    )
   })
 
   it('uses the request budget: a message admitted at send fits one model request', () => {

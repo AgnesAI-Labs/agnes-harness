@@ -447,6 +447,28 @@ describe('verified head checkpoint under attack', () => {
     await log.close()
   })
 
+  it('keeps the checkpoint when the background verify fails on a storage error', async () => {
+    const storage = await seeded(10)
+    const first = await SessionLogImpl.open(options(storage, 'a'))
+    await first.fullVerified()
+    await first.close()
+    const checkpoint = await storage.readVerifiedHead('k')
+    expect(checkpoint).toBeDefined()
+    let folded = false
+    const failing: StorageAdapter = Object.create(storage)
+    failing.scanIntegrity = async (key, q) => {
+      if (q.fromSeq === 1 && folded) throw new Error('disk error')
+      folded = true
+      return storage.scanIntegrity(key, q)
+    }
+    const log = await SessionLogImpl.open(options(failing, 'b'))
+    expect(log.historyVerified).toBe(false)
+    await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
+    // Whether the history is intact is unknown, not bad: the next open can still start from the checkpoint.
+    expect(await storage.readVerifiedHead('k')).toEqual(checkpoint)
+    await log.close()
+  })
+
   it('a turn on a session opened from a checkpoint sends nothing to the model until the history is verified', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
