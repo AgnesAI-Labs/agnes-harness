@@ -62,6 +62,24 @@ export const LEGACY_EXTENSION_BLOCKER: PackageBlocker = Object.freeze({
   references: ['legacy-extension-format:agnes.plugins-required'],
 })
 
+/** Identity/integrity reasons stay fatal: they mean the installed bytes are not what the lock recorded. */
+const FATAL_INSPECTION_REASONS: ReadonlySet<string> = new Set([
+  'source-identity',
+  'adapter-metadata',
+  'adapter-integrity',
+])
+/**
+ * One classification for "this package's own contents are unusable": a PackageError raised by static
+ * inspection (E_EXT_LOAD/E_API_RANGE with a reason) blocks that package row instead of the daemon.
+ */
+function packageShapeReason(error: unknown): string | undefined {
+  if (!(error instanceof PackageError)) return undefined
+  if (error.legacyCode !== 'E_EXT_LOAD' && error.legacyCode !== 'E_API_RANGE') return undefined
+  const reason = error.detail.reason
+  if (typeof reason !== 'string' || FATAL_INSPECTION_REASONS.has(reason)) return undefined
+  return reason
+}
+
 export function isReservedRowIdPackageError(error: unknown): boolean {
   return (
     error instanceof PackageError &&
@@ -135,16 +153,11 @@ export function verifyPackageDirectory(
       return { capabilityHash: hash, blockers: [RESERVED_WEB_ROW_BLOCKER] }
     if (error instanceof PackageError && error.detail.reason === 'legacy-extension-format')
       return { capabilityHash: hash, blockers: [LEGACY_EXTENSION_BLOCKER] }
-    if (
-      error instanceof PackageError &&
-      (error.detail.reason === 'plugin-api-range-required' ||
-        error.detail.reason === 'plugin-api-range-incompatible')
-    )
+    const reason = packageShapeReason(error)
+    if (reason !== undefined)
       return {
         capabilityHash: hash,
-        blockers: [
-          { code: 'incompatible', references: [String(error.detail.reason), 'docs/guide/packages.md'] },
-        ],
+        blockers: [{ code: 'incompatible', references: [reason, 'docs/guide/packages.md'] }],
       }
     throw error
   }

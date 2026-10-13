@@ -112,6 +112,10 @@ export function terminal(operation: PackageOperation): boolean {
 }
 
 export function blockerText(blocker: PackageBlocker, t: LocaleTranslator = englishText): string {
+  if (blocker.code === 'incompatible')
+    return t('blocker.incompatible-action', {
+      references: blocker.references.filter((ref) => !ref.startsWith('docs/')).join(t('list.separator')),
+    })
   const name = t(`blocker.${blocker.code}`)
   const references = blocker.references.length
     ? t('blocker.references', { references: blocker.references.join(t('list.separator')) })

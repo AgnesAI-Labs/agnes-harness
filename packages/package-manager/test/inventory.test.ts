@@ -153,6 +153,59 @@ it('cuts read boundaries on mutations, fresh verification and administrator poli
   })
 })
 
+it('blocks one package with removed package-level agnes.capabilities without aborting inventory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-inventory-isolation-'))
+  roots.push(root)
+  const profileDir = join(root, 'profiles', 'local-dev')
+  mkdirSync(profileDir, { recursive: true })
+  const lock = emptyLock('local-dev', '0.1.0')
+  lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
+  lock.seams = Object.fromEntries(
+    ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+      name,
+      { provider: 'local' },
+    ]),
+  )
+  lock.policySnapshot = { capabilityCeiling: [], workspacePackages: 'require-project-trust' }
+  for (const [id, agnes] of [
+    [
+      'acme/stale-skill',
+      { kinds: ['skills'], capabilities: {}, plugins: [{ export: 'main', apiRange: '^3.0.0' }] },
+    ],
+    ['acme/good', { plugins: [{ export: 'main', apiRange: '^3.0.0' }] }],
+  ] as const) {
+    const directory = packageDir(root, 'local-dev', id)
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({ name: id, version: '1.0.0', license: 'MIT', exports: './index.mjs', agnes }),
+    )
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = () => {}\n')
+    const treeIntegrity = hashDirectory(directory, { exclude: [] })
+    lock.packages[id] = {
+      version: '1.0.0',
+      source: { type: 'file', ref: `file:./${id}` },
+      integrity: treeIntegrity,
+      trust: 'trusted',
+      license: 'MIT',
+      state: { installed: '2026-09-21T00:00:00.000Z', trusted: null, enabled: false },
+      dependencies: {},
+      previous: null,
+      contributions: [],
+      treeIntegrity,
+    }
+  }
+  writeLock(profileDir, lock)
+  const inventory = readInventory(lock, { dataDir: root, profileDir, ceiling: [] })
+  const stale = inventory.packages.find((p) => p.id === 'acme/stale-skill')
+  expect(stale?.blockers).toEqual([
+    { code: 'incompatible', references: ['agnes-metadata', 'docs/guide/packages.md'] },
+  ])
+  if (!stale) throw new Error('missing stale row')
+  expect(isRuntimePackageEligible({ ...stale, trusted: true, enabled: true })).toBe(false)
+  expect(inventory.packages.find((p) => p.id === 'acme/good')).toBeDefined()
+})
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })

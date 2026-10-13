@@ -66,6 +66,17 @@ describe('admin text labels', () => {
     )
   })
 
+  it('gives incompatible packages an actionable reinstall message', () => {
+    const blocker = {
+      code: 'incompatible' as const,
+      references: ['agnes-metadata', 'docs/guide/packages.md'],
+    }
+    expect(blockerText(blocker, createCatalogTranslator(adminLocaleCatalog, 'en'))).toContain(
+      'Reinstall it, or ask its author to republish',
+    )
+    expect(blockerText(blocker, createCatalogTranslator(adminLocaleCatalog, 'zh-CN'))).toContain('请重新安装')
+  })
+
   it('keeps English and Simplified Chinese admin keys paired', () => {
     expect(Object.keys(adminLocaleCatalog.en).sort()).toEqual(Object.keys(adminLocaleCatalog['zh-CN']).sort())
     expect(Object.keys(resourceListLocaleCatalog.en).sort()).toEqual(

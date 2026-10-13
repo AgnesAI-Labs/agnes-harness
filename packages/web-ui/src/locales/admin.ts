@@ -67,6 +67,8 @@ export const adminLocaleCatalog: LocaleCatalog = {
     'blocker.policy': 'Security policy',
     'blocker.incompatible': 'Compatibility',
     'blocker.unknown-contribution': 'Unknown contribution',
+    'blocker.incompatible-action':
+      'This plugin is not compatible with the current format ({references}). Reinstall it, or ask its author to republish it in the current format (see docs/guide/packages.md). Other plugins are not affected.',
     'blocker.message': '{name} blocks this operation{references}',
     'blocker.references': ': {references}',
     'capability.added': 'Added {item}',
@@ -141,6 +143,8 @@ export const adminLocaleCatalog: LocaleCatalog = {
     'blocker.policy': '安全策略',
     'blocker.incompatible': '兼容性',
     'blocker.unknown-contribution': '未知贡献',
+    'blocker.incompatible-action':
+      '此插件与当前格式不兼容（{references}）。请重新安装，或让作者按当前格式重新发布（见 docs/guide/packages.md）。你的其他插件不受影响。',
     'blocker.message': '{name}阻止此操作{references}',
     'blocker.references': '：{references}',
     'capability.added': '新增 {item}',
