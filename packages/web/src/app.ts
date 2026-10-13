@@ -1118,6 +1118,11 @@ const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
 const requestedPrompt = startupRequest.get('prompt') ?? undefined
+// `/admin/resources?workspaceId=…` forwards here: the link names the workspace its resources are for.
+const requestedWorkspaceId = (() => {
+  const id = startupRequest.get('workspaceId')
+  return id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
+})()
 const settingsText = (key: string): string =>
   createCatalogTranslator(
     settingsCatalog,
@@ -1930,10 +1935,13 @@ clientModules.locale.subscribe(() => {
   skinGroup.sync()
 })
 
-/** The workbench's current workspace, only when it is a canonical 64-hex directory id. */
+/**
+ * The workspace the admin panes are scoped to: the workbench's current one, else the one the
+ * address named. Only a canonical 64-hex directory id is passed on.
+ */
 function paneWorkspaceId(): string | undefined {
   const id = selectedWorkspace?.workspaceId
-  return id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
+  return id && /^[a-f0-9]{64}$/.test(id) ? id : requestedWorkspaceId
 }
 
 const candidateSources = {
@@ -2159,8 +2167,15 @@ run(async () => {
     list(),
   ])
   if (models.status === 'rejected') showError(models.reason)
-  if (workspaces.status === 'fulfilled') applyWorkspaces(workspaces.value)
-  else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
+  if (workspaces.status === 'fulfilled') {
+    applyWorkspaces(workspaces.value)
+    // A link that names a workspace selects it, unless the reader has already chosen one.
+    const requested = workspaceRows.find((row) => row.workspaceId === requestedWorkspaceId)
+    if (requested && !selectedWorkspace && selection === startupSelection) {
+      selectedWorkspace = requested
+      updateWorkspaceOptions()
+    }
+  } else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
   if (sessions.status === 'rejected') throw sessions.reason
   const page = sessions.value
   // A user choice also owns whether the account setup dialog may open.

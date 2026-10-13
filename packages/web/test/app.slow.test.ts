@@ -1730,6 +1730,43 @@ describe('web session selection', () => {
     )
   })
 
+  it('selects the workspace a forwarded resources link names', async () => {
+    installPublicFixture()
+    const linked = 'b'.repeat(64)
+    history.replaceState(null, '', `/?workspaceId=${linked}#test-launcher-token`)
+    const row = (name: string, workspaceId: string) => ({
+      path: `/workspace/${name}`,
+      name,
+      workspaceId,
+      lastUsedAt: null,
+      sessionCount: 0,
+      available: true,
+    })
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      approval: { decide: vi.fn(async () => undefined) },
+      close: vi.fn(async () => undefined),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+        save: vi.fn(async () => ({ configured: true })),
+        test: vi.fn(async () => ({ verified: true, models: [] })),
+      },
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      workspace: {
+        list: vi.fn(async () => ({ items: [row('first', 'a'.repeat(64)), row('linked', linked)] })),
+        add: vi.fn(),
+      },
+      session: { list: vi.fn(async () => ({ items: [] })), load: vi.fn(), new: vi.fn() },
+    })
+
+    await import('../src/app.js')
+    await vi.waitFor(() =>
+      expect(document.getElementById('composer-workspace')?.textContent).toContain('linked'),
+    )
+  })
+
   it('keeps the native picker available when workspace.add rejects the selected directory', async () => {
     installPublicFixture()
     history.replaceState(null, '', '/#test-launcher-token')
