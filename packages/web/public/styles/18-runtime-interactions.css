@@ -34,31 +34,6 @@
     margin: var(--s4) 0 var(--s12);
     overflow-wrap: anywhere;
   }
-  .runtime-settings .agh-disclosure {
-    margin-block: var(--s16);
-  }
-  /* A page made of collapsible sections reads as one divided list: rows touch, hairlines separate. */
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details {
-    margin-block: 0;
-    border-bottom: 1px solid var(--agnes-line-primary);
-  }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details + .agnes-settings-details {
-    margin-top: calc(-1 * var(--s16));
-  }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details > .agh-disclosure-summary {
-    padding-block: var(--s12);
-    color: var(--agnes-text-primary);
-    font-weight: var(--font-weight-medium);
-  }
-  .runtime-settings
-    .agnes-settings-stack
-    > .agnes-settings-details[data-open="true"]
-    > .agh-disclosure-summary {
-    font-weight: var(--font-weight-semibold);
-  }
-  .runtime-settings .agnes-settings-stack > .agnes-settings-details > .agh-disclosure-content {
-    padding-block: 0 var(--s20);
-  }
   .runtime-settings table {
     width: 100%;
     text-align: start;

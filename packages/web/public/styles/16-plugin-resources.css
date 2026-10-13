@@ -644,6 +644,8 @@
   }
   .plugin-dialog-form {
     display: grid;
+    /* One column that may shrink: long hashes wrap instead of widening the dialog. */
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
     max-height: inherit;
     padding: var(--s24);
@@ -688,7 +690,7 @@
     min-width: 0;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
-    background: var(--agnes-bg-page);
+    background: var(--agnes-bg-group);
   }
   .confirm-review-section > .agh-disclosure-summary {
     padding: 0.625rem var(--s12);

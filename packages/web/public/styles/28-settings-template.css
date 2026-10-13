@@ -283,6 +283,20 @@
     border-radius: var(--radius-full);
   }
 
+  /* Consecutive section cards read as one run: half the page rhythm between them. */
+  :is(.settings-shell, .runtime-settings)
+    .agnes-settings-stack
+    > .agh-disclosure[data-variant="card"]
+    + .agh-disclosure[data-variant="card"] {
+    margin-top: calc(-1 * var(--s12));
+  }
+  /* A plain line directly in a list row is its meta line. */
+  .agnes-settings-list > .agh-list-row .agh-list-row-copy > span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* A page that brings its own header into the scroller (Skills) keeps it in view, on the same
    line and at the same size as every other page header. */
   .settings-shell #resource-list > .agnes-settings-page-heading {

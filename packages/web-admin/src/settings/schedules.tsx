@@ -380,6 +380,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           <ListRow
             key={row.id}
             data-testid="schedules-row"
+            icon={<Icon name="clock" size={20} />}
             title={row.title}
             onOpen={() => {
               setFormOpen(true)

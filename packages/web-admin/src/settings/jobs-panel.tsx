@@ -182,6 +182,7 @@ export function JobsPanel({
           filters={
             sessions.current() === sessionId ? (
               <SettingsDetails
+                compact
                 title={`${t('session')}: ${choices.find((row) => row.id === sessionId)?.title ?? ''}`}
                 data-testid="jobs-session-context"
               >

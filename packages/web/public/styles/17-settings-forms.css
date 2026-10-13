@@ -550,7 +550,7 @@
   }
   #config-save {
     min-width: 7rem;
-    min-height: 2.5rem;
+    min-height: var(--control-height);
     flex: 0 0 auto;
     border-radius: var(--radius-md);
   }

@@ -1691,6 +1691,39 @@
   .agnes-settings-technical[data-variant="plain"] {
     margin-top: calc(-1 * var(--s8));
   }
+  /* What an open card reveals is already inside its outline: a group or list directly in it keeps
+   its rows and hairlines and draws no second frame. */
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list) {
+    margin-inline: calc(-1 * var(--s16));
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list):first-child {
+    margin-top: calc(-1 * var(--s12));
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list):last-child {
+    margin-bottom: calc(-1 * var(--s12));
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body > .agnes-settings-list {
+    margin-inline: calc(-1 * var(--s12));
+  }
+  /* A disclosure inside a list row is a quiet line of that row. */
+  :is(.agh-list-row, .agnes-settings-row) .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
+    width: auto;
+    min-height: var(--control-height-sm);
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-regular);
+  }
+  :is(.agh-list-row, .agnes-settings-row) .agh-disclosure[data-variant="row"] > .agh-disclosure-body {
+    padding-block: var(--s4) var(--s8);
+  }
   /* A card disclosure met inside another outline gives its own up: one outline per group. */
   :is(.agnes-settings-card, .config-card, .agnes-settings-group, .agnes-settings-list, .agh-disclosure-body)
   > .agh-disclosure[data-variant="card"] {
