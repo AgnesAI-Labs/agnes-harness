@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join } from 'node:path'
 import { FILE_UPLOAD_PATH, httpRpcError, normalizeRpcError, type RpcError } from '@agnes/protocol'
+import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
@@ -171,6 +172,22 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       }
       if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
+      if (requestUrl.pathname === DELIVERABLE_PREVIEW_PATH) {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.writeHead(405).end()
+          return
+        }
+        const frame = deliverablePreviewFrame()
+        response.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Content-Security-Policy': frame.csp,
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        response.end(request.method === 'HEAD' ? undefined : frame.body)
+        return
+      }
       if (requestUrl.pathname === FILE_UPLOAD_PATH) {
         await handleFileUpload(request, response)
         return
