@@ -124,7 +124,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
   const panel = document.querySelector('[role=menu]') as HTMLElement
   expect([...panel.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
-    '重命名',
+    '重命名…',
     '运行信息',
     '分叉会话',
     '归档会话',
@@ -138,7 +138,7 @@ it('keeps the row menu out of the session button and hides archived rows', async
   const key = (node: Element, value: string) =>
     node.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }))
   key(trigger, 'ArrowDown')
-  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('重命名'))
+  await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('重命名…'))
   if (!document.activeElement) throw new Error('menu focus missing')
   key(document.activeElement, 'ArrowDown')
   expect(document.activeElement?.textContent).toBe('运行信息')

@@ -63,7 +63,7 @@ it('portals one menu with four icon-led items and marks the trigger expanded', a
   expect(document.body.contains(panel)).toBe(true)
   expect(panel.getAttribute('role')).toBe('menu')
   const items = [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-  expect(items.map((item) => item.textContent)).toEqual(['重命名', '运行信息', '分叉会话', '归档会话'])
+  expect(items.map((item) => item.textContent)).toEqual(['重命名…', '运行信息', '分叉会话', '归档会话'])
   expect(items.map((item) => item.querySelector('svg') !== null)).toEqual([true, true, true, true])
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(document.activeElement).toBe(items[0])

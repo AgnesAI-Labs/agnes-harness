@@ -2283,18 +2283,6 @@ document.addEventListener('visibilitychange', () => {
     scheduleClientRosterRead()
   }
 })
-for (const [index, tab] of [button('view-chat'), button('view-trace')].entries()) {
-  tab.addEventListener('keydown', (event) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-    event.preventDefault()
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : event.key === 'ArrowLeft' ? 0 : 1
-    const target = next === 0 ? button('view-chat') : button('view-trace')
-    target.focus()
-    tracePanel.setOpen(next === 1)
-  })
-  tab.setAttribute('aria-posinset', String(index + 1))
-  tab.setAttribute('aria-setsize', '2')
-}
 addEventListener('popstate', () => {
   const id = new URL(location.href).searchParams.get('session')
   run(async () => {

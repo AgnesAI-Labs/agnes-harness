@@ -1,7 +1,7 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import { Button, IconButton, Tabs, useDocumentLanguage } from '@agnes/web-ui'
 
-/** The trace controller still owns selection and visibility on these stable button nodes. */
+/** The trace controller owns selection and visibility on these stable buttons; the view owns their keys. */
 export function SessionViews() {
   useDocumentLanguage()
   return (
@@ -26,6 +26,16 @@ export function SessionViews() {
                 aria-posinset={index + 1}
                 aria-setsize={2}
                 tabIndex={index === 0 ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                  event.preventDefault()
+                  // The trace controller listens on these stable buttons; arrows move focus and selection.
+                  const target = document.getElementById(
+                    event.key === 'Home' || event.key === 'ArrowLeft' ? 'view-chat' : 'view-trace',
+                  )
+                  target?.focus()
+                  if (target?.getAttribute('aria-selected') !== 'true') target?.click()
+                }}
               >
                 {tr(view === 'chat' ? 'index-shell.tabChat' : 'index-shell.tabTrace')}
               </Button>

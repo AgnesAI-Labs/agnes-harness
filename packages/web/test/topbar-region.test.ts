@@ -85,6 +85,18 @@ describe('rendered topbar region', () => {
     expect(document.getElementById('report-problem')?.getAttribute('aria-label')).toBe('报告问题')
     chat.click()
     expect(runtime.trace?.isOpen()).toBe(false)
+
+    // Arrow, Home and End move both focus and the selected view.
+    const press = (tab: HTMLElement, key: string) =>
+      tab.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    press(chat, 'ArrowRight')
+    expect(runtime.trace?.isOpen()).toBe(true)
+    expect(document.activeElement).toBe(trace)
+    press(trace, 'End')
+    expect(runtime.trace?.isOpen()).toBe(true)
+    press(trace, 'Home')
+    expect(runtime.trace?.isOpen()).toBe(false)
+    expect(document.activeElement).toBe(chat)
   })
 
   it('shadows only topbar and restores the built-in component after unload', async () => {
