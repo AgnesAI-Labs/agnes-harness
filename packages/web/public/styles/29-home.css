@@ -490,4 +490,51 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+
+  /* The connection bar: one strip across the top of the main area, only while disconnected. */
+  .connection-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s8);
+    min-height: 2rem;
+    padding: var(--s4) var(--s16);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+  }
+  .connection-bar[hidden] {
+    display: none;
+  }
+  .connection-bar[data-state="closed"],
+  .connection-bar[data-state="stalled"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .connection-bar-dot {
+    flex: 0 0 auto;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: var(--radius-full);
+    background: currentcolor;
+  }
+  .connection-bar:is([data-state="reconnecting"], [data-state="waiting"], [data-state="recovering"])
+    .connection-bar-dot {
+    animation: session-breathe 2.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .connection-bar .connection-bar-dot {
+      animation: none;
+    }
+  }
+  .connection-bar-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* A new session floats the top bar over the hero; with the bar showing it returns to the flow. */
+  body:has(#empty-state:not([hidden])) main:has(> .connection-bar:not([hidden])) > .topbar-row {
+    position: static;
+  }
 }

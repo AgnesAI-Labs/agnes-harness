@@ -57,7 +57,7 @@
   }
   /* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
    透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
-   跟着一起消失。连接异常那一行仍然保留（见 connection-group 的可见性规则）。 */
+   跟着一起消失。连接异常由主区域顶部的连接状态条承担（见 .connection-bar）。 */
   body:has(#empty-state:not([hidden])) main {
     position: relative;
   }
@@ -70,17 +70,12 @@
   }
   /* The bar is out of flow here, so a notice would start at the very top and be drawn across its
    controls. While one is showing, the notice region starts below the bar instead. */
-  body:has(#empty-state:not([hidden]))
-  main:has(> #notice:not(:empty), > #reconnect-notice:not([hidden]), > .agh-banner) {
+  body:has(#empty-state:not([hidden])) main:has(> #notice:not(:empty), > .agh-banner) {
     padding-top: 2.75rem;
   }
   body:has(#empty-state:not([hidden])) .topbar .task-heading,
   body:has(#empty-state:not([hidden])) .session-tabs-bar {
     display: none;
-  }
-  /* .task-heading 平时靠 flex:1 把连接组顶到右边；它退场后这份推力要显式补回来。 */
-  body:has(#empty-state:not([hidden])) .connection-group {
-    margin-left: auto;
   }
   /* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
    正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。

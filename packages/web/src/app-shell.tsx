@@ -2,7 +2,7 @@ import { tr as t } from '@agnes/web-foundation/locale-bridge'
 import { Button, mountApplication, RegionErrorBoundary, useDocumentLanguage } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
-import { AppNotice, ReadOnlyNotice, ReconnectNotice } from './app-notices.js'
+import { AppNotice, ConnectionBar, ReadOnlyNotice } from './app-notices.js'
 import { SessionViews } from './regions/session-views.js'
 
 /** The elements AppShell renders for controller-owned regions to mount into. */
@@ -62,6 +62,10 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
       ></aside>
 
       <main id="main-content" tabIndex={-1}>
+        {/* One connection status for every surface in the main area, home pages included. */}
+        <RegionErrorBoundary region="reconnect">
+          <ConnectionBar />
+        </RegionErrorBoundary>
         {/* One slim bar: the left part is the replaceable topbar unit, the right part the view controls. */}
         <header className="topbar-row" data-agnes-region="topbar">
           <div ref={hold('topbar')} className="topbar"></div>
@@ -81,9 +85,6 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
         </RegionErrorBoundary>
         <RegionErrorBoundary region="read-only">
           <ReadOnlyNotice />
-        </RegionErrorBoundary>
-        <RegionErrorBoundary region="reconnect">
-          <ReconnectNotice />
         </RegionErrorBoundary>
         <section
           ref={hold('homePage')}

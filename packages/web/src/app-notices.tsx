@@ -19,7 +19,12 @@ type ReadOnlyNoticeView = {
   scan?: Readonly<{ fromSeq: number; throughSeq: number }>
 }
 const readOnlyStore = createExternalStore<ReadOnlyNoticeView | undefined>(undefined)
-const reconnectStore = createExternalStore<{ phase: ReconnectPhase; retry?: () => void }>({ phase: 'idle' })
+type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
+const reconnectStore = createExternalStore<{
+  phase: ReconnectPhase
+  connection: ConnectionState
+  retry?: () => void
+}>({ phase: 'idle', connection: 'connecting' })
 
 /** Controllers own notices and their commands; the shell only renders their snapshots. */
 export const appNotice = {
@@ -57,7 +62,13 @@ export const appReadOnly = {
 }
 
 export function setReconnectNotice(phase: ReconnectPhase, retry: () => void) {
-  reconnectStore.set({ phase, retry })
+  reconnectStore.set({ ...reconnectStore.getSnapshot(), phase, retry })
+}
+
+/** The transport's own state: a dropped socket shows before page-level recovery starts. */
+export function setConnectionNotice(connection: ConnectionState) {
+  const view = reconnectStore.getSnapshot()
+  if (view.connection !== connection) reconnectStore.set({ ...view, connection })
 }
 
 export function AppNotice() {
@@ -133,20 +144,42 @@ export function ReadOnlyNotice() {
   )
 }
 
-export function ReconnectNotice() {
+/**
+ * The one connection status for the whole workbench: hidden while connected, and otherwise what
+ * happened and what the person can do. Pages and panels do not repeat it.
+ */
+export function ConnectionBar() {
   const view = useStoreSelector(reconnectStore, (value) => value)
+  const dropped = view.connection === 'reconnecting' || view.connection === 'closed'
+  const state = view.phase !== 'idle' ? view.phase : dropped ? view.connection : 'connected'
   return (
-    <p id="reconnect-notice" role="status" hidden={view.phase === 'idle'}>
-      {view.phase === 'waiting' ? (
-        t('app.reconnect.waiting')
-      ) : view.phase === 'recovering' ? (
-        t('app.reconnect.reloading')
-      ) : view.phase === 'stalled' ? (
-        <>
-          {t('app.reconnect.stalled')}
-          <Button onClick={view.retry}>{t('app.reconnect.retry')}</Button>
-        </>
-      ) : null}
-    </p>
+    <div
+      id="reconnect-notice"
+      className="connection-bar"
+      data-testid="connection-bar"
+      data-state={state}
+      role="status"
+      hidden={state === 'connected'}
+    >
+      <span className="connection-bar-dot" aria-hidden="true" />
+      <span className="connection-bar-text">
+        {state === 'waiting'
+          ? t('app.reconnect.waiting')
+          : state === 'recovering'
+            ? t('app.reconnect.reloading')
+            : state === 'stalled'
+              ? t('app.reconnect.stalled')
+              : state === 'reconnecting'
+                ? t('home.connection.reconnecting')
+                : state === 'closed'
+                  ? t('home.connection.closed')
+                  : null}
+      </span>
+      {state === 'stalled' && (
+        <Button size="small" onClick={view.retry}>
+          {t('app.reconnect.retry')}
+        </Button>
+      )}
+    </div>
   )
 }

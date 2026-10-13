@@ -46,10 +46,9 @@ describe('empty session layout', () => {
     expect(rule('#transcript-content')).toMatch(/margin-inline: auto/)
   })
 
-  it('shows the connection state only while the connection is unhealthy', () => {
-    expect(css).toMatch(
-      /body:not\(\[data-connection="reconnecting"\]\):not\(\[data-connection="closed"\]\) \.connection-group/,
-    )
+  it('shows connection state in the shell connection bar, not in the top bar', () => {
+    expect(rule('.connection-group')).toMatch(/display: none/)
+    expect(rule('.connection-bar[hidden]')).toMatch(/display: none/)
     expect(css).not.toMatch(/#disconnect/)
   })
 })

@@ -111,7 +111,6 @@
       min-height: 0;
     }
     #notice,
-    #reconnect-notice,
     #approval,
     #composer,
     .composer-meta,
@@ -128,20 +127,6 @@
     .topbar-row {
       min-height: 3rem;
       gap: var(--s4);
-    }
-    .connection-group {
-      gap: var(--s8);
-    }
-    /* 窄屏只留一个状态点：文字仍对屏幕阅读器可见，视觉上的原因说明交给
-     #reconnect-notice。「断开连接」按钮已移除，不再需要为它单独放宽触控尺寸。 */
-    #connection {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0 0 0 0);
-      white-space: nowrap;
-      clip-path: inset(50%);
     }
 
     /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
@@ -182,7 +167,6 @@
 
   @media (max-width: 380px) {
     #notice,
-    #reconnect-notice,
     #approval,
     #composer,
     .composer-meta,

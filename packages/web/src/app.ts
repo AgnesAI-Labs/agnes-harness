@@ -67,7 +67,7 @@ import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createAdminPaneController } from './admin-pane-coordinator.js'
-import { appNotice, setReconnectNotice } from './app-notices.js'
+import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
@@ -1473,6 +1473,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
     }
   }
   topbarRuntime.setConnectionState(value)
+  setConnectionNotice(value)
   settings.setConnected(connected)
   renderControls()
 }

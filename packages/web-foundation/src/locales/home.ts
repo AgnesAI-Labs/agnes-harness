@@ -46,6 +46,8 @@ export const homeLocaleCatalog: LocaleCatalog = {
     'home.archived.back': 'Show active sessions',
     'home.archived.notice': 'Archived. Find it under “Archived” in the sidebar filter.',
     'home.archived.undo': 'Undo',
+    'home.connection.reconnecting': 'Connection lost. Reconnecting…',
+    'home.connection.closed': 'The backend connection is closed.',
   },
   'zh-CN': {
     'home.entries.nav': '主页',
@@ -91,5 +93,7 @@ export const homeLocaleCatalog: LocaleCatalog = {
     'home.archived.back': '显示进行中的会话',
     'home.archived.notice': '已归档。在侧栏筛选的「已归档」里可以找到。',
     'home.archived.undo': '撤销',
+    'home.connection.reconnecting': '连接中断，正在重连…',
+    'home.connection.closed': '与后台的连接已关闭。',
   },
 }

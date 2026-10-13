@@ -90,59 +90,12 @@
   ) {
     color: var(--agnes-status-danger-text);
   }
+  /* The connection bar above the main area is the one place connection state shows. The top bar
+   keeps `#connection` as the machine-readable state only. */
   .connection-group {
-    flex: 0 0 auto;
-    gap: var(--s4);
-    height: 1.75rem;
-    padding: 0 var(--s8);
-    border: 1px solid transparent;
-    border-radius: 13px;
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    line-height: 1.125rem;
-    white-space: nowrap;
-  }
-  .connection-group::before {
-    width: 0.4375rem;
-    height: 0.4375rem;
-    flex: 0 0 auto;
-    margin-inline: 0.1875rem;
-    content: "";
-    border-radius: 50%;
-    background: var(--agnes-icon-secondary);
-  }
-  .connection-group:has(#connection[data-state="connecting"]) {
-    border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
-    color: var(--agnes-status-warning-text);
-    background: var(--agnes-status-warning-bg);
-  }
-  .connection-group:has(#connection[data-state="reconnecting"]) {
-    border-color: color-mix(in srgb, var(--agnes-status-warning-text) 20%, transparent);
-    color: var(--agnes-status-warning-text);
-    background: var(--agnes-status-warning-bg);
-  }
-  .connection-group:has(#connection[data-state="connected"]) {
-    border-color: color-mix(in srgb, var(--agnes-status-success-text) 20%, transparent);
-    color: var(--agnes-status-success-text);
-    background: var(--agnes-status-success-bg);
-  }
-  .connection-group:has(#connection[data-state="closed"]) {
-    border-color: color-mix(in srgb, var(--agnes-status-danger-text) 20%, transparent);
-    color: var(--agnes-status-danger-text);
-    background: var(--agnes-status-danger-bg);
-  }
-  .connection-group:has(#connection[data-state="connected"])::before,
-  .connection-group:has(#connection[data-state="reconnecting"])::before,
-  .connection-group:has(#connection[data-state="closed"])::before {
-    background: currentcolor;
-  }
-  /* 连接正常是默认态，常驻一行「已连接」没有信息量；只有中断和已关闭才值得占位置。
-   恢复路径本来就在 #reconnect-notice 里，顶栏只负责把状态本身说清楚。 */
-  body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .connection-group {
     display: none;
   }
-  #notice,
-  #reconnect-notice {
+  #notice {
     width: min(50rem, calc(100% - 3rem));
     min-height: 0;
     margin: 0 auto;
@@ -312,12 +265,6 @@
     )
   ) {
     display: none;
-  }
-  #reconnect-notice:not([hidden]) {
-    color: var(--agnes-status-warning-text);
-    background: var(--agnes-status-warning-bg);
-    border-radius: var(--radius-control);
-    padding: var(--s8) var(--s12);
   }
   @media (max-width: 900px) {
     #sidebar-toggle {
