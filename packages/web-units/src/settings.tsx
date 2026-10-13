@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import type { AdminPaneStore } from './admin-pane-store.js'
 import { SettingsStaticPane } from './settings-panes.js'
 import { createSettingsNavigationStore, SettingsDshHost, SettingsShell } from './settings-shell.js'
 
@@ -38,6 +39,8 @@ export type SettingsNavigationEntry = {
 }
 export interface SettingsRegionOptions {
   sections?: { entries(): readonly SettingsNavigationEntry[]; subscribe(listener: () => void): () => void }
+  /** Load state of the plugin and Skill / MCP panes, written by their controller. */
+  adminPanes?: AdminPaneStore
 
   /** Host capability probe; a failed probe keeps the diagnostic entry available. */
   computerUseSupported?: () => Promise<boolean>
@@ -544,7 +547,11 @@ function SettingsBuiltinImpl(
   return (
     <div ref={host}>
       <div>
-        <SettingsShell store={options.sections ? navigation : undefined} translate={options.translate} />
+        <SettingsShell
+          store={options.sections ? navigation : undefined}
+          adminPanes={options.adminPanes}
+          translate={options.translate}
+        />
       </div>
       <SettingsAccountDialog {...(options.translate ? { t: options.translate } : {})} />
       {createPortal(
@@ -567,11 +574,13 @@ export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 export function SettingsPaneBuiltin({
   pane,
   computerUse,
+  adminPanes,
   translate,
 }: {
   translate?: (key: string) => string
   pane: SettingsPane
   computerUse?: ReactNode
+  adminPanes?: AdminPaneStore
 }) {
   if (pane === 'computer-use' && computerUse)
     return (
@@ -588,7 +597,11 @@ export function SettingsPaneBuiltin({
           afterAccounts={<SettingsDshHost name="settings.models.footer" />}
         />
       ) : (
-        <SettingsStaticPane pane={pane} {...(translate ? { translate } : {})} />
+        <SettingsStaticPane
+          pane={pane}
+          {...(adminPanes ? { adminPanes } : {})}
+          {...(translate ? { translate } : {})}
+        />
       )}
     </div>
   )

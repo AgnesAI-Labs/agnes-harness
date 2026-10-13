@@ -1,6 +1,15 @@
 import { webRowId } from '@agnes/web-slots'
 
 export {
+  type AdminPaneName,
+  type AdminPaneNotice,
+  type AdminPaneSnapshot,
+  type AdminPaneStore,
+  type AdminResourceTab,
+  adminPaneControl,
+  createAdminPaneStore,
+} from './admin-pane-store.js'
+export {
   Approval,
   type ApprovalAction,
   type ApprovalHandle,

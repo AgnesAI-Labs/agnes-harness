@@ -1,15 +1,39 @@
 import { Button, Field, SettingsChoice, SettingsInput, SettingsPageHeader } from '@agnes/web-ui'
+import { useLayoutEffect, useRef } from 'react'
+import type { AdminPaneNotice, AdminPaneStore } from './admin-pane-store.js'
 import type { SettingsPane } from './settings.js'
-import { SettingsDshHost } from './settings-shell.js'
+import { SettingsDshHost, useAdminPanes } from './settings-shell.js'
+
+/**
+ * The pane's status line. The pane's own controller writes its results into the same element, so
+ * the host's notice is applied once per write instead of being held as React children.
+ */
+function AdminPaneNoticeLine({ id, notice }: { id: string; notice: AdminPaneNotice | undefined }) {
+  const line = useRef<HTMLParagraphElement>(null)
+  const applied = useRef(false)
+  useLayoutEffect(() => {
+    if (!line.current || !notice) return
+    // Nothing to say on mount: leave the element exactly as the markup declares it.
+    if (!applied.current && notice.text === '') return
+    applied.current = true
+    line.current.textContent = notice.text
+    line.current.dataset.kind = notice.kind
+  }, [notice])
+  return <p ref={line} id={id} className="admin-notice" role="status" aria-live="polite" />
+}
 
 /** Fixed compatibility surfaces; controllers continue to own field values and page state. */
 export function SettingsStaticPane({
   pane,
+  adminPanes,
   translate,
 }: {
   pane: SettingsPane
+  adminPanes?: AdminPaneStore
   translate?: (key: string) => string
 }) {
+  const admin = useAdminPanes(adminPanes)
+  const resourcesHidden = admin ? !admin.resources.ready : false
   const text = (key: string, fallback: string) => {
     const value = translate?.(key) ?? key
     return value === key ? fallback : value
@@ -110,7 +134,7 @@ export function SettingsStaticPane({
               <p id="orphan-pins-status" className="orphan-pins-status" hidden />
               <ul id="orphan-pins-list" className="orphan-pins-list" />
             </section>
-            <p id="admin-notice" className="admin-notice" role="status" aria-live="polite" />
+            <AdminPaneNoticeLine id="admin-notice" notice={admin?.plugin.notice} />
             <p id="plugin-tree-status" className="plugin-tree-status" role="status" aria-live="polite" />
             <div className="plugin-toolbar">
               <div className="plugin-tabs" role="tablist" aria-label={text('shell.tabs.aria', '插件视图')}>
@@ -188,8 +212,8 @@ export function SettingsStaticPane({
             }
           />
           <div className="admin-pane-body">
-            <p id="resource-notice" className="admin-notice" role="status" aria-live="polite" />
-            <div className="resource-toolbar">
+            <AdminPaneNoticeLine id="resource-notice" notice={admin?.resources.notice} />
+            <div className="resource-toolbar" hidden={resourcesHidden}>
               <div className="resource-toolbar-actions">
                 <Button id="skill-refresh" htmlType="button" appearance="secondary" size="small">
                   <span>{text('button.refresh', '刷新技能目录')}</span>
@@ -203,6 +227,7 @@ export function SettingsStaticPane({
               <section
                 id="resource-list"
                 className="plugin-list"
+                hidden={resourcesHidden}
                 aria-live="polite"
                 aria-label={text('shell.list.aria', '资源目录')}
               />

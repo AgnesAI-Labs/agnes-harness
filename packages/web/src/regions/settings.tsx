@@ -10,6 +10,8 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { createCatalogTranslator, createRegionRenderer } from '@agnes/web-ui'
 import {
+  type AdminPaneStore,
+  createAdminPaneStore,
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
   SettingsBuiltin,
@@ -34,6 +36,8 @@ export interface SettingsRegionOptions {
 
   computerUseSupported?: () => Promise<boolean>
   computerUse?: ReactNode
+  /** Load state of the plugin and Skill / MCP panes, written by the admin pane controller. */
+  adminPanes?: AdminPaneStore
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
 }
@@ -42,6 +46,12 @@ export interface SettingsRegionMount extends EmptyStateRegionMount, SettingsRegi
   /** Remove exactly one built-in pane without disturbing its siblings or the settings shell. */
   unmountPane(pane: SettingsPane): void
 }
+
+/**
+ * The store behind the plugin and Skill / MCP panes. Writes commit synchronously, so a controller
+ * that opens a pane right after `begin` finds the navigation already showing the requested tab.
+ */
+export const createSettingsAdminPaneStore = (): AdminPaneStore => createAdminPaneStore(flushSync)
 
 /** The settings dialog is component-owned; the dialog shell remains the skin/accessibility boundary. */
 export function mountSettingsPaneRegion(
@@ -118,6 +128,7 @@ export function mountSettingsPaneRegion(
         <SettingsPaneBuiltin
           pane={pane}
           computerUse={options.computerUse}
+          {...(options.adminPanes ? { adminPanes: options.adminPanes } : {})}
           {...(locale ? { translate: (key: string) => paneText(pane, key) } : {})}
         />
       ),

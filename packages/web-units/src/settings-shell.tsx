@@ -1,11 +1,24 @@
 import { Button, Field, Icon, type IconName, icons, SettingsInput } from '@agnes/web-ui'
 import { Fragment, useSyncExternalStore } from 'react'
+import { type AdminPaneSnapshot, type AdminPaneStore, adminPaneControl } from './admin-pane-store.js'
 import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
 import { PANE_IDS, settingsDshSlotHostId, settingsPaneSlotHostId } from './settings.js'
 import { advancedSettings, settingsGroup, settingsNavigationGroups } from './settings-navigation.js'
 
 export function SettingsDshHost({ name }: { name: SettingsDshSlotName }) {
   return <div id={settingsDshSlotHostId(name)} data-agnes-dsh-slot={name} />
+}
+
+const noAdminPanes = () => () => {}
+const noAdminPaneSnapshot = () => undefined
+/** Load state of the plugin and Skill / MCP panes; hosts without those panes pass no store. */
+export function useAdminPanes(store: AdminPaneStore | undefined): AdminPaneSnapshot | undefined {
+  return useSyncExternalStore(store?.subscribe ?? noAdminPanes, store?.snapshot ?? noAdminPaneSnapshot)
+}
+/** Attributes a navigation control takes from the pane it opens. */
+function adminControlProps(admin: AdminPaneSnapshot | undefined, id: string) {
+  const control = adminPaneControl(admin, id)
+  return { disabled: control.disabled, 'aria-busy': control.busy || undefined }
 }
 
 type NavigationSnapshot = { entries: readonly SettingsNavigationEntry[]; selected: string }
@@ -45,12 +58,15 @@ function NavigationIcon({ name }: { name: string }) {
 
 function SettingsRegistryNavigation({
   store,
+  adminPanes,
   translate,
 }: {
   store: SettingsNavigationStore
+  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
   const { entries } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const admin = useAdminPanes(adminPanes)
   const t = translate ?? ((key: string) => key)
   const groups = settingsNavigationGroups(entries)
   const renderGroup = (group: readonly SettingsNavigationEntry[]) => {
@@ -60,25 +76,28 @@ function SettingsRegistryNavigation({
     return (
       <Fragment key={key}>
         {key === 'extensions' && <p className="settings-nav-label">{t('settings-shell.extensions')}</p>}
-        {(key === 'extensions' ? group : [first]).map((entry) => (
-          <Button
-            key={entry.id}
-            appearance="ghost"
-            className="settings-nav-item"
-            id={
-              group.length > 1 && entry.nativePane
-                ? `settings-group-${key}`
-                : (entry.navigationId ?? `runtime-settings-${entry.id}`)
-            }
-            data-settings-section={entry.id}
-            data-testid={`settings-nav-${entry.id}`}
-            data-settings-group={key}
-          >
-            <NavigationIcon name={entry.icon} />
-            <span>{t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}</span>
-            {key === 'extensions' && <small>{t(entry.groupTitleKey)}</small>}
-          </Button>
-        ))}
+        {(key === 'extensions' ? group : [first]).map((entry) => {
+          const id =
+            group.length > 1 && entry.nativePane
+              ? `settings-group-${key}`
+              : (entry.navigationId ?? `runtime-settings-${entry.id}`)
+          return (
+            <Button
+              key={entry.id}
+              appearance="ghost"
+              className="settings-nav-item"
+              id={id}
+              data-settings-section={entry.id}
+              data-testid={`settings-nav-${entry.id}`}
+              data-settings-group={key}
+              {...adminControlProps(admin, id)}
+            >
+              <NavigationIcon name={entry.icon} />
+              <span>{t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}</span>
+              {key === 'extensions' && <small>{t(entry.groupTitleKey)}</small>}
+            </Button>
+          )
+        })}
       </Fragment>
     )
   }
@@ -135,12 +154,15 @@ function SettingsRegistryNavigation({
 
 function SettingsSectionTabs({
   store,
+  adminPanes,
   translate,
 }: {
   store: SettingsNavigationStore
+  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
   const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const admin = useAdminPanes(adminPanes)
   const t = translate ?? ((key: string) => key)
   const selectedEntry = entries.find((entry) => entry.id === selected)
   const groupKey = settingsGroup(selectedEntry?.group ?? '')
@@ -159,15 +181,14 @@ function SettingsSectionTabs({
     >
       {groups.flat().map((entry) => {
         const visible = settingsGroup(entry.group) === groupKey
+        const id = entry.nativePane
+          ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
+          : `settings-section-tab-${entry.id}`
         return (
           <Button
             key={entry.id}
             appearance="ghost"
-            id={
-              entry.nativePane
-                ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
-                : `settings-section-tab-${entry.id}`
-            }
+            id={id}
             data-settings-section={entry.id}
             data-testid={`settings-nav-${entry.id}-tab`}
             role={visible ? 'tab' : undefined}
@@ -175,6 +196,7 @@ function SettingsSectionTabs({
             aria-controls={PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane]}
             aria-selected={visible ? entry.id === selected : undefined}
             tabIndex={entry.id === selected ? 0 : -1}
+            {...adminControlProps(admin, id)}
           >
             <span>{t(entry.titleKey)}</span>
           </Button>
@@ -186,9 +208,11 @@ function SettingsSectionTabs({
 
 export function SettingsShell({
   store,
+  adminPanes,
   translate,
 }: {
   store?: SettingsNavigationStore | undefined
+  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
   const t = translate ?? ((key: string) => key)
@@ -209,10 +233,10 @@ export function SettingsShell({
             </Button>
             <SettingsDshHost name="settings.close" />
           </div>
-          <SettingsRegistryNavigation store={store} translate={translate} />
+          <SettingsRegistryNavigation store={store} adminPanes={adminPanes} translate={translate} />
         </aside>
       ) : (
-        <SettingsLegacyRail translate={translate} slots />
+        <SettingsLegacyRail adminPanes={adminPanes} translate={translate} slots />
       )}
       <div id="settings-content-slots">
         {store && (
@@ -220,7 +244,7 @@ export function SettingsShell({
             <Button id="settings-back" appearance="ghost" data-testid="settings-back">
               <span>{t('settings-shell.back')}</span>
             </Button>
-            <SettingsSectionTabs store={store} translate={translate} />
+            <SettingsSectionTabs store={store} adminPanes={adminPanes} translate={translate} />
           </>
         )}
         <div id="settings-dsh-shell-slots">
@@ -238,12 +262,16 @@ export function SettingsShell({
 }
 
 export function SettingsLegacyRail({
+  adminPanes,
   translate,
   slots = false,
 }: {
+  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
   slots?: boolean
 }) {
+  const admin = useAdminPanes(adminPanes)
+  const resourceTab = admin?.resources.tab ?? 'skills'
   const text = (key: string, fallback: string) => {
     const value = translate?.(key) ?? key
     return value === key ? fallback : value
@@ -293,7 +321,13 @@ export function SettingsLegacyRail({
           </svg>
           <span>{text('settings-shell.modelNav', '模型与账户')}</span>
         </Button>
-        <Button id="plugin-management" className="settings-nav-item" htmlType="button" appearance="ghost">
+        <Button
+          id="plugin-management"
+          className="settings-nav-item"
+          htmlType="button"
+          appearance="ghost"
+          {...adminControlProps(admin, 'plugin-management')}
+        >
           <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3" />
           </svg>
@@ -309,10 +343,12 @@ export function SettingsLegacyRail({
             id="skills-tab"
             className="settings-nav-item"
             role="tab"
-            aria-selected="true"
+            aria-selected={resourceTab === 'skills'}
             aria-controls="resource-list"
+            tabIndex={resourceTab === 'skills' ? 0 : -1}
             htmlType="button"
             appearance="ghost"
+            {...adminControlProps(admin, 'skills-tab')}
           >
             <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z" />
@@ -323,11 +359,12 @@ export function SettingsLegacyRail({
             id="mcp-tab"
             className="settings-nav-item"
             role="tab"
-            aria-selected="false"
+            aria-selected={resourceTab === 'mcp'}
             aria-controls="resource-list"
-            tabIndex={-1}
+            tabIndex={resourceTab === 'mcp' ? 0 : -1}
             htmlType="button"
             appearance="ghost"
+            {...adminControlProps(admin, 'mcp-tab')}
           >
             <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 3h6v4h4v6h-4v8H9v-8H5V7h4Z" />

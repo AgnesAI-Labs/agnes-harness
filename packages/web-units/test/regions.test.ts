@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Conversation,
   type ConversationChildContainers,
+  createAdminPaneStore,
   EMPTY_SIDEBAR_STATE,
   SettingsBuiltin,
   type SettingsPane,
@@ -62,6 +63,64 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-provider')).toBeInstanceOf(HTMLSelectElement)
     expect(host.querySelector('#config-save')).toBeInstanceOf(HTMLButtonElement)
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
+  })
+
+  it('renders the admin pane load state on its navigation controls, list and notice', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    const adminPanes = createAdminPaneStore(flushSync)
+    flushSync(() => root.render(createElement(SettingsBuiltin, { options: { adminPanes } })))
+    for (const pane of ['plugin', 'resources'] as const) {
+      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
+      if (!slot) throw new Error('Missing settings pane slot')
+      const paneRoot = createRoot(slot)
+      roots.push(paneRoot)
+      flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane, adminPanes })))
+    }
+    const control = (id: string) => host.querySelector<HTMLButtonElement>(`#${id}`) as HTMLButtonElement
+    const list = host.querySelector<HTMLElement>('#resource-list') as HTMLElement
+    const toolbar = host.querySelector<HTMLElement>('.resource-toolbar') as HTMLElement
+    const notice = host.querySelector<HTMLElement>('#resource-notice') as HTMLElement
+    expect(control('skills-tab').getAttribute('aria-selected')).toBe('true')
+    expect(list.hidden).toBe(false)
+    expect(notice.hasAttribute('data-kind')).toBe(false)
+
+    adminPanes.begin('resources', 'mcp')
+    expect(control('mcp-tab').getAttribute('aria-selected')).toBe('true')
+    expect(control('mcp-tab').tabIndex).toBe(0)
+    expect(control('mcp-tab').getAttribute('aria-busy')).toBe('true')
+    expect(control('mcp-tab').disabled).toBe(false)
+    expect(control('skills-tab').getAttribute('aria-selected')).toBe('false')
+    expect(control('skills-tab').tabIndex).toBe(-1)
+    expect(control('skills-tab').hasAttribute('aria-busy')).toBe(false)
+    expect(list.hidden).toBe(true)
+    expect(toolbar.hidden).toBe(true)
+
+    adminPanes.fail('resources', 'Could not open')
+    adminPanes.settle('resources', false)
+    expect(notice.textContent).toBe('Could not open')
+    expect(notice.dataset.kind).toBe('error')
+    expect(control('mcp-tab').hasAttribute('aria-busy')).toBe(false)
+    expect(list.hidden).toBe(true)
+
+    // The pane's own controller reports into the same line; the next open still clears it.
+    notice.textContent = 'Saved'
+    adminPanes.begin('resources', 'mcp')
+    adminPanes.clearNotice('resources')
+    adminPanes.settle('resources', true)
+    expect(notice.textContent).toBe('')
+    expect(notice.dataset.kind).toBe('')
+    expect(list.hidden).toBe(false)
+    expect(toolbar.hidden).toBe(false)
+
+    adminPanes.begin('plugin')
+    expect(control('plugin-management').disabled).toBe(true)
+    expect(control('plugin-management').getAttribute('aria-busy')).toBe('true')
+    adminPanes.settle('plugin', true)
+    expect(control('plugin-management').disabled).toBe(false)
+    expect(control('plugin-management').hasAttribute('aria-busy')).toBe(false)
   })
 
   it('keeps one rail entry per registry group, routes tabs by keyboard and removes disposed sections', () => {

@@ -71,7 +71,7 @@ import {
   type SkinRosterEntry,
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { createPendingCoordinator } from './admin-pane-coordinator.js'
+import { createAdminPaneController } from './admin-pane-coordinator.js'
 import { appNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
@@ -91,6 +91,7 @@ import type { ModelPickerOption } from './model-picker.js'
 import { mountNewSessionDialog } from './new-session-dialog.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
+import { createSettingsAdminPaneStore } from './region-slots.js'
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
@@ -811,6 +812,7 @@ addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
 const references = composerReferences(prepareComposerSession, renderControls)
 let referenceSessionPending: Promise<Session> | undefined
 
+const adminPanes = createSettingsAdminPaneStore()
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
@@ -943,6 +945,7 @@ const clientModules = await startClientModules({
   settingsPaneContainer: document.getElementById('config') ?? undefined,
   settings: {
     sections: settingsSections,
+    adminPanes,
     computerUseSupported: async () => {
       const report = await client.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
       return report.status !== 'blocked' || !report.blockers.includes('platform-unsupported')
@@ -950,8 +953,8 @@ const clientModules = await startClientModules({
     computerUse: computerUseStatus.render(),
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
-      else if (pane === 'plugin') void openAdminPane('plugin')
-      else if (pane === 'resources') void openAdminPane('resources', tab ?? 'skills')
+      else if (pane === 'plugin') void adminPaneController.open('plugin')
+      else if (pane === 'resources') void adminPaneController.open('resources', tab ?? 'skills')
       else if (pane === 'archived') void sessionActions.loadArchived()
       else if (pane === 'computer-use') void computerUseStatus.refresh()
       else {
@@ -2034,153 +2037,57 @@ clientModules.locale.subscribe(() => {
 window.addEventListener('agnes:packages-changed', () => void skinGroup.refresh())
 window.addEventListener('focus', () => void skinGroup.refresh())
 
-type AdminPaneName = 'plugin' | 'resources'
-type ResourceTab = 'skills' | 'mcp'
-type MountedAdminPane = Readonly<{
-  reload(): Promise<void>
-  ready?: Promise<void>
-  sync?(scope: { tab: ResourceTab; workspaceId?: string }, options?: { refresh?: boolean }): Promise<void>
-  setWorkspace?(workspaceId?: string): Promise<void>
-  setTab?(tab: ResourceTab): void
-}>
-
-const mountedAdminPanes = new Map<AdminPaneName, MountedAdminPane>()
-const pendingAdminPanes = createPendingCoordinator<AdminPaneName>()
-let resourcePaneRequest = 0
-
 /** The workbench's current workspace, only when it is a canonical 64-hex directory id. */
 function paneWorkspaceId(): string | undefined {
   const id = selectedWorkspace?.workspaceId
   return id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
 }
 
-/** Opens one admin pane: re-authenticates, mounts on first open, reloads afterwards. */
-async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): Promise<void> {
-  const request = pane === 'resources' ? ++resourcePaneRequest : undefined
-  const isCurrentRequest = () => pane !== 'resources' || request === resourcePaneRequest
-  const paneNotice = element(pane === 'plugin' ? 'admin-notice' : 'resource-notice', 'p')
-  const entry = button(pane === 'plugin' ? 'plugin-management' : tab === 'skills' ? 'skills-tab' : 'mcp-tab')
-  const resourceList = pane === 'resources' ? element('resource-list', 'section') : undefined
-  const resourceToolbar = resourceList
-    ?.closest('.admin-pane-body')
-    ?.querySelector<HTMLElement>('.resource-toolbar')
-  const controls = pane === 'resources' ? [button('skills-tab'), button('mcp-tab')] : [entry]
-  const selectResourceTab = () => {
-    if (pane !== 'resources') return
-    for (const control of controls) {
-      const selected = control.id === `${tab}-tab`
-      if (control.getAttribute('role') === 'tab') {
-        control.setAttribute('aria-selected', String(selected))
-        control.tabIndex = selected ? 0 : -1
-      } else {
-        control.removeAttribute('aria-selected')
-        control.setAttribute('aria-current', selected ? 'page' : 'false')
-        control.tabIndex = 0
-      }
-    }
-  }
-  let resourceReady = false
-  // Resource tabs stay available so a later choice can supersede an in-flight load.
-  entry.disabled = pane === 'plugin'
-  entry.setAttribute('aria-busy', 'true')
-  if (resourceList) resourceList.hidden = true
-  if (resourceToolbar) resourceToolbar.hidden = true
-  selectResourceTab()
-  settingsRegion.open(pane)
-  try {
-    if (pane === 'resources' && pendingAdminPanes.has(pane)) {
-      // Join the existing mount before applying the latest tab; never mount the same pane twice.
-      await pendingAdminPanes.run(pane, () => {}).catch(() => undefined)
-      if (!isCurrentRequest() || settingsRegion.pane(pane)?.hidden !== false) return
-    }
-    await pendingAdminPanes.run(pane, async () => {
-      if (!isCurrentRequest()) return
-      paneNotice.textContent = ''
-      paneNotice.dataset.kind = ''
-      const mounted = mountedAdminPanes.get(pane)
-      if (mounted) {
-        if (pane === 'resources' && mounted.sync) {
-          const scope: { tab: ResourceTab; workspaceId?: string } = { tab }
-          const workspaceId = paneWorkspaceId()
-          if (workspaceId) scope.workspaceId = workspaceId
-          await mounted.sync(scope, { refresh: true })
-          resourceReady = true
-        } else await mounted.reload()
-        return
-      }
-      if (pane === 'plugin') {
-        const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
-        mountedAdminPanes.set(pane, {
-          ...mountPluginAdmin({
-            candidateSessionTurnTime: async (id, turn) =>
-              (
-                await client.call<UITimeline>('_agnes/v1/session.projectUI', {
-                  sessionId: id,
-                  surface: 'web',
-                })
-              ).turns.find((row) => row.turn === turn)?.startedAt,
-            candidateSessionTitle: async (id) =>
-              sessionTitles.get(id) ??
-              (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find(
-                (row) => row.sessionId === id,
-              )?.title,
-            actualSlots: clientModules.actualSlots,
-            runtime: clientModules.reconciler,
-            schedules: {
-              list: (params) => client.call('_agnes/v1/schedules.list', params),
-              upsert: (params) => client.call('_agnes/v1/schedules.upsert', params),
-              archive: (params) => client.call('_agnes/v1/schedules.archive', params),
-              sessionKey: () => current?.id,
-            },
-          }),
-        })
-      } else {
-        const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
-        const workspaceId = paneWorkspaceId()
-        const options = {
-          ...(workspaceId ? { workspaceId } : {}),
-          tab,
-          embedded: true,
-        }
-        const mountedResource = adaptResourceAdmin(mountResourceAdmin(options), options, {
-          sessionTitle: async (id) =>
-            sessionTitles.get(id) ??
-            (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find(
-              (row) => row.sessionId === id,
-            )?.title,
-          sessionTurnTime: async (id, turn) =>
-            (
-              await client.call<UITimeline>('_agnes/v1/session.projectUI', {
-                sessionId: id,
-                surface: 'web',
-              })
-            ).turns.find((row) => row.turn === turn)?.startedAt,
-        })
-        mountedAdminPanes.set(pane, mountedResource)
-        await mountedResource.ready
-        resourceReady = true
-      }
-    })
-  } catch (error) {
-    if (!isCurrentRequest()) return
-    const message = error instanceof Error ? error.message : t('app.admin.openFailed')
-    paneNotice.textContent = errorNotice(message, undefined, undefined, undefined, undefined, t)
-    paneNotice.dataset.kind = 'error'
-    resourceList?.replaceChildren()
-  } finally {
-    if (isCurrentRequest()) {
-      for (const control of controls) {
-        control.disabled = false
-        control.removeAttribute('aria-busy')
-      }
-      selectResourceTab()
-      if (resourceList) resourceList.hidden = !resourceReady
-      if (resourceToolbar) resourceToolbar.hidden = !resourceReady
-      // Loading an old pane must not navigate back after the user has selected another category.
-      if (settingsRegion.pane(pane)?.hidden === false) settingsRegion.open(pane)
-    }
-  }
+const candidateSources = {
+  sessionTitle: async (id: string) =>
+    sessionTitles.get(id) ??
+    (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find((row) => row.sessionId === id)
+      ?.title,
+  sessionTurnTime: async (id: string, turn: number) =>
+    (
+      await client.call<UITimeline>('_agnes/v1/session.projectUI', { sessionId: id, surface: 'web' })
+    ).turns.find((row) => row.turn === turn)?.startedAt,
 }
+
+const adminPaneController = createAdminPaneController({
+  store: adminPanes,
+  settings: settingsRegion,
+  workspaceId: paneWorkspaceId,
+  errorText: (error) =>
+    errorNotice(
+      error instanceof Error ? error.message : t('app.admin.openFailed'),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      t,
+    ),
+  async mountPlugin() {
+    const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
+    return mountPluginAdmin({
+      candidateSessionTurnTime: candidateSources.sessionTurnTime,
+      candidateSessionTitle: candidateSources.sessionTitle,
+      actualSlots: clientModules.actualSlots,
+      runtime: clientModules.reconciler,
+      schedules: {
+        list: (params) => client.call('_agnes/v1/schedules.list', params),
+        upsert: (params) => client.call('_agnes/v1/schedules.upsert', params),
+        archive: (params) => client.call('_agnes/v1/schedules.archive', params),
+        sessionKey: () => current?.id,
+      },
+    })
+  },
+  async mountResources(scope) {
+    const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
+    const options = { ...scope, embedded: true }
+    return adaptResourceAdmin(mountResourceAdmin(options), options, candidateSources)
+  },
+})
 
 function handleComposerWorkspace(): void {
   composerController.handleComposerWorkspace()
