@@ -9,6 +9,7 @@ import { SettingsAccountDialog } from '../src/settings-account-dialog.js'
 it('uses the injected catalog for provider, base URL and API key field labels', () => {
   const host = document.createElement('div')
   document.body.append(host)
+  const inline = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
   const translatedLabels: Record<string, string> = {
     'accounts.providerLabel': 'Provider · translated',
@@ -74,8 +75,20 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     expect(host.querySelector<HTMLInputElement>('#config-account-name')?.maxLength).toBe(128)
     expect(host.querySelector<HTMLInputElement>('#config-context-window')?.maxLength).toBe(32)
     expect(host.querySelector<HTMLButtonElement>('#config-save')?.getAttribute('form')).toBe('config-form')
+    const body = host.querySelector<HTMLElement>('.account-dialog-body')!
+    inline.append(body)
+    const name = body.querySelector<HTMLInputElement>('#config-account-name')!
+    name.value = 'Preserved inline draft'
+    flushSync(() => advanced.querySelector<HTMLButtonElement>('.agh-disclosure-summary')?.click())
+    expect(advanced.dataset.open).toBe('true')
+    expect(name.value).toBe('Preserved inline draft')
+    host.querySelector('#account-dialog')!.append(body)
+    flushSync(() => advanced.querySelector<HTMLButtonElement>('.agh-disclosure-summary')?.click())
+    expect(advanced.dataset.open).toBe('false')
+    expect(name.value).toBe('Preserved inline draft')
   } finally {
     root.unmount()
     host.remove()
+    inline.remove()
   }
 })
