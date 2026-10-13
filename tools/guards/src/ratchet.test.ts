@@ -329,7 +329,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
-  'packages/base/extensions/tools-core': 1080,
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/base/extensions/tools-core 1252; no exclusions or spare allocation.
+  'packages/base/extensions/tools-core': 1252,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -1098,7 +1099,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/core/src 27144; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
-  'packages/core/src': 27751,
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
+  'packages/core/src': 28242,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1418,7 +1420,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/protocol/src 2400; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/protocol/src 2402; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/protocol/src 2404; no exclusions or spare allocation.
-  'packages/protocol/src': 2404,
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/protocol/src 2411; no exclusions or spare allocation.
+  'packages/protocol/src': 2411,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1988,7 +1991,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/daemon/src 27459; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/daemon/src 27523; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one typed mapping for integrity refusals, the in-process integrity notice and a typed interrupted open; reviewed exact countLines packages/daemon/src 27564; no exclusions or spare allocation.
-  'packages/daemon/src': 27564,
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/daemon/src 27613; no exclusions or spare allocation.
+  'packages/daemon/src': 27613,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2745,7 +2749,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src 39989; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: title generation and its usage recovery wait for the verified history; reviewed exact countLines packages/host/src 40004; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src 40215; no exclusions or spare allocation.
-  'packages/host/src': 40215,
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/host/src 40352; no exclusions or spare allocation.
+  'packages/host/src': 40352,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2991,7 +2996,8 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CRLF-preserving write/edit, the stopped-process notice, background shell, the job tool, and the
   // PowerShell, timeout and wrapper feedback in shell results; measured 1080, exact (a sibling
   // extension for `job` alone would still leave this above 922).
-  ['tools-core', 1080],
+  // 2026-10-13 attachments by reference: reads of stored attachments, saveTo and image references; measured 1252, exact.
+  ['tools-core', 1252],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
