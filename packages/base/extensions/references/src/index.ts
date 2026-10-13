@@ -16,7 +16,6 @@ export const sessionReferenceResolver = defineProvider(referenceResolverKind, {
 } satisfies ReferenceResolver)
 
 export const referenceResolversPlugin = {
-  inject: { providers: { required: true } },
   apply(ctx: ProviderPluginContext) {
     ctx.providers.register(referenceResolverKind, fileReferenceResolver)
     ctx.providers.register(referenceResolverKind, sessionReferenceResolver)
