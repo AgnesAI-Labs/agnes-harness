@@ -1,4 +1,4 @@
-import type { PolicyRule } from './normalize.js'
+export type PolicyRule = { tool: string; argv: string; action: 'allow' | 'require_approval' | 'deny' }
 
 /**
  * `require_approval` is the word, and this evaluator owns it: it is the only thing in the repository
@@ -11,12 +11,13 @@ const ASK_SPELLINGS = ['require_approval', 'ask']
 const ACTIONS = ['allow', 'deny', ...ASK_SPELLINGS]
 
 /**
- * The command table from `approval.command_policy`, read once at assembly.
+ * The command table a preset states under `approval.command_policy`, read whenever that preset is
+ * read into a view, so the table a session enforces is the one its own preset wrote.
  *
  * Every problem is a refusal that names the rule, rather than a skipped rule. A table that cannot be
- * read has to stop the host: dropping the one rule that failed to compile leaves a policy that looks
- * installed and decides differently from the one that was written, and the direction it differs in
- * is whichever way the missing rule pointed.
+ * read has to stop the preset from loading: dropping the one rule that failed to compile leaves a
+ * policy that looks installed and decides differently from the one that was written, and the
+ * direction it differs in is whichever way the missing rule pointed.
  */
 export function readCommandRules(raw: unknown): PolicyRule[] {
   if (raw === undefined) return []
@@ -26,7 +27,7 @@ export function readCommandRules(raw: unknown): PolicyRule[] {
     if (typeof r?.tool !== 'string' || typeof r?.argv !== 'string')
       throw new Error(`${at}: each rule needs a tool and an argv pattern`)
     if (!ACTIONS.includes(r.action)) throw new Error(`${at} (tool ${r.tool}): bad action ${String(r.action)}`)
-    // Compiled here so a bad pattern fails assembly rather than one call at a time.
+    // Compiled here so a bad pattern fails the read rather than one call at a time.
     for (const [field, source] of [
       ['tool', r.tool],
       ['argv', r.argv],

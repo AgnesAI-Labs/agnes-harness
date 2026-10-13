@@ -35,6 +35,8 @@ describe('checkToolMeta (explicit safety keys, optional hints)', () => {
     })
     expect(checkToolMeta({ ...fullMeta, modelVisible: 'no' }).ok).toBe(false)
     expect(checkToolMeta({ ...fullMeta, requiresImageInput: 'yes' }).ok).toBe(false)
+    expect(checkToolMeta({ ...fullMeta, commandArg: 'command' }).ok).toBe(true)
+    for (const commandArg of ['', 'a.b', 1]) expect(checkToolMeta({ ...fullMeta, commandArg }).ok).toBe(false)
     expect(
       checkToolMeta({
         ...fullMeta,

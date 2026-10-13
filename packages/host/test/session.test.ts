@@ -145,6 +145,21 @@ describe('createSession', () => {
     expect(s.key).toBeDefined()
     await host.close()
   })
+  it('hands each session the command table of its own preset, not the default preset’s', async () => {
+    const dataDir = tmp()
+    const rule = { tool: 'shell', argv: '^git push', action: 'deny' }
+    const { host } = await createTestHost({
+      dataDir,
+      presets: { strict: { name: 'strict', extends: 'standard', approval: { command_policy: [rule] } } },
+      allowed: ['standard', 'strict'],
+    })
+    const table = async (preset: string) =>
+      host.kernel.get((await host.createSession({ key: preset, cwd: dataDir, preset })).key)?.preset.approval
+        .commandTable
+    expect(await table('strict')).toEqual([rule])
+    expect((await table('standard')) ?? []).not.toContainEqual(rule)
+    await host.close()
+  })
   it('rejects a preset whose command_policy contains a rule that cannot decide', async () => {
     const dataDir = tmp()
     const { host } = await createTestHost({

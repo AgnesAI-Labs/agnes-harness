@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./command-table/rules": "./src/command-table/rules.ts",
     "./context-diagnostics": "./src/context-diagnostics.ts",
     "./ids": "./src/ids.ts",
     "./jcs": "./src/jcs.ts",

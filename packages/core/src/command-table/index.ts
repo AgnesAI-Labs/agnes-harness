@@ -1,4 +1,5 @@
-export { withCommandFloor, withCommandFloorRegistry } from './floor.js'
+export { readCommandRules } from '@agnes/core-common/command-table/rules'
+export { sessionCommandFloor, withCommandFloor } from './floor.js'
 export {
   argvHash,
   matchPolicy,
@@ -6,4 +7,3 @@ export {
   normalizeArgv,
   type PolicyRule,
 } from './normalize.js'
-export { readCommandRules } from './rules.js'

@@ -81,6 +81,13 @@ export interface ToolMeta {
   requiresImageInput?: boolean
   paths?: readonly WorkspacePathArgument[]
   /**
+   * The top-level string argument that carries the command text this tool runs: a shell line, text
+   * typed into a terminal, a program. The command table matches its rules against that text, with
+   * whitespace runs folded to one space, instead of the canonical JSON of every argument. Omitted
+   * means the tool runs no command of its own.
+   */
+  commandArg?: string
+  /**
    * The effect only publishes display state to the user and has no external side effect.
    * Optional, like `paths`: omitting it means the tool is not presentational. It cannot be
    * combined with `isDestructive` or `isOpenWorld`.
@@ -408,6 +415,7 @@ export interface ToolDef<P extends TSchema = TSchema> {
 
 const REPLAY = new Set<string>(['safe', 'never', 'idempotent'])
 const RISK = new Set<string>(['never', 'destructive', 'always'])
+const COMMAND_ARG = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 
 type CheckResult = { ok: true } | { ok: false; problems: string[] }
 
@@ -450,6 +458,8 @@ export function checkToolMeta(meta: unknown): CheckResult {
   for (const key of ['modelVisible', 'requiresImageInput'] as const)
     if (m[key] !== undefined && typeof m[key] !== 'boolean')
       problems.push(`${key}: expected boolean | undefined`)
+  if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))
+    problems.push('commandArg: expected a top-level argument name | undefined')
   if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
     problems.push('isPresentational: expected boolean | undefined')
   if (m.isPresentational === true && m.isDestructive === true)

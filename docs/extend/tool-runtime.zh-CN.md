@@ -22,7 +22,17 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 策略可在 `ask` 决策中附带 `approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision }`。`subjectRevision` 是待审领域状态的 SHA-256。Core 只提供单次批准/拒绝，跳过 session/permanent grants，将决策绑定到该 revision 与精确调用。执行端得到只读事实 `ToolContext.approval`（`requestId`、`subjectRevision`、`answeredBy`）；领域 continuation 必须先原子比较当前 revision，才能应用变更。这些事实字段不会给 extension-api 增加决策方法。
 
-内置 approval-policy 插件注册默认策略。profile 的 `approval.command_policy` 命令表是部署的安全底线，由 Host 包在会话所选的任何工具策略（包括自定义策略）外面：命中 deny 的调用被拒绝；命中 allow 的调用，若所选策略给出 `ask`，则不再询问（`always` 工具、仅限人工的审核、被污染的上下文除外）；所选策略可以收紧、但不能放宽命令表的结论。读不懂的命令表会让装配失败并指出出错的规则。人工审批与持久工具请求走 Core 决策。永久授权由 Host 存储和撤销，绑定批准人与工具定义；审批 provider 只负责送达问题（`ask`）。
+内置 approval-policy 插件注册默认策略。预设的 `approval.command_policy` 命令表是安全底线，由 Core 包在会话所选的任何工具策略（包括自定义策略）外面：命中 deny 的调用被拒绝；命中 allow 的调用，若所选策略给出 `ask`，则不再询问（`always` 工具、仅限人工的审核、被污染的上下文除外）；所选策略可以收紧、但不能放宽命令表的结论。生效的是会话所用预设里的那张表：写在非默认预设里的规则对选用该预设的会话生效，默认预设的规则不会作用到使用其他预设的会话。读不懂的命令表会让该预设被拒绝，并指出预设和出错的规则：默认预设在装配时，其他预设在会话以它打开时。
+
+规则用完全锚定的 `tool` 模式指明它覆盖的工具，并与调用的身份匹配：
+
+| 工具 | 规则的 `argv` 匹配的身份 |
+| --- | --- |
+| 声明了 `ToolMeta.commandArg` 的工具：`shell`（`command`）、`pty_send`（`text`）、`run_code`（`code`），以及声明了它的插件工具 | 该参数的文本，连续空白折叠为一个空格 |
+| `read`、`write`、`edit`、`ls`、`grep`、`find` | 工作区内解析后的绝对路径；无法归一为唯一身份的路径会被拒绝 |
+| 其他工具 | 全部参数的规范 JSON |
+
+命令表匹配的是文本，不是沙箱。为 `shell` 写的规则不会覆盖别的工具，除非 `tool` 模式写上它（`shell|pty_send`）。发给 PTY 的文本可以拆成多次调用，shell 或 `run_code` 程序也可以在运行时拼出命令，所以 deny 规则拦住的是命令的直接写法，隔离边界仍然是沙箱预设。没有声明 `commandArg` 却会执行命令的插件工具按参数 JSON 匹配。`schedule_create`、`schedule_update` 接收的是提示词而不是命令；它们启动的轮次和其他轮次一样受命令表约束。人工审批与持久工具请求走 Core 决策。永久授权由 Host 存储和撤销，绑定批准人与工具定义；审批 provider 只负责送达问题（`ask`）。
 
 参见[只读策略示例](../../examples/policies/read-only/)和[循环事件](loop-events.zh-CN.md)。
 

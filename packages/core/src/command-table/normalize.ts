@@ -1,6 +1,9 @@
+import type { PolicyRule } from '@agnes/core-common/command-table/rules'
 import { jcs } from '@agnes/core-common/jcs'
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { normalizeWorkspacePath } from '@agnes/core-common/workspace-path'
+
+export type { PolicyRule }
 
 const PATH_TOOLS = new Set(['read', 'write', 'edit', 'ls', 'grep', 'find'])
 
@@ -67,6 +70,10 @@ function normalizeWindowsPath(path: string, workspaceRoot: string): string {
 /**
  * The string a rule is matched against and a grant is bound to.
  *
+ * A tool that runs a command says which argument carries it (`ToolMeta.commandArg`), and that text
+ * is the identity, with runs of whitespace folded to one space. A tool that declares nothing is
+ * matched on the canonical JSON of all its arguments.
+ *
  * Paths become the containment-checked absolute path, never the workspace-relative one. Relative is
  * sound for deciding containment and is not an identity: where a backslash is an ordinary filename
  * character, the single file `src\a.ts` and the file `a.ts` inside the directory `src` produce the
@@ -78,9 +85,15 @@ function normalizeWindowsPath(path: string, workspaceRoot: string): string {
  * of the spellings that motivated this rule, and a check anchored at the start of the string does
  * not see it.
  */
-export function normalizeArgv(tool: string, args: unknown, workspaceRoot: string): string {
+export function normalizeArgv(
+  tool: string,
+  args: unknown,
+  workspaceRoot: string,
+  commandArg?: string,
+): string {
   const a = (args ?? {}) as Record<string, unknown>
-  if (tool === 'shell' && typeof a.command === 'string') return a.command.trim().replace(/\s+/g, ' ')
+  const command = commandArg === undefined ? undefined : a[commandArg]
+  if (typeof command === 'string') return command.trim().replace(/\s+/g, ' ')
   if (PATH_TOOLS.has(tool) && typeof a.path === 'string') {
     const p = a.path
     if (windowsRoot(workspaceRoot)) return normalizeWindowsPath(p, workspaceRoot)
@@ -98,8 +111,6 @@ export function normalizeArgv(tool: string, args: unknown, workspaceRoot: string
   // environments; no parameter schema declares `env` today, which is why keeping it costs nothing.
   return jcs(a)
 }
-
-export type PolicyRule = { tool: string; argv: string; action: 'allow' | 'require_approval' | 'deny' }
 
 /**
  * Anchoring, and why it is asymmetric.
@@ -136,8 +147,9 @@ export function argvHash(
   tool: string,
   args: unknown,
   workspaceRoot: string,
+  commandArg?: string,
 ): { hash: string; shown: string } {
-  const argv = normalizeArgv(tool, args, workspaceRoot)
+  const argv = normalizeArgv(tool, args, workspaceRoot, commandArg)
   return {
     hash: sha256Hex(jcs({ tool, argv })),
     shown: argv.replace(/\0/g, '\\0'),

@@ -124,6 +124,7 @@ describe('tool types', () => {
       | 'deferLoading'
       | 'requiresApproval'
       | 'paths'
+      | 'commandArg'
       | 'isPresentational'
       | 'modelVisible'
       | 'requiresImageInput'

@@ -6,7 +6,6 @@ import type { ToolContext, ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@ag
 import type { ApprovalGrant, DecisionSnapshot, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
-import { withCommandFloorRegistry } from '../src/command-table/floor.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { permanentGrantId } from '../src/step/approval-grants.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -14,6 +13,11 @@ import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, testFsOps } from './helpers/open-session.js'
 
 const profileHash = `sha256-${'a'.repeat(64)}`
+/** The view of a preset that states this command table. */
+function withCommandTable(commandTable: import('../src/command-table/normalize.js').PolicyRule[]) {
+  const preset = presetDefaults()
+  return { ...preset, approval: { ...preset.approval, commandTable } }
+}
 
 function scopedTool(
   scopes: string[],
@@ -982,9 +986,8 @@ describe('v3 approval modes and grants', () => {
     })
     const opened = await atTools({
       scopes: ['tool:write'],
-      toolPolicies: withCommandFloorRegistry(registry, [
-        { tool: 'scoped_write', argv: '.*', action: 'allow' },
-      ]),
+      toolPolicies: registry,
+      preset: withCommandTable([{ tool: 'scoped_write', argv: '.*', action: 'allow' }]),
       toolPolicySettings: async () => ({ policy: 'escalating' }),
       seams: fakeSeams({
         approval: {
@@ -1006,6 +1009,31 @@ describe('v3 approval modes and grants', () => {
       allowedBy: 'command-policy',
       review: { decision: 'escalate', source: 'fallback' },
     })
+  })
+
+  it('enforces the command table of the preset the session runs under, not another preset’s', async () => {
+    const run = async (preset?: import('@agnes/core-common/step/preset').PresetView) => {
+      let executions = 0
+      const opened = await atTools({
+        scopes: ['tool:write'],
+        approvalMode: 'off',
+        ...(preset ? { preset } : {}),
+        execute: async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'done' }] }
+        },
+      })
+      await opened.session.runToolsPhase()
+      const [result] = await opened.log.scan({ type: 'tool/result', limit: 1 })
+      return { executions, result: result?.data as { isError?: boolean; content: unknown } }
+    }
+    const denied = await run(
+      withCommandTable([{ tool: 'scoped_write', argv: '"value":"0"', action: 'deny' }]),
+    )
+    expect(denied.executions).toBe(0)
+    expect(JSON.stringify(denied.result)).toContain('blocked by the command policy')
+    // The same call under a preset that states no such rule is not held to it.
+    expect((await run()).executions).toBe(1)
   })
 
   it('ends every answered decision of a call a human rejected', async () => {

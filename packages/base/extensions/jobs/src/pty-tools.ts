@@ -93,7 +93,7 @@ export function createPtyTools(jobs: ShellJobs) {
         { ...id, text: Type.String({ maxLength: 65536 }) },
         { additionalProperties: false },
       ),
-      meta,
+      meta: { ...meta, commandArg: 'text' },
       async execute(args, ctx) {
         try {
           await jobs.send(ctx, args.jobId, args.text)

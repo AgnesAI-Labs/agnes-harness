@@ -1,5 +1,6 @@
 import { APPROVAL_DEFAULTS } from '@agnes/extension-api'
 import type { ThinkingLevel } from '@agnes/protocol'
+import { type PolicyRule, readCommandRules } from '../command-table/rules.js'
 
 /**
  * The knobs the step machine reads, as one already-resolved view. The preset document itself is
@@ -42,6 +43,8 @@ export type PresetView = {
     timeoutMs: number
     onUnavailable: 'deny' | 'park'
     pendingTtlMs: number
+    /** This preset's command table. Core enforces it around whichever tool policy the session selects. */
+    commandTable?: readonly PolicyRule[]
   }
   codeRuntime?: import('@agnes/extension-api').ToolContext['codeRuntime']
   sandbox: { onUnavailable: 'deny' | 'allow' }
@@ -141,6 +144,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       throw new TypeError(`${kind} requires { provider: id }`)
   }
   const d = presetDefaults()
+  const commandTable = Object.freeze(readCommandRules(get(raw, 'approval.command_policy')))
   return {
     name,
     ...(get(raw, 'code_runtime.language') === undefined
@@ -195,6 +199,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       timeoutMs: pick(raw, 'approval.timeout_ms', d.approval.timeoutMs),
       onUnavailable: pick(raw, 'approval.on_unavailable', d.approval.onUnavailable),
       pendingTtlMs: pick(raw, 'approval.pending_ttl_ms', d.approval.pendingTtlMs),
+      ...(commandTable.length ? { commandTable } : {}),
     },
     sandbox: { onUnavailable: pick(raw, 'sandbox.on_unavailable', d.sandbox.onUnavailable) },
     tools: {

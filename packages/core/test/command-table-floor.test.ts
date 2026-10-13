@@ -1,6 +1,6 @@
 import { defaultToolPolicy, type ToolPolicy, type ToolPolicyInput } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { withCommandFloor, withCommandFloorRegistry } from '../src/command-table/floor.js'
+import { sessionCommandFloor, withCommandFloor } from '../src/command-table/floor.js'
 import type { PolicyRule } from '../src/command-table/normalize.js'
 
 const input = (over: Partial<ToolPolicyInput> = {}): ToolPolicyInput => ({
@@ -24,8 +24,10 @@ const input = (over: Partial<ToolPolicyInput> = {}): ToolPolicyInput => ({
 
 const EDIT_ALLOW: PolicyRule = { tool: 'edit|write', argv: '/work/proj/(?:[^/]+/)*[^/]+', action: 'allow' }
 const signal = new AbortController().signal
+/** What the official tools that run a command declare as `ToolMeta.commandArg`. */
+const commandArgOf = (tool: string) => ({ shell: 'command', pty_send: 'text', run_code: 'code' })[tool]
 const decide = (rules: PolicyRule[], over: Partial<ToolPolicyInput> = {}, base = defaultToolPolicy) =>
-  withCommandFloor(base, rules).decide(input(over), signal)
+  withCommandFloor(base, rules, commandArgOf).decide(input(over), signal)
 
 describe('command floor', () => {
   it('lets an allow rule answer a call the selected policy would ask about', async () => {
@@ -91,16 +93,37 @@ describe('command floor', () => {
     expect((await decide(rules, {}, open)).effect).toBe('deny')
   })
 
-  it('wraps every policy a registry resolves, stably, and is absent for an empty table', () => {
-    const registry = {
-      register: () => async () => undefined,
-      resolve: () => defaultToolPolicy,
-      catalog: () => [],
-    }
-    expect(withCommandFloorRegistry(registry, [])).toBe(registry)
-    const floored = withCommandFloorRegistry(registry, [EDIT_ALLOW])
-    expect(floored.resolve('default')).toBe(floored.resolve('default'))
-    expect(floored.resolve('default')).not.toBe(defaultToolPolicy)
-    expect(floored.resolve('default').id).toBe(defaultToolPolicy.id)
+  it('matches a rule against the command text of every tool that declares one', async () => {
+    const rules: PolicyRule[] = [{ tool: 'shell|pty_send|run_code', argv: 'git push', action: 'deny' }]
+    const calls = [
+      { id: 't', name: 'shell', args: { command: 'git  push origin' } },
+      { id: 't', name: 'pty_send', args: { jobId: 'j1', text: 'git push\n' } },
+      { id: 't', name: 'run_code', args: { code: 'run("git push")' } },
+    ]
+    for (const call of calls) expect((await decide(rules, { call })).effect, call.name).toBe('deny')
+    const status = { id: 't', name: 'pty_send', args: { jobId: 'j1', text: 'git status\n' } }
+    expect((await decide(rules, { call: status })).effect).toBe('ask')
+    // A rule names the tools it covers: one written for `shell` alone does not reach `pty_send`.
+    const shellOnly: PolicyRule[] = [{ tool: 'shell', argv: 'git push', action: 'deny' }]
+    expect((await decide(shellOnly, { call: calls[1] as never })).effect).toBe('ask')
+  })
+
+  it('matches a tool that declares no command on the canonical JSON of its arguments', async () => {
+    const rules: PolicyRule[] = [{ tool: 'deploy', argv: '^\\{"env":"prod"\\}$', action: 'deny' }]
+    const call = (env: string) => ({ id: 't', name: 'deploy', args: { env } })
+    expect((await decide(rules, { call: call('prod') })).effect).toBe('deny')
+    expect((await decide(rules, { call: call('dev') })).effect).toBe('ask')
+  })
+
+  it('gives one session a stable floor per policy and table, and none for an empty table', () => {
+    const floor = sessionCommandFloor(commandArgOf)
+    expect(floor(defaultToolPolicy, [])).toBe(defaultToolPolicy)
+    expect(floor(defaultToolPolicy, undefined)).toBe(defaultToolPolicy)
+    const floored = floor(defaultToolPolicy, [EDIT_ALLOW])
+    expect(floored).not.toBe(defaultToolPolicy)
+    expect(floored.id).toBe(defaultToolPolicy.id)
+    // A preset view rebuilt with the same rules is not a policy change; a different table is.
+    expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW }])).toBe(floored)
+    expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW, action: 'deny' }])).not.toBe(floored)
   })
 })

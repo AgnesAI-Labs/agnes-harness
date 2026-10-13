@@ -24,6 +24,7 @@ export function createShellTool(jobs?: ShellJobs) {
       replay: 'never',
       costHint: {},
       deferLoading: false,
+      commandArg: 'command',
     },
     async execute(args, ctx): Promise<ToolResult> {
       if (jobs && (ctx.platform.shell === 'posix' || ctx.sandbox.openProcess)) {

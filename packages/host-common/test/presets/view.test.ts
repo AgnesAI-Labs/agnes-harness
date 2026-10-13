@@ -166,4 +166,25 @@ describe('toPresetView', () => {
       'deny',
     )
   })
+
+  it('carries the preset’s own command table into the view Core enforces', () => {
+    const rules = [{ tool: 'shell', argv: '^git push', action: 'deny' }]
+    expect(
+      toPresetView({ name: 'strict', approval: { command_policy: rules } }).approval.commandTable,
+    ).toEqual(rules)
+    expect(toPresetView({ name: 'plain' }).approval.commandTable).toBeUndefined()
+  })
+
+  it('refuses a preset whose command table cannot be read, naming the preset and the rule', () => {
+    const doc = {
+      name: 'strict',
+      approval: { command_policy: [{ tool: 'shell', argv: '(', action: 'deny' }] },
+    }
+    expect(() => toPresetView(doc)).toThrow(/preset strict: approval\.command_policy\[0\] \(tool shell\)/)
+    try {
+      toPresetView(doc)
+    } catch (e) {
+      expect(e).toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
+    }
+  })
 })

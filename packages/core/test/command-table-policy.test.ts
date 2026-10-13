@@ -1,15 +1,18 @@
 import { createHash } from 'node:crypto'
+import { readCommandRules } from '@agnes/core-common/command-table/rules'
 import { jcs } from '@agnes/core-common/jcs'
 import { describe, expect, it } from 'vitest'
 import { argvHash, matchPolicy, normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
-import { readCommandRules } from '../src/command-table/rules.js'
 
 const root = '/work/proj'
 
 describe('normalizeArgv', () => {
-  it('folds a shell command line to one spelling', () => {
-    expect(normalizeArgv('shell', { command: '  git   status ' }, root)).toBe('git status')
-    expect(normalizeArgv('shell', { command: 'git\tstatus' }, root)).toBe('git status')
+  it('folds the command text a tool declared to one spelling', () => {
+    expect(normalizeArgv('shell', { command: '  git   status ' }, root, 'command')).toBe('git status')
+    expect(normalizeArgv('shell', { command: 'git\tstatus' }, root, 'command')).toBe('git status')
+    // The declaration, not the tool's name, is what makes an argument a command.
+    expect(normalizeArgv('pty_send', { jobId: 'j1', text: 'git  push\n' }, root, 'text')).toBe('git push')
+    expect(normalizeArgv('shell', { command: 'git status' }, root)).toBe('{"command":"git status"}')
   })
 
   // The containment-checked absolute path, not the workspace-relative one: relative is sound for
@@ -41,11 +44,11 @@ describe('normalizeArgv', () => {
 
 describe('argvHash', () => {
   it('is stable across key order and whitespace, and separates different commands', () => {
-    expect(argvHash('shell', { command: 'ls  -la' }, root).hash).toBe(
-      argvHash('shell', { command: 'ls -la ' }, root).hash,
+    expect(argvHash('shell', { command: 'ls  -la' }, root, 'command').hash).toBe(
+      argvHash('shell', { command: 'ls -la ' }, root, 'command').hash,
     )
-    expect(argvHash('shell', { command: 'ls' }, root).hash).not.toBe(
-      argvHash('shell', { command: 'rm' }, root).hash,
+    expect(argvHash('shell', { command: 'ls' }, root, 'command').hash).not.toBe(
+      argvHash('shell', { command: 'rm' }, root, 'command').hash,
     )
     expect(argvHash('x', { a: 1, b: 2 }, root).hash).toBe(argvHash('x', { b: 2, a: 1 }, root).hash)
   })

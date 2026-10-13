@@ -20,3 +20,4 @@ The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld,
 | `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |
 | `requiresImageInput` | Optional, defaults to false. Only a model with native image input can discover or execute this tool. |
 | `paths` | Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence. |
+| `commandArg` | Optional. Names the top-level string argument that carries the command text this tool runs. The command table matches its rules against that text, whitespace-folded, instead of the canonical JSON of all arguments. |

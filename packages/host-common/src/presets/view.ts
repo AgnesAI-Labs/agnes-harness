@@ -1,4 +1,5 @@
 import { type PresetView, readPreset } from '@agnes/core'
+import { readCommandRules } from '@agnes/core/command-table'
 import { HostError } from '../errors.js'
 import type { PresetDoc } from './types.js'
 import { validatedPresetViewInput } from './validate.js'
@@ -11,6 +12,22 @@ const TIERS = new Set([0, 1, 2])
  * that owns PresetView. This wrapper adds only what belongs to the host: the document-level
  * refusals, and the one Profile limit that reaches a session as a preset knob.
  */
+/**
+ * A preset's command table. Core enforces the table of the preset a session runs under, so a table
+ * that cannot be read refuses the preset with the rule named wherever the preset is resolved: the
+ * default preset at assembly, any other when a session opens under it. It never degrades to
+ * deny-all at run time, and one preset's bad table does not stop sessions that run under another.
+ */
+export function readCommandTable(doc: PresetDoc) {
+  try {
+    return readCommandRules((doc.approval as { command_policy?: unknown } | undefined)?.command_policy)
+  } catch (e) {
+    throw new HostError('E_PRESET_UNSUPPORTED', `preset ${doc.name}: ${(e as Error).message}`, {
+      detail: { capability: 'approval.command_policy', source: doc.name },
+    })
+  }
+}
+
 export function toPresetView(
   doc: PresetDoc,
   opts: { limits?: Record<string, number>; park?: unknown } = {},
@@ -46,7 +63,10 @@ export function toPresetView(
       },
     )
 
-  const view = readRoutedPreset(validatedPresetViewInput(doc))
+  // The schema's refusals come first: they carry the document path of each problem.
+  const input = validatedPresetViewInput(doc)
+  readCommandTable(doc)
+  const view = readRoutedPreset(input)
   // ERRATA B20: `--park` may not write a preset field through the flags layer, so cli hands it down
   // as a Profile limit and the conversion to a session knob happens here.
   if (opts.park === 1 || opts.limits?.['approval.park'] === 1)

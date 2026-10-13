@@ -22,7 +22,6 @@ import { createNetFetch } from '../adapters/index.js'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import { capabilityEnabled } from '../profile/session-capabilities.js'
 import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
-import { floorToolPolicies, readCommandTable } from './command-table.js'
 import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
@@ -122,7 +121,6 @@ export async function createKernel(
   const { models, view } = providerStage
   const { pluginTree, bindRuntimeSession } = runtimeTarget
   const runtimeTargetPublisher = runtimeTarget.publisher
-  const commandTable = readCommandTable(presets.defaultPreset.doc)
   // 8 kernel - the repository's single Kernel.create call site
   const observabilityLease = leaseFor(
     {
@@ -200,11 +198,12 @@ export async function createKernel(
       resolve: (id) => pluginTree.root.providers.resolve(toolRuntimeKind, id),
       catalog: () => toolProviderCatalog('tool-runtime'),
     },
-    toolPolicies: floorToolPolicies(
-      pluginTree.root.providers,
-      () => toolProviderCatalog('tool-policy'),
-      commandTable,
-    ),
+    toolPolicies: {
+      register: (source, provider) =>
+        pluginTree.root.providers.registerHost(toolPolicyKind, source, provider),
+      resolve: (id) => pluginTree.root.providers.resolve(toolPolicyKind, id),
+      catalog: () => toolProviderCatalog('tool-policy'),
+    },
     loopEvents: {
       on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
       dispatch: (event, payload, context) => pluginTree.root.loopEvents.dispatch(event, payload, context),

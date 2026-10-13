@@ -26,6 +26,17 @@ API additions require a minor version; removals or semantic changes require a ma
   Core and the port throws `E_BUDGET` with `detail.reason` (`parked`, `blocked` or `aborted`),
   the same refusal a step or credit budget produces.
 
+### Added
+
+- `ToolMeta.commandArg`: the top-level string argument that carries the command text a tool runs.
+  The command table matches a rule's `argv` against that text (whitespace-folded) for any tool that
+  declares it; `shell`, `pty_send` and `run_code` do. A tool that declares nothing is matched on the
+  canonical JSON of its arguments, as before. The tool name `shell` no longer implies an identity.
+- `PresetView.approval.commandTable`: the command table of the preset a session runs under. Core
+  applies it around the session's selected tool policy, so the floor follows the session's preset
+  instead of the Host's default preset. `ToolPolicyRegistryPort` is unchanged; a Host no longer
+  wraps it.
+
 ## 3.1.0
 
 Adds optional `ToolPolicyDecision.allowedBy`. The command-table floor sets it to `command-policy` when a rule allows a call the selected policy asked about, so the policy's own `review` (for example an `escalate` fallback) is kept as an observation beside the final `allow` instead of being rewritten.

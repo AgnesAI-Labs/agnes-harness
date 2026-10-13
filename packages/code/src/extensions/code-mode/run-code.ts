@@ -47,6 +47,7 @@ export function createRunCodeTool(deps: RunCodeDeps): ToolDef<typeof RunCodePara
 
       deferLoading: false,
       requiresApproval: 'always',
+      commandArg: 'code',
     },
     async execute(args, ctx): Promise<ToolResult> {
       const controller = new AbortController()

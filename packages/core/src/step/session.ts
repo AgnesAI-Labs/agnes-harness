@@ -113,6 +113,7 @@ import {
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
 import { unbindChildFactory } from '../child/sessions.js'
+import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
@@ -844,8 +845,15 @@ export class SessionImpl {
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
     return instance.runtime
   }
+  private readonly commandFloor = sessionCommandFloor(
+    (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
+  )
+  /** The selected policy inside this session's command floor: its own preset's table, read per call. */
   toolPolicy(selection?: string) {
-    return this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default')
+    return this.commandFloor(
+      this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
+      this.preset.approval.commandTable,
+    )
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {

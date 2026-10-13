@@ -42,6 +42,7 @@ describe('author documentation generation', () => {
       'modelVisible',
       'requiresImageInput',
       'paths',
+      'commandArg',
     ])
     expect(tools).toContain('`isPresentational` is optional')
     expect(tools).toContain('does not override explicit approval or concurrency flags')
