@@ -156,7 +156,7 @@ async function specFrom(command: BatchCommand, cwd: string): Promise<BatchSpec> 
   const prompt = o.prompt ?? (await readInput(cwd, '--prompt-file', o['prompt-file'] as string))
   if (prompt.length === 0 || prompt.length > MAX_PROMPT_CHARS)
     throw new UsageError(`the prompt must be 1 to ${MAX_PROMPT_CHARS} characters`)
-  let schema: Record<string, unknown> | undefined
+  let schema: BatchSpec['schema'] | undefined
   if (o.schema !== undefined) {
     const text = await readInput(cwd, '--schema', o.schema)
     let value: unknown
@@ -167,7 +167,7 @@ async function specFrom(command: BatchCommand, cwd: string): Promise<BatchSpec> 
     }
     if (typeof value !== 'object' || value === null || Array.isArray(value))
       throw new UsageError(`--schema ${o.schema} must hold a JSON object`)
-    schema = value as Record<string, unknown>
+    schema = value as BatchSpec['schema']
   }
   if (o.budget !== undefined && (!/^\d+(\.\d+)?$/u.test(o.budget) || Number(o.budget) < MIN_BUDGET))
     throw new UsageError(`--budget expects a positive number of credits (at least ${MIN_BUDGET})`)
