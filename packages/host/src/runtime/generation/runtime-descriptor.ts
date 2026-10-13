@@ -41,7 +41,7 @@ export type SessionRuntimeInput = Readonly<{
   }>[]
   sandbox?: Readonly<{
     policyDigest?: string
-    enforcement?: NonNullable<SessionRuntimeDescriptor['policy']['sandbox']['enforcement']>
+    enforcement?: NonNullable<NonNullable<SessionRuntimeDescriptor['policy']>['sandbox']['enforcement']>
   }>
   restartRequired: readonly string[]
 }>
@@ -131,6 +131,7 @@ export function describeSessionRuntime(input: SessionRuntimeInput): SessionRunti
   const resources = input.resourceRows.filter((row) => row.liveResources?.length)
   return {
     sessionKey: input.sessionKey,
+    loaded: true,
     generation: {
       ...(input.generation.id ? { id: input.generation.id } : {}),
       current: input.generation.newerId === undefined,
@@ -167,6 +168,54 @@ export function describeSessionRuntime(input: SessionRuntimeInput): SessionRunti
       },
     },
     restartRequired,
+  }
+}
+
+export type ColdSessionInput = Readonly<{
+  sessionKey: string
+  /** The session's durable generation pin; absent in a deployment without pins. */
+  pin?: Readonly<{
+    generationId: string
+    loop?: Readonly<{ id: string; version: string }>
+    seams?: readonly Readonly<{ kind: string; provider: string; version: string }>[]
+  }>
+  /** Id of the generation new sessions open on. */
+  headId?: string
+  failed: boolean
+  /** The session's recorded composition intent. */
+  composition?: Readonly<{ hash: string; preset: string; bundles: readonly string[] }>
+}>
+
+/**
+ * Describes a session no container has open from its durable records alone. Providers, resources and
+ * policy need a live container, so they are left out instead of being read from today's Host, which
+ * may not be the configuration this session was written under.
+ */
+export function describeColdSession(input: ColdSessionInput): SessionRuntimeDescriptor {
+  const { pin, headId } = input
+  const current = !pin || headId === undefined || pin.generationId === headId
+  return {
+    sessionKey: input.sessionKey,
+    loaded: false,
+    generation: {
+      ...(pin ? { id: pin.generationId } : {}),
+      current,
+      state: input.failed ? 'failed' : current ? 'active' : 'historical',
+      ...(current || !headId ? {} : { newer: { id: headId, effect: 'new-sessions' as const } }),
+    },
+    ...(input.composition ? { composition: { hash: input.composition.hash } } : {}),
+    ...(input.composition
+      ? { preset: { name: input.composition.preset, bundles: [...input.composition.bundles] } }
+      : {}),
+    ...(pin?.loop ? { loop: { id: pin.loop.id, version: pin.loop.version } } : {}),
+    providers: [],
+    seams: (pin?.seams ?? []).map((seam) => ({
+      kind: seam.kind,
+      provider: seam.provider,
+      version: seam.version,
+      pinned: true,
+    })),
+    restartRequired: [],
   }
 }
 

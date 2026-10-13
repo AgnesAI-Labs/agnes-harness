@@ -2,6 +2,7 @@ import type { ProviderCatalogEntry } from '@agnes/extension-api'
 import { type SessionCapabilitySet, SessionRuntimeDescriptor, validateAgainst } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
+  describeColdSession,
   describeSessionRuntime,
   type SessionRuntimeInput,
 } from '../../src/runtime/generation/runtime-descriptor.js'
@@ -197,5 +198,47 @@ describe('describeSessionRuntime', () => {
       }),
     )
     expect(descriptor.providers.find((item) => item.kind === 'loop')?.pending).toBeUndefined()
+  })
+})
+
+describe('cold session descriptor', () => {
+  it('reports only the durable pin and composition record, and leaves live sections out', () => {
+    const cold = describeColdSession({
+      sessionKey: 'old',
+      pin: {
+        generationId: 'gen-old',
+        loop: { id: 'acme.loop', version: '1.0.0' },
+        seams: [{ kind: 'billing', provider: 'acme.bill', version: '2.0.0' }],
+      },
+      headId: 'gen-new',
+      failed: false,
+      composition: { hash: 'sha256-x', preset: 'review', bundles: ['b1'] },
+    })
+    expect(cold).toEqual({
+      sessionKey: 'old',
+      loaded: false,
+      generation: {
+        id: 'gen-old',
+        current: false,
+        state: 'historical',
+        newer: { id: 'gen-new', effect: 'new-sessions' },
+      },
+      composition: { hash: 'sha256-x' },
+      preset: { name: 'review', bundles: ['b1'] },
+      loop: { id: 'acme.loop', version: '1.0.0' },
+      providers: [],
+      seams: [{ kind: 'billing', provider: 'acme.bill', version: '2.0.0', pinned: true }],
+      restartRequired: [],
+    })
+    expect(cold.policy).toBeUndefined()
+    expect(cold.resources).toBeUndefined()
+    expect(validateAgainst(SessionRuntimeDescriptor, cold).ok).toBe(true)
+  })
+
+  it('leaves everything unknown when no durable record exists', () => {
+    const cold = describeColdSession({ sessionKey: 'bare', failed: false })
+    expect(cold).toMatchObject({ loaded: false, generation: { current: true, state: 'active' } })
+    expect(cold.preset).toBeUndefined()
+    expect(cold.loop).toBeUndefined()
   })
 })

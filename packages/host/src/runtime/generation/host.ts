@@ -10,7 +10,10 @@ import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { readGitWorktreeRegistry } from '@agnes/host-infrastructure/git-worktrees'
 import { compileRunPlan, seamSelectionsOf } from '@agnes/host-providers/assemble/run-plan'
 import { skillRowRevision } from '@agnes/host-providers/assemble/skill-row'
-import { readLiveCompositionSessions } from '@agnes/host-providers/profile/composition-state'
+import {
+  CompositionSessionStore,
+  readLiveCompositionSessions,
+} from '@agnes/host-providers/profile/composition-state'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
@@ -39,7 +42,7 @@ import {
 } from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
-import { describeHostSession, generationSessions } from './runtime-descriptor.js'
+import { describeColdSession, describeHostSession, generationSessions } from './runtime-descriptor.js'
 import {
   assertPinsMatch,
   assertRepinConsented,
@@ -450,10 +453,12 @@ export async function createRuntimeGenerationHost(
       opening.delete(id)
     }
   }
-  const owner = (key: string): Host => {
+  const openOwner = (key: string): Host | undefined => {
     for (const generation of live.values()) if (generation.host.kernel.get(key)) return generation.host
-    return current?.host ?? initial
+    const head = current?.host ?? initial
+    return head.kernel.get(key) ? head : undefined
   }
+  const owner = (key: string): Host => openOwner(key) ?? current?.host ?? initial
   const collect = async (retiredIds: ReadonlySet<string> = new Set()): Promise<void> => {
     if (collector) clearTimeout(collector)
     collector = undefined
@@ -944,7 +949,33 @@ export async function createRuntimeGenerationHost(
         : undefined
     },
     sessionRuntime: (key) => {
-      const host = owner(key)
+      const host = openOwner(key)
+      if (!host) {
+        const pin = store.session(key)
+        // A record this build cannot read leaves the composition unknown; a query never fails on it.
+        const binding = (() => {
+          try {
+            return new CompositionSessionStore(options.profileDir).read(key)
+          } catch {
+            return undefined
+          }
+        })()
+        return describeColdSession({
+          sessionKey: key,
+          ...(pin ? { pin } : {}),
+          ...(current ? { headId: current.snapshot.id } : {}),
+          failed: pin ? failures.has(pin.generationId) : false,
+          ...(binding
+            ? {
+                composition: {
+                  hash: binding.tree.hash,
+                  preset: binding.tree.preset,
+                  bundles: binding.tree.bundles,
+                },
+              }
+            : {}),
+        })
+      }
       const id = store.session(key)?.generationId ?? bindings.get(host)?.id
       return describeHostSession(host, current?.host ?? initial, key, {
         ...(id ? { id, digest: live.get(id)?.snapshot.resourcesDigest } : {}),

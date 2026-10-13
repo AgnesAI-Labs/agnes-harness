@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `SessionRuntimeDescriptor.loaded` (required): false for a session no container has open. Such a descriptor is built from the durable generation pin and composition record only; `preset`, `loop`, `resources` and `policy` are now optional and absent when they cannot be derived without loading the session, and `providers` is empty. Nothing is read from the current Host's configuration.
 - `SessionViewResult.history.scan` (optional): `{ reason: 'events' | 'bytes' | 'time' | 'cancelled', throughSeq }`. Present when `session.view` stopped scanning at its event, byte or time budget, or because the caller cancelled; the timeline then covers only the rows up to `throughSeq`.
 - `_agnes/v1/session.view` (client tier): reads a session's recorded conversation without opening it, so a session this build cannot continue (newer or older version, missing pinned provider, damaged ledger) stays viewable. Adds `SessionViewParams`, `SessionViewResult` and `SessionViewNotice`. Nothing is restored, locked or written; a damaged ledger returns the rows that decoded safely plus a `notice`.
 - `_agnes/v1/sessions.migrate`: optional `repin` (pinned seam kinds the administrator agrees to replace) on the params and optional `repinned` on the result. A migration that would replace a pinned seam implementation without naming it fails with `E_SEAM_PIN_CHANGE`.

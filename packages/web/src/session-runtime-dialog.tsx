@@ -20,6 +20,7 @@ const effectKey = (effect: Pending['effect']) =>
 /** Description-only view of the Host's runtime descriptor; nothing is derived here. */
 export function RuntimeInfo({ runtime, t }: { runtime: SessionRuntimeDescriptor; t: Translate }) {
   const { generation, policy, resources } = runtime
+  const unloaded = <MetaText>{t('session.runtime.unloaded')}</MetaText>
   const pendingTag = (pending: Pending | undefined) =>
     pending ? (
       <Tag tone="warn">
@@ -48,9 +49,22 @@ export function RuntimeInfo({ runtime, t }: { runtime: SessionRuntimeDescriptor;
       />
       <ListRow
         title={t('session.runtime.loop')}
-        description={`${runtime.loop.id} ${runtime.loop.version}`}
-        meta={<MetaText>{t('session.runtime.preset', { name: runtime.preset.name })}</MetaText>}
+        description={
+          runtime.loop ? `${runtime.loop.id} ${runtime.loop.version}` : t('session.runtime.unknown')
+        }
+        meta={
+          runtime.preset ? (
+            <MetaText>{t('session.runtime.preset', { name: runtime.preset.name })}</MetaText>
+          ) : undefined
+        }
       />
+      {!runtime.loaded && (
+        <ListRow
+          title={t('session.runtime.providers')}
+          description={t('session.runtime.unknown')}
+          status={unloaded}
+        />
+      )}
       {runtime.providers.map((provider) => (
         <ListRow
           key={`${provider.kind}:${provider.id}`}
@@ -70,20 +84,28 @@ export function RuntimeInfo({ runtime, t }: { runtime: SessionRuntimeDescriptor;
       ))}
       <ListRow
         title={t('session.runtime.policy')}
-        description={t('session.runtime.policyValue', {
-          mode: policy.approvalMode ?? t('session.runtime.unset'),
-          policy: policy.toolPolicy,
-          sandbox: policy.sandbox.provider,
-        })}
+        description={
+          policy
+            ? t('session.runtime.policyValue', {
+                mode: policy.approvalMode ?? t('session.runtime.unset'),
+                policy: policy.toolPolicy,
+                sandbox: policy.sandbox.provider,
+              })
+            : t('session.runtime.unknown')
+        }
+        status={policy ? undefined : unloaded}
       />
       <ListRow
         title={t('session.runtime.resources')}
         description={
-          resources.items.length
-            ? resources.items.map((item) => `${item.id} ${item.revision ?? ''}`.trim()).join(' · ')
-            : t('session.runtime.none')
+          !resources
+            ? t('session.runtime.unknown')
+            : resources.items.length
+              ? resources.items.map((item) => `${item.id} ${item.revision ?? ''}`.trim()).join(' · ')
+              : t('session.runtime.none')
         }
-        meta={resources.modelRevision ? <MetaText>{resources.modelRevision}</MetaText> : undefined}
+        meta={resources?.modelRevision ? <MetaText>{resources.modelRevision}</MetaText> : undefined}
+        status={resources ? undefined : unloaded}
       />
       {runtime.restartRequired.length > 0 && (
         <p role="status">

@@ -164,7 +164,7 @@ describe('Host.reloadEcosystemExtension', () => {
         restartRequired: [],
       })
       expect(runtime?.providers.some((item) => item.kind === 'loop')).toBe(true)
-      expect(runtime?.resources.items.find((item) => item.id === 'ext:agnes/skills')).toMatchObject({
+      expect(runtime?.resources?.items.find((item) => item.id === 'ext:agnes/skills')).toMatchObject({
         resources: expect.arrayContaining(['skills']),
         revision: consumers[0]?.liveResourceRevision,
       })

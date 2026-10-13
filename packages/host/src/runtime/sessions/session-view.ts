@@ -38,7 +38,7 @@ export async function readSessionView(
   options: {
     maxNodes?: number
     signal?: AbortSignal
-    budget?: Partial<typeof SESSION_VIEW_SCAN_BUDGET>
+    budget?: Partial<Record<keyof typeof SESSION_VIEW_SCAN_BUDGET, number>>
   } = {},
 ): Promise<SessionViewResult> {
   const events: Event[] = []

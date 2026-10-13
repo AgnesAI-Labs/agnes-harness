@@ -9195,6 +9195,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.runtime': {
     valid: {
       sessionKey: 's',
+      loaded: true,
       generation: {
         id: 'g1',
         current: false,
@@ -9225,6 +9226,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
       { sessionKey: 's' },
       {
         sessionKey: 's',
+        loaded: true,
         generation: { current: true, state: 'unknown' },
       },
     ],

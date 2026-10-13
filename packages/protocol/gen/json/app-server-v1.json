@@ -36725,6 +36725,9 @@
           "maxLength": 1024,
           "type": "string"
         },
+        "loaded": {
+          "type": "boolean"
+        },
         "generation": {
           "additionalProperties": false,
           "type": "object",
@@ -37195,13 +37198,10 @@
       },
       "required": [
         "sessionKey",
+        "loaded",
         "generation",
-        "preset",
-        "loop",
         "providers",
         "seams",
-        "resources",
-        "policy",
         "restartRequired"
       ]
     },
