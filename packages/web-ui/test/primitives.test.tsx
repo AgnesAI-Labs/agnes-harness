@@ -1,7 +1,20 @@
 /** @vitest-environment happy-dom */
 import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { Button, Count, Menu, mountRegion, Tag, Toast, Tooltip } from '../src/index.js'
+import {
+  Button,
+  CompletionCheck,
+  CopyButton,
+  Count,
+  Kbd,
+  Menu,
+  mountRegion,
+  StatusDot,
+  shortcutLabel,
+  Tag,
+  Toast,
+  Tooltip,
+} from '../src/index.js'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -281,4 +294,78 @@ it('keeps DataList row actions independent from opening a row and renders caller
     />,
   )
   expect(host.querySelector('[role="status"]')?.textContent).toBe('No rows')
+})
+
+it('spells shortcuts for the platform and renders them as an untranslated hint chip', () => {
+  expect(shortcutLabel(['mod', 'N'], true)).toBe('⌘N')
+  expect(shortcutLabel(['mod', 'shift', 'enter'], true)).toBe('⌘⇧↵')
+  expect(shortcutLabel(['mod', 'esc'], true)).toBe('⌘ Esc')
+  expect(shortcutLabel(['mod', 'shift', 'N'], false)).toBe('Ctrl+Shift+N')
+  const host = render(createElement(Kbd, null, '⌘N'))
+  const chip = host.querySelector('kbd.agh-kbd')
+  expect(chip?.textContent).toBe('⌘N')
+  expect(chip?.getAttribute('translate')).toBe('no')
+})
+it('names a status dot only when no adjacent text states the status', () => {
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(StatusDot, { running: true }),
+      createElement(StatusDot, { tone: 'danger', label: 'Failed' }),
+    ),
+  )
+  const [running, failed] = host.querySelectorAll('.agh-status-dot')
+  expect(running?.getAttribute('data-running')).toBe('true')
+  expect(running?.getAttribute('aria-hidden')).toBe('true')
+  expect(failed?.hasAttribute('data-running')).toBe(false)
+  expect(failed?.getAttribute('role')).toBe('img')
+  expect(failed?.getAttribute('aria-label')).toBe('Failed')
+  expect(failed?.getAttribute('data-tone')).toBe('danger')
+})
+it('marks completion with a named check and an optional quiet detail', () => {
+  const host = render(createElement(CompletionCheck, { label: 'Completed' }, '12s'))
+  const mark = host.querySelector('.agh-completion')
+  expect(mark?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(mark?.querySelector('.agh-visually-hidden')?.textContent).toBe('Completed')
+  expect(mark?.querySelector('.agh-completion-detail')?.textContent).toBe('12s')
+})
+it('turns the copy action into a confirmation only after a successful copy, then restores it', async () => {
+  // Only the confirmation timer is virtual; React keeps scheduling on real tasks.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  // The copy resolves in a microtask and React renders in the task after it.
+  const settled = async () => {
+    for (let turn = 0; turn < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve))
+  }
+  try {
+    const outcomes: boolean[] = []
+    let succeed = false
+    const host = render(
+      createElement(CopyButton, {
+        label: 'Copy',
+        copiedLabel: 'Copied',
+        onCopy: () => succeed,
+        onCopied: (copied: boolean) => outcomes.push(copied),
+      }),
+    )
+    const button = () => host.querySelector('button') as HTMLButtonElement
+    button().click()
+    await settled()
+    expect(outcomes).toEqual([false])
+    expect(button().getAttribute('aria-label')).toBe('Copy')
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('')
+    succeed = true
+    button().click()
+    await settled()
+    expect(outcomes).toEqual([false, true])
+    expect(button().getAttribute('aria-label')).toBe('Copied')
+    expect(button().hasAttribute('data-copied')).toBe(true)
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Copied')
+    await vi.advanceTimersByTimeAsync(1600)
+    await settled()
+    expect(button().getAttribute('aria-label')).toBe('Copy')
+    expect(button().hasAttribute('data-copied')).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
 })
