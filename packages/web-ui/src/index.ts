@@ -98,14 +98,19 @@ export {
   SettingsChoice,
   SettingsCode,
   SettingsDetails,
+  SettingsGroup,
   SettingsInput,
+  SettingsItem,
   SettingsList,
   SettingsPage,
+  SettingsPageActions,
   SettingsPageHeader,
   SettingsRow,
   SettingsSaveBar,
+  SettingsSection,
   SettingsSelect,
   SettingsState,
+  SettingsTechnicalDetails,
   SettingsTextArea,
   SettingsToolbar,
 } from './settings-layout.js'
@@ -135,9 +140,11 @@ export { Icon, type IconProps } from './ui/icon.js'
 export { IconButton, type IconButtonProps } from './ui/icon-button.js'
 export { type IconName, icons } from './ui/icons.js'
 export { Kbd, type KbdProps, type ShortcutKey, shortcutLabel } from './ui/kbd.js'
+export { LabeledSwitch, type LabeledSwitchProps } from './ui/labeled-switch.js'
 export { ListRow, type ListRowProps } from './ui/list-row.js'
 export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
 export { Popover } from './ui/popover.js'
+export { SearchBar, type SearchBarProps } from './ui/search-bar.js'
 export { Select, type SelectProps } from './ui/select.js'
 export { Skeleton } from './ui/skeleton.js'
 export {

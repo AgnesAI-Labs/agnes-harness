@@ -1,0 +1,197 @@
+/** @vitest-environment happy-dom */
+import { createElement } from 'react'
+import { afterEach, expect, it, vi } from 'vitest'
+import {
+  Button,
+  Disclosure,
+  LabeledSwitch,
+  mountRegion,
+  SearchBar,
+  SettingsCard,
+  SettingsGroup,
+  SettingsItem,
+  SettingsPage,
+  SettingsPageActions,
+  SettingsPageHeader,
+  SettingsTechnicalDetails,
+} from '../src/index.js'
+
+const disposers: (() => void)[] = []
+afterEach(() => {
+  for (const dispose of disposers.splice(0)) dispose()
+  document.body.replaceChildren()
+  document.documentElement.lang = ''
+})
+function render(element: Parameters<typeof mountRegion>[1]) {
+  const host = document.createElement('div')
+  document.body.append(host)
+  disposers.push(mountRegion(host, element))
+  return host
+}
+
+it('shows one header per screen: a nested page hands its description and actions to the outer one', () => {
+  const host = render(
+    createElement(
+      SettingsPage,
+      { title: 'Credentials', 'data-testid': 'outer' },
+      createElement(
+        SettingsPage,
+        {
+          title: 'Credentials',
+          headingId: 'inner-title',
+          description: 'Keys used by tools.',
+          actions: createElement(Button, { 'data-testid': 'create' }, 'New'),
+          'data-testid': 'inner',
+        },
+        createElement(
+          SettingsPageActions,
+          null,
+          createElement(Button, { 'data-testid': 'refresh' }, 'Refresh'),
+        ),
+        createElement('p', null, 'Body'),
+      ),
+    ),
+  )
+  const headers = host.querySelectorAll('header.agnes-settings-page-heading')
+  expect(headers).toHaveLength(1)
+  const header = headers[0]
+  expect(header?.parentElement?.getAttribute('data-testid')).toBe('outer')
+  expect(header?.querySelector('p')?.textContent).toBe('Keys used by tools.')
+  expect(
+    [...(header?.querySelectorAll('.agnes-settings-actions [data-testid]') ?? [])].map((node) =>
+      node.getAttribute('data-testid'),
+    ),
+  ).toEqual(['create', 'refresh'])
+  // The inner title stays reachable for labels and assistive tech without a second visible heading.
+  const inner = host.querySelector('#inner-title')
+  expect(inner?.textContent).toBe('Credentials')
+  expect(inner?.classList.contains('visually-hidden')).toBe(true)
+  expect(host.querySelector('[data-testid="inner"]')?.getAttribute('data-nested')).toBe('true')
+})
+
+it('renders a standalone header and standalone page actions in place', () => {
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(SettingsPageHeader, { title: 'General', description: 'Local preferences.' }),
+      createElement(SettingsPageActions, null, createElement(Button, null, 'Reset')),
+    ),
+  )
+  expect(host.querySelector('header h2')?.textContent).toBe('General')
+  expect(host.querySelector('header .agnes-settings-actions')).toBeNull()
+  expect(host.querySelector('.agnes-settings-actions button')?.textContent).toBe('Reset')
+})
+
+it('keeps a card heading outside its outline and rows inside one group', () => {
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(
+        SettingsCard,
+        { title: 'Status', description: 'Local checks.', 'data-testid': 'card' },
+        createElement('p', null, 'Ready'),
+      ),
+      createElement(
+        SettingsGroup,
+        null,
+        createElement(
+          SettingsItem,
+          { label: 'Theme', labelId: 'theme', description: 'Follows the system.' },
+          'control',
+        ),
+        createElement(SettingsItem, { label: 'Read-only' }),
+      ),
+    ),
+  )
+  const section = host.querySelector('[data-testid="card"]')
+  expect(section?.classList.contains('agnes-settings-section')).toBe(true)
+  expect(section?.querySelector(':scope > .agnes-settings-section-heading h3')?.textContent).toBe('Status')
+  expect(section?.querySelector(':scope > .agnes-settings-card h3')).toBeNull()
+  expect(section?.querySelector(':scope > .agnes-settings-card')?.textContent).toBe('Ready')
+  const items = host.querySelectorAll('.agnes-settings-group > .agnes-settings-item')
+  expect(items).toHaveLength(2)
+  expect(items[0]?.querySelector('#theme')?.textContent).toBe('Theme')
+  expect(items[0]?.querySelector('.agnes-settings-item-control')?.textContent).toBe('control')
+  expect(items[1]?.querySelector('.agnes-settings-item-control')).toBeNull()
+})
+
+it('keeps the native disclosure contract under the shared chevron', () => {
+  const toggled = vi.fn()
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(
+        Disclosure,
+        {
+          summary: 'Advanced',
+          variant: 'plain',
+          id: 'advanced',
+          'data-testid': 'advanced',
+          onToggle: toggled,
+        },
+        'Hidden content',
+      ),
+      createElement(SettingsTechnicalDetails, null, 'probe: l1'),
+    ),
+  )
+  const details = host.querySelector<HTMLDetailsElement>('#advanced')
+  expect(details).toBeInstanceOf(HTMLDetailsElement)
+  expect(details?.open).toBe(false)
+  expect(details?.getAttribute('data-testid')).toBe('advanced')
+  const summary = details?.querySelector('summary')
+  expect(summary?.textContent).toBe('Advanced')
+  expect(summary?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(details?.querySelector('.agh-disclosure-body')?.textContent).toBe('Hidden content')
+  // Diagnostics are kept on the page under one fixed, localized name.
+  expect(host.querySelector('.agnes-settings-technical summary')?.textContent).toBe('Technical details')
+})
+
+it('submits a search with Enter without submitting a host form, and names its field', () => {
+  const submit = vi.fn(),
+    change = vi.fn(),
+    hostSubmit = vi.fn((event: Event) => event.preventDefault())
+  const host = render(
+    createElement(
+      'form',
+      { onSubmit: hostSubmit },
+      createElement(SearchBar, {
+        label: 'Search history',
+        placeholder: 'Search titles and messages…',
+        value: 'report',
+        onChange: change,
+        onSubmit: submit,
+        inputProps: { id: 'history-query', 'data-testid': 'history-query' },
+        filters: createElement('span', null, 'filter'),
+        actions: createElement(Button, null, 'Search'),
+      }),
+    ),
+  )
+  const input = host.querySelector<HTMLInputElement>('#history-query')
+  expect(host.querySelector('[role="search"]')).not.toBeNull()
+  expect(host.querySelector('form form')).toBeNull()
+  expect(input?.type).toBe('search')
+  expect(input?.placeholder).toBe('Search titles and messages…')
+  expect(input?.closest('label')?.textContent).toBe('Search history')
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  input?.dispatchEvent(enter)
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(enter.defaultPrevented).toBe(true)
+  expect(hostSubmit).not.toHaveBeenCalled()
+})
+
+it('states a switch in words in the document language', () => {
+  const toggle = vi.fn()
+  document.documentElement.lang = 'zh-CN'
+  const host = render(
+    createElement(LabeledSwitch, { label: '自动审阅', checked: false, disabled: false, onToggle: toggle }),
+  )
+  expect(host.querySelector('.agh-labeled-switch-state')?.textContent).toBe('已关闭')
+  const control = host.querySelector<HTMLButtonElement>('[role="switch"]')
+  expect(control?.getAttribute('aria-label')).toBe('自动审阅')
+  expect(control?.getAttribute('aria-checked')).toBe('false')
+  control?.click()
+  expect(toggle).toHaveBeenCalledWith(true)
+})

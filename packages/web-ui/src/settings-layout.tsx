@@ -5,16 +5,26 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
-import { forwardRef, useEffect, useId, useState } from 'react'
+import { createContext, forwardRef, useContext, useEffect, useId, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { fallbackT } from './locales/index.js'
 import { Button } from './ui/button.js'
+import { Disclosure } from './ui/disclosure.js'
 import { Icon } from './ui/icon.js'
 import { Skeleton } from './ui/skeleton.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
-/** Shared settings composition, matching the model/account pane and its card spacing. */
+/** The header slots of the page a component is rendered in; nested pages fill them instead of repeating a header. */
+type SettingsPageFrame = { lead: HTMLElement | null; actions: HTMLElement | null }
+const SettingsPageFrameContext = createContext<SettingsPageFrame | undefined>(undefined)
+
+/**
+ * The one settings page template: title, one-line description and page actions in the header,
+ * then the body. A page rendered inside another page contributes its description and actions to
+ * the outer header, so a screen never shows two titles.
+ */
 export function SettingsPage({
   title,
   description,
@@ -39,20 +49,112 @@ export function SettingsPage({
     saveBar?: ReactNode
     variant?: 'form' | 'list'
   }) {
-  return (
-    <section
-      {...props}
-      data-layout={variant}
-      className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}
-    >
-      <SettingsPageHeader title={title} description={description} actions={actions} headingId={headingId} />
+  const nested = useContext(SettingsPageFrameContext) !== undefined
+  const [lead, setLead] = useState<HTMLElement | null>(null)
+  const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null)
+  const frame = useMemo(() => ({ lead, actions: actionsHost }), [lead, actionsHost])
+  const body = (
+    <>
       {banner}
       {toolbar}
       <div className={['agnes-settings-stack', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
       {saveBar}
+    </>
+  )
+  return (
+    <section
+      {...props}
+      data-layout={variant}
+      data-nested={nested || undefined}
+      className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}
+    >
+      <SettingsPageHeader
+        title={title}
+        description={description}
+        actions={actions}
+        headingId={headingId}
+        slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
+      />
+      {nested ? (
+        body
+      ) : (
+        <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
+      )}
     </section>
   )
 }
+/** Page-level actions declared from anywhere inside a page land in that page's header. */
+export function SettingsPageActions({ children }: { children: ReactNode }) {
+  const frame = useContext(SettingsPageFrameContext)
+  if (!frame) return <div className="agnes-settings-actions">{children}</div>
+  return frame.actions ? createPortal(children, frame.actions) : null
+}
+/** A titled part of a page. Its content sits below the heading, never inside a second frame. */
+export function SettingsSection({
+  title,
+  description,
+  actions,
+  children,
+  ...props
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title?: ReactNode
+    description?: ReactNode
+    actions?: ReactNode
+  }) {
+  return (
+    <section {...props} className={['agnes-settings-section', props.className].filter(Boolean).join(' ')}>
+      {(title || description || actions) && (
+        <div className="agnes-settings-section-heading">
+          <div>
+            {title && <h3>{title}</h3>}
+            {description && <p>{description}</p>}
+          </div>
+          {actions && <div className="agnes-settings-actions">{actions}</div>}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+/** One quiet outline around a run of setting rows. */
+export function SettingsGroup(props: HTMLAttributes<HTMLDivElement> & DataAttributes) {
+  return <div {...props} className={['agnes-settings-group', props.className].filter(Boolean).join(' ')} />
+}
+/** A setting row: what it is on the left, its control on the right (or below when `stacked`). */
+export function SettingsItem({
+  label,
+  description,
+  labelId,
+  stacked = false,
+  children,
+  ...props
+}: Omit<HTMLAttributes<HTMLDivElement>, 'title'> &
+  DataAttributes & {
+    label: ReactNode
+    description?: ReactNode
+    labelId?: string
+    stacked?: boolean
+  }) {
+  return (
+    <div
+      {...props}
+      data-stacked={stacked || undefined}
+      className={['agnes-settings-item', props.className].filter(Boolean).join(' ')}
+    >
+      <div className="agnes-settings-item-copy">
+        <div className="agnes-settings-item-label" id={labelId}>
+          {label}
+        </div>
+        {description && <div className="agnes-settings-item-description">{description}</div>}
+      </div>
+      {children !== undefined && children !== null && children !== false && (
+        <div className="agnes-settings-item-control">{children}</div>
+      )}
+    </div>
+  )
+}
+/** A section whose content is one outlined block; the heading stays outside the outline. */
 export function SettingsCard({
   title,
   description,
@@ -66,21 +168,9 @@ export function SettingsCard({
     actions?: ReactNode
   }) {
   return (
-    <section
-      {...props}
-      className={['config-card', 'agnes-settings-card', props.className].filter(Boolean).join(' ')}
-    >
-      {(title || description || actions) && (
-        <div className="config-accounts-heading">
-          <div>
-            {title && <h3>{title}</h3>}
-            {description && <p>{description}</p>}
-          </div>
-          {actions}
-        </div>
-      )}
-      {children}
-    </section>
+    <SettingsSection {...props} title={title} description={description} actions={actions}>
+      <div className="config-card agnes-settings-card">{children}</div>
+    </SettingsSection>
   )
 }
 export function SettingsState({
@@ -188,16 +278,34 @@ export function SettingsDetails({
   'data-testid'?: string
 }) {
   return (
-    <details
+    <Disclosure
       {...props}
+      summary={title}
+      variant={compact ? 'plain' : 'row'}
       data-compact={compact || undefined}
       className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}
+      summaryProps={{ 'data-testid': props['data-testid'] ? `${props['data-testid']}-toggle` : undefined }}
     >
-      <summary data-testid={props['data-testid'] ? `${props['data-testid']}-toggle` : undefined}>
-        {title}
-      </summary>
-      <div>{children}</div>
-    </details>
+      {children}
+    </Disclosure>
+  )
+}
+/** Diagnostics a user rarely needs: kept on the page, collapsed, under one fixed name. */
+export function SettingsTechnicalDetails({
+  title,
+  children,
+  ...props
+}: Omit<import('react').DetailsHTMLAttributes<HTMLDetailsElement>, 'title'> &
+  DataAttributes & { title?: ReactNode }) {
+  return (
+    <Disclosure
+      {...props}
+      variant="plain"
+      summary={title ?? fallbackT('ui.technicalDetails')}
+      className={['agnes-settings-technical', props.className].filter(Boolean).join(' ')}
+    >
+      {children}
+    </Disclosure>
   )
 }
 export function SettingsToolbar({
@@ -271,6 +379,7 @@ export function SettingsPageHeader({
   description,
   actions,
   headingId,
+  slots,
   ...props
 }: Omit<HTMLAttributes<HTMLElement>, 'title'> &
   DataAttributes & {
@@ -278,17 +387,36 @@ export function SettingsPageHeader({
     description?: ReactNode
     actions?: ReactNode
     headingId?: string | undefined
+    /** Set by SettingsPage: receives the header's description and actions hosts. */
+    slots?: { lead(node: HTMLElement | null): void; actions(node: HTMLElement | null): void } | undefined
   }) {
+  const frame = useContext(SettingsPageFrameContext)
+  // Inside another page the outer header already names the screen: keep the heading for
+  // assistive tech and existing references, and hand the rest to the outer header.
+  if (frame && !slots)
+    return (
+      <>
+        <h2 id={headingId} className="visually-hidden">
+          {title}
+        </h2>
+        {description && frame.lead && createPortal(<p>{description}</p>, frame.lead)}
+        {actions && frame.actions && createPortal(actions, frame.actions)}
+      </>
+    )
   return (
     <header
       {...props}
       className={['config-heading', 'agnes-settings-page-heading', props.className].filter(Boolean).join(' ')}
     >
-      <div>
+      <div ref={slots?.lead}>
         <h2 id={headingId}>{title}</h2>
         {description && <p>{description}</p>}
       </div>
-      {actions && <div className="agnes-settings-actions">{actions}</div>}
+      {(actions || slots) && (
+        <div className="agnes-settings-actions" ref={slots?.actions}>
+          {actions}
+        </div>
+      )}
     </header>
   )
 }

@@ -51,7 +51,8 @@ it('keeps the account dialog close control anchored and the action footer visibl
   // selector must therefore win on specificity or the close control falls back into the left edge.
   expect(close).toContain('position: absolute')
   expect(close).toContain('right: 0.75rem')
-  expect(styleRule(css, '#config-form .agnes-settings-page-heading')).toContain('padding-inline-end: 3.25rem')
+  // The settings column ends before the close control; only a narrow dialog reserves room for it.
+  expect(styleRule(css, '.agnes-settings-group-title')).toContain('max-width: var(--settings-frame)')
 
   // Only the middle section may scroll. Keeping the footer outside that scrollport prevents a
   // short browser window from clipping the save action below the dialog edge.
@@ -424,7 +425,9 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
     expect(host.querySelector('[data-testid="settings-refresh"]')?.closest('details')?.open).toBe(false)
     expect(settingsSections.get('doctor')).toBeUndefined()
-    expect(host.querySelector('.agnes-settings-card')?.getAttribute('data-testid')).toBe('diagnostics-doctor')
+    expect(host.querySelector('.agnes-settings-section')?.getAttribute('data-testid')).toBe(
+      'diagnostics-doctor',
+    )
   } finally {
     flushSync(() => root.unmount())
     expect(occupancy.parentNode).toBe(form)

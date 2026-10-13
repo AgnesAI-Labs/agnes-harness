@@ -1178,4 +1178,244 @@
   .agnes-ui-sender textarea::placeholder {
     color: var(--agnes-text-tertiary);
   }
+
+  /* ── Settings template parts ─────────────────────────────────────────────── */
+  /* Disclosure with a variant: one shared chevron in place of the browser marker. Without a
+   variant the caller keeps styling its own summary. */
+  .agh-disclosure[data-variant] {
+    min-width: 0;
+  }
+  .agh-disclosure[data-variant] > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: var(--control-height-sm);
+    list-style: none;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+    cursor: pointer;
+    user-select: none;
+    overflow-wrap: anywhere;
+  }
+  .agh-disclosure[data-variant] > summary::-webkit-details-marker {
+    display: none;
+  }
+  .agh-disclosure[data-variant] > summary::marker {
+    content: "";
+  }
+  .agh-disclosure[data-variant] > summary:hover {
+    color: var(--agnes-text-primary);
+  }
+  .agh-disclosure[data-variant] > summary:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 2px;
+  }
+  .agh-disclosure-chevron {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .agh-disclosure[data-variant][open] > summary > .agh-disclosure-chevron {
+    transform: rotate(90deg);
+  }
+  .agh-disclosure-title {
+    min-width: 0;
+  }
+  .agh-disclosure[data-variant] > .agh-disclosure-body {
+    min-width: 0;
+    padding-block: var(--s8);
+    overflow-wrap: anywhere;
+  }
+  /* A row disclosure is a divided line of its list; neighbours share one rule. */
+  .agh-disclosure[data-variant="row"] + .agh-disclosure[data-variant="row"] {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agh-disclosure[data-variant="row"] > summary {
+    min-height: 2.75rem;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .agh-disclosure[data-variant="row"] > .agh-disclosure-body {
+    padding-block: var(--s4) var(--s20);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-disclosure-chevron {
+      transition: transform var(--transition-fast);
+    }
+  }
+
+  /* Search bar: one field, then filters, then the action. */
+  .agh-search-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agh-search-bar-field {
+    position: relative;
+    flex: 1 1 14rem;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .agh-search-bar-field > svg {
+    position: absolute;
+    inset-inline-start: var(--s10);
+    color: var(--agnes-text-tertiary);
+    pointer-events: none;
+  }
+  .agh-search-bar-field > input {
+    width: 100%;
+    min-width: 0;
+    height: var(--control-height-form);
+    min-height: var(--control-height-form);
+    padding: 0 var(--s12) 0 var(--s32);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-control);
+    color: var(--agnes-input-content-strong);
+    background: var(--agnes-input-surface);
+    font: inherit;
+    font-size: var(--agnes-ui-input-font-size);
+  }
+  .agh-search-bar-field > input::placeholder {
+    color: var(--agnes-text-tertiary);
+  }
+  .agh-search-bar-field > input:hover {
+    border-color: var(--agnes-input-border-emphasis);
+  }
+  .agh-search-bar-field > input:focus-visible {
+    border-color: var(--agnes-input-border-focus);
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 0;
+  }
+  .agh-search-bar-filters,
+  .agh-search-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agh-search-bar-filters > * {
+    min-width: 8rem;
+  }
+
+  /* A switch always shows its state in words beside the knob. */
+  .agh-labeled-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    white-space: nowrap;
+  }
+  .agh-labeled-switch-state {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-labeled-switch[data-checked="true"] > .agh-labeled-switch-state {
+    color: var(--agnes-text-primary);
+  }
+
+  /* Section: one title style, content directly beneath it. */
+  .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-section-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .agnes-settings-section-heading > div:first-child {
+    min-width: 0;
+  }
+  .agnes-settings-section-heading h3,
+  .agnes-settings-section > h3 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  .agnes-settings-section-heading p {
+    max-width: 60ch;
+    margin: var(--s2) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  /* Group: a single quiet outline around setting rows; rows are divided, never boxed again. */
+  .agnes-settings-group {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-settings-group > * + * {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-settings-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12) var(--s24);
+    min-width: 0;
+    min-height: 3.25rem;
+    box-sizing: border-box;
+    padding: var(--s12) var(--s16);
+  }
+  .agnes-settings-item[data-stacked] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .agnes-settings-item-copy {
+    flex: 1 1 auto;
+    display: grid;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agnes-settings-item-label {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-item-description {
+    max-width: 60ch;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-item-control {
+    flex: 0 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control > :is(select, .agnes-ui-select) {
+    width: 14rem;
+    max-width: 100%;
+  }
+  .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
+    justify-content: flex-start;
+  }
+  .agnes-settings-technical {
+    margin-top: calc(-1 * var(--s8));
+  }
+  @media (max-width: 640px) {
+    .agnes-settings-item:not([data-stacked]) {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-item-control {
+      justify-content: flex-start;
+    }
+  }
 }
