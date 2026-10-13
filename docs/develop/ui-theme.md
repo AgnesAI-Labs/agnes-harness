@@ -48,8 +48,11 @@ Rules that keep the theme coherent:
 | Reading | `--font-size-prose`, `--line-height-prose`, `--measure-prose` | 14px, 1.7, 72ch for conversation prose; code and tables use the full width. |
 | Body line height | `--line-height-body` | 1.6, the floor for CJK body text. |
 | Radius | `--radius-control`, `--radius-card`, `--radius-surface`, `--radius-pill` | 6px controls; 8px cards and menus; 12px dialogs and the composer card; pills for small chips only. |
+| Control height | `--control-height`, `--control-height-sm`, `--control-height-form`, `--control-height-touch` | 36px buttons; 28px compact and icon buttons; text fields match the buttons at 36px and rise to the 44px touch target at phone widths. |
 | Elevation | `--elevation-0`, `--elevation-1`, `--elevation-2`, `--shadow-hairline` | Flat; menus and popovers; dialogs and drawers; the composer's 1px lift. |
 | Motion | `--motion-fast`, `--motion-base`, `--motion-ease`, `--motion-breathe` | 120ms, 200ms, ease-out, and the 2.4s cycle of a running dot. |
+
+Settings and admin pages share one heading scale, whichever heading element a page uses: page title 16px, section 14px, row 13px, all semibold, with 13px body text. Dialog titles are 16px semibold. An empty state is a 24px mark, a 14px line that names the state and a 13px line that says what to do next.
 
 Borders carry structure. A bordered card has no shadow; elevation belongs to layers that float above the page. Numbers that are compared (times, counts, costs, usage) use `font-variant-numeric: tabular-nums`. Motion is for occasional surfaces such as dialogs and drawers; menus, tabs and keyboard-triggered actions do not animate, and every animation stops under `prefers-reduced-motion`.
 
