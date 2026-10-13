@@ -2049,8 +2049,10 @@ export class SessionImpl {
   append(tx: EventInput[]) {
     return this.d.log.append(tx)
   }
-  discardNewSession(): Promise<void> {
-    return this.d.log.discardNewSession()
+  async discardNewSession(): Promise<void> {
+    await this.d.log.discardNewSession()
+    // The key can be bound again by a new session, which must not inherit uploads made to this one.
+    await this.d.attachments?.forgetReceipts?.(this.key)
   }
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)

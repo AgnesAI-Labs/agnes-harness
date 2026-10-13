@@ -115,6 +115,8 @@ describe('attachment store', () => {
       bytes: 5,
       mimeType: 'image/png',
       firstSeenMs: 1_000,
+      // The marker was last rewritten when session-b's receipt was added.
+      lastSeenMs: 2_000,
       receipts: [attachmentReceiptFor('session-a'), attachmentReceiptFor('session-b')],
     })
   })

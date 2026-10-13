@@ -36,6 +36,8 @@ export type UserAttachmentPort = AttachmentReadPort &
       sessionKey: string
       referenced: boolean
     }): Promise<'ok' | 'missing' | 'unauthorized'>
+    /** Drops a discarded session's upload receipts, so a new session bound to its key does not inherit them. */
+    forgetReceipts?(sessionKey: string): Promise<void>
   }>
 
 type Ref = { sha256: string; bytes: number }

@@ -75,8 +75,8 @@ function parse(text: string): CacheMap {
  * read). The map is replaced whole through a temporary file and a rename; writes for one session are
  * serialized in this process, which is the process hosting that session.
  *
- * Maps are not removed with a session: nothing on this build deletes a session that has attachments;
- * an unused map costs one small file and goes with the attachment sweep.
+ * Maps are not removed with a session here: the attachment sweep treats every copy a map names as in
+ * use, and removes the map of a session that no longer exists once it is older than its grace period.
  */
 export function createUserAttachmentReader(o: {
   store: AttachmentStore

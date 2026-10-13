@@ -77,6 +77,7 @@ import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-c
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
+import { scheduleAttachmentOrphans } from './attachment-orphans.js'
 import { type AttachmentStore, createAttachmentStore } from './attachment-store.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
@@ -193,7 +194,7 @@ import {
   type WorkspaceRuntimeFence,
 } from './session-workspace-runtime.js'
 import { createTrajectoryLifecycle } from './trajectory-lifecycle.js'
-import { createUserAttachmentPort } from './user-attachments.js'
+import { attachmentLimit, createUserAttachmentPort } from './user-attachments.js'
 import type { WorkspaceBinding } from './workspace-authority.js'
 import { WorkspaceHookLoader } from './workspace-hook-loader.js'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
@@ -1713,6 +1714,15 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       cacheInline: bundledArtifacts,
     })
     const requestVersions = assembleRequestVersions(attachmentStore, dataDir, clock)
+    if (attachments.storeByReference) {
+      const orphans = scheduleAttachmentOrphans({
+        dataDir,
+        store: attachmentStore,
+        graceMs: attachmentLimit(profile.limits, 'attachments.orphan_grace_ms'),
+        onError: (error) => deps.log.warn('attachment orphan cleanup failed', { error: String(error) }),
+      })
+      rollback.push('attachment-orphans', () => orphans.close())
+    }
     kernel = Kernel.create({
       storage: adapters.storage,
       seams,

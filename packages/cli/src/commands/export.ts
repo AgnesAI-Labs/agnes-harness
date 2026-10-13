@@ -1,12 +1,32 @@
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  closeSync,
+  createReadStream,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from 'node:fs'
 import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { DEFAULT_RULES, redact } from '@agnes/base/privacy'
 import { exportClaudeCode, exportShareGpt } from '@agnes/bridges/convert'
 import { createPlatform } from '@agnes/host'
-import type { EventEnvelope, UITimeline } from '@agnes/protocol'
+import {
+  ARTIFACT_READ_RPC_MAX_BYTES,
+  attachmentForm,
+  type EventEnvelope,
+  type SessionAttachmentReadParams,
+  type SessionAttachmentReadResult,
+  type UITimeline,
+} from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
-import { ExitCode, UsageError } from '../errors.js'
+import { createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import { CommandError, ExitCode, UsageError } from '../errors.js'
 import { renderHtml } from '../html/template.js'
 import type { ParsedArgs } from '../types.js'
 import { writeWindowsPrivateExport } from './export-private-file.js'
@@ -149,10 +169,192 @@ export async function readLedger(client: Client, id: string): Promise<LedgerExpo
   }
 }
 
-/** The native export is one protocol envelope per UTF-8 line, with no sdk-only `_meta` wrapper. */
-export function formatAgnes(events: EventEnvelope[]): Uint8Array {
-  const text = events.length > 0 ? `${events.map((event) => JSON.stringify(event)).join('\n')}\n` : ''
+/**
+ * The native export is one protocol envelope per UTF-8 line, with no sdk-only `_meta` wrapper. A
+ * row read back whole through `session.exportRaw` is written as the line the daemon gave.
+ */
+export function formatAgnes(
+  events: EventEnvelope[],
+  lines: ReadonlyMap<number, string> = new Map(),
+): Uint8Array {
+  const text =
+    events.length > 0
+      ? `${events.map((event) => lines.get(event.seq) ?? JSON.stringify(event)).join('\n')}\n`
+      : ''
   return new TextEncoder().encode(text)
+}
+
+/** Whether a row holds an attachment block in the lean form, whose bytes stayed in storage. */
+function holdsOmitted(value: unknown, depth = 0): boolean {
+  if (!value || typeof value !== 'object' || depth > 16) return false
+  if (Array.isArray(value)) return value.some((item) => holdsOmitted(item, depth + 1))
+  if (attachmentForm(value) === 'omitted') return true
+  return Object.values(value).some((child) => holdsOmitted(child, depth + 1))
+}
+
+type RawPort = Pick<Client['session'], 'exportRaw'>
+
+/** One stored row, whole, as the daemon serves it in pieces: its JSONL line without the newline. */
+async function rawLine(session: RawPort, id: string, seq: number): Promise<string> {
+  const pieces: Buffer[] = []
+  let offset: number | null = 0
+  while (offset !== null) {
+    const piece = await session.exportRaw(id, seq, offset)
+    if (piece.seq !== seq) throw new CommandError(`export of ${id}: row ${seq} came back as row ${piece.seq}`)
+    const bytes = Buffer.from(piece.base64, 'base64')
+    pieces.push(bytes)
+    if (piece.nextOffset !== null && piece.nextOffset !== offset + bytes.byteLength)
+      throw new CommandError(`export of ${id}: row ${seq} was served out of order`)
+    offset = piece.nextOffset
+  }
+  const line = Buffer.concat(pieces).toString('utf8')
+  return line.endsWith('\n') ? line.slice(0, -1) : line
+}
+
+/**
+ * A replay leaves large old inline attachments out of the rows it sends (the lean form). A raw
+ * export puts each such row back whole, read through `session.exportRaw`, which serves only rows
+ * whose history has been verified.
+ */
+export async function completeLeanRows(
+  session: RawPort,
+  id: string,
+  events: readonly EventEnvelope[],
+): Promise<{ events: EventEnvelope[]; lines: Map<number, string> }> {
+  const lines = new Map<number, string>()
+  const out: EventEnvelope[] = []
+  for (const event of events) {
+    if (!holdsOmitted(event.data)) {
+      out.push(event)
+      continue
+    }
+    const line = await rawLine(session, id, event.seq)
+    const { _meta: _ignored, ...full } = JSON.parse(line) as EventEnvelope & { _meta?: unknown }
+    if (full.seq !== event.seq || full.id !== event.id)
+      throw new CommandError(`export of ${id}: the stored row ${event.seq} is not the row replayed`)
+    lines.set(event.seq, line)
+    out.push(full)
+  }
+  return { events: out, lines }
+}
+
+type StoredAttachment = Readonly<{
+  sha256: string
+  bytes: number
+  at: Omit<SessionAttachmentReadParams, 'sessionId' | 'offset' | 'length'>
+}>
+
+/**
+ * Every object a user message names: references and their thumbnails, located as the attachment
+ * read finds them (the message seq, the kind, and the place among the message's blocks of that kind).
+ */
+function storedAttachments(events: readonly EventEnvelope[]): StoredAttachment[] {
+  const found = new Map<string, StoredAttachment>()
+  for (const event of events) {
+    if (event.type !== 'user/message') continue
+    const content = (event.data as { content?: unknown } | null)?.content
+    if (!Array.isArray(content)) continue
+    const places = { image: 0, file: 0 }
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (block?.type !== 'image' && block?.type !== 'file') continue
+      const kind: 'image' | 'file' = block.type
+      places[kind] += 1
+      if (attachmentForm(block) !== 'reference') continue
+      const at = { seq: event.seq, kind, index: places[kind] }
+      const ref = block.attachment as { sha256?: unknown; bytes?: unknown }
+      const thumb = block.thumbnail as { sha256?: unknown; bytes?: unknown } | undefined
+      for (const [object, thumbnail] of [
+        [ref, false],
+        [thumb, true],
+      ] as const)
+        if (
+          typeof object?.sha256 === 'string' &&
+          /^[0-9a-f]{64}$/u.test(object.sha256) &&
+          typeof object.bytes === 'number' &&
+          !found.has(object.sha256)
+        )
+          found.set(object.sha256, {
+            sha256: object.sha256,
+            bytes: object.bytes,
+            at: thumbnail ? { ...at, thumbnail: true } : at,
+          })
+    }
+  }
+  return [...found.values()]
+}
+
+async function digestOf(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest('hex')
+}
+
+/** Writes one attachment through a private temporary file, renamed into place once its digest matches. */
+async function writeAttachment(
+  call: Client['call'],
+  id: string,
+  dir: string,
+  object: StoredAttachment,
+): Promise<void> {
+  const path = join(dir, object.sha256)
+  if (existsSync(path) && (await digestOf(path)) === object.sha256) return
+  const windows = createPlatform().os === 'win32'
+  const temporary = join(dir, `.agnes-export-${randomUUID()}.tmp`)
+  const fd = windows ? createPrivateFileSync(temporary) : openSync(temporary, 'wx', 0o600)
+  let committed = false
+  try {
+    try {
+      const hash = createHash('sha256')
+      let offset = 0
+      let total = object.bytes
+      do {
+        const window = await call<SessionAttachmentReadResult>('_agnes/v1/session.attachmentRead', {
+          sessionId: id,
+          ...object.at,
+          offset,
+          length: Math.max(1, Math.min(ARTIFACT_READ_RPC_MAX_BYTES, total - offset)),
+        } satisfies SessionAttachmentReadParams)
+        total = window.totalBytes
+        const bytes = Buffer.from(window.base64, 'base64')
+        if (bytes.byteLength === 0 && offset < total)
+          throw new CommandError(`export of ${id}: attachment ${object.sha256} stopped at ${offset} bytes`)
+        hash.update(bytes)
+        writeSync(fd, bytes)
+        offset += bytes.byteLength
+      } while (offset < total)
+      if (total !== object.bytes || hash.digest('hex') !== object.sha256)
+        throw new CommandError(
+          `export of ${id}: attachment ${object.sha256} does not match its reference; nothing more was exported`,
+        )
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    if (windows) renameWriteThroughSync(temporary, path)
+    else renameSync(temporary, path)
+    committed = true
+  } finally {
+    if (!committed) rmSync(temporary, { force: true })
+  }
+}
+
+/**
+ * A raw native export also carries the bytes of every attachment its rows reference, one file per
+ * object named by its digest in `<out>.attachments/`, read through `session.attachmentRead`. An
+ * import of the export reads them from there.
+ */
+export async function exportAttachments(
+  call: Client['call'],
+  id: string,
+  out: string,
+  events: readonly EventEnvelope[],
+): Promise<number> {
+  const objects = storedAttachments(events)
+  if (objects.length === 0) return 0
+  const dir = `${out}.attachments`
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  for (const object of objects) await writeAttachment(call, id, dir, object)
+  return objects.length
 }
 
 function formatFor(p: ParsedArgs): 'agnes' | 'html' | 'sharegpt' | 'claude-code' {
@@ -179,9 +381,8 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
   const ledger = await readLedger(client, id)
   if (p.raw) deps.io.stderr.write('warning: --raw exports without redaction (secrets, paths, PII)\n')
   const rules = privacyRules(deps)
-  const events = p.raw
-    ? ledger.events
-    : (redact(sanitizeExportValue(ledger.events), rules) as EventEnvelope[])
+  const raw = p.raw ? await completeLeanRows(client.session, id, ledger.events) : undefined
+  const events = raw ? raw.events : (redact(sanitizeExportValue(ledger.events), rules) as EventEnvelope[])
   const timeline = p.raw
     ? ledger.timeline
     : (redact(sanitizeExportValue(ledger.timeline), rules) as UITimeline)
@@ -199,13 +400,16 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
         ? exportShareGpt(events, { tools: 'role', id: sessionId })
         : format === 'claude-code'
           ? exportClaudeCode(events, { cwd: p.raw ? deps.cwd : redact(deps.cwd, rules) })
-          : formatAgnes(events)
+          : formatAgnes(events, raw?.lines)
 
-  if (p.out) {
-    const path = isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out)
-    await (deps.writeFile ?? writePrivateFile)(path, bytes)
-  } else {
-    deps.io.stdout.write(bytes)
+  const path = p.out ? (isAbsolute(p.out) ? p.out : resolve(deps.cwd, p.out)) : undefined
+  // The attachments are written before the rows, so an export that names them has them.
+  if (raw && format === 'agnes') {
+    if (path) await exportAttachments(client.call.bind(client), id, path, events)
+    else if (storedAttachments(events).length > 0)
+      deps.io.stderr.write('warning: attachment bytes are exported only with --out\n')
   }
+  if (path) await (deps.writeFile ?? writePrivateFile)(path, bytes)
+  else deps.io.stdout.write(bytes)
   return ExitCode.OK
 }

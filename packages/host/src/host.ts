@@ -79,6 +79,8 @@ export interface Host {
   ): Promise<ServiceInspection>
   applyModelProfile(next: ResolvedProfile): Promise<void>
   readonly profile: ResolvedProfile
+  /** The data directory this host was assembled on: its ledger and its attachment store live here. */
+  readonly dataDir: string
   readonly kernel: Kernel
   /** ERRATA B19: cli reads it for `agnes models` and for --probe. */
   readonly provider: Assembled['provider']
@@ -216,6 +218,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
     get profile() {
       return profile
     },
+    dataDir: opts.dataDir,
     applyModelProfile(next) {
       const operation = modelApplication.then(async () => {
         if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')

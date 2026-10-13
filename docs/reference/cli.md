@@ -24,8 +24,8 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
 | `agh resume ID [-p prompt]` | Resume entry point |
 | `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | List/details |
-| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
-| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |
+| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` (with `-o`, a raw native export also writes referenced attachments to `FILE.attachments/`) |
+| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import; a native import reads referenced attachments from `FILE.attachments/` |
 | `agh --connect TARGET` | Connect only to that target; no fallback on failure |
 | `agh --standalone` / `agh --ephemeral` | Embedded / temporary execution |
 | `agh acp` / `agh --mode acp` | ACP protocol entry point |

@@ -150,6 +150,9 @@ export function createUserAttachmentPort(o: {
     usage,
     checkQuota,
     store: ({ bytes, mimeType, sessionBytes }) => keep(bytes, mimeType, sessionBytes),
+    async forgetReceipts(sessionKey) {
+      await o.store.forgetReceipts?.(sessionKey)
+    },
     async authorize({ sha256, bytes, sessionKey, referenced }) {
       // Entitlement first: telling "missing" from "not yours" for an object the session has no claim
       // on would let it probe the store for content it was never given.

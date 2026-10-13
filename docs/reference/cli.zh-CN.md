@@ -20,8 +20,8 @@
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
 | `agh resume ID [-p prompt]` | 恢复入口 |
 | `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | 列表/详情 |
-| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
-| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |
+| `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw`（带 `-o` 的原生 raw 导出还会把被引用的附件写到 `FILE.attachments/`） |
+| `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入；原生导入从 `FILE.attachments/` 读取被引用的附件 |
 | `agh --connect TARGET` | 只连接目标，失败不回退 |
 | `agh --standalone` / `agh --ephemeral` | 嵌入/临时执行 |
 | `agh acp` / `agh --mode acp` | ACP 协议入口 |

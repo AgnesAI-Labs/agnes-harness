@@ -95,6 +95,11 @@ export * from './assemble/routes.js'
 export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
 export {
+  type AttachmentOrphanOptions,
+  collectAttachmentOrphans,
+  scheduleAttachmentOrphans,
+} from './attachment-orphans.js'
+export {
   type AttachmentKind,
   type AttachmentStaging,
   type AttachmentStore,

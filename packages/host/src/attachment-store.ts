@@ -1,7 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants as fsConstants } from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
-import { copyFile, link, lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import {
+  copyFile,
+  link,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  utimes,
+} from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export type AttachmentKind = 'user-attachment' | 'request-version' | 'thumbnail'
@@ -13,6 +25,11 @@ export type UserAttachmentMarker = Readonly<{
   mimeType: string
   firstSeenMs: number
   receipts: readonly string[]
+  /**
+   * When the bytes were last stored or marked as a user attachment: the marker file's modification
+   * time, which a later mark of the same bytes moves forward without rewriting the marker.
+   */
+  lastSeenMs?: number
 }>
 export type AttachmentStoreErrorCode =
   | 'ATTACHMENT_HASH_MISMATCH'
@@ -49,10 +66,14 @@ export interface AttachmentStore {
   markUserAttachment(object: StoredObject, meta: { mimeType: string; receiptFor?: string }): Promise<void>
   userAttachment(sha256: string): Promise<UserAttachmentMarker | undefined>
   sweepStaging(nowMs: number): Promise<number>
+  /** Removes one session's upload receipt from every marker; resolves to how many markers changed. */
+  forgetReceipts?(sessionKey: string): Promise<number>
 }
 
 const SHA256 = /^[0-9a-f]{64}$/u
 const STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** A mark of bytes already marked moves their last-seen time forward at most this often. */
+const SEEN_REFRESH_MS = 60_000
 const MIB = 1024 * 1024
 /** `readFile` refuses anything larger; such objects are read by range. */
 const MAX_WHOLE_READ = 2 ** 31 - 1
@@ -313,6 +334,8 @@ export function createAttachmentStoreInternal(o: {
       if (errorCode(error) === 'ENOENT') return undefined
       throw error
     }
+    // A marker replaced or removed between the two reads counts as seen when it was first seen.
+    const seenMs = Math.floor((await stat(markerPath(sha256)).catch(() => undefined))?.mtimeMs ?? 0)
     let marker: UserAttachmentMarker | undefined
     try {
       marker = JSON.parse(text) as UserAttachmentMarker
@@ -323,18 +346,23 @@ export function createAttachmentStoreInternal(o: {
       if (strict) throw new AttachmentStoreError('ATTACHMENT_CORRUPT', 'unreadable attachment marker')
       return undefined
     }
-    return marker
+    const firstSeenMs = Number.isFinite(marker.firstSeenMs) ? marker.firstSeenMs : 0
+    return { ...marker, lastSeenMs: Math.max(firstSeenMs, seenMs) }
   }
+
+  /** The marker's file time is when its bytes were last seen; setting it rewrites nothing. */
+  const touch = (path: string, ms: number) => utimes(path, ms / 1000, ms / 1000)
 
   /**
    * `createOnly` publishes with a hard link (or, without hard links, an exclusive copy), which fails
    * when a marker is already there instead of replacing it; resolves false in that case. Without it
-   * the marker is replaced.
+   * the marker is replaced. The published file carries `seenMs` as its time.
    */
   async function writeMarker(
     sha256: string,
     marker: UserAttachmentMarker,
     createOnly = false,
+    seenMs = clock(),
   ): Promise<boolean> {
     const directory = join(markers, sha256.slice(0, 2))
     await ensureDir(directory)
@@ -348,6 +376,8 @@ export function createAttachmentStoreInternal(o: {
       } finally {
         await handle.close()
       }
+      // A hard link and a rename keep the file time; an exclusive copy gets it again below.
+      await touch(temporary, seenMs)
       if (!createOnly) await rename(temporary, markerPath(sha256))
       else {
         try {
@@ -361,6 +391,7 @@ export function createAttachmentStoreInternal(o: {
             // A file system without hard links: an exclusive copy still never replaces a marker.
             try {
               await copyFile(temporary, markerPath(sha256), fsConstants.COPYFILE_EXCL)
+              await touch(markerPath(sha256), seenMs)
             } catch (copyError) {
               if (errorCode(copyError) !== 'EEXIST') throw copyError
               created = false
@@ -375,6 +406,18 @@ export function createAttachmentStoreInternal(o: {
     }
     await syncDir(directory)
     return created
+  }
+
+  /** Runs one marker change after every earlier change to the same marker in this process. */
+  async function withMarkerLock(sha256: string, run: () => Promise<void>): Promise<void> {
+    const next = (markerLocks.get(sha256) ?? Promise.resolve()).then(run)
+    const tail = next.catch(() => undefined)
+    markerLocks.set(sha256, tail)
+    try {
+      await next
+    } finally {
+      if (markerLocks.get(sha256) === tail) markerLocks.delete(sha256)
+    }
   }
 
   const store: AttachmentStore = {
@@ -425,13 +468,27 @@ export function createAttachmentStoreInternal(o: {
     },
     async markUserAttachment(object, meta) {
       checkId(object.sha256)
-      const previous = markerLocks.get(object.sha256) ?? Promise.resolve()
-      const next = previous.then(async () => {
-        const current = await readMarker(object.sha256, false)
+      await withMarkerLock(object.sha256, async () => {
+        let current = await readMarker(object.sha256, false)
         const receipt = meta.receiptFor === undefined ? undefined : attachmentReceiptFor(meta.receiptFor)
         const receipts = [...(current?.receipts ?? [])]
         if (receipt && !receipts.includes(receipt)) receipts.push(receipt)
-        if (current && receipts.length === current.receipts.length) return
+        if (current && receipts.length === current.receipts.length) {
+          // Nothing to add: only the time the bytes were last seen moves, by the file time alone, so
+          // a receipt another process wrote meanwhile is never overwritten.
+          const now = clock()
+          if (now - (current.lastSeenMs ?? current.firstSeenMs) <= SEEN_REFRESH_MS) return
+          try {
+            await touch(markerPath(object.sha256), now)
+            return
+          } catch (error) {
+            if (errorCode(error) !== 'ENOENT') throw error
+          }
+          // Removed since it was read (the attachment sweep): marked again like new bytes.
+          current = undefined
+          receipts.length = 0
+          if (receipt) receipts.push(receipt)
+        }
         const marker = {
           schemaVersion: 1 as const,
           sha256: object.sha256,
@@ -450,13 +507,6 @@ export function createAttachmentStoreInternal(o: {
         // and a damaged marker is rewritten by the next mark that adds a receipt.
         await writeMarker(object.sha256, marker, true)
       })
-      const tail = next.catch(() => undefined)
-      markerLocks.set(object.sha256, tail)
-      try {
-        await next
-      } finally {
-        if (markerLocks.get(object.sha256) === tail) markerLocks.delete(object.sha256)
-      }
     },
     async userAttachment(sha256) {
       checkId(sha256)
@@ -469,6 +519,33 @@ export function createAttachmentStoreInternal(o: {
       for (const shard of await readdir(markers).catch(() => [] as string[]))
         removed += await sweepOld(join(markers, shard), nowMs, (name) => name.endsWith('.tmp'))
       return removed
+    },
+    /**
+     * A session key can be bound again by a new session once the old one is gone, and the new one
+     * must not inherit the old one's uploads. Each marker keeps its time, so forgetting a receipt
+     * does not postpone the attachment sweep.
+     */
+    async forgetReceipts(sessionKey) {
+      const receipt = attachmentReceiptFor(sessionKey)
+      let changed = 0
+      for (const shard of await readdir(markers).catch(() => [] as string[]))
+        for (const name of await readdir(join(markers, shard)).catch(() => [] as string[])) {
+          if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue
+          const sha256 = name.slice(0, -5)
+          await withMarkerLock(sha256, async () => {
+            const current = await readMarker(sha256, false)
+            if (!current?.receipts.includes(receipt)) return
+            const { lastSeenMs, ...kept } = current
+            await writeMarker(
+              sha256,
+              { ...kept, receipts: current.receipts.filter((r) => r !== receipt) },
+              false,
+              lastSeenMs,
+            )
+            changed++
+          })
+        }
+      return changed
     },
   }
   return Object.freeze(store)
