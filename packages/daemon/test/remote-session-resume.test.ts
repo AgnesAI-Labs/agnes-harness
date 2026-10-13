@@ -32,6 +32,15 @@ describe('RemoteSession.scan resume', () => {
     expect(command.mock.calls[1]).toEqual(['scan', { ...query, toSeq: 1, limit: 1 }])
   })
 
+  it('refuses a resume that made no progress instead of asking forever', async () => {
+    const command = vi.fn().mockResolvedValue({ rows: [], resume: { fromSeq: 1, limit: 5 } })
+    const remote = new RemoteSession('k', 'writer', 1, { alive: true, command } as never, '/test')
+    await expect(remote.scan({ fromSeq: 1, toSeq: 9, limit: 5 })).rejects.toMatchObject({
+      data: { code: 'SCAN_RESUME_WITHOUT_ROWS' },
+    })
+    expect(command).toHaveBeenCalledTimes(1)
+  })
+
   it('makes one call when the page fits one frame', async () => {
     const command = vi.fn().mockResolvedValue({ rows: [r1] })
     const remote = new RemoteSession('k', 'writer', 1, { alive: true, command } as never, '/test')

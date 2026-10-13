@@ -7,6 +7,7 @@ export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
 export * from './diagnostics-dialog.js'
+export { formatMegabytes } from './format-bytes.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,

@@ -222,7 +222,8 @@ export {
   type SessionLister,
   type SessionMetaRow,
 } from './ports.js'
-export { toSessionUpdate, toSessionUpdates } from './project.js'
+// The complete form: a user message is several updates, so the single-update form stays internal.
+export { toSessionUpdates } from './project.js'
 export type { ApprovalRequest, AskOutcome, Prompter } from './prompter.js'
 export { PrompterRouter } from './prompter.js'
 export {

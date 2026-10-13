@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import { releaseRawExport } from '@agnes/worker-runtime'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import type { JsonRpcId } from '../rpc.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
@@ -308,6 +309,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     e.inflight?.abort.abort()
     e.ac.abort()
     e.tail()
+    releaseRawExport(e.session)
     await e.session.close()
   }
 

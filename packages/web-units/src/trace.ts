@@ -1,4 +1,5 @@
 import type { ToolCall, ToolResult, UINode, UISpan, UITurn } from '@agnes/protocol'
+import { formatMegabytes } from '@agnes/web-ui'
 import {
   createElement,
   type ForwardedRef,
@@ -1330,9 +1331,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                     createElement(
                       'span',
                       { key: `user-image:${index}`, className: 'trace-image-omitted', role: 'status' },
-                      traceText('trace.image.omitted', {
-                        size: `${(block.dataOmitted.bytes / 1048576).toFixed(1)} MB`,
-                      }),
+                      traceText('trace.image.omitted', { size: formatMegabytes(block.dataOmitted.bytes) }),
                     ),
                   ]
                 if (

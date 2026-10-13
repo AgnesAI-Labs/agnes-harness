@@ -1,4 +1,4 @@
-import type { Actor, EventEnvelope } from '@agnes/protocol'
+import { type Actor, type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { ToolDetailRead, ToolDetailReadResult } from '@agnes/worker-runtime'
 import type { PreviewSnapshotEntry } from '../registry.js'
 import type { WorkspaceBindingEnvelope } from '../storage/workspaces.js'
@@ -174,7 +174,8 @@ export class RemoteSession {
         resume?: Record<string, unknown>
       }
       // A resume that made no progress would never end.
-      if (part.resume && part.rows.length === 0) throw new Error('worker scan resumed without rows')
+      if (part.resume && part.rows.length === 0)
+        throw rpcError('INTERNAL_ERROR', { code: 'SCAN_RESUME_WITHOUT_ROWS', resume: part.resume })
       rows.push(...part.rows)
       if (part.resume) this.scanResumes++
       next = part.resume ? { ...query, ...part.resume } : undefined

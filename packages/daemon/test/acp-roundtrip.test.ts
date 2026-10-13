@@ -1,3 +1,4 @@
+import { checkSequence } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { noticeParams } from '../src/local/attached.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
@@ -443,6 +444,51 @@ describe('local endpoint: ACP round trip', () => {
         content: { type: 'text', text: '[image omitted: 400000 bytes; read session-image://4/2]' },
       },
     ])
+  })
+
+  it('stamps each row once, so a multi-block user message keeps eventSequence strictly increasing', async () => {
+    const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    const feed = new Feed(ep, { key: 'k', generation: 1 } as never, () => undefined)
+    const row = (seq: number, type: string, data: unknown) =>
+      ({
+        seq,
+        ts: '1970-01-01T00:00:00.000Z',
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
+        type,
+        data,
+        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+        lane: 'main',
+      }) as never
+    feed.replayLoad([
+      row(1, 'user/message', {
+        content: [
+          { type: 'text', text: 'see' },
+          { type: 'image', mimeType: 'image/png', data: 'QUJD' },
+          { type: 'file', mimeType: 'application/zip', name: 'a.zip', dataOmitted: { bytes: 9 } },
+        ],
+      }),
+      row(2, 'user/message', {
+        content: [
+          { type: 'text', text: 'and' },
+          { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 400_000 } },
+        ],
+      }),
+      row(3, 'assistant/message', { content: [{ type: 'text', text: 'done' }], stopReason: 'end_turn' }),
+    ])
+    const sent = (await drain(ep)) as N[]
+    expect(sent).toHaveLength(6)
+    expect(sent.map((n) => n.params?._meta?.['ai.agnes.harness']?.eventSequence)).toEqual([
+      1,
+      undefined,
+      undefined,
+      2,
+      undefined,
+      3,
+    ])
+    const frames = sent.map((msg) => ({ dir: 'recv' as const, msg: msg as Record<string, unknown> }))
+    expect(checkSequence(frames, ['seq-monotonic'])).toEqual({ ok: true, violations: [] })
   })
 
   it('Feed.pushed gives up on a seq no row will ever carry', async () => {

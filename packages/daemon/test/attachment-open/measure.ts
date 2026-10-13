@@ -12,7 +12,10 @@ export type ColdLoadResult = {
   workerPeakMb: number | null
   /** Bytes the supervisor received from the worker while opening and replaying the session. */
   transferBytes: number
-  /** Scan pages the supervisor had to read again in halves. */
+  /**
+   * The supervisor's `scanResumes` (the `resumes` of `session.load`): scan pages that did not fit one
+   * worker frame and were continued in another reply. A resume re-reads nothing; the name is kept.
+   */
   splitScans: number
   maxRowBytes: number
   dbBytes: number

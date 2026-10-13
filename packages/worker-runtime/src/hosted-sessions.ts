@@ -1,6 +1,7 @@
 import { type Host, type HostSession, leanEvent, type WorkspaceBinding } from '@agnes/host'
 import type { WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
+import { releaseRawExport } from './export-raw.js'
 import {
   type EventFrame,
   type PreviewFrame,
@@ -322,6 +323,7 @@ export class HostedSessions {
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
     })
     hosted.tail?.abort()
+    releaseRawExport(session)
     const done = (async () => {
       try {
         await session.close()
@@ -527,6 +529,7 @@ export class HostedSessions {
       if (!hosted) return
       this.sessions.delete(sessionKey)
       hosted.tail?.abort()
+      releaseRawExport(hosted.session)
       for (const abort of hosted.aborts.values()) abort.abort()
       this.options.channel.closeSession(sessionKey)
       try {

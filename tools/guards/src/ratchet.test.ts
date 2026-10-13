@@ -303,8 +303,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // its own wrapper here (antd's Tooltip consumes `rootClassName`, not `className`). Measured: 6678.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6687, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-ui/src 6691; no exclusions or spare allocation.
-  // 2026-10-13 attachments by reference: the omitted image size label; reviewed exact countLines packages/web-ui/src 6700; no exclusions or spare allocation.
-  'packages/web-ui/src': 6700,
+  // 2026-10-13 attachments by reference: the omitted image size label; reviewed exact countLines packages/web-ui/src 6702; no exclusions or spare allocation.
+  'packages/web-ui/src': 6702,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -323,8 +323,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // instead of claiming the attachment could not be read. Measured: 6242, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6273, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
-  // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6291; no exclusions or spare allocation.
-  'packages/web-units/src': 6291,
+  // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6290; no exclusions or spare allocation.
+  'packages/web-units/src': 6290,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
@@ -1964,8 +1964,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 26919, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 27138, exact.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/daemon/src 27243; no exclusions or spare allocation.
-  // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27284; no exclusions or spare allocation.
-  'packages/daemon/src': 27284,
+  // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27281; no exclusions or spare allocation.
+  'packages/daemon/src': 27281,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

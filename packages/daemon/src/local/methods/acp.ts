@@ -262,16 +262,13 @@ export class Feed {
     // An attached client that asked for raw rows only gets no ACP projection; everyone else does.
     if (!prefs || prefs.filter.acpUpdates) {
       const updates = toSessionUpdates(e, o)
-      for (const u of updates)
-        this.ep.push(
-          notify(
-            'session/update',
-            setHarnessMeta(
-              { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } },
-              meta,
-            ),
-          ),
-        )
+      updates.forEach((u, i) => {
+        const update = { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } }
+        // One row, one ledger position: only its first update carries the row's meta, so each
+        // eventSequence is still told once. The further blocks of a user message follow it unstamped,
+        // like previews, and an ACP client joins them into that message.
+        this.ep.push(notify('session/update', i === 0 ? setHarnessMeta(update, meta) : update))
+      })
       // turn/end has no projection of its own; the phase rides an empty chunk so an ACP client sees
       // terminalQuiescence as the last session/update of the turn.
       if (updates.length === 0 && e.type === 'turn/end')

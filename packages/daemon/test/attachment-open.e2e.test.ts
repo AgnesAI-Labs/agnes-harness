@@ -11,6 +11,7 @@ type Budget = {
     loadMs: number
     workerPeakMb: number
     transferBytes: number
+    /** Counts scan resumes now (`scanResumes`); a resume re-reads nothing. */
     splitScans: number
     verifyFullMs: number
   }

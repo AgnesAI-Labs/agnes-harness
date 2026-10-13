@@ -1836,7 +1836,7 @@
       }
     },
     "SessionExportRawParams": {
-      "description": "Read one stored ledger row as its exact JSONL line (UTF-8 JSON plus a newline), in pieces of at most 8 MiB. Lean replays name large attachments they leave out; this returns them. The daemon authenticates session ownership first.",
+      "description": "Read one stored ledger row's envelope as one JSONL line (its UTF-8 JSON and a newline), in pieces of at most 8 MiB. Replays of worker-hosted sessions leave large inline attachment data out and name it; this returns the full row. The daemon authenticates session ownership first.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "seq", "offset"],
@@ -1847,14 +1847,14 @@
       }
     },
     "SessionExportRawResult": {
-      "description": "One piece of a stored row's JSONL line. Decode and concatenate pieces until nextOffset is null.",
+      "description": "One piece of a stored row's envelope as a JSONL line. Decode and concatenate pieces until nextOffset is null.",
       "type": "object",
       "additionalProperties": false,
       "required": ["seq", "base64", "nextOffset"],
       "properties": {
         "seq": { "type": "integer", "minimum": 1 },
         "base64": {
-          "description": "Standard base64 for at most 8388608 bytes of the line.",
+          "description": "Standard base64 for at most 8388608 bytes of the line. No canonical-base64 pattern is declared on purpose: a regular expression over a string this long exceeds the regex engine's stack.",
           "type": "string",
           "maxLength": 11184812
         },

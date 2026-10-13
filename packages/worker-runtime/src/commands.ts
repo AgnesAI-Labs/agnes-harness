@@ -340,6 +340,11 @@ export async function handleCommand(
       if (kept === 0) throw rpcError('INTERNAL_ERROR', { code: 'SCAN_ROW_TOO_LARGE', seq: rows[0]?.seq })
       const page = rows.slice(0, kept)
       const last = (page.at(-1) as { seq: number }).seq
+      // The resumed read continues the same query. One theoretical edge: a `limit` above SCAN_PAGE_MAX
+      // asks for every row (and fails with E_SCAN_TRUNCATED past the page maximum); once `limit - kept`
+      // falls to SCAN_PAGE_MAX or below, the resumed read becomes an ordinary page. That only differs
+      // when `toSeq` is open and rows are appended between the two replies: they would be read as a
+      // page up to that limit rather than refused. The first reply already proved the range fits.
       const limit = typeof query.limit === 'number' ? query.limit - kept : undefined
       return {
         rows: page,

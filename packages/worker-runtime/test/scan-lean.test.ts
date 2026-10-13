@@ -6,7 +6,12 @@ import type { Host, HostSession } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleCommand } from '../src/commands.js'
-import { EXPORT_RAW_CHUNK_BYTES, exportRawChunk } from '../src/export-raw.js'
+import {
+  createRawExporter,
+  EXPORT_RAW_CHUNK_BYTES,
+  EXPORT_RAW_IDLE_MS,
+  exportRawChunk,
+} from '../src/export-raw.js'
 import { realHosted } from './real-hosted.js'
 
 const cleanup: Array<() => Promise<void> | void> = []
@@ -158,5 +163,76 @@ describe('worker tail', () => {
     const frame = t.sent.find((f) => f.kind === 'event' && f.seq === seqs[0])
     expect(JSON.stringify(frame)).not.toContain(bigBase64.slice(1000, 1064))
     expect(JSON.stringify(frame)).toContain('"dataOmitted"')
+  })
+})
+
+describe('raw exporter holding', () => {
+  function fakeTimers() {
+    const pending = new Map<number, { fn: () => void; ms: number }>()
+    let next = 0
+    return {
+      pending,
+      timers: {
+        setTimeout: (fn: () => void, ms: number) => {
+          pending.set(++next, { fn, ms })
+          return next
+        },
+        clearTimeout: (id: unknown) => void pending.delete(id as number),
+      },
+      fire() {
+        for (const [id, t] of [...pending]) {
+          pending.delete(id)
+          t.fn()
+        }
+      },
+    }
+  }
+  const big = 'x'.repeat(EXPORT_RAW_CHUNK_BYTES + 10)
+  const fakeSession = () => ({
+    scan: vi.fn(async (q: { fromSeq: number }) => [{ seq: q.fromSeq, data: big }]),
+  })
+
+  it('drops an abandoned row after the idle timeout and reads it again on the next piece', async () => {
+    const t = fakeTimers()
+    const exporter = createRawExporter({ timers: t.timers })
+    const session = fakeSession()
+    await exporter.chunk(session as never, 1, 0)
+    expect([...t.pending.values()].map((p) => p.ms)).toEqual([EXPORT_RAW_IDLE_MS])
+    await exporter.chunk(session as never, 1, EXPORT_RAW_CHUNK_BYTES)
+    // The last piece released the row at once.
+    expect(t.pending.size).toBe(0)
+    await exporter.chunk(session as never, 1, 0)
+    expect(session.scan).toHaveBeenCalledTimes(2)
+    t.fire()
+    await exporter.chunk(session as never, 1, EXPORT_RAW_CHUNK_BYTES)
+    expect(session.scan).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads a row once for concurrent and interleaved pieces, and forgets it when the session closes', async () => {
+    const t = fakeTimers()
+    const exporter = createRawExporter({ timers: t.timers })
+    const session = fakeSession()
+    await Promise.all([exporter.chunk(session as never, 1, 0), exporter.chunk(session as never, 1, 0)])
+    await exporter.chunk(session as never, 2, 0)
+    await exporter.chunk(session as never, 1, EXPORT_RAW_CHUNK_BYTES)
+    await exporter.chunk(session as never, 2, EXPORT_RAW_CHUNK_BYTES)
+    expect(session.scan).toHaveBeenCalledTimes(2)
+    await exporter.chunk(session as never, 3, 0)
+    exporter.release(session as never)
+    expect(t.pending.size).toBe(0)
+    await exporter.chunk(session as never, 3, EXPORT_RAW_CHUNK_BYTES)
+    expect(session.scan).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not keep a failed read', async () => {
+    const exporter = createRawExporter({ timers: fakeTimers().timers })
+    const session = { scan: vi.fn(async () => []) }
+    await expect(exporter.chunk(session as never, 9, 0)).rejects.toMatchObject({
+      data: { reason: 'row-not-found' },
+    })
+    await expect(exporter.chunk(session as never, 9, 0)).rejects.toMatchObject({
+      data: { reason: 'row-not-found' },
+    })
+    expect(session.scan).toHaveBeenCalledTimes(2)
   })
 })

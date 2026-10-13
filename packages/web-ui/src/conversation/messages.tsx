@@ -15,6 +15,7 @@ import {
   useState,
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { formatMegabytes } from '../format-bytes.js'
 import type { Translate } from '../locales/index.js'
 import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
@@ -149,8 +150,6 @@ const approvalStatus = (node: ApprovalNode, t: Translate) =>
 /** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
 const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
 
-const megabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`
-
 /** 历史消息里的图片按服务端同一套预算重新判一遍，超出的一张只显示占位说明。 */
 function imageBlobBytes(bytes: Uint8Array): ArrayBuffer {
   const copy = new ArrayBuffer(bytes.byteLength)
@@ -172,7 +171,7 @@ function UserMessageImage({
   const [previewUrl, setPreviewUrl] = useState<string>()
   const [unavailable, setUnavailable] = useState(false)
   const { mimeType } = image
-  // 精简块（字节留在存储里）没有可解码的数据，按不可用占位显示。
+  // 精简块（字节留在服务端）没有可解码的数据：不解码，下面改为显示它的大小。
   const data = 'data' in image ? image.data : undefined
   useEffect(() => {
     if (!allowed || data === undefined) {
@@ -196,7 +195,7 @@ function UserMessageImage({
   if ('dataOmitted' in image)
     return (
       <span className="user-message-image-unavailable" role="status">
-        {t('conversation.image.omitted', { size: megabytes(image.dataOmitted.bytes) })}
+        {t('conversation.image.omitted', { size: formatMegabytes(image.dataOmitted.bytes) })}
       </span>
     )
   if (unavailable)
