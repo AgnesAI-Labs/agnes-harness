@@ -20,7 +20,8 @@ const roots: string[] = []
 // The read description names session-file attachments and what this runtime can read natively.
 // Background shell jobs add the job tool and reword the shell and write descriptions.
 // Batch processing adds batch_start, batch_status and batch_cancel.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'fa6aba73d31ec1f3c137b032ec36c698b26282a77e854abb280cc5e6bb4f14eb'
+// The read tool takes max_edge for workspace images.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '2824504ca638034530b319d034ebf266e6714613b190a39b028e6606a291408c'
 const expectedToolNames = [
   'batch_cancel',
   'batch_start',
