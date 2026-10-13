@@ -2009,7 +2009,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return owner !== undefined && owner !== rowId
       },
       governance: new Map(
-        ['agnes/privacy', 'agnes/hooks-runner'].map((extensionId) => {
+        ['agnes/privacy', 'agnes/hooks-runner', 'agnes/batch'].map((extensionId) => {
           const manifest = authorManifestOf(extensionId)
           return [
             `ext:${extensionId}`,

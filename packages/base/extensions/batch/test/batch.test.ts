@@ -164,6 +164,12 @@ describe('item sessions may only read', () => {
       reason: 'A batch item may only use the read tool.',
     })
     expect(await hook?.({ name: 'shell' }, at(item))).toMatchObject({ allow: false })
+    // An item cannot start or steer a batch of its own.
+    for (const name of ['batch_start', 'batch_status', 'batch_cancel'])
+      expect(await hook?.({ name }, at(item)), name).toEqual({
+        allow: false,
+        reason: 'A batch item may only use the read tool.',
+      })
     expect(await hook?.({ name: 'read' }, at(item))).toEqual({ allow: true })
     expect(await hook?.({ name: 'write' }, at('agnes:local:default:cli:workspace:0123456789abcdef'))).toEqual(
       {

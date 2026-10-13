@@ -197,6 +197,22 @@ describe('a third party replaces a migrated builtin and gives way', () => {
     await h.host.close()
   })
 
+  it('refuses to replace batch by a plugin that keeps the tools but drops the item-session hook', async () => {
+    const row = 'ext:agnes/batch'
+    const body = ['batch_start', 'batch_status', 'batch_cancel']
+      .map((n) => `agnes.registerTool(tool('${n}'))`)
+      .join('\n')
+    const h = await pluginHost(pluginSource(body, 'plugin', row))
+    await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(row)]))).rejects.toThrow(
+      /replacement of ext:agnes\/batch must register hooks: tool_call/,
+    )
+    await settle()
+    expect(listed(h, 'agnes/batch')?.loaded).toBe(true)
+    expect(h.host.kernel.registrations('agnes/batch')).toEqual(SUPPLIED['agnes/batch'])
+    expect(h.host.kernel.tools.resolve('batch_start')?.source.source).toBe('agnes/batch')
+    await h.host.close()
+  })
+
   it('refuses a replacement of privacy that never asked for the facade, whatever the previous one held', async () => {
     const row = 'ext:agnes/privacy'
     const other = { vendor: '@acme/silent-tools', snapshotId: `sha256-${'6'.repeat(64)}` }
