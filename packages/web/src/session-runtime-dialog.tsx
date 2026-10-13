@@ -375,6 +375,8 @@ export function createRuntimeDialog(options: {
       }
     },
     dispose() {
+      opened = false
+      version++
       unmountRegion(host)
       host.remove()
     },

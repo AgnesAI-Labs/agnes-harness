@@ -180,3 +180,36 @@ it('groups the session tools by source and explains an unopened session', async 
   expect(view.host.textContent).toContain(enT('session.runtime.toolsUnavailable'))
   await view.close()
 })
+
+it('retires pending descriptor reads when the runtime dialog is disposed', async () => {
+  const { createRuntimeDialog } = await import('../src/session-runtime-dialog.js')
+  const { vi } = await import('vitest')
+  let resolve!: (value: SessionRuntimeDescriptor) => void
+  const call = vi.fn()
+  const sessionGrants = vi.fn()
+  const error = vi.fn()
+  const client = {
+    session: {
+      runtime: () =>
+        new Promise<SessionRuntimeDescriptor>((done) => {
+          resolve = done
+        }),
+    },
+    call,
+    approval: { sessionGrants },
+  } as unknown as import('@agnes/sdk/browser').Client
+  const dialog = createRuntimeDialog({ client, translate: enT, error })
+  let opening!: Promise<void>
+  await act(async () => {
+    opening = dialog.open('s', document.createElement('button'))
+  })
+  await act(async () => dialog.dispose())
+  await act(async () => {
+    resolve(descriptor('gen-1'))
+    await opening
+  })
+  expect(call).not.toHaveBeenCalled()
+  expect(sessionGrants).not.toHaveBeenCalled()
+  expect(error).not.toHaveBeenCalled()
+  expect(document.querySelector('[data-session-runtime]')).toBeNull()
+})
