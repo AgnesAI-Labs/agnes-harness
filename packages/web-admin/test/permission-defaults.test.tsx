@@ -14,8 +14,11 @@ it.each([false, true])(
       revision: 4,
       defaults: {
         preset: 'workspace-write',
-        loop: { id: 'default-loop', version: '1.0.0' },
-        modelAdapter: { id: 'default-model', version: '1.0.0', model: 'test' },
+        providers: {
+          loop: { provider: 'default-loop', version: '1.0.0' },
+          'model-adapter': { provider: 'default-model', version: '1.0.0' },
+        },
+        model: 'test',
       },
     }
     const writes: unknown[] = []
@@ -73,8 +76,11 @@ it.each([false, true])(
         revision: 5,
         defaults: {
           preset: 'full-access',
-          loop: { id: 'default-loop', version: '1.0.0' },
-          modelAdapter: { id: 'default-model', version: '1.0.0', model: 'test' },
+          providers: {
+            loop: { provider: 'default-loop', version: '1.0.0' },
+            'model-adapter': { provider: 'default-model', version: '1.0.0' },
+          },
+          model: 'test',
         },
       })
       expect(pick('full-access').checked).toBe(true)

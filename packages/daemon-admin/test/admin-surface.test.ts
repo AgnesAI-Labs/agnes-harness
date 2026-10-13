@@ -396,7 +396,10 @@ it('reads real selection catalogs and protects defaults with the existing admin 
     capabilities: { imageInput: true, tools: true, streaming: true },
     models: [{ id: 'model' }],
   }
-  const snapshot = { revision: 4, defaults: { loop: { id: loop.id, version: loop.version } } }
+  const snapshot = {
+    revision: 4,
+    defaults: { providers: { loop: { provider: loop.id, version: loop.version } } },
+  }
   const provider: AdminSessionSelection = {
     loops: async () => [loop],
     modelAdapters: async () => [adapter],

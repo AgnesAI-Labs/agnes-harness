@@ -1,3 +1,4 @@
+import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
@@ -1150,7 +1151,7 @@ async function refreshSessionCatalog(): Promise<void> {
     newSessionCatalog = catalog
     runtimeCatalog = runtime
     loopCatalogError = false
-    if (draftingNew && !draftLoopEdited) draftLoop = newSessionCatalog.defaults.loop
+    if (draftingNew && !draftLoopEdited) draftLoop = defaultLoop(newSessionCatalog.defaults)
     if (draftingNew) syncDraftPermission()
   } catch {
     if (generation === sessionCatalogGeneration) loopCatalogError = true
@@ -1601,7 +1602,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   draftModelSettingsEdited = false
   draftModelExplicit = false
   draftLoopEdited = false
-  draftLoop = newSessionCatalog?.defaults.loop
+  draftLoop = newSessionCatalog && defaultLoop(newSessionCatalog.defaults)
   draftPreset = undefined
   draftBundles = []
   pendingSessionKey = crypto.randomUUID()
@@ -1634,7 +1635,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   try {
     await refreshSessionCatalog()
     if (selection === epoch && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
-      const adminModel = newSessionCatalog?.defaults.modelAdapter
+      const adminModel = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
       const preferred = adminModel
         ? runtimeModels.find(
             (model) =>
@@ -1709,7 +1710,7 @@ async function refreshModels(): Promise<ModelPickerOption[]> {
       !permissionChangePending
     ) {
       const next = selectionFromMemory(runtimeModels, accountProvider)
-      const adminDefault = newSessionCatalog?.defaults.modelAdapter
+      const adminDefault = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
       const preferred = adminDefault
         ? models.find(
             (model) =>

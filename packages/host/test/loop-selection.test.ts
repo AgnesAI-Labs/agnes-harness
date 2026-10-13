@@ -83,7 +83,9 @@ async function fixture(
   if (installedAfterBoot) manifest.agnes.plugins[0].default = false
   if (bundle)
     manifest.agnes.bundles = {
-      selected: { profile: { loop: { provider: loopSelection.id, version: loopSelection.version } } },
+      selected: {
+        profile: { providers: { loop: { provider: loopSelection.id, version: loopSelection.version } } },
+      },
     }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
@@ -142,7 +144,11 @@ async function fixture(
       ...(bundle && !installedAfterBoot
         ? {
             bundleCatalog: parsePackageBundles(source.snapshot.packageId, {
-              selected: { profile: { loop: { provider: loopSelection.id, version: loopSelection.version } } },
+              selected: {
+                profile: {
+                  providers: { loop: { provider: loopSelection.id, version: loopSelection.version } },
+                },
+              },
             }),
           }
         : {}),
@@ -232,7 +238,7 @@ it('loads an installed manifest plugin before Kernel construction, selects profi
     expect(await profileSession.scan({ type: 'effect/intent', limit: 1 })).toEqual([])
     await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
       revision: 0,
-      defaults: { loop: DEFAULT_LOOP },
+      defaults: { providers: { loop: { provider: DEFAULT_LOOP.id, version: DEFAULT_LOOP.version } } },
     })
     const adminSession = await f.host.createSession({ key: 'admin-loop', cwd: f.dataDir })
     expect(adminSession.loop).toEqual(DEFAULT_LOOP)
@@ -285,7 +291,10 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
       profile: 'local-dev',
       profileDir: join(f.dataDir, 'custom-profile'),
     })
-    await customConfiguration.saveSessionDefaults({ revision: 0, defaults: { loop: dag } })
+    await customConfiguration.saveSessionDefaults({
+      revision: 0,
+      defaults: { providers: { loop: { provider: dag.id, version: dag.version } } },
+    })
     expect(await readAdminLoopDefault(customConfiguration)).toEqual(dag)
     f.defaults({ id: 'missing', version: '1' })
     await expect(f.host.createSession({ key: 'missing-default', cwd: f.dataDir })).rejects.toMatchObject({
@@ -531,7 +540,7 @@ it.each([false, true])(
     try {
       await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
         revision: 0,
-        defaults: { loop: DEFAULT_LOOP },
+        defaults: { providers: { loop: { provider: DEFAULT_LOOP.id, version: DEFAULT_LOOP.version } } },
       })
       const session = await f.host.createSession({
         key: 'bundle-loop',

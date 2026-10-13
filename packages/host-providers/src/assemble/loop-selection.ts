@@ -3,7 +3,7 @@ import {
   ConfigurationError,
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
-import { type LoopSelection, parseLoopSelection } from '@agnes/protocol'
+import { defaultLoop, type LoopSelection, parseLoopSelection } from '@agnes/protocol'
 
 /** Admin defaults share the configuration service's validation and live persisted state. */
 export async function readAdminLoopDefault(
@@ -11,7 +11,8 @@ export async function readAdminLoopDefault(
 ): Promise<LoopSelection | undefined> {
   try {
     const { defaults } = await configuration.sessionDefaults()
-    return defaults.loop === undefined ? undefined : parseLoopSelection(defaults.loop)
+    const loop = defaultLoop(defaults)
+    return loop === undefined ? undefined : parseLoopSelection(loop)
   } catch (error) {
     if (error instanceof ConfigurationError && error.code === 'CONFIG_INVALID_STATE')
       throw new HostError(

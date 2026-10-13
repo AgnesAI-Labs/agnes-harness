@@ -1,4 +1,4 @@
-import { userImagePolicy } from '@agnes/protocol'
+import { defaultLoop, userImagePolicy } from '@agnes/protocol'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import { renderGoalCard } from '@agnes/web-conversation/goal-card'
@@ -370,12 +370,13 @@ export function createComposerController(
       context.draftBundles.some((id) => !context.runtimeCatalog?.bundles?.some((bundle) => bundle.id === id))
     )
       composerView.send.disabled = true
+    const adminLoop = context.newSessionCatalog && defaultLoop(context.newSessionCatalog.defaults)
     updateLoopPicker({
       visible: context.draftingNew,
       disabled: !context.connected || context.sending || context.sessionPending || context.loopCatalogPending,
       loops: context.newSessionCatalog?.loops ?? [],
-      resolvedLoop: context.newSessionCatalog?.defaults.loop ?? context.newSessionCatalog?.composition?.loop,
-      loopSource: context.newSessionCatalog?.defaults.loop
+      resolvedLoop: adminLoop ?? context.newSessionCatalog?.composition?.loop,
+      loopSource: adminLoop
         ? { layer: 'admin', name: 'session-defaults' }
         : context.newSessionCatalog?.composition?.source,
       ...(context.draftLoop ? { selected: context.draftLoop } : {}),

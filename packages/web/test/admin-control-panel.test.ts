@@ -288,8 +288,11 @@ it('loads catalog choices and saves their exact identities and revision', async 
     revision: 4,
     defaults: {
       preset: 'read-only',
-      loop: { id: loop.id, version: loop.version },
-      modelAdapter: { id: adapter.id, version: adapter.version, model: 'model' },
+      providers: {
+        loop: { provider: loop.id, version: loop.version },
+        'model-adapter': { provider: adapter.id, version: adapter.version },
+      },
+      model: 'model',
     },
   }
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {

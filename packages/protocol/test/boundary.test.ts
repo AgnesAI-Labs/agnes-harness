@@ -237,6 +237,8 @@ describe('protocol src boundary', () => {
         'childEngineRowConfig',
         'childEngineSettingsError',
         'commandAllowed',
+        'defaultLoop',
+        'defaultModelAdapter',
         'fromAcpOptionKind',
         'getHarnessMeta',
         'isDateTime',

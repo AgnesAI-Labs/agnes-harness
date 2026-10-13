@@ -10,6 +10,7 @@ import {
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import {
   type CompositionBinding,
@@ -486,7 +487,7 @@ export async function createCompositionHost(
               ],
               bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
             }
-            const adminLoop = parent ? undefined : (await configuration.sessionDefaults()).defaults.loop
+            const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
             const tree =
               parent?.tree ??
               resolveComposition(
@@ -496,13 +497,7 @@ export async function createCompositionHost(
                   preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
                     limits: profile.limits,
                   }).doc,
-                  ...(adminLoop
-                    ? {
-                        admin: {
-                          composition: loopPatch(adminLoop),
-                        },
-                      }
-                    : {}),
+                  ...(adminLoop ? { admin: { composition: loopPatch(adminLoop) } } : {}),
                   ...(input.loop ? { session: loopPatch(input.loop) } : {}),
                   ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
                 },

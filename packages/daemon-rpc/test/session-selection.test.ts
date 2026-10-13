@@ -77,8 +77,11 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
       revision: 0,
       defaults: {
         preset: 'read-only',
-        loop: { id: loop.id, version: loop.version },
-        modelAdapter: { id: adapter.id, version: adapter.version, model: 'model' },
+        providers: {
+          loop: { provider: loop.id, version: loop.version },
+          'model-adapter': { provider: adapter.id, version: adapter.version },
+        },
+        model: 'model',
       },
     }
     expect(await request(browser, 'defaults.save', input)).toMatchObject({
@@ -90,7 +93,7 @@ it('serves host catalogs, persists exact defaults and refuses web/narrow writes'
     expect(
       await request(ep, 'defaults.save', {
         ...input,
-        defaults: { loop: { ...input.defaults.loop, version: 'missing' } },
+        defaults: { providers: { loop: { ...input.defaults.providers.loop, version: 'missing' } } },
       }),
     ).toMatchObject({ error: { data: { reason: 'CONFIG_INVALID_INPUT' } } })
     expect(await request(ep, 'defaults.save', input)).toMatchObject({

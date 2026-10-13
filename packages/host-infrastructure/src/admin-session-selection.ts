@@ -30,19 +30,21 @@ export function createAdminSessionSelection(
     getDefaults: () => configuration.sessionDefaults(),
     async saveDefaults(input) {
       if (!isSessionDefaultsSnapshot(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
-      const { preset, loop, modelAdapter } = input.defaults
+      const { preset, providers, model } = input.defaults
+      const loop = providers?.loop
+      const modelAdapter = providers?.['model-adapter']
       if (preset && !(await catalog.presets?.())?.includes(preset))
         throw new ConfigurationError('CONFIG_INVALID_INPUT')
       const [loops, adapters] = await Promise.all([catalog.loops(), modelAdapters()])
-      if (loop && !loops.some((entry) => entry.id === loop.id && entry.version === loop.version))
+      if (loop && !loops.some((entry) => entry.id === loop.provider && entry.version === loop.version))
         throw new ConfigurationError('CONFIG_INVALID_INPUT')
       if (
         modelAdapter &&
         !adapters.some(
           (entry) =>
-            entry.id === modelAdapter.id &&
+            entry.id === modelAdapter.provider &&
             entry.version === modelAdapter.version &&
-            entry.models.some((model) => model.id === modelAdapter.model),
+            entry.models.some((candidate) => candidate.id === model),
         )
       )
         throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')

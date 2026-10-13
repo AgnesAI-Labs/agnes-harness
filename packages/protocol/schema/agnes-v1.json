@@ -6246,49 +6246,57 @@
               "maxLength": 256,
               "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
             },
-            "loop": {
+            "providers": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["id", "version"],
+              "required": [],
               "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                "loop": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["provider", "version"],
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    }
+                  }
                 },
-                "version": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                "model-adapter": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["provider", "version"],
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    }
+                  }
                 }
               }
             },
-            "modelAdapter": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["id", "version", "model"],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
-                },
-                "version": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
-                },
-                "model": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
-                }
-              }
+            "model": {
+              "description": "The model served by providers.model-adapter; valid only beside it.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
             }
           }
         }

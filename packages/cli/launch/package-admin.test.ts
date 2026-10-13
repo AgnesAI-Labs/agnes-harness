@@ -331,7 +331,10 @@ it('fits production catalog/defaults relays without an injected provider', async
     expect(await provider.loops()).toEqual(await mocks.sessionSelection.loops())
     expect(await provider.modelAdapters()).toEqual([])
     expect(await provider.getDefaults()).toEqual({ revision: 0, defaults: {} })
-    const update = { revision: 0, defaults: { loop: { id: 'default', version: '1.0.0' } } }
+    const update = {
+      revision: 0,
+      defaults: { providers: { loop: { provider: 'default', version: '1.0.0' } } },
+    }
     expect(await provider.saveDefaults(update)).toEqual(update)
     expect(mocks.sessionSelection.saveDefaults).toHaveBeenCalledWith(update)
     const failure = {

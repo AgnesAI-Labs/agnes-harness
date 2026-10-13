@@ -139,7 +139,7 @@ Agent 起草的候选列表先显示类型（插件／技能）、版本、新�
 
 “新会话默认配置”读取后台目录，使用配置 revision 保存确切的 Loop/适配器版本及模型 ID。已有会话保留原绑定。已失效的选择须替换或清除，保存冲突时须重新加载目录。本地 daemon 从持有 Host 的共享 worker 查询目录，启动器通过私有 Unix 连接转发。在工作台，新任务在现有模型选择器旁预选保存的 Loop 和模型；首条消息发送前可以修改 Loop，已有会话保留原绑定。会话 Trace 从会话元数据展示记录的 Loop ID/版本，重新打开后同样可见。
 
-固定本地管理路由为 `GET /admin/api/loops`（Loop 目录和默认值/revision）、`GET /admin/api/model-adapters`、`GET /admin/api/defaults` 与 `PUT /admin/api/defaults`，保存参数为 `{ revision, defaults: { loop?, modelAdapter? } }`。Loop 选择包含 `id` 和 `version`，适配器选择还包含 `model`。写入需要插件激活权限和同源管理上下文。可信启动器提供通往 daemon 的 `AdminSessionSelection` relay，Host 通过 `createAdminSessionSelection` 组合真实目录与现有配置存储。适配器模型在可用时包含已配置的 `route`，供工作台选择实际运行时模型。端点不导入插件工厂，也不接收凭据。
+固定本地管理路由为 `GET /admin/api/loops`（Loop 目录和默认值/revision）、`GET /admin/api/model-adapters`、`GET /admin/api/defaults` 与 `PUT /admin/api/defaults`，保存参数为 `{ revision, defaults: { preset?, providers?: { loop?, 'model-adapter'? }, model? } }`。每个 `providers.<kind>` 选择都是 `{ provider, version }`，与其他位置形状相同；`model` 是所选适配器的模型，只能与适配器同时出现。写入需要插件激活权限和同源管理上下文。可信启动器提供通往 daemon 的 `AdminSessionSelection` relay，Host 通过 `createAdminSessionSelection` 组合真实目录与现有配置存储。适配器模型在可用时包含已配置的 `route`，供工作台选择实际运行时模型。端点不导入插件工厂，也不接收凭据。
 
 ## 安装后端示例
 

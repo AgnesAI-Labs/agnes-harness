@@ -16,11 +16,30 @@ export type AdminModelAdapter = Readonly<{
   label?: string
   models: readonly Readonly<{ id: string; label?: string; route?: string }>[]
 }>
+/** Admin defaults select providers in the same `providers.<kind>` table as every other artifact. */
 export type SessionDefaults = Readonly<{
   preset?: string
-  loop?: Readonly<{ id: string; version: string }>
-  modelAdapter?: Readonly<{ id: string; version: string; model: string }>
+  providers?: Readonly<{
+    loop?: Readonly<{ provider: string; version: string }>
+    'model-adapter'?: Readonly<{ provider: string; version: string }>
+  }>
+  /** The model served by `providers.model-adapter`; only valid beside it. */
+  model?: string
 }>
+/** The default loop as the exact identity the Host and Web carry. */
+export const defaultLoop = (defaults: SessionDefaults): { id: string; version: string } | undefined => {
+  const loop = defaults.providers?.loop
+  return loop ? { id: loop.provider, version: loop.version } : undefined
+}
+/** The default model adapter and its model as one identity, when both are chosen. */
+export const defaultModelAdapter = (
+  defaults: SessionDefaults,
+): { id: string; version: string; model: string } | undefined => {
+  const adapter = defaults.providers?.['model-adapter']
+  return adapter && defaults.model
+    ? { id: adapter.provider, version: adapter.version, model: defaults.model }
+    : undefined
+}
 export type SessionDefaultsSnapshot = Readonly<{
   revision: number
   defaults: SessionDefaults
@@ -50,18 +69,19 @@ const keys = (value: Record<string, unknown>, allowed: readonly string[]) =>
   Object.keys(value).every((key) => allowed.includes(key))
 
 export function isSessionDefaults(value: unknown): value is SessionDefaults {
-  if (!record(value) || !keys(value, ['preset', 'loop', 'modelAdapter'])) return false
-  const { preset, loop, modelAdapter } = value
+  if (!record(value) || !keys(value, ['preset', 'providers', 'model'])) return false
+  const { preset, providers, model } = value
+  if (preset !== undefined && !text(preset)) return false
+  if (model !== undefined && !text(model)) return false
+  if (providers === undefined) return model === undefined
+  if (!record(providers) || !keys(providers, ['loop', 'model-adapter'])) return false
+  const selection = (item: unknown) =>
+    item === undefined ||
+    (record(item) && keys(item, ['provider', 'version']) && text(item.provider) && text(item.version))
   return (
-    (preset === undefined || text(preset)) &&
-    (loop === undefined ||
-      (record(loop) && keys(loop, ['id', 'version']) && text(loop.id) && text(loop.version))) &&
-    (modelAdapter === undefined ||
-      (record(modelAdapter) &&
-        keys(modelAdapter, ['id', 'version', 'model']) &&
-        text(modelAdapter.id) &&
-        text(modelAdapter.version) &&
-        text(modelAdapter.model)))
+    selection(providers.loop) &&
+    selection(providers['model-adapter']) &&
+    (model === undefined) === (providers['model-adapter'] === undefined)
   )
 }
 export function isSessionDefaultsSnapshot(value: unknown): value is SessionDefaultsSnapshot {

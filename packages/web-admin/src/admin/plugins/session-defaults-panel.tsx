@@ -1,4 +1,10 @@
-import type { AdminLoop, AdminModelAdapter, SessionDefaultsSnapshot } from '@agnes/protocol'
+import {
+  type AdminLoop,
+  type AdminModelAdapter,
+  defaultLoop,
+  defaultModelAdapter,
+  type SessionDefaultsSnapshot,
+} from '@agnes/protocol'
 import { Button, Field, Select, SettingsCard, useUiText } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
@@ -54,9 +60,11 @@ export function SessionDefaultsPanel({
           snapshot: loops,
         })
         setPreset(loops.defaults.preset ?? '')
-        setLoop(loops.defaults.loop ? identity(loops.defaults.loop) : '')
-        setAdapter(loops.defaults.modelAdapter ? identity(loops.defaults.modelAdapter) : '')
-        setModel(loops.defaults.modelAdapter?.model ?? '')
+        const chosenLoop = defaultLoop(loops.defaults)
+        const chosenAdapter = defaultModelAdapter(loops.defaults)
+        setLoop(chosenLoop ? identity(chosenLoop) : '')
+        setAdapter(chosenAdapter ? identity(chosenAdapter) : '')
+        setModel(chosenAdapter?.model ?? '')
       })
       .catch(() => {
         if (current) setError('defaults.unavailable')
@@ -84,10 +92,19 @@ export function SessionDefaultsPanel({
         revision: catalog.snapshot.revision,
         defaults: {
           ...(preset ? { preset } : {}),
-          ...(selectedLoop ? { loop: { id: selectedLoop.id, version: selectedLoop.version } } : {}),
-          ...(selectedAdapter
-            ? { modelAdapter: { id: selectedAdapter.id, version: selectedAdapter.version, model } }
+          ...(selectedLoop || selectedAdapter
+            ? {
+                providers: {
+                  ...(selectedLoop
+                    ? { loop: { provider: selectedLoop.id, version: selectedLoop.version } }
+                    : {}),
+                  ...(selectedAdapter
+                    ? { 'model-adapter': { provider: selectedAdapter.id, version: selectedAdapter.version } }
+                    : {}),
+                },
+              }
             : {}),
+          ...(selectedAdapter ? { model } : {}),
         },
       })
       setCatalog({ ...catalog, snapshot })
@@ -98,6 +115,8 @@ export function SessionDefaultsPanel({
       setBusy(false)
     }
   }
+  const storedLoop = catalog && defaultLoop(catalog.snapshot.defaults)
+  const storedAdapter = catalog && defaultModelAdapter(catalog.snapshot.defaults)
   const stale =
     (!!preset && !catalog?.presets.includes(preset)) ||
     (!!loop && !selectedLoop) ||
@@ -185,11 +204,11 @@ export function SessionDefaultsPanel({
                       ? `${choiceText(composition.source.layer === 'admin' ? 'choiceSourceAdmin' : composition.source.layer === 'default' ? 'choiceSourceBuiltin' : 'choiceSourceProfile')} · ${composition.source.name}`
                       : choiceText('choiceSourceUnknown'),
                   },
-                  ...(loop && !selectedLoop && catalog.snapshot.defaults.loop
+                  ...(loop && !selectedLoop && storedLoop
                     ? [
                         {
                           value: loop,
-                          label: `${label(catalog.snapshot.defaults.loop)} · ${t('defaults.unavailable-choice')}`,
+                          label: `${label(storedLoop)} · ${t('defaults.unavailable-choice')}`,
                           disabled: true,
                         },
                       ]
@@ -218,14 +237,11 @@ export function SessionDefaultsPanel({
               }}
               options={[
                 { value: '', label: t('defaults.configured') },
-                ...(adapter && !selectedAdapter && catalog.snapshot.defaults.modelAdapter
+                ...(adapter && !selectedAdapter && storedAdapter
                   ? [
                       {
                         value: adapter,
-                        label:
-                          label(catalog.snapshot.defaults.modelAdapter) +
-                          ' · ' +
-                          t('defaults.unavailable-choice'),
+                        label: label(storedAdapter) + ' · ' + t('defaults.unavailable-choice'),
                         disabled: true,
                       },
                     ]

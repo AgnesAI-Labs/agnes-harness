@@ -164,7 +164,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   const reset = await service.save({ providerId: 'openai', model, defaultSettings: {}, expectedRevision: 2 })
   expect(reset.accounts?.[0]?.models[0]?.defaultSettings).toEqual({})
   const beforeSelection = await service.get()
-  const selection = { loop: { id: 'workflow', version: '1.0.0' } }
+  const selection = { providers: { loop: { provider: 'workflow', version: '1.0.0' } } }
   const selected = await service.saveSessionDefaults({
     revision: beforeSelection.revision,
     defaults: selection,
@@ -582,8 +582,11 @@ it('persists session defaults in existing configuration with cross-instance revi
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   const defaults = {
     preset: 'read-only',
-    loop: { id: 'workflow', version: '1.0.0' },
-    modelAdapter: { id: 'adapter', version: '2.0.0', model: 'model' },
+    providers: {
+      loop: { provider: 'workflow', version: '1.0.0' },
+      'model-adapter': { provider: 'adapter', version: '2.0.0' },
+    },
+    model: 'model',
   }
   expect(await service.sessionDefaults()).toEqual({ revision: 0, defaults: {} })
   await expect(service.saveSessionDefaults({ revision: 0, defaults })).resolves.toEqual({
@@ -597,7 +600,10 @@ it('persists session defaults in existing configuration with cross-instance revi
     code: 'CONFIG_REVISION_CONFLICT',
   })
   await expect(
-    reloaded.saveSessionDefaults({ revision: 1, defaults: { loop: { id: '', version: '1' } } }),
+    reloaded.saveSessionDefaults({
+      revision: 1,
+      defaults: { providers: { loop: { provider: '', version: '1' } } },
+    }),
   ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
   await service.saveSessionDefaults({ revision: 1, defaults: {} })
   expect(await reloaded.sessionDefaults()).toEqual({ revision: 2, defaults: {} })

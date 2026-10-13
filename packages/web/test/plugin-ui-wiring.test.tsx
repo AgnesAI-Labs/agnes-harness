@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import type { PackageInstalledDescriptor } from '@agnes/protocol'
+import { defaultLoop, type PackageInstalledDescriptor } from '@agnes/protocol'
 import { pluginStates } from '@agnes/web-admin/admin/plugins/control-panel'
 import type { ClientContext } from '@agnes/web-client'
 import { act, createElement } from 'react'
@@ -17,21 +17,26 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
   const fetcher = vi.fn<typeof fetch>(async (url) =>
     Response.json(
       String(url).endsWith('/loops')
-        ? { loops: [loop], revision: 3, defaults: { loop: { id: loop.id, version: loop.version } } }
+        ? {
+            loops: [loop],
+            revision: 3,
+            defaults: { providers: { loop: { provider: loop.id, version: loop.version } } },
+          }
         : { modelAdapters: [] },
     ),
   )
   const catalog = await loadNewSessionCatalog(fetcher)
-  expect(catalog.defaults.loop).toEqual({ id: 'workflow', version: '1.2.0' })
+  expect(defaultLoop(catalog.defaults)).toEqual({ id: 'workflow', version: '1.2.0' })
   expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/api/loops')
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
+  const chosen = defaultLoop(catalog.defaults)
   const view = {
     visible: true,
     disabled: false,
     loops: catalog.loops,
-    ...(catalog.defaults.loop ? { selected: catalog.defaults.loop } : {}),
+    ...(chosen ? { selected: chosen } : {}),
     label: enT('composer.loop.select'),
     inherited: enT('composer.loop.inherited'),
     unavailable: enT('composer.loop.unavailable'),

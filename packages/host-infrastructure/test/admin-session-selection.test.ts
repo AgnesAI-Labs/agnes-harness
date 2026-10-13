@@ -24,8 +24,11 @@ it('validates exact catalog versions and model ids before persisting defaults', 
     revision: 0,
     defaults: {
       preset: 'read-only',
-      loop: { id: 'loop', version: '1.0.0' },
-      modelAdapter: { id: 'adapter', version: '1.0.0', model: 'model' },
+      providers: {
+        loop: { provider: 'loop', version: '1.0.0' },
+        'model-adapter': { provider: 'adapter', version: '1.0.0' },
+      },
+      model: 'model',
     },
   }
   expect(await provider.loops()).toEqual([loop])
@@ -34,10 +37,14 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   expect(await provider.presets?.()).toEqual(['read-only', 'workspace-write', 'full-access'])
   for (const defaults of [
     { preset: 'absent' },
-    { loop: { id: 'loop', version: '2.0.0' } },
-    { loop: { id: 'absent', version: '1.0.0' } },
-    { modelAdapter: { id: 'adapter', version: '1.0.0', model: 'absent' } },
-    { modelAdapter: { id: 'absent', version: '1.0.0', model: 'model' } },
+    { providers: { loop: { provider: 'loop', version: '2.0.0' } } },
+    { providers: { loop: { provider: 'absent', version: '1.0.0' } } },
+    { providers: { 'model-adapter': { provider: 'adapter', version: '1.0.0' } }, model: 'absent' },
+    { providers: { 'model-adapter': { provider: 'absent', version: '1.0.0' } }, model: 'model' },
+    // A model without the adapter that serves it, and the retired spellings, are not selections.
+    { model: 'model' },
+    { loop: { id: 'loop', version: '1.0.0' } } as never,
+    { modelAdapter: { id: 'adapter', version: '1.0.0', model: 'model' } } as never,
   ])
     await expect(provider.saveDefaults({ revision: 0, defaults })).rejects.toThrow()
   expect(save).toHaveBeenCalledOnce()

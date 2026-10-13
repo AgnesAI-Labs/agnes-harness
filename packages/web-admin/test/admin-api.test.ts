@@ -376,7 +376,10 @@ it('treeList and treeApply use the plugins.tree BFF routes', async () => {
 
 it('validates catalogs and sends defaults through fixed same-origin GET/PUT routes', async () => {
   const loop = { id: 'loop', version: '1.0.0', sourcePackage: '@acme/loop', capabilities: ['resume'] }
-  const snapshot = { revision: 1, defaults: { loop: { id: loop.id, version: loop.version } } }
+  const snapshot = {
+    revision: 1,
+    defaults: { providers: { loop: { provider: loop.id, version: loop.version } } },
+  }
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(Response.json({ loops: [loop], ...snapshot }))
