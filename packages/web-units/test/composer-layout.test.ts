@@ -113,6 +113,27 @@ it('owns the draft as state: typing reports it, the host can replace it and read
   expect(props.onDraftChange).toHaveBeenCalledTimes(1)
 })
 
+it('reports each typed change once and adopts scripted writes to the textarea', async () => {
+  const { handle, prompt, props } = mount()
+  type(prompt, '一次')
+  expect(props.onDraftChange).toHaveBeenCalledTimes(1)
+
+  // Text expanders and automation assign the value and fire an input event themselves.
+  prompt.value = '脚本写入'
+  prompt.dispatchEvent(new Event('input', { bubbles: true }))
+  expect(props.onDraftChange).toHaveBeenLastCalledWith('脚本写入')
+  expect(props.onDraftChange).toHaveBeenCalledTimes(2)
+  expect(handle.getDraft()).toBe('脚本写入')
+
+  // Without an event the host still reads what is on screen, and clearing really clears it.
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  prompt.value = '没有事件'
+  expect(handle.getDraft()).toBe('没有事件')
+  handle.setDraft('脚本写入')
+  expect(prompt.value).toBe('脚本写入')
+  expect(props.onDraftChange).toHaveBeenCalledTimes(2)
+})
+
 it('submits on Enter only: Shift+Enter and an active IME composition leave the draft alone', () => {
   const { prompt, props } = mount()
   type(prompt, '你好')

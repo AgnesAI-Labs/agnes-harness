@@ -189,8 +189,9 @@ function ModelPanel({
 
   function select(option: ModelPickerOption | undefined): void {
     if (!option) return
-    // 点当前模型不必再发一次同样的 setModel。
-    if (sameOption(option, state.selected)) {
+    // 当前模型的设置就在下面这一段里，点它不必再发一次同样的 setModel。
+    // 没有设置可看时（模型没报容量）重选等于按默认值再确认一次，仍然提交。
+    if (sameOption(option, state.selected) && state.settings && onSettingsChange) {
       if (!busy) close(true)
       return
     }

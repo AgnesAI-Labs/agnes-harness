@@ -8,6 +8,7 @@ import {
   type ForwardedRef,
   Fragment,
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -96,12 +97,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     handleDrop,
   } = useComposerAttachments({ view, dependencies, prepareUploadSession, onAttachmentsChange, onError })
 
+  // What React last rendered into the textarea; a host edit is pending while it differs from draftRef.
+  const renderedDraft = useRef(initialDraft)
   const pendingCaret = useRef<number>()
   const changeDraft = (value: string): void => {
+    if (value === draftRef.current) return
     draftRef.current = value
     setDraft(value)
     onDraftChange(value)
   }
+  const adoptDraft = useRef(changeDraft)
+  adoptDraft.current = changeDraft
   /** Programmatic edits (pasted text, a chosen or started reference) go through the same state as typing. */
   const editDraft = (start: number, end: number, text: string): void => {
     pendingCaret.current = start + text.length
@@ -112,6 +118,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useLayoutEffect(() => {
     const input = (sender.current?.inputElement as HTMLTextAreaElement | undefined) ?? null
     prompt.current = input
+    renderedDraft.current = draft
     const caret = pendingCaret.current
     if (caret === undefined || !input || input.value !== draftRef.current) return
     pendingCaret.current = undefined
@@ -121,6 +128,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
 
+  // A scripted write (`textarea.value = …` followed by an input event, as text expanders and
+  // automation do) bypasses React's change tracking. Adopt it so the draft is what the user sees.
+  useEffect(() => {
+    const input = prompt.current
+    if (!input) return
+    const adopt = () => adoptDraft.current(input.value)
+    input.addEventListener('input', adopt)
+    return () => input.removeEventListener('input', adopt)
+  }, [])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -129,7 +146,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         sender.current?.focus()
       },
       getDraft() {
-        return draftRef.current
+        // A host edit that has not rendered yet wins; otherwise the textarea is what the user sees.
+        if (draftRef.current !== renderedDraft.current) return draftRef.current
+        return prompt.current?.value ?? draftRef.current
       },
       getImageBlocks() {
         return attachmentsRef.current
@@ -159,9 +178,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       restoreImageBlocks: restoreAttachmentBlocks,
       setDraft(value) {
-        if (draftRef.current === value) return
-        draftRef.current = value
-        setDraft(value)
+        if (draftRef.current !== value) {
+          draftRef.current = value
+          setDraft(value)
+          return
+        }
+        // A scripted write React never saw is still on screen; bring the textarea back to the state.
+        const input = prompt.current
+        if (input && input.value !== value) input.value = value
       },
     }),
     [clearImageBlocks, restoreAttachmentBlocks, attachmentsRef, pendingCountRef, uploads],

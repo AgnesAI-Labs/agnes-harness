@@ -196,6 +196,14 @@ describe('model picker', () => {
     expect(document.activeElement).toBe(list)
   })
 
+  it('closes on a second click of the trigger', async () => {
+    const { trigger } = mountPicker()
+    await open(trigger)
+    trigger.click()
+    await closed()
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('searches a long catalog, says when nothing matches and selects the highlighted row with Enter', async () => {
     const many = Array.from({ length: 9 }, (_, index) => ({
       route: 'bulk',
@@ -261,12 +269,20 @@ describe('model picker', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger))
   })
 
-  it('does not resend the model that is already selected', async () => {
+  it('does not resend the selected model while its settings are on the panel', async () => {
     const { trigger, onSelect } = mountPicker()
     await open(trigger)
     row('gpt-5.6').click()
     await closed()
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('re-applies the selected model when there are no settings to show for it', async () => {
+    const { trigger, onSelect } = mountPicker({ settings: undefined })
+    await open(trigger)
+    row('gpt-5.6').click()
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(currentModel))
+    await closed()
   })
 
   it('stays open with the current selection when the host declines or the change fails', async () => {
