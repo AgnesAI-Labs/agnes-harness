@@ -118,31 +118,38 @@ export function createUserAttachmentPort(o: {
   const checkQuota = async ({ add, sessionBytes }: { add: number; sessionBytes: number }) => {
     ;(await reserve(add, sessionBytes))()
   }
+  /** Stores and marks (without a receipt) one attachment's bytes within the limits and quotas. */
+  const keep = async (bytes: Uint8Array, mimeType: string, sessionBytes: number) => {
+    if (bytes.byteLength > limit('attachments.max_upload_bytes'))
+      throw new AttachmentQuotaError('The attachment is larger than the upload limit.')
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    // The session quota applies to every reference, so whether the bytes are already stored makes no
+    // difference to the answer. Bytes already marked are counted and need no room on the volume.
+    sessionQuota(bytes.byteLength, sessionBytes)
+    const known = await o.store.userAttachment(sha256).catch(() => undefined)
+    const release = known ? () => undefined : await reserve(bytes.byteLength, sessionBytes)
+    try {
+      const object = await o.store.put(bytes, { kind: 'user-attachment', mimeType })
+      await usage()
+      const before = known ?? (await o.store.userAttachment(object.sha256).catch(() => undefined))
+      await o.store.markUserAttachment(object, { mimeType })
+      if (!before) global += object.bytes
+      return { sha256: object.sha256, bytes: object.bytes }
+    } finally {
+      release()
+    }
+  }
   return {
-    ...createUserAttachmentReader({ store: o.store, cacheInline: o.cacheInline === true }),
+    // A cache copy is no reference of the session, so it is charged to the global quota and the
+    // free-space floor only.
+    ...createUserAttachmentReader({
+      store: o.store,
+      ...(o.cacheInline ? { keep: (bytes: Uint8Array, mimeType: string) => keep(bytes, mimeType, 0) } : {}),
+    }),
     storeByReference: o.storeByReference,
     usage,
     checkQuota,
-    async store({ bytes, mimeType, sessionBytes }) {
-      if (bytes.byteLength > limit('attachments.max_upload_bytes'))
-        throw new AttachmentQuotaError('The attachment is larger than the upload limit.')
-      const sha256 = createHash('sha256').update(bytes).digest('hex')
-      // The session quota applies to every reference, so whether the bytes are already stored makes no
-      // difference to the answer. Bytes already marked are counted and need no room on the volume.
-      sessionQuota(bytes.byteLength, sessionBytes)
-      const known = await o.store.userAttachment(sha256).catch(() => undefined)
-      const release = known ? () => undefined : await reserve(bytes.byteLength, sessionBytes)
-      try {
-        const object = await o.store.put(bytes, { kind: 'user-attachment', mimeType })
-        await usage()
-        const before = known ?? (await o.store.userAttachment(object.sha256).catch(() => undefined))
-        await o.store.markUserAttachment(object, { mimeType })
-        if (!before) global += object.bytes
-        return { sha256: object.sha256, bytes: object.bytes }
-      } finally {
-        release()
-      }
-    },
+    store: ({ bytes, mimeType, sessionBytes }) => keep(bytes, mimeType, sessionBytes),
     async authorize({ sha256, bytes, sessionKey, referenced }) {
       // Entitlement first: telling "missing" from "not yours" for an object the session has no claim
       // on would let it probe the store for content it was never given.

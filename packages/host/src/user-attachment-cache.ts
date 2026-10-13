@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, statfs } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { AttachmentReadPort } from '@agnes/core'
 import {
   type AttachmentStore,
@@ -12,8 +12,6 @@ import {
 const SHA256 = /^[0-9a-f]{64}$/u
 /** Sessions whose cache maps are kept in memory at once; an evicted map is read from disk again. */
 const MAPS_HELD = 64
-/** Free space a cache copy must leave on the store's volume; below it the copy is skipped. */
-export const INLINE_CACHE_MIN_FREE_BYTES = 2 * 1024 ** 3
 
 type CacheEntry = Readonly<{ sha256: string; bytes: number; rowId: string }>
 type CacheMap = Record<string, CacheEntry>
@@ -54,12 +52,6 @@ function parse(text: string): CacheMap {
   return out
 }
 
-/** Free bytes on the volume of `dir`, or of its parent while the store has not created it yet. */
-async function defaultDiskFree(dir: string): Promise<number> {
-  const s = await statfs(dir).catch(() => statfs(dirname(dir)))
-  return Number(s.bavail) * Number(s.bsize)
-}
-
 /**
  * How a session reads user attachments from the host's attachment store.
  *
@@ -72,23 +64,24 @@ async function defaultDiskFree(dir: string): Promise<number> {
  * the bytes in the store, and `<store>/user-attachment-cache/<session receipt>.json` maps its place in
  * the session (`<seq>/<kind>/<index>`) to the stored object and to the id of the row it came from, so
  * later reads skip the row and a reused seq never matches an old copy. The ledger is never written. A
- * lost or damaged map only costs one more read of the row. A copy is skipped (the read still
- * succeeds, from the row) when it would leave less than `minFreeBytes` free on the store's volume.
+ * lost or damaged map only costs one more read of the row.
  *
- * `cacheInline: false` leaves only the reads (old inline attachments are then decoded from their row
- * on every read). The map is replaced whole through a temporary file and a rename; writes for one
- * session are serialized in this process, which is the process hosting that session. The copy is
- * marked as a user attachment only when the object has no marker yet, and never with a receipt:
- * keeping a cache copy grants no session the right to reference the object.
+ * The copy itself is made by `keep`, the host port's quota-checked store: it is charged to the global
+ * quota and the free-space floor like any stored attachment, and refused (the read still succeeds,
+ * from the row) when there is no room. It is marked as a user attachment with the store's receipt-less
+ * mark, which only ever creates a missing marker, so it never rewrites a marker an upload is adding a
+ * receipt to; keeping a cache copy grants no session the right to reference the object. Without
+ * `keep` only the reads are offered (old inline attachments are then decoded from their row on every
+ * read). The map is replaced whole through a temporary file and a rename; writes for one session are
+ * serialized in this process, which is the process hosting that session.
  *
  * Maps are not removed with a session: nothing on this build deletes a session that has attachments;
  * an unused map costs one small file and goes with the attachment sweep.
  */
 export function createUserAttachmentReader(o: {
   store: AttachmentStore
-  cacheInline?: boolean
-  minFreeBytes?: number
-  diskFree?: (dir: string) => Promise<number>
+  /** Stores and marks one cache copy, or refuses it; omitted, old inline attachments are not copied. */
+  keep?: (bytes: Uint8Array, mimeType: string) => Promise<StoredObject>
 }): AttachmentReadPort {
   const dir = join(o.store.root, 'user-attachment-cache')
   const held = new Map<string, Promise<CacheMap>>()
@@ -134,7 +127,8 @@ export function createUserAttachmentReader(o: {
     if (!(await isUserAttachment(sha256))) throw new AttachmentStoreError('ATTACHMENT_MISSING')
     return o.store.read(sha256, range, signal)
   }
-  if (o.cacheInline === false) return Object.freeze({ isUserAttachment, read })
+  const keep = o.keep
+  if (!keep) return Object.freeze({ isUserAttachment, read })
   return Object.freeze({
     isUserAttachment,
     read,
@@ -156,14 +150,7 @@ export function createUserAttachmentReader(o: {
       const key = keyOf(input.seq, input.kind, input.index)
       if (!key || typeof input.rowId !== 'string' || input.rowId.length === 0)
         throw new TypeError('invalid attachment position')
-      const free = await (o.diskFree ?? defaultDiskFree)(o.store.root).catch(() => 0)
-      if (free - input.bytes.byteLength < (o.minFreeBytes ?? INLINE_CACHE_MIN_FREE_BYTES))
-        throw new AttachmentStoreError('ATTACHMENT_TOO_LARGE', 'too little free space to keep a cache copy')
-      const object = await o.store.put(input.bytes, { kind: 'user-attachment', mimeType: input.mimeType })
-      // Receipt-less and only when absent, so it never rewrites a marker an upload is adding a receipt
-      // to; the store's receipt-less mark is the one to use for that.
-      const marker = await o.store.userAttachment(object.sha256).catch(() => undefined)
-      if (!marker) await o.store.markUserAttachment(object, { mimeType: input.mimeType })
+      const object = await keep(input.bytes, input.mimeType)
       const file = fileFor(input.sessionKey)
       const entry: CacheEntry = Object.freeze({ ...object, rowId: input.rowId })
       const previous = writes.get(file) ?? Promise.resolve()

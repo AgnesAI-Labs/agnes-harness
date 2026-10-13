@@ -5,17 +5,31 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { attachmentReceiptFor, createAttachmentStore } from '../src/attachment-store.js'
 import { createUserAttachmentReader } from '../src/user-attachment-cache.js'
+import { createUserAttachmentPort } from '../src/user-attachments.js'
 
 const dirs: string[] = []
 afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
 })
 const plenty = async () => 1024 ** 4
+/** The host port's reader with the inline cache, as assembly builds it. */
+const cached = (
+  store: ReturnType<typeof createAttachmentStore>,
+  over: Partial<Parameters<typeof createUserAttachmentPort>[0]> = {},
+) =>
+  createUserAttachmentPort({
+    store,
+    limits: {},
+    storeByReference: false,
+    cacheInline: true,
+    diskFree: plenty,
+    ...over,
+  })
 async function fresh() {
   const dataDir = await mkdtemp(join(tmpdir(), 'agh-att-cache-'))
   dirs.push(dataDir)
   const store = createAttachmentStore({ dataDir })
-  return { dataDir, store, reader: createUserAttachmentReader({ store, diskFree: plenty }) }
+  return { dataDir, store, reader: cached(store) }
 }
 const hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const bytes = (text: string) => new TextEncoder().encode(text)
@@ -75,7 +89,7 @@ describe('inline attachment cache', () => {
     // A seq reused by another row (an import, a rewritten session) never matches the old copy.
     expect(await reader.cachedInline?.('k', 5, 'file', 1, 'row-other')).toBeUndefined()
     // A second process (a new reader) finds it from the file.
-    const again = createUserAttachmentReader({ store: createAttachmentStore({ dataDir }) })
+    const again = cached(createAttachmentStore({ dataDir }))
     expect(await again.cachedInline?.('k', 5, 'file', 1, 'row-5')).toEqual(object)
     expect(
       (await readdir(join(dataDir, 'artifacts', 'user-attachment-cache'))).filter((n) => n.endsWith('.tmp')),
@@ -101,16 +115,24 @@ describe('inline attachment cache', () => {
     ])
   })
 
-  it('skips the copy when the volume would be left with too little free space', async () => {
+  it('skips the copy when the free-space floor or the global quota leaves no room for it', async () => {
     const { store } = await fresh()
-    const reader = createUserAttachmentReader({ store, minFreeBytes: 1000, diskFree: async () => 1005 })
-    await expect(reader.cacheInline?.(copy({ seq: 1, text: 'too big' }))).rejects.toMatchObject({
-      code: 'ATTACHMENT_TOO_LARGE',
+    const floor = { 'attachments.min_free_bytes': 1000 }
+    const low = cached(store, { limits: floor, diskFree: async () => 1005 })
+    await expect(low.cacheInline?.(copy({ seq: 1, text: 'too big' }))).rejects.toMatchObject({
+      code: 'UPLOAD_QUOTA',
     })
     expect(await store.stat(hex(bytes('too big')))).toBeUndefined()
-    expect(await reader.cachedInline?.('k', 1, 'file', 1, 'row-1')).toBeUndefined()
-    const roomy = createUserAttachmentReader({ store, minFreeBytes: 1000, diskFree: async () => 2000 })
+    expect(await low.cachedInline?.('k', 1, 'file', 1, 'row-1')).toBeUndefined()
+    const full = cached(store, { limits: { 'attachments.global_quota_bytes': 5 } })
+    await expect(full.cacheInline?.(copy({ seq: 1, text: 'too big' }))).rejects.toMatchObject({
+      code: 'UPLOAD_QUOTA',
+    })
+    expect(await store.stat(hex(bytes('too big')))).toBeUndefined()
+    const roomy = cached(store, { limits: floor, diskFree: async () => 2000 })
     await expect(roomy.cacheInline?.(copy({ seq: 1, text: 'fits' }))).resolves.toBeDefined()
+    // The copy counts toward the global quota from then on.
+    expect(await roomy.usage()).toBe(bytes('fits').byteLength)
   })
 
   it('treats a damaged map as empty and refuses a malformed position', async () => {
@@ -119,9 +141,7 @@ describe('inline attachment cache', () => {
     await reader.cacheInline?.(copy({ seq: 1, kind: 'image', text: 'x' }))
     const file = join(dir, `${attachmentReceiptFor('k')}.json`)
     await writeFile(file, '{"1/image/1": {"sha256": "nope", "bytes": 1}, "../x": 1')
-    expect(
-      await createUserAttachmentReader({ store }).cachedInline?.('k', 1, 'image', 1, 'row-1'),
-    ).toBeUndefined()
+    expect(await cached(store).cachedInline?.('k', 1, 'image', 1, 'row-1')).toBeUndefined()
     // Readable JSON keeps only its well-formed entries.
     const good = { sha256: 'a'.repeat(64), bytes: 1, rowId: 'r' }
     await writeFile(
@@ -134,7 +154,7 @@ describe('inline attachment cache', () => {
         '3/file/1': good,
       }),
     )
-    const reopened = createUserAttachmentReader({ store })
+    const reopened = cached(store)
     expect(await reopened.cachedInline?.('k', 1, 'image', 1, 'r')).toBeUndefined()
     expect(await reopened.cachedInline?.('k', 2, 'file', 1, 'r')).toBeUndefined()
     expect(await reopened.cachedInline?.('k', 4, 'file', 1, 'r')).toBeUndefined()
@@ -156,7 +176,7 @@ describe('inline attachment cache', () => {
 
   it('offers reads only when the inline cache is off', async () => {
     const { store } = await fresh()
-    const reader = createUserAttachmentReader({ store, cacheInline: false })
+    const reader = createUserAttachmentReader({ store })
     expect(reader.cacheInline).toBeUndefined()
     expect(reader.cachedInline).toBeUndefined()
     const object = await store.put(bytes('ref'), { kind: 'user-attachment', mimeType: 'text/plain' })

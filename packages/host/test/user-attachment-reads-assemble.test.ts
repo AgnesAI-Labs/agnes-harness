@@ -28,13 +28,14 @@ const read = (args: Record<string, string>): InferenceEvent[] => [
 const done: InferenceEvent[] = [{ type: 'text_delta', delta: 'done' }]
 
 /** A host with the bundled tools; each model call takes the next queued answer, then says done. */
-async function open(storeAttachmentsByReference: boolean) {
+async function open(storeAttachmentsByReference: boolean, limits?: Record<string, number>) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agh-attach-reads-')))
   roots.push(root)
   const answers: InferenceEvent[][] = []
   const { host } = await createTestHost({
     dataDir: root,
     storeAttachmentsByReference,
+    ...(limits ? { limits } : {}),
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     // The test route's models, able to take images.
     provider: (profile) =>
@@ -87,6 +88,25 @@ const upload = async (
 }
 
 describe('user attachment reads in an assembled host', () => {
+  it('keeps a copy of an old inline attachment only when there is room for it, and reads it either way', async () => {
+    for (const [limits, copied] of [
+      [{ 'attachments.global_quota_bytes': 1 }, false],
+      [{}, true],
+    ] as const) {
+      const { store, session } = await open(false, limits)
+      const a = await session('reads-cache')
+      const inline = await a.message([
+        { type: 'file', mimeType: 'text/plain', name: 'notes.txt', data: TEXT.toString('base64') },
+      ])
+      expect(inline.content).toMatchObject([{ data: TEXT.toString('base64') }])
+      const [result] = await a.turn(read({ path: `session-file://${inline.seq}/1` }))
+      expect(result).toContain('kept by reference')
+      expect(result).toContain('"isError":false')
+      expect((await store.stat(hex(TEXT))) !== undefined).toBe(copied)
+      if (copied) expect(await store.userAttachment(hex(TEXT))).toMatchObject({ receipts: [] })
+    }
+  })
+
   it('keeps references readable when storing by reference is off, and inline input inline', async () => {
     const { store, session } = await open(false)
     const a = await session('reads-off')
