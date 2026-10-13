@@ -2197,7 +2197,8 @@ export class SessionImpl {
   }
 
   private guardProjection(): void {
-    if (this.d.log.faulted) throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    // A history that failed verification is refused as such, so a client can say why.
+    this.d.log.sealCheck()
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 

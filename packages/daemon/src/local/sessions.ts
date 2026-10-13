@@ -65,6 +65,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
       clock: () => number
       pollMs?: number
       observe?: (sessionKey: string, event: EventEnvelope, cwd: string) => void
+      /** Told once when a session's stored history fails verification; it stays refused. */
+      onIntegrityFailure?: (sessionKey: string) => void
     },
   ) {}
 
@@ -218,6 +220,14 @@ export class SessionRegistry implements Registry<SessionEntry> {
       signal: ac.signal,
       onError: (e) => {
         entry.tailError = e
+        // The log sealed itself because its history failed verification: attached clients are told.
+        if ((e as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY') {
+          try {
+            this.o.onIntegrityFailure?.(entry.key)
+          } catch {
+            /* a notice must not change the outcome */
+          }
+        }
       },
       onEvents: (evs) => {
         for (const e of evs) {

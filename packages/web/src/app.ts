@@ -2325,9 +2325,53 @@ client.on('generationChanged', (payload) => {
   if (!forCurrent(payload)) return
   void live?.resync().catch(showError)
 })
+/**
+ * The daemon closed the open session for good (its stored history failed the integrity check, or a
+ * reconnect found it written by another build): stop following it, keep no composer on it, and show
+ * the stored history read-only with why. Where storage cannot be read, the transcript already on
+ * screen stays, labelled the same way: it was built from the history that failed.
+ */
+function refuseCurrentSession(id: string, code: unknown): void {
+  const session = current
+  if (!session || session.id !== id || sessionPending) return
+  const reason =
+    code === 'LEGACY_LEDGER_FORMAT'
+      ? 'legacy-ledger-format'
+      : code === 'NEWER_LEDGER_FORMAT'
+        ? 'newer-ledger-format'
+        : 'ledger-integrity'
+  const message = errorNotice('', undefined, undefined, undefined, reason, t)
+  const epoch = selection
+  const shown = projection
+  const stop = stopEvents
+  stopEvents = undefined
+  live = undefined
+  current = undefined
+  clientModules.session.setSession(undefined)
+  offPermission?.()
+  offPermission = undefined
+  liveApproval?.finish({ verdict: 'rejected' })
+  liveApproval = undefined
+  sending = false
+  stopping = false
+  awaitingPromptStart = false
+  projection = undefined
+  void stopWithTimeout(stop)
+  void session.detach().catch(() => undefined)
+  renderControls()
+  storedHistory.started(id)
+  void storedHistory.failed(id, message, shown?.sessionId === id ? shown : undefined).then((ok) => {
+    if (!ok && epoch === selection) notify({ text: message, kind: 'error' })
+  })
+}
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
-  const incoming = payload as { kind?: unknown; detail?: unknown }
+  const incoming = payload as { kind?: unknown; detail?: unknown; sessionId?: unknown; code?: unknown }
+  // integrity_failed comes from the daemon; session-refused from the SDK, when a reconnect is refused.
+  if (incoming.kind === 'integrity_failed' && typeof incoming.sessionId === 'string')
+    return refuseCurrentSession(incoming.sessionId, 'E_LEDGER_INTEGRITY')
+  if (incoming.kind === 'session-refused' && typeof incoming.sessionId === 'string')
+    return refuseCurrentSession(incoming.sessionId, incoming.code)
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null

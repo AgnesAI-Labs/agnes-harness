@@ -168,3 +168,27 @@ describe('session.storedOpening', () => {
     await client.close()
   })
 })
+
+describe('waiting for the history to be verified', () => {
+  it('outlasts the request timeout for verifyHistory and every exportRaw piece, and gives up on abort', async () => {
+    vi.useFakeTimers()
+    const { client, server } = await clientWithScriptedServer({}, { request: 30_000 })
+    const verified = client.session.verifyHistory('s1')
+    const piece = client.session.exportRaw('s1', 3, 0)
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(server.received('_agnes/v1/session.verifyHistory')).toEqual([{ sessionId: 's1' }])
+    expect(server.received('_agnes/v1/session.exportRaw')).toEqual([{ sessionId: 's1', seq: 3, offset: 0 }])
+    server.reply('_agnes/v1/session.verifyHistory', {})
+    server.reply('_agnes/v1/session.exportRaw', { seq: 3, base64: '', nextOffset: null })
+    await expect(verified).resolves.toEqual({})
+    await expect(piece).resolves.toMatchObject({ seq: 3, nextOffset: null })
+
+    const abort = new AbortController()
+    const abandoned = client.session.verifyHistory('s1', { signal: abort.signal })
+    const assertion = expect(abandoned).rejects.toBe('gave up')
+    await vi.advanceTimersByTimeAsync(1_000)
+    abort.abort('gave up')
+    await assertion
+    await client.close()
+  })
+})

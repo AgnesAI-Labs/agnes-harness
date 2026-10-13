@@ -81,11 +81,18 @@ export type OpenLogOptions = {
   /** `op` is the program-counter cell the batch will write, when it writes one. */
   relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
-  /** Folds the ledger while `open` verifies it: `page` receives every verified page in order, from seq 1. */
+  /**
+   * Folds the ledger while `open` reads it: `page` receives every page in order, from seq 1. Without a
+   * checkpoint every page has been verified first; with one, the pages the checkpoint vouches for are
+   * folded unhashed and verified in the background (see `fullVerified`), the pages after it verified.
+   */
   replay?: {
     page(events: Event[]): void
   }
-  /** Told after each verified page how far the open has got; a listener that throws is ignored. */
+  /**
+   * Told after each page how far the open has got (`fold` for a page a checkpoint vouches for, `verify`
+   * for one hashed now); a listener that throws is ignored.
+   */
   progress?: (p: OpenProgress) => void
   /** Called once when the background verification of an open from a checkpoint finishes. */
   onFullVerify?: (r: FullVerifyReport) => void
@@ -602,7 +609,8 @@ export class SessionLogImpl {
     this.timer = handle
   }
 
-  private sealCheck(): void {
+  /** Throws if the log sealed itself: the integrity failure as itself, any other fault as E_STORAGE_FAULT. */
+  sealCheck(): void {
     if (!this.faultedValue) return
     // An integrity failure is reported as itself, so a client can say why the session stopped.
     if (this.faultCause?.code === 'E_LEDGER_INTEGRITY') throw this.faultCause

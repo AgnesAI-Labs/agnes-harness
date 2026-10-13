@@ -26,7 +26,7 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
   }
-  const reveal = async (id: string, reason?: string): Promise<boolean> => {
+  const reveal = async (id: string, reason?: string, fallback?: unknown): Promise<boolean> => {
     const mine = generation
     // Read once per open: a failure after the delayed read shows the same history with its reason.
     if (read?.id !== id) read = { id, view: Promise.resolve().then(() => deps.storedOpening(id)) }
@@ -34,9 +34,10 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
     try {
       view = await read.view
     } catch {
-      // The recovery notice still reports the original failure.
       if (mine === generation) read = undefined
-      return false
+      // The recovery notice still reports the original failure, unless there is a timeline to show.
+      if (fallback === undefined) return false
+      view = { timeline: fallback, hasEarlier: false }
     }
     if (mine !== generation) return false
     shown = true
@@ -63,12 +64,15 @@ export function createStoredHistory(deps: StoredHistoryDeps) {
       if (shown) deps.clear()
       shown = false
     },
-    /** Shows the stored history with the reason the open failed; false when there is none to show. */
-    async failed(id: string, reason: string): Promise<boolean> {
+    /**
+     * Shows the stored history with the reason the open failed; false when there is none to show.
+     * `fallback`, a timeline already on screen, is shown with the reason when storage cannot be read.
+     */
+    async failed(id: string, reason: string, fallback?: unknown): Promise<boolean> {
       if (id !== opening) return false
       stop()
       const mine = generation
-      const ok = await reveal(id, reason)
+      const ok = await reveal(id, reason, fallback)
       // Another open began while this one read; that open owns the screen and the state now.
       if (mine !== generation) return false
       generation++

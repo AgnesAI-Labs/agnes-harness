@@ -405,6 +405,31 @@ describe('verified head checkpoint under attack', () => {
     await second.session.close()
   })
 
+  it('every UI projection of a history that failed verification is refused with the integrity code', async () => {
+    const storage = new MemoryStorage()
+    const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
+    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await first.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    await first.session.close()
+    tamper(storage, 'k', 1)
+    const { storage: slow, release } = held(storage)
+    const second = await openSession({
+      storage: slow as MemoryStorage,
+      provider: fakeProvider([]),
+      writerRunId: 'r2',
+    })
+    // Shown while the verification runs: the opening is what the history looks like so far.
+    await expect(second.session.projectUIOpening()).resolves.toBeDefined()
+    release()
+    await expect(second.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    const integrity = { code: 'E_LEDGER_INTEGRITY' }
+    await expect(second.session.projectUI()).rejects.toMatchObject(integrity)
+    await expect(second.session.projectUIOpening()).rejects.toMatchObject(integrity)
+    await expect(second.session.projectUIHistory(second.log.lastSeq, 1)).rejects.toMatchObject(integrity)
+    await expect(second.session.projectUIPatch(0)).rejects.toMatchObject(integrity)
+    await second.session.close()
+  })
+
   it('a storage error during the background verify seals the log as a storage fault', async () => {
     const storage = await seeded(10)
     let folded = false

@@ -564,7 +564,10 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         }
         await entry.session.close().catch(() => undefined)
       }
-      throw error
+      // An integrity failure that interrupted this open is why it failed, whichever step then noticed
+      // the session was gone: the caller gets the typed refusal, not "unavailable".
+      const interruptedBy: unknown = entry.ac.signal.aborted ? entry.ac.signal.reason : undefined
+      throw isIntegrityFailure(interruptedBy) ? interruptedBy : error
     }
   }
 

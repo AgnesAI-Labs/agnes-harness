@@ -2,6 +2,7 @@ import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { requireChildControl } from '../src/child/store.js'
 import { Kernel } from '../src/kernel.js'
+import { forkBaseProviders } from '../src/log/fork-seed.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import type { ScanQuery, StorageAdapter } from '../src/log/storage.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -142,6 +143,35 @@ describe('what creating a delegated child still detects', () => {
     await expect(
       createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }),
     ).rejects.toMatchObject({ code: 'E_STORAGE_FAULT', message: expect.stringContaining('ancestry') })
+    await k.close()
+  })
+})
+
+describe('a delegated child in a newer ledger format', () => {
+  it('is refused on the live-parent path before any of its rows are read', async () => {
+    const storage = new MemoryStorage({ clock: () => CLOCK })
+    const childReads: string[] = []
+    const newer: StorageAdapter = Object.create(storage, {
+      open: {
+        value: async (key: string, claim: { writerRunId: string; ttlMs: number }) => {
+          const opened = await storage.open(key, claim)
+          return opened.parent ? { ...opened, formatVersion: 3 } : opened
+        },
+      },
+      scanIntegrity: {
+        value: async (key: string, q: { fromSeq: Seq; toSeq: Seq; limit: number }) => {
+          if (key !== 'parent') childReads.push(key)
+          return storage.scanIntegrity(key, q)
+        },
+      },
+    })
+    const { k, parent } = await parentReady(newer, script())
+    // The parent's fork point is in hand, so the child opens from the live parent, not cold.
+    expect(forkBaseProviders.has(parent.d.log)).toBe(true)
+    await expect(
+      createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }),
+    ).rejects.toMatchObject({ code: 'E_FORMAT', detail: { reason: 'newer-ledger-format', formatVersion: 3 } })
+    expect(childReads).toEqual([])
     await k.close()
   })
 })

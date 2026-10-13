@@ -416,6 +416,92 @@ it('does not start a late ledger write after recovery scan times out', async () 
   }
 })
 
+/** Makes the session's stored history look unverified until `release`, or failed with `fail`. */
+function holdVerification(session: HostSession) {
+  let verified = true
+  let settle!: { resolve: () => void; reject: (error: unknown) => void }
+  const pending = new Promise<void>((resolve, reject) => {
+    settle = { resolve, reject }
+  })
+  pending.catch(() => undefined)
+  const getter = vi.spyOn(session.d.log, 'historyVerified', 'get').mockImplementation(() => verified)
+  const wait = vi.spyOn(session.d.log, 'fullVerified').mockImplementation(() => pending)
+  return {
+    hold: () => {
+      verified = false
+    },
+    release: () => {
+      verified = true
+      settle.resolve()
+    },
+    fail: () => settle.reject(Object.assign(new Error('tampered'), { code: 'E_LEDGER_INTEGRITY' })),
+    restore: () => {
+      getter.mockRestore()
+      wait.mockRestore()
+    },
+  }
+}
+
+it('recovers title usage into the ledger only once the stored history is verified', async () => {
+  const f = await fixture()
+  await run(f.session)
+  await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+  for (const outcome of ['verified', 'failed', 'closed'] as const) {
+    const verification = holdVerification(f.session)
+    verification.hold()
+    const record = vi.spyOn(f.session.d.runtime, 'ledgerRecord').mockResolvedValue(true)
+    const onError = vi.fn()
+    const recovery = await startSessionTitle(f.session, { schedule: (work) => work(), onError })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(record).not.toHaveBeenCalled()
+      if (outcome === 'verified') {
+        verification.release()
+        await vi.waitFor(() => expect(record).toHaveBeenCalledOnce())
+      } else if (outcome === 'closed') {
+        // Closing does not wait for a verification that only the log's own close would end.
+        await recovery.close()
+        expect(record).not.toHaveBeenCalled()
+      } else {
+        verification.fail()
+        await vi.waitFor(() =>
+          expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'E_LEDGER_INTEGRITY' })),
+        )
+        expect(record).not.toHaveBeenCalled()
+      }
+    } finally {
+      await recovery.close()
+      record.mockRestore()
+      verification.restore()
+    }
+  }
+}, 30_000)
+
+it('asks for no title budget and sends no title request before the stored history is verified', async () => {
+  const projected = vi.fn(async () => ({ credits: 0, creditSource: 'estimated' as const }))
+  const f = await fixture({ ledger: { projected, record: async () => undefined } })
+  const verification = holdVerification(f.session)
+  let atTurnEnd = -1
+  // Right after the first turn ends, before its title is generated, the history counts as unverified.
+  const off = f.session.d.log.observeCommitted(['turn/end'], () => {
+    verification.hold()
+    atTurnEnd = projected.mock.calls.length
+  })
+  try {
+    expect((await run(f.session)).reason).toBe('completed')
+    off()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(projected).toHaveBeenCalledTimes(atTurnEnd)
+    expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(0)
+    verification.release()
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    expect(projected.mock.calls.length).toBeGreaterThan(atTurnEnd)
+  } finally {
+    off()
+    verification.restore()
+  }
+}, 30_000)
+
 // Two Hosts and real turns: about 0.2 s alone, past the 5 s default on the Windows runner.
 it('ignores forged and mismatched cost rows across pages when recovering title usage', async () => {
   const f = await fixture()

@@ -52,6 +52,7 @@ import { registerExtensions } from './methods/extensions.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
 import { registerStoredOpening } from './methods/stored-opening.js'
 import { registerWorkspaces } from './methods/workspaces.js'
+import { NoticeSink } from './notice.js'
 import {
   type ClaimStore,
   type CommandJournal,
@@ -337,10 +338,14 @@ export function createLocalEndpoint(
   const workspaces =
     opts.workspaces ??
     new WorkspaceCatalogImpl(new MemoryWorkspaceStore(), sessionWorkspaces, resolveWorkspaceDirectory, clock)
+  // The one connection this endpoint serves hears session notices only while attached, as in a daemon.
+  const notices = new NoticeSink({ endpoints: () => [{ ep, conn: ep.conn }], clock })
   const registry = new SessionRegistry(host, {
     clock,
     ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}),
     observe: (sessionKey, event, cwd) => indexApprovalTicket(tickets, sessionKey, event, cwd),
+    onIntegrityFailure: (sessionId) =>
+      notices.emit('integrity_failed', { sessionId, detail: { code: 'E_LEDGER_INTEGRITY' } }),
   })
   const prompter = new PrompterRouter({
     ...(opts.prompter ? { local: opts.prompter } : {}),

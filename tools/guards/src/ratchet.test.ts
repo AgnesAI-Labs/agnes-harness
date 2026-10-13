@@ -438,7 +438,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 141, exact.
-  'packages/web/src/presentation': 141,
+  // 2026-10-13 attachments by reference: refusal copy for a failed integrity check and a newer ledger; reviewed exact countLines packages/web/src/presentation 143; no exclusions or spare allocation.
+  'packages/web/src/presentation': 143,
   'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
@@ -507,7 +508,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // listeners, the detached-notifier reset, the shared noticeHoldsPersistentContent predicate every
   // notice writer now goes through, and the dismiss on submit. Measured: 2222, exact, no spare.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src/app 2368; no exclusions or spare allocation.
-  'packages/web/src/app': 2368,
+  // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src/app 2406; no exclusions or spare allocation.
+  'packages/web/src/app': 2406,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1495,7 +1497,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C3: projection.ts is now a re-export of the SDK engine.
   // measured 4238 (-534), exact, lowered to the measured value.
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
-  'packages/cli-tui/src': 4737,
+  // 2026-10-13 attachments by reference: the terminal UI ends a session whose history failed verification; reviewed exact countLines packages/cli-tui/src 4764; no exclusions or spare allocation.
+  'packages/cli-tui/src': 4764,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1608,7 +1611,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/sdk/src 5194; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/sdk/src 5284; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/sdk/src 5287; no exclusions or spare allocation.
-  'packages/sdk/src': 5287,
+  // 2026-10-13 attachments by reference: a session refused for good ends its recovery; verifyHistory and exportRaw without a request deadline; reviewed exact countLines packages/sdk/src 5345; no exclusions or spare allocation.
+  'packages/sdk/src': 5345,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1980,7 +1984,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/daemon/src 27312; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/daemon/src 27459; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/daemon/src 27523; no exclusions or spare allocation.
-  'packages/daemon/src': 27523,
+  // 2026-10-13 attachments by reference: one typed mapping for integrity refusals, the in-process integrity notice and a typed interrupted open; reviewed exact countLines packages/daemon/src 27564; no exclusions or spare allocation.
+  'packages/daemon/src': 27564,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2241,7 +2246,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src 17031; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web/src 17033; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src 17193; no exclusions or spare allocation.
-  'packages/web/src': 17193,
+  // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src 17239; no exclusions or spare allocation.
+  'packages/web/src': 17239,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2734,7 +2740,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src 39765; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src 39897; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src 39989; no exclusions or spare allocation.
-  'packages/host/src': 39989,
+  // 2026-10-13 attachments by reference: title generation and its usage recovery wait for the verified history; reviewed exact countLines packages/host/src 40004; no exclusions or spare allocation.
+  'packages/host/src': 40004,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

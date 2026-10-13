@@ -163,6 +163,24 @@ describe('export', () => {
     }
   })
 
+  it('waits for a verification that outlasts the request timeout', async () => {
+    const ep = endpoint().on('_agnes/v1/session.verifyHistory', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return {}
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: ep },
+      journal: memoryJournal(),
+      timeouts: { request: 50 },
+    })
+    await client.initialize()
+    try {
+      await expect(readLedger(client, SESSION_ID)).resolves.toBeDefined()
+    } finally {
+      await client.close()
+    }
+  })
+
   it('refuses a handle installed by another caller during restoration', async () => {
     const ep = endpoint()
     const client = await clientFor(ep)

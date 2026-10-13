@@ -219,8 +219,9 @@ export class WorkerPool {
       },
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
-        // No notice here: the protocol has no kind for a session-scoped interruption, and the
-        // registry reopens a watched session on its own, so attached clients see a reconnect.
+        // No notice here: the registry decides what the failure means. It reopens a watched session on
+        // its own, so attached clients see a reconnect; an integrity failure is final, and the
+        // registry tells attached clients `integrity_failed` instead.
         this.retire([sessionKey], 'session-projection-failed')
         this.o.onSessionFailure?.(sessionKey, error)
       },

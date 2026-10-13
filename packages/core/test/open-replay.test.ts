@@ -302,7 +302,7 @@ describe('a cold open folds the rows it verifies', () => {
 })
 
 describe('verification comes before folding', () => {
-  it('never hands a replay consumer a row that fails verification', async () => {
+  it('without a checkpoint, never hands a replay consumer a row that fails verification', async () => {
     const storage = new MemoryStorage()
     const writer = await SessionLogImpl.open({
       ...common,

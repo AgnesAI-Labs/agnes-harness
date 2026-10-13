@@ -1063,6 +1063,38 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       await registry.closeAll()
     })
 
+    it('fails an open the integrity failure interrupted with that failure, not as unavailable', async () => {
+      const key = 'tampered-while-opening'
+      let releaseTail!: () => void
+      let tailing!: () => void
+      const tailStarted = new Promise<void>((resolve) => {
+        tailing = resolve
+      })
+      const link = {
+        ...channel(key),
+        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+        tail: () => {
+          tailing()
+          return new Promise<void>((resolve) => {
+            releaseTail = resolve
+          })
+        },
+      }
+      const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
+      const registry = new WorkerRegistry(
+        { acquire: vi.fn().mockResolvedValue(link), retire: vi.fn() } as unknown as WorkerPool,
+        lifecycle,
+        undefined,
+        vi.fn(),
+      )
+      const opening = open(registry, { key, cwd: '/workspace', resume: true })
+      await tailStarted
+      registry.interrupt(key, integrity())
+      releaseTail()
+      await expect(opening).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await registry.closeAll()
+    })
+
     it('stops recovering after a reopen fails the integrity check', async () => {
       const key = 'tampered-recovery'
       let crash: (() => void) | undefined

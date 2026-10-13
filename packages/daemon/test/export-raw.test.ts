@@ -163,11 +163,11 @@ describe('_agnes/v1/session.exportRaw', () => {
     release()
     const refused = await pending
     expect(refused.result).toBeUndefined()
-    expect(refused.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY' })
+    expect(refused.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
     // A later piece, of any row, is refused the same way.
     const again = await rpc<Page>(ep, '_agnes/v1/session.exportRaw', { sessionId, seq: 1, offset: 0 })
     expect(again.result).toBeUndefined()
-    expect(again.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY' })
+    expect(again.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
   })
 
   it('serves a row of a history opened from a checkpoint once its verification has passed', async () => {

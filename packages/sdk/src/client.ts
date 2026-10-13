@@ -29,6 +29,7 @@ import {
   type PageSessionMeta,
   projectClientModuleRows,
   rpcError,
+  type SessionExportRawResult,
   type SessionListParams,
   type SessionPreferences,
   type SessionStoredOpeningResult,
@@ -152,6 +153,11 @@ export type SessionLoadOptions = {
   idleTimeoutMs?: number
   /** Fails the load with `LoadStalled` after this long whatever the progress. Default 10 min. */
   hardTimeoutMs?: number
+}
+
+/** Call options for a request bounded by the connection's liveness and the caller's signal only. */
+function longCall(signal: AbortSignal | undefined): CallOptions {
+  return { timeoutMs: null, ...(signal ? { signal } : {}) }
 }
 
 const LOAD_IDLE_TIMEOUT_MS = 30_000
@@ -454,6 +460,24 @@ export class Client {
      */
     storedOpening: (id: string, o: { maxNodes?: number } = {}): Promise<SessionStoredOpeningResult> =>
       this.call('_agnes/v1/session.storedOpening', { sessionId: id, ...o }),
+    /**
+     * Settles once the daemon has verified every stored row of the session; rejects when the history
+     * failed its integrity check. No fixed deadline (`timeouts.request` does not apply): a long history
+     * opened from a checkpoint can take minutes to verify. `signal` gives up waiting.
+     */
+    verifyHistory: (id: string, o: { signal?: AbortSignal } = {}): Promise<Record<string, never>> =>
+      this.call('_agnes/v1/session.verifyHistory', { sessionId: id }, longCall(o.signal)),
+    /**
+     * One piece of one stored row, byte for byte, for a raw export. Like `verifyHistory` it has no fixed
+     * deadline, since every piece waits for the history to be verified; `signal` gives up waiting.
+     */
+    exportRaw: (
+      id: string,
+      seq: number,
+      offset: number,
+      o: { signal?: AbortSignal } = {},
+    ): Promise<SessionExportRawResult> =>
+      this.call('_agnes/v1/session.exportRaw', { sessionId: id, seq, offset }, longCall(o.signal)),
   }
 
   /**
@@ -565,6 +589,10 @@ export class Client {
       }
       if (p.kind === 'overloaded' && typeof p.sessionId === 'string')
         this.sessionTable.get(p.sessionId)?.onStreamOverloaded()
+      // Final: the daemon closed the session and refuses every reopen, so no reconnect recovers it.
+      // The notice itself is what listeners hear, so the session does not announce it again.
+      if (p.kind === 'integrity_failed' && typeof p.sessionId === 'string')
+        this.sessionTable.get(p.sessionId)?.onRefused('E_LEDGER_INTEGRITY', { announce: false })
       this.emit('notice', p)
       return
     }

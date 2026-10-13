@@ -1,5 +1,5 @@
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
-import { ledgerIntegrityRpcError } from './acp.js'
+import { ledgerIntegrityRefusal } from './acp.js'
 
 type ExportRawPage = { seq: number; base64: string; nextOffset: number | null }
 type Exportable = { exportRaw?(input: { seq: number; offset: number }): Promise<ExportRawPage> }
@@ -22,8 +22,7 @@ export function registerExportRaw(
         ? session.exportRaw({ seq: p.seq, offset: p.offset })
         : local(session as never, p.seq, p.offset))
     } catch (error) {
-      if ((error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY') throw ledgerIntegrityRpcError()
-      throw error
+      throw ledgerIntegrityRefusal(error) ?? error
     }
   })
 }

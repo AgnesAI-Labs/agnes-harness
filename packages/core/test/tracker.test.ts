@@ -380,7 +380,9 @@ describe('StateTracker', () => {
       ).toEqual([])
   })
 
-  it('does not let a reopen past a tampered prefix row', async () => {
+  // The wrapped adapter has no readVerifiedHead, so this reopen verifies every row from the first;
+  // a reopen from a checkpoint folds that prefix first and is covered in verified-head.test.ts.
+  it('without a checkpoint, does not let a reopen past a tampered prefix row', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
     await first.log.append(

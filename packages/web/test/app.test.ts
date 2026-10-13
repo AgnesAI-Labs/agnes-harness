@@ -2903,13 +2903,14 @@ describe('opening a large session', () => {
     storedOpening: (id: string) => Promise<unknown>,
     load = vi.fn(),
     items = [{ sessionId: 'old', title: 'Old' }],
+    on = vi.fn(),
   ) {
     installPublicFixture()
     sdk.createClient.mockReturnValue({
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       close: vi.fn(async () => undefined),
       initialize: vi.fn(async () => undefined),
-      on: vi.fn(),
+      on,
       config: {
         get: vi.fn(async () => ({ configured: true })),
         providers: vi.fn(async () => ({ providers: [] })),
@@ -2996,6 +2997,86 @@ describe('opening a large session', () => {
     const notice = document.getElementById('notice') as HTMLElement
     await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
     expect((document.getElementById('stored-history-notice') as HTMLElement).hidden).toBe(true)
+  })
+
+  describe('a session the daemon closes for good while it is open', () => {
+    async function openThenRefuse(
+      storedOpening: (id: string) => Promise<unknown>,
+      notice: Record<string, unknown>,
+    ) {
+      const on = vi.fn(() => () => undefined)
+      boot(storedOpening, vi.fn(), undefined, on)
+      const live = (): UITimeline => ({
+        ...idleTimeline('old'),
+        upto: 1,
+        nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'live question' }] }],
+      })
+      const old = session('old', async () => live())
+      binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+      await import('../src/app.js')
+      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      await vi.waitFor(() => expect(prompt.disabled).toBe(false))
+      await vi.waitFor(() =>
+        expect(document.getElementById('transcript')?.textContent).toContain('live question'),
+      )
+      for (const [event, handler] of on.mock.calls as unknown as Array<[string, (p: unknown) => void]>)
+        if (event === 'notice') handler(notice)
+      return { old, prompt, stored: document.getElementById('stored-history-notice') as HTMLElement }
+    }
+
+    it.each([
+      [
+        'the daemon reports its history failed verification',
+        { kind: 'integrity_failed', sessionId: 'old', detail: { code: 'E_LEDGER_INTEGRITY' }, at: 't' },
+      ],
+      [
+        'a reconnect is refused for the same reason',
+        { kind: 'session-refused', sessionId: 'old', code: 'E_LEDGER_INTEGRITY' },
+      ],
+    ])(
+      'when %s: input stops, the live view stops, and the stored history is shown unverified with why',
+      async (_case, notice) => {
+        const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+        const { old, prompt, stored } = await openThenRefuse(storedOpening, notice)
+        await vi.waitFor(() => expect(stored.hidden).toBe(false))
+        expect(stored.textContent).toContain('未通过完整性校验')
+        expect(stored.textContent).toContain('未校验，只读')
+        expect(storedOpening).toHaveBeenCalledWith('old')
+        expect(prompt.disabled).toBe(true)
+        expect(old.detach).toHaveBeenCalled()
+        await vi.waitFor(() =>
+          expect(document.getElementById('transcript')?.textContent).toContain('stored question'),
+        )
+      },
+    )
+
+    it('keeps the transcript on screen, labelled unverified, when storage cannot be read', async () => {
+      const { prompt, stored } = await openThenRefuse(
+        async () => {
+          throw new Error('stored-opening-unavailable')
+        },
+        { kind: 'integrity_failed', sessionId: 'old', detail: { code: 'E_LEDGER_INTEGRITY' }, at: 't' },
+      )
+      await vi.waitFor(() => expect(stored.hidden).toBe(false))
+      expect(stored.textContent).toContain('未通过完整性校验')
+      expect(stored.textContent).toContain('未校验，只读')
+      expect(prompt.disabled).toBe(true)
+      expect(document.getElementById('transcript')?.textContent).toContain('live question')
+    })
+
+    it("ignores another session's notice", async () => {
+      const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+      const { prompt, stored } = await openThenRefuse(storedOpening, {
+        kind: 'integrity_failed',
+        sessionId: 'other',
+        detail: { code: 'E_LEDGER_INTEGRITY' },
+        at: 't',
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(stored.hidden).toBe(true)
+      expect(prompt.disabled).toBe(false)
+      expect(storedOpening).not.toHaveBeenCalled()
+    })
   })
 
   it('says how far the load has got once it has taken 2 s', async () => {

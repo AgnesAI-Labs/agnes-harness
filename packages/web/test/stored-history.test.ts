@@ -142,4 +142,18 @@ describe('stored history while a session opens', () => {
     expect(h.read.mock.calls).toEqual([['s2']])
     expect(h.shown.map((v) => v.id)).toEqual(['s2'])
   })
+
+  it('shows a timeline already on screen with the reason when storage cannot be read, and clears it later', async () => {
+    const h = harness(async () => {
+      throw new Error('stored-opening-unavailable')
+    })
+    const onScreen = { nodes: [{ id: 'live' }] }
+    h.history.started('s1')
+    expect(await h.history.failed('s1', 'history failed', onScreen)).toBe(true)
+    expect(h.shown).toEqual([{ id: 's1', timeline: onScreen, hasEarlier: false, reason: 'history failed' }])
+    // Without one there is nothing to show, as before.
+    h.history.started('s2')
+    expect(await h.history.failed('s2', 'history failed')).toBe(false)
+    expect(h.clear).toHaveBeenCalledTimes(1)
+  })
 })

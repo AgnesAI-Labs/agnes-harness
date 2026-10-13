@@ -434,7 +434,11 @@ export class LocalEndpoint implements RpcEndpoint {
       if (id === undefined) return undefined
       if (isRpcError(e)) {
         // A refusal the caller can act on that an operator still has to be able to find.
-        if (e.data.code === 'LEGACY_LEDGER_FORMAT' || e.data.code === 'NEWER_LEDGER_FORMAT') {
+        if (
+          e.data.code === 'LEGACY_LEDGER_FORMAT' ||
+          e.data.code === 'NEWER_LEDGER_FORMAT' ||
+          e.data.code === 'E_LEDGER_INTEGRITY'
+        ) {
           const diagnosticId = randomUUID()
           try {
             this.o.audit?.({

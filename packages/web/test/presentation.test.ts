@@ -214,6 +214,15 @@ describe('web presentation controls', () => {
     )
     expect(legacy).toBe('该会话由旧版本创建，当前版本无法打开，请新建会话。')
     expect(legacy).not.toContain('诊断')
+    // A history that failed its integrity check, or one a newer build wrote: said plainly too.
+    expect(errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'ledger-integrity', zhT)).toBe(
+      '该会话存储的历史未通过完整性校验，已关闭。请恢复备份或新建会话。',
+    )
+    expect(webLocaleCatalog.en?.['session.error.ledgerIntegrity']).toContain('integrity check')
+    expect(webLocaleCatalog.en?.['session.error.newerLedger']).toContain('newer build')
+    expect(
+      errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'newer-ledger-format', zhT),
+    ).toBe('该会话由更新的版本写入，当前版本无法打开，请升级后再打开。')
     expect(errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'other', zhT)).toBe(
       'SEMANTIC_REJECTED (-32011)',
     )

@@ -355,7 +355,8 @@ export function throwSessionOpenRpcError(error: unknown): never {
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
   // The reverse: a newer build wrote it in a format this one does not read. Nothing was changed.
   if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
-  if (e?.code === 'E_LEDGER_INTEGRITY') throw ledgerIntegrityRpcError()
+  const refusal = ledgerIntegrityRefusal(error)
+  if (refusal) throw refusal
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
@@ -366,7 +367,18 @@ export function throwSessionOpenRpcError(error: unknown): never {
 
 /** The refusal for a session whose stored history failed its integrity check: it stays refused. */
 export function ledgerIntegrityRpcError(): RpcError {
-  return rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY' })
+  return rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
+}
+
+/**
+ * The one mapping of a history that failed its integrity check, whatever reached it first (an open, a
+ * read, a projection, a write, a run's outcome, in process or forwarded by a worker): its typed
+ * refusal, or undefined for any other error. Callers throw `ledgerIntegrityRefusal(e) ?? e`.
+ */
+export function ledgerIntegrityRefusal(error: unknown): RpcError | undefined {
+  return (error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY'
+    ? ledgerIntegrityRpcError()
+    : undefined
 }
 
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
@@ -643,9 +655,7 @@ export function registerAcp(
       } catch (error) {
         // The background verification of a history opened from a checkpoint can fail mid-replay; the
         // load is then refused with the same typed code as an open that failed it.
-        if ((error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY')
-          throw ledgerIntegrityRpcError()
-        throw error
+        throw ledgerIntegrityRefusal(error) ?? error
       }
       cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
       // Whatever is streaming now is not in the transcript yet; the snapshot says it.
@@ -724,6 +734,9 @@ export function registerAcp(
       completed = out.reason === 'completed'
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
+      // A run that stopped because the history failed verification is refused as that, not as a fault.
+      const refused = out.reason === 'error' ? ledgerIntegrityRefusal(out.error) : undefined
+      if (refused) throw refused
       if (out.reason === 'error')
         throw rpcError('INTERNAL_ERROR', {
           code: 'TURN_ERROR',
@@ -734,6 +747,9 @@ export function registerAcp(
         stopReason: toAcpStopReason(out.reason as Exclude<TurnEndReason, 'error'>),
         _meta: { [HARNESS]: { phase: 'terminalQuiescence', turnEnd: { reason: out.reason } } },
       }
+    } catch (error) {
+      // The prompt's own input is refused the same way once the history failed verification.
+      throw ledgerIntegrityRefusal(error) ?? error
     } finally {
       queued.cancel()
       const followUps =

@@ -12,6 +12,7 @@ import {
   type EventEnvelope,
   getHarnessMeta,
   type HarnessMeta,
+  rpcError,
   type SessionAttachParams,
   type SessionAttachResult,
   type SessionBudgetResult,
@@ -97,6 +98,26 @@ function sameList(a: string[] | undefined, b: string[] | undefined): boolean {
   if (!a || !b || a.length !== b.length) return false
   return a.every((x, i) => x === b[i])
 }
+
+/**
+ * Refusals that end a session for this client until it is opened again on purpose: the daemon will
+ * answer every reopen of it the same way (a history that failed its integrity check, or a ledger
+ * written by an older or a newer build), so recovering it again would only retry forever.
+ */
+const TERMINAL_REFUSALS: ReadonlySet<unknown> = new Set([
+  'E_LEDGER_INTEGRITY',
+  'LEGACY_LEDGER_FORMAT',
+  'NEWER_LEDGER_FORMAT',
+])
+
+function terminalRefusal(error: unknown): string | undefined {
+  if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SEMANTIC_REJECTED) return undefined
+  const code = error.data.code
+  return TERMINAL_REFUSALS.has(code) ? (code as string) : undefined
+}
+
+/** What a client notice says when a session was given up for good; `code` is the daemon's refusal. */
+export type SessionRefusedNotice = { kind: 'session-refused'; sessionId: string; code: string }
 
 function eventSeq(params: Record<string, unknown>): number | null {
   const event = params.event as { seq?: unknown } | undefined
@@ -226,6 +247,9 @@ export class Session {
   // from process.cwd() in a browser-capable SDK.
   private workspace: string | null
   private restoring: Promise<void> | null = null
+  // Set when the daemon refused this session for good (see TERMINAL_REFUSALS); cleared by an attach
+  // that succeeds, which only an explicit open can bring about.
+  private refusedCode: string | null = null
   private readonly permission = new PermissionGate()
   onPermissionRequest(handler: PermissionHandler): () => void {
     return this.permission.register(handler)
@@ -270,6 +294,11 @@ export class Session {
 
   get closed(): boolean {
     return this.isClosed
+  }
+
+  /** The daemon's refusal that ended this session for this client (`E_LEDGER_INTEGRITY`, …), if any. */
+  get refused(): string | undefined {
+    return this.refusedCode ?? undefined
   }
 
   /** A copy: the filter in force is a fact about the subscription, not a handle on it. */
@@ -370,6 +399,7 @@ export class Session {
     const r = await this.client.call<SessionAttachResult>('_agnes/v1/session.attach', params)
     this.gen = r.generation
     this.serverSeq = r.lastSeq
+    this.refusedCode = null
     if (cursor) {
       // Everything the cursor says was applied stays applied. Without the two watermarks
       // a resumed session persists a position behind the one it resumed from, and a
@@ -427,16 +457,46 @@ export class Session {
   // connection is doing. Resends this session's pending writes before touching attach at
   // all: a steer sitting in the journal from before the drop must reach the server before
   // the event stream resumes, never after.
+  //
+  // A refusal the daemon will repeat on every reopen (TERMINAL_REFUSALS) ends recovery for this
+  // session only: it is marked detached and a `session-refused` notice says why, and the reconnect
+  // goes on with the other sessions instead of retrying this one forever.
   async recover(): Promise<void> {
-    await this.client.resendPending(this.id)
-    // Verbatim, per the cursor convention above - no `+ 1`.
-    const cursor: Cursor = { fromSeq: this.lastApplied, generation: this.gen }
     try {
-      await this.attachForRecovery(cursor)
+      await this.client.resendPending(this.id)
+      // Verbatim, per the cursor convention above - no `+ 1`.
+      const cursor: Cursor = { fromSeq: this.lastApplied, generation: this.gen }
+      try {
+        await this.attachForRecovery(cursor)
+      } catch (e) {
+        if (!this.isSessionNotFound(e) || !this.workspace) throw e
+        await this.restoreAfterReclaim()
+      }
     } catch (e) {
-      if (!this.isSessionNotFound(e) || !this.workspace) throw e
-      await this.restoreAfterReclaim()
+      const code = terminalRefusal(e)
+      if (code === undefined) throw e
+      this.onRefused(code)
     }
+  }
+
+  /**
+   * The daemon refused this session for good: stop following it. Iterators end, a prompt waiting
+   * for its turn's end is told, and nothing reattaches it until an explicit attach succeeds. A
+   * notice says so unless the daemon's own notice already did (`announce: false`).
+   */
+  onRefused(code: string, opts: { announce?: boolean } = {}): void {
+    if (this.refusedCode === code && !this.isAttached) return
+    this.refusedCode = code
+    this.cancelStreamRecovery()
+    this.isAttached = false
+    const ends = [...this.enders]
+    this.enders.clear()
+    for (const end of ends) end()
+    const waiters = [...this.quiescenceWaiters]
+    this.quiescenceWaiters.clear()
+    for (const reject of waiters) reject(new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code })))
+    if (opts.announce !== false)
+      this.client.notice({ kind: 'session-refused', sessionId: this.id, code } satisfies SessionRefusedNotice)
   }
 
   /** Applies the two cursor repairs shared by transport reconnect and idle-worker restoration. */
@@ -485,7 +545,15 @@ export class Session {
     if (!cwd) return Promise.reject(new Error('session workspace unavailable'))
     const wasAttached = this.isAttached
     const restoring = (async () => {
-      await this.client.restoreSession(this.id, cwd)
+      try {
+        await this.client.restoreSession(this.id, cwd)
+      } catch (e) {
+        // Refused for good: whoever called (a reconnect, a prompt) learns it, and this handle stops
+        // being recovered rather than reopened once per retry.
+        const code = terminalRefusal(e)
+        if (code !== undefined) this.onRefused(code)
+        throw e
+      }
       if (wasAttached) {
         await this.attachForRecovery({ fromSeq: this.lastApplied, generation: this.gen })
       }
@@ -500,8 +568,8 @@ export class Session {
    * Settles once the daemon has verified every stored row of this session; rejects when the
    * history failed its integrity check. Call it before handing the history on, as export does.
    */
-  verifyHistory(): Promise<Record<string, never>> {
-    return this.client.call<Record<string, never>>('_agnes/v1/session.verifyHistory', { sessionId: this.id })
+  verifyHistory(opts: { signal?: AbortSignal } = {}): Promise<Record<string, never>> {
+    return this.client.session.verifyHistory(this.id, opts)
   }
 
   budget(): Promise<SessionBudgetResult> {

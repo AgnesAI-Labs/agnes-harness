@@ -2,7 +2,7 @@
 // it drives - resend-before-attach ordering, -32004/-32005 recovery, backoff (including the
 // OVERLOADED override), an in-flight prompt() settling off a post-reconnect notification, and
 // the shutting_down latch that turns the next drop into a real close instead of a retry.
-import { META_KEY } from '@agnes/protocol'
+import { META_KEY, rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { localAuth } from '../src/auth.js'
 import { type CreateClientOptions, createClient } from '../src/client.js'
@@ -273,6 +273,127 @@ describe('reconnect', () => {
     )
 
     expect(await result).toEqual({ stopReason: 'end_turn', reason: 'completed', lastSeq: 9 })
+  })
+
+  describe('a session the daemon refuses for good', () => {
+    const idOf = (p: unknown) => (p as { sessionId: string }).sessionId
+    /** Resolves with the next `reconnected`, or rejects if none arrives in time. */
+    const nextReconnected = (c: ReturnType<typeof client>) =>
+      Promise.race([
+        new Promise((resolve) => c.on('reconnected', resolve)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('no reconnected')), 2_000)),
+      ])
+
+    it.each(['E_LEDGER_INTEGRITY', 'LEGACY_LEDGER_FORMAT', 'NEWER_LEDGER_FORMAT'])(
+      'is loaded once on reconnect when it answers %s, and the others still reconnect',
+      async (code) => {
+        let dropped = false
+        const loads: string[] = []
+        const attaches: string[] = []
+        const f = flakyEndpoint({
+          initialize: stockInit,
+          'session/load': (p) => {
+            if (dropped) loads.push(idOf(p))
+            // Reclaimed while the client was gone; reopening it verifies its history, which fails.
+            if (dropped && idOf(p) === 'bad') throw rpcError('SEMANTIC_REJECTED', { code })
+            return {}
+          },
+          '_agnes/v1/session.attach': (p) => {
+            if (dropped) attaches.push(idOf(p))
+            if (dropped && idOf(p) === 'bad') throw rpcError('SESSION_NOT_FOUND', { sessionId: idOf(p) })
+            return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+          },
+        })
+        const c = client(f)
+        const notices: unknown[] = []
+        c.on('notice', (n) => notices.push(n))
+        // The refused session comes first: before the fix its failure skipped every session after it.
+        const bad = await c.session.load('bad', { cwd: '/w' })
+        await bad.attach()
+        const good = await c.session.load('good', { cwd: '/w' })
+        await good.attach()
+        const reading = bad.events()[Symbol.asyncIterator]().next()
+
+        const reconnected = nextReconnected(c)
+        dropped = true
+        f.drop()
+        await reconnected
+        expect(loads).toEqual(['bad'])
+        expect(attaches).toEqual(['bad', 'good'])
+        expect(bad.attached).toBe(false)
+        expect(bad.refused).toBe(code)
+        expect(good.attached).toBe(true)
+        expect(notices).toContainEqual({ kind: 'session-refused', sessionId: 'bad', code })
+        // A reader of the refused session is not left waiting on a stream that will not come back.
+        expect(await reading).toEqual({ done: true, value: undefined })
+
+        // Nor is it tried again on the next drop.
+        const again = nextReconnected(c)
+        f.drop()
+        await again
+        expect(loads).toEqual(['bad'])
+        expect(attaches).toEqual(['bad', 'good', 'good'])
+      },
+    )
+
+    it('is attached once on reconnect when the attach itself is refused, and the others still reconnect', async () => {
+      // A daemon that still holds the session answers the attach with the refusal; nothing reopens.
+      let dropped = false
+      const attaches: string[] = []
+      const f = flakyEndpoint({
+        initialize: stockInit,
+        '_agnes/v1/session.attach': (p) => {
+          if (dropped) attaches.push(idOf(p))
+          if (dropped && idOf(p) === 'bad')
+            throw rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
+          return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+        },
+      })
+      const c = client(f)
+      const bad = await c.session.attach('bad')
+      const good = await c.session.attach('good')
+      const reconnected = nextReconnected(c)
+      dropped = true
+      f.drop()
+      await reconnected
+      expect(attaches).toEqual(['bad', 'good'])
+      expect(bad.refused).toBe('E_LEDGER_INTEGRITY')
+      expect(good.attached).toBe(true)
+      expect(f.calls.filter((call) => call.method === 'session/load')).toEqual([])
+    })
+
+    it('stops following a session the daemon reports failed its integrity check', async () => {
+      const attaches: string[] = []
+      const f = flakyEndpoint({
+        initialize: stockInit,
+        '_agnes/v1/session.attach': (p) => {
+          attaches.push(idOf(p))
+          return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+        },
+      })
+      const c = client(f)
+      const notices: unknown[] = []
+      c.on('notice', (n) => notices.push(n))
+      const s = await c.session.attach('s')
+      const reading = s.events()[Symbol.asyncIterator]().next()
+      const failed = {
+        kind: 'integrity_failed',
+        sessionId: 's',
+        detail: { code: 'E_LEDGER_INTEGRITY' },
+        at: 't',
+      }
+      f.notify({ jsonrpc: '2.0', method: '_agnes/v1/daemon.notice', params: failed })
+      await flush()
+      expect(s.attached).toBe(false)
+      expect(s.refused).toBe('E_LEDGER_INTEGRITY')
+      expect(await reading).toEqual({ done: true, value: undefined })
+      // The daemon's notice is the one listeners hear; the session does not announce it again.
+      expect(notices).toEqual([failed])
+      const reconnected = nextReconnected(c)
+      f.drop()
+      await reconnected
+      expect(attaches).toEqual(['s'])
+    })
   })
 
   it('does not reconnect after a shutting_down notice, and reports closed once', async () => {

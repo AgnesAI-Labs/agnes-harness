@@ -35,6 +35,8 @@ export async function clientWithScriptedServer(
     ...ready,
     'session/load': held('session/load'),
     '_agnes/v1/session.storedOpening': held('_agnes/v1/session.storedOpening'),
+    '_agnes/v1/session.verifyHistory': held('_agnes/v1/session.verifyHistory'),
+    '_agnes/v1/session.exportRaw': held('_agnes/v1/session.exportRaw'),
   })
   const client = createClient({
     transport: { kind: 'inproc', endpoint: fake.endpoint },
