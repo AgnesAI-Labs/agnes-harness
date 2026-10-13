@@ -123,26 +123,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .process-chevron {
-    flex: 0 0 auto;
-    width: 1rem;
-    height: 1rem;
-    color: var(--agnes-text-tertiary);
-    transform: rotate(-90deg);
-    transition:
-      transform var(--transition),
-      color var(--transition-fast);
-  }
-  .turn-process[data-open="true"] .process-chevron {
-    transform: rotate(0deg);
-  }
-  /* Each process step is a quiet card; the answer that follows keeps a clear gap. */
-  .turn-process-body + .turn-process-body {
-    margin-top: var(--s8);
-  }
-  .turn-process-body + .turn-final {
-    margin-top: var(--s16);
-  }
   .turn-process > .agh-disclosure-summary:hover,
   .turn-process > .agh-disclosure-summary:focus-visible {
     color: var(--agnes-text-primary);
@@ -150,93 +130,6 @@
   .turn-process > .agh-disclosure-summary:hover .process-chevron,
   .turn-process > .agh-disclosure-summary:focus-visible .process-chevron {
     color: var(--agnes-text-secondary);
-  }
-  /* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
-  .turn-process-body {
-    margin-top: 0;
-    padding: var(--s8) var(--s12);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    background: var(--agnes-bg-subtle);
-  }
-  .turn-process-body > * {
-    margin: 0;
-    padding: var(--s8) 0;
-  }
-  .turn-process-body > :first-child {
-    padding-top: 0;
-  }
-  .turn-process-body > :last-child {
-    padding-bottom: 0;
-  }
-  .turn-process-body > * + * {
-    border-top: 0.5px solid var(--agnes-line-primary);
-  }
-  /* 工具行前缀图标：24 网格描边字形，与名称同族。 */
-  .tool-icon {
-    width: 0.875rem;
-    height: 0.875rem;
-    color: var(--agnes-text-tertiary);
-  }
-  /* 步骤标题 */
-  .turn-process-body .node-label,
-  .turn-process-body .tool-name {
-    color: var(--agnes-text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    letter-spacing: 0;
-    line-height: 1.5rem;
-    text-transform: none;
-  }
-  .turn-process-body .tool-status {
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    font-weight: 400;
-    line-height: 1.5rem;
-  }
-  .turn-process-body .tool-summary {
-    margin: var(--s4) 0 0;
-    padding: 0.375rem var(--s8);
-    overflow: visible;
-    border: 0.5px solid var(--agnes-line-primary);
-    border-radius: 0.5rem;
-    color: var(--agnes-text-secondary);
-    background: var(--agnes-bg-code);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size: 0.6875rem;
-    line-height: 1.1875rem;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  /* 元信息（用量这类）：更小、更弱，与步骤正文区分开。 */
-  .turn-process-body .timeline-node.cost {
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    line-height: 1.6;
-  }
-  /* 标签不参与收缩：否则长数值会把「用量」挤成一列两个字。 */
-  .turn-process-body .cost .node-label {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-  .turn-process-body .cost .node-label,
-  .turn-process-body .cost .node-body {
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    font-weight: 400;
-    line-height: 1.6;
-  }
-  .turn-process-body .cost .node-body {
-    color: var(--agnes-text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
-  /* 「查看详情」是步骤里的次级动作 */
-  .turn-process-body .tool-detail {
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.5rem;
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-xs);
-    line-height: 1.6;
   }
   /* Frequent detail inspection is immediate; the grid keeps the existing collapsed layout. */
   .tool-detail-body {
@@ -265,16 +158,6 @@
     line-height: 1.1875rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-  .turn-process-body .tool-detail:hover:not(:disabled) {
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-hover);
-  }
-  .turn-response .turn-process-body .timeline-node {
-    margin-left: 0;
-  }
-  .turn-process-body > .timeline-node.assistant {
-    padding-left: 0;
   }
   .turn-attention {
     margin: var(--s16) 0 0;

@@ -125,23 +125,32 @@ describe('conversation leaf renderers', () => {
     const detail = element.querySelector<HTMLButtonElement>('.tool-detail')
     detail?.click()
     expect(element.dataset.expanded).toBe('true')
-    for (const [status, label] of [
-      ['planned', '等待执行'],
-      ['awaiting_approval', '等待审批'],
-      ['running', '正在执行'],
-      ['completed', '执行完成'],
-      ['cancelled', '已取消'],
+    // The row names the status only when the step needs the reader or did not finish; the label
+    // on the article always does.
+    for (const [status, label, shown] of [
+      ['planned', '等待执行', undefined],
+      ['awaiting_approval', '等待审批', '等待审批'],
+      ['running', '正在执行', undefined],
+      ['completed', '执行完成', undefined],
+      ['cancelled', '已取消', '已取消'],
     ] as const) {
       card.update({ ...node, status })
       expect(element.dataset.status).toBe(status)
-      expect(element.querySelector('.tool-status')?.textContent).toBe(label)
-      expect(element.querySelector('.tool-detail-text')?.textContent).toContain(`状态：${label}`)
+      expect(element.getAttribute('aria-label')).toBe(`工具 read_file：${label}`)
+      expect(element.querySelector('.tool-status')?.textContent).toBe(shown)
     }
+    card.update({ ...node, status: 'running' })
+    expect(element.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
+    // A summary that only repeats the call is not shown; a readable one is the row's target.
     card.update({ ...node, summary: 'read_file {"path":"README.md"}' })
-    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(true)
+    expect(element.querySelector('.activity-target')).toBeNull()
     card.update({ ...node, summary: 'read_file 已读取 README.md' })
-    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(false)
-    expect(element.querySelector('.tool-summary')?.textContent).toBe('read_file 已读取 README.md')
+    expect(element.querySelector('.activity-target')?.textContent).toBe('read_file 已读取 README.md')
+    card.update({
+      ...node,
+      argsPreview: JSON.stringify({ path: `${['', 'Users', 'someone'].join('/')}/project/README.md` }),
+    })
+    expect(element.querySelector('.activity-target')?.textContent).toBe('~/project/README.md')
     expect(element.querySelector('[data-agnes-tool-card]')).not.toBeNull()
 
     card.update({ ...node, status: 'failed', resultPreview: 'Permission denied' })

@@ -152,11 +152,13 @@ export function MessageFeedback({
           aria-label={t('note')}
           title={t('note')}
           data-testid="feedback-details"
+          // A note belongs to a rating: the entry appears once there is one to add it to.
+          hidden={!expanded && !(item && !item.withdrawn)}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
           <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 4h16v16H4ZM8 8h8M8 12h8M8 16h5" />
+            <path d="M4 5h16v11H9l-5 4ZM8 9h8M8 12h5" />
           </svg>
         </Button>
       </fieldset>

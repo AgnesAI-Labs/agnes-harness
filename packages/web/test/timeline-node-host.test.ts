@@ -273,7 +273,7 @@ describe('W4a opt-in transcript node host', () => {
       )
       expect(shell?.dataset.status).toBe(status)
       expect(shell?.querySelector('.turn-final')?.textContent).toContain('最终回答')
-      expect(shell?.querySelector('.turn-process .thinking-content')?.textContent).toContain('分析中')
+      expect(shell?.querySelector('.turn-step .thinking-content')?.textContent).toContain('分析中')
       expect(shell?.querySelectorAll('.thinking')).toHaveLength(1)
     }
   })
@@ -357,7 +357,7 @@ describe('W4a opt-in transcript node host', () => {
     expect(details?.dataset.open).toBe('true')
   })
 
-  it('holds selected thinking in the final article until the reader releases it', async () => {
+  it('keeps selected thinking in place when the turn settles: reasoning is its own step', async () => {
     const { transcript, mount } = await setup()
     const thinking: UINode = {
       kind: 'assistant',
@@ -369,7 +369,15 @@ describe('W4a opt-in transcript node host', () => {
     }
     await act(async () => mount.render([user, thinking], [turn()]))
     const article = item(transcript, 'assistant')
-    const thought = article?.querySelector<HTMLElement>('.thinking-content p')
+    // The thought is a step of the process, beside the article it belongs to, from the start.
+    expect(article?.querySelector('.thinking-content')).toBeNull()
+    const step = transcript.querySelector<HTMLElement>('.turn-step .thinking')
+    const toggle = step?.querySelector<HTMLButtonElement>('[data-testid="thinking-toggle"]')
+    expect(toggle?.dataset.state).toBe('running')
+    expect(toggle?.querySelector('.activity-target')?.textContent).toBe('分析中')
+    await act(async () => toggle?.click())
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    const thought = step?.querySelector<HTMLElement>('.thinking-content p')
     const selection = document.getSelection()
     const range = document.createRange()
     range.selectNodeContents(thought?.firstChild ?? transcript)
@@ -382,11 +390,14 @@ describe('W4a opt-in transcript node host', () => {
       ),
     )
     expect(item(transcript, 'assistant')).toBe(article)
-    expect(article?.querySelector('.thinking-content p')).toBe(thought)
+    expect(transcript.querySelector('.turn-step .thinking')).toBe(step)
+    expect(step?.querySelector('.thinking-content p')).toBe(thought)
     expect(selection?.toString()).toBe('分析中')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle?.dataset.state).toBeUndefined()
     selection?.removeAllRanges()
     await act(async () => document.dispatchEvent(new Event('selectionchange')))
-    expect(transcript.querySelector('.turn-process .thinking-content')?.textContent).toContain('分析中')
+    expect(transcript.querySelectorAll('.thinking')).toHaveLength(1)
     expect(article?.querySelector('.thinking-content')).toBeNull()
     expect(article?.textContent).toContain('最终回答')
   })
@@ -488,7 +499,7 @@ describe('W4a opt-in transcript node host', () => {
       expect(transcript.querySelector('.turn-status')?.textContent).toBe(activeLabel)
       visibility.mockReturnValue('visible')
       await act(async () => tick?.())
-      expect(transcript.querySelector('.turn-status')?.textContent).toContain('用时 10 秒')
+      expect(transcript.querySelector('.turn-status')?.textContent).toMatch(/ · 10 秒$/)
       const clock = setClock.mock.results.find(
         (result, index) => setClock.mock.calls[index]?.[1] === 1000 && result.type === 'return',
       )?.value

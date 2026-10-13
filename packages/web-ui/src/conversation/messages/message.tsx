@@ -1,12 +1,59 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ReactNode, RefObject } from 'react'
+import { useState } from 'react'
+import type { Translate } from '../../locales/index.js'
 import { ConversationCost } from '../cost.js'
+import { ActivityIcon, ActivityRow } from './activity-row.js'
 import { approvalStatus } from './approval-labels.js'
 import { AssistantMessage } from './assistant-message.js'
-import { type ConversationMessagesProps, fallbackT } from './context.js'
+import { type ApprovalNode, type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
+
+// How a decided approval reads as a step. Why it ended (timed out, stopped) wins over the verdict.
+const APPROVAL_STEP_KEYS: Record<string, string> = {
+  'allowed-once': 'activity.approval.allowedOnce',
+  'allowed-session': 'activity.approval.allowedSession',
+  'allowed-permanent': 'activity.approval.allowedPermanent',
+  rejected: 'activity.approval.rejected',
+}
+
+/**
+ * An approval in the process is one line: what was decided · what it was for. The card that asks
+ * for the decision is the approval region; this line is its record in the turn.
+ */
+function ApprovalStep({ node, t }: { node: ApprovalNode; t: Translate }) {
+  const [expanded, setExpanded] = useState(false)
+  const decided = node.state === 'decided' && node.decision
+  const key = decided && !node.decision?.reason ? APPROVAL_STEP_KEYS[node.decision?.verdict ?? ''] : undefined
+  const refused = decided && !node.decision?.verdict.startsWith('allowed')
+  return (
+    <>
+      <ActivityRow
+        className="approval-step"
+        testId="approval-step"
+        icon={<ActivityIcon name="approval" />}
+        verb={<span className="tool-status">{key ? t(key) : approvalStatus(node, t)}</span>}
+        target={<span className="approval-summary">{node.summary}</span>}
+        tooltip={node.summary}
+        mono
+        state={
+          node.state === 'pending'
+            ? 'attention'
+            : refused || node.state === 'expired'
+              ? 'cancelled'
+              : undefined
+        }
+        expanded={expanded}
+        onToggle={() => setExpanded((open) => !open)}
+      />
+      <div className="tool-detail-text approval-detail" hidden={!expanded}>
+        {node.rewrite ? `${node.rewrite.summary}\n\n${node.summary}` : node.summary}
+      </div>
+    </>
+  )
+}
 
 export function nativeContent(
   node: UINode,
@@ -33,15 +80,7 @@ export function nativeContent(
     case 'tool':
       return props.renderTool ? props.renderTool(node) : <ConversationToolCard node={node} t={t} />
     case 'approval':
-      return (
-        <>
-          <div className="approval-head">
-            <span className="node-label">{t('timeline.approvalTitle')}</span>
-            <span className="tool-status">{approvalStatus(node, t)}</span>
-          </div>
-          <div className="approval-summary">{node.summary}</div>
-        </>
-      )
+      return <ApprovalStep node={node} t={t} />
     case 'cost':
       return props.renderCost ? props.renderCost(node) : <ConversationCost node={node} t={t} />
     case 'artifact':

@@ -247,12 +247,15 @@ describe('W3b projected message DOM', () => {
     const step = item('step')
     expect(step?.querySelectorAll('button')).toHaveLength(1)
     const head = step?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')
-    expect(head?.closest('.ant-thought-chain-item')).not.toBeNull()
-    expect(head?.querySelector('.tool-name')?.textContent).toBe('read_file')
-    expect(step?.querySelector('.ant-thought-chain-status-success')).not.toBeNull()
-    expect([head?.getAttribute('aria-expanded'), head?.title]).toEqual(['false', '查看详情'])
+    // One line: verb · target. A finished step says nothing about its status.
+    expect(head?.classList.contains('activity-row')).toBe(true)
+    expect(head?.querySelector('.tool-name')?.textContent).toBe('读取')
+    expect(head?.querySelector('.activity-target')?.textContent).toBe('读取文档')
+    expect(head?.querySelector('.activity-note')).toBeNull()
+    expect(head?.dataset.state).toBeUndefined()
+    expect(head?.getAttribute('aria-expanded')).toBe('false')
     await act(async () => head?.click())
-    expect([head?.getAttribute('aria-expanded'), head?.title]).toEqual(['true', '收起详情'])
+    expect(head?.getAttribute('aria-expanded')).toBe('true')
     expect(step?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
   })
 
@@ -329,7 +332,9 @@ describe('W3b projected message DOM', () => {
     expect(item('user')?.textContent).toContain('图片无法显示')
     expect(item('assistant')?.textContent).toContain('思考中')
     expect(item('assistant')?.textContent).toContain('回答 **正文**')
-    expect(item('tool')?.textContent).toContain('正在执行')
+    // A running step shimmers instead of saying so; its name still reaches assistive technology.
+    expect(item('tool')?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
+    expect(item('tool')?.getAttribute('aria-label')).toContain('正在执行')
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBeNull()
     expect(item('tool')?.querySelector('.tool-detail-inner .tool-detail-text')?.textContent).toContain(
       '执行参数',
@@ -454,7 +459,9 @@ describe('W3b projected message DOM', () => {
       ),
     )
     expect(item('approval')?.getAttribute('aria-label')).toBe('无人审批，未执行')
-    expect(item('approval')?.querySelectorAll('button')).toHaveLength(0)
+    // The record of an approval only unfolds its own text; it offers no decision.
+    expect(item('approval')?.querySelectorAll('button:not([data-testid="approval-step"])')).toHaveLength(0)
+    expect(item('approval')?.querySelector('[data-approval-action]')).toBeNull()
     expect(item('cost')?.textContent).toContain('1.25 credits（网关记录）')
     expect(cost?.dataset.open).toBe('true')
     expect(item('artifact')?.textContent).toContain('final.md')
@@ -548,7 +555,10 @@ describe('W3b projected message DOM', () => {
     expect(item('lost')?.textContent).toContain('输出中断，至少 42 字未保存')
     expect(item('waiting')?.textContent).toContain('等待审批')
     expect(item('expired')?.getAttribute('aria-label')).toBe('审批已过期')
-    expect(host.querySelectorAll('button')).toHaveLength(1)
+    expect([...host.querySelectorAll('button')].map((button) => button.getAttribute('data-testid'))).toEqual([
+      'tool-detail-toggle',
+      'approval-step',
+    ])
     await update(store, [
       { kind: 'assistant', id: 'lost', seq: 1, text: 'recovered', streaming: false },
       {
@@ -562,7 +572,9 @@ describe('W3b projected message DOM', () => {
       },
     ])
     expect(item('lost')?.textContent).toContain('recovered')
-    expect(item('waiting')?.textContent).toContain('执行完成')
+    // Success is silent on the row and still named for assistive technology.
+    expect(item('waiting')?.querySelector('.activity-note')).toBeNull()
+    expect(item('waiting')?.getAttribute('aria-label')).toContain('执行完成')
   })
 })
 

@@ -1,6 +1,7 @@
 import type { UITurn } from '@agnes/protocol'
 import {
   Fragment,
+  type ReactNode,
   type Ref,
   useCallback,
   useImperativeHandle,
@@ -31,6 +32,8 @@ export interface ConversationTurnActionsProps {
   localeTag?: string
   onFork?: (turn: UITurn) => Promise<void>
   feedbackRef?: Ref<ConversationTurnFeedback>
+  /** Host actions that belong to the same bar: rating and plugin contributions for this answer. */
+  extra?: ReactNode
 }
 
 const ACTION_BUTTON = { htmlType: 'button', appearance: 'ghost', size: 'small' } as const
@@ -123,6 +126,7 @@ export function ConversationTurnActions({
   localeTag = 'en-US',
   onFork,
   feedbackRef,
+  extra,
 }: ConversationTurnActionsProps) {
   const [usageOpen, setUsageOpen] = useState(false)
   const summary = useRef<HTMLButtonElement>(null)
@@ -352,6 +356,7 @@ export function ConversationTurnActions({
     <ConversationXScope>
       <footer ref={footer} className="turn-footer" hidden={!settled}>
         <Actions className="turn-actions" items={actions} />
+        {extra}
         <Disclosure
           className="turn-usage"
           hidden={!settled}
@@ -364,7 +369,24 @@ export function ConversationTurnActions({
             'data-testid': 'turn-metadata',
             'aria-label': t('turnactions.metaAria'),
           }}
-          summary={settled ? facts.join(' · ') : ''}
+          summary={
+            settled ? (
+              <span className="turn-meta-text">
+                <span className="turn-meta-facts">{facts.join(' · ')}</span>
+                {turn.status === 'completed' && duration && (
+                  <span className="turn-meta-done">
+                    {facts.length > 0 && ' · '}
+                    <svg className="icon turn-done-check" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m5 12.5 4.5 4.5L19 7.5" />
+                    </svg>
+                    {t('turnactions.took', { duration })}
+                  </span>
+                )}
+              </span>
+            ) : (
+              ''
+            )
+          }
         >
           <dl ref={usage} className="turn-usage-grid">
             {settled &&

@@ -37,8 +37,13 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.turns.flatMap((turn) => turn.nodeIds.map((id) => [id, turn.id] as const)),
     )
     const loose = [...nodes].filter(([id]) => !assigned.has(id))
+    const last = props.turns.at(-1)
     items = props.turns.map((turn) =>
-      item(turn.id, 'turn', <Turn turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />),
+      item(
+        turn.id,
+        'turn',
+        <Turn turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} latest={turn === last} />,
+      ),
     )
     items.push(
       item(

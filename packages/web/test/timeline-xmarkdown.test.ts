@@ -81,7 +81,9 @@ it.each(['completed', 'failed', 'cancelled'] as const)(
     expect(host.querySelector('[data-node-id="a"]')).toBe(article)
     expect(article?.getAttribute('data-streaming')).toBe('false')
     expect(article?.querySelector('.node-body')?.textContent).toContain('body **unfinished')
-    expect(article?.querySelector('.thinking-content')?.textContent).toContain('thought `unfinished')
+    // Reasoning is a step of the turn's process, beside the article it belongs to.
+    expect(article?.querySelector('.thinking-content')).toBeNull()
+    expect(host.querySelector('.turn-step .thinking-content')?.textContent).toContain('thought `unfinished')
     expect(host.querySelector('[data-turn-id="t"]')?.getAttribute('data-status')).toBe(status)
   },
 )
@@ -114,7 +116,7 @@ it('holds selection through final promotion, preserves code focus, replay/order 
   })
   expect(article?.querySelector('.node-body strong')?.textContent).toBe('answer')
   expect(host.querySelectorAll('[data-conversation-markdown="thinking"]').length).toBeGreaterThanOrEqual(1)
-  expect(host.querySelector('.turn-process [data-conversation-markdown="thinking"]')?.textContent).toContain(
+  expect(host.querySelector('.turn-step [data-conversation-markdown="thinking"]')?.textContent).toContain(
     'final thought',
   )
   const copy = article?.querySelector<HTMLButtonElement>('.code-copy')
@@ -161,10 +163,11 @@ it('holds selection through final promotion, preserves code focus, replay/order 
   expect(host.textContent).not.toContain('pending replacement')
 })
 
-it('retains selected thinking until release when a final answer promotes it into the process area', async () => {
+it('retains selected thinking until release when a final answer replaces it', async () => {
   const { host, mount } = await setup()
   await act(async () => mount.render([user, assistant('', 'selected thought')], [turn()]))
-  const thinking = host.querySelector(`[data-node-id="a"] [data-conversation-markdown="thinking"]`)
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="thinking-toggle"]')?.click())
+  const thinking = host.querySelector('.turn-step [data-conversation-markdown="thinking"]')
   const paragraph = thinking?.querySelector('p')
   const selection = document.getSelection()
   const range = document.createRange()
@@ -180,16 +183,17 @@ it('retains selected thinking until release when a final answer promotes it into
     selection?.removeAllRanges()
     document.dispatchEvent(new Event('selectionchange'))
   })
-  expect(host.querySelector('.turn-process [data-conversation-markdown="thinking"]')?.textContent).toContain(
+  expect(host.querySelector('.turn-step [data-conversation-markdown="thinking"]')?.textContent).toContain(
     'latest thought',
   )
   expect(host.querySelectorAll('[data-conversation-markdown="thinking"]').length).toBeGreaterThanOrEqual(1)
   expect(host.querySelector('.turn-final .node-body')?.textContent).toContain('final body')
 })
 
-it('retains focused thinking code through terminal handover and clears it on dispose', async () => {
+it('retains focused thinking code through the terminal update and clears it on dispose', async () => {
   const { host, mount } = await setup()
   await act(async () => mount.render([user, assistant('', '```ts\nold thought\n```')], [turn()]))
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="thinking-toggle"]')?.click())
   const copy = host.querySelector<HTMLButtonElement>(`.thinking-content .code-copy`)
   await act(async () => copy?.focus())
   await act(async () =>
@@ -203,8 +207,8 @@ it('retains focused thinking code through terminal handover and clears it on dis
     copy?.blur()
     await Promise.resolve()
   })
-  expect(host.querySelector(`.turn-process .thinking-content code`)?.textContent).toBe('final thought\n')
-  const moved = host.querySelector(`.turn-process .thinking-content`)
+  expect(host.querySelector(`.turn-step .thinking-content code`)?.textContent).toBe('final thought\n')
+  const moved = host.querySelector(`.turn-step .thinking-content`)
   const selection = document.getSelection()
   const range = document.createRange()
   range.selectNodeContents(moved ?? host)
@@ -243,7 +247,8 @@ it.each(['failed', 'cancelled'] as const)(
 it('keeps selected thinking visible when a terminal replacement removes that part', async () => {
   const { host, mount } = await setup()
   await act(async () => mount.render([user, assistant('', 'selected thought')], [turn()]))
-  const thinking = host.querySelector(`[data-node-id="a"] [data-conversation-markdown="thinking"]`)
+  await act(async () => host.querySelector<HTMLElement>('[data-testid="thinking-toggle"]')?.click())
+  const thinking = host.querySelector('.turn-step [data-conversation-markdown="thinking"]')
   const selection = document.getSelection()
   const range = document.createRange()
   range.selectNodeContents(thinking?.querySelector('p') ?? host)

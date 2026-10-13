@@ -65,10 +65,13 @@ function DshNodeLeaf({
   node,
   native,
   registry,
+  actionsInBar = false,
 }: {
   node: UINode
   native: ReactNode
   registry: SlotRegistry
+  /** The turn's answer shows its action contributions in the turn's action bar instead. */
+  actionsInBar?: boolean
 }) {
   const name = node.kind === 'tool' ? 'tool.call.toolview' : 'conversation.chat.node'
   const entryKey = node.kind === 'tool' ? node.name : node.kind
@@ -76,7 +79,9 @@ function DshNodeLeaf({
     node.kind === 'tool'
       ? (['tool.call.images', 'tool.view.cordis'] as const)
       : ([
-          ...(node.kind === 'assistant' ? ['conversation.chat.assistant-actions' as const] : []),
+          ...(node.kind === 'assistant' && !actionsInBar
+            ? ['conversation.chat.assistant-actions' as const]
+            : []),
           'conversation.chat.commandview',
           'conversation.chat.turnTail',
           'conversation.message.images',
@@ -186,23 +191,69 @@ export function WebConversationMessages({
     echoedTools.set(node.id, echo)
     rawEchoes.set(echo.id, [...(rawEchoes.get(echo.id) ?? []), node.text])
   }
+  // Each turn's answer: its rating and action contributions sit in that turn's one action bar.
+  const answers = new Map<string, Extract<UINode, { kind: 'assistant' }>>()
+  for (const turn of turns ?? []) {
+    const answer = nodes?.find((node) => node.id === turn.finalAssistantId)
+    if (answer?.kind === 'assistant') answers.set(answer.id, answer)
+  }
   const props: ConversationMessagesProps = {
     keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
     t: (key, vars) => locale?.t(key, vars) ?? key,
     nodes: nodes ?? [],
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
-    renderTurnActions: (turn, finalText, settled) => (
-      <ConversationTurnActions
-        key={turn.id}
-        turn={turn}
-        finalText={finalText}
-        settled={settled}
-        t={(key, vars) => locale?.t(key, vars) ?? key}
-        {...(locale ? { localeTag: locale.locale } : {})}
-        {...(onFork ? { onFork } : {})}
-      />
-    ),
+    renderTurnActions: (turn, finalText, settled) => {
+      const answer = turn.finalAssistantId ? answers.get(turn.finalAssistantId) : undefined
+      const rated =
+        sessionScope &&
+        session?.getSnapshot() === sessionScope &&
+        settled &&
+        !turn.inherited &&
+        answer &&
+        !answer.streaming &&
+        answer.seq > 0
+      return (
+        <ConversationTurnActions
+          key={turn.id}
+          turn={turn}
+          finalText={finalText}
+          settled={settled}
+          t={(key, vars) => locale?.t(key, vars) ?? key}
+          {...(locale ? { localeTag: locale.locale } : {})}
+          {...(onFork ? { onFork } : {})}
+          extra={
+            <>
+              {rated && (
+                <MessageFeedback
+                  sessionId={sessionScope}
+                  target={{ messageSeq: answer.seq, turn: turn.turn }}
+                  openEvidence={(candidateId) => {
+                    if (
+                      !factChainLinks.open({
+                        sessionId: sessionScope,
+                        laneId: 'main',
+                        anchor: { kind: 'authoring', candidateId },
+                      })
+                    )
+                      workbenchNavigation.open('facts')
+                  }}
+                />
+              )}
+              {answer && registry?.spec('conversation.chat.assistant-actions') && (
+                <span className="turn-action-slot" data-agnes-dsh-children="conversation.chat.node">
+                  <SlotOutlet
+                    name="conversation.chat.assistant-actions"
+                    props={{ owner: { node: answer, nodeId: answer.id, kind: answer.kind } }}
+                    hideWhenEmpty
+                  />
+                </span>
+              )}
+            </>
+          }
+        />
+      )
+    },
     renderMarkdown: (text, part, state) => {
       const markdown = (
         <ConversationMarkdown
@@ -276,18 +327,6 @@ export function WebConversationMessages({
     ),
     renderNode: (node, native) => {
       const base = native
-      const feedbackTurn =
-        node.kind === 'assistant' ? turns?.find((turn) => turn.nodeIds.includes(node.id)) : undefined
-      const feedbackReady =
-        sessionScope &&
-        session?.getSnapshot() === sessionScope &&
-        feedbackTurn &&
-        feedbackTurn.status !== 'running' &&
-        feedbackTurn.status !== 'waiting' &&
-        !feedbackTurn.inherited &&
-        node.kind === 'assistant' &&
-        !node.streaming &&
-        node.seq > 0
       const factAnchor =
         node.kind === 'tool'
           ? { kind: 'tool' as const, toolUseId: node.toolUseId }
@@ -297,22 +336,6 @@ export function WebConversationMessages({
       const content = (
         <>
           {base}
-          {feedbackReady && (
-            <MessageFeedback
-              sessionId={sessionScope}
-              target={{ messageSeq: node.seq, turn: feedbackTurn.turn }}
-              openEvidence={(candidateId) => {
-                if (
-                  !factChainLinks.open({
-                    sessionId: sessionScope,
-                    laneId: 'main',
-                    anchor: { kind: 'authoring', candidateId },
-                  })
-                )
-                  workbenchNavigation.open('facts')
-              }}
-            />
-          )}
           {node.kind === 'tool' && node.review && (
             <p data-testid="tool-review-decision">
               {locale?.t(
@@ -342,7 +365,13 @@ export function WebConversationMessages({
         </>
       )
       return registry ? (
-        <DshNodeLeaf key={node.id} node={node} native={content} registry={registry} />
+        <DshNodeLeaf
+          key={node.id}
+          node={node}
+          native={content}
+          registry={registry}
+          actionsInBar={answers.has(node.id)}
+        />
       ) : (
         content
       )

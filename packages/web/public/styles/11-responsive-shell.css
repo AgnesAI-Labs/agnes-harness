@@ -121,9 +121,6 @@
     #transcript-content {
       padding-inline: var(--s16);
     }
-    .new-content {
-      right: 1rem;
-    }
   }
 
   @media (max-width: 540px) {
@@ -161,9 +158,12 @@
     .sidebar-footer button,
     .session,
     .code-copy,
-    .tool-detail,
-    .new-content {
+    .tool-detail {
       min-height: 2.75rem;
+    }
+    .new-content.agh-btn {
+      width: 2.75rem;
+      height: 2.75rem;
     }
     .composer-meta {
       margin-bottom: max(0.75rem, env(safe-area-inset-bottom));

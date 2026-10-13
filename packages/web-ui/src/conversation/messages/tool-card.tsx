@@ -1,12 +1,12 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
-import { Button } from '../../ui/button.js'
-import { ThoughtChain } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
-import { ConversationXScope } from '../x-scope.js'
+import { ActivityRow, type ActivityState } from './activity-row.js'
 import { fallbackT, type ToolNode } from './context.js'
+import { toolStep } from './tool-step.js'
+import { WebSourceList, webSources } from './web-sources.js'
 
 // A shell result ends with `[exit N]`. When the projection marks that call failed, N says why: a
 // nonzero exit is the command's own answer, and what it printed is its output, not an error report.
@@ -45,15 +45,7 @@ export const toolLabelKeys: Record<ToolNode['status'], string> = {
   cancelled: 'tool.status.cancelled',
 }
 
-/** The step's state glyph; a call that has not started yet shows its wording only. */
-const chainStatus: Partial<Record<ToolNode['status'], 'loading' | 'success' | 'error' | 'abort'>> = {
-  running: 'loading',
-  completed: 'success',
-  failed: 'error',
-  cancelled: 'abort',
-}
-
-/** One step of a turn's chain: its head is the only control that opens the call's detail. */
+/** One step of a turn's process: a single line that opens the call's detail in place. */
 export function ConversationToolCard({
   node,
   icon,
@@ -83,68 +75,76 @@ export function ConversationToolCard({
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
   const outcome = toolOutcome(node, t)
+  const step = toolStep(node, t, interaction)
+  // The row already names the tool and how it ended; the detail is what went in and what came out.
   const nextDetail = [
-    t('tool.detail.header', { name: node.name }),
-    t('tool.detail.status', { status: outcome.label }),
-    ...(node.argsPreview ? ['', t('tool.detail.args'), node.argsPreview] : []),
+    ...(step.command
+      ? [`$ ${step.command}`]
+      : node.argsPreview
+        ? [t('tool.detail.args'), node.argsPreview]
+        : []),
     ...(outcome.text ? ['', outcome.section, outcome.text] : []),
     ...(resultAppendix ? ['', resultAppendix] : []),
-  ].join('\n')
+  ]
+    .join('\n')
+    .trim()
   const detail = useInteractionSnapshot(detailHost, nextDetail)
   const toggle = () => {
     const next = !expanded
     onExpandedChange?.(next)
     flushSync(() => setExpanded(next))
   }
-  const status = chainStatus[node.status]
+  // A finished web search lists the pages it found; the raw text stays underneath.
+  const sources = step.kind === 'web' && node.status === 'completed' ? webSources(outcome.text) : []
+  const state: ActivityState =
+    node.status === 'running'
+      ? 'running'
+      : node.status === 'failed'
+        ? 'failed'
+        : node.status === 'awaiting_approval'
+          ? 'attention'
+          : node.status === 'cancelled'
+            ? 'cancelled'
+            : undefined
+  // Success is silent; only a step that failed, waits or was cancelled says so.
+  const note = state && state !== 'running' ? outcome.label : undefined
+  const target = step.target || (meaningful ? summary : '')
   return (
-    <ConversationXScope>
-      <div
-        ref={cardHost}
-        data-agnes-tool-card=""
-        data-status={node.status}
-        data-expanded={expanded ? 'true' : undefined}
-      >
-        <div className="tool-head">
-          <ThoughtChain.Item
-            className="tool-meta"
-            variant="text"
-            {...(status ? { status } : {})}
-            blink={node.status === 'running'}
-            title={
-              <Button
-                htmlType="button"
-                appearance="ghost"
-                size="small"
-                className="tool-detail"
-                data-testid="tool-detail-toggle"
-                aria-expanded={expanded}
-                title={expanded ? t('tool.detail.collapse') : t('tool.detail.expand')}
-                onClick={toggle}
-              >
-                {icon}
-                <span className="tool-name">{interaction?.name ?? node.name}</span>
-              </Button>
-            }
-            description={<span className="tool-status">{outcome.label}</span>}
-          />
-        </div>
-        <div className="tool-summary" hidden={!meaningful}>
-          {meaningful ? summary : ''}
-        </div>
-        <div className="tool-detail-body" aria-hidden={!expanded}>
-          <div className="tool-detail-inner">
-            <div
-              ref={detailHost}
-              className="tool-detail-text"
-              data-testid="tool-detail-text"
-              tabIndex={expanded ? 0 : -1}
-            >
-              {detail}
-            </div>
+    <div
+      ref={cardHost}
+      data-agnes-tool-card=""
+      data-status={node.status}
+      data-expanded={expanded ? 'true' : undefined}
+    >
+      <ActivityRow
+        className="tool-detail"
+        testId="tool-detail-toggle"
+        icon={icon}
+        verb={<span className="tool-name">{step.verb}</span>}
+        target={target}
+        tooltip={step.full || target || (expanded ? t('tool.detail.collapse') : t('tool.detail.expand'))}
+        mono={step.kind !== 'tool' && Boolean(step.target)}
+        state={state}
+        note={note}
+        expanded={expanded}
+        onToggle={toggle}
+      />
+      <div className="tool-detail-body" aria-hidden={!expanded}>
+        <div className="tool-detail-inner">
+          {sources.length > 0 && expanded && (
+            <WebSourceList sources={sources} label={t('activity.sources', { n: sources.length })} />
+          )}
+          <div
+            ref={detailHost}
+            className="tool-detail-text"
+            hidden={sources.length > 0}
+            data-testid="tool-detail-text"
+            tabIndex={expanded ? 0 : -1}
+          >
+            {detail}
           </div>
         </div>
       </div>
-    </ConversationXScope>
+    </div>
   )
 }

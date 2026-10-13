@@ -122,11 +122,19 @@ export const Conversation = forwardRef<ConversationHandle, ConversationProps>(fu
         aria-labelledby="empty-state-title"
         hidden={true}
       />
-      <Button ref={newContentButton} id="new-content" className="new-content" htmlType="button" hidden={true}>
+      <Button
+        ref={newContentButton}
+        id="new-content"
+        className="new-content"
+        htmlType="button"
+        shape="circle"
+        title={t('conversation.newContent')}
+        hidden={true}
+      >
         <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden={true}>
           <path d={NEW_CONTENT_ICON_PATH} />
         </svg>
-        <span>{t('conversation.newContent')}</span>
+        <span className="visually-hidden">{t('conversation.newContent')}</span>
       </Button>
       <div
         ref={messageActions}

@@ -2,8 +2,9 @@ import type { ContentBlock, UINode } from '@agnes/protocol'
 import { uploadedAttachment } from '@agnes/protocol'
 import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { Image } from 'antd'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
+import { Button } from '../../ui/button.js'
 import { Disclosure } from '../../ui/disclosure.js'
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
@@ -165,3 +166,58 @@ export function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user
     </ul>
   )
 }
+
+/** Under what the reader wrote: copy it back. Shown to the pointer or the keyboard. */
+export function UserMessageActions({ text, t }: { text: string; t: Translate }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  if (!text.trim()) return null
+  const copy = () => {
+    void navigator.clipboard?.writeText(text).then(
+      () => {
+        setCopied(true)
+        clearTimeout(timer.current)
+        timer.current = setTimeout(() => setCopied(false), 1600)
+      },
+      () => undefined,
+    )
+  }
+  return (
+    <span className="user-message-actions">
+      <Button
+        htmlType="button"
+        appearance="ghost"
+        size="small"
+        className="turn-action"
+        data-testid="user-message-copy"
+        data-copied={copied ? 'true' : undefined}
+        aria-label={t('usermessage.copy')}
+        title={t('usermessage.copy')}
+        onClick={copy}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+          {copied ? (
+            <path d="m5 12.5 4.5 4.5L19 7.5" />
+          ) : (
+            <>
+              <path d="M9 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+              <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" />
+            </>
+          )}
+        </svg>
+      </Button>
+      <span className="visually-hidden" role="status">
+        {copied ? t('turnactions.copied') : ''}
+      </span>
+    </span>
+  )
+}
+
+export const userMessageText = (node: Extract<UINode, { kind: 'user' }>): string =>
+  node.content
+    .filter(
+      (block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text' && !block.reference,
+    )
+    .map((block) => block.text)
+    .join('\n')

@@ -184,7 +184,8 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
     const paragraph = item('assistant')?.querySelector('.node-body p')
     expect(paragraph?.textContent).toBe('first')
     const toolElement = item('tool')?.querySelector<HTMLElement>('[data-agnes-tool-card]')
-    expect(toolElement?.textContent).toContain('正在执行')
+    expect(toolElement?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
+    expect(item('tool')?.getAttribute('aria-label')).toContain('正在执行')
     expect(toolElement?.querySelector('svg.icon.tool-icon')?.getAttribute('aria-hidden')).toBe('true')
     const details = item('cost')?.querySelector<HTMLElement>('.agh-disclosure.call-usage')
     expect(details?.textContent).toContain('费用未提供')
@@ -225,7 +226,8 @@ describe('W3b Web-owned leaves and real web-client slots', () => {
       await Promise.resolve()
     })
     expect(item('tool')?.querySelector('[data-agnes-tool-card]')).not.toBe(toolElement)
-    expect(item('tool')?.querySelector('.tool-status')?.textContent).toBe('等待执行')
+    expect(item('tool')?.getAttribute('aria-label')).toContain('等待执行')
+    expect(item('tool')?.querySelector('.activity-row')?.getAttribute('data-state')).toBeNull()
   })
 
   it('updates a tool glyph and retains its disclosure when a tool name changes under the same ID', async () => {
@@ -380,14 +382,18 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
   expect(host.querySelector<HTMLElement>('.turn-process')?.dataset.open).toBe('false')
   await act(async () =>
     root.render(
-      createElement(FailedTurn, { current: { ...turn, status: 'completed', reason: 'completed' } }),
+      createElement(FailedTurn, {
+        current: { ...turn, status: 'completed', reason: 'completed', finalAssistantId: 'assistant' },
+      }),
     ),
   )
   expect(host.querySelector('.turn-error')).toBeNull()
+  // Rating the answer is part of the turn's one action bar.
   expect(host.querySelectorAll('[data-testid="message-feedback"]')).toHaveLength(1)
+  expect(host.querySelector('.turn-footer [data-testid="message-feedback"]')).not.toBeNull()
   for (const current of [
-    { ...turn, status: 'running' as const },
-    { ...turn, inherited: true },
+    { ...turn, status: 'running' as const, finalAssistantId: 'assistant' },
+    { ...turn, status: 'completed' as const, finalAssistantId: 'assistant', inherited: true },
   ]) {
     await act(async () => root.render(createElement(FailedTurn, { current })))
     expect(host.querySelector('[data-testid="message-feedback"]')).toBeNull()
@@ -595,7 +601,7 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: [question, echo, prose] })
   await mount(store)
   expect(item('tool')?.querySelector('.tool-name')?.textContent).toBe('提问')
-  expect(item('tool')?.querySelector('.tool-summary')?.textContent).toBe('问题已发送，等待你的回答。')
+  expect(item('tool')?.querySelector('.activity-target')?.textContent).toBe('问题已发送，等待你的回答。')
   expect(item('echo')?.querySelector('[data-testid=interaction-result-details]')).toBeNull()
   expect(item('tool')?.querySelectorAll('[data-testid=tool-detail-toggle]')).toHaveLength(1)
   expect(item('tool')?.querySelector('[data-testid=tool-detail-text]')?.textContent).toContain(

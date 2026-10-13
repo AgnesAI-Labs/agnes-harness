@@ -227,7 +227,8 @@ it.each(['legacy', 'xmarkdown'] as const)(
       await act(async () => live.refresh())
       await vi.waitFor(() => expect(transcript.querySelector('[data-node-id="tool-1"]')).toBeTruthy())
       const toolArticle = transcript.querySelector<HTMLElement>('[data-node-id="tool-1"]')
-      expect(toolArticle?.querySelector('[data-agnes-tool-card]')?.textContent).toContain('正在执行')
+      expect(toolArticle?.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
+      expect(toolArticle?.getAttribute('aria-label')).toContain('正在执行')
       function ToolView({ owner }: { owner: { block: { status: string } } }) {
         const [count, setCount] = useState(0)
         return createElement(
@@ -317,7 +318,8 @@ it.each(['legacy', 'xmarkdown'] as const)(
       await act(async () => releaseToolView?.())
       releaseToolView = undefined
       expect(toolArticle?.querySelector('[data-agnes-timeline-native]')?.getAttribute('hidden')).toBeNull()
-      expect(toolArticle?.querySelector('[data-agnes-tool-card]')?.textContent).toContain('执行完成')
+      expect(toolArticle?.querySelector('.activity-row')?.getAttribute('data-state')).toBeNull()
+      expect(toolArticle?.getAttribute('aria-label')).toContain('执行完成')
       state.upto = 8
       state.nodes.push(user('u3', 7, 'cancelled request'), assistant('a3', 8, 'e3', '', true))
       state.turns.push(turn('t3', ['u3', 'a3'], 'running'))
