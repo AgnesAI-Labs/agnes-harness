@@ -268,7 +268,7 @@ export const readTool = defineTool({
     }
     if (isBinary(bytes)) {
       // Only a file the text path refuses is looked at as an image, so text reads stay as they were.
-      const image = await readWorkspaceImage(args.path, ctx, args.max_edge)
+      const image = await readWorkspaceImage(args.path, bytes, ctx, args.max_edge)
       if (image) return image
       return {
         content: [

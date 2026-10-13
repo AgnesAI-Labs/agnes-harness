@@ -105,6 +105,22 @@ describe('read on workspace images through the real file system adapter', () => 
     expect([...(sent[1] as Sent).bytes.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff])
   })
 
+  it('recognises images by the bytes a windowed read leaves of them, whatever their names', async () => {
+    writeFileSync(join(root, 'a.bin'), png(40, 30))
+    writeFileSync(join(root, 'b.dat'), JPEG)
+    const { ctx, sent } = session()
+    // What the text path's first read gets: every byte that is not UTF-8 turned into U+FFFD.
+    const first = async (path: string) =>
+      Buffer.from(
+        (await ctx.fs.read(path, { offset: 0, limit: 4 * 1024 * 1024 + 1 })).subarray(0, 10),
+      ).toString('hex')
+    expect(await first('a.bin')).toBe('efbfbd504e470d0a1a0a')
+    expect((await first('b.dat')).slice(0, 18)).toBe('efbfbdefbfbdefbfbd')
+    await run({ path: 'a.bin' }, ctx)
+    await run({ path: 'b.dat' }, ctx)
+    expect(sent.map((s) => s.mimeType)).toEqual(['image/png', 'image/jpeg'])
+  })
+
   it('follows a link that stays inside the workspace, and a path through `..` that does', async () => {
     mkdirSync(join(root, 'sub'))
     writeFileSync(join(root, 'sub', 'a.png'), png(16, 16))

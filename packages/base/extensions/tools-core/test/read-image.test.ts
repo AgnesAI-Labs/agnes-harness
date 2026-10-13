@@ -5,7 +5,13 @@ import { decodeSafeImageBytes } from '@agnes/protocol-validation'
 import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { MAX_IMAGE_FILE_BYTES, readLocalImage } from '../src/tools/local-image.js'
+import {
+  decodeSlots,
+  MAX_CONCURRENT_DECODES,
+  MAX_IMAGE_FILE_BYTES,
+  readLocalImage,
+  withDecodeSlot,
+} from '../src/tools/local-image.js'
 import { MAX_READ_BYTES, readTool } from '../src/tools/read.js'
 import { ReadParams } from '../src/tools/schemas.js'
 
@@ -17,14 +23,29 @@ type Sent = { bytes: Uint8Array; mimeType: 'image/png' | 'image/jpeg'; name: str
 function imageCtx(
   files: Record<string, Uint8Array>,
   supported = true,
-  opts: { limits?: Partial<Policy>; stat?: (path: string) => Promise<FsStat> } = {},
+  opts: {
+    limits?: Partial<Policy>
+    stat?: (path: string) => Promise<FsStat>
+    /** Answer a windowed read the way the host file system does: decoded as UTF-8 and re-encoded. */
+    hostWindowing?: boolean
+  } = {},
 ) {
   const base = fakeToolContext({ files })
   const limits = { ...policy, ...opts.limits }
   const sent: Sent[] = []
+  const windowed = async (path: string, window?: { offset?: number; limit?: number }) => {
+    const bytes = await base.fs.read(path, window)
+    return window
+      ? new TextEncoder().encode(new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes))
+      : bytes
+  }
   const ctx = {
     ...base,
-    fs: { ...base.fs, ...(opts.stat ? { stat: opts.stat } : {}) },
+    fs: {
+      ...base.fs,
+      ...(opts.stat ? { stat: opts.stat } : {}),
+      ...(opts.hostWindowing ? { read: windowed } : {}),
+    },
     session: {
       ...base.session,
       imageInputPolicy: async () => ({ ...limits, supported }),
@@ -63,6 +84,31 @@ const noisy = (width: number, height: number) => {
 const sizeOf = async (bytes: Uint8Array): Promise<[number, number]> => {
   const meta = await sharp(bytes).metadata()
   return [meta.width ?? 0, meta.height ?? 0]
+}
+/** Resolves once no decode holds or waits for a slot: an abandoned decode keeps its slot until it ends. */
+async function decodesIdle(): Promise<void> {
+  while (decodeSlots.active() + decodeSlots.queued() > 0)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+}
+const deferred = () => {
+  let resolve = (_value: string) => {}
+  const promise = new Promise<string>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+/** A PNG that is only a header: enough for the decoder to report its size, layout and depth. */
+function pngHeader(width: number, height: number, depth: 8 | 16, colorType: 2 | 6, interlace: 0 | 1): Buffer {
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header.set([depth, colorType, 0, 0, interlace], 8)
+  return Buffer.concat([
+    Buffer.from(PNG_SIGNATURE),
+    pngChunk('IHDR', header),
+    pngChunk('IDAT', deflateSync(Buffer.alloc(64))),
+    pngChunk('IEND', new Uint8Array()),
+  ])
 }
 const textOf = (result: ToolResult): string =>
   result.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
@@ -237,10 +283,16 @@ describe('read on workspace images', () => {
   })
 
   it('gives up after eight ever smaller encodings', async () => {
-    // Noise PNGs at 1000, 700, 489, 342, 239, 167, 116 and 81 px all weigh more than this (the last
-    // about 11.6 KB); a ninth try, at 56 px and about 5 KB, would fit.
-    const { ctx, sent } = imageCtx({ 'n.png': await noisy(1000, 1000).png().toBuffer() }, true, {
-      limits: { maxBytes: 8000 },
+    // The byte limit sits between the eighth try and a ninth one, each a 70% step down from 1000 px.
+    const source = noisy(1000, 1000)
+    const edges = [1000]
+    while (edges.length < 9) edges.push(Math.floor((edges.at(-1) as number) * 0.7))
+    const weight = async (edge: number) =>
+      (await source.clone().resize({ width: edge, height: edge, fit: 'fill' }).png().toBuffer()).length
+    const [eighth, ninth] = [await weight(edges[7] as number), await weight(edges[8] as number)]
+    expect(ninth).toBeLessThan(eighth)
+    const { ctx, sent } = imageCtx({ 'n.png': await source.png().toBuffer() }, true, {
+      limits: { maxBytes: eighth - 1 },
     })
     const result = await readTool.execute({ path: 'n.png' }, ctx)
     expect(result.isError).toBe(true)
@@ -378,14 +430,161 @@ describe('read on workspace images', () => {
 
   it('stops at once when the call is cancelled mid-decode', async () => {
     const { ctx, sent } = imageCtx({})
+    const bytes = await noisy(3000, 2000).png().toBuffer()
+    await decodesIdle()
     const controller = new AbortController()
-    const pending = readLocalImage(await noisy(3000, 2000).png().toBuffer(), 'a.png', {
-      ...ctx,
-      signal: controller.signal,
-    })
+    const pending = readLocalImage(bytes, 'a.png', { ...ctx, signal: controller.signal })
+    pending.catch(() => {})
+    while (decodeSlots.active() === 0) await new Promise((resolve) => setImmediate(resolve))
     controller.abort(new Error('cancelled by the user'))
     await expect(pending).rejects.toThrow('cancelled by the user')
+    // The answer came while the decode was still running: its slot is released only when it ends.
+    expect(decodeSlots.active()).toBe(1)
     expect(sent).toEqual([])
+    await decodesIdle()
+  })
+
+  it.each([
+    ['a 64 MP 16-bit RGBA interlaced PNG (512 MiB decoded)', () => pngHeader(8000, 8000, 16, 6, 1)],
+    ['a 36 MP 16-bit RGBA PNG (288 MB decoded)', () => pngHeader(6000, 6000, 16, 6, 0)],
+    ['a 20 MP interlaced PNG', () => pngHeader(5000, 4000, 8, 2, 1)],
+    ['a 16 MP 16-bit RGBA interlaced PNG (128 MB decoded)', () => pngHeader(4000, 4000, 16, 6, 1)],
+    [
+      'a 20 MP progressive JPEG',
+      () =>
+        sharp({ create: { width: 5000, height: 4000, channels: 3, background: '#123456' } })
+          .jpeg({ progressive: true })
+          .toBuffer(),
+    ],
+  ])('refuses %s from its header, before decoding it', async (_label, make) => {
+    const { ctx, sent } = imageCtx({ 'big.img': await make() })
+    const result = await readTool.execute({ path: 'big.img' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('needs too much memory to decode')
+    expect(sent).toEqual([])
+  })
+
+  it.each([
+    ['a 64 MP 8-bit RGBA PNG (exactly 256 MB decoded)', () => pngHeader(8000, 8000, 8, 6, 0)],
+    ['a 16 MP 8-bit RGBA interlaced PNG (64 MB decoded)', () => pngHeader(4000, 4000, 8, 6, 1)],
+  ])('lets %s through to the decoder', async (_label, make) => {
+    const { ctx, sent } = imageCtx({ 'edge.png': make() })
+    const result = await readTool.execute({ path: 'edge.png' }, ctx)
+    // The header passes; the stand-in pixel data then fails to decode.
+    expect(textOf(result)).toContain('Image read failed')
+    expect(sent).toEqual([])
+  })
+
+  it('keeps no decoded pixels in the codec cache', async () => {
+    const { ctx, sent } = imageCtx({ 'c.png': await solid(2000, 1500).png().toBuffer() })
+    await readTool.execute({ path: 'c.png' }, ctx)
+    expect(sent).toHaveLength(1)
+    expect(sharp.cache()).toMatchObject({ memory: { current: 0, max: 0 }, items: { current: 0, max: 0 } })
+  })
+
+  it(`decodes at most ${MAX_CONCURRENT_DECODES} images at once across parallel reads`, async () => {
+    const image = await noisy(1500, 1000).png().toBuffer()
+    const files = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`p${n}.png`, image]))
+    const { ctx, sent } = imageCtx(files)
+    await decodesIdle()
+    let peak = 0
+    let queued = 0
+    let watching = true
+    const watch = async () => {
+      while (watching) {
+        peak = Math.max(peak, decodeSlots.active())
+        queued = Math.max(queued, decodeSlots.queued())
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    }
+    const watcher = watch()
+    await Promise.all(Object.keys(files).map((path) => readTool.execute({ path }, ctx)))
+    watching = false
+    await watcher
+    expect(sent).toHaveLength(6)
+    expect(peak).toBe(MAX_CONCURRENT_DECODES)
+    expect(queued).toBeGreaterThan(0)
+  })
+})
+
+describe('the process-wide decode slots', () => {
+  const far = () => Date.now() + 60_000
+
+  it('starts decodes in arrival order as slots free up', async () => {
+    await decodesIdle()
+    const works = [1, 2, 3, 4, 5, 6].map(() => deferred())
+    const started: number[] = []
+    const calls = works.map((work, index) =>
+      withDecodeSlot(new AbortController().signal, far(), () => {
+        started.push(index)
+        return work.promise
+      }),
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(started).toEqual([0, 1])
+    expect(decodeSlots.queued()).toBe(4)
+    for (const [index, work] of works.entries()) {
+      work.resolve(`done ${index}`)
+      await calls[index]
+    }
+    expect(started).toEqual([0, 1, 2, 3, 4, 5])
+    expect(await Promise.all(calls)).toEqual(works.map((_, index) => `done ${index}`))
+    expect(decodeSlots.active()).toBe(0)
+  })
+
+  it('lets a waiter that is cancelled or out of time leave the queue without ever starting', async () => {
+    await decodesIdle()
+    const busy = [deferred(), deferred()]
+    const holding = busy.map((work) =>
+      withDecodeSlot(new AbortController().signal, far(), () => work.promise),
+    )
+    const cancel = new AbortController()
+    let started = 0
+    const start = () => {
+      started++
+      return Promise.resolve('ran')
+    }
+    const cancelled = withDecodeSlot(cancel.signal, far(), start)
+    const late = withDecodeSlot(new AbortController().signal, Date.now() + 20, start)
+    const next = withDecodeSlot(new AbortController().signal, far(), start)
+    expect(decodeSlots.queued()).toBe(3)
+    cancel.abort(new Error('cancelled while waiting'))
+    await expect(cancelled).rejects.toThrow('cancelled while waiting')
+    await expect(late).rejects.toBeInstanceOf(Error)
+    expect(decodeSlots.queued()).toBe(1)
+    busy[0]?.resolve('free')
+    expect(await next).toBe('ran')
+    expect(started).toBe(1)
+    busy[1]?.resolve('free')
+    await Promise.all(holding)
+    expect(decodeSlots.active()).toBe(0)
+  })
+
+  it('holds a slot until the decode ends, even after its caller stopped waiting', async () => {
+    await decodesIdle()
+    const work = deferred()
+    const caller = new AbortController()
+    const call = withDecodeSlot(caller.signal, far(), () => work.promise)
+    caller.abort(new Error('gone'))
+    await expect(call).rejects.toThrow('gone')
+    expect(decodeSlots.active()).toBe(1)
+    work.resolve('late')
+    await work.promise
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(decodeSlots.active()).toBe(0)
+  })
+})
+
+describe('read on images whose first read the host decoded as text', () => {
+  it.each([
+    ['PNG', 'a.bin', () => solid(64, 48).png().toBuffer(), 'image/png'],
+    ['JPEG', 'b.dat', () => solid(64, 48).jpeg().toBuffer(), 'image/jpeg'],
+  ])('recognises a %s from its mangled first bytes and reads it whole', async (_label, path, make, mime) => {
+    const { ctx, sent, calls } = imageCtx({ [path]: await make() }, true, { hostWindowing: true })
+    const result = await readTool.execute({ path }, ctx)
+    expect(result.isError).toBeUndefined()
+    expect(calls.read).toHaveLength(2)
+    expect(sent.map((s) => s.mimeType)).toEqual([mime])
   })
 })
 
@@ -403,14 +602,30 @@ describe('read on files that are not images', () => {
     expect(sent).toEqual([])
   })
 
-  it('keeps the binary-file answer for other binary files', async () => {
+  it.each([
+    ['a.zip', Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 1, 2])],
+    ['app.sqlite', Uint8Array.from([...new TextEncoder().encode('SQLite format 3'), 0])],
+    ['m.wasm', Uint8Array.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0])],
+  ])('keeps the binary-file answer for %s, with a single read', async (path, bytes) => {
+    for (const hostWindowing of [false, true]) {
+      const { ctx, sent, calls } = imageCtx({ [path]: bytes }, true, { hostWindowing })
+      const result = await readTool.execute({ path }, ctx)
+      expect(result).toEqual({
+        content: [
+          { type: 'text', text: `binary file (${bytes.length} bytes); use shell tools to inspect it` },
+        ],
+        isError: true,
+      })
+      expect(calls.read).toHaveLength(1)
+      expect(sent).toEqual([])
+    }
+  })
+
+  it('reads a second time a file named like an image, and keeps the binary answer when it is not one', async () => {
     const zip = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 1, 2])
-    const { ctx, sent } = imageCtx({ 'a.zip': zip })
-    const result = await readTool.execute({ path: 'a.zip' }, ctx)
-    expect(result).toEqual({
-      content: [{ type: 'text', text: 'binary file (8 bytes); use shell tools to inspect it' }],
-      isError: true,
-    })
+    const { ctx, sent, calls } = imageCtx({ 'fake.png': zip })
+    expect(textOf(await readTool.execute({ path: 'fake.png' }, ctx))).toContain('binary file (8 bytes)')
+    expect(calls.read).toHaveLength(2)
     expect(sent).toEqual([])
   })
 })
