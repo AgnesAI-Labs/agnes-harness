@@ -667,6 +667,12 @@
     padding: var(--s4);
     margin: calc(-1 * var(--s4));
   }
+  /* A form in a dialog has one vertical rhythm between its fields and sections. */
+  .agh-dialog .ant-modal-body > form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
   .agh-dialog .ant-modal-footer,
   .agh-dialog-footer {
     display: flex;

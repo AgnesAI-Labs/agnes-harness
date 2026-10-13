@@ -11,6 +11,7 @@ import {
   Menu,
   releaseDialogModal,
   SettingsCheckbox,
+  SettingsList,
   SettingsPage,
   SettingsState,
   useUiText,
@@ -33,20 +34,14 @@ export { credentialsCatalog } from './credentials-locale.js'
 function References({ item }: { item: AdminCredentialMetadata }) {
   const { t } = useUiText('@agnes/credentials', credentialsCatalog)
   return (
-    <div data-testid="credential-references">
-      <strong>{t('used')}</strong>
-      {item.references.length ? (
-        <ul>
-          {item.references.map((ref) => (
-            <li key={JSON.stringify([ref.kind, ref.profile, ref.configId])}>
-              {t(`reference.${ref.kind}`)} · {ref.configId} · {ref.profile}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>{t('unused')}</p>
-      )}
-    </div>
+    // One quiet line under the row: where the credential is used, or that nothing uses it yet.
+    <span data-testid="credential-references">
+      {item.references.length
+        ? `${t('used')}: ${item.references
+            .map((ref) => `${t(`reference.${ref.kind}`)} · ${ref.configId} · ${ref.profile}`)
+            .join('; ')}`
+        : t('unused')}
+    </span>
   )
 }
 const defaultApi = new CredentialsApi()
@@ -179,42 +174,47 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
       {items?.length === 0 && (
         <EmptyState icon={<Icon name="key-round" />} title={t('empty')} description={t('emptyHelp')} />
       )}
-      {items?.map((item) => (
-        <ListRow
-          key={item.id}
-          data-testid="credential-row"
-          data-credential-id={item.id}
-          title={item.label}
-          meta={
-            <>
-              {t('type')} · {t('created', { date: new Date(item.createdAt).toLocaleDateString(locale) })}
-            </>
-          }
-          actions={
-            <Menu
-              label={t('menu', { name: item.label })}
-              trigger={<IconButton name="ellipsis" label={t('menu', { name: item.label })} />}
-              items={(['rename', 'replace', 'delete'] as const).map((mode) => ({
-                id: mode,
-                label: t(mode),
-                testId: `credential-${mode}`,
-                danger: mode === 'delete',
-                disabled: busy || !!blocked,
-                ...(blocked ? { disabledReason: t(`error.${blocked}`) } : {}),
-                onSelect: () => {
-                  if (mode === 'delete') {
-                    setError(undefined)
-                    setConfirmed(false)
-                    setRemoving(item)
-                  } else open(mode, item)
-                },
-              }))}
-            />
-          }
-        >
-          <References item={item} />
-        </ListRow>
-      ))}
+      {!!items?.length && (
+        <SettingsList>
+          {items.map((item) => (
+            <ListRow
+              key={item.id}
+              data-testid="credential-row"
+              data-credential-id={item.id}
+              icon={<Icon name="key-round" size={20} />}
+              title={item.label}
+              meta={
+                <>
+                  {t('type')} · {t('created', { date: new Date(item.createdAt).toLocaleDateString(locale) })}
+                </>
+              }
+              actions={
+                <Menu
+                  label={t('menu', { name: item.label })}
+                  trigger={<IconButton name="ellipsis" label={t('menu', { name: item.label })} />}
+                  items={(['rename', 'replace', 'delete'] as const).map((mode) => ({
+                    id: mode,
+                    label: t(mode),
+                    testId: `credential-${mode}`,
+                    danger: mode === 'delete',
+                    disabled: busy || !!blocked,
+                    ...(blocked ? { disabledReason: t(`error.${blocked}`) } : {}),
+                    onSelect: () => {
+                      if (mode === 'delete') {
+                        setError(undefined)
+                        setConfirmed(false)
+                        setRemoving(item)
+                      } else open(mode, item)
+                    },
+                  }))}
+                />
+              }
+            >
+              <References item={item} />
+            </ListRow>
+          ))}
+        </SettingsList>
+      )}
       {editor && (
         <CredentialEditor
           api={api}

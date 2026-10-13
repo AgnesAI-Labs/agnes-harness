@@ -1,6 +1,11 @@
 @layer app {
   #config {
-    position: relative;
+    /* Fixed like every modal: it anchors its own absolute children and stays centred when it is
+     shown non-modally under a dialog opened from it. */
+    position: fixed;
+    /* While a dialog opened from settings owns modal focus, settings is shown non-modally: it keeps
+     its place above the page and below that dialog. */
+    z-index: calc(var(--agh-z-dropdown) - 1);
     width: 1100px;
     max-width: calc(100vw - 48px);
     height: min(800px, calc(100dvh - 48px));

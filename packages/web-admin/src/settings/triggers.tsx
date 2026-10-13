@@ -247,6 +247,7 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
           <ListRow
             key={item.id}
             data-testid="trigger-row"
+            icon={<Icon name="activity" size={20} />}
             title={item.id}
             meta={`${item.event} · ${item.workspace.split(/[\\/]/).filter(Boolean).at(-1) ?? ''}`}
             status={!item.enabled ? <Tag tone="warn">{t('paused')}</Tag> : undefined}
