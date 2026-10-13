@@ -59,7 +59,8 @@ export async function readSessionView(
             ? 'time'
             : undefined
   for (let fromSeq = 1; ; ) {
-    if ((stopped = exhausted())) break
+    stopped = exhausted()
+    if (stopped) break
     let page: Event[]
     try {
       page = await read(sessionKey, { fromSeq, limit: PAGE })
