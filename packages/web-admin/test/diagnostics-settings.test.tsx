@@ -45,7 +45,7 @@ const bundle: DiagnosticsExportResult = {
   telemetry: { enabled: true, includeContent: true, endpointHosts: ['collector.example:4318'] },
 }
 async function mount(api: ReturnType<typeof diagnosticsApi>, download = vi.fn()) {
-  const host = document.createElement('div')
+  const host = document.createElement('form')
   document.body.append(host)
   const root = createRoot(host)
   roots.push(root)
@@ -65,6 +65,7 @@ it.each([false, true])(
     })
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
+    expect(host.querySelector('form')).toBeNull()
     expect(host.querySelector<HTMLInputElement>('[data-testid="otlp-endpoint"]')?.value).toBe(
       'http://collector.example:4318',
     )
@@ -87,9 +88,12 @@ it.each([false, true])(
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, diagnosticId)
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    await act(async () =>
-      host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
-    )
+    await act(async () => {
+      if (doctorAvailable)
+        host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-search"]')?.click()
+      else
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export"]')?.click(),
     )

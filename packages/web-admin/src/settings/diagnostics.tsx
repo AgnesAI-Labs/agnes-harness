@@ -215,12 +215,7 @@ export function DiagnosticsPanel({
           )}
         </div>
         <SettingsDetails title={t('findById')} data-testid="diagnostics-find-id">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              void search()
-            }}
-          >
+          <div role="search" aria-label={t('findById')}>
             <Field label={t('id')} htmlFor="diagnostics-query">
               <SettingsInput
                 id="diagnostics-query"
@@ -230,10 +225,16 @@ export function DiagnosticsPanel({
                 maxLength={36}
                 disabled={busy}
                 onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void search()
+                }}
               />
             </Field>
             <div className="agnes-settings-actions">
-              <Button htmlType="submit" data-testid="diagnostics-search" disabled={busy}>
+              <Button data-testid="diagnostics-search" disabled={busy} onClick={() => void search()}>
                 {t('search')}
               </Button>
               <Button
@@ -254,7 +255,7 @@ export function DiagnosticsPanel({
                 {t('refresh')}
               </Button>
             </div>
-          </form>
+          </div>
         </SettingsDetails>
         <p>{t('latest')}</p>
         {!busy && bundle && bundle.errors.length === 0 && <SettingsState>{t('empty')}</SettingsState>}
