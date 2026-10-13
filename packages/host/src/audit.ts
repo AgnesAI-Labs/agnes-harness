@@ -66,6 +66,8 @@ export const AUDIT_KINDS = [
   'session.open',
   'session.load',
   'session.verify_full',
+  // A batch of files handed to the model; the one record of who started it and with what limits.
+  'batch.started',
 ] as const
 export type AuditKind = (typeof AUDIT_KINDS)[number]
 export type AuditEvent = { kind: string; detail?: Record<string, unknown>; at?: string }

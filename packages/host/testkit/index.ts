@@ -191,6 +191,8 @@ export type TestHostOptions = {
   /** Private daemon-owned Skill view, for asserting the production Host request path. */
   mcpManage?: HostOptions['mcpManage']
   pluginManage?: HostOptions['pluginManage']
+  /** The daemon bridge for the bundled batch tools, as the session worker supplies it. */
+  batch?: HostOptions['batch']
   skillResources?: SkillRuntimeInput
   // A seam with a close(), so a test can watch the teardown run instead of reading an audit line
   // that claims it did. It lands on the rollback stack like every other seam close.
@@ -385,6 +387,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.extensionIsolation ? { extensionIsolation: o.extensionIsolation } : {}),
     ...(o.pluginManage ? { pluginManage: o.pluginManage } : {}),
     ...(o.mcpManage ? { mcpManage: o.mcpManage } : {}),
+    ...(o.batch ? { batch: o.batch } : {}),
     ...(o.extensionIsolationServices ? { extensionIsolationServices: o.extensionIsolationServices } : {}),
     ...(o.skillResources ? { skillResources: o.skillResources } : {}),
     ...(o.trajectoryFetch ? { trajectoryFetch: o.trajectoryFetch } : {}),

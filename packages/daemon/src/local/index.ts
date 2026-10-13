@@ -55,6 +55,7 @@ import { registerStoredOpening } from './methods/stored-opening.js'
 import { registerWorkspaces } from './methods/workspaces.js'
 import { NoticeSink } from './notice.js'
 import {
+  type BatchPort,
   type ClaimStore,
   type CommandJournal,
   type DirectoryPort,
@@ -258,6 +259,8 @@ export type LocalEndpointOptions = {
   activationBarrier?: ExtensionActivationBarrier
   claims?: ClaimStore
   jobs?: JobsPort
+  /** The daemon batch engine; omitted, the batch methods answer CAPABILITY_DENIED. */
+  batch?: BatchPort
   /** Authentication verifier for an embedded endpoint. The normal local form keeps the unix-only
    * default; authenticated transport adapters can supply their verifier without bypassing authGate. */
   auth?: LocalContext['auth']
@@ -410,6 +413,7 @@ export function createLocalEndpoint(
       journal,
       claims: opts.claims ?? new MemoryClaims(),
       ...(opts.jobs ? { jobs: opts.jobs } : {}),
+      ...(opts.batch ? { batch: opts.batch } : {}),
       ...(opts.directory ? { directory: opts.directory } : {}),
       // Host owns the fitted principals seam. An explicit resolver remains available to transport
       // tests and enterprise adapters, but the ordinary local CLI must not lose approval support

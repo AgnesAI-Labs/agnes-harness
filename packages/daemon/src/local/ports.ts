@@ -1,3 +1,5 @@
+import type { BatchStatus } from '@agnes/protocol'
+
 export type CompactOutcome =
   | { state: 'completed'; endSeq: number }
   | { state: 'failed'; endSeq: number }
@@ -51,6 +53,14 @@ export interface JobsPort {
   sessionKey(jobId: string): Promise<string | undefined>
   poll(jobId: string): Promise<unknown>
   cancel(jobId: string): Promise<void>
+}
+
+/** The daemon batch engine as the RPC layer sees it; the principal always comes from the connection. */
+export interface BatchPort {
+  start(input: { principalId: string; cwd: string; spec: unknown }): Promise<BatchStatus>
+  status(input: { principalId: string; batchId: string; export?: boolean }): Promise<BatchStatus>
+  cancel(input: { principalId: string; batchId: string }): Promise<BatchStatus>
+  list(input: { principalId: string }): Promise<BatchStatus[]>
 }
 
 export type SessionMetaRow = {

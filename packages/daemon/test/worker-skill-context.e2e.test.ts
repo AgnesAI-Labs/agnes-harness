@@ -19,9 +19,13 @@ const roots: string[] = []
 // The write description also includes the incremental-generation guidance shipped with the tools.
 // The read description names session-file attachments and what this runtime can read natively.
 // Background shell jobs add the job tool and reword the shell and write descriptions.
-// The read tool also reads stored attachments by range and saves originals into the workspace.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '3e3336a6a734dd21afff06755b4ef30c7a5500c50d8435bd4c82bac1196aff2a'
+// Batch processing adds batch_start, batch_status and batch_cancel.
+// The read tool takes max_edge for workspace images, reads stored attachments by range and saves originals into the workspace.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '9d23cc36302b27af36671272f1100c4883669d194ed41c07ea3a5013fce50554'
 const expectedToolNames = [
+  'batch_cancel',
+  'batch_start',
+  'batch_status',
   'compact',
   'edit',
   'find',

@@ -229,6 +229,44 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     }
   })
 
+  it('hands the daemon batch bridge only to the exact batch extension id', async () => {
+    const bridge = vi.fn(async () => {
+      throw new Error('unused')
+    })
+    for (const supplied of [true, false]) {
+      const seen: Record<string, unknown> = {}
+      const { host } = await createTestHost({
+        dataDir: scratch(),
+        packageDirs: { '@agnes/base': baseDir },
+        ...(supplied ? { batch: bridge } : {}),
+        packages: {
+          '@agnes/base': {
+            ecosystem: {
+              ...baseEcosystem,
+              'agnes/batch': (context) => {
+                seen.batch = context.batch
+                return baseEcosystem['agnes/batch'](context)
+              },
+              'agnes/refine': (context) => {
+                seen.refine = context.batch
+                return baseEcosystem['agnes/refine'](context)
+              },
+            },
+          },
+        },
+      })
+      try {
+        if (supplied) {
+          expect((seen.batch as { request?: unknown } | undefined)?.request).toBe(bridge)
+          expect(Object.isFrozen(seen.batch)).toBe(true)
+        } else expect(seen.batch).toBeUndefined()
+        expect(seen.refine).toBeUndefined()
+      } finally {
+        await host.close()
+      }
+    }
+  })
+
   it('loads bundled tools, including the compaction request surface', async () => {
     const { host } = await createTestHost({
       dataDir: scratch(),
@@ -282,6 +320,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/privacy',
         'agnes/mcp-search',
         'agnes/skills',
+        'agnes/batch',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -678,8 +717,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot. An empty resource-control view must not alter the legacy Host tool surface.
     // Seventeen plus the computer-use tool the default enabled profile now mounts as a row, plus
-    // `job` for background shell jobs.
-    expect(host.kernel.tools.size).toBe(19)
+    // `job` for background shell jobs, plus the three batch tools.
+    expect(host.kernel.tools.size).toBe(22)
+    expect(host.kernel.tools.resolve('batch_start')).toMatchObject({ name: 'batch_start' })
     expect(host.kernel.tools.resolve('computer_use')).toMatchObject({ name: 'computer_use' })
     expect(host.kernel.tools.resolve('subagent_cancel')).toMatchObject({ name: 'subagent_cancel' })
     await host.close()
@@ -1025,7 +1065,13 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(host.extensions().find((status) => status.id === 'agnes/hooks-runner')).toMatchObject({
         loaded: true,
       })
-      expect(host.kernel.hooks.snapshot().entries('tool_call')).toHaveLength(1)
+      // hooks-runner, and agnes/batch keeping batch item sessions to read.
+      expect(
+        host.kernel.hooks
+          .snapshot()
+          .entries('tool_call')
+          .map((entry) => entry.meta.source),
+      ).toEqual(['agnes/hooks-runner', 'agnes/batch'])
       const session = await host.createSession({ cwd: dataDir })
       const payload = {
         toolUseId: 'tool-1',

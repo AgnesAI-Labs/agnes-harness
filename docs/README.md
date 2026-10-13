@@ -33,6 +33,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [CLI and TUI](guide/cli.md) | Run terminal tasks, hold interactive conversations, and handle approvals |
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
+| [Batch processing](guide/batch.md) | Have the model read every file in a folder and collect one result row per file |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |

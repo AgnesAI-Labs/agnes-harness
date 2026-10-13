@@ -7,6 +7,7 @@ import type {
   Verdict,
 } from '@agnes/core'
 import type { FsEntry, FsStat, Logger, SessionRef } from '@agnes/extension-api'
+import type { BatchRequest, BatchStatus } from '@agnes/protocol'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
@@ -178,6 +179,8 @@ export type SeamInitContext = {
       signal: AbortSignal,
     ): Promise<void>
   }
+  /** Supplied only to the bundled agnes/batch extension: forwards its tool requests to the daemon. */
+  batch?: Readonly<{ request(input: BatchRequest, signal: AbortSignal): Promise<BatchStatus> }>
   /** Supplied only to the exact trusted computer-use extension after platform driver admission. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: ComputerUseToolOptions

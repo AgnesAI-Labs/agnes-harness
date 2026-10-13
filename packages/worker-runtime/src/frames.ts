@@ -58,6 +58,7 @@ export type WorkerMethod =
   | 'resourceMcpApply'
   | 'resourceMcpReconnect'
   | 'resource.stale'
+  | 'batch.confinement'
 
 export type WorkerHello = {
   kind: 'hello'
@@ -185,6 +186,7 @@ export type RequestFrame = {
     | 'plugin-manage-abort'
     | 'mcp-manage'
     | 'mcp-manage-abort'
+    | 'batch'
   params: unknown
 }
 export type WorkerCommandFrame = {

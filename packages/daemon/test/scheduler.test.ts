@@ -428,4 +428,35 @@ describe('Scheduler', () => {
       waitingDepth: [{ sessionKey: 'deep', depth: 11 }],
     })
   })
+
+  it('runs the turns of every job claimed in one tick at the same time', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    for (const key of ['a', 'b', 'c', 'd']) repo.insert(row(key, { sessionKey: key }))
+    let started = 0
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const registry: SchedulerRegistry = {
+      open: async ({ key }) => ({
+        key: key ?? '',
+        inflight: null,
+        session: {
+          cwd: '/workspace',
+          enqueue: async () => 1,
+          run: async () => {
+            started++
+            await gate
+            return { reason: 'completed', lastSeq: 2 }
+          },
+        },
+      }),
+      get: () => undefined,
+      keys: () => [],
+    }
+    const wave = scheduler(repo, registry, () => 10_000).tick()
+    await vi.waitFor(() => expect(started).toBe(4))
+    release()
+    expect(await wave).toMatchObject({ claimed: 4 })
+  })
 })

@@ -52,6 +52,10 @@ export type MethodName =
   | '_agnes/v1/config.test'
   | '_agnes/v1/config.save'
   | '_agnes/v1/config.account'
+  | '_agnes/v1/batch.start'
+  | '_agnes/v1/batch.status'
+  | '_agnes/v1/batch.cancel'
+  | '_agnes/v1/batch.list'
   | '_agnes/v1/computerUse.status'
   | '_agnes/v1/computerUse.permissions.status'
   | '_agnes/v1/computerUse.permissions.grant'
@@ -128,6 +132,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/config.test': clientRequest(A.ConfigTestInput, A.ConfigTestResult),
   '_agnes/v1/config.save': clientRequest(A.ConfigSaveInput, A.ConfigSnapshot),
   '_agnes/v1/config.account': clientRequest(A.ConfigAccountInput, A.ConfigSnapshot),
+  '_agnes/v1/batch.start': clientRequest(A.BatchStartParams, A.BatchStatus),
+  '_agnes/v1/batch.status': clientRequest(A.BatchIdParams, A.BatchStatus),
+  '_agnes/v1/batch.cancel': clientRequest(A.BatchIdParams, A.BatchStatus),
+  '_agnes/v1/batch.list': clientRequest(A.Empty, A.BatchList),
   '_agnes/v1/computerUse.status': clientRequest(A.Empty, A.ComputerUseStatusResult),
   '_agnes/v1/computerUse.permissions.status': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
   '_agnes/v1/computerUse.permissions.grant': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),

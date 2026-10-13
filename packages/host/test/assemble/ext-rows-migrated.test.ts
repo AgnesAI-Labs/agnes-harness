@@ -55,6 +55,7 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:compact',
     'hook:approval_request',
   ],
+  'agnes/batch': ['tool:batch_start', 'tool:batch_status', 'tool:batch_cancel', 'hook:tool_call'],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -86,6 +87,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/privacy',
       'agnes/mcp-search',
       'agnes/skills',
+      'agnes/batch',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)
@@ -192,6 +194,22 @@ describe('a third party replaces a migrated builtin and gives way', () => {
     await settle()
     expect(listed(h, 'agnes/hooks-runner')?.loaded).toBe(true)
     expect(h.host.kernel.registrations('agnes/hooks-runner')).toEqual(SUPPLIED['agnes/hooks-runner'])
+    await h.host.close()
+  })
+
+  it('refuses to replace batch by a plugin that keeps the tools but drops the item-session hook', async () => {
+    const row = 'ext:agnes/batch'
+    const body = ['batch_start', 'batch_status', 'batch_cancel']
+      .map((n) => `agnes.registerTool(tool('${n}'))`)
+      .join('\n')
+    const h = await pluginHost(pluginSource(body, 'plugin', row))
+    await expect(h.host.applyRuntimeTarget(targetOf([pluginRow(row)]))).rejects.toThrow(
+      /replacement of ext:agnes\/batch must register hooks: tool_call/,
+    )
+    await settle()
+    expect(listed(h, 'agnes/batch')?.loaded).toBe(true)
+    expect(h.host.kernel.registrations('agnes/batch')).toEqual(SUPPLIED['agnes/batch'])
+    expect(h.host.kernel.tools.resolve('batch_start')?.source.source).toBe('agnes/batch')
     await h.host.close()
   })
 

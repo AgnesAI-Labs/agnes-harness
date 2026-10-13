@@ -1,5 +1,6 @@
 import { type Host, type HostSession, leanEvent, type WorkspaceBinding } from '@agnes/host'
 import type { WorkerGeneration } from '@agnes/protocol'
+import { assertBatchItemConfinement } from './batch-confinement.js'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
 import { releaseRawExport } from './export-raw.js'
 import {
@@ -72,6 +73,18 @@ const ACTIVE_METHODS = new Set([
   'callService',
 ])
 
+/** Commands that start or continue a turn: a batch item session runs none without its hook. */
+const TURN_METHODS = new Set([
+  'enqueue',
+  'sendQueuedNow',
+  'run',
+  'append',
+  'resume',
+  'fork',
+  'manualCompact',
+  'decideApproval',
+])
+
 /** Owns every HostSession in the single shared business worker. */
 export class HostedSessions {
   private readonly sessions = new Map<string, HostedSession>()
@@ -112,6 +125,7 @@ export class HostedSessions {
 
   async open(frame: SessionOpenFrame): Promise<SessionOpenResult> {
     if (this.closingAll) throw new Error('shared worker is closing')
+    assertBatchItemConfinement(this.options.host, frame.sessionKey)
     const envelope = parseWorkspaceBinding(frame.params.binding, frame.sessionKey)
     const binding = this.options.host.acceptWorkspaceBinding(envelope, frame.sessionKey)
     const parent = frame.params.parent
@@ -220,6 +234,7 @@ export class HostedSessions {
   }
 
   async dispatch(frame: SessionCommandFrame): Promise<unknown> {
+    if (TURN_METHODS.has(frame.method)) assertBatchItemConfinement(this.options.host, frame.sessionKey)
     const stub = this.stubs.get(frame.sessionKey)
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
@@ -377,6 +392,7 @@ export class HostedSessions {
     const started = this.clock()
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
+      assertBatchItemConfinement(this.options.host, key)
       const session = await this.options.host
         .createSession({
           key,
@@ -505,6 +521,7 @@ export class HostedSessions {
       input.childKey === parentSession.key
     )
       throw new Error('invalid fork command')
+    assertBatchItemConfinement(this.options.host, input.childKey)
     const envelope = parseWorkspaceBinding(input.binding, input.childKey)
     const binding = this.options.host.acceptWorkspaceBinding(envelope, input.childKey)
     const parent = { key: parentSession.key, boundarySeq: input.at }

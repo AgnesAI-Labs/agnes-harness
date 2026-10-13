@@ -4,6 +4,12 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolContext.session` gains the optional `imageInputPolicy()` and `imageInput({ bytes, mimeType, name })`.
+The first reports the active model's image limits for tool-supplied pixels (`supported`, `maxWidth`,
+`maxHeight`, `maxBytes`, `maxPixels`); the second checks prepared PNG or JPEG bytes against them, stores
+them as an artifact and returns a result whose image block the next model request carries. Both are
+absent in runtimes that do not provide them.
+
 `ToolContext` gains the optional `jobs`: the session's background jobs. `start(cmd, { cwd?, env? })` runs a
 command the way `exec` does (same shell, sandbox and policy) but returns once it is running, with a `JobInfo`
 (`id`, `command`, `cwd`, `status` of `running`, `exited` or `stopped`, `code` once it exited, `startedAt`);

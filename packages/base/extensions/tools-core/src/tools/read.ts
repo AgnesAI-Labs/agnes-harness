@@ -7,6 +7,7 @@ import {
 import { observe, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { readWorkspaceImage } from './local-image.js'
 import { saveAttachment } from './save-to.js'
 import { ReadParams } from './schemas.js'
 
@@ -177,7 +178,7 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Binary files, PDF, audio and video may be unreadable with the current pi-ai input. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace; a target that already exists is refused.',
+    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). A workspace PNG or JPEG file (up to 20 MiB and 64 megapixels, single frame) becomes an image for the model when the model supports images; it is downscaled to the model limit, and max_edge lowers its longest edge further. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace; a target that already exists is refused.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -295,7 +296,10 @@ export const readTool = defineTool({
       if ((e as { code?: string }).code === 'ENOENT') observe(ctx.session.key, abs, undefined)
       return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
     }
-    if (isBinary(bytes))
+    if (isBinary(bytes)) {
+      // Only a file the text path refuses is looked at as an image, so text reads stay as they were.
+      const image = await readWorkspaceImage(args.path, bytes, ctx, args.max_edge)
+      if (image) return image
       return {
         content: [
           {
@@ -305,6 +309,7 @@ export const readTool = defineTool({
         ],
         isError: true,
       }
+    }
     // What this session has now seen of the file, taken from the whole of what came back and before
     // the cut below, so that `write` can refuse to replace it once it has changed. A page of a file
     // counts as having read the file.

@@ -11,6 +11,8 @@ export const ReadParams = Type.Object(
     offset: Type.Optional(Type.Integer({ minimum: 1 })),
     limit: Type.Optional(Type.Integer({ minimum: 1 })),
     saveTo: Type.Optional(Path),
+    // Only ever lowers the image edge; 1456 is the fixed product limit for model images.
+    max_edge: Type.Optional(Type.Integer({ minimum: 64, maximum: 1456 })),
   },
   { additionalProperties: false },
 )

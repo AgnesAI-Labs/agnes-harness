@@ -118,6 +118,10 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/artifact.read',
       '_agnes/v1/attachment.upload',
       '_agnes/v1/auth.claim',
+      '_agnes/v1/batch.cancel',
+      '_agnes/v1/batch.list',
+      '_agnes/v1/batch.start',
+      '_agnes/v1/batch.status',
       '_agnes/v1/clientModules.callEffect',
       '_agnes/v1/clientModules.callService',
       '_agnes/v1/clientModules.list',
@@ -233,7 +237,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(122)
+    expect(Object.keys(METHODS)).toHaveLength(126)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

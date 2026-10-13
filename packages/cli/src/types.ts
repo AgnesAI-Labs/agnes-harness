@@ -16,6 +16,7 @@ export type Command =
   | 'import'
   | 'doctor'
   | 'computer-use'
+  | 'batch'
   | 'profile'
   | 'package'
   | 'packages'

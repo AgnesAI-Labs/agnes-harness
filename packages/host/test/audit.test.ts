@@ -53,6 +53,7 @@ const CURRENT_KINDS = [
   'session.open',
   'session.load',
   'session.verify_full',
+  'batch.started',
 ] as const
 
 describe('audit kind closure', () => {

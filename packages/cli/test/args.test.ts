@@ -144,6 +144,16 @@ describe('parseArgs: subcommands', () => {
     expect(usage()).toContain('agh computer-use status [--json]')
   })
 
+  it('hands the tail of agh batch to its own grammar and lists it in the usage', () => {
+    expect(parseArgs(['batch', 'start', 'lab', '--prompt', 'x', '--json'])).toMatchObject({
+      command: 'batch',
+      rest: ['start', 'lab', '--prompt', 'x', '--json'],
+      positional: [],
+      json: false,
+    })
+    expect(usage()).toContain('agh batch start <dir>')
+  })
+
   it('collects repeated Computer Use doctor include and skip selectors without swallowing them', () => {
     expect(
       parseArgs([

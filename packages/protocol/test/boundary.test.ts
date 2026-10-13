@@ -85,6 +85,7 @@ describe('protocol src boundary', () => {
         'USER_MESSAGE_IMAGE_LIMITS',
         'userImagePolicy',
         'BRIDGE_ERRORS',
+        'BATCH_ITEM_SESSION_PATTERN',
         'validateServiceCapability',
         'validateSurfaceArtifact',
         'validateSurfaceConfigValue',

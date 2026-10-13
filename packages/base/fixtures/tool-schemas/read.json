@@ -19,6 +19,11 @@
       "minLength": 1,
       "maxLength": 4096,
       "type": "string"
+    },
+    "max_edge": {
+      "minimum": 64,
+      "maximum": 1456,
+      "type": "integer"
     }
   },
   "required": [
