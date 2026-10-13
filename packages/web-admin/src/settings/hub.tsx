@@ -108,9 +108,18 @@ export function SettingsHub({
     return () => document.removeEventListener('agnes:settings-page', listener)
   }, [])
   useEffect(() => {
-    onPage(page)
-    const hash = location.hash.slice(1)
-    if (hash.startsWith('settings-subsection-')) requestAnimationFrame(() => revealSettingsAnchor(hash))
+    let current = true
+    // The native settings controller commits its navigation synchronously. Notify it after
+    // this React lifecycle so its flushSync does not run inside the current commit.
+    queueMicrotask(() => {
+      if (!current) return
+      onPage(page)
+      const hash = location.hash.slice(1)
+      if (hash.startsWith('settings-subsection-')) requestAnimationFrame(() => revealSettingsAnchor(hash))
+    })
+    return () => {
+      current = false
+    }
   }, [page, onPage])
   useEffect(() => {
     if (embedded) return
