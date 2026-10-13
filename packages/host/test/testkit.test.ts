@@ -5,7 +5,13 @@ import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import type { Prompter } from '@agnes/host'
 import type { InferenceEvent, ModelRecord } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ASSEMBLY_STEPS, crashAtEveryStep, createTestHost, runOnce } from '../testkit/index.js'
+import {
+  ASSEMBLY_STEPS,
+  baseSeamFactories,
+  crashAtEveryStep,
+  createTestHost,
+  runOnce,
+} from '../testkit/index.js'
 
 /** One scripted turn: ScriptedProvider prepends `sent`, so an answer and a stop are all it needs. */
 const say = (text: string): InferenceEvent[] => [
@@ -24,8 +30,13 @@ describe('testkit', () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
 
-  it('boots a host with faux seams and a scripted provider', async () => {
-    const { host, profile } = await createTestHost({ dataDir: tmp() })
+  it.each([false, true])('boots a scripted host with a real checkpoint=%s', async (realCheckpoint) => {
+    const { host, profile } = await createTestHost({
+      dataDir: tmp(),
+      ...(realCheckpoint
+        ? { packages: { '@agnes/base': { seams: { checkpoint: baseSeamFactories.checkpoint } } } }
+        : {}),
+    })
     expect(profile.hash).toMatch(/^sha256-/)
     expect(host.extensions()).toEqual([])
     await host.close()

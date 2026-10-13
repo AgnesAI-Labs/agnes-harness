@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import {
@@ -261,8 +262,8 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...seamsImpl.sandbox,
     forWorkspace,
     ...(!configuredSandbox && {
-      // The canonical root, resolved lazily: dataDir may not exist until the adapters open, and
-      // the bound fence compares canonical spellings, so the policy must name the real one.
+      // Resolve the canonical root after fixture bootstrap: the bound fence compares canonical
+      // spellings, so the policy must name the real one.
       fsPolicy: () => {
         const policy = testFsPolicy('/workspace')
         const workspaceRoot = localRealpathSync(o.dataDir)
@@ -392,13 +393,16 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   }
   for (const module of Object.values(modules)) attachTestSeamPlugins(module)
   const loader = new MemoryPackageLoader(modules)
+  const profileDir = join(o.dataDir, 'profiles', template)
+  // Match daemon bootstrap independently of whether the checkpoint creates a SQLite directory.
+  await mkdir(profileDir, { recursive: true, mode: 0o700 })
   const host = await createHost(profile, {
     dataDir: o.dataDir,
     packageDirs: new Map([
       ...ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir] as const),
       ...Object.entries(o.packageDirs ?? {}),
     ]),
-    profileDir: `${o.dataDir}/profiles/${template}`,
+    profileDir,
     workspaceRoot: o.dataDir,
     homeDir: o.dataDir,
     hostRoot: process.cwd(),
