@@ -10,7 +10,7 @@
   "packages/core/src": 26812,
   "packages/ai/src": 4169,
   "packages/host/src/assemble": 4212,
-  "packages/protocol/src": 2281,
+  "packages/protocol/src": 2303,
   "packages/cli/src/tui": 4000,
   "packages/cli-tui/src": 4737,
   "packages/extension-api/src": 1018,
