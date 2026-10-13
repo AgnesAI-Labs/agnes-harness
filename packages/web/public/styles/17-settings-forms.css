@@ -83,13 +83,14 @@
     font-size: var(--font-size-sm);
     line-height: 1.6;
   }
-  /* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
-   外观页仍沿用两栏，未动。 */
+  /* 模型账户页：账户列表在上、辅助模型在下，单列。内容区和其他页一样自己滚动
+   （见下方 .config-workspace），页面再长也不会被弹窗底边裁掉。外观页仍沿用两栏。 */
   #model-settings-pane .config-workspace {
-    flex: 0 1 auto;
     display: block;
     padding-bottom: var(--s24);
-    overflow: visible;
+  }
+  #model-settings-pane .config-workspace > * + * {
+    margin-top: var(--s16);
   }
   .config-workspace {
     min-width: 0;
@@ -275,12 +276,13 @@
     outline: 2px solid var(--agnes-input-border-focus);
     outline-offset: 2px;
   }
+  /* A quiet closing line of the account list; it carries no rule of its own, so nothing is drawn
+   between it and the list above or the card below. */
   .config-list-note {
-    margin-top: auto;
-    padding: var(--s12) 0;
-    color: var(--agnes-text-secondary);
-    border-top: 1px solid var(--agnes-line-primary);
+    padding: var(--s12) 0 0;
+    color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
+    line-height: 1.6;
   }
   .config-detail-card {
     min-height: 0;

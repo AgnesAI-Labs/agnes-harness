@@ -11,7 +11,7 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.slots.saveSession': 'Save {slot} for this session',
     'modelSettings.slots.title': 'Auxiliary models',
     'modelSettings.slots.help':
-      'Explicit profile defaults for new sessions. Existing sessions keep their models. Unset reviewer slots ask a human; the main model is never borrowed.',
+      'Choose the auxiliary models new sessions start with. Existing sessions keep their own. When no review model is set, reviews are handed to you; the main model is never used in its place.',
     'modelSettings.slots.fast': 'Fast · fast',
     'modelSettings.slots.fastHelp':
       'Used by auto review when selected; plugins may also use it for summaries.',
@@ -28,7 +28,7 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
       'Could not load or save auxiliary models. Your draft is retained; reload to resolve configuration changes.',
     'modelSettings.slots.advanced': 'Auxiliary models (advanced)',
     'modelSettings.slots.sessionHelp':
-      'Override a slot for this session. Select a model explicitly; profile defaults and the main model stay unchanged.',
+      'Change an auxiliary model for this session only. The defaults for new sessions and the main model stay unchanged.',
     'modelSettings.slots.sessionSaved': 'Session slot saved',
     'modelSettings.slots.sessionFailed': 'Could not save the session slot',
     'modelSettings.slots.choose': 'Choose a model',
@@ -57,7 +57,7 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.slots.saveSession': '为当前会话保存 {slot}',
     'modelSettings.slots.title': '辅助模型',
     'modelSettings.slots.help':
-      '显式设置新会话的 profile 默认值。已有会话保留自己的模型。未设置审查档位时转交人工，绝不借用主模型。',
+      '为新会话选择默认的辅助模型，已有会话保留各自的设置。没有设置审查模型时，审查会交给你处理，不会改用主模型。',
     'modelSettings.slots.fast': '快速 · fast',
     'modelSettings.slots.fastHelp': '选为审查档位时用于自动审查；插件也可将它用于摘要。',
     'modelSettings.slots.verifier': '验证器 · verifier',
@@ -71,8 +71,7 @@ export const modelSettingsLocaleCatalog: LocaleCatalog = {
     'modelSettings.slots.saved': '默认值已保存，适用于新会话',
     'modelSettings.slots.failed': '辅助模型读取或保存失败，草稿已保留；配置冲突时请重新加载。',
     'modelSettings.slots.advanced': '辅助模型（高级）',
-    'modelSettings.slots.sessionHelp':
-      '仅覆盖当前会话的档位。请显式选择模型；profile 默认值和主模型保持不变。',
+    'modelSettings.slots.sessionHelp': '只更改当前会话的辅助模型。新会话的默认值和主模型保持不变。',
     'modelSettings.slots.sessionSaved': '会话档位已保存',
     'modelSettings.slots.sessionFailed': '会话档位保存失败',
     'modelSettings.slots.choose': '选择模型',

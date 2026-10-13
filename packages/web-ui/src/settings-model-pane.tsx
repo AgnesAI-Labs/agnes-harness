@@ -22,17 +22,6 @@ export function SettingsModelPane({
       description={t('settings-shell.modelIntro')}
       headingId="config-title"
       bodyClassName="config-workspace"
-      actions={
-        <Button
-          id="config-add-account"
-          appearance="primary"
-          htmlType="button"
-          aria-label={t('settings-shell.addAccount')}
-        >
-          <Icon name="plus" />
-          <span>{t('settings-shell.addAccount')}</span>
-        </Button>
-      }
     >
       {beforeAccounts}
       <SettingsCard className="config-accounts-section" aria-label={t('settings-shell.accountsAria')}>
@@ -41,6 +30,16 @@ export function SettingsModelPane({
             <h3>{t('settings-shell.accountsTitle')}</h3>
             <p>{t('settings-shell.accountsIntro')}</p>
           </div>
+          {/* The action belongs to the list it adds to, clear of the dialog's close button. */}
+          <Button
+            id="config-add-account"
+            appearance="primary"
+            htmlType="button"
+            aria-label={t('settings-shell.addAccount')}
+          >
+            <Icon name="plus" />
+            <span>{t('settings-shell.addAccount')}</span>
+          </Button>
         </div>
         <div
           id="config-accounts"
