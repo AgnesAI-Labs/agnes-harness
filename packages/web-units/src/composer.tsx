@@ -358,6 +358,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <p id="composer-hint" data-kind={view.hint.kind}>
                   {view.hint.text}
                 </p>
+                {view.hint.action && (
+                  <Button
+                    className="composer-hint-action"
+                    data-testid="composer-use-model"
+                    disabled={view.model.pending}
+                    onClick={() => {
+                      const model = view.hint.action?.model
+                      if (model) void Promise.resolve(onModelSelect(model)).catch(onError)
+                    }}
+                  >
+                    {view.hint.action.label}
+                  </Button>
+                )}
                 {slots?.model}
                 <div className="model-field">
                   <dependencies.ModelPicker

@@ -153,6 +153,8 @@ export function createComposerController(
     const permissionUnknown =
       context.current !== undefined &&
       (context.permissionRefreshPending || context.sessionYoloEnabled === undefined)
+    // When the session's model is gone, the first model the configured accounts offer is the way on.
+    const fallbackModel = context.runtimeModels[0]
     const selectedRecord = context.runtimeModels.find(
       (m) => m.route === context.knownSessionModel?.route && m.id === context.knownSessionModel?.id,
     )
@@ -220,7 +222,20 @@ export function createComposerController(
                     : context.t('composer.hint.permissionRequired'),
                 }
               : context.knownSessionModel && !context.selectedModelAvailable()
-                ? { kind: 'state', text: context.t('composer.hint.modelUnavailable') }
+                ? fallbackModel
+                  ? {
+                      kind: 'state',
+                      text: context.t('composer.hint.modelGone'),
+                      action: {
+                        label: context.t('composer.hint.useModel', {
+                          model: fallbackModel.label
+                            ? `${fallbackModel.label} · ${fallbackModel.id}`
+                            : fallbackModel.id,
+                        }),
+                        model: fallbackModel,
+                      },
+                    }
+                  : { kind: 'state', text: context.t('composer.hint.modelUnavailable') }
                 : imageUnsupported
                   ? { kind: 'state', text: context.t('composer.hint.imageUnsupported') }
                   : composerHintPresentation(

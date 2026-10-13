@@ -103,7 +103,8 @@ export interface ComposerView {
   connected: boolean
   configured: boolean
   hasSession: boolean
-  hint: { kind: 'shortcut' | 'state'; text: string }
+  /** `action` is the one-click way out of the state the hint describes: switch to this model. */
+  hint: { kind: 'shortcut' | 'state'; text: string; action?: { label: string; model: ModelPickerOption } }
   input: { disabled: boolean; placeholder: string }
   loading: boolean
   model: ModelPickerState

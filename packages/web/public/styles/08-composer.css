@@ -414,6 +414,23 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
+  /* A hint that comes with its way out keeps to its text, so the action sits right beside it. */
+  #composer-hint:has(+ .composer-hint-action) {
+    flex: 0 1 auto;
+  }
+  .composer-hint-action.agnes-ui-button {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    margin-right: auto;
+    padding: 0 var(--s8);
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   #composer-hint:empty,
   #composer-hint:not([data-kind="state"]) {
     position: absolute;

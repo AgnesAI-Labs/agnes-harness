@@ -37,7 +37,7 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     UsagePanel: ConversationUsage,
     isSubmitShortcut: () => false,
   }
-  const onModelSelect = async () => false
+  const onModelSelect = vi.fn(async () => false)
   const onPermissionSelect = async () => false
   const onModelSettingsChange = async () => false
   const options = {
@@ -124,6 +124,21 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     expect(host.querySelector('#composer-hint')?.textContent).toBe('disconnected')
     expect(host.querySelector('#prompt')?.getAttribute('aria-describedby')).toBe('composer-hint')
     expect(host.querySelector('#composer kbd')).toBeNull()
+    expect(host.querySelector('[data-testid="composer-use-model"]')).toBeNull()
+
+    // A hint that names a way out offers it as one click: switch to the model it carries.
+    const next = { route: 'account', id: 'next' }
+    await act(async () =>
+      handle.current?.render({
+        ...view,
+        hint: { kind: 'state', text: 'model gone', action: { label: 'Use next', model: next } },
+      }),
+    )
+    const use = host.querySelector<HTMLButtonElement>('[data-testid="composer-use-model"]')
+    expect(use?.textContent).toBe('Use next')
+    expect(use?.previousElementSibling?.id).toBe('composer-hint')
+    await act(async () => use?.click())
+    expect(onModelSelect).toHaveBeenLastCalledWith(next)
   } finally {
     await act(async () => root.unmount())
     host.remove()
