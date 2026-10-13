@@ -1,15 +1,27 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundledPackageJson } from '@agnes/extension-api'
+import { RuntimeAdminSnapshot, validateAgainst } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import { emptyLock, type Lockfile, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
 import { type ExecFn, packageDir } from '../src/sources.js'
 import { verifyWorkspace } from '../src/workspace.js'
+import { listWorkspaceDeployments } from '../src/workspace-deployments.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const HASH = `sha256-${'0'.repeat(64)}`
@@ -281,6 +293,49 @@ describe('PackageManager project trust', () => {
       state: { trusted: '2026-09-07T00:00:00Z', enabled: true },
     })
     expect(verifyWorkspace(lock, profileDir)).toEqual({ ok: true, deployDir })
+  })
+
+  it('offers the deploy directories trust accepts, with what the lock already vouches for', async () => {
+    const manager = createPackageManager({
+      dataDir,
+      agnesVersion: '0.1.0',
+      now: () => '2026-09-07T00:00:00Z',
+    })
+    // Read with the lock and version the manager itself trusts with.
+    const offered = (_manager: unknown, agnesVersion = '0.1.0') =>
+      listWorkspaceDeployments(
+        profileDir,
+        () => readLock(profileDir, { profile: 'enterprise', agnesVersion }),
+        agnesVersion,
+      )
+    const offer = { deployDir: realpathSync(deployDir), path: 'deploy/xinwei', manifestId: 'xinwei' }
+    expect(offered(manager)).toEqual([{ ...offer, state: 'untrusted' }])
+    expect(
+      validateAgainst(RuntimeAdminSnapshot, {
+        providers: [],
+        presets: [],
+        localPluginFolders: { home: '/home/plugins', workspace: '/work/plugins' },
+        workspaceDeployments: offered(manager),
+      }).ok,
+    ).toBe(true)
+    // What is offered is what trust takes.
+    await manager.trustWorkspace(profileDir, offer.deployDir)
+    expect(offered(manager)).toEqual([{ ...offer, state: 'trusted' }])
+    writeFileSync(join(deployDir, 'notes.txt'), 'edited after trust')
+    expect(offered(manager)).toEqual([{ ...offer, state: 'changed' }])
+
+    // A directory without a valid manifest, a hidden one and a symlink are never offered.
+    mkdirSync(join(profileDir, 'deploy', 'empty'))
+    mkdirSync(join(profileDir, 'deploy', 'broken'))
+    writeFileSync(join(profileDir, 'deploy', 'broken', 'manifest.json'), '{ "id": "broken" }')
+    cpSync(deployDir, join(profileDir, '.hidden'), { recursive: true })
+    symlinkSync(deployDir, join(profileDir, 'deploy', 'linked'))
+    expect(offered(manager).map((entry) => entry.path)).toEqual(['deploy/xinwei'])
+    // A build the manifest does not support, or a policy that refuses workspace packages, offers none.
+    expect(offered(manager, '99.0.0')).toEqual([])
+    const lock = readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' })
+    writeLock(profileDir, { ...lock, policySnapshot: { ...lock.policySnapshot, workspacePackages: 'deny' } })
+    expect(offered(manager)).toEqual([])
   })
 
   it('refuses identity drift, policy denial, and deploy directories outside the profile root', async () => {

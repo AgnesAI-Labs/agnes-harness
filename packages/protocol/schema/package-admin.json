@@ -1671,7 +1671,17 @@
                   "additionalProperties": false,
                   "properties": {
                     "key": { "type": "string", "minLength": 1, "maxLength": 1024 },
-                    "open": { "type": "boolean" }
+                    "open": { "type": "boolean" },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "The session's title, when it has one."
+                    },
+                    "run": {
+                      "enum": ["idle", "running"],
+                      "description": "Whether a turn is in progress. A session that is not open is idle."
+                    }
                   },
                   "required": ["key", "open"]
                 }

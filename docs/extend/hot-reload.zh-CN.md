@@ -67,4 +67,4 @@ const status = host.pluginGenerationStatus?.()
 
 生产 daemon 通过持久化包/目标协调路径发布。嵌入者将 PackageManager 的 `bindLocalPluginReload({ async reloadPlugin(id) { … } })` 绑定到自己的发布入口；已完成源快照准备时可等待 `host.reloadPlugin(id)`。恢复当前 head 时也要持久化 desired state，不能只保存会话 pin。
 
-Node 管理客户端可调用 `client.packages.generations({ profile })`；只读 RPC 为 `_agnes/v1/plugins.generations`，本地 BFF 路由为 `POST /admin/plugins/api/generations`，均要求 `packages.read`。`packages.list` 也可返回 generation 状态和包计数。状态错误仅公开稳定错误码；不会返回源码、Skills 正文或已解析密钥。
+Node 管理客户端可调用 `client.packages.generations({ profile })`；只读 RPC 为 `_agnes/v1/plugins.generations`，本地 BFF 路由为 `POST /admin/plugins/api/generations`，均要求 `packages.read`。`packages.list` 也可返回 generation 状态和包计数。每个 generation 最多列出 256 个仍由它持有的会话，形如 `{ key, open, title?, run }`：会话有标题时带 `title`；有轮次在进行时 `run` 为 `running`，其余情况（包括会话未打开）为 `idle`。状态错误仅公开稳定错误码；不会返回源码、Skills 正文或已解析密钥。

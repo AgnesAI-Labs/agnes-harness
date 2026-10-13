@@ -213,6 +213,7 @@ import { bindConnection } from './connection.js'
 import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
+import { describeGenerationSessions } from './generation-sessions.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
@@ -249,6 +250,7 @@ import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
 import { webhookSessions } from './webhook-sessions.js'
 import { WorkerPool } from './worker-pool.js'
+import { PACKAGE_MANAGER_VERSION, workspaceDeployments } from './workspace-deployments.js'
 import { listenWebSocket } from './ws.js'
 
 /**
@@ -1545,11 +1547,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
             generationStatus: async () => {
               const worker = await pool.acquireSharedWorker()
-              return (await worker.command(
+              const status = (await worker.command(
                 'pluginGenerations.status',
                 {},
                 { timeoutMs: o.config.limits.workerStartupMs },
               )) as import('@agnes/protocol').PluginGenerationStatus
+              const running = (key: string) => registry.get(key)?.session.running === true
+              return describeGenerationSessions(status, { lister, running })
             },
             publicationStatus: async () => {
               const worker = await pool.acquireSharedWorker()
@@ -2411,6 +2415,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               ...(catalog.bundles ? { bundles: catalog.bundles } : {}),
               ...(catalog.security ? { security: catalog.security } : {}),
               localPluginFolders,
+              workspaceDeployments: await workspaceDeployments(o.packageRuntime, o.profile.name),
               ...(catalog.publication ? { publication: catalog.publication } : {}),
             }
           },
@@ -2908,7 +2913,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   let runtimeReferenceReader: PackageReferenceFactReader | undefined
   const packageManager = createPackageManager({
     dataDir: scope.dataDir,
-    agnesVersion: '0.0.0',
+    agnesVersion: PACKAGE_MANAGER_VERSION,
     cwd: scope.workspace,
     localPlugins: localPluginRoots(scope.home, scope.workspace),
     sourceAdapters: [pluginProposalSourceAdapter(join(scope.dataDir, 'resource-control'))],

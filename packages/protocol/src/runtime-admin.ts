@@ -125,6 +125,24 @@ export const RuntimeAdminSnapshot = Type.Object(
       { maxItems: 256 },
     ),
     localPluginFolders: Type.Object({ home: text, workspace: text }, { additionalProperties: false }),
+    /**
+     * The deploy directories `packages.trustWorkspace` accepts for this profile. `deployDir` is the
+     * value to send; `trusted` needs no action, `changed` was trusted before its files changed.
+     */
+    workspaceDeployments: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            deployDir: Type.String({ minLength: 1, maxLength: 4096 }),
+            path: text,
+            manifestId: text,
+            state: Type.Union([Type.Literal('untrusted'), Type.Literal('trusted'), Type.Literal('changed')]),
+          },
+          { additionalProperties: false },
+        ),
+        { maxItems: 64 },
+      ),
+    ),
     publication: Type.Optional(RuntimePublicationReport),
     security: Type.Optional(RuntimeSecurityStatus),
   },
