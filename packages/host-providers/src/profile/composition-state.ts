@@ -1,22 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
-import {
-  linkSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   checkResolvedCompositionSelection,
   type ResolvedComposition,
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
+import { DurableStateError, publishFileDurablySync, removeFileDurablySync } from '@agnes/package-manager'
 
 export type CompositionBinding = Readonly<{
   sessionKey: string
@@ -55,52 +47,80 @@ export class CompositionSessionStore {
   private path(key: string): string {
     return join(this.root, createHash('sha256').update(key).digest('hex') + '.json')
   }
+  /** A binding that exists but is not a complete record is a located corruption, never a missing one. */
   read(key: string): CompositionBinding | undefined {
+    const file = this.path(key)
     let bytes: string
     try {
-      bytes = readFileSync(this.path(key), 'utf8')
+      bytes = readFileSync(file, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-      throw error
+      throw invalidBinding(file, 'cannot be read', error)
     }
-    const value = JSON.parse(bytes) as CompositionBinding
+    let value: Partial<CompositionBinding> | null
+    try {
+      value = JSON.parse(bytes) as Partial<CompositionBinding> | null
+    } catch (error) {
+      throw invalidBinding(file, 'is not valid JSON', error)
+    }
+    const { tree, profile } = value ?? {}
     if (
-      value.sessionKey !== key ||
-      !value.tree ||
-      !value.profile ||
-      value.tree.profile !== value.profile.name ||
-      !/^sha256-[a-f0-9]{64}$/.test(value.tree.hash)
+      value?.sessionKey !== key ||
+      !tree ||
+      typeof tree !== 'object' ||
+      !profile ||
+      typeof profile !== 'object' ||
+      tree.profile !== profile.name ||
+      typeof tree.hash !== 'string' ||
+      !/^sha256-[a-f0-9]{64}$/.test(tree.hash)
     )
-      throw new Error('E_COMPOSITION_BINDING_INVALID: session composition cannot be resumed')
-    checkResolvedCompositionSelection(value.tree.selection)
-    return value
+      throw invalidBinding(file, 'does not describe this session')
+    try {
+      checkResolvedCompositionSelection(tree.selection)
+    } catch (error) {
+      throw invalidBinding(file, 'has an invalid selection', error)
+    }
+    return value as CompositionBinding
   }
+  /** For lookups that must not fail on damage (ownership, deletion); opening a session uses `read`. */
+  readIfValid(key: string): CompositionBinding | undefined {
+    try {
+      return this.read(key)
+    } catch {
+      return undefined
+    }
+  }
+  /** A damaged intent cannot prove its session is elsewhere, so it counts as using the tree. */
+  mayUseTree(key: string, treeHash: string): boolean {
+    try {
+      return this.read(key)?.tree.hash === treeHash
+    } catch {
+      return true
+    }
+  }
+  /**
+   * Publishes the intent record durably (see `publishFileDurablySync`), so the generation pin that
+   * follows it can never survive power loss without it. The first writer wins.
+   */
   pin(binding: CompositionBinding): CompositionBinding {
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
-    const path = this.path(binding.sessionKey),
-      temporary = path + '.' + randomUUID()
-    writeFileSync(temporary, JSON.stringify(binding), { mode: 0o600, flag: 'wx', flush: true })
-    try {
-      try {
-        linkSync(temporary, path)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      }
-      return this.read(binding.sessionKey)!
-    } finally {
-      rmSync(temporary, { force: true })
-    }
+    publishFileDurablySync(this.path(binding.sessionKey), JSON.stringify(binding))
+    return this.read(binding.sessionKey)!
   }
   release(key: string): void {
-    rmSync(this.path(key), { force: true })
+    removeFileDurablySync(this.path(key))
   }
   /**
    * A binding is the intent record written before the generation pin and released after it, so a crash
    * on either side leaves a binding without a pin. Drops those (and the profile snapshot each carries)
    * once older than the grace in which another worker may still be opening the session.
+   *
+   * The pin is looked up by the binding's file name, which is the digest of its session key, never by
+   * parsing the binding: a damaged binding whose pin exists is kept (resume then refuses it as
+   * corrupt), and nothing is deleted unless the pin is positively absent.
    */
   sweepOrphans(
-    hasGenerationPin: (key: string) => boolean,
+    pinState: (keyDigest: string) => 'present' | 'absent',
     options: { graceMs?: number; now?: number } = {},
   ): readonly string[] {
     const grace = options.graceMs ?? ORPHAN_GRACE_MS,
@@ -122,31 +142,35 @@ export class CompositionSessionStore {
         continue
       }
       if (age < grace) continue
-      if (!/^[a-f0-9]{64}\.json$/.test(name)) {
-        // Interrupted pin temporaries.
+      const digest = /^([a-f0-9]{64})\.json$/.exec(name)?.[1]
+      if (!digest) {
+        // Interrupted publication temporaries.
         rmSync(path, { force: true })
         continue
       }
-      let key: unknown
+      let state: 'present' | 'absent' = 'present'
       try {
-        key = (JSON.parse(readFileSync(path, 'utf8')) as { sessionKey?: unknown }).sessionKey
+        state = pinState(digest)
       } catch {
-        key = undefined
+        // An unreadable pin directory is not proof of an orphan.
       }
-      if (typeof key === 'string') {
-        let pinned = true
-        try {
-          pinned = hasGenerationPin(key)
-        } catch {
-          // An unreadable pin is not proof of an orphan.
-        }
-        if (pinned) continue
-      }
-      rmSync(path, { force: true })
+      if (state === 'present') continue
+      removeFileDurablySync(path)
       removed.push(name)
     }
     return removed
   }
+}
+
+function invalidBinding(file: string, reason: string, cause?: unknown): DurableStateError {
+  return Object.assign(
+    new DurableStateError(
+      'E_COMPOSITION_BINDING_INVALID',
+      `session composition ${basename(file)} ${reason}; it is kept for inspection and the session cannot be resumed`,
+      file,
+    ),
+    cause === undefined ? {} : { cause },
+  )
 }
 
 const ORPHAN_GRACE_MS = 10 * 60_000

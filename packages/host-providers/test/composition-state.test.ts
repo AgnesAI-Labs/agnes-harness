@@ -36,7 +36,8 @@ describe('composition binding orphan sweep', () => {
     const orphan = bindingFile(store, 'orphan', HOUR),
       pinned = bindingFile(store, 'pinned', HOUR),
       opening = bindingFile(store, 'opening', 0)
-    const removed = store.sweepOrphans((key) => key === 'pinned')
+    const digest = (key: string) => createHash('sha256').update(key).digest('hex')
+    const removed = store.sweepOrphans((hash) => (hash === digest('pinned') ? 'present' : 'absent'))
     expect(removed).toHaveLength(1)
     expect(existsSync(orphan)).toBe(false)
     expect(existsSync(pinned)).toBe(true)
@@ -52,7 +53,61 @@ describe('composition binding orphan sweep', () => {
     expect(existsSync(path)).toBe(true)
   })
 
-  it('removes interrupted pin temporaries and unparseable stale bindings', () => {
+  it('keeps a damaged binding while its generation pin exists and refuses to resume it', () => {
+    const store = new CompositionSessionStore(home())
+    mkdirSync(store.root, { recursive: true })
+    const key = 'saved-session',
+      path = join(store.root, `${createHash('sha256').update(key).digest('hex')}.json`)
+    writeFileSync(path, '{')
+    age(path, HOUR)
+    const asked: string[] = []
+    expect(
+      store.sweepOrphans((digest) => {
+        asked.push(digest)
+        return 'present'
+      }),
+    ).toEqual([])
+    expect(asked).toEqual([createHash('sha256').update(key).digest('hex')])
+    expect(existsSync(path)).toBe(true)
+    expect(() => store.read(key)).toThrow(/E_COMPOSITION_BINDING_INVALID/)
+    try {
+      store.read(key)
+    } catch (error) {
+      expect((error as { file?: string }).file).toBe(path)
+    }
+  })
+
+  it('removes a damaged binding only when its pin is positively absent', () => {
+    const store = new CompositionSessionStore(home())
+    mkdirSync(store.root, { recursive: true })
+    const path = join(store.root, `${createHash('sha256').update('never-pinned').digest('hex')}.json`)
+    writeFileSync(path, '{')
+    age(path, HOUR)
+    expect(store.sweepOrphans(() => 'absent')).toHaveLength(1)
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('reports every shape failure of a binding as a located invalid binding', () => {
+    const store = new CompositionSessionStore(home())
+    mkdirSync(store.root, { recursive: true })
+    for (const [key, content] of [
+      ['null-binding', 'null'],
+      ['no-tree', JSON.stringify({ sessionKey: 'no-tree', profile: { name: 'p' } })],
+      [
+        'bad-selection',
+        JSON.stringify({
+          sessionKey: 'bad-selection',
+          profile: { name: 'p' },
+          tree: { profile: 'p', hash: `sha256-${'a'.repeat(64)}`, selection: 3 },
+        }),
+      ],
+    ] as const) {
+      writeFileSync(join(store.root, `${createHash('sha256').update(key).digest('hex')}.json`), content)
+      expect(() => store.read(key)).toThrow(/E_COMPOSITION_BINDING_INVALID/)
+    }
+  })
+
+  it('removes interrupted pin temporaries and stale bindings whose pin is absent', () => {
     const store = new CompositionSessionStore(home())
     mkdirSync(store.root, { recursive: true })
     const temporary = join(store.root, `${'a'.repeat(64)}.json.${randomUUID()}`),
@@ -61,7 +116,7 @@ describe('composition binding orphan sweep', () => {
     writeFileSync(torn, '{')
     age(temporary, HOUR)
     age(torn, HOUR)
-    store.sweepOrphans(() => true)
+    store.sweepOrphans(() => 'absent')
     expect(existsSync(temporary)).toBe(false)
     expect(existsSync(torn)).toBe(false)
   })

@@ -149,9 +149,9 @@ describe('client module immutable snapshots', () => {
       ],
       'test',
     )
-    store.pin('old-session', snapshot.id)
+    store.pin('old-session', snapshot.id, [])
     const another = store.create(decodeRuntimeTargetArtifact(snapshot.artifact), snapshot.sources, 'test')
-    store.pin('other-session', another.id)
+    store.pin('other-session', another.id, [])
     rmSync(f.packageDirectory, { recursive: true })
     const empty: InstalledInventory = { profile: 'local-dev', hash: 'empty', packages: [] }
     const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })

@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
-  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -17,9 +16,20 @@ import {
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
+import { publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { syncDirectory } from './integrity.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
+import {
+  corrupt,
+  DurableStateError,
+  decodeGenerationRecord,
+  decodeHeadRecord,
+  decodeSessionPin,
+  GENERATION_ID_PATTERN,
+  parseRecord,
+  sessionPinFileName,
+} from './runtime-snapshots-decode.js'
 import {
   type RuntimeGenerationResourceInput,
   type RuntimeGenerationResourceSnapshot,
@@ -28,17 +38,62 @@ import {
 } from './runtime-snapshots-resources.js'
 import { hashDirectory } from './sources.js'
 
-const OWNER_FILE = 'owner.pid'
+// Durable record publication is shared by every module that keeps recoverable state beside generations.
+export { publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
+export { DurableStateError } from './runtime-snapshots-decode.js'
+
+const OWNER_FILE = 'owner.json'
 const ADOPTERS_DIR = 'adopters'
 const UNOWNED_GRACE_MS = 10 * 60_000
+const PIN_LOCK_STALE_MS = 30_000
+const PIN_LOCK_WAIT_MS = 10_000
 
-function writeAtomically(path: string, bytes: string): void {
-  const temporary = `${path}.${randomUUID()}.tmp`
+/** A process recorded as holding a generation: its pid, and its start identity when one was known. */
+type Holder = Readonly<{ pid: number; startId?: string }>
+
+/**
+ * How a store tells whether a recorded holder still runs. `startId` identifies this process beyond
+ * its pid, so a reused pid is not mistaken for the holder. Without one a store records and compares
+ * bare pids, which can only keep a generation longer than needed, never remove one early.
+ */
+export type ProcessLiveness = Readonly<{
+  startId: string
+  /** False only when the process is gone or the pid now belongs to another process; unknown counts as running. */
+  isRunning(pid: number, startId: string): Promise<boolean>
+}>
+
+export type StateProblem = Readonly<{ file: string; reason: string }>
+
+function parseHolder(bytes: string): Holder | undefined {
   try {
-    writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx', flush: true })
-    renameSync(temporary, path)
-  } finally {
-    rmSync(temporary, { force: true })
+    const value = JSON.parse(bytes) as { pid?: unknown; startId?: unknown } | null
+    if (!value || !Number.isSafeInteger(value.pid) || (value.pid as number) <= 0) return undefined
+    return {
+      pid: value.pid as number,
+      ...(typeof value.startId === 'string' && value.startId ? { startId: value.startId } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function pidExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
+}
+
+function pause(ms: number): void {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  } catch {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      // Atomics.wait is unavailable; a short spin covers a contended lock.
+    }
   }
 }
 /** The seam selections a generation's container is compiled from, with the format they were written in. */
@@ -64,7 +119,7 @@ export const GENERATION_SNAPSHOT_VERSION = 3
 
 export type PluginGenerationSnapshot = Readonly<{
   version?: 1 | 2 | 3
-  /** Absent on a snapshot written before seams were recorded; such a snapshot cannot be resumed. */
+  /** Present on every snapshot a session can resume; older formats carry none. */
   seams?: GenerationSeams
   id: string
   artifact: RuntimeTargetArtifact
@@ -75,11 +130,14 @@ export type PluginGenerationSnapshot = Readonly<{
   resources?: RuntimeGenerationResourceSnapshot
 }>
 export type SessionGenerationPin = Readonly<{
-  /** Monotonic integer; absent only on a pin written before the field existed. */
-  formatVersion?: number
+  /** Monotonic integer of the format the pin was written in. */
+  formatVersion: number
   sessionKey: string
   generationId: string
-  /** The pinned seam implementations, recorded at the session's first binding. */
+  /**
+   * The pinned seam implementations, recorded at the session's first binding. Every readable pin
+   * carries them; only the key and generation of a pin written by a newer AGH are decoded.
+   */
   seams?: readonly PinnedSeam[]
   loop?: Readonly<{ id: string; version: string }>
   resourcesDigest?: string
@@ -90,13 +148,30 @@ export class RuntimeGenerationSnapshotStore {
   readonly root: string
   readonly #created = new Set<string>()
   readonly #token = randomUUID()
-  constructor(profileDirectory: string) {
+  readonly #liveness: ProcessLiveness | undefined
+  #problems: StateProblem[] = []
+  constructor(profileDirectory: string, options: { liveness?: ProcessLiveness | undefined } = {}) {
     this.root = join(profileDirectory, '.runtime-generations')
+    this.#liveness = options.liveness
   }
 
   private directory(id: string): string {
-    if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error('E_GENERATION_ID: invalid generation id')
+    if (!GENERATION_ID_PATTERN.test(id)) throw new Error('E_GENERATION_ID: invalid generation id')
     return join(this.root, id)
+  }
+
+  /** Creates a subdirectory of the root and makes its entry durable, so records published inside it outlive power loss. */
+  #ensure(name: string): string {
+    const directory = join(this.root, name)
+    if (mkdirSync(directory, { recursive: true, mode: 0o700 }) !== undefined) {
+      syncDirectory(this.root)
+      syncDirectory(join(this.root, '..'))
+    }
+    return directory
+  }
+
+  #holder(): Holder {
+    return { pid: process.pid, ...(this.#liveness ? { startId: this.#liveness.startId } : {}) }
   }
 
   create(
@@ -115,7 +190,7 @@ export class RuntimeGenerationSnapshotStore {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     try {
       // Written first so collection can tell a live creator from a dead one before generation.json exists.
-      writeFileSync(join(directory, OWNER_FILE), String(process.pid), { mode: 0o600, flush: true })
+      writeFileSync(join(directory, OWNER_FILE), JSON.stringify(this.#holder()), { mode: 0o600, flush: true })
       const copied = sources.map((source, index) => {
         if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
         const destination = join(directory, String(index))
@@ -127,20 +202,22 @@ export class RuntimeGenerationSnapshotStore {
       const resourcesDigest = resources
         ? writeGenerationResources(join(directory, 'resources'), resources)
         : undefined
-      writeAtomically(
+      publishFileDurablySync(
         join(directory, 'generation.json'),
         JSON.stringify({
           version: seams ? GENERATION_SNAPSHOT_VERSION : resources ? 2 : 1,
           ...(seams ? { seams } : {}),
           id,
-          ownerPid: process.pid,
           artifact: encodeRuntimeTargetArtifact(target),
           sources: copied,
           packages,
           compatibility,
           ...(resourcesDigest ? { resourcesDigest } : {}),
         }),
+        { replace: true },
       )
+      // The directory entry itself must be durable before any pin or head may name this generation.
+      syncDirectory(this.root)
       this.#created.add(id)
       this.#adopt(id)
       return this.read(id)
@@ -151,41 +228,19 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   read(id: string): PluginGenerationSnapshot {
-    const directory = this.directory(id)
+    const directory = this.directory(id),
+      file = join(directory, 'generation.json')
     let text: string
     try {
-      text = readFileSync(join(directory, 'generation.json'), 'utf8')
+      text = readFileSync(file, 'utf8')
     } catch {
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${id} cannot be resumed`)
     }
-    let record: PluginGenerationSnapshot
-    try {
-      record = JSON.parse(text) as PluginGenerationSnapshot
-    } catch {
-      throw new Error(`E_GENERATION_INTEGRITY: generation ${id} record is not valid JSON`)
-    }
-    if (typeof record.version === 'number' && record.version > GENERATION_SNAPSHOT_VERSION)
-      throw new Error(
-        `E_GENERATION_SNAPSHOT_NEWER: generation ${id} was written by a newer AGH (snapshot format ${record.version})`,
-      )
-    if (
-      record.id !== id ||
-      (record.version !== undefined && ![1, 2, 3].includes(record.version)) ||
-      (record.version === 2 && !/^[a-f0-9]{64}$/.test(record.resourcesDigest ?? '')) ||
-      (record.version === 3 && !validSeams(record.seams)) ||
-      typeof record.compatibility !== 'string' ||
-      !Array.isArray(record.sources) ||
-      !Array.isArray(record.packages) ||
-      record.packages.some((pkg) => typeof pkg.id !== 'string' || typeof pkg.version !== 'string')
-    )
-      throw new Error('E_GENERATION_INTEGRITY: invalid generation snapshot')
-    decodeRuntimeTargetArtifact(record.artifact)
+    const record = decodeGenerationRecord(parseRecord(text, file), id, file, GENERATION_SNAPSHOT_VERSION)
     const sources = record.sources.map((source, index) => {
-      if (!source.trusted || source.snapshot.directory !== String(index))
-        throw new Error('E_GENERATION_INTEGRITY: invalid package snapshot')
       const snapshot = { ...source.snapshot, directory: join(directory, String(index)) }
       if (hashDirectory(snapshot.directory, { exclude: [] }) !== snapshot.treeIntegrity)
-        throw new Error('E_GENERATION_INTEGRITY: package snapshot is unavailable or changed')
+        throw corrupt(file, `package snapshot ${index} is unavailable or changed`)
       return Object.freeze({ ...source, snapshot: Object.freeze(snapshot) })
     })
     return Object.freeze({
@@ -211,7 +266,14 @@ export class RuntimeGenerationSnapshotStore {
       decodeRuntimeTargetArtifact(record.artifact)
       return Object.freeze(record.artifact)
     } catch (cause) {
-      throw new Error('E_GENERATION_CONFIG_INTEGRITY: accepted configuration cannot be restored', { cause })
+      throw Object.assign(
+        new DurableStateError(
+          'E_GENERATION_CONFIG_INTEGRITY',
+          'accepted configuration cannot be restored',
+          path,
+        ),
+        { cause },
+      )
     }
   }
 
@@ -221,113 +283,149 @@ export class RuntimeGenerationSnapshotStore {
       path = join(directory, 'live-config.json')
     if (!existsSync(join(directory, 'generation.json')))
       throw new Error('E_GENERATION_SNAPSHOT_MISSING: configuration generation is unavailable')
-    if (!artifact) {
-      rmSync(path, { force: true })
-      syncDirectory(directory)
-      return
-    }
-    decodeRuntimeTargetArtifact(artifact)
-    const temporary = `${path}.${randomUUID()}.tmp`
-    try {
-      writeFileSync(temporary, JSON.stringify({ generationId: id, artifact }), {
-        mode: 0o600,
-        flag: 'wx',
-        flush: true,
-      })
-      renameSync(temporary, path)
-      syncDirectory(directory)
-    } finally {
-      rmSync(temporary, { force: true })
-    }
+    if (artifact) {
+      decodeRuntimeTargetArtifact(artifact)
+      publishFileDurablySync(path, JSON.stringify({ generationId: id, artifact }), { replace: true })
+    } else removeFileDurablySync(path)
   }
 
   private pinPath(sessionKey: string): string {
-    return join(this.root, 'sessions', `${createHash('sha256').update(sessionKey).digest('hex')}.json`)
+    return join(this.root, 'sessions', sessionPinFileName(sessionKey))
   }
 
-  pin(sessionKey: string, generationId: string, seams?: readonly PinnedSeam[]): SessionGenerationPin {
+  /** Binds the session's first generation. A pin already published by another worker wins and is returned. */
+  pin(sessionKey: string, generationId: string, seams: readonly PinnedSeam[]): SessionGenerationPin {
     if (!existsSync(join(this.directory(generationId), 'generation.json')))
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${generationId} cannot be bound`)
-    mkdirSync(join(this.root, 'sessions'), { recursive: true, mode: 0o700 })
-    const path = this.pinPath(sessionKey),
-      pin: SessionGenerationPin = {
-        formatVersion: SESSION_PIN_FORMAT_VERSION,
-        sessionKey,
-        generationId,
-        ...(seams ? { seams } : {}),
-      }
-    // Link publication is atomic and never overwrites another worker's first binding.
-    const temporary = `${path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, JSON.stringify(pin), { mode: 0o600, flag: 'wx', flush: true })
+    this.#ensure('sessions')
+    const pin: SessionGenerationPin = {
+      formatVersion: SESSION_PIN_FORMAT_VERSION,
+      sessionKey,
+      generationId,
+      seams,
+    }
+    return publishFileDurablySync(this.pinPath(sessionKey), JSON.stringify(pin))
+      ? Object.freeze(pin)
+      : (this.session(sessionKey) as SessionGenerationPin)
+  }
+
+  /**
+   * Whether a pin file exists for the session whose key has this sha256 digest, without reading it.
+   * Anything other than a definite absence counts as present, so an unreadable pin is never "no pin".
+   */
+  pinFileState(sessionKeyDigest: string): 'present' | 'absent' {
     try {
-      try {
-        linkSync(temporary, path)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-        return this.session(sessionKey) as SessionGenerationPin
-      }
-      return Object.freeze(pin)
-    } finally {
-      rmSync(temporary, { force: true })
+      statSync(join(this.root, 'sessions', `${sessionKeyDigest}.json`))
+      return 'present'
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'present'
     }
   }
 
   session(sessionKey: string): SessionGenerationPin | undefined {
     const path = this.pinPath(sessionKey)
-    if (!existsSync(path)) return undefined
-    let pin: SessionGenerationPin
+    let bytes: string
     try {
-      pin = JSON.parse(readFileSync(path, 'utf8')) as SessionGenerationPin
-    } catch {
-      throw new Error(`E_GENERATION_INTEGRITY: session pin ${sessionKey} is not valid JSON`)
+      bytes = readFileSync(path, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw corrupt(path, 'session pin cannot be read')
     }
-    if (pin.sessionKey !== sessionKey) throw new Error('E_GENERATION_INTEGRITY: session pin mismatch')
-    if (pin.formatVersion !== undefined && pin.formatVersion > SESSION_PIN_FORMAT_VERSION)
-      throw new Error(
-        `E_GENERATION_PIN_NEWER: session pin was written by a newer AGH (pin format ${pin.formatVersion})`,
-      )
-    this.directory(pin.generationId)
-    return Object.freeze(pin)
+    return Object.freeze(
+      decodeSessionPin(parseRecord(bytes, path), path, {
+        allowNewer: false,
+        currentFormat: SESSION_PIN_FORMAT_VERSION,
+      }),
+    )
   }
 
   /**
    * Every readable pin. One session that cannot be read here (written by a newer AGH, or damaged)
-   * must not hide the others or stop generation bookkeeping, and its generation must not be
-   * collected: a pin of a newer format still names its generation, and an unreadable one makes
-   * collection stand down altogether.
+   * must not hide the others or stop generation bookkeeping: a pin of a newer format still names its
+   * generation and keeps it, and a damaged one is listed by `corruptEntries()` and makes collection
+   * stand down altogether.
    */
   sessions(): readonly SessionGenerationPin[] {
     const directory = join(this.root, 'sessions')
-    this.#unreadablePins = 0
+    this.#problems = []
     if (!existsSync(directory)) return []
     const pins: SessionGenerationPin[] = []
     for (const name of readdirSync(directory).filter((entry) => entry.endsWith('.json'))) {
+      const file = join(directory, name)
       try {
-        const raw = JSON.parse(readFileSync(join(directory, name), 'utf8')) as SessionGenerationPin
-        try {
-          pins.push(this.session(raw.sessionKey) as SessionGenerationPin)
-        } catch (error) {
-          if (!String((error as Error).message).includes('E_GENERATION_PIN_NEWER')) throw error
-          this.directory(raw.generationId)
-          pins.push(Object.freeze(raw))
-        }
-      } catch {
-        this.#unreadablePins += 1
+        pins.push(
+          Object.freeze(
+            decodeSessionPin(parseRecord(readFileSync(file, 'utf8'), file), file, {
+              allowNewer: true,
+              currentFormat: SESSION_PIN_FORMAT_VERSION,
+            }),
+          ),
+        )
+      } catch (error) {
+        this.#problems.push({
+          file,
+          reason: error instanceof DurableStateError ? error.message : `${name}: cannot be read`,
+        })
       }
     }
     return pins
   }
-  #unreadablePins = 0
+
+  /** The damaged durable entries found by the latest `sessions()` or `collect()`, each with its file. */
+  corruptEntries(): readonly StateProblem[] {
+    return this.#problems
+  }
+
+  /**
+   * Serializes read-modify-write of one pin (and its release) across workers. The critical section is a single small
+   * read and publish, so a lock older than `PIN_LOCK_STALE_MS` belongs to a crashed worker and is removed.
+   */
+  #lockedPin<T>(sessionKey: string, body: () => T): T {
+    const lock = `${this.pinPath(sessionKey)}.lock`,
+      started = Date.now()
+    this.#ensure('sessions')
+    for (;;) {
+      try {
+        mkdirSync(lock, { mode: 0o700 })
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        let stale = false
+        try {
+          stale = Date.now() - statSync(lock).mtimeMs > PIN_LOCK_STALE_MS
+        } catch {
+          continue
+        }
+        if (stale) rmSync(lock, { recursive: true, force: true })
+        else if (Date.now() - started > PIN_LOCK_WAIT_MS)
+          throw new DurableStateError(
+            'E_GENERATION_PIN_BUSY',
+            `session pin is locked by another worker; remove ${lock} if no AGH process is running`,
+            lock,
+          )
+        else pause(5)
+      }
+    }
+    try {
+      return body()
+    } finally {
+      rmSync(lock, { recursive: true, force: true })
+    }
+  }
+
+  #replacePin(pin: SessionGenerationPin): SessionGenerationPin {
+    publishFileDurablySync(this.pinPath(pin.sessionKey), JSON.stringify(pin), { replace: true })
+    return Object.freeze(pin)
+  }
 
   recordLoop(sessionKey: string, loop: Readonly<{ id: string; version: string }>): void {
-    const pin = this.session(sessionKey)
-    if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
-    if (pin.loop && (pin.loop.id !== loop.id || pin.loop.version !== loop.version))
-      throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session loop differs from its generation pin')
-    const path = this.pinPath(sessionKey),
-      temporary = `${path}.${randomUUID()}.tmp`
-    writeFileSync(temporary, JSON.stringify({ ...pin, loop }), { mode: 0o600, flag: 'wx', flush: true })
-    renameSync(temporary, path)
+    this.#lockedPin(sessionKey, () => {
+      const pin = this.session(sessionKey)
+      if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
+      if (pin.loop && (pin.loop.id !== loop.id || pin.loop.version !== loop.version))
+        throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session loop differs from its generation pin')
+      this.#replacePin({ ...pin, loop })
+    })
   }
 
   /** Coordinator-owned idle migration. Admission must be excluded while replacing this pin. */
@@ -337,28 +435,20 @@ export class RuntimeGenerationSnapshotStore {
     generationId: string,
     seams?: readonly PinnedSeam[],
   ): SessionGenerationPin {
-    const pin = this.session(sessionKey)
-    if (!pin || pin.generationId !== expectedGenerationId)
-      throw new Error('E_GENERATION_BINDING_CONFLICT: session pin changed before migration')
-    if (this.read(pin.generationId).compatibility !== this.read(generationId).compatibility)
-      throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
-    const nextSeams = seams ?? pin.seams
-    const next: SessionGenerationPin = {
-      formatVersion: SESSION_PIN_FORMAT_VERSION,
-      sessionKey,
-      generationId,
-      ...(nextSeams ? { seams: nextSeams } : {}),
-      ...(pin.loop ? { loop: pin.loop } : {}),
-    }
-    const path = this.pinPath(sessionKey),
-      temporary = `${path}.${randomUUID()}.tmp`
-    try {
-      writeFileSync(temporary, JSON.stringify(next), { mode: 0o600, flag: 'wx', flush: true })
-      renameSync(temporary, path)
-      return Object.freeze(next)
-    } finally {
-      rmSync(temporary, { force: true })
-    }
+    return this.#lockedPin(sessionKey, () => {
+      const pin = this.session(sessionKey)
+      if (!pin || pin.generationId !== expectedGenerationId)
+        throw new Error('E_GENERATION_BINDING_CONFLICT: session pin changed before migration')
+      if (this.read(pin.generationId).compatibility !== this.read(generationId).compatibility)
+        throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
+      return this.#replacePin({
+        formatVersion: SESSION_PIN_FORMAT_VERSION,
+        sessionKey,
+        generationId,
+        seams: seams ?? (pin.seams as readonly PinnedSeam[]),
+        ...(pin.loop ? { loop: pin.loop } : {}),
+      })
+    })
   }
 
   sessionResources(key: string): RuntimeGenerationResourceSnapshot | undefined {
@@ -390,17 +480,19 @@ export class RuntimeGenerationSnapshotStore {
     const temporary = `${directory}.${randomUUID()}.tmp`
     try {
       const resourcesDigest = writeGenerationResources(temporary, resources)
-      rmSync(directory, { recursive: true, force: true })
-      renameSync(temporary, directory)
-      const path = this.pinPath(key),
-        record = `${path}.${randomUUID()}.tmp`
-      writeFileSync(record, JSON.stringify({ ...pin, resourcesDigest }), {
-        mode: 0o600,
-        flag: 'wx',
-        flush: true,
+      return this.#lockedPin(key, () => {
+        const current = this.session(key)
+        if (!current) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
+        // Another worker may have pinned resources, or migrated the session, while ours were written.
+        if (current.generationId !== pin.generationId)
+          throw new Error('E_GENERATION_BINDING_CONFLICT: session pin changed before resources were pinned')
+        if (current.resourcesDigest) return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
+        rmSync(directory, { recursive: true, force: true })
+        renameSync(temporary, directory)
+        syncDirectory(join(directory, '..'))
+        this.#replacePin({ ...current, resourcesDigest })
+        return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
       })
-      renameSync(record, path)
-      return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
     } finally {
       rmSync(temporary, { recursive: true, force: true })
     }
@@ -408,7 +500,8 @@ export class RuntimeGenerationSnapshotStore {
 
   /** Call only after the session has been deleted, never on close or hibernation. */
   releaseSession(sessionKey: string): void {
-    rmSync(this.pinPath(sessionKey), { force: true })
+    if (!existsSync(join(this.root, 'sessions'))) return
+    this.#lockedPin(sessionKey, () => removeFileDurablySync(this.pinPath(sessionKey)))
   }
 
   /**
@@ -418,15 +511,26 @@ export class RuntimeGenerationSnapshotStore {
   #adopt(id: string): void {
     const directory = join(this.directory(id), ADOPTERS_DIR)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
-    writeFileSync(join(directory, this.#token), String(process.pid), { mode: 0o600, flush: true })
+    publishFileDurablySync(join(directory, this.#token), JSON.stringify(this.#holder()), { replace: true })
   }
 
   #release(id: string): void {
     rmSync(join(this.directory(id), ADOPTERS_DIR, this.#token), { force: true })
   }
 
+  async #running(holder: Holder): Promise<boolean> {
+    if (holder.startId !== undefined && this.#liveness) {
+      try {
+        return await this.#liveness.isRunning(holder.pid, holder.startId)
+      } catch {
+        return true
+      }
+    }
+    return pidExists(holder.pid)
+  }
+
   /** Whether a different store (worker) still holds the generation; an unreadable record counts while young. */
-  #heldByOther(id: string): boolean {
+  async #heldByOther(id: string): Promise<boolean> {
     const directory = join(this.directory(id), ADOPTERS_DIR)
     let names: string[]
     try {
@@ -434,33 +538,28 @@ export class RuntimeGenerationSnapshotStore {
     } catch {
       return false
     }
-    return names.some((name) => {
-      if (name === this.#token) return false
+    for (const name of names) {
+      if (name === this.#token) continue
       const path = join(directory, name)
-      let pid: number
+      let holder: Holder | undefined
       try {
-        pid = Number(readFileSync(path, 'utf8'))
+        holder = parseHolder(readFileSync(path, 'utf8'))
       } catch {
-        return false
+        continue
       }
-      if (!Number.isSafeInteger(pid) || pid <= 0) {
+      if (!holder) {
         try {
-          return Date.now() - statSync(path).mtimeMs < UNOWNED_GRACE_MS
-        } catch {
-          return false
-        }
+          if (Date.now() - statSync(path).mtimeMs < UNOWNED_GRACE_MS) return true
+        } catch {}
+        continue
       }
-      try {
-        process.kill(pid, 0)
-        return true
-      } catch (error) {
-        return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-      }
-    })
+      if (await this.#running(holder)) return true
+    }
+    return false
   }
 
   /** Unreadable owner metadata counts as live until the directory is old enough that no creator can still be writing it. */
-  private ownerMayBeLive(id: string): boolean {
+  private async ownerMayBeLive(id: string): Promise<boolean> {
     const directory = this.directory(id),
       young = () => {
         try {
@@ -469,23 +568,13 @@ export class RuntimeGenerationSnapshotStore {
           return false
         }
       }
-    let ownerPid: unknown
+    let holder: Holder | undefined
     try {
-      ownerPid = JSON.parse(readFileSync(join(directory, 'generation.json'), 'utf8')).ownerPid
+      holder = parseHolder(readFileSync(join(directory, OWNER_FILE), 'utf8'))
     } catch {
-      try {
-        ownerPid = Number(readFileSync(join(directory, OWNER_FILE), 'utf8'))
-      } catch {
-        return young()
-      }
+      return young()
     }
-    if (typeof ownerPid !== 'number' || !Number.isSafeInteger(ownerPid) || ownerPid <= 0) return young()
-    try {
-      process.kill(ownerPid, 0)
-      return true
-    } catch (error) {
-      return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-    }
+    return holder ? this.#running(holder) : young()
   }
 
   private headPath(compositionKey: string): string {
@@ -497,19 +586,16 @@ export class RuntimeGenerationSnapshotStore {
     this.directory(generationId)
     if (!existsSync(join(this.directory(generationId), 'generation.json')))
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${generationId} cannot become the head`)
-    mkdirSync(join(this.root, 'heads'), { recursive: true, mode: 0o700 })
-    writeAtomically(this.headPath(compositionKey), JSON.stringify({ compositionKey, generationId }))
+    this.#ensure('heads')
+    publishFileDurablySync(this.headPath(compositionKey), JSON.stringify({ compositionKey, generationId }), {
+      replace: true,
+    })
   }
 
   headId(compositionKey: string): string | undefined {
+    const file = this.headPath(compositionKey)
     try {
-      const value = JSON.parse(readFileSync(this.headPath(compositionKey), 'utf8')) as {
-        compositionKey?: unknown
-        generationId?: unknown
-      }
-      if (value.compositionKey !== compositionKey || typeof value.generationId !== 'string') return undefined
-      this.directory(value.generationId)
-      return value.generationId
+      return decodeHeadRecord(parseRecord(readFileSync(file, 'utf8'), file), compositionKey, file)
     } catch {
       return undefined
     }
@@ -549,46 +635,44 @@ export class RuntimeGenerationSnapshotStore {
     }
   }
 
-  collect(keep: ReadonlySet<string>, retired: ReadonlySet<string> = new Set()): readonly string[] {
+  /**
+   * Removes generations nothing can still reach. Anything this store cannot read and so cannot prove
+   * unreferenced (a damaged pin or head, listed by `corruptEntries()`) stops the whole pass.
+   */
+  async collect(
+    keep: ReadonlySet<string>,
+    retired: ReadonlySet<string> = new Set(),
+  ): Promise<readonly string[]> {
     if (!existsSync(this.root)) return []
     const referenced = new Set(this.sessions().map((pin) => pin.generationId)),
       removed: string[] = []
     // A recorded head outlives the worker that created it; the next worker to start reuses it.
-    for (const name of existsSync(join(this.root, 'heads')) ? readdirSync(join(this.root, 'heads')) : []) {
+    const heads = join(this.root, 'heads')
+    for (const name of existsSync(heads)
+      ? readdirSync(heads).filter((entry) => entry.endsWith('.json'))
+      : []) {
+      const file = join(heads, name)
       try {
-        const head = JSON.parse(readFileSync(join(this.root, 'heads', name), 'utf8')) as {
-          generationId?: string
-        }
-        if (typeof head.generationId === 'string') referenced.add(head.generationId)
-      } catch {}
+        referenced.add(decodeHeadRecord(parseRecord(readFileSync(file, 'utf8'), file), undefined, file))
+      } catch (error) {
+        this.#problems.push({
+          file,
+          reason: error instanceof DurableStateError ? error.message : `${name}: cannot be read`,
+        })
+      }
     }
-    if (this.#unreadablePins > 0) return []
+    if (this.#problems.length > 0) return []
     for (const id of readdirSync(this.root)) {
       // Another workspace worker may still be accepting sessions on its own snapshot.
-      if (!/^[a-f0-9-]{36}$/.test(id) || keep.has(id)) continue
+      if (!GENERATION_ID_PATTERN.test(id) || keep.has(id)) continue
       this.#release(id)
-      if (referenced.has(id) || this.#heldByOther(id)) continue
-      if (!this.#created.has(id) && !retired.has(id) && this.ownerMayBeLive(id)) continue
+      if (referenced.has(id) || (await this.#heldByOther(id))) continue
+      if (!this.#created.has(id) && !retired.has(id) && (await this.ownerMayBeLive(id))) continue
       rmSync(this.directory(id), { recursive: true, force: true })
       removed.push(id)
       this.#created.delete(id)
     }
+    if (removed.length) syncDirectory(this.root)
     return removed
   }
-}
-
-function validSeams(value: unknown): value is GenerationSeams {
-  if (!value || typeof value !== 'object') return false
-  const record = value as { formatVersion?: unknown; selections?: unknown }
-  if (record.formatVersion !== 1) return false
-  const selections = record.selections
-  if (!selections || typeof selections !== 'object' || Array.isArray(selections)) return false
-  return Object.values(selections).every(
-    (selection) =>
-      selection &&
-      typeof selection === 'object' &&
-      typeof (selection as { provider?: unknown }).provider === 'string' &&
-      ((selection as { version?: unknown }).version === undefined ||
-        typeof (selection as { version?: unknown }).version === 'string'),
-  )
 }

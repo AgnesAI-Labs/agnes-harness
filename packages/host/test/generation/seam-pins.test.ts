@@ -7,6 +7,7 @@ import {
   describeDifferences,
   diffPins,
   pinnedBindings,
+  translateSessionFailure,
 } from '../../src/runtime/generation/seam-pins.js'
 
 const pin = (
@@ -47,8 +48,13 @@ describe('seam pins', () => {
     )
   })
 
-  it('refuses a container whose bindings drifted from the pin, and ignores a legacy pin without any', () => {
-    expect(() => assertPinsMatch('s', undefined, [pin('approval', 'z')])).not.toThrow()
+  it('refuses a pin that records no seams as corrupt instead of skipping the comparison', () => {
+    expect(() => assertPinsMatch('s', undefined, [pin('approval', 'z')])).toThrowError(
+      expect.objectContaining({ code: 'E_SESSION_CORRUPT' }),
+    )
+  })
+
+  it('refuses a container whose bindings drifted from the pin', () => {
     expect(() => assertPinsMatch('s', [pin('approval', 'a')], [pin('approval', 'a')])).not.toThrow()
     expect(() => assertPinsMatch('s', [pin('approval', 'a')], [pin('approval', 'z')])).toThrowError(
       expect.objectContaining({
@@ -85,9 +91,25 @@ describe('seam pins', () => {
     ['E_GENERATION_SEAMS_MISSING: old', 'older'],
     ['E_SEAM_MISSING: provider gone', 'older'],
     ['E_GENERATION_INTEGRITY: changed', 'corrupt'],
+    ['E_GENERATION_CONFIG_INTEGRITY: live config', 'corrupt'],
+    ['E_COMPOSITION_BINDING_INVALID: intent', 'corrupt'],
+    ['E_GENERATION_PIN_NEWER: pin', 'newer'],
     ['E_FORMAT_CORRUPT: header', 'corrupt'],
   ] as const)('classifies %s as %s', (message, issue) => {
     expect(classifyGenerationFailure(new Error(message))).toBe(issue)
+  })
+
+  it('maps a damaged durable record to a corrupt refusal that names its file, and keeps newer distinct', () => {
+    const damaged = Object.assign(new Error('E_GENERATION_INTEGRITY: abc.json: not valid JSON'), {
+      file: '.runtime-generations/sessions/abc.json',
+    })
+    expect(translateSessionFailure(damaged, 's')).toMatchObject({
+      code: 'E_SESSION_CORRUPT',
+      detail: { sessionKey: 's', issue: 'corrupt', file: '.runtime-generations/sessions/abc.json' },
+    })
+    expect(translateSessionFailure(new Error('E_GENERATION_PIN_NEWER: pin format 9'), 's')).toMatchObject({
+      code: 'E_SESSION_VERSION_NEWER',
+    })
   })
 
   it('leaves an unrelated failure alone', () => {

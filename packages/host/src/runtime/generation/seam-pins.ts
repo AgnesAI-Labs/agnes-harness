@@ -51,7 +51,8 @@ export function assertPinsMatch(
   recorded: readonly PinnedSeam[] | undefined,
   actual: readonly PinnedSeam[],
 ): void {
-  if (!recorded) return
+  if (!recorded)
+    throw seamPinError('corrupt', sessionKey, 'E_GENERATION_INTEGRITY', 'the session pin records no seams')
   const differences = diffPins(recorded, actual)
   if (!differences.length) return
   throw seamPinError('older', sessionKey, 'E_SEAM_PIN_MISMATCH', describeDifferences(differences), {
@@ -128,6 +129,8 @@ export function classifyGenerationFailure(error: unknown): SessionVersionIssue |
     case 'E_FORMAT_OLDER':
       return 'older'
     case 'E_GENERATION_INTEGRITY':
+    case 'E_GENERATION_CONFIG_INTEGRITY':
+    case 'E_COMPOSITION_BINDING_INVALID':
     case 'E_GENERATION_RESOURCE_INTEGRITY':
     case 'E_FORMAT_CORRUPT':
       return 'corrupt'
@@ -138,7 +141,9 @@ export function classifyGenerationFailure(error: unknown): SessionVersionIssue |
 
 /**
  * A session that cannot continue is told in one of three directions (newer, older, corrupt) with the
- * session id and where the raw ledger lives. The original code stays in the message and the detail,
+ * session id and where the raw ledger lives; a damaged durable record also names its file in `detail.file`.
+ * Every storage-shape failure of generation or composition metadata arrives here as `corrupt`, while a
+ * record written by a newer AGH stays `newer`. The original code stays in the message and the detail,
  * nothing durable is touched, and a failure that is not about versions passes through unchanged.
  */
 export function translateSessionFailure(error: unknown, key: string): unknown {
@@ -148,12 +153,13 @@ export function translateSessionFailure(error: unknown, key: string): unknown {
   const message = error instanceof Error ? error.message : String(error)
   const cause = message.match(/E_[A-Z0-9_]+/)?.[0] ?? 'E_GENERATION'
   const detail = (error as { detail?: { location?: unknown } }).detail
+  const file = (error as { file?: unknown }).file
   return seamPinError(
     issue,
     key,
     cause,
     message.replace(/^E_[A-Z0-9_]+:\s*/, '').slice(0, 240),
-    {},
+    typeof file === 'string' ? { file } : {},
     typeof detail?.location === 'string' ? detail.location : undefined,
   )
 }

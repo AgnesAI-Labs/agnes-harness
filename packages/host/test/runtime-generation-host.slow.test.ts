@@ -27,6 +27,7 @@ import {
 import { expect, it, vi } from 'vitest'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
+import { pinnedBindings } from '../src/runtime/generation/seam-pins.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
 import { createTestHost } from '../testkit/index.js'
 import { fixtureTool } from './fixtures/tool.js'
@@ -451,7 +452,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     )
     expect(store.session('session-a')).toEqual(savedPin)
     writeFileSync(oldFile, oldBytes)
-    store.pin('idle-incompatible-loop', required(firstId))
+    store.pin('idle-incompatible-loop', required(firstId), pinnedBindings(host.seamBindings()))
     store.recordLoop('idle-incompatible-loop', { id: 'missing-loop', version: '9.0.0' })
     await expect(required(host.migrateSessionGeneration)('idle-incompatible-loop')).rejects.toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
@@ -568,7 +569,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     ]
     for (const [caseIndex, [reason, facts]] of blocking.entries()) {
       const key = `migration-${reason}-${caseIndex}`
-      store.pin(key, required(firstId))
+      store.pin(key, required(firstId), pinnedBindings(host.seamBindings()))
       const storage = host.kernel.o.storage
       const log = await SessionLogImpl.open({
         storage,
@@ -657,7 +658,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     }
     // A durable open chat turn with no tool/effect binding does not fence migration.
     const chatKey = 'migration-unfinished-chat'
-    store.pin(chatKey, required(firstId))
+    store.pin(chatKey, required(firstId), pinnedBindings(host.seamBindings()))
     const chatLog = await SessionLogImpl.open({
       storage: host.kernel.o.storage,
       key: chatKey,

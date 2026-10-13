@@ -52,7 +52,7 @@ export async function createCompositionHost(
     profileDir: options.profileDir,
   })
   const generations = new RuntimeGenerationSnapshotStore(options.profileDir)
-  store.sweepOrphans((key) => generations.session(key) !== undefined)
+  store.sweepOrphans((digest) => generations.pinFileState(digest))
   const containers = new Map<string, Container>()
   const opening = new Map<string, Promise<Container>>()
   const sessionOwners = new Map<string, Container>()
@@ -323,8 +323,8 @@ export async function createCompositionHost(
     const active =
       sessionOwners.get(key) ?? [...containers.values()].find((container) => container.host.kernel.get(key))
     if (active) return active
-    // Closed sessions retain their composition owner until their durable pin is released.
-    const binding = store.read(key)
+    // Closed sessions keep their owner until the pin is released; a damaged intent must not block deletion.
+    const binding = store.readIfValid(key)
     return (binding && containers.get(binding.tree.hash)) ?? initial
   }
   const live = () => {
@@ -571,7 +571,7 @@ export async function createCompositionHost(
         if (
           container.draining &&
           container !== initial &&
-          !generations.sessions().some((pin) => store.read(pin.sessionKey)?.tree.hash === container.tree.hash)
+          !generations.sessions().some((pin) => store.mayUseTree(pin.sessionKey, container.tree.hash))
         ) {
           await container.host.close()
           containers.delete(container.tree.hash)

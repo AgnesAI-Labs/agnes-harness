@@ -4,6 +4,7 @@ import {
   constants,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -602,6 +603,52 @@ export function renameWriteThroughSync(from: string, to: string): void {
     } finally {
       closeSync(fd)
     }
+  }
+}
+
+/**
+ * Publishes one small record so that, once this returns, both its content and its directory entry
+ * are durable: a private temporary in the same directory is flushed, then linked (never replacing)
+ * or renamed over the destination, then the parent directory is flushed. Returns false only when
+ * `replace` is not set and the destination already exists.
+ *
+ * A process crash at any point leaves the previous file or the complete new one, never a torn file;
+ * unreferenced `*.tmp` leftovers are inert. A power loss before this returns may keep either state.
+ * Records that depend on one another (an intent written before the pin it announces, a pin written
+ * before the head that names its generation) get their order from sequencing the calls: each one is
+ * durable before the next starts, so after power loss a later record never exists without the
+ * earlier one it depends on.
+ */
+export function publishFileDurablySync(
+  path: string,
+  bytes: string,
+  options: { replace?: boolean; mode?: number } = {},
+): boolean {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, bytes, { mode: options.mode ?? 0o600, flag: 'wx', flush: true })
+    if (options.replace) renameSync(temporary, path)
+    else
+      try {
+        linkSync(temporary, path)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+        throw error
+      }
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  syncDirectorySync(dirname(resolve(path)))
+  return true
+}
+
+/** Removes one file and flushes the parent directory so the removal survives power loss. A missing file or directory is success. */
+export function removeFileDurablySync(path: string): void {
+  rmSync(path, { force: true })
+  try {
+    syncDirectorySync(dirname(resolve(path)))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 }
 

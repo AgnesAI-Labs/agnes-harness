@@ -20,7 +20,6 @@ import {
   developmentPluginRows,
   generationResourcesDigest,
   type PluginGenerationSnapshot,
-  RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
   readDevelopmentPlugin,
 } from '@agnes/package-manager'
@@ -41,6 +40,7 @@ import {
   type SessionBinding,
 } from './change-result.js'
 import { assertMigrationSettled } from './migration-state.js'
+import { openGenerationStore } from './process-liveness.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, generationSessions } from './runtime-descriptor.js'
 import {
@@ -95,7 +95,7 @@ export async function createRuntimeGenerationHost(
   options: HostOptions,
   factory: Factory,
 ): Promise<Host> {
-  const store = new RuntimeGenerationSnapshotStore(options.profileDir)
+  const store = await openGenerationStore(options.profileDir)
   const live = new Map<string, LiveGeneration>()
   const opening = new Map<string, Promise<LiveGeneration>>()
   const preparedRows = new Map<string, Parameters<Host['extensionRows']['prepare']>[0]>()
@@ -503,7 +503,7 @@ export async function createRuntimeGenerationHost(
       )
       collector.unref()
     }
-    store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
+    await store.collect(new Set([...live.keys(), ...opening.keys()]), retired)
     if (errors.length) throw new AggregateError(errors, 'generation collection failed')
   }
   const enqueue = <T>(run: () => Promise<T>): Promise<T> => {
@@ -839,7 +839,7 @@ export async function createRuntimeGenerationHost(
       // Failed candidates were never published. Retain only their diagnostic, not resource
       // bodies, factory closures or executable archives with no session references.
       try {
-        store.collect(new Set([...live.keys(), ...opening.keys()]))
+        await store.collect(new Set([...live.keys(), ...opening.keys()]))
       } catch {
         /* Preserve the activation error. */
       }
@@ -1127,7 +1127,7 @@ export async function createRuntimeGenerationHost(
         const desiredId = input.parent
           ? (store.session(input.parent.key)?.generationId ?? head.snapshot.id)
           : head.snapshot.id
-        const pin = existing ?? { sessionKey: key, generationId: desiredId }
+        const pin = existing ?? { generationId: desiredId, loop: undefined }
         const generation = await resolve(pin.generationId).catch((error: unknown) => {
           throw translateSessionFailure(error, key)
         })
@@ -1353,7 +1353,7 @@ export async function createRuntimeGenerationHost(
         const results = await Promise.allSettled(hosts.values())
         const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
         if (errors.length) throw new AggregateError(errors, 'generation shutdown failed')
-        store.collect(new Set())
+        await store.collect(new Set())
       })()
       return closing
     },
