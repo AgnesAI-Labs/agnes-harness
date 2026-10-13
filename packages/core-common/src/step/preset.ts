@@ -125,13 +125,13 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
   const legacy =
     (raw.tools as { runtime?: unknown } | undefined)?.runtime !== undefined ||
     (raw.approval as { policy?: unknown } | undefined)?.policy !== undefined ||
-    (raw.loop as { id?: unknown } | undefined)?.id !== undefined
-  if (legacy)
-    throw new TypeError(
-      'Provider selections require <kind>: { provider }; legacy preset selectors are not supported',
-    )
+    (raw.loop as { id?: unknown } | undefined)?.id !== undefined ||
+    raw['tool-runtime'] !== undefined ||
+    raw['tool-policy'] !== undefined
+  if (legacy) throw new TypeError('Provider selections are written as providers.<kind>: { provider }')
+  const providers = raw.providers as Record<string, unknown> | undefined
   for (const kind of ['tool-runtime', 'tool-policy']) {
-    const value = raw[kind]
+    const value = providers?.[kind]
     if (value === undefined) continue
     if (
       !value ||
@@ -141,7 +141,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       !(value as { provider: string }).provider.trim() ||
       Object.keys(value).some((key) => key !== 'provider')
     )
-      throw new TypeError(`${kind} requires { provider: id }`)
+      throw new TypeError(`providers.${kind} requires { provider: id }`)
   }
   const d = presetDefaults()
   const commandTable = Object.freeze(readCommandRules(get(raw, 'approval.command_policy')))
@@ -192,9 +192,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     approval: {
       // Not readable from the document: see presetDefaults.
-      ...(get(raw, 'tool-policy.provider') === undefined
+      ...(get(raw, 'providers.tool-policy.provider') === undefined
         ? {}
-        : { policy: pick<string>(raw, 'tool-policy.provider', 'default') }),
+        : { policy: pick<string>(raw, 'providers.tool-policy.provider', 'default') }),
       onTimeout: 'rejected',
       timeoutMs: pick(raw, 'approval.timeout_ms', d.approval.timeoutMs),
       onUnavailable: pick(raw, 'approval.on_unavailable', d.approval.onUnavailable),
@@ -203,9 +203,9 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     sandbox: { onUnavailable: pick(raw, 'sandbox.on_unavailable', d.sandbox.onUnavailable) },
     tools: {
-      ...(get(raw, 'tool-runtime.provider') === undefined
+      ...(get(raw, 'providers.tool-runtime.provider') === undefined
         ? {}
-        : { runtime: pick<string>(raw, 'tool-runtime.provider', 'default') }),
+        : { runtime: pick<string>(raw, 'providers.tool-runtime.provider', 'default') }),
       ...(get(raw, 'tools.max_parallel') === undefined
         ? {}
         : { maxParallel: pick<number>(raw, 'tools.max_parallel', 4) }),

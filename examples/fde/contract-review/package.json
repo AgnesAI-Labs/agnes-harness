@@ -75,13 +75,15 @@
     "bundles": {
       "contract-review": {
         "profile": {
-          "loop": {
-            "version": "5.0.0",
-            "provider": "fde.contract-review"
-          },
           "skills": [
             "contract-review"
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.contract-review"
+            }
+          }
         },
         "presets": {
           "contract-review": {
@@ -95,8 +97,10 @@
                 }
               }
             },
-            "tool-policy": {
-              "provider": "fde.contract-review"
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.contract-review"
+              }
             }
           }
         }

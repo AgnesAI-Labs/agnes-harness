@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.device-inspection"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.device-inspection"
+        }
       }
     }
   }

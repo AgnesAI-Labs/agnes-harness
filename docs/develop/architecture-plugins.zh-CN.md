@@ -69,7 +69,7 @@ providers:
   child-agent: { provider: 'in-process' }
 ```
 
-配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。Preset 仍为使用它的会话保留自己的 `tool-runtime` 和 `tool-policy: { provider }`，bundle 的 composition patch 也保留自己的 provider 块；两者是叠在这张表之上的层，不是配置档选择的另一个写法。
+配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 接受注册 id、来源包或它们的列表，保留同时使用多种 wire 协议的能力。Preset 在自己的 `providers` 表里写同样形状的选择（还包括 `tool-runtime` 和 `tool-policy`），bundle、admin 和 session 的 composition patch 也带 `providers` 表；它们都是叠在配置档这张表之上的层，不是另一种写法。唯一例外是 system prompt 的 `model.system_prompt.provider`：它留在用户设置与 preset 共用的提示词配置对象里。
 
 `child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register(childAgentKind, provider)`，注册清理由平台绑定到插件生命周期。
 

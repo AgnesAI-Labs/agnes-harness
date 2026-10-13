@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.contract-review"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.contract-review"
+        }
       }
     }
   }

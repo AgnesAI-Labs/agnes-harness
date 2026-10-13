@@ -82,13 +82,15 @@
     "bundles": {
       "device-inspection": {
         "profile": {
-          "loop": {
-            "version": "5.0.0",
-            "provider": "fde.device-inspection"
-          },
           "skills": [
             "device-inspection"
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.device-inspection"
+            }
+          }
         },
         "presets": {
           "device-inspection": {
@@ -102,8 +104,10 @@
                 }
               }
             },
-            "tool-policy": {
-              "provider": "fde.device-inspection"
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.device-inspection"
+              }
             }
           }
         }

@@ -7,71 +7,6 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "loop": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["provider", "version"],
-          "properties": {
-            "version": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            },
-            "provider": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          }
-        },
-        "compaction": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "provider": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 512,
-                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-                }
-              },
-              "required": ["provider"]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "persistence": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "provider": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          },
-          "required": ["provider"]
-        },
-        "sandbox": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "provider": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-            }
-          },
-          "required": ["provider"]
-        },
         "packages": {
           "type": "array",
           "maxItems": 256,
@@ -203,30 +138,101 @@
             }
           }
         },
-        "model-adapter": {
+        "providers": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["provider"],
           "properties": {
-            "provider": {
-              "anyOf": [
-                {
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "version"],
+              "properties": {
+                "version": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 512
+                  "maxLength": 64,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            },
+            "model-adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "array",
+                      "maxItems": 256,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "compaction": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                    }
+                  },
+                  "required": ["provider"]
                 },
                 {
-                  "type": "array",
-                  "maxItems": 256,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 512,
-                    "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
-                  }
+                  "type": "null"
                 }
               ]
+            },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
+            },
+            "sandbox": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
             }
           }
         }

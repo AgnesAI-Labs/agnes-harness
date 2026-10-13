@@ -225,8 +225,8 @@ Adds optional `ToolPolicyDecision.allowedBy`. The command-table floor sets it to
 - `ExtensionAPI.latestExtEvent`, a declared optional method no host implemented.
 - Authored root profile `loop`, `compaction`, model `provider.adapters`, composition
   `modelAdapters`, and preset `tools.runtime` / `approval.policy`. Select through
-  `<kind>: { provider }` in enabled package config or composition; presets use
-  `tool-runtime` / `tool-policy: { provider }`. Loop composition also requires
+  `providers.<kind>: { provider }` (profile, bundle, preset, admin and session layers;
+  a preset's table also takes `tool-runtime` and `tool-policy`). Loop composition also requires
   `version`. `model-adapter.provider` accepts an id, source package or unique list
   so multiple transports remain available. Resolved profiles and session pins
   retain backend identities; stored pins are not author config. Missing explicitly

@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.finance-reconcile"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.finance-reconcile"
+        }
       }
     }
   }

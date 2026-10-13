@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.recruiting-screen"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.recruiting-screen"
+        }
       }
     }
   }

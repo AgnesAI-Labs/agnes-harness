@@ -22,13 +22,6 @@
           "@agnes-example/research-bundle#base"
         ],
         "profile": {
-          "loop": {
-            "version": "1.0.0",
-            "provider": "example.dag"
-          },
-          "compaction": {
-            "provider": "sliding-window"
-          },
           "packages": [
             {
               "id": "@agnes-example/dag-loop",
@@ -40,7 +33,16 @@
               "source": "file:./examples/compaction/sliding-window",
               "version": "0.1.0"
             }
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "1.0.0",
+              "provider": "example.dag"
+            },
+            "compaction": {
+              "provider": "sliding-window"
+            }
+          }
         },
         "presets": {
           "research": {

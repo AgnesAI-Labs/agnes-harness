@@ -35,7 +35,7 @@ export function readProviderSelections(
   const selected: ProviderSelections = {}
   const top = profile as Record<string, unknown>
   const table = record(top.providers)
-  const composition = record(top.composition)
+  const composition = record(record(top.composition)?.providers)
   const sources = record(top.compositionSources)
   const composed = (kind: string) => {
     const source = record(sources?.[kind === 'model-adapter' ? 'modelAdapters' : kind])
@@ -85,13 +85,18 @@ export function applyProviderSelections(
 }
 
 export function applyProviderPreset(document: PresetDoc, selections: ProviderSelections): PresetDoc {
-  return {
-    ...document,
+  const chosen = {
     ...(selections['tool-runtime']
       ? { 'tool-runtime': { provider: selections['tool-runtime'].provider } }
       : {}),
     ...(selections['tool-policy'] ? { 'tool-policy': { provider: selections['tool-policy'].provider } } : {}),
   }
+  return Object.keys(chosen).length
+    ? {
+        ...document,
+        providers: { ...(document.providers as Record<string, unknown> | undefined), ...chosen },
+      }
+    : document
 }
 
 export function providerConfigurationScopes(
@@ -99,7 +104,7 @@ export function providerConfigurationScopes(
   profile: ResolvedProfile,
   preset: PresetView,
 ): readonly string[] {
-  if (entry.kind === 'compaction' && profile.composition?.compaction === null) return []
+  if (entry.kind === 'compaction' && profile.composition?.providers?.compaction === null) return []
   if ((SEAM_KINDS as readonly string[]).includes(entry.kind)) {
     const chosen = profile.seams[entry.kind as SeamKind]
     return chosen.provider === entry.id && (chosen.version === undefined || chosen.version === entry.version)

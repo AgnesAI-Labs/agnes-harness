@@ -1,5 +1,9 @@
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
-import type { CompositionPatch, ResolvedComposition } from '@agnes/host-common/profile/composition'
+import type {
+  CompositionPatch,
+  CompositionProviders,
+  ResolvedComposition,
+} from '@agnes/host-common/profile/composition'
 import { freezeTree } from '@agnes/host-common/profile/composition-freeze'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
@@ -12,6 +16,15 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
     composition: tree,
     installed: { modelAdapters: [...new Set((profile.provider.routes ?? []).map((route) => route.api))] },
   })
+  const providers: CompositionProviders = {
+    ...(patch.modelAdapters ? { 'model-adapter': { provider: patch.modelAdapters } } : {}),
+    ...(patch.loop ? { loop: { provider: patch.loop.id, version: patch.loop.version } } : {}),
+    ...(patch.compaction === undefined
+      ? {}
+      : { compaction: patch.compaction === null ? null : { provider: patch.compaction.engine } }),
+    ...(patch.persistence ? { persistence: patch.persistence } : {}),
+    ...(patch.sandbox ? { sandbox: patch.sandbox } : {}),
+  }
   const overrides = new Map((patch.packages ?? []).map((pkg) => [pkg.id, pkg]))
   const next = {
     ...rest,
@@ -39,10 +52,12 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
       }
     }),
     composition: {
-      ...Object.fromEntries(Object.entries(patch).filter(([key]) => key !== 'modelAdapters')),
-      ...(patch.modelAdapters ? { 'model-adapter': { provider: patch.modelAdapters } } : {}),
-      ...(patch.loop ? { loop: { provider: patch.loop.id, version: patch.loop.version } } : {}),
-      ...(patch.compaction ? { compaction: { provider: patch.compaction.engine } } : {}),
+      ...Object.fromEntries(
+        Object.entries(patch).filter(
+          ([key]) => !['modelAdapters', 'loop', 'compaction', 'persistence', 'sandbox'].includes(key),
+        ),
+      ),
+      ...(Object.keys(providers).length ? { providers } : {}),
     } as CompositionPatch,
     compositionToolScope: tree.toolScope ?? { bundlePackages: [], activePackages: [] },
     compositionSources: tree.sources,

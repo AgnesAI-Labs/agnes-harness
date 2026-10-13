@@ -144,20 +144,12 @@ export async function readSessionView(
 
 type Fetch = (query: Parameters<SessionRowsReader>[1]) => ReturnType<typeof settled<Event[]>>
 
-function exhausted(
-  count: number,
-  bytes: number,
-  budget: ScanBudget,
-): ScanStop | undefined {
+function exhausted(count: number, bytes: number, budget: ScanBudget): ScanStop | undefined {
   return count >= budget.events ? 'events' : bytes >= budget.bytes ? 'bytes' : undefined
 }
 
 /** Reads from seq 1 until the end or a budget; the rows it keeps are the oldest ones. */
-async function scanForward(
-  fetch: Fetch,
-  budget: ScanBudget,
-  signal: AbortSignal | undefined,
-): Promise<Rows> {
+async function scanForward(fetch: Fetch, budget: ScanBudget, signal: AbortSignal | undefined): Promise<Rows> {
   const events: Event[] = []
   let bytes = 0
   for (let fromSeq = 1; ; ) {

@@ -9,6 +9,7 @@ import {
   compositionDump,
   expandBundles,
   parsePackageBundles,
+  presetCompositionPatch,
   resolveComposition,
   validateComposition,
 } from '@agnes/host-common/profile/composition'
@@ -47,8 +48,10 @@ const catalog = parsePackageBundles('acme/research', {
   research: {
     extends: ['acme/research#base'],
     profile: {
-      loop: { provider: 'example.dag', version: '1.0.0' },
-      compaction: { provider: 'sliding-window' },
+      providers: {
+        loop: { provider: 'example.dag', version: '1.0.0' },
+        compaction: { provider: 'sliding-window' },
+      },
     },
     presets: { research: { name: 'research', extends: 'standard', composition: { tools: ['lookup'] } } },
   },
@@ -222,7 +225,7 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
     resolveComposition(
       { ...profile, bundles: [], composition: {}, loop: { id: 'agnes.default', version: '1.0.0' } },
       {
-        session: { loop: { provider: 'example.dag', version: '1.0.0' } },
+        session: { providers: { loop: { provider: 'example.dag', version: '1.0.0' } } },
       },
     ).toolScope?.activePackages,
   ).toEqual(['acme/research'])
@@ -236,7 +239,9 @@ it('resolves inherited bundles, preset/admin/session precedence and safe dumps',
       bundleCatalog: {
         ...catalog,
         ...parsePackageBundles('acme/shared-default', {
-          demo: { profile: { loop: { provider: defaultLoop.id, version: defaultLoop.version } } },
+          demo: {
+            profile: { providers: { loop: { provider: defaultLoop.id, version: defaultLoop.version } } },
+          },
         }),
       },
     }).toolScope?.activePackages,
@@ -302,12 +307,20 @@ it('rejects executable, malformed and dangerous patches before reading their fie
     { loop: { id: 'echo', version: '1.0.0' } },
     { compaction: { engine: 'default' } },
     { modelAdapters: ['echo'] },
-    { 'model-adapter': { provider: ['echo', 'echo'] } },
+    { providers: { 'model-adapter': { provider: ['echo', 'echo'] } } },
+    { providers: { 'tool-policy': { provider: 'read-only' } } },
+    // The provider kinds are selected in providers.<kind>, never as patch keys of their own.
+    { loop: { provider: 'echo', version: '1.0.0' } },
+    { 'model-adapter': { provider: ['chat'] } },
+    { persistence: { provider: 'sqlite' } },
   ])
     expect(() => checkCompositionPatch(old)).toThrow()
-  expect(checkCompositionPatch({ 'model-adapter': { provider: ['chat', 'messages'] } })).toEqual({
-    'model-adapter': { provider: ['chat', 'messages'] },
-  })
+  expect(() => checkCompositionPatch({ loop: { provider: 'echo', version: '1.0.0' } })).toThrow(
+    'providers.loop',
+  )
+  expect(
+    checkCompositionPatch({ providers: { 'model-adapter': { provider: ['chat', 'messages'] } } }),
+  ).toEqual({ providers: { 'model-adapter': { provider: ['chat', 'messages'] } } })
   expect(() => checkCompositionPatch({ plugins: JSON.parse('{"__proto__":{"enabled":true}}') })).toThrow()
   expect(() =>
     checkCompositionPatch({
@@ -359,7 +372,7 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
     }),
   ).toThrow('unknown package acme/unknown')
   const next = resolveComposition(profile, {
-    preset: { name: 'research', composition: { compaction: { provider: 'sliding-window' } } },
+    preset: { name: 'research', providers: { compaction: { provider: 'sliding-window' } } },
   })
   expect(() => assertCompositionCompatible(baseline, next)).toThrow('separate Host generation')
   const compiled = profileForComposition(profile, next)
@@ -415,15 +428,40 @@ it('canonicalizes the documented default loop alias before catalog validation an
   }
   const alias = resolveComposition(profile, {
     ...options,
-    session: { loop: { provider: 'default', version: '1.0.0' } },
+    session: { providers: { loop: { provider: 'default', version: '1.0.0' } } },
   })
   const canonical = resolveComposition(profile, {
     ...options,
-    session: { loop: { provider: 'agnes.default', version: '1.0.0' } },
+    session: { providers: { loop: { provider: 'agnes.default', version: '1.0.0' } } },
   })
   expect(alias.selection.loop).toEqual({ id: 'agnes.default', version: '1.0.0' })
   expect(alias.hash).toBe(canonical.hash)
   expect(() =>
-    resolveComposition(profile, { ...options, session: { loop: { provider: 'default', version: '2.0.0' } } }),
+    resolveComposition(profile, {
+      ...options,
+      session: { providers: { loop: { provider: 'default', version: '2.0.0' } } },
+    }),
   ).toThrow('unknown loop')
+})
+
+it('reads a preset selection from its one providers table', () => {
+  expect(
+    presetCompositionPatch({ name: 'p', providers: { 'tool-policy': { provider: 'read-only' } } }),
+  ).toEqual({})
+  expect(
+    presetCompositionPatch({
+      name: 'p',
+      composition: { tools: ['lookup'] },
+      providers: { 'tool-runtime': { provider: 'serial' }, compaction: { provider: 'sliding-window' } },
+    }),
+  ).toEqual({ tools: ['lookup'], providers: { compaction: { provider: 'sliding-window' } } })
+  // A preset has one table; a second provider block in its composition is not another way to write it.
+  expect(() =>
+    presetCompositionPatch({
+      name: 'p',
+      composition: { providers: { loop: { provider: 'x', version: '1.0.0' } } },
+    }),
+  ).toThrow('providers table')
+  expect(validatePreset({ name: 'p', providers: { 'tool-policy': { provider: 'read-only' } } }).ok).toBe(true)
+  expect(validatePreset({ name: 'p', 'tool-policy': { provider: 'read-only' } }).ok).toBe(false)
 })

@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.meeting-actions"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.meeting-actions"
+        }
       }
     }
   }

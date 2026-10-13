@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.knowledge-qa"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.knowledge-qa"
+        }
       }
     }
   }

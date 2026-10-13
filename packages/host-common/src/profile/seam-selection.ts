@@ -88,6 +88,8 @@ export function relocatedSelection(manifest: unknown): string | undefined {
   if (Object.hasOwn(mapping(m.provider) ?? {}, 'adapters'))
     return 'provider.adapters was removed; use providers.model-adapter: { provider }'
   const composition = mapping(m.composition)
+  if (composition && Object.hasOwn(composition, 'providers'))
+    return 'a profile selects providers in its own providers table, not in composition.providers'
   for (const kind of ['loop', 'model-adapter', 'compaction', 'persistence', 'sandbox'])
     if (mapping(composition?.[kind]))
       return `composition.${kind} is selected with providers.${kind}: { provider }`

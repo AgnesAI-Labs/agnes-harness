@@ -36,7 +36,7 @@ for (const verdict of ['allowed-once', 'rejected'])
         finance: {
           name: 'finance',
           extends: 'standard',
-          'tool-policy': { provider: 'fde.finance-reconcile' },
+          providers: { 'tool-policy': { provider: 'fde.finance-reconcile' } },
         },
       },
       replies: replies.map((events) => (request) => {

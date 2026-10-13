@@ -30,7 +30,8 @@ export const providerConfigSchemas = {
   sandbox: annotate(PresetSchema.Import('PresetDoc').$defs.PresetDoc.properties.sandbox, 'sandbox'),
   compaction: annotate(PresetSchema.Import('PresetDoc').$defs.PresetDoc.properties.compaction, 'compaction'),
   persistence: annotate(
-    ProfileSchema.Import('CompositionPatch').$defs.CompositionPatch.properties.persistence,
+    ProfileSchema.Import('CompositionPatch').$defs.CompositionPatch.properties.providers.properties
+      .persistence,
     'persistence',
   ),
 } as const

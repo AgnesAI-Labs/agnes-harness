@@ -565,18 +565,16 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     }
   }
   const adapterSelection = providers['model-adapter']
+  const composed = m.composition?.providers
   const loop =
     providers.loop ??
-    (m.composition?.loop
-      ? { provider: m.composition.loop.provider, version: m.composition.loop.version }
-      : undefined)
+    (composed?.loop ? { provider: composed.loop.provider, version: composed.loop.version } : undefined)
   const compaction =
-    providers.compaction ??
-    (m.composition?.compaction ? { provider: m.composition.compaction.provider } : undefined)
-  const persistence = m.composition?.persistence ?? startup.persistence
+    providers.compaction ?? (composed?.compaction ? { provider: composed.compaction.provider } : undefined)
+  const persistence = composed?.persistence ?? startup.persistence
   const sandbox = readSandboxStartupConfig({
-    ...((m.composition?.sandbox ?? startup.sandbox)
-      ? { provider: (m.composition?.sandbox ?? startup.sandbox)?.provider }
+    ...((composed?.sandbox ?? startup.sandbox)
+      ? { provider: (composed?.sandbox ?? startup.sandbox)?.provider }
       : {}),
     ...(m.sandbox?.options ? { options: m.sandbox.options } : {}),
   })

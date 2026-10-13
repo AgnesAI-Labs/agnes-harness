@@ -68,7 +68,7 @@ it.each([
         'full-access': {
           name: 'full-access',
           extends: 'standard',
-          'tool-policy': { provider: 'full-access' },
+          providers: { 'tool-policy': { provider: 'full-access' } },
           sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
         },
       },

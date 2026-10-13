@@ -10,7 +10,9 @@ import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { toPresetView } from '@agnes/host-common/presets/view'
 import {
+  bindProviderSelections,
   type CompositionPatch,
+  type CompositionProviders,
   type CompositionSource,
   type ResolvedComposition,
   type ResolvedCompositionSelection,
@@ -77,28 +79,21 @@ function immutable<T>(value: T): T {
   return Object.freeze(value)
 }
 
+function selectedByProfile(selection: CompositionPatch | undefined, field: string): boolean {
+  const kind = field === 'modelAdapters' ? 'model-adapter' : field
+  return (
+    selection?.[field as keyof CompositionPatch] !== undefined ||
+    selection?.providers?.[kind as keyof CompositionProviders] !== undefined
+  )
+}
+
 /** One pure decision path for admission, runtime reads, invocation policy and inspection.
  * Empty tools/MCP/Skills lists retain defaults; policy.allow and shell lists are literal allowlists.
  * Only safe identities and posture leave this boundary, never factories, credentials or config.
  */
 export function resolveSessionCapabilities(input: SessionCapabilityInput): CapabilityResolution {
   const tree = input.composition ?? (input.profile ? resolveComposition(input.profile, input) : undefined)
-  const toBound = (choice: CompositionPatch): ResolvedCompositionSelection => {
-    const { loop, compaction, 'model-adapter': adapters, ...rest } = choice
-    return {
-      ...rest,
-      ...(adapters
-        ? {
-            modelAdapters:
-              typeof adapters.provider === 'string' ? [adapters.provider] : [...adapters.provider],
-          }
-        : {}),
-      ...(loop ? { loop: { id: loop.provider, version: loop.version } } : {}),
-      ...(compaction === undefined
-        ? {}
-        : { compaction: compaction === null ? null : { engine: compaction.provider } }),
-    }
-  }
+  const toBound = bindProviderSelections
   const declared = tree?.selection ?? toBound(input.selection ?? {})
   // Legacy Hosts never applied composition tool/resource filters. A durable legacy pin retains that catalog.
   const selection: ResolvedCompositionSelection = input.pin?.legacy
@@ -118,7 +113,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
       ? { layer: 'session' as const, name: 'legacy-binding' }
       : undefined) ??
     sources[field] ??
-    (input.selection?.[field.split('.')[0] as keyof CompositionPatch] !== undefined
+    (selectedByProfile(input.selection, field.split('.')[0]!)
       ? { layer: 'profile', name: 'composition' }
       : builtin)
   const preset = input.presetView ?? (input.preset ? toPresetView(input.preset) : undefined)
@@ -264,9 +259,9 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         value: loop,
         source: input.pin?.loop
           ? { layer: 'session' as const, name: 'code-pin' }
-          : !tree && input.session?.loop
+          : !tree && input.session?.providers?.loop
             ? { layer: 'session' as const, name: 'request' }
-            : !tree && input.admin?.composition?.loop
+            : !tree && input.admin?.composition?.providers?.loop
               ? { layer: 'admin' as const, name: 'selection' }
               : selection.loop
                 ? source('loop')

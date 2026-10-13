@@ -1,3 +1,4 @@
+import { presetProvider } from '@agnes/host-common/presets/provider'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -27,14 +28,7 @@ export function adminSecurityStatus(
     presetPolicies: profile.presets.allowed.map((id) => {
       const doc = resolvePreset(id, presets, { limits: profile.limits }).doc
       const sandbox = normalizeSandboxStaticConfig(doc)
-      const approval = doc['tool-policy']
-      const approvalPolicy =
-        approval &&
-        typeof approval === 'object' &&
-        'provider' in approval &&
-        typeof approval.provider === 'string'
-          ? approval.provider
-          : 'default'
+      const approvalPolicy = presetProvider(doc, 'tool-policy') ?? 'default'
       return {
         id,
         level: sandbox.level,

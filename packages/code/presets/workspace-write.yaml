@@ -4,4 +4,5 @@ extends: standard
 
 sandbox: { level: L1, required: true, on_unavailable: deny }
 
-tool-policy: { provider: default }
+providers:
+  tool-policy: { provider: default }

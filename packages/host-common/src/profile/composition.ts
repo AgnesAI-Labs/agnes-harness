@@ -18,12 +18,20 @@ export type CompositionSource = Readonly<{
   layer: 'default' | 'profile' | 'preset' | 'admin' | 'session'
   name: string
 }>
-export type CompositionPatch = {
+/** The provider kinds a composition layer selects, written in the one `providers.<kind>` table. */
+export type CompositionProviders = {
   loop?: { provider: string; version: string }
   'model-adapter'?: { provider: string | string[] }
   compaction?: { provider: string } | null
   persistence?: { provider: string }
   sandbox?: { provider: string }
+}
+/** A composition layer that selects one exact loop. */
+export const loopPatch = (loop: { id: string; version: string }): CompositionPatch => ({
+  providers: { loop: { provider: loop.id, version: loop.version } },
+})
+export type CompositionPatch = {
+  providers?: CompositionProviders
   packages?: PackageRef[]
   plugins?: Record<string, { enabled?: boolean; config?: JsonValue }>
   toolPolicy?: { readOnly?: boolean; allow?: string[]; deny?: string[] }
@@ -36,16 +44,21 @@ export type CompositionPatch = {
   shell?: { modules?: string[]; slots?: string[] }
 }
 /** Exact backend identities retained in session pins and capability snapshots. */
-export type ResolvedCompositionSelection = Omit<CompositionPatch, 'loop' | 'compaction' | 'model-adapter'> & {
+export type ResolvedCompositionSelection = Omit<CompositionPatch, 'providers'> & {
   modelAdapters?: string[]
   loop?: LoopSelection
   compaction?: { engine: string } | null
+  persistence?: { provider: string }
+  sandbox?: { provider: string }
 }
 
-function bindProviderSelections(patch: CompositionPatch): ResolvedCompositionSelection {
-  const { loop, compaction, 'model-adapter': adapters, ...rest } = patch
+export function bindProviderSelections(patch: CompositionPatch): ResolvedCompositionSelection {
+  const { providers, ...rest } = patch
+  const { loop, compaction, 'model-adapter': adapters, persistence, sandbox } = providers ?? {}
   return {
     ...rest,
+    ...(persistence ? { persistence } : {}),
+    ...(sandbox ? { sandbox } : {}),
     ...(adapters
       ? {
           modelAdapters: typeof adapters.provider === 'string' ? [adapters.provider] : [...adapters.provider],
@@ -99,12 +112,9 @@ function fail(message: string): never {
 const list = (value: unknown): value is string[] =>
   Array.isArray(value) && value.length <= 256 && value.every(text) && new Set(value).size === value.length
 const safeKey = (key: string) => !['__proto__', 'constructor', 'prototype'].includes(key)
+const PROVIDER_FIELDS = ['loop', 'model-adapter', 'compaction', 'persistence', 'sandbox'] as const
 const fields = new Set([
-  'loop',
-  'model-adapter',
-  'compaction',
-  'persistence',
-  'sandbox',
+  'providers',
   'packages',
   'plugins',
   'toolPolicy',
@@ -116,21 +126,47 @@ const fields = new Set([
   'shell',
 ])
 
-/** Validate static data before it can influence package loading or runtime selection. */
-export function checkCompositionPatch(value: unknown): CompositionPatch {
-  const inspected = inspectJsonData(value, 1_048_576)
-  if (!inspected.ok) fail('patch must be JSON data')
-  value = inspected.value
-  if (!map(value) || Object.keys(value).some((key) => !fields.has(key))) fail('invalid patch fields')
-  if (value['model-adapter'] !== undefined) {
-    const adapter = value['model-adapter']
+function checkProviders(providers: unknown): void {
+  if (
+    !map(providers) ||
+    Object.keys(providers).some((key) => !(PROVIDER_FIELDS as readonly string[]).includes(key))
+  )
+    fail('invalid providers')
+  const { loop, 'model-adapter': adapter } = providers
+  if (adapter !== undefined) {
     if (
       !map(adapter) ||
       Object.keys(adapter).some((key) => key !== 'provider') ||
       !(text(adapter.provider) || list(adapter.provider))
     )
-      fail('invalid model-adapter.provider')
+      fail('invalid providers.model-adapter.provider')
   }
+  if (
+    loop !== undefined &&
+    (!map(loop) ||
+      !text(loop.provider) ||
+      !text(loop.version) ||
+      Object.keys(loop).some((key) => !['provider', 'version'].includes(key)))
+  )
+    fail('providers.loop requires provider and version')
+  for (const field of ['compaction', 'persistence', 'sandbox'] as const) {
+    const item = providers[field]
+    if (field === 'compaction' && item === null) continue
+    if (item !== undefined && (!map(item) || !text(item.provider) || Object.keys(item).length !== 1))
+      fail(`invalid providers.${field}.provider`)
+  }
+}
+
+/** Validate static data before it can influence package loading or runtime selection. */
+export function checkCompositionPatch(value: unknown): CompositionPatch {
+  const inspected = inspectJsonData(value, 1_048_576)
+  if (!inspected.ok) fail('patch must be JSON data')
+  value = inspected.value
+  if (!map(value)) fail('invalid patch fields')
+  for (const key of PROVIDER_FIELDS)
+    if (Object.hasOwn(value, key)) fail(`${key} is selected with providers.${key}: { provider }`)
+  if (Object.keys(value).some((key) => !fields.has(key))) fail('invalid patch fields')
+  if (value.providers !== undefined) checkProviders(value.providers)
   for (const field of ['tools', 'mcp', 'skills', 'uiModules'])
     if (value[field] !== undefined && !list(value[field])) fail(`invalid ${field}`)
   if (
@@ -146,24 +182,6 @@ export function checkCompositionPatch(value: unknown): CompositionPatch {
       (value.shell.slots !== undefined && !list(value.shell.slots)))
   )
     fail('invalid shell')
-  if (
-    value.loop !== undefined &&
-    (!map(value.loop) ||
-      !text(value.loop.provider) ||
-      !text(value.loop.version) ||
-      Object.keys(value.loop).some((key) => !['provider', 'version'].includes(key)))
-  )
-    fail('loop requires provider and version')
-  for (const [field, key] of [
-    ['compaction', 'provider'],
-    ['persistence', 'provider'],
-    ['sandbox', 'provider'],
-  ] as const) {
-    const item = value[field]
-    if (field === 'compaction' && item === null) continue
-    if (item !== undefined && (!map(item) || !text(item[key]) || Object.keys(item).length !== 1))
-      fail(`invalid ${field}.${key}`)
-  }
   if (
     value.packages !== undefined &&
     (!Array.isArray(value.packages) ||
@@ -207,6 +225,22 @@ export function checkCompositionPatch(value: unknown): CompositionPatch {
   return value as CompositionPatch
 }
 
+/**
+ * What a preset selects, as one composition layer. The preset's `providers` table is the only place it
+ * names provider kinds: `tool-runtime` and `tool-policy` reach the preset view, the rest join the patch.
+ */
+export function presetCompositionPatch(preset: PresetDoc | undefined): CompositionPatch | undefined {
+  if (preset?.composition === undefined && preset?.providers === undefined) return undefined
+  const patch = checkCompositionPatch(preset.composition ?? {})
+  if (patch.providers !== undefined)
+    fail(`preset ${preset.name}: select providers in the preset's providers table`)
+  const table = preset.providers
+  if (table === undefined) return patch
+  if (!map(table)) fail(`preset ${preset.name}: invalid providers`)
+  const { 'tool-runtime': _runtime, 'tool-policy': _policy, ...selected } = table
+  return Object.keys(selected).length ? checkCompositionPatch({ ...patch, providers: selected }) : patch
+}
+
 /** Packages publish data in package.json agnes.bundles; no entry module is evaluated. */
 export function parsePackageBundles(packageId: string, value: unknown): BundleCatalog {
   if (value === undefined) return {}
@@ -229,7 +263,7 @@ export function parsePackageBundles(packageId: string, value: unknown): BundleCa
     for (const [preset, doc] of Object.entries((raw.presets ?? {}) as Record<string, unknown>)) {
       if (!/^[a-z][a-z0-9-]{0,63}$/.test(preset) || !map(doc) || doc.name !== preset)
         fail(`invalid preset ${preset}`)
-      if (doc.composition !== undefined) checkCompositionPatch(doc.composition)
+      presetCompositionPatch(doc as PresetDoc)
       if (doc.bundles !== undefined && !list(doc.bundles)) fail(`invalid bundles in preset ${preset}`)
       presets[preset] = structuredClone(doc) as PresetDoc
     }
@@ -289,22 +323,28 @@ export function checkResolvedCompositionSelection(value: unknown): ResolvedCompo
     (!map(compaction) || Object.keys(compaction).some((key) => key !== 'engine'))
   )
     fail('invalid resolved compaction identity')
+  const { modelAdapters, loop: _loop, compaction: _compaction, persistence, sandbox, ...rest } = value
+  const providers: Record<string, unknown> = {
+    ...(modelAdapters === undefined ? {} : { 'model-adapter': { provider: modelAdapters } }),
+    ...(loop === undefined
+      ? {}
+      : {
+          loop: {
+            provider: (loop as Record<string, unknown>).id,
+            version: (loop as Record<string, unknown>).version,
+          },
+        }),
+    ...(compaction === undefined
+      ? {}
+      : {
+          compaction:
+            compaction === null ? null : { provider: (compaction as Record<string, unknown>).engine },
+        }),
+    ...(persistence === undefined ? {} : { persistence }),
+    ...(sandbox === undefined ? {} : { sandbox }),
+  }
   return bindProviderSelections(
-    checkCompositionPatch({
-      ...Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'modelAdapters')),
-      ...(value.modelAdapters === undefined ? {} : { 'model-adapter': { provider: value.modelAdapters } }),
-      ...(loop === undefined
-        ? {}
-        : {
-            loop: {
-              provider: (loop as Record<string, unknown>).id,
-              version: (loop as Record<string, unknown>).version,
-            },
-          }),
-      ...(compaction === undefined || compaction === null
-        ? {}
-        : { compaction: { provider: (compaction as Record<string, unknown>).engine } }),
-    }),
+    checkCompositionPatch({ ...rest, ...(Object.keys(providers).length ? { providers } : {}) }),
   )
 }
 
@@ -349,6 +389,9 @@ export function mergeComposition<T extends CompositionPatch | ResolvedCompositio
   patch: T,
 ): T {
   const result = { ...base, ...patch }
+  const providers = (patch as CompositionPatch).providers
+  if (providers)
+    (result as CompositionPatch).providers = { ...(base as CompositionPatch).providers, ...providers }
   if (patch.packages) {
     const packages = new Map((base.packages ?? []).map((pkg) => [pkg.id, pkg]))
     for (const pkg of patch.packages) packages.set(pkg.id, { ...packages.get(pkg.id), ...pkg })
@@ -374,6 +417,9 @@ function applySource(
         for (const key of Object.keys(row)) sources[`plugins.${id}.${key}`] = source
     } else if (field === 'toolPolicy') {
       for (const key of Object.keys(value as object)) sources[`toolPolicy.${key}`] = source
+    } else if (field === 'providers') {
+      for (const kind of Object.keys(value as object))
+        sources[kind === 'model-adapter' ? 'modelAdapters' : kind] = source
     } else sources[field] = source
   }
 }
@@ -405,7 +451,7 @@ export function prepareProfileComposition(
   for (const key of ['persistence', 'sandbox'] as const) {
     const chosen = manifest.providers?.[key]
     if (chosen !== undefined) {
-      patch = mergeComposition(patch, { [key]: { provider: chosen.provider } })
+      patch = mergeComposition(patch, { providers: { [key]: { provider: chosen.provider } } })
       sources[key] = { layer: 'profile', name: manifest.name }
     }
   }
@@ -476,10 +522,6 @@ export function resolveComposition(
     }
   selection = mergeComposition(selection, bindProviderSelections(profile.composition ?? {}))
   Object.assign(sources, profile.compositionSources)
-  if (sources['model-adapter']) {
-    sources.modelAdapters = sources['model-adapter']
-    delete sources['model-adapter']
-  }
   for (const key of ['persistence', 'sandbox'] as const)
     if (profile[key] !== undefined && (!sources[key] || sources[key]?.layer === 'default'))
       sources[key] = { layer: 'profile', name: profile.name }
@@ -499,8 +541,8 @@ export function resolveComposition(
     if (!list(options.preset.bundles)) fail(`invalid bundles in preset ${preset}`)
     bundleLayer(options.preset.bundles, 'preset')
   }
-  if (options.preset?.composition !== undefined)
-    apply(checkCompositionPatch(options.preset.composition), { layer: 'preset', name: preset })
+  const presetPatch = presetCompositionPatch(options.preset)
+  if (presetPatch) apply(presetPatch, { layer: 'preset', name: preset })
   bundleLayer(options.admin?.bundles ?? profile.adminBundles ?? [], 'admin')
   if (options.admin?.composition) apply(options.admin.composition, { layer: 'admin', name: 'selection' })
   if (sessionBundles !== undefined) {
@@ -510,9 +552,11 @@ export function resolveComposition(
   if (profile.sessionComposition?.loop)
     apply(
       {
-        loop: {
-          provider: profile.sessionComposition.loop.id,
-          version: profile.sessionComposition.loop.version,
+        providers: {
+          loop: {
+            provider: profile.sessionComposition.loop.id,
+            version: profile.sessionComposition.loop.version,
+          },
         },
       },
       { layer: 'session', name: 'request' },
@@ -544,8 +588,8 @@ export function resolveComposition(
   const loopBundles = entries.filter(
     (entry) =>
       selection.loop?.id !== DEFAULT_LOOP.id &&
-      entry.document.profile?.loop?.provider === selection.loop?.id &&
-      entry.document.profile?.loop?.version === selection.loop?.version,
+      entry.document.profile?.providers?.loop?.provider === selection.loop?.id &&
+      entry.document.profile?.providers?.loop?.version === selection.loop?.version,
   )
   const toolScope = profile.compositionToolScope ?? {
     bundlePackages: [...new Set(entries.map((entry) => entry.sourcePackage))].sort(),

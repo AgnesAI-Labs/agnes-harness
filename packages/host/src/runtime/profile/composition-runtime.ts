@@ -2,7 +2,11 @@ import { dirname } from 'node:path'
 import { CoreError } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
-import { type ResolvedComposition, resolveComposition } from '@agnes/host-common/profile/composition'
+import {
+  loopPatch,
+  type ResolvedComposition,
+  resolveComposition,
+} from '@agnes/host-common/profile/composition'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -495,13 +499,11 @@ export async function createCompositionHost(
                   ...(adminLoop
                     ? {
                         admin: {
-                          composition: { loop: { provider: adminLoop.id, version: adminLoop.version } },
+                          composition: loopPatch(adminLoop),
                         },
                       }
                     : {}),
-                  ...(input.loop
-                    ? { session: { loop: { provider: input.loop.id, version: input.loop.version } } }
-                    : {}),
+                  ...(input.loop ? { session: loopPatch(input.loop) } : {}),
                   ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
                 },
               )

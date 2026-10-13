@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.data-report"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.data-report"
+        }
       }
     }
   }

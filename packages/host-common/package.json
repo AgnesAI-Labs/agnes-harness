@@ -23,6 +23,7 @@
     "./paths": "./src/paths.ts",
     "./presets/index": "./src/presets/index.ts",
     "./presets/merge": "./src/presets/merge.ts",
+    "./presets/provider": "./src/presets/provider.ts",
     "./presets/resolve": "./src/presets/resolve.ts",
     "./presets/types": "./src/presets/types.ts",
     "./presets/view": "./src/presets/view.ts",

@@ -13,6 +13,7 @@ import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
+import { loopPatch } from '@agnes/host-common/profile/composition'
 import { policyDigest } from '@agnes/host-common/profile/policy-digest'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '@agnes/host-common/workspace-authority'
@@ -435,10 +436,8 @@ export async function createSession(
     defaultLoop: async () => {
       const loop = await a.sessionLoopDefault?.()
       return resolveSessionCapabilities({
-        ...(profile.loop
-          ? { selection: { loop: { provider: profile.loop.id, version: profile.loop.version } } }
-          : {}),
-        ...(loop ? { admin: { composition: { loop: { provider: loop.id, version: loop.version } } } } : {}),
+        ...(profile.loop ? { selection: loopPatch(profile.loop) } : {}),
+        ...(loop ? { admin: { composition: loopPatch(loop) } } : {}),
         presetView: view,
       }).loop.value
     },

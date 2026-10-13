@@ -5,7 +5,7 @@ import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
-import { assertCompositionCompatible } from '@agnes/host-common/profile/composition'
+import { assertCompositionCompatible, loopPatch } from '@agnes/host-common/profile/composition'
 import { withAssemblyIsolation } from '@agnes/host-common/profile/isolation'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
@@ -455,11 +455,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const adminLoop = await a.sessionLoopDefault?.()
           const selection = a.compositionForPreset(
             name,
-            o.loop
-              ? { loop: { provider: o.loop.id, version: o.loop.version } }
-              : adminLoop
-                ? { loop: { provider: adminLoop.id, version: adminLoop.version } }
-                : undefined,
+            o.loop ? loopPatch(o.loop) : adminLoop ? loopPatch(adminLoop) : undefined,
           )
           assertCompositionCompatible(a.compositionForPreset(), selection)
           o = { ...o, loop: resolveSessionCapabilities({ composition: selection }).loop.value }

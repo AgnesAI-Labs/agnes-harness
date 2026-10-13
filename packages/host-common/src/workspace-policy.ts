@@ -3,6 +3,7 @@ import { posix, win32 } from 'node:path'
 import type { FsPolicy, FsRule } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { presetProvider } from './presets/provider.js'
 
 export type WorkspacePathSemantics = Readonly<{
   flavor: 'posix' | 'win32'
@@ -55,13 +56,9 @@ function stringList(value: unknown, field: string): readonly string[] {
 
 /** The single normalized static sandbox plan consumed by policy compilation and readiness identity. */
 export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unknown>>): SandboxStaticConfig {
-  const policy = preset['tool-policy'] as { provider?: string } | undefined
+  const policy = presetProvider(preset, 'tool-policy')
   const access =
-    policy?.provider === 'read-only'
-      ? 'read-only'
-      : policy?.provider === 'full-access'
-        ? 'full-access'
-        : 'workspace-write'
+    policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write'
   const raw = preset.sandbox
   if (raw === undefined)
     return Object.freeze({

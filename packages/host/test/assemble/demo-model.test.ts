@@ -205,7 +205,7 @@ it('adds the demo only for an opted-in fresh local-dev boot, preserving explicit
     for (const override of [
       { profile: 'enterprise' },
       { lock: { packages: {} } },
-      { configuration: { composition: { compaction: null } } },
+      { configuration: { composition: { providers: { compaction: null } } } },
       { configuration: { providers: { 'model-adapter': { provider: 'custom' } } } },
     ]) {
       const inputs = await readConfigurationProfileInputs({ ...options, demoFallback: true, ...override })

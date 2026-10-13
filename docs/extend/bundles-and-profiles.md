@@ -29,8 +29,10 @@ Declare `agnes.kinds: ["bundle"]` and an `agnes.bundles` map in `package.json`. 
       "research": {
         "extends": ["acme/research#base"],
         "profile": {
-          "loop": { "provider": "example.dag", "version": "1.0.0" },
-          "compaction": { "provider": "sliding-window" }
+          "providers": {
+            "loop": { "provider": "example.dag", "version": "1.0.0" },
+            "compaction": { "provider": "sliding-window" }
+          }
         },
         "presets": { "research": { "name": "research", "extends": "standard" } }
       }
@@ -52,14 +54,14 @@ composition:
     deny: ["network_search"]
 ```
 
-The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. The profile's `providers.persistence` and `providers.sandbox` override the corresponding bundle composition fields. A profile selects loops and compaction in its `providers` table and a bundle in its composition patch; a profile's own `composition` cannot carry a provider block. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
+The compiler applies bundle parents before children, once per resolution; cycles and unknown identifiers are errors. Later selected bundles win. Direct profile composition overrides profile bundles. The profile's `providers.persistence` and `providers.sandbox` override the corresponding bundle composition fields. Every layer selects providers in a `providers.<kind>` table: a profile in its manifest, a bundle in its patch's `providers`, a preset in its own `providers`, the admin and session layers in their patch's `providers`. A profile's own `composition` cannot carry one. Preset composition follows profile composition, saved admin bundles follow presets, and an explicit session patch is last. Admin selection is stored separately with optimistic revision checks and takes effect on restart.
 
 | Patch field | Meaning |
 | --- | --- |
-| `loop` | Exact `{provider, version}` selection |
-| `model-adapter` | `{provider: id}` or `{provider: [ids]}` selects registration ids; activate registrations with package or plugin rows; an empty list keeps defaults |
-| `compaction` | `{provider}` selection; `null` disables compaction |
-| `persistence`, `sandbox` | `{provider}` selection; uses the Host provider catalog; defaults are `sqlite` and `local` |
+| `providers.loop` | Exact `{provider, version}` selection |
+| `providers.model-adapter` | `{provider: id}` or `{provider: [ids]}` selects registration ids; activate registrations with package or plugin rows; an empty list keeps defaults |
+| `providers.compaction` | `{provider}` selection; `null` disables compaction |
+| `providers.persistence`, `providers.sandbox` | `{provider}` selection; uses the Host provider catalog; defaults are `sqlite` and `local` |
 | `packages` | Package references merged by id; lock/trust and capability ceilings still apply |
 | `plugins` | Ordinary row ids mapped to `{enabled, config}`; row config replaces as a whole |
 | `toolPolicy` | `readOnly`, exact-name `allow` and `deny` lists; deny wins |
@@ -72,7 +74,7 @@ The compiler applies bundle parents before children, once per resolution; cycles
 
 Arrays replace rather than append, except package references which merge by id. `toolPolicy` and each plugin row merge by field. Reserved object keys and non-JSON data are refused. Composition cannot turn a disabled or untrusted package into an authorized registration. Existing deployment/user/workspace ordinary row layers retain their precedence; composition sits after deployment defaults and before explicit user/workspace row overrides.
 
-A bundle can provide presets with the usual preset inheritance, plus `bundles` and `composition` fields. Bundle-provided presets join the profile’s allowed presets. Choose a preset when creating a session to obtain its loop and invocation policy.
+A bundle can provide presets with the usual preset inheritance, plus `bundles`, `composition` and `providers` fields. A preset's `providers` table also selects `tool-runtime` and `tool-policy`; its `composition` carries no provider block. Bundle-provided presets join the profile’s allowed presets. Choose a preset when creating a session to obtain its loop and invocation policy.
 
 ## Inspect and select in admin
 

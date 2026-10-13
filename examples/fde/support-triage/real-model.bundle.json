@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.support-triage"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.support-triage"
+        }
       }
     }
   }

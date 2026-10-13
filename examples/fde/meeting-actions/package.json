@@ -77,13 +77,15 @@
     "bundles": {
       "meeting-actions": {
         "profile": {
-          "loop": {
-            "version": "5.0.0",
-            "provider": "fde.meeting-actions"
-          },
           "skills": [
             "meeting-actions"
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.meeting-actions"
+            }
+          }
         },
         "presets": {
           "meeting-actions": {
@@ -97,8 +99,10 @@
                 }
               }
             },
-            "tool-policy": {
-              "provider": "fde.meeting-actions"
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.meeting-actions"
+              }
             }
           }
         }

@@ -33,10 +33,10 @@ Host 只读取已启用、已信任且完整性校验通过的已安装包。包
 
 | 字段 | 含义 |
 | --- | --- |
-| `loop` | 精确的 `{provider, version}` |
-| `model-adapter` | `{provider: id}` 或 `{provider: [ids]}` 选择注册 id；通过包或插件行启用注册；空列表保留默认值 |
-| `compaction` | `{provider}`；`null` 关闭压缩 |
-| `persistence`、`sandbox` | `{provider}`，使用对应 Host 目录；默认为 `sqlite` 和 `local` |
+| `providers.loop` | 精确的 `{provider, version}` |
+| `providers.model-adapter` | `{provider: id}` 或 `{provider: [ids]}` 选择注册 id；通过包或插件行启用注册；空列表保留默认值 |
+| `providers.compaction` | `{provider}`；`null` 关闭压缩 |
+| `providers.persistence`、`providers.sandbox` | `{provider}`，使用对应 Host 目录；默认为 `sqlite` 和 `local` |
 | `packages` | 按 id 合并包引用；仍受 lock、信任和能力上限约束 |
 | `plugins` | 普通插件行 id 对应 `{enabled, config}`；config 整体替换 |
 | `toolPolicy` | `readOnly`、精确名称的 `allow` 和 `deny`；deny 优先 |

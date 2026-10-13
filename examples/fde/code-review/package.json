@@ -75,13 +75,15 @@
     "bundles": {
       "code-review": {
         "profile": {
-          "loop": {
-            "version": "5.0.0",
-            "provider": "fde.code-review"
-          },
           "skills": [
             "code-review"
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.code-review"
+            }
+          }
         },
         "presets": {
           "code-review": {
@@ -95,8 +97,10 @@
                 }
               }
             },
-            "tool-policy": {
-              "provider": "fde.code-review"
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.code-review"
+              }
             }
           }
         }

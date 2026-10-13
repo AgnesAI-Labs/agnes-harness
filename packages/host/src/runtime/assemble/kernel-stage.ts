@@ -44,7 +44,7 @@ async function selectCoreProviders(
 ) {
   const { providerSelections } = ctx
   const compaction =
-    ctx.profile.composition?.compaction === null
+    ctx.profile.composition?.providers?.compaction === null
       ? undefined
       : await assembleCompaction(pluginTree.root.compactionEngines, ctx.profile.compaction)
   const selectedLoop = providerSelections.loop

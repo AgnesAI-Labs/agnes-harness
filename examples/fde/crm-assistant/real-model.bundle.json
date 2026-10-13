@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.crm-assistant"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.crm-assistant"
+        }
       }
     }
   }

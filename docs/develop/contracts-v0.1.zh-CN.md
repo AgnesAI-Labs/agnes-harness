@@ -108,7 +108,7 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 
 v0.1 不指定这些兼容码的删除日期。Provider errors 保持 experimental；本次收尾不重命名配置或授权失败。
 
-启用包的 provider config 统一为 `<kind>: {provider, version?}`。`model-adapter.provider` 接受注册 id、来源包或唯一列表。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。Preset 通过 `tool-runtime` / `tool-policy: {provider}` 选择。根 persistence 和 sandbox 已使用 `{provider}`。冲突包选择、缺少 provider 或 Loop 版本歧义拒绝启动。作者 composition 使用同一 provider 拼写；会话 pin 仍保存精确的后台身份。
+每种制品都用 `providers.<kind>: {provider, version?}` 选择 provider：配置档写在清单里，bundle 写在 patch 的 `providers`，preset 写在自己的 `providers`（还接受 `tool-runtime` 和 `tool-policy`），admin 与 session 层写在各自的 patch 里；启用包的 `config` 不会选择 provider，试图选择会被拒绝。`model-adapter.provider` 接受注册 id、来源包或唯一列表。根 `loop`、`compaction`、`provider.adapters` 和 preset 的 `tools.runtime` / `approval.policy` 已删除。preset 顶层的 `tool-runtime` / `tool-policy` 已删除。缺少 provider 或 Loop 版本歧义拒绝启动。唯一例外是 `model.system_prompt.provider`：system prompt 的 `{ id, version }` 位于用户设置与 preset 共用的配置对象内。会话 pin 仍保存精确的后台身份。
 
 | Kind | Scope | 生效边界 |
 | --- | --- | --- |

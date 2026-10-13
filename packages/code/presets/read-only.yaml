@@ -6,4 +6,5 @@ approval: { command_policy: [] }
 sandbox: { level: L1, required: true, on_unavailable: deny }
 subagent: { isolation: shared }
 
-tool-policy: { provider: read-only }
+providers:
+  tool-policy: { provider: read-only }

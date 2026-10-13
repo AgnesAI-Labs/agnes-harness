@@ -12,11 +12,11 @@ English | [简体中文](tool-runtime.zh-CN.md)
 Ordinary Cordis plugins inject `providers` and call `providers.register(toolRuntimeKind, provider)` or `providers.register(toolPolicyKind, policy)`. Registration belongs to the calling plugin fiber. Read `providers.catalog()` and filter by `kind`; entries include id, version, sourcePackage, capabilities and selection/lifecycle metadata. Selection is by id; duplicate ids and missing selections fail explicitly. Unloading a selected provider cancels its lifetime and refuses later calls.
 
 ```yaml
+providers:
+  tool-runtime: { provider: default }
+  tool-policy: { provider: default }
 tools:
-  runtime: default
   max_parallel: 4
-approval:
-  policy: default
 ```
 
 Omitting these fields preserves current behavior. The default runtime runs adjacent concurrency-safe calls in a bounded pool, drains that pool before an exclusive call, and preserves input order in returned results. The parallel limit accepts 1–64. Cancellation or dispatch failure stops replenishment and drains started calls. Nested calls retain Core's hierarchical scheduling. Instances stay alive until session close so preset switches cannot dispose an in-flight batch.
@@ -39,7 +39,7 @@ A rule names the tools it covers with a fully anchored `tool` pattern and is mat
 
 The table matches text; it is not a sandbox. A rule written for `shell` does not cover another tool unless its `tool` pattern names it (`shell|pty_send`). Text sent to a PTY can be split across calls, and a shell or a `run_code` program can build a command at run time, so a deny rule stops the plain spelling of a command and the sandbox preset remains the containment boundary. A plugin tool that runs commands without declaring `commandArg` is matched on its argument JSON. `schedule_create` and `schedule_update` take a prompt, not a command; the turn they start is held to the table like any other. Human approval and durable tool requests use Core decisions. Permanent grants are stored and revoked by the Host, bound to the approver and the tool definition; the approval provider only delivers the question (`ask`). Principal denials remain terminal. A custom policy's `deny` or `ask` remains effective in full-access mode; the policy explicitly chooses how to interpret `input.fullAccess`. Core honors principal approval requirements under the existing host approval mode.
 
-[Read-only policy example](../../examples/policies/read-only/) denies writes and destructive tools, including in full-access sessions. Install and enable its row, then select `tool-policy: { provider: read-only }`. Both contracts apply to the default loop and custom loops through `LoopContext.tools`.
+[Read-only policy example](../../examples/policies/read-only/) denies writes and destructive tools, including in full-access sessions. Install and enable its row, then select `providers.tool-policy: { provider: read-only }` in a preset. Both contracts apply to the default loop and custom loops through `LoopContext.tools`.
 
 Optional `meta.isPresentational: true` declares that the effect only publishes display state to the user and has no external side effect. It cannot be combined with `isDestructive` or `isOpenWorld`. The default tool policy does not escalate a presentational, non-read-only tool solely because the turn is tainted. `requiresApproval: always` and a destructive approval band still ask. Omitting the flag leaves the tool subject to tainted-write approval. The [tool metadata reference](../../packages/extension-api/docs/tools-meta.md) lists the flag with the other metadata keys.
 
@@ -49,7 +49,7 @@ Set `meta.deferLoading: true` to omit a tool's schema from the initial model req
 
 ## Model-assisted policies
 
-The official `@agnes/base` policy registers `auto-review` alongside `default`. Select it with `tool-policy: { provider: auto-review }`, or enable its Web policy card when the selected base policy is `default`. Trusted profiles can select `approvals.mode: auto-review`. The settings card does not replace custom, read-only or full-access policies.
+The official `@agnes/base` policy registers `auto-review` alongside `default`. Select it with `providers.tool-policy: { provider: auto-review }` in a preset or the profile, or enable its Web policy card when the selected base policy is `default`. Trusted profiles can select `approvals.mode: auto-review`. The settings card does not replace custom, read-only or full-access policies.
 
 `ToolPolicyInput` includes optional `config: AutoReviewConfig`, category (`read`, `write`, `external`), trusted retained human `instructions`, and the pending call's description, parameters and definition fingerprint. Arguments and tool descriptions are data, not authorization. The optional `ToolPolicyPorts` exposes `reserve(limit): boolean | Promise<boolean>` and `model({ slot: 'fast' | 'verifier', prompt }, signal, onUsage?)`. The model operation returns `{ text, model, cost, costSource? }`, discloses no tools, makes no automatic retries, obeys the active request cap, and accounts for usage. The optional usage callback supplies `{ model, cost, costSource }`, including estimates on interrupted streams. Reservations are session-wide durable attempt counts; an interrupted reservation is not refunded. Propagate cancellation and fall back to `ask` when a port is unavailable.
 

@@ -63,8 +63,7 @@ describe('toPresetView', () => {
     expect(toPresetView({ name: 'bare' })).toEqual({ ...presetDefaults(), name: 'bare' })
     const selected = toPresetView({
       name: 'custom',
-      'tool-runtime': { provider: 'serial' },
-      'tool-policy': { provider: 'read-only' },
+      providers: { 'tool-runtime': { provider: 'serial' }, 'tool-policy': { provider: 'read-only' } },
     })
     expect(selected.tools.runtime).toBe('serial')
     expect(selected.approval.policy).toBe('read-only')

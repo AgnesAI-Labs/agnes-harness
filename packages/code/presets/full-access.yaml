@@ -5,4 +5,5 @@ extends: standard
 approval: { command_policy: [] }
 sandbox: { level: L0, required: false, on_unavailable: allow }
 
-tool-policy: { provider: full-access }
+providers:
+  tool-policy: { provider: full-access }

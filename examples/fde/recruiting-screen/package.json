@@ -75,13 +75,15 @@
     "bundles": {
       "recruiting-screen": {
         "profile": {
-          "loop": {
-            "version": "5.0.0",
-            "provider": "fde.recruiting-screen"
-          },
           "skills": [
             "recruiting-screen"
-          ]
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.recruiting-screen"
+            }
+          }
         },
         "presets": {
           "recruiting-screen": {
@@ -95,8 +97,10 @@
                 }
               }
             },
-            "tool-policy": {
-              "provider": "fde.recruiting-screen"
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.recruiting-screen"
+              }
             }
           }
         }

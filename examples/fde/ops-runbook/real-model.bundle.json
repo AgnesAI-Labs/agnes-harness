@@ -12,8 +12,10 @@
           }
         }
       },
-      "tool-policy": {
-        "provider": "fde.ops-runbook"
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.ops-runbook"
+        }
       }
     }
   }

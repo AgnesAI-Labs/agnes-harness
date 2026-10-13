@@ -5470,11 +5470,16 @@ const PRESET_DEFS: Record<string, TSchema> = {
 const PRESET_SAMPLES: Record<string, Sample> = {
   CompositionPatch: {
     valid: {
-      loop: { provider: 'default', version: '1.0.0' },
+      providers: { loop: { provider: 'default', version: '1.0.0' } },
       tools: ['read'],
       toolPolicy: { readOnly: true },
     },
-    invalid: [{ unknown: true }, { loop: { provider: 'default' } }, { tools: ['read', 'read'] }],
+    invalid: [
+      { unknown: true },
+      { loop: { provider: 'default', version: '1.0.0' } },
+      { providers: { loop: { provider: 'default' } } },
+      { tools: ['read', 'read'] },
+    ],
     note: 'Preset composition selects closed plugin identities and unique tool names',
   },
   PresetDoc: {
