@@ -2259,6 +2259,7 @@ run(async () => {
   }
   const startupSettings = startupRequest.get('settings') ?? ''
   // A link to the old history or archive page opens the sidebar's search or archived list instead.
+  const startupTerminal = settingsRoute(startupSettings).terminal === true
   const startupMoved = movedSettingsTarget(startupSettings)
   const startupSection = startupMoved ? undefined : settingsSections.get(settingsRoute(startupSettings).id)
   if (selected) {
@@ -2275,7 +2276,12 @@ run(async () => {
     if (first) await open(first.sessionId)
     else
       await beginNewDraft(
-        configured && !startupSection && !startupMoved && !homeNavigation.getSnapshot() && !guided,
+        configured &&
+          !startupSection &&
+          !startupTerminal &&
+          !startupMoved &&
+          !homeNavigation.getSnapshot() &&
+          !guided,
       )
   }
   const factCandidate = startupRequest.get('factCandidate')
@@ -2295,7 +2301,8 @@ run(async () => {
   }
   const shown = await firstRun.initialize(
     snapshot,
-    page.items.length > 0 || Boolean(startupSection || startupMoved || homeNavigation.getSnapshot()),
+    page.items.length > 0 ||
+      Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
   )
   if (guided && !shown) await beginNewDraft(true)
   if (startupMoved)
@@ -2303,7 +2310,10 @@ run(async () => {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => archivedSessions.show('archived'),
     })
-  if (startupSection && new URL(location.href).searchParams.get('settings') === startupSettings) {
+  if (
+    (startupSection || startupTerminal) &&
+    new URL(location.href).searchParams.get('settings') === startupSettings
+  ) {
     settingsRegion.open('model')
     await settings.open()
     if (new URL(location.href).searchParams.get('settings') !== startupSettings) return

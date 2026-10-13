@@ -1571,14 +1571,14 @@ describe('web session selection', () => {
     expect(location.hash).toBe('#settings-subsection-examples')
   })
 
-  it.each([false, true])(
+  it.each([undefined, 'terminal', 'jobs'])(
     'validates directory confirmation and handles a terminal deep link without a session (%s)',
     async (terminalLink) => {
       installPublicFixture()
       history.replaceState(
         null,
         '',
-        terminalLink ? '/?settings=terminal#test-launcher-token' : '/#test-launcher-token',
+        terminalLink ? `/?settings=${terminalLink}#test-launcher-token` : '/#test-launcher-token',
       )
       const create = vi.fn<() => Promise<SessionDouble>>()
 
