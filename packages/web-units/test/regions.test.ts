@@ -292,6 +292,14 @@ describe('independent core web-unit implementations', () => {
     for (const listener of changed) listener()
     expect(nav()).toHaveLength(3)
     expect(host.querySelectorAll('#settings-section-tabs [role="tab"]')).toHaveLength(3)
+    // A group of pages is named once above its tabs, and the tab list takes that name.
+    const groupTitle = host.querySelector<HTMLElement>('#settings-group-title')
+    expect(groupTitle?.hidden).toBe(false)
+    expect(groupTitle?.textContent).not.toBe('')
+    expect(groupTitle?.nextElementSibling?.id).toBe('settings-section-tabs')
+    expect(host.querySelector('#settings-section-tabs')?.getAttribute('aria-labelledby')).toBe(
+      'settings-group-title',
+    )
     entries = entries.filter((entry) => entry.id !== 'second')
     for (const listener of changed) listener()
     expect(host.querySelector('[data-settings-section="second"]')).toBeNull()

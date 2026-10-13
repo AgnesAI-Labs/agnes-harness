@@ -82,6 +82,9 @@
     max-width: var(--settings-frame);
     padding: var(--s24) var(--settings-gutter) 0;
   }
+  .runtime-settings .agnes-settings-group-title {
+    padding-inline: 0;
+  }
   .agnes-settings-group-title[hidden] {
     display: none;
   }

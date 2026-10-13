@@ -305,6 +305,11 @@ export function SettingsHub({
               {shellText('settings-shell.back')}
             </Button>
             {groupEntries.length > 1 && (
+              <h2 className="agnes-settings-group-title">
+                {shellText(groupEntries[0]?.groupTitleKey ?? '')}
+              </h2>
+            )}
+            {groupEntries.length > 1 && (
               <div
                 className="agnes-settings-section-tabs"
                 role="tablist"
