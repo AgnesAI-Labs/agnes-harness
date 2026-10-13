@@ -22,7 +22,7 @@ it('gives the same answers without String.prototype.isWellFormed, on the per-cha
     '',
     'plain',
     'é你好😀𝄞',
-    '"\\\n\t\u0000\u001f\u007f  ',
+    '"\\\n\t\u0000\u001f\u007f\u2028\u2029',
     { '😀': ['𐀀', '􏿿'] },
     'x'.repeat(70_000),
     '\ud800',
