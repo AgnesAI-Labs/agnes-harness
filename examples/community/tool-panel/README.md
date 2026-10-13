@@ -32,9 +32,9 @@ The public client descriptor contains only the panel label, never backend config
 
 The backend requires the Host's extension service. On a Host without that
 injection the row cannot activate; inspect its missing-inject/dependency error
-in Plugins. The author test separately demonstrates a descriptive error when
-the callback is called without the service. This does not simulate a Host
-activation or assert a fabricated active state.
+in Plugins. The author test reads the same manifest injection declaration and
+checks that Cordis leaves the plugin pending without the service. This is a
+dependency contract test; real Host activation is covered by the manual check above.
 
 ## Cleanup
 

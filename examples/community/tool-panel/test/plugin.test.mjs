@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { Context, FiberState } from '@agnes/cordis'
 import { createPluginTestHost } from '@agnes/host/author-testkit'
@@ -26,8 +27,11 @@ test('configured tool validates inputs, returns deterministic results and unregi
 })
 
 test('missing tool service prevents activation and invalid config reports useful author errors', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  const entry = manifest.agnes.plugins.find((entry) => entry.export === 'main')
+  assert.ok(entry)
   const root = new Context()
-  const fiber = root.plugin(main)
+  const fiber = root.plugin({ ...main, inject: entry.inject })
   try {
     assert.equal(fiber.state, FiberState.PENDING)
   } finally {
