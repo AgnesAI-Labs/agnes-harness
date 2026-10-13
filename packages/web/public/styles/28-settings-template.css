@@ -156,6 +156,10 @@
   .settings-shell #resource-list:has(> .agnes-settings-page-heading) {
     padding-top: 0;
   }
+  /* Parts of a page keep their own height in every layout; the body is what scrolls. */
+  .settings-shell .config-workspace > * {
+    flex-shrink: 0;
+  }
   .settings-shell .config-workspace > *,
   .settings-shell .archived-pane-body > *,
   .settings-shell #plugin-list > *,

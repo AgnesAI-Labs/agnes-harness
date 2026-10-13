@@ -79,10 +79,7 @@
     display: none;
   }
   .config-accounts-section {
-    min-height: 0;
-    flex-direction: column;
     margin: 0;
-    overflow: visible;
   }
   #model-settings-pane .config-accounts-section {
     border: 0;
@@ -121,7 +118,6 @@
     line-height: 1.6;
   }
   #config-accounts {
-    min-height: 0;
     display: grid;
     align-content: start;
     gap: var(--s8);

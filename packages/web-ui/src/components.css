@@ -1792,6 +1792,10 @@
     background: transparent;
   }
   @media (max-width: 640px) {
+    /* A section's actions drop under its title and description instead of squeezing them. */
+    .agnes-settings-section-heading > div:first-child {
+      flex-basis: 100%;
+    }
     .agnes-settings-item:not([data-stacked]) {
       flex-wrap: wrap;
     }
