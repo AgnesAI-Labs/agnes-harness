@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   type AttachmentStore,
   attachmentReceiptFor,
+  collectAttachmentOrphans,
   createAttachmentStore,
   createUserAttachmentPort,
 } from '@agnes/host'
@@ -837,5 +838,57 @@ describe('more of the upload method', () => {
       commandId: 'forged',
     })
     expect(refused.error?.data).toMatchObject({ code: 'ATTACHMENT_NOT_AUTHORIZED' })
+  })
+
+  it('keeps bytes stored long ago when an upload of the same bytes is finishing during the attachment sweep', async () => {
+    const DAY = 24 * 60 * 60 * 1000
+    let committed = false
+    let swept: { deleted: number } | undefined
+    let dataDir = ''
+    const f = await fixture({
+      wrapStore: (store) => ({
+        ...store,
+        root: store.root,
+        stage: async (meta) => {
+          const staging = await store.stage(meta)
+          return {
+            get bytes() {
+              return staging.bytes
+            },
+            write: (chunk, signal) => staging.write(chunk, signal),
+            commit: async (expected) => {
+              const object = await staging.commit(expected)
+              committed = true
+              return object
+            },
+            abort: () => staging.abort(),
+          }
+        },
+        // The sweep runs after the upload committed and before it marks the bytes with its receipt.
+        userAttachment: async (sha256) => {
+          if (committed && !swept)
+            swept = await collectAttachmentOrphans({ dataDir, store, graceMs: 7 * DAY })
+          return store.userAttachment(sha256)
+        },
+      }),
+    })
+    dataDir = f.h.dataDir
+    // The same bytes, uploaded and marked eight days ago and never sent: an orphan by now.
+    const bytes = Buffer.from('the same zip, uploaded again')
+    const old = createAttachmentStore({ dataDir, clock: () => Date.now() - 8 * DAY })
+    const staging = await old.stage({
+      kind: 'user-attachment',
+      mimeType: 'application/zip',
+      maxBytes: bytes.length,
+    })
+    await staging.write(bytes)
+    const object = await staging.commit()
+    await old.markUserAttachment(object, { mimeType: 'application/zip' })
+
+    const done = await f.uploadAll(bytes, { name: 'again.zip', mimeType: 'application/zip' })
+    expect(done.result?.attachment).toMatchObject({ type: 'file', attachment: { sha256: sha(bytes) } })
+    expect(swept).toEqual({ deleted: 0, bytes: 0 })
+    expect(await f.store.stat(sha(bytes))).toEqual({ sha256: sha(bytes), bytes: bytes.length })
+    expect((await f.store.userAttachment(sha(bytes)))?.receipts).toHaveLength(1)
   })
 })

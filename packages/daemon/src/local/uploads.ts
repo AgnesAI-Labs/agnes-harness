@@ -288,7 +288,15 @@ export function createUploads(o: {
           throw error
         }
         try {
-          const existed = (await o.store.stat(u.hash.digest('hex')).catch(() => undefined)) !== undefined
+          const sha256 = u.hash.digest('hex')
+          // Bytes already stored as a user attachment are marked as seen before this upload relies on
+          // them, as a send does: the attachment sweep judges the mark once more before it deletes.
+          const marker = await o.store.userAttachment(sha256).catch(() => undefined)
+          if (marker)
+            await o.store
+              .markUserAttachment({ sha256, bytes: marker.bytes }, { mimeType: marker.mimeType })
+              .catch(() => undefined)
+          const existed = (await o.store.stat(sha256).catch(() => undefined)) !== undefined
           const object = await u.staging.commit(i.sha256)
           return { object, name: u.name, mimeType: u.mimeType, purpose: u.purpose, existed, settle: u.settle }
         } catch (error) {

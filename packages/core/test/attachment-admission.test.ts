@@ -1,4 +1,6 @@
+import { USER_IMAGE_SEND_BUDGET } from '@agnes/protocol-validation'
 import { describe, expect, it } from 'vitest'
+import { USER_IMAGE_BUDGET } from '../src/request/user-images.js'
 import {
   admitAttachments,
   checkUserImageBudget,
@@ -338,6 +340,11 @@ describe('checkUserImageBudget', () => {
     const full = { ...ref(MIB), width: 4000, height: 2000 }
     expect(refusal([full])).toBeUndefined()
     expect(refusal([full, inline])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
+  })
+
+  it('uses the request budget: a message admitted at send fits one model request', () => {
+    expect(USER_IMAGE_BUDGET.bytes).toBe(USER_IMAGE_SEND_BUDGET.maxAggregateBytes)
+    expect(USER_IMAGE_BUDGET.pixels).toBe(USER_IMAGE_SEND_BUDGET.maxAggregatePixels)
   })
 
   it('does not count files: a 90 MB zip goes through', () => {

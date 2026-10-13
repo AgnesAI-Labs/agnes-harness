@@ -4,7 +4,7 @@ import {
   modelImageInputError,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol'
-import { imageHeaderDimensions } from '@agnes/protocol-validation'
+import { imageHeaderDimensions, USER_IMAGE_SEND_BUDGET } from '@agnes/protocol-validation'
 import { base64DecodedBytes } from '../log/lean.js'
 import type { SurfaceNode } from '../project/surface.js'
 import type { SessionImpl } from '../step/session.js'
@@ -26,9 +26,10 @@ export type UserImageCandidate = Readonly<{
 }>
 export type UserImageBudget = Readonly<{ count: number; bytes: number; pixels: number; perMessage: number }>
 export const USER_IMAGE_STEPS = Object.freeze({ bytes: 4 * 1024 * 1024, pixels: 2_000_000 })
+/** The bytes and pixels are the send budget's, so a message admitted at send fits a request. */
 export const USER_IMAGE_BUDGET = Object.freeze({
-  bytes: 16 * 1024 * 1024,
-  pixels: 8_000_000,
+  bytes: USER_IMAGE_SEND_BUDGET.maxAggregateBytes,
+  pixels: USER_IMAGE_SEND_BUDGET.maxAggregatePixels,
   defaultCount: 8,
 })
 const UNKNOWN_IMAGE_TOKENS = 1_600
