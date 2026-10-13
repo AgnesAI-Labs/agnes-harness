@@ -243,6 +243,15 @@
       "purpose": "Render the 3D demo world of Agnes MHS in the browser.",
       "rationale": "The standard WebGL scene graph, with the loaders and post-processing the demo needs.",
       "consumers": ["examples/mars-world"]
+    },
+    {
+      "name": "sharp",
+      "version": "0.34.5",
+      "license": "Apache-2.0",
+      "source": "https://github.com/lovell/sharp",
+      "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
+      "rationale": "The shared safe-image validator does not decode raster pixels or resize images; the native codec (prebuilt @img/sharp-* and LGPL-3.0-or-later libvips packages; sharp's install script is neither needed nor run) and its transitive license notices ship with the runtime.",
+      "consumers": ["packages/base"]
     }
   ]
 }
