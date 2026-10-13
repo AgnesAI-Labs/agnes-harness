@@ -13,7 +13,6 @@ import {
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
-import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
@@ -32,7 +31,6 @@ const out = join(root, 'dist', 'web')
 export async function buildWeb(options: { clean?: boolean } = {}): Promise<BuildResult[]> {
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
-  const generatedConversationCss = join(out, 'conversation-tailwind.css')
   // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
   // 同一份实例；app.js 打包时保持这些说明符为外部导入。
   const platformExternals = [
@@ -42,7 +40,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     'react-dom/client',
     '@agnes/cordis',
     '@agnes/web-client',
-    '@agnes/web-ui/assistant-ui',
+    '@agnes/web-ui/conversation',
     '@agnes/web-ui/x',
     'antd',
     'recharts',
@@ -79,7 +77,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     }),
   )
   // WC5：平台共享单例 /vendor/*。React 入口与外部化 React 的 UI vendor 分开构建；React 的代码只
-  // 存在于共享入口/chunk 一份，antd、assistant-ui、web-client 经 import map 引用同一套 React 说明符。产物落在
+  // 存在于共享入口/chunk 一份，antd、conversation、web-client 经 import map 引用同一套 React 说明符。产物落在
   // /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
   const vendorOptions = {
     outdir: join(out, 'vendor'),
@@ -114,7 +112,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
         recharts: join(root, 'tools', 'vendor', 'recharts-entry.js'),
         'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
         'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
-        'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),
+        conversation: join(root, 'tools', 'vendor', 'conversation-entry.js'),
         x: join(root, 'tools', 'vendor', 'x-entry.js'),
         cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
@@ -161,12 +159,9 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     join(out, 'style.css'),
     `\n${readUiCss(join(root, '..', 'web-ui', 'src', 'intelligent-ui', 'styles.css'))}`,
   )
-  buildConversationCss(generatedConversationCss)
-  await appendFile(join(out, 'style.css'), `\n${readUiCss(generatedConversationCss)}`)
-  await rm(generatedConversationCss)
   // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
   // already load /style.css, so merge core + published themes + Agnes overrides there.
-  const generatedMarkdownCss = join(out, 'vendor', 'assistant-ui.css')
+  const generatedMarkdownCss = join(out, 'vendor', 'conversation.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(generatedMarkdownCss, 'utf8'),
     Promise.resolve(readMarkdownThemeCss(markdownLightCss)),

@@ -50,7 +50,7 @@ const requiredWebAssets = [
   'vendor/react-dom-client.js',
   'vendor/antd.js',
   'vendor/recharts.js',
-  'vendor/assistant-ui.js',
+  'vendor/conversation.js',
   'vendor/x.js',
   'vendor/cordis.js',
   'vendor/web-client.js',

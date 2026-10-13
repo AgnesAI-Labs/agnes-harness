@@ -33,13 +33,9 @@ it('ships private conversation styles in the existing three-page style asset', a
   expect(built).toContain('.x-markdown-dark')
   expect(built).toContain('.conversation-markdown')
   expect(built).toContain('--text-color: var(--agnes-text-primary)')
-  expect(built).toContain('.aui\\:flex')
-  expect(built).toContain('.aui\\:self-stretch')
-  expect(built).toContain('align-self:stretch')
-  expect(built).toContain('var(--agnes-bg-card)')
-  expect(built).not.toContain('box-sizing:border-box')
+  expect(built).not.toContain('.aui\\:')
   expect(files).not.toContain('messages.css')
-  expect(files).not.toContain('assistant-ui.css')
+  expect(files).not.toContain('conversation.css')
   expect(files).not.toContain('conversation-tailwind.css')
 
   for (const page of ['index', 'admin', 'resources']) {
@@ -49,25 +45,25 @@ it('ships private conversation styles in the existing three-page style asset', a
   }
 }, 30_000)
 
-it('resolves assistant-ui from the shared vendor instead of bundling a second app copy', async () => {
+it('resolves the conversation layer from the shared vendor instead of bundling a second app copy', async () => {
   const output = resolve(web, 'dist/web')
   const license = await readFile(resolve(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'), 'utf8')
   expect(license).toContain('Copyright (c) 2015-present Ant UED')
   const app = await readFile(resolve(output, 'app.js'), 'utf8')
-  expect(/from\s+["']@agnes\/web-ui\/assistant-ui["']/.test(app)).toBe(true)
+  expect(/from\s+["']@agnes\/web-ui\/conversation["']/.test(app)).toBe(true)
 
   const appMaps = (await readdir(output)).filter((file) => file.endsWith('.js.map'))
   const duplicated = []
   for (const file of appMaps) {
     const map = JSON.parse(await readFile(resolve(output, file), 'utf8')) as { sources: string[] }
-    if (map.sources.some((source) => source.includes('node_modules/@assistant-ui/'))) duplicated.push(file)
+    if (map.sources.some((source) => source.includes('@ant-design/x-markdown/'))) duplicated.push(file)
   }
   expect(duplicated).toEqual([])
 
-  const vendor = JSON.parse(await readFile(resolve(output, 'vendor/assistant-ui.js.map'), 'utf8')) as {
+  const vendor = JSON.parse(await readFile(resolve(output, 'vendor/conversation.js.map'), 'utf8')) as {
     sources: string[]
   }
-  expect(vendor.sources.some((source) => source.includes('node_modules/@assistant-ui/react/'))).toBe(true)
+  expect(vendor.sources.some((source) => source.includes('node_modules/@assistant-ui/'))).toBe(false)
   expect(vendor.sources.some((source) => source.includes('@ant-design/x-markdown/'))).toBe(true)
   expect(vendor.sources.some((source) => source.includes('html-react-parser/'))).toBe(true)
   expect(
@@ -77,6 +73,6 @@ it('resolves assistant-ui from the shared vendor instead of bundling a second ap
   ).toBe(false)
   for (const page of ['index', 'admin', 'resources']) {
     const html = await readFile(resolve(output, `${page}.html`), 'utf8')
-    expect(html).toContain('"@agnes/web-ui/assistant-ui": "/vendor/assistant-ui.js"')
+    expect(html).toContain('"@agnes/web-ui/conversation": "/vendor/conversation.js"')
   }
 }, 30_000)

@@ -1,7 +1,7 @@
 import type { UiArtifactFileData } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientDocumentKind, ClientDocumentResource, ClientResourceService } from '@agnes/web-client'
 import { Button, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog, useUiText } from '@agnes/web-ui'
-import { DocumentPreview } from '@agnes/web-ui/assistant-ui'
+import { DocumentPreview } from '@agnes/web-ui/conversation'
 import { useEffect, useMemo, useState } from 'react'
 
 function previewKind(mime: string): ClientDocumentKind | undefined {

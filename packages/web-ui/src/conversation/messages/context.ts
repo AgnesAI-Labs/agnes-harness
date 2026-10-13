@@ -1,5 +1,5 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { createContext, type ReactNode, type RefObject } from 'react'
+import type { ReactNode } from 'react'
 import type { Translate } from '../../locales/index.js'
 
 export type AssistantNode = Extract<UINode, { kind: 'assistant' }>
@@ -22,6 +22,8 @@ export interface ConversationMarkdownState {
 export interface ConversationMessagesProps {
   /** Locale-bound translate injected by the host; called during render, never cached. */
   t: Translate
+  /** The controller-owned projection window, in source order. */
+  nodes: readonly UINode[]
   turns?: readonly UITurn[]
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
@@ -35,31 +37,3 @@ export interface ConversationMessagesProps {
   /** Host-owned interactive cards and deliverables can stay outside collapsed process history. */
   keepNodeVisible?: (node: UINode) => boolean
 }
-
-export type ConversationMessageContextValue = {
-  node: UINode
-  props: ConversationMessagesProps
-  hideThinking: boolean
-  turnStatus?: UITurn['status']
-  thinkingHost?: RefObject<HTMLDivElement>
-}
-
-export const ConversationMessageContext = createContext<ConversationMessageContextValue | null>(null)
-
-export type ConversationMessageTarget = {
-  element: HTMLDivElement
-  context: ConversationMessageContextValue
-}
-
-export type ConversationMessageTargetContextValue = {
-  targets: ReadonlyMap<string, ConversationMessageTarget>
-  version: number
-}
-
-export const ConversationMessageTargetContext = createContext<ConversationMessageTargetContextValue | null>(
-  null,
-)
-
-export const registerConversationMessageTargetContext = createContext<
-  ((id: string, target: ConversationMessageTarget | undefined) => void) | null
->(null)

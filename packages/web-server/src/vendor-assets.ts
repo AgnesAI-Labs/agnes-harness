@@ -8,7 +8,7 @@ export const VENDOR_ENTRY_NAMES = new Set([
   'recharts',
   'antd-en-us',
   'antd-zh-cn',
-  'assistant-ui',
+  'conversation',
   'x',
   'cordis',
   'web-client',

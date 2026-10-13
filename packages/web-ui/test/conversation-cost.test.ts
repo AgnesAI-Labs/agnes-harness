@@ -3,9 +3,8 @@ import type { UINode } from '@agnes/protocol'
 import {
   ConversationMessages,
   createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
-import { AssistantRuntimeProvider } from '@assistant-ui/react'
+  useConversationProjection,
+} from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
@@ -37,8 +36,8 @@ const call: CostNode = {
   timing: { ttftMs: 0, durationMs: 2400 },
 }
 function Harness({ store }: { store: ReturnType<typeof createConversationProjectionStore> }) {
-  const runtime = useConversationRuntime(store)
-  return createElement(AssistantRuntimeProvider, { runtime }, createElement(ConversationMessages, { t: zhT }))
+  const projection = useConversationProjection(store)
+  return createElement(ConversationMessages, { t: zhT, nodes: projection.nodes })
 }
 async function mount(node: CostNode) {
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: [node] })

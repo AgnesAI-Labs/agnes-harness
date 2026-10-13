@@ -21,7 +21,6 @@
     "packages/web-ui/src/conversation/messages.tsx",
     "packages/web-ui/src/conversation/messages/approval-labels.ts",
     "packages/web-ui/src/conversation/messages/assistant-message.tsx",
-    "packages/web-ui/src/conversation/messages/assistant-portal.tsx",
     "packages/web-ui/src/conversation/messages/context.ts",
     "packages/web-ui/src/conversation/messages/markdown-state.ts",
     "packages/web-ui/src/conversation/messages/message.tsx",

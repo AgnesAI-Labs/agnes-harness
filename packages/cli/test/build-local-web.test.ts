@@ -19,7 +19,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
     )
     const html = await readFile(join(output, 'index.html'), 'utf8')
     const antdVendor = await readFile(join(output, 'vendor', 'antd.js'), 'utf8')
-    // antd 产物不自包含是正常情况：另一个 vendor 入口（比如 assistant-ui）只要也引用 antd，esbuild 就会把
+    // antd 产物不自包含是正常情况：另一个 vendor 入口（比如 conversation）只要也引用 antd，esbuild 就会把
     // 共享代码提成 chunk，antd.js 只剩再导出的壳，连带 react-is 的版权声明一起搬进 chunk。所以顺着 chunk 找。
     const antdVendorChunks = [...antdVendor.matchAll(/(?:from\s+)?["'](\.\/chunk-[\w-]+\.js)["']/g)].map(
       (match) => match[1],
@@ -30,7 +30,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
         antdVendorChunks.map((chunk) => readFile(join(output, 'vendor', chunk ?? ''), 'utf8')),
       )),
     ]
-    const markdownVendor = await readFile(join(output, 'vendor', 'assistant-ui.js'), 'utf8')
+    const markdownVendor = await readFile(join(output, 'vendor', 'conversation.js'), 'utf8')
     const markdownLicense = await readFile(
       join(output, 'THIRD-PARTY-NOTICES/ant-design-x-markdown.txt'),
       'utf8',
@@ -38,7 +38,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
     expect(markdownLicense).toContain('Copyright (c) 2015-present Ant UED')
     expect(app).toMatch(/from\s+["']react["']/)
     expect(chunkSources.some((source) => /from\s+["']antd["']/.test(source))).toBe(true)
-    expect(app).toMatch(/from\s+["']@agnes\/web-ui\/assistant-ui["']/)
+    expect(app).toMatch(/from\s+["']@agnes\/web-ui\/conversation["']/)
     expect(html).toContain('"react": "/vendor/react.js"')
     expect(html).toContain('"recharts": "/vendor/recharts.js"')
     expect(chunkSources.some((source) => /from\s+["']recharts["']/.test(source))).toBe(true)
@@ -103,7 +103,7 @@ it('builds local web assets with the shared platform vendor modules', async () =
     )
     expect(styles).toContain('background: var(--light-bg);')
     expect(styles).toContain('background: var(--dark-bg);')
-    await expect(readFile(join(output, 'vendor/assistant-ui.css'), 'utf8')).rejects.toThrow()
+    await expect(readFile(join(output, 'vendor/conversation.css'), 'utf8')).rejects.toThrow()
   } finally {
     await rm(output, { recursive: true, force: true })
   }
@@ -131,7 +131,7 @@ it('rejects a local package when an HTML or import-map asset is missing', async 
       'vendor/react-dom-client.js',
       'vendor/antd.js',
       'vendor/recharts.js',
-      'vendor/assistant-ui.js',
+      'vendor/conversation.js',
       'vendor/x.js',
       'vendor/cordis.js',
       'vendor/web-client.js',

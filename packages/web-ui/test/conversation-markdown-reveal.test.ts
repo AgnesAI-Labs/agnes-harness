@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { ConversationMarkdown } from '@agnes/web-ui/assistant-ui'
+import { ConversationMarkdown } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'

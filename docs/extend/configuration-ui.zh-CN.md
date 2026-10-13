@@ -125,7 +125,7 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 
 ## Guard 与验收
 
-`tools/guards/src/frontend-ui.test.ts` 检查 JSX/HTML 显示文字、可访问性属性、presentation props、DOM 文本写入和原生确认；有 locale 绑定的静态 HTML fallback 允许保留。它也禁止 `packages/web/src` 内布局 inline styles，以及 registry 之外直接渲染内置设置页。`ui-layer.test.ts` 将 antd、私有入口和 assistant-ui 限定在 web-ui。源码检查配合 key parity 和主屏幕未解析 key 测试；运行时/插件提供的数据不当作应用固定文案。
+`tools/guards/src/frontend-ui.test.ts` 检查 JSX/HTML 显示文字、可访问性属性、presentation props、DOM 文本写入和原生确认；有 locale 绑定的静态 HTML fallback 允许保留。它也禁止 `packages/web/src` 内布局 inline styles，以及 registry 之外直接渲染内置设置页。`ui-layer.test.ts` 将 antd 及其私有入口限定在 web-ui。源码检查配合 key parity 和主屏幕未解析 key 测试；运行时/插件提供的数据不当作应用固定文案。
 
 迁移表单保留控件、DOM/test ID 和 locale 目录；验证实际保存 payload、失败与只读路径。将中英、明暗、1440×900 / 1280×800 与已验收 UI 对照，不无理由修改其他任务的视觉基线。
 

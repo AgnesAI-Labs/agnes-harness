@@ -18,7 +18,6 @@ import {
 } from '../../../tools/web-style-source.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
-import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { prepareDocumentReader } from './document-reader.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
@@ -212,7 +211,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     'react-dom/client',
     '@agnes/cordis',
     '@agnes/web-client',
-    '@agnes/web-ui/assistant-ui',
+    '@agnes/web-ui/conversation',
     '@agnes/web-ui/x',
     'antd',
     'recharts',
@@ -278,7 +277,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       recharts: join(repoPackages, 'web', 'tools', 'vendor', 'recharts-entry.js'),
       'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
       'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
-      'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
+      conversation: join(repoPackages, 'web', 'tools', 'vendor', 'conversation-entry.js'),
       x: join(repoPackages, 'web', 'tools', 'vendor', 'x-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
@@ -323,11 +322,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     join(webOut, 'style.css'),
     `\n${readUiCss(join(webUi, 'src', 'intelligent-ui', 'styles.css'))}`,
   )
-  const generatedConversationCss = join(webOut, 'conversation-tailwind.css')
-  buildConversationCss(generatedConversationCss)
-  await appendFile(join(webOut, 'style.css'), `\n${readUiCss(generatedConversationCss)}`)
-  await rm(generatedConversationCss)
-  const markdownCss = join(webOut, 'vendor', 'assistant-ui.css')
+  const markdownCss = join(webOut, 'vendor', 'conversation.css')
   const [core, light, dark, overrides] = await Promise.all([
     readFile(markdownCss, 'utf8'),
     Promise.resolve(

@@ -332,7 +332,7 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
       'react-dom-client',
       'antd',
       'recharts',
-      'assistant-ui',
+      'conversation',
       'x',
       'cordis',
       'web-client',

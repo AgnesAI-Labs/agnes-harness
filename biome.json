@@ -13,7 +13,6 @@
       "!**/dist",
       "!**/node_modules",
       "!docs",
-      "!packages/web-ui/src/conversation/tailwind.css",
       "!packages/base/fixtures/tool-schemas",
       "!packages/cordis",
       "!packages/cosmokit"

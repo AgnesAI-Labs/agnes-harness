@@ -1,21 +1,9 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
-import {
-  AssistantRuntimeProvider,
-  createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
+import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
 import type { TranscriptHandle } from '@agnes/web-units'
-import {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { WebConversationMessages } from './conversation-message-adapter.js'
@@ -54,8 +42,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   const [store] = useState(() =>
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
-  const runtime = useConversationRuntime(store, locale?.t.bind(locale))
-  const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  const projection = useConversationProjection(store)
   const viewport = useCallback(
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
     [],
@@ -196,20 +183,17 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         </button>
       </div>
       <div id="transcript-content" ref={content}>
-        <AssistantRuntimeProvider runtime={runtime}>
-          <WebConversationMessages
-            nodes={projection.nodes}
-            registry={registry}
-            {...(markdownRenderer ? { markdownRenderer } : {})}
-            {...(projection.turns ? { turns: projection.turns } : {})}
-            visibleNodeIds={projection.nodes.map((node) => node.id)}
-            {...(onFork ? { onFork } : {})}
-            {...(claim ? { claim } : {})}
-            {...(session ? { session } : {})}
-            {...(locale ? { locale } : {})}
-            {...(resources ? { resources } : {})}
-          />
-        </AssistantRuntimeProvider>
+        <WebConversationMessages
+          nodes={projection.nodes}
+          registry={registry}
+          {...(markdownRenderer ? { markdownRenderer } : {})}
+          {...(projection.turns ? { turns: projection.turns } : {})}
+          {...(onFork ? { onFork } : {})}
+          {...(claim ? { claim } : {})}
+          {...(session ? { session } : {})}
+          {...(locale ? { locale } : {})}
+          {...(resources ? { resources } : {})}
+        />
       </div>
     </div>
   )

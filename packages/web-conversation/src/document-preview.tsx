@@ -1,10 +1,10 @@
 import type { LocaleVars } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import { DocumentPreview, type DocumentPreviewInput, documentResourceUrl } from '@agnes/web-ui/assistant-ui'
+import { DocumentPreview, type DocumentPreviewInput, documentResourceUrl } from '@agnes/web-ui/conversation'
 import { flushSync } from 'react-dom'
 
-export type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-ui/assistant-ui'
-export { sanitizeDocumentHtml } from '@agnes/web-ui/assistant-ui'
+export type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-ui/conversation'
+export { sanitizeDocumentHtml } from '@agnes/web-ui/conversation'
 
 export interface DocumentPreviewRenderer {
   update(input: DocumentPreviewInput): void

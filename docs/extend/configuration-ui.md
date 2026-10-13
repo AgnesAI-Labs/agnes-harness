@@ -121,7 +121,7 @@ If persistence fails after a live apply, the publisher restores the previous run
 
 ## Guardrails and verification
 
-`tools/guards/src/frontend-ui.test.ts` rejects literal copy at JSX/HTML display positions, accessible attributes, presentation props, DOM text writes and browser confirmations; locale-bound static HTML fallbacks are allowed. It also rejects layout styles in `packages/web/src` and direct rendering of built-in settings pages outside the registry. `ui-layer.test.ts` fences Ant Design, its private entry points and assistant-ui to web-ui. These source checks complement locale parity and real-screen unresolved-key tests; runtime/plugin-supplied data is not treated as application copy.
+`tools/guards/src/frontend-ui.test.ts` rejects literal copy at JSX/HTML display positions, accessible attributes, presentation props, DOM text writes and browser confirmations; locale-bound static HTML fallbacks are allowed. It also rejects layout styles in `packages/web/src` and direct rendering of built-in settings pages outside the registry. `ui-layer.test.ts` fences Ant Design and its private entry points to web-ui. These source checks complement locale parity and real-screen unresolved-key tests; runtime/plugin-supplied data is not treated as application copy.
 
 Preserve the existing controls, DOM/test IDs and locale catalogs when migrating a built-in form. Validate real saved payloads and failure/read-only paths; compare the light/dark, English/Chinese, 1440×900 and 1280×800 screens with the approved UI. Do not update another stream's visual baselines without a documented reason.
 

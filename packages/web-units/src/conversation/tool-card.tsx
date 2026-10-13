@@ -1,6 +1,6 @@
 import type { UINode } from '@agnes/protocol'
 import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
-import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/assistant-ui'
+import { ConversationToolCard as ReactToolCard, toolOutcome } from '@agnes/web-ui/conversation'
 import type { ElementType, ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../locales/index.js'

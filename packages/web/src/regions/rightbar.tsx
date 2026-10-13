@@ -11,7 +11,7 @@ import {
 } from '@agnes/web-client'
 import type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-conversation/document-preview'
 import { createRegionRenderer, EmptyState, Icon } from '@agnes/web-ui'
-import { DocumentPreview } from '@agnes/web-ui/assistant-ui'
+import { DocumentPreview } from '@agnes/web-ui/conversation'
 import { useLayoutEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {

@@ -1,5 +1,5 @@
 import { createRegionRenderer } from '@agnes/web-ui'
-import { ConversationMarkdown, type ConversationMarkdownProps } from '@agnes/web-ui/assistant-ui'
+import { ConversationMarkdown, type ConversationMarkdownProps } from '@agnes/web-ui/conversation'
 import { flushSync } from 'react-dom'
 export type MarkdownState = {
   streaming?: boolean

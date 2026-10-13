@@ -2,7 +2,7 @@ import { createPermissionPicker } from '@agnes/web-admin/permission-picker'
 import type { SlotName, SlotRegistry } from '@agnes/web-client'
 import { isComposerSubmitShortcut, resizeComposer } from '@agnes/web-conversation/presentation'
 import { createUsagePanel } from '@agnes/web-conversation/usage'
-import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
+import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   type ComposerDependencies,
   type ConversationChildContainers,

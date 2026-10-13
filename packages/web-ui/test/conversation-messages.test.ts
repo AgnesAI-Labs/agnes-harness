@@ -7,13 +7,12 @@ import {
   type ConversationMessagesProps,
   type ConversationProjectionStore,
   createConversationProjectionStore,
-  projectConversationMessages,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
-import { AssistantRuntimeProvider } from '@assistant-ui/react'
+  useConversationProjection,
+} from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { systemInputText } from '../src/conversation/user-presentation.js'
 import { webUiLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
@@ -50,12 +49,12 @@ function Harness({
   store: ConversationProjectionStore
   renderMarkdown?: ConversationMessagesProps['renderMarkdown']
 }) {
-  const runtime = useConversationRuntime(store)
-  return createElement(
-    AssistantRuntimeProvider,
-    { runtime },
-    createElement(ConversationMessages, { t, ...(renderMarkdown ? { renderMarkdown } : {}) }),
-  )
+  const projection = useConversationProjection(store)
+  return createElement(ConversationMessages, {
+    t,
+    nodes: projection.nodes,
+    ...(renderMarkdown ? { renderMarkdown } : {}),
+  })
 }
 
 async function mount(
@@ -144,7 +143,7 @@ describe('W3b projected message DOM', () => {
     expect(notice?.textContent).not.toContain('timeline.ledgerRecovery')
   })
 
-  it('renders ordinary message content through assistant-ui message parts', async () => {
+  it('renders ordinary message content once, in the node article', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',
       nodes: [
@@ -180,9 +179,11 @@ describe('W3b projected message DOM', () => {
     })
     await mount(store)
 
-    const user = item('user-1')?.querySelector('[data-agnes-assistant-ui-message="user"]')
-    const assistant = item('assistant-1')?.querySelector('[data-agnes-assistant-ui-message="assistant"]')
+    const user = item('user-1')
+    const assistant = item('assistant-1')
     expect(user).not.toBeNull()
+    expect(user?.querySelectorAll('.node-body')).toHaveLength(1)
+    expect(assistant?.querySelectorAll('.node-body')).toHaveLength(1)
     expect(user?.textContent).toContain('Question')
     expect(user?.textContent).not.toContain('hidden excerpt')
     expect(user?.querySelector('[data-testid="reference-session-link"]')?.getAttribute('href')).toBe(
@@ -190,12 +191,8 @@ describe('W3b projected message DOM', () => {
     )
     expect(user?.querySelector('[data-testid="reference-sent-chip"]')?.textContent).toContain('摘录已截断')
     expect(user?.querySelector('script')).toBeNull()
-    expect(assistant?.querySelector('[data-assistant-ui-part="reasoning"]')?.textContent).toContain(
-      'Checking the result',
-    )
-    expect(assistant?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toContain(
-      'Streaming answer',
-    )
+    expect(assistant?.querySelector('details.thinking')?.textContent).toContain('Checking the result')
+    expect(assistant?.querySelector('.node-body')?.textContent).toContain('Streaming answer')
   })
 
   it('keeps a long fenced code line inside the assistant message width', async () => {
@@ -207,13 +204,12 @@ describe('W3b projected message DOM', () => {
     })
     await mount(store, (text, part) => createElement(ConversationMarkdown, { source: text, part, t }))
 
-    const content = item('wide-code')?.querySelector<HTMLElement>('.aui-assistant-message-content')
+    expect(item('wide-code')?.querySelectorAll('pre code')).toHaveLength(1)
     expect(item('wide-code')?.querySelector('pre code')?.textContent?.trimEnd()).toBe(line)
-    expect(content?.classList.contains('aui:self-stretch')).toBe(true)
-    expect(content?.classList.contains('aui:min-w-0')).toBe(true)
+    expect(item('wide-code')?.querySelector('.node-body.markdown pre')).not.toBeNull()
   })
 
-  it('renders messages projected after the read-only runtime starts empty', async () => {
+  it('renders messages projected after the store starts empty', async () => {
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [] })
     await mount(store)
     await update(store, [
@@ -221,12 +217,8 @@ describe('W3b projected message DOM', () => {
       { kind: 'assistant', id: 'assistant-after-start', seq: 2, text: 'Answer' },
     ])
 
-    expect(item('user-after-start')?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toBe(
-      'Question',
-    )
-    expect(item('assistant-after-start')?.querySelector('[data-assistant-ui-part="text"]')?.textContent).toBe(
-      'Answer',
-    )
+    expect(item('user-after-start')?.querySelector('.node-body')?.textContent).toBe('Question')
+    expect(item('assistant-after-start')?.querySelector('.node-body')?.textContent).toBe('Answer')
   })
 
   it('keeps the thinking disclosure stable across stream updates and after manual reopening', async () => {
@@ -288,7 +280,7 @@ describe('W3b projected message DOM', () => {
     expect(store.getSnapshot().nodes).toBe(nodes)
   })
 
-  it('rebuilds a persisted image preview in both DOM copies and releases its URL when the row leaves', async () => {
+  it('rebuilds a persisted image preview once and releases its URL when the row leaves', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: vi.fn(() => 'blob:history-image'),
@@ -310,35 +302,29 @@ describe('W3b projected message DOM', () => {
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [user] })
     await mount(store)
     const article = item('persisted-image')
-    // 门户那份是界面上真正显示的内容，兜底只是被 CSS 隐藏的备份：图只出现在兜底里等于没显示。
-    const portal = article?.querySelector<HTMLElement>('[data-agnes-assistant-ui-target]')
-    expect(portal?.dataset.agnesAssistantUiReady).toBe('true')
-    expect(portal?.querySelectorAll('img.user-message-image')).toHaveLength(5)
-    const thumbnail = portal?.querySelector<HTMLImageElement>('img.user-message-image')
+    // 一条消息只有一棵 DOM：五张图就是五个缩略图，不存在隐藏的第二份。
+    expect(article?.querySelectorAll('img.user-message-image')).toHaveLength(5)
+    const thumbnail = article?.querySelector<HTMLImageElement>('img.user-message-image')
     expect(thumbnail?.src).toBe('blob:history-image')
     // 固定缩略图尺寸，不跟着原图比例走：否则竖长图会把消息撑成一根。
     expect([thumbnail?.getAttribute('width'), thumbnail?.getAttribute('height')]).toEqual(['72', '56'])
-    expect(article?.querySelector<HTMLImageElement>('img.user-message-image')?.src).toBe('blob:history-image')
     await update(store, [])
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:history-image')
   })
 
-  it('keeps the attachment block above the message text in both DOM copies', async () => {
+  it('keeps the attachment block above the message text', async () => {
     const store = createConversationProjectionStore({ sessionId: 'session', nodes })
     await mount(store)
     const article = item('user')
-    for (const copy of ['[data-agnes-assistant-ui-target]', '[data-agnes-assistant-ui-fallback]']) {
-      expect(article?.querySelector(`${copy} .user-message-files`)?.textContent).toContain(
-        '<script>附件.txt</script>',
-      )
-      expect(article?.querySelector(`${copy} .user-message-files script`)).toBeNull()
-      const images = article?.querySelector(`${copy} .user-message-images`) as Element
-      const text = article?.querySelector(`${copy} .node-body`) as Element
-      expect(images).not.toBeNull()
-      expect(text).not.toBeNull()
-      // DOCUMENT_POSITION_FOLLOWING：正文排在图片块之后，图片才算是独立的一块。
-      expect(images.compareDocumentPosition(text)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    }
+    expect(article?.querySelectorAll('.user-message-files')).toHaveLength(1)
+    expect(article?.querySelector('.user-message-files')?.textContent).toContain('<script>附件.txt</script>')
+    expect(article?.querySelector('.user-message-files script')).toBeNull()
+    const images = article?.querySelector('.user-message-images') as Element
+    const text = article?.querySelector('.node-body') as Element
+    expect(images).not.toBeNull()
+    expect(text).not.toBeNull()
+    // DOCUMENT_POSITION_FOLLOWING：正文排在图片块之后，图片才算是独立的一块。
+    expect(images.compareDocumentPosition(text)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('updates each kind by ID, preserves disclosure state, and removes deleted nodes', async () => {
@@ -576,15 +562,14 @@ it.each([
     expect(host.querySelector('[role=status]')?.textContent).toBe(summary)
     expect(host.querySelector('.system-input-trace')?.hasAttribute('open')).toBe(false)
     expect(host.querySelector('.system-input-trace pre')?.textContent).toContain('machine-only')
-    expect(host.querySelector('[data-agnes-assistant-ui-message=user]')).toBeNull()
+    expect(host.querySelector('[data-node-kind="user"]')).toBeNull()
+    expect(host.querySelector('[data-node-kind="system-input"]')).not.toBeNull()
     const english = (key: string, vars?: Record<string, string | number>) =>
       Object.entries(vars ?? {}).reduce(
         (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
         webUiLocaleCatalog.en[key] ?? key,
       )
-    const messages = projectConversationMessages(store.getSnapshot(), english)
-    expect(messages[0]?.role).toBe('assistant')
-    expect(messages[0]?.content).toBe(
+    expect(node.kind === 'user' && node.system ? systemInputText(node.system, english) : undefined).toBe(
       status === 'succeeded'
         ? 'Submitted: name, email'
         : status === 'failed'

@@ -3,11 +3,6 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import { type ClientResourceService, LocaleService, type SessionService } from '@agnes/web-client'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { createAntdRoot, webUiLocaleCatalog } from '@agnes/web-ui'
-import {
-  AssistantRuntimeProvider,
-  createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
 import { Approval, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { useState } from 'react'
 import { WebConversationMessages } from '../../../packages/web/src/conversation-message-adapter.js'
@@ -54,7 +49,6 @@ const turn: UITurn = {
     calls: [],
   },
 }
-const store = createConversationProjectionStore({ sessionId: 'fixture-session', nodes, turns: [turn] })
 const resources = {
   files: {
     async load() {
@@ -64,22 +58,19 @@ const resources = {
   },
 } as unknown as ClientResourceService
 function Fixture() {
-  const runtime = useConversationRuntime(store)
   const [plan, setPlan] = useState(true)
   const [decision, setDecision] = useState('')
   const session = {} as SessionService
   return (
     <main className="conversation-fixture">
       <div id="transcript-content">
-        <AssistantRuntimeProvider runtime={runtime}>
-          <WebConversationMessages
-            nodes={nodes}
-            turns={[turn]}
-            locale={locale}
-            session={session}
-            resources={resources}
-          />
-        </AssistantRuntimeProvider>
+        <WebConversationMessages
+          nodes={nodes}
+          turns={[turn]}
+          locale={locale}
+          session={session}
+          resources={resources}
+        />
       </div>
       <section id="approval" hidden={!plan} aria-live="polite">
         <Approval

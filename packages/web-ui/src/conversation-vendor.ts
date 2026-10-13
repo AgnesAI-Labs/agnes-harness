@@ -1,5 +1,4 @@
-/** One declared web-ui boundary for the headless conversation runtime and its vendor entry. */
-export { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
+/** One declared web-ui boundary for the conversation surfaces and their vendor entry. */
 export { ConversationCost } from './conversation/cost.js'
 export { type CostNode, costDetails, costSummary } from './conversation/cost-format.js'
 export {
@@ -22,13 +21,13 @@ export {
   toolOutcome,
 } from './conversation/messages.js'
 export {
-  type ConversationMessage,
+  type ConversationNode,
   type ConversationProjection,
   type ConversationProjectionStore,
+  conversationNodes,
   createConversationProjectionStore,
-  projectConversationMessages,
-  useConversationRuntime,
-} from './conversation/runtime.js'
+  useConversationProjection,
+} from './conversation/projection.js'
 export {
   ConversationTurnActions,
   type ConversationTurnActionsProps,

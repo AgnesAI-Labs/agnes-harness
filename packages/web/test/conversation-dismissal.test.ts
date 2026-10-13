@@ -1,11 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
-import {
-  AssistantRuntimeProvider,
-  createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
+import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
 import { act, createElement, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -85,12 +81,8 @@ it('keeps the React adapter disclosure through replay and retires its binding on
   const root = createRoot(host)
   const store = createConversationProjectionStore({ sessionId: 'session', nodes, turns: [turn] })
   function Harness() {
-    const runtime = useConversationRuntime(store)
-    return createElement(
-      AssistantRuntimeProvider,
-      { runtime },
-      createElement(WebConversationMessages, { turns: [turn] }),
-    )
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, { nodes: projection.nodes, turns: [turn] })
   }
   const add = vi.spyOn(document, 'addEventListener')
   const remove = vi.spyOn(document, 'removeEventListener')

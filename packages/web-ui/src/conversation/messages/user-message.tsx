@@ -68,10 +68,7 @@ export function UserMessageImage({
   )
 }
 
-/**
- * 一条用户消息的全部内联图片。原生兜底与 assistant-ui 门户是两棵各渲染一份的 DOM：
- * 门户负责可见内容，兜底只是 CSS 隐藏的备份，两条路径都要带上图片，否则门户一份只剩文字。
- */
+/** 一条用户消息的全部内联图片。 */
 export function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const images = node.content.filter((block) => block.type === 'image')
   if (images.length === 0) return null

@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { UITurn } from '@agnes/protocol'
-import { ConversationTurnActions } from '@agnes/web-ui/assistant-ui'
+import { ConversationTurnActions } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -295,7 +295,7 @@ it('keeps feedback local and retires a timed message and owned click listener', 
   const add = vi.spyOn(document, 'addEventListener')
   const remove = vi.spyOn(document, 'removeEventListener')
   const feedbackRef = {
-    current: null as import('@agnes/web-ui/assistant-ui').ConversationTurnFeedback | null,
+    current: null as import('@agnes/web-ui/conversation').ConversationTurnFeedback | null,
   }
   await render({ turn: turn(), finalText: 'answer', settled: true, feedbackRef })
   const details = required<HTMLDetailsElement>('details.turn-usage')
@@ -319,8 +319,8 @@ it('keeps feedback local and retires a timed message and owned click listener', 
 
 it('keeps timed feedback independent across mounted turns', async () => {
   vi.useFakeTimers()
-  const first = { current: null as import('@agnes/web-ui/assistant-ui').ConversationTurnFeedback | null }
-  const second = { current: null as import('@agnes/web-ui/assistant-ui').ConversationTurnFeedback | null }
+  const first = { current: null as import('@agnes/web-ui/conversation').ConversationTurnFeedback | null }
+  const second = { current: null as import('@agnes/web-ui/conversation').ConversationTurnFeedback | null }
   const siblingHost = document.createElement('div')
   document.body.append(siblingHost)
   const siblingRoot = createRoot(siblingHost)

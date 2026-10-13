@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Web UI component layer: the only package allowed to import antd/@ant-design/x/@assistant-ui (spec 2026-09-24-web-ui-component-system-design)",
+  "description": "Web UI component layer: the only package allowed to import antd/@ant-design (spec 2026-09-24-web-ui-component-system-design)",
   "exports": {
     ".": "./src/index.ts",
-    "./assistant-ui": "./src/assistant-ui-vendor.ts",
+    "./conversation": "./src/conversation-vendor.ts",
     "./x": "./src/x-vendor.ts",
     "./layers.css": "./src/layers.css",
     "./components.css": "./src/components.css",

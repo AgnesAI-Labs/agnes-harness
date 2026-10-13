@@ -25,7 +25,7 @@ import {
   ConversationToolCard,
   ConversationTurnActions,
   interactionToolPresentation,
-} from '@agnes/web-ui/assistant-ui'
+} from '@agnes/web-ui/conversation'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
@@ -189,6 +189,7 @@ export function WebConversationMessages({
   const props: ConversationMessagesProps = {
     keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
     t: (key, vars) => locale?.t(key, vars) ?? key,
+    nodes: nodes ?? [],
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
     renderTurnActions: (turn, finalText, settled) => (

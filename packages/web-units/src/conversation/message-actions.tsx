@@ -1,6 +1,6 @@
 import type { UITurn } from '@agnes/protocol'
 import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
-import { ConversationTurnActions, type ConversationTurnFeedback } from '@agnes/web-ui/assistant-ui'
+import { ConversationTurnActions, type ConversationTurnFeedback } from '@agnes/web-ui/conversation'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../locales/index.js'
 import type { ConversationFeedback } from './feedback.js'

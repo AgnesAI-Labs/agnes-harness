@@ -137,11 +137,6 @@
       "layer": "skin",
       "reason": "SkinSheet wraps the authored CSS in the skin layer."
     },
-    "packages/web-ui/src/conversation/tailwind.css": {
-      "count": 0,
-      "layer": "ui",
-      "reason": "buildConversationCss wraps the Tailwind input and all generated rules in the ui layer."
-    },
     "tools/e2e-web/baselines/screenshot.css": {
       "count": 1,
       "layer": "ui",

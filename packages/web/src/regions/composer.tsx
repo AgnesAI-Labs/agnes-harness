@@ -1,7 +1,7 @@
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createUsagePanel } from '@agnes/web-conversation/usage'
 import { createRegionRenderer } from '@agnes/web-ui'
-import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
+import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   Composer,
   type ComposerDependencies,

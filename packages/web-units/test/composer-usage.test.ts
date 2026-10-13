@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { webUiLocaleCatalog } from '@agnes/web-ui'
-import { ConversationUsage } from '@agnes/web-ui/assistant-ui'
+import { ConversationUsage } from '@agnes/web-ui/conversation'
 import { act, createElement, createRef, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'

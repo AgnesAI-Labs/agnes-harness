@@ -4,11 +4,7 @@ import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SessionService, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
-import {
-  AssistantRuntimeProvider,
-  createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
+import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -58,17 +54,13 @@ const tool = (status: Extract<UINode, { kind: 'tool' }>['status']): Extract<UINo
 })
 
 function Harness({ store }: { store: ReturnType<typeof createConversationProjectionStore> }) {
-  const runtime = useConversationRuntime(store)
-  return createElement(
-    AssistantRuntimeProvider,
-    { runtime },
-    createElement(WebConversationMessages, {
-      registry,
-      claim: (entry, extId) => entry.owner === extId,
-      locale: zhLocaleService(),
-      nodes: store.getSnapshot().nodes,
-    }),
-  )
+  const projection = useConversationProjection(store)
+  return createElement(WebConversationMessages, {
+    nodes: projection.nodes,
+    registry,
+    claim: (entry, extId) => entry.owner === extId,
+    locale: zhLocaleService(),
+  })
 }
 
 async function mount(store: ReturnType<typeof createConversationProjectionStore>) {
@@ -367,17 +359,14 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
   const nodes: UINode[] = [user, { kind: 'assistant', id: 'assistant', seq: 2, text: 'earlier progress' }]
   const store = createConversationProjectionStore({ sessionId: 'session', nodes, turns: [turn] })
   function FailedTurn({ current }: { current: UITurn }) {
-    const runtime = useConversationRuntime(store)
-    return createElement(
-      AssistantRuntimeProvider,
-      { runtime },
-      createElement(WebConversationMessages, {
-        registry,
-        session,
-        turns: [current],
-        locale: zhLocaleService(),
-      }),
-    )
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, {
+      nodes: projection.nodes,
+      registry,
+      session,
+      turns: [current],
+      locale: zhLocaleService(),
+    })
   }
   await act(async () => root.render(createElement(FailedTurn, { current: turn })))
   const error = host.querySelector<HTMLElement>('.turn-error')
@@ -441,12 +430,14 @@ it('keeps each React action footer through replay and history prepend, then reti
     throw new Error('offline')
   }
   function TurnHarness({ turns }: { turns: UITurn[] }) {
-    const runtime = useConversationRuntime(store)
-    return createElement(
-      AssistantRuntimeProvider,
-      { runtime },
-      createElement(WebConversationMessages, { registry, turns, onFork, locale: zhLocaleService() }),
-    )
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, {
+      nodes: projection.nodes,
+      registry,
+      turns,
+      onFork,
+      locale: zhLocaleService(),
+    })
   }
   await act(async () => root.render(createElement(TurnHarness, { turns: [first, second] })))
   const firstFooter = host.querySelector<HTMLElement>('[data-turn-id="turn:1"] footer.turn-footer')
@@ -558,17 +549,13 @@ it('keeps installed cards, jobs and children visible when settled process histor
   }
   const store = createConversationProjectionStore({ sessionId: 'session', nodes: cardNodes, turns: [turn] })
   function CardsHarness() {
-    const runtime = useConversationRuntime(store)
-    return createElement(
-      AssistantRuntimeProvider,
-      { runtime },
-      createElement(WebConversationMessages, {
-        registry,
-        turns: [turn],
-        locale: zhLocaleService(),
-        nodes: store.getSnapshot().nodes,
-      }),
-    )
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, {
+      nodes: projection.nodes,
+      registry,
+      turns: [turn],
+      locale: zhLocaleService(),
+    })
   }
   await act(async () => root.render(createElement(CardsHarness)))
   expect(host.querySelector<HTMLDetailsElement>('.turn-process')?.open).toBe(false)

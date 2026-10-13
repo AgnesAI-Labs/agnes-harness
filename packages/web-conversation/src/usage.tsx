@@ -1,11 +1,11 @@
 import type { UsageView } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
 import { createRegionHost, createRegionRenderer, renderRegion, unmountRegion } from '@agnes/web-ui'
-import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
+import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/conversation'
 import { Fragment } from 'react'
 import { flushSync } from 'react-dom'
 
-export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/assistant-ui'
+export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/conversation'
 
 /** Keeps the disclosure and its focus/expanded state through incremental updates. */
 export function createCostDetails(

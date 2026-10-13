@@ -1,14 +1,9 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import { type ReactNode, type RefObject, useContext, useLayoutEffect, useMemo, useRef } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { ConversationCost } from '../cost.js'
 import { approvalStatus } from './approval-labels.js'
 import { AssistantMessage } from './assistant-message.js'
-import {
-  type ConversationMessageContextValue,
-  type ConversationMessagesProps,
-  fallbackT,
-  registerConversationMessageTargetContext,
-} from './context.js'
+import { type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
@@ -117,40 +112,8 @@ export function Message({
   turnStatus?: UITurn['status'] | undefined
   thinkingHost?: RefObject<HTMLDivElement> | undefined
 }) {
-  const messageTarget = useRef<HTMLDivElement>(null)
-  const registerTarget = useContext(registerConversationMessageTargetContext)
-  const native = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
+  const content = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
   const systemInput = node.kind === 'user' && node.origin === 'system' && node.system !== undefined
-  const usesAssistantUi = (node.kind === 'user' && !systemInput) || node.kind === 'assistant'
-  const context = useMemo<ConversationMessageContextValue>(
-    () => ({
-      node,
-      props,
-      hideThinking,
-      ...(turnStatus ? { turnStatus } : {}),
-      ...(thinkingHost ? { thinkingHost } : {}),
-    }),
-    [hideThinking, node, props, thinkingHost, turnStatus],
-  )
-  useLayoutEffect(() => {
-    const element = messageTarget.current
-    if (!element || !usesAssistantUi || !registerTarget) return
-    registerTarget(node.id, { element, context })
-  }, [context, node.id, registerTarget, usesAssistantUi])
-  useLayoutEffect(
-    () => () => {
-      if (usesAssistantUi) registerTarget?.(node.id, undefined)
-    },
-    [node.id, registerTarget, usesAssistantUi],
-  )
-  const content = usesAssistantUi ? (
-    <>
-      <div ref={messageTarget} data-agnes-assistant-ui-target="" />
-      <div data-agnes-assistant-ui-fallback="">{native}</div>
-    </>
-  ) : (
-    native
-  )
   return (
     <article
       className={`timeline-node ${systemInput ? 'system-input' : node.kind}`}

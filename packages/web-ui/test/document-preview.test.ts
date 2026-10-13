@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import { DocumentPreview, type DocumentPreviewProps } from '@agnes/web-ui/assistant-ui'
+import { DocumentPreview, type DocumentPreviewProps } from '@agnes/web-ui/conversation'
 import { act, createElement, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
