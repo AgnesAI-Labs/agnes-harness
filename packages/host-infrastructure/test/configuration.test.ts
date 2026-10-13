@@ -438,6 +438,26 @@ it('an empty thinkingEfforts object is rejected as corrupt state, not silently t
   await expect(reloaded.profileInput()).rejects.toMatchObject({ code: 'CONFIG_INVALID_STATE' })
 })
 
+it('fails closed on a damaged configuration file, names it, and leaves it unchanged', async () => {
+  const entry = getApiKeyProvider('openai')
+  if (!entry) throw new Error('openai registry entry missing')
+  const model = (await entry.createAdapter()).models(entry.route)[0]?.id
+  if (!model) throw new Error('openai catalogue is empty')
+  const server = await fixture(model)
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await service.save({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value', model })
+  const configPath = await savedModelPath(root)
+  await writeFile(configPath, '{"accounts":')
+
+  const reloaded = createConfigurationService({ home: root, profile: 'local-dev' })
+  const failure = await reloaded.profileInput().catch((error: unknown) => error)
+  expect(failure).toMatchObject({ code: 'CONFIG_INVALID_STATE', file: configPath })
+  expect((failure as Error).message).toContain(configPath)
+  expect((failure as Error).message).toContain('left unchanged')
+  expect(await readFile(configPath, 'utf8')).toBe('{"accounts":')
+})
+
 it('isolates two same-type accounts across disk reload, routes, credentials and account operations', async () => {
   const entry = getApiKeyProvider('openai')
   if (!entry) throw new Error('catalogue')

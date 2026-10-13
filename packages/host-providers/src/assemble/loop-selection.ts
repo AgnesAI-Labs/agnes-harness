@@ -14,7 +14,10 @@ export async function readAdminLoopDefault(
     return defaults.loop === undefined ? undefined : parseLoopSelection(defaults.loop)
   } catch (error) {
     if (error instanceof ConfigurationError && error.code === 'CONFIG_INVALID_STATE')
-      throw new HostError('E_PRESET_UNSUPPORTED', 'invalid persisted session loop default')
+      throw new HostError(
+        'E_PRESET_UNSUPPORTED',
+        `invalid persisted session loop default${error.file ? ` in ${error.file}` : ''}`,
+      )
     throw error
   }
 }

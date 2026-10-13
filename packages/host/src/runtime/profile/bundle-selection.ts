@@ -36,12 +36,12 @@ export function readBundleSelection(profileDir: string): BundleSelection {
     fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { revision: 0, bundles: [] }
-    throw new ConfigurationError('CONFIG_INVALID_STATE')
+    throw new ConfigurationError('CONFIG_INVALID_STATE', file)
   }
   let bytes: Buffer
   try {
     const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.size > 65_536) throw new ConfigurationError('CONFIG_INVALID_STATE')
+    if (!stat.isFile() || stat.size > 65_536) throw new ConfigurationError('CONFIG_INVALID_STATE', file)
     bytes = readFileSync(fd)
   } finally {
     closeSync(fd)
@@ -50,9 +50,9 @@ export function readBundleSelection(profileDir: string): BundleSelection {
   try {
     value = JSON.parse(bytes.toString('utf8'))
   } catch {
-    throw new ConfigurationError('CONFIG_INVALID_STATE')
+    throw new ConfigurationError('CONFIG_INVALID_STATE', file)
   }
-  if (!isBundleSelection(value)) throw new ConfigurationError('CONFIG_INVALID_STATE')
+  if (!isBundleSelection(value)) throw new ConfigurationError('CONFIG_INVALID_STATE', file)
   return value
 }
 
