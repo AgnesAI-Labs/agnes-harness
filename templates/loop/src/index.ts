@@ -3,8 +3,6 @@ import { defineWorkflowLoop, workflowModelText } from '@agnes/plugin-runtime'
 // Add business stages, tools, confirmation and deliverables to this definition.
 const workflow = defineWorkflowLoop({
   id: '__PACKAGE_NAME__',
-  source: '__PACKAGE_NAME__',
-  name: '__PACKAGE_NAME__',
   version: '0.1.0',
   stages: [
     {

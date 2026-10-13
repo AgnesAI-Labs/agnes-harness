@@ -118,7 +118,6 @@ const stages = [
 const workflowOptions = {
   id: 'fde.device-inspection',
   version: '5.0.0',
-  source: '@agnes-fde/device-inspection',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/device-inspection',

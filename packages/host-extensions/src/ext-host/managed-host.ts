@@ -1,10 +1,5 @@
-import type {
-  ExtensionContext,
-  ExtensionFactory,
-  ExtensionManifest,
-  LeaseView,
-  Logger,
-} from '@agnes/extension-api'
+import type { ExtensionContext, ExtensionManifest, LeaseView, Logger } from '@agnes/extension-api'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
 import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
 import { buildExtensionAPI } from './api-proxy.js'

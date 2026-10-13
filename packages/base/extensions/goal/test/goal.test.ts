@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs'
 import {
   bundledExtensionManifest,
   checkManifest,
-  type ExtensionAPI,
   type HookContext,
   type HookHandler,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'

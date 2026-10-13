@@ -93,7 +93,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.support-triage',
   version: '5.0.0',
-  source: '@agnes-fde/support-triage',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/support-triage',

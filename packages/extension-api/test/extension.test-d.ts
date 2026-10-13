@@ -1,10 +1,18 @@
 import type { JsonValue } from '@agnes/protocol'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory, PlatformFacts } from '../src/index.js'
+import type { ExtensionAPI, ExtensionFactory } from '../src/host.js'
+import type { ExtensionContext, PlatformFacts } from '../src/index.js'
 
 type RootHookEvent = import('../src/index.js').HookEvent
 
 describe('ExtensionAPI backend surface', () => {
+  it('is exported from the host subpath only, never from the author root', () => {
+    // @ts-expect-error The author root exports the ctx facets, not the backend port behind them.
+    type LeakedPort = import('../src/index.js').ExtensionAPI
+    // @ts-expect-error The mount factory over that port is Host-internal too.
+    type LeakedFactory = import('../src/index.js').ExtensionFactory
+    expectTypeOf<[LeakedPort, LeakedFactory]>().toBeArray()
+  })
   it('registerHook is constrained by the HookEvent on the root surface', () => {
     expectTypeOf<Parameters<ExtensionAPI['registerHook']>[0]>().toEqualTypeOf<RootHookEvent>()
   })

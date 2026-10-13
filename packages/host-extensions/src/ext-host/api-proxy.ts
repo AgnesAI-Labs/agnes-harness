@@ -1,7 +1,6 @@
 import {
   checkManifest,
   checkToolDef,
-  type ExtensionAPI,
   type ExtensionContext,
   ExtensionError,
   type ExtensionManifest,
@@ -9,6 +8,7 @@ import {
   type SlotPayloadMap,
   type ToolDef,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { inspectJsonData, validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
 import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'

@@ -22,7 +22,7 @@ export {
 export function defineWorkflowLoop(options: WorkflowOptions) {
   const policy = workflowPolicy(options)
   const plan =
-    `# ${options.name} workflow plan\n\n` +
+    `# ${options.name ?? options.id} workflow plan\n\n` +
     options.stages.map((stage, i) => `${i + 1}. ${stage.name}`).join('\n') +
     '\n\nPresent generated reports. Keep source evidence read-only where configured. Business actions require a separate Proceed/Cancel answer and backend tool permission; unknown effects are never replayed.'
   const stages: WorkflowStage[] = [

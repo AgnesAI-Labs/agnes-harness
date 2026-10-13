@@ -56,8 +56,18 @@ describe('plugin author API', () => {
     for (const helper of helpers) expect(() => helper({ id: 'bad', version: '1' } as never)).toThrow('semver')
   })
 
-  it('keeps the runtime root surface author-only', async () => {
-    expect(Object.keys(await import('../src/index.js')).sort()).toEqual([
+  it('is the one author import: the contract root plus these helpers, and nothing Host-side', async () => {
+    const root = await import('../src/index.js')
+    const contracts = await import('@agnes/extension-api')
+    for (const name of Object.keys(contracts)) expect(root).toHaveProperty(name)
+    // A helper of the same name replaces the contract package's own.
+    expect(root.definePersistenceProvider).not.toBe(
+      (contracts as Record<string, unknown>).definePersistenceProvider,
+    )
+    const helpers = Object.keys(root).filter(
+      (name) => (root as Record<string, unknown>)[name] !== (contracts as Record<string, unknown>)[name],
+    )
+    expect(helpers.sort()).toEqual([
       'defineAgnesPlugin',
       'defineChildAgentProvider',
       'defineCompactionEngine',

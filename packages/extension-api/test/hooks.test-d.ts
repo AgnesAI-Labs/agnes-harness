@@ -1,8 +1,8 @@
 import type { ResourceEntry as ProtocolResource } from '@agnes/protocol/gen/hooks'
 import { describe, expectTypeOf, it } from 'vitest'
+import type { ExtensionAPI } from '../src/host.js'
 import type {
   CompactionPlan,
-  ExtensionAPI,
   HookContext,
   HookEvent,
   HookHandler,

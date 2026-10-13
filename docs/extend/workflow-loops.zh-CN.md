@@ -17,7 +17,6 @@ import { accountLookup, recordNote } from './tools.js'
 const workflow = defineWorkflowLoop({
   id: 'acme.renewal',
   version: '1.0.0',
-  source: '@acme/renewal',
   name: 'Renewal review',
   tools: [accountLookup, recordNote],
   deliverables: {

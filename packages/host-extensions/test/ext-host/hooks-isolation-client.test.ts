@@ -10,7 +10,6 @@ import {
   type WorkspaceInvocationSource,
 } from '@agnes/core'
 import type {
-  ExtensionAPI,
   HookEvent,
   HookHandler,
   HookPayloadMap,
@@ -19,6 +18,7 @@ import type {
   SessionRef,
 } from '@agnes/extension-api'
 import { bundledPackageJson, unavailableProjections } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   connectIsolatedHooksRunner,

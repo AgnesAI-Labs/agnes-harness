@@ -16,8 +16,6 @@ import {
 import {
   type CompactionEngine,
   definePersistenceProvider,
-  type ExtensionAPI,
-  type ExtensionFactory,
   type ExtensionManifest,
   type HookInvocationSnapshot,
   type Logger,
@@ -25,6 +23,7 @@ import {
   ProviderError,
   type SandboxProvider,
 } from '@agnes/extension-api'
+import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
 import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
 import type { Lockfile } from '@agnes/host-common/packages/lockfile'
@@ -216,7 +215,7 @@ export function readNamedExports(
         try {
           return Object.freeze({
             declaration,
-            entry: normalizePluginExport(mod[declaration.export] as never),
+            entry: normalizePluginExport(mod[declaration.export] as never, declaration.inject),
           })
         } catch {
           throw new HostError('E_EXT_LOAD', `${id}: plugin export ${declaration.export} is invalid`, {

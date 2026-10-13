@@ -11,14 +11,13 @@ import type {
 } from '@agnes/core'
 import type {
   CompactionEngine,
-  ExtensionAPI,
-  ExtensionFactory,
   ExtensionManifest,
   HookInvocationSnapshot,
   Logger,
   PersistenceProvider,
   SandboxProvider,
 } from '@agnes/extension-api'
+import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'

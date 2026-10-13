@@ -128,7 +128,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.recruiting-screen',
   version: '5.0.0',
-  source: '@agnes-fde/recruiting-screen',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/recruiting-screen',

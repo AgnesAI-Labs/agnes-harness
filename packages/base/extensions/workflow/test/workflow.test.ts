@@ -1,4 +1,5 @@
-import type { ExtensionAPI, HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/extension-api'
+import type { HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it } from 'vitest'
 import extension from '../src/index.js'

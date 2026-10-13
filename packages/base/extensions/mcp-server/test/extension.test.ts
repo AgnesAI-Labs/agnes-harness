@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '../../../src/mcp/config.js'

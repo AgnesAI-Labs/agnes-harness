@@ -127,7 +127,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.code-review',
   version: '5.0.0',
-  source: '@agnes-fde/code-review',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/code-review',

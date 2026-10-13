@@ -123,7 +123,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.data-report',
   version: '5.0.0',
-  source: '@agnes-fde/data-report',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/data-report',

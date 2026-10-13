@@ -1,12 +1,6 @@
 import { ecosystem } from '@agnes/base'
-import type {
-  ExtensionAPI,
-  ExtensionFactory,
-  ExtensionManifest,
-  HookContext,
-  ToolContext,
-  ToolDef,
-} from '@agnes/extension-api'
+import type { ExtensionManifest, HookContext, ToolContext, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import { describe, expect, it, vi } from 'vitest'
 import { createBuiltinRowHost } from '../../src/ext-host/builtin-row-host.js'

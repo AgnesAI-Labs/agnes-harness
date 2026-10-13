@@ -2,15 +2,9 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { HOOK_UNHANDLED, type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
-import type {
-  ExtensionAPI,
-  HookContext,
-  HookEvent,
-  HookHandler,
-  HookPayloadMap,
-  HookReturnMap,
-} from '@agnes/extension-api'
+import type { HookContext, HookEvent, HookHandler, HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { createEcosystemExtensions } from '../../../src/ecosystem.js'

@@ -1,7 +1,6 @@
 import {
   checkToolDef,
   type Disposer,
-  type ExtensionAPI,
   type ExtensionContext,
   ExtensionError,
   extEventType,
@@ -10,6 +9,7 @@ import {
   type HookHandler,
   type ToolDef,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
 import type { Lease } from './lease.js'

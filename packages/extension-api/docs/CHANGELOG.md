@@ -13,6 +13,23 @@ API additions require a minor version; removals or semantic changes require a ma
   `ProviderConformanceOptions.sourcePackage` is gone for the same reason.
 
   Migration: delete the second argument.
+- `ExtensionAPI` and `ExtensionFactory` from the package root. They are the Host's backend port
+  behind the context facets, never an author entry, and now live at `@agnes/extension-api/host`.
+  The root keeps `ExtensionContext` (what `ctx.self` returns) and `TrustTier`.
+
+  Migration: a Host adapter imports the two types from `@agnes/extension-api/host`. A plugin uses
+  the facets it lists in `inject`.
+- `WorkflowOptions.source` in `@agnes/plugin-runtime`: the Host attributes the workflow's loop and
+  policy to the plugin's package. `name` is optional and defaults to `id`.
+
+  Migration: delete `source`.
+
+### Added
+
+- `@agnes/plugin-runtime` re-exports the root of this package, so a plugin imports helpers and
+  contracts from one package.
+- A plugin export without `inject` takes the `inject` list of its `agnes.plugins` manifest entry.
+  An export that declares its own, for example to mark a service optional, keeps it.
 
 ### Changed
 

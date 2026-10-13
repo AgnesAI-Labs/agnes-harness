@@ -118,7 +118,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.knowledge-qa',
   version: '5.0.0',
-  source: '@agnes-fde/knowledge-qa',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/knowledge-qa',

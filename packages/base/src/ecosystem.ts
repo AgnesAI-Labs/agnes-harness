@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { ExtensionFactory } from '@agnes/extension-api'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { gitWorktreeKind } from '@agnes/git-worktree-contract'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { type BundledPlugin, extensionFactoryOf } from '@agnes/plugin-runtime/bundled'

@@ -1,6 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { checkToolDef, type ExtensionAPI, type ToolDef } from '@agnes/extension-api'
+import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type { Context } from '@agnes/plugin-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import { connectMcp } from '../../src/mcp/connect.js'

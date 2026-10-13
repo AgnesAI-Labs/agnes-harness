@@ -241,8 +241,19 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
   )
 }
 
-export function normalizePluginExport(exported: Plugin<unknown>): VerifiedRowEntry {
-  const inject = deepFreeze(cloneValue(ownRecord(Inject.resolve(exported.inject))))
+/**
+ * `declaredInject` is the `inject` list of the plugin's manifest entry. The manifest is where a
+ * plugin states its dependencies, so an export that does not repeat them gets the manifest's.
+ */
+export function normalizePluginExport(
+  exported: Plugin<unknown>,
+  declaredInject?: readonly string[],
+): VerifiedRowEntry {
+  const inject = deepFreeze(
+    cloneValue(
+      ownRecord(Inject.resolve(exported.inject ?? (declaredInject ? [...declaredInject] : undefined))),
+    ),
+  )
   const provides = normalizeProvides(exported.provide)
   const prepared = preparePluginInvocation(exported, inject)
   return Object.freeze({ prepared, inject, provides })

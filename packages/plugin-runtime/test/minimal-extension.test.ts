@@ -3,7 +3,6 @@ import {
   bundledExtensionManifest,
   checkManifest,
   checkToolDef,
-  type ExtensionAPI,
   type HookContext,
   type HookHandler,
   type SlotContext,
@@ -11,6 +10,7 @@ import {
   type ToolContext,
   type ToolDef,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import fixture from '../examples/minimal/fixtures/basic.fixture.js'

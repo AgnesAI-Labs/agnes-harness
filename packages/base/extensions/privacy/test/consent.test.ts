@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { ExtensionAPI, HookContext } from '@agnes/extension-api'
+import type { HookContext } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type { Context } from '@agnes/plugin-runtime'
 import { describe, expect, it } from 'vitest'
 import {

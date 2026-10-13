@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
-import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
+import type { HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
 import {
   checkProvidedExternals,

@@ -1,5 +1,6 @@
 import type { Context } from '@agnes/cordis'
-import type { ExtensionFactory, ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
 import {
   createPluginRow,
   EMPTY_EXTRAS_REVISION,

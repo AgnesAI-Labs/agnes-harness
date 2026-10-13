@@ -1,5 +1,6 @@
-import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
 import { ExtensionError } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type { ExtensionManifest } from './manifest.js'
 import type { KernelPorts } from './ports.js'
 

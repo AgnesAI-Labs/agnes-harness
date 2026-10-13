@@ -1,6 +1,7 @@
 import type { HarnessEntry, OpContext, RefineProposal, SeamImplementations } from '@agnes/core'
 import { actor, fakeProvider, fakeSeams, openSession, textTurn } from '@agnes/core/testkit'
-import type { ExtensionAPI, HookHandler, ToolDef } from '@agnes/extension-api'
+import type { HookHandler, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { createEcosystemExtensions } from '../../../src/ecosystem.js'

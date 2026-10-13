@@ -1,3 +1,7 @@
+// The one package a plugin author imports: the contracts of `@agnes/extension-api` (kinds, loop
+// ports, provider types, errors) beside the `define*` helpers below. A helper of the same name
+// here replaces the contract package's.
+export * from '@agnes/extension-api'
 export {
   defineChildAgentProvider,
   defineCompactionEngine,

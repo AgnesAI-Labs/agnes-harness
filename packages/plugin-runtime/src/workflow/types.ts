@@ -36,8 +36,8 @@ export interface WorkflowStage {
 export interface WorkflowOptions {
   id: string
   version: string
-  source: string
-  name: string
+  /** The title shown in the plan and in published deliverables. Defaults to `id`. */
+  name?: string
   stages: readonly WorkflowStage[]
   tools?: readonly ToolDef[]
   skills?: readonly { name: string; description: string; body: string }[]

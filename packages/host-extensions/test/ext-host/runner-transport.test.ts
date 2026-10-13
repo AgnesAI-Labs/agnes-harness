@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process'
-import type { ExtensionAPI } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   type IsolatedHooksRunner,

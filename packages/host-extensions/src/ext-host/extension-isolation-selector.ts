@@ -1,4 +1,4 @@
-import type { ExtensionFactory } from '@agnes/extension-api'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
 import { readBundledManifest } from '@agnes/host-common/packages/manager'
 import type { InstalledPackage } from '@agnes/package-manager'

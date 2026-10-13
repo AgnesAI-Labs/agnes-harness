@@ -173,7 +173,6 @@ const sourceParams = { type: 'object', additionalProperties: false, properties: 
 const workflow = defineWorkflowLoop({
   id: 'fde.finance-reconcile',
   version: '5.0.0',
-  source: '@agnes-fde/finance-reconcile',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/finance-reconcile',

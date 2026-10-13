@@ -1,12 +1,11 @@
 import {
   type Disposer,
-  type ExtensionAPI,
   ExtensionError,
-  type ExtensionFactory,
   PLUGIN_FACET_NAMES,
   type PluginContextFacets,
   type PluginFacetName,
 } from '@agnes/extension-api'
+import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 
 /**
  * The part of an `AgnesPlugin` a bundled package is mounted through. The Host calls `apply` with

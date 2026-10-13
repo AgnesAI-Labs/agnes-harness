@@ -2,7 +2,6 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { WORKSPACE_HOOK_SANDBOX, type WorkspaceHookSandbox } from '@agnes/core'
 import type {
-  ExtensionFactory,
   HookEvent,
   HookInvocationSnapshot,
   HookPayloadMap,
@@ -12,6 +11,7 @@ import type {
   SessionRef,
 } from '@agnes/extension-api'
 import { HOOK_EVENTS } from '@agnes/extension-api'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
 import { connectExtensionRunner } from './runner-transport.js'
 

@@ -1,5 +1,6 @@
 import type { HookEngine, HookRegistry, ResourceRegistry, ToolRegistry, ToolSource } from '@agnes/core'
-import type { ExtensionAPI, HookHandler, SlotFill } from '@agnes/extension-api'
+import type { HookHandler, SlotFill } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type { ToolPort } from '@agnes/host-extensions/ext-host/api'
 import type { KernelPorts, RegMeta } from '@agnes/host-extensions/ext-host/ports'
 import { expectTypeOf } from 'vitest'

@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
 import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'

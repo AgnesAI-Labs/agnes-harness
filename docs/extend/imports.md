@@ -4,7 +4,7 @@ English | [简体中文](imports.zh-CN.md)
 
 [Author kit](README.md) · [Quickstart](quickstart.md) · [Testing](testing.md)
 
-Start with `@agnes/plugin-runtime` for author helpers, `@agnes/extension-api` for contracts, and **`@agnes/host/author-testkit` for author tests**. Every kind, registered or bound, is one token type; import a Host-service token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#4-optional-compilation-and-tests).
+Import plugin code from one package, `@agnes/plugin-runtime`: it carries the author helpers and re-exports every contract of `@agnes/extension-api` (kinds, Loop ports, provider types, errors), so the rows below that name `@agnes/extension-api` are reachable from it too. Use **`@agnes/host/author-testkit` for author tests**. `@agnes/extension-api/host` holds the Host's backend port and is not an author entry. Every kind, registered or bound, is one token type; import a Host-service token from its owning contract package only when you need that service. There is no unified SDK package or public npm release; use the matching source checkout and [local SDK linker](quickstart.md#4-optional-compilation-and-tests).
 
 **Author** below means the supported public author surface in this preview, not a frozen API guarantee. **Specialist** means an explicit contract or integration task. **Internal/legacy — don't use** means avoid that entry in new author templates; existing exports remain available.
 

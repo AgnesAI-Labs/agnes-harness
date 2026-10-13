@@ -125,6 +125,20 @@ describe('verified row contract', () => {
     await host.adapter.unmount(installation)
   })
 
+  it('takes the injected services from the manifest when the export does not repeat them', () => {
+    const apply = () => {}
+    // Exactly what the export would have declared itself.
+    const repeated = normalizePluginExport({ apply, inject: ['tools', 'providers'] }).inject
+    expect(Object.keys(repeated)).toEqual(['tools', 'providers'])
+    expect(normalizePluginExport({ apply }, ['tools', 'providers']).inject).toEqual(repeated)
+    expect(Object.keys(normalizePluginExport(apply, ['tools']).inject)).toEqual(['tools'])
+    // An export that states its own dependencies, including optional ones, keeps them.
+    expect(
+      normalizePluginExport({ apply, inject: { tools: { required: false } } }, ['tools', 'providers']).inject,
+    ).toEqual({ tools: { required: false } })
+    expect(normalizePluginExport({ apply }).inject).toEqual({})
+  })
+
   it('freezes caller data before snapshot verification yields', async () => {
     let release!: () => void
     const waiting = new Promise<void>((resolve) => {

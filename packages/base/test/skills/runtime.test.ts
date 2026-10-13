@@ -1,5 +1,6 @@
 import { applyContextResults } from '@agnes/core'
-import type { ExtensionAPI, HookContext, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { HookContext, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { validateAgainst } from '@agnes/protocol'
 import { ContextReturn } from '@agnes/protocol/gen/hooks'

@@ -1,12 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type {
-  ExtensionAPI,
-  HookEvent,
-  HookHandler,
-  HookInvocationSnapshot,
-  PlatformFacts,
-} from '@agnes/extension-api'
+import type { HookEvent, HookHandler, HookInvocationSnapshot, PlatformFacts } from '@agnes/extension-api'
 import { EXTENSION_ERROR_CODES, ExtensionError, unavailableProjections } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { CcHookGroup } from '../extensions/hooks-runner/src/config.js'
 import {

@@ -2,12 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookEngine, HookRegistry, ResourceRegistry, SlotRegistry } from '@agnes/core'
-import {
-  API_VERSION,
-  bundledPackageJson,
-  type ExtensionAPI,
-  type ExtensionManifest,
-} from '@agnes/extension-api'
+import { API_VERSION, bundledPackageJson, type ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { createManagedExtHost, type ExtensionSpec } from '@agnes/host-extensions/ext-host/managed-host'

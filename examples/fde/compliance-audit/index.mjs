@@ -104,7 +104,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.compliance-audit',
   version: '5.0.0',
-  source: '@agnes-fde/compliance-audit',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/compliance-audit',

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./host": "./src/host.ts",
     "./mcp-naming": "./src/mcp-naming.ts",
     "./seams": "./src/seams.ts",
     "./testkit": "./testkit/index.ts",

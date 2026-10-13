@@ -83,7 +83,6 @@ const stages = [
 const workflowOptions = {
   id: 'fde.crm-assistant',
   version: '5.0.0',
-  source: '@agnes-fde/crm-assistant',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/crm-assistant',

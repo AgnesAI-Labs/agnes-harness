@@ -207,7 +207,7 @@ function normalizeExport(
   if (!Object.hasOwn(module, declaration.export))
     stateFailure('plugin-export-missing', { export: declaration.export })
   try {
-    return normalizePluginExport(module[declaration.export] as never)
+    return normalizePluginExport(module[declaration.export] as never, declaration.inject)
   } catch {
     stateFailure('plugin-export-shape', { export: declaration.export })
   }

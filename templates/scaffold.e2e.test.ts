@@ -19,7 +19,7 @@ describe('plugin scaffolder', () => {
           const source = await readFile(join(target, 'src/index.ts'), 'utf8')
           expect(source).toContain('defineWorkflowLoop({')
           expect(source).toContain("id: '@acme/hello.world'")
-          expect(source).toContain("source: '@acme/hello.world'")
+          expect(source).not.toContain('source:')
           expect(source).toContain('export const main = workflow.main')
         } else if (kind === 'model-adapter') {
           expect(manifest.agnes.plugins[0].inject).toEqual(['providers'])

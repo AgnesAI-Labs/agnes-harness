@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import type {
   IntelligentUiInstance,
   UiSourceResolveInput,

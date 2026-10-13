@@ -1,11 +1,13 @@
-import type { ModelAdapterConfig, ModelAdapterInstance } from '@agnes/extension-api'
-import { loopKind, modelAdapterKind } from '@agnes/extension-api'
 import {
   type Context,
   defineAgnesPlugin,
   defineLoop,
   defineModelAdapter,
   defineTool,
+  loopKind,
+  type ModelAdapterConfig,
+  type ModelAdapterInstance,
+  modelAdapterKind,
   readOnlyTool,
 } from '@agnes/plugin-runtime'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'

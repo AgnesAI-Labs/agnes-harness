@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
 import {
   bundledExtensionManifest,
   checkApiRange,
@@ -8,6 +8,7 @@ import {
   checkToolDef,
   extEventType,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { CODE_MODE_EVENTS, CODE_MODE_EXT_ID, codeModeExtension as plugin } from '../src/index.js'

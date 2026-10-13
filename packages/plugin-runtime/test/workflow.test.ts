@@ -26,7 +26,6 @@ const definition = (options: Partial<WorkflowOptions> = {}) =>
   defineWorkflowLoop({
     id: 'test.workflow',
     version: '1.0.0',
-    source: '@test/workflow',
     name: 'workflow',
     stages: [
       {

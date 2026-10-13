@@ -12,7 +12,7 @@ export async function publishWorkflow(
   if (!options.deliverables) return []
   const markdown =
     options.deliverables.markdown?.(state) ??
-    `# ${options.name}\n\n\u0060\u0060\u0060json\n${JSON.stringify(state.data, null, 2)}\n\u0060\u0060\u0060\n`
+    `# ${options.name ?? options.id}\n\n\u0060\u0060\u0060json\n${JSON.stringify(state.data, null, 2)}\n\u0060\u0060\u0060\n`
   const documents = [{ name: 'report.md', content: markdown }]
   const html = options.deliverables.html?.(state)
   if (html) documents.push({ name: 'report.html', content: html })
@@ -26,7 +26,7 @@ export async function publishWorkflow(
     files.push({
       path,
       name: document.name,
-      description: `${options.name}: ${state.index === state.stageCount - 1 ? 'final' : 'review draft'}`,
+      description: `${options.name ?? options.id}: ${state.index === state.stageCount - 1 ? 'final' : 'review draft'}`,
     })
   }
   const output = workflowChecked(await ctx.tools.execute({ name: 'present', args: { files } }, signal))

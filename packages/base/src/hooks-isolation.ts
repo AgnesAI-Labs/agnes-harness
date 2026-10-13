@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { WorkspaceHookSandbox } from '@agnes/core'
-import type { ExtensionAPI, HookEvent, HookInvocationSnapshot } from '@agnes/extension-api'
+import type { HookEvent, HookInvocationSnapshot } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import {
   type CcHookGroup,
   hookGroupsFromSnapshot,

@@ -88,7 +88,6 @@ const stages = [
 export const { main, factory, createFactory, policy } = defineWorkflowLoop({
   id: 'fde.contract-review',
   version: '5.0.0',
-  source: '@agnes-fde/contract-review',
   confirm: 'surface',
   deliverables: {
     directory: 'fde-output/contract-review',

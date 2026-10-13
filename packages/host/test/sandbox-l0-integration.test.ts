@@ -17,13 +17,13 @@ import { type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import {
   bundledExtensionManifest,
-  type ExtensionAPI,
   type ExtensionManifest,
   type HookContext,
   type HookEvent,
   type HookHandler,
   unavailableProjections,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { ProfileInputs } from '@agnes/host-common/profile/types'

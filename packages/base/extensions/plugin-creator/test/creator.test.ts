@@ -1,5 +1,6 @@
 import { runInNewContext } from 'node:vm'
-import type { ExtensionAPI, ToolContext } from '@agnes/extension-api'
+import type { ToolContext } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
 import pluginCreator, { pluginCreatorTools } from '../src/index.js'
