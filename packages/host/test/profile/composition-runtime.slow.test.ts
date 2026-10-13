@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -699,6 +707,7 @@ it('filters registered MCP identities without confusing slug collisions or long 
 
 it('retains a legacy session deployment when bundles are configured after its first boot', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-legacy-composition-'))
+  expect(existsSync(join(root, 'profiles'))).toBe(false)
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
   try {
     host = (
@@ -708,6 +717,7 @@ it('retains a legacy session deployment when bundles are configured after its fi
         packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
       })
     ).host
+    expect(existsSync(join(root, 'profiles'))).toBe(true)
     const original = await host.createSession({ key: 'before-bundles', cwd: root })
     const generation = original.pluginGenerationId
     const loop = original.loop
