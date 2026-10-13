@@ -5,6 +5,7 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import { type CountResult, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { CountResult as CountResultSchema } from '@agnes/protocol/gen/model'
+import { hookedAsk } from './approval-ask.js'
 import { domainDecisionEvents, requestDomainDecision } from './domain-decision.js'
 import type { SessionImpl, TurnEndReason } from './session.js'
 
@@ -161,32 +162,9 @@ export async function quoteBudget(
     bindingHash: '',
     deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
   }
-  // Same hook as the tool-approval path in tools.ts, the park path in gate.ts, and the
-  // unknown-outcome ask in resume.ts: the payload describes "any request for human approval", not
-  // "only a tool approval" — this ask has no tool call behind it either, so `tool` names the
-  // approval's own kind and `argv` carries nothing. Unlike those two sites, `asked.risk` here
-  // ('budget') is already a member of extension-api's ApprovalRequest risk enum, so it passes
-  // through unmapped rather than being coerced to 'always'.
-  const overridden = s.hooks.approvalRequest
-    ? (
-        await s.hooks.approvalRequest({
-          request: {
-            tool: asked.kind,
-            argv: null,
-            risk: asked.risk,
-            actor: s.d.actor,
-            summary: asked.summary,
-          },
-        })
-      ).request
-    : undefined
-  const finalAsked = overridden
-    ? {
-        ...asked,
-        risk: overridden.risk ?? asked.risk,
-        ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-      }
-    : asked
+  // The payload describes "any request for human approval": this ask has no tool call behind it,
+  // so `tool` names the approval's own kind and `argv` carries nothing.
+  const { asked: finalAsked, rewrite } = await hookedAsk(s, asked.kind, null, asked)
   const review = await requestDomainDecision(
     s,
     'budget',
@@ -198,6 +176,7 @@ export async function quoteBudget(
       cap: s.turnBudgetCap(),
       creditsUsed: s.state.creditsUsed,
       risk: finalAsked.risk,
+      ...(rewrite ? { rewrite } : {}),
     },
     {
       ...finalAsked,
@@ -206,7 +185,6 @@ export async function quoteBudget(
       actor: s.d.actor,
       taint: op.taint || s.laneTaint(),
       scope: s.key,
-      ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
     },
     s.ac.signal,
   )

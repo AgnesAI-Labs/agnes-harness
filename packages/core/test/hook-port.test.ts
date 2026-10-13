@@ -553,6 +553,32 @@ describe('SessionHookPort.approvalRequest', () => {
     )
     await expect(port.approvalRequest({ request })).resolves.toEqual({
       request: { summary: 'run rm -rf /', risk: 'always' },
+      rewrittenBy: [meta.source],
+    })
+  })
+
+  it('never lowers the risk an approver sees', async () => {
+    const { engine, port } = setup()
+    engine.on('approval_request', () => ({ request: { risk: 'budget' as const } }), meta)
+    await expect(port.approvalRequest({ request })).resolves.toEqual({
+      request: { risk: 'destructive' },
+      rewrittenBy: [],
+    })
+  })
+
+  it('keeps an earlier raise when a later handler asks for less, and names who rewrote the text', async () => {
+    const { engine, port } = setup()
+    engine.on('approval_request', () => ({ request: { risk: 'always' as const } }), {
+      ...meta,
+      source: 'agnes/raises',
+    })
+    engine.on('approval_request', () => ({ request: { risk: 'destructive' as const, context: 'safe' } }), {
+      ...meta,
+      source: 'agnes/lowers',
+    })
+    await expect(port.approvalRequest({ request })).resolves.toEqual({
+      request: { risk: 'always', context: 'safe' },
+      rewrittenBy: ['agnes/lowers'],
     })
   })
 
@@ -582,6 +608,7 @@ describe('SessionHookPort.approvalRequest', () => {
     )
     await expect(port.approvalRequest({ request })).resolves.toEqual({
       request: { risk: 'always', summary: 'run rm -rf /' },
+      rewrittenBy: ['agnes/other'],
     })
     expect(seenBySecond).toEqual(['always'])
   })

@@ -35,6 +35,7 @@ import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
+import { type ApprovalNode, approvalSubject } from './approval-subject.js'
 import {
   applyCacheHealthEvent,
   type CacheHealthState,
@@ -102,7 +103,6 @@ export type UIProjectionUsageOptions = {
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 type AssistantNode = Extract<UINode, { kind: 'assistant' }>
-type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 const text = (blocks: ReadonlyArray<{ type: string; text?: string }>, kind = 'text') =>
   blocks
     .filter((block) => block.type === kind)
@@ -858,7 +858,7 @@ export class UIProjectionCell {
                 ? 'decided'
                 : 'pending',
           summary: clip(value.request.spec.prompt, 4096),
-          risk: (value.request.spec.subject as { risk?: 'destructive' | 'always' }).risk ?? 'always',
+          ...approvalSubject(value.request.spec.subject),
           options: value.request.spec.options.map((option) =>
             option === 'allowed-once'
               ? 'allow_once'

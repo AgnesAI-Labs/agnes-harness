@@ -338,7 +338,10 @@ export type HookPort = {
     depth: number
   }): Promise<{ block?: boolean; park?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
-  approvalRequest?(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']>
+  /** `rewrittenBy` names the hook sources whose summary or context the answer carries. */
+  approvalRequest?(
+    p: HookPayloadMap['approval_request'],
+  ): Promise<HookReturnMap['approval_request'] & { rewrittenBy?: readonly string[] }>
   requestError?(p: HookPayloadMap['request_error']): Promise<void>
   formatDeviation?(p: HookPayloadMap['format_deviation']): Promise<void>
   beforeCompact?(p: HookPayloadMap['before_compact']): Promise<BeforeCompactHookSelection>

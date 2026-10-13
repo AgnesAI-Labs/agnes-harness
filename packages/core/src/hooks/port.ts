@@ -5,6 +5,7 @@ import type { HookSnapshot } from '../registry/hooks.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches, applyContextResults, type ContextResult } from '../request/transforms.js'
+import { raisedRisk } from '../step/approval-ask.js'
 import type { HookPort } from '../step/session.js'
 import { type DispatchContext, HOOK_UNHANDLED, type HookEngine } from './engine.js'
 import { discoverResources, type ResourceDiscovery, type ResourceDiscoveryInputs } from './resources.js'
@@ -242,8 +243,11 @@ export class SessionHookPort implements HookPort {
     return { result }
   }
 
-  async approvalRequest(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']> {
+  async approvalRequest(
+    p: HookPayloadMap['approval_request'],
+  ): Promise<HookReturnMap['approval_request'] & { rewrittenBy?: readonly string[] }> {
     let request: HookReturnMap['approval_request']['request']
+    const rewrittenBy = new Set<string>()
     // Same reasoning as toolResult above: fold the accumulated override back into the payload's own
     // `request` so a later handler builds on earlier accepted changes instead of overwriting them.
     // `risk`/`context`/`summary` are the only fields a return may touch, and `ApprovalRequest`
@@ -254,15 +258,20 @@ export class SessionHookPort implements HookPort {
       this.inputs.context(),
       {
         snapshot: this.snapshot(),
-        accept: (value) => {
-          if (value.request) request = { ...request, ...value.request }
+        accept: (value, source) => {
+          if (!value.request) return
+          // The risk only moves up along the waterfall: a later handler cannot undo an earlier raise.
+          const risk = raisedRisk(request?.risk ?? p.request.risk, value.request.risk)
+          request = { ...request, ...value.request, risk }
+          if (value.request.summary !== undefined || value.request.context !== undefined)
+            rewrittenBy.add(source)
         },
       },
     )
     if (outcome.kind === 'rejected') rejected()
     // `exactOptionalPropertyTypes` refuses `{ request: undefined }` as a stand-in for "absent": the
     // key itself must be missing when no waterfall member supplied an override.
-    return request === undefined ? {} : { request }
+    return request === undefined ? {} : { request, rewrittenBy: [...rewrittenBy] }
   }
 
   async requestError(p: HookPayloadMap['request_error']): Promise<void> {

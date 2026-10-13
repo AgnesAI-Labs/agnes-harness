@@ -3,6 +3,7 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionHandle, DecisionSnapshot } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
+import type { AskRewrite } from '../../step/approval-ask.js'
 import type { DecisionSource } from '../../step/decisions.js'
 import type { SessionImpl } from '../../step/session.js'
 import type { PlannedCall } from './tools.js'
@@ -34,6 +35,7 @@ export async function requestToolDecision(
   s: SessionImpl,
   call: PlannedCall,
   offered: ApprovalRequest,
+  rewrite?: AskRewrite,
 ): Promise<DecisionSnapshot> {
   const source = toolDecisionSource(s, call)
   const def = s.currentTools().resolve(call.name)
@@ -74,6 +76,7 @@ export async function requestToolDecision(
       approval: offered.approval ? { ...offered.approval } : null,
       context: offered.context ?? null,
       risk: offered.risk,
+      ...(rewrite ? { rewrite } : {}),
     },
     prompt: offered.summary,
     options: offered.options ?? ['allowed-once', 'allowed-session', 'rejected'],

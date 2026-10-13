@@ -255,9 +255,18 @@ describe('verifier pause continuation', () => {
       await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
       const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
       expect(outcome.reason).toBe('parked')
-      expect(seenRequest).toMatchObject({ risk: 'budget' })
+      // The hook's text reaches the person beside the platform's own; its lower risk does not.
+      expect(seenRequest).toMatchObject({ risk: 'unknown', summary: 'escalated by extension' })
       expect((await log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
-        request: { spec: { subject: { risk: 'budget' }, prompt: 'escalated by extension' } },
+        request: {
+          spec: {
+            subject: {
+              risk: 'unknown',
+              rewrite: { by: [], summary: expect.stringContaining('verifier failed') },
+            },
+            prompt: 'escalated by extension',
+          },
+        },
       })
     } finally {
       await session.close()

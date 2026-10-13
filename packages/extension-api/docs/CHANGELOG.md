@@ -25,6 +25,12 @@ API additions require a minor version; removals or semantic changes require a ma
 - The step a generic model or tool port opens fires `before_step`. A park or block ends the turn in
   Core and the port throws `E_BUDGET` with `detail.reason` (`parked`, `blocked` or `aborted`),
   the same refusal a step or credit budget produces.
+- An `approval_request` hook can only raise the risk a person is shown
+  (`budget` < `destructive` < `always`); a lower value is ignored, along the waterfall and against
+  the platform's own value. A `summary` or `context` it returns no longer replaces the platform's
+  summary silently: the decision subject records `rewrite: { by, summary }` (the hook sources and
+  the platform's summary), the timeline's approval node carries it as `rewrite`, and the Web
+  approval card shows both.
 
 ### Added
 

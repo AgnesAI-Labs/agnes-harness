@@ -212,6 +212,12 @@ export function createTurnController(
       ? liveApprovalCard(context.liveApproval.request.toolCall, context.t)
       : undefined
     const impact = durable ? risks[durable.risk] : (card?.impact ?? context.t('app.approval.toolImpact'))
+    const rewrite = context.liveApproval ? undefined : durable?.rewrite
+    const rewritten = rewrite
+      ? rewrite.by.length
+        ? context.t('app.approval.rewrittenBy', { source: rewrite.by.join(', '), summary: rewrite.summary })
+        : context.t('app.approval.rewritten', { summary: rewrite.summary })
+      : undefined
     const actions: ApprovalAction[] = []
     const decide = (id: string, label: string, action: () => Promise<void>): void => {
       actions.push({
@@ -272,6 +278,7 @@ export function createTurnController(
       ...(planApproval ? { kind: 'plan' as const } : {}),
       title: context.t('app.approval.title'),
       summary,
+      ...(rewritten === undefined ? {} : { rewritten }),
       impact,
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...((card?.preview ?? durable?.subjectText) === undefined

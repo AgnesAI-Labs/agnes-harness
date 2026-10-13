@@ -5,6 +5,7 @@ import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState, Inbox, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
 import { minimumContextBudget } from '@agnes/protocol'
+import { type AskRewrite, hookedAsk } from '../../step/approval-ask.js'
 import { quoteBudget } from '../../step/calibrate.js'
 import { finishAborted } from '../../step/control.js'
 import { domainDecisionEvents, requestDomainDecision } from '../../step/domain-decision.js'
@@ -293,7 +294,12 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
         (value.request.spec.subject as { step?: number }).step === op.step,
     )
   const subject = persisted?.request.spec.subject as
-    | { verdict: VerifierVerdict['verdict']; reasons: string[]; risk: 'always' | 'budget' | 'unknown' }
+    | {
+        verdict: VerifierVerdict['verdict']
+        reasons: string[]
+        risk: 'always' | 'budget' | 'unknown'
+        rewrite?: AskRewrite
+      }
     | undefined
   const hook = persisted
     ? { action: 'complete' as const }
@@ -366,32 +372,12 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
       bindingHash: '',
       deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
     }
-    // Same hook as the tool-approval path in tools.ts: the payload describes "any request for human
-    // approval", not "only a tool approval" — this park has no tool call behind it at all, so `tool`
-    // names the approval's own kind and `argv` carries nothing. extension-api's ApprovalRequest risk
-    // enum has no 'unknown' member (the value this call site's `asked.risk` actually carries); this
-    // approval is unconditional regardless of risk heuristics, which 'always' already means.
-    const overridden =
-      !persisted && s.hooks.approvalRequest
-        ? (
-            await s.hooks.approvalRequest({
-              request: {
-                tool: asked.kind,
-                argv: null,
-                risk: 'always',
-                actor: s.d.actor,
-                summary: asked.summary,
-              },
-            })
-          ).request
-        : undefined
-    const finalAsked = overridden
-      ? {
-          ...asked,
-          risk: overridden.risk ?? asked.risk,
-          ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-        }
-      : asked
+    // The payload describes "any request for human approval": this park has no tool call behind it,
+    // so `tool` names the approval's own kind and `argv` carries nothing.
+    const hooked = await hookedAsk(s, asked.kind, null, asked, !persisted)
+    const finalAsked = hooked.asked
+    // A restored question is asked again exactly as it was recorded.
+    const rewrite = subject?.rewrite ?? hooked.rewrite
     const review = await requestDomainDecision(
       s,
       'gate',
@@ -404,6 +390,7 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
         verdict: verdict.verdict,
         reasons: verdict.reasons,
         risk: finalAsked.risk,
+        ...(rewrite ? { rewrite } : {}),
       },
       {
         ...finalAsked,
@@ -412,7 +399,6 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
         actor: s.d.actor,
         taint: op.taint || s.laneTaint(),
         scope: s.key,
-        ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       },
       s.ac.signal,
     )

@@ -1,5 +1,6 @@
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
+import { hookedAsk } from '../../step/approval-ask.js'
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 
@@ -36,36 +37,21 @@ export async function unknownOutcomeRows(
     bindingHash: '',
     deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
   }
-  // Same hook as the tool-approval path in tools.ts and the park path in gate.ts: the payload
-  // describes "any request for human approval", not "only a tool approval" — this ask has no tool
-  // call behind it either, so `tool` names the approval's own kind and `argv` carries nothing.
-  // extension-api's ApprovalRequest risk enum has no 'unknown' member (the value this call site's
-  // `asked.risk` actually carries), so it maps to 'always', exactly as gate.ts's park path does.
-  const overridden = s.hooks.approvalRequest
-    ? (
-        await s.hooks.approvalRequest({
-          request: {
-            tool: asked.kind,
-            argv: null,
-            risk: 'always',
-            actor: s.d.actor,
-            summary: asked.summary,
-          },
-        })
-      ).request
-    : undefined
-  const finalAsked = overridden
-    ? {
-        ...asked,
-        risk: overridden.risk ?? asked.risk,
-        ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-      }
-    : asked
+  // The payload describes "any request for human approval": this ask has no tool call behind it,
+  // so `tool` names the approval's own kind and `argv` carries nothing.
+  const { asked: finalAsked, rewrite } = await hookedAsk(s, asked.kind, null, asked)
   const decision = await requestDomainDecision(
     s,
     'unknown-outcome',
     toolUseId,
-    { toolUseId, name, turn: op.meta.turn, step: op.step, risk: finalAsked.risk },
+    {
+      toolUseId,
+      name,
+      turn: op.meta.turn,
+      step: op.step,
+      risk: finalAsked.risk,
+      ...(rewrite ? { rewrite } : {}),
+    },
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -73,7 +59,6 @@ export async function unknownOutcomeRows(
       actor: s.d.actor,
       taint: op.taint || s.laneTaint(),
       scope: s.key,
-      ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
     },
     s.ac.signal,
   ).catch(async (error) => {

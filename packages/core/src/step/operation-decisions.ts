@@ -1,6 +1,7 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { DecisionReviewPort, DecisionSpec } from '@agnes/extension-api'
+import { hookedAsk } from './approval-ask.js'
 import { deliverDecision } from './decision-delivery.js'
 import { domainDecisionEvents } from './domain-decision.js'
 import type { SessionImpl } from './session.js'
@@ -26,23 +27,23 @@ export function operationDecisionPort(s: SessionImpl, owner: string): DecisionRe
       const existing = [...s.state.registers.decisionStates.values()].find(
         ({ value }) => value.request.owner === source.owner && value.request.spec.key === spec.key,
       )?.value
-      const override =
-        !existing && s.hooks.approvalRequest
-          ? (
-              await s.hooks.approvalRequest({
-                request: {
-                  tool: spec.purpose,
-                  argv: null,
-                  risk: 'always',
-                  actor: s.d.actor,
-                  summary: spec.prompt,
-                },
-              })
-            ).request
-          : undefined
+      const { asked, rewrite } = await hookedAsk(
+        s,
+        spec.purpose,
+        null,
+        { summary: spec.prompt, risk: 'always' as const },
+        !existing,
+      )
+      const subject = spec.subject
+      // A restored question is asked again exactly as it was recorded.
       const handle = await port.request({
         ...spec,
-        prompt: existing?.request.spec.prompt ?? override?.summary ?? spec.prompt,
+        ...(existing
+          ? { subject: existing.request.spec.subject }
+          : rewrite && subject && typeof subject === 'object' && !Array.isArray(subject)
+            ? { subject: { ...subject, rewrite } }
+            : {}),
+        prompt: existing?.request.spec.prompt ?? asked.summary,
       })
       const snapshot = await port.get(handle)
       if (snapshot.consumption) throw new CoreError('E_RELATION', 'DECISION_ALREADY_CONSUMED')
@@ -66,7 +67,7 @@ export function operationDecisionPort(s: SessionImpl, owner: string): DecisionRe
             options: [...spec.options] as Array<'allowed-once' | 'allowed-session' | 'rejected'>,
             deadline:
               snapshot.request.expiresAt ?? new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
-            context: override?.context ?? canonicalJson(spec.subject),
+            context: asked.context ?? canonicalJson(spec.subject),
           },
           signal,
           source.alive,

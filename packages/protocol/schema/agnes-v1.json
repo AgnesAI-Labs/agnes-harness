@@ -3331,6 +3331,26 @@
                 "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
               }
             },
+            "rewrite": {
+              "type": "object",
+              "description": "Present when an approval_request hook rewrote the summary or context: the platform's own summary and the hook sources that rewrote it.",
+              "additionalProperties": false,
+              "required": ["by", "summary"],
+              "properties": {
+                "by": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              }
+            },
             "ticket": {
               "type": "string"
             },

@@ -18,6 +18,8 @@ export interface ApprovalAction {
 export interface ApprovalView {
   key: string
   summary: string
+  /** Says a plugin rewrote the summary and gives the original; read right after the summary. */
+  rewritten?: string
   title: string
   impact: string
   /** Says that part of the call is not shown; rendered before the preview so it is read first. */
@@ -93,6 +95,11 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
         >
           <h2>{view.title}</h2>
           <p>{view.summary}</p>
+          {view.rewritten !== undefined && (
+            <p className="approval-warning" data-testid="approval-rewritten">
+              {view.rewritten}
+            </p>
+          )}
           <p className="approval-impact">{view.impact}</p>
           {detail}
           {view.warning !== undefined && <p className="approval-warning">{view.warning}</p>}

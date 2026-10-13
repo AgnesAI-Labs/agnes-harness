@@ -118,6 +118,11 @@ export interface HookReturnMap {
   tool_call: { allow: true } | { allow: false; reason: string }
   tool_result: { result?: ToolResult }
   turn_stopping: { action: 'stop' } | { action: 'continue'; note: string }
+  /**
+   * A returned `risk` only raises what the person is shown (`budget` < `destructive` < `always`); a
+   * lower one is ignored. A returned `summary` or `context` is shown with the platform's own summary
+   * and the source that rewrote it.
+   */
   approval_request: { request?: Partial<Pick<ApprovalRequest, 'risk' | 'context' | 'summary'>> }
   before_compact: CompactionPlan | null
   // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type

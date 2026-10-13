@@ -23,6 +23,7 @@ import {
 import { readSessionAttachment } from '../../request/session-files.js'
 import { readSessionImages } from '../../request/session-images.js'
 import { imageInput, imageInputPolicy } from '../../request/tool-images.js'
+import { hookedAsk } from '../../step/approval-ask.js'
 import {
   approvalBindingHash,
   approvalScopesForCall,
@@ -846,30 +847,9 @@ export async function approveAndExecute(
         ...(permission.approval ? { approval: permission.approval } : {}),
         deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
       }
-      // A transform hook: an extension may adjust risk/context/summary before the question reaches a
-      // human, the same waterfall shape `context`/`before_request` already use. `argv` is cast rather
-      // than re-validated here because the inference or nested-call entry validated `call.args`
-      // before persisting the exact args and resolved policy binding consumed by this dispatch.
-      const overridden = s.hooks.approvalRequest
-        ? (
-            await s.hooks.approvalRequest({
-              request: {
-                tool: call.name,
-                argv: call.args as JsonValue,
-                risk: asked.risk,
-                actor: s.d.actor,
-                summary: asked.summary,
-              },
-            })
-          ).request
-        : undefined
-      const finalAsked = overridden
-        ? {
-            ...asked,
-            risk: overridden.risk ?? asked.risk,
-            ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-          }
-        : asked
+      // The inference or nested-call entry validated `call.args` before persisting the exact args
+      // and resolved policy binding consumed by this dispatch.
+      const { asked: finalAsked, rewrite } = await hookedAsk(s, call.name, call.args as JsonValue, asked)
       const approvalRequest = {
         ...finalAsked,
         sessionKey: s.key,
@@ -882,13 +862,12 @@ export async function approveAndExecute(
         policyVersion: policy.policyVersion,
         policyBinding,
         options: [...options],
-        ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       }
       const storage = s.d.log.storage
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
       const delivery = await deliverToolDecision(
         s,
-        await requestToolDecision(s, call, approvalRequest),
+        await requestToolDecision(s, call, approvalRequest, rewrite),
         approvalRequest,
         o.signal ?? s.ac.signal,
       )

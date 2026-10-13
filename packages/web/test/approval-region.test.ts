@@ -31,6 +31,7 @@ describe('rendered approval region', () => {
       kind: 'plan',
       title: '需要你的确认',
       summary: '读取工作区文件',
+      rewritten: '此摘要由 plugin/reviewer 改写。原始请求：read README.md',
       impact: '请核对工具及参数后决定是否继续。',
       preview: '{"path":"README.md"}',
       actions: [
@@ -48,6 +49,9 @@ describe('rendered approval region', () => {
         approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
       ).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
+      expect(approval?.querySelector('[data-testid="approval-rewritten"]')?.textContent).toBe(
+        '此摘要由 plugin/reviewer 改写。原始请求：read README.md',
+      )
       expect(approval?.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
       expect(approval?.querySelectorAll<HTMLButtonElement>('.approval-actions button')).toHaveLength(2)
     }, committed)

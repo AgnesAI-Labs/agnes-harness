@@ -445,12 +445,49 @@ describe('tools phase', () => {
           actor: expect.objectContaining({ id: 'u' }),
           summary: expect.stringContaining('shell'),
         })
-        return { request: { risk: 'always', summary: 'operator flagged this' } }
+        return {
+          request: { risk: 'always', summary: 'operator flagged this' },
+          rewrittenBy: ['agnes/reviewer'],
+        }
       },
     }
     await s.session.runToolsPhase()
     expect(seenRequest).toMatchObject({ risk: 'always', summary: 'operator flagged this' })
-    expect((await s.session.decisions.list())[0]?.request.spec.prompt).toBe('operator flagged this')
+    const spec = (await s.session.decisions.list())[0]?.request.spec
+    expect(spec?.prompt).toBe('operator flagged this')
+    // The platform's own summary stays on the question beside the rewrite, with who rewrote it.
+    expect(spec?.subject).toMatchObject({
+      risk: 'always',
+      rewrite: { by: ['agnes/reviewer'], summary: expect.stringContaining('shell') },
+    })
+    // The approval card is built from the same record, so the person is shown both.
+    expect((await s.session.projectUI()).nodes.find((node) => node.kind === 'approval')).toMatchObject({
+      summary: 'operator flagged this',
+      risk: 'always',
+      rewrite: { by: ['agnes/reviewer'], summary: expect.stringContaining('shell') },
+    })
+  })
+
+  it('an approvalRequest hook cannot lower the risk an approver is shown', async () => {
+    let seenRequest: unknown
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          seenRequest = req
+          return { verdict: 'allowed-once', answeredBy: actor }
+        },
+      },
+    })
+    const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
+    s.session.hooks = {
+      ...s.session.hooks,
+      approvalRequest: async () => ({ request: { risk: 'budget' } }),
+    }
+    await s.session.runToolsPhase()
+    expect(seenRequest).toMatchObject({ risk: 'destructive' })
+    const subject = (await s.session.decisions.list())[0]?.request.spec.subject
+    expect(subject).toMatchObject({ risk: 'destructive' })
+    expect(subject).not.toHaveProperty('rewrite')
   })
 
   it('allowed-session covers later argv for the same owner/session/tool/scope', async () => {
