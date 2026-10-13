@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionFactory } from '@agnes/extension-api'
+import { createBatchExtension } from '../extensions/batch/src/index.js'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
 import {
@@ -193,4 +194,5 @@ export const ecosystem = {
       throw new Error('computer-use extension requires the Host-owned backend provider')
     return createComputerUseExtension(init.computerUseBackendProvider, init.computerUseOptions)
   },
+  'agnes/batch': (init: SeamInitContext): ExtensionFactory => createBatchExtension(init.batch),
 } as const

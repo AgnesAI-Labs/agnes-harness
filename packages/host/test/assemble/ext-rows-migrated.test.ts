@@ -55,6 +55,7 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:compact',
     'hook:approval_request',
   ],
+  'agnes/batch': ['tool:batch_start', 'tool:batch_status', 'tool:batch_cancel', 'hook:tool_call'],
 }
 
 const listed = (h: { host: { extensions(): { id: string; loaded: boolean }[] } }, id: string) =>
@@ -86,6 +87,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/privacy',
       'agnes/mcp-search',
       'agnes/skills',
+      'agnes/batch',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

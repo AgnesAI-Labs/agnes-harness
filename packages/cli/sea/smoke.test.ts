@@ -203,6 +203,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           'agnes/skills',
           'agnes/computer-use',
           'agnes/code-mode',
+          'agnes/batch',
         ]),
       )
       expect(

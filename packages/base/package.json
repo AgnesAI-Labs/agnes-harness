@@ -56,7 +56,8 @@
       "./extensions/hooks-runner",
       "./extensions/privacy",
       "./extensions/skills",
-      "./extensions/computer-use"
+      "./extensions/computer-use",
+      "./extensions/batch"
     ]
   },
   "scripts": {
