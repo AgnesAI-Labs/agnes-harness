@@ -1,4 +1,4 @@
-import { isToolResult } from '@agnes/core-effects/effects/tool-dispatch'
+import { boundToolResult, isToolResult } from '@agnes/core-effects/effects/tool-dispatch'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import type {
   HookPayloadMap,
@@ -182,7 +182,13 @@ export async function dispatchLoopEvent<E extends LoopEventName>(
       hooked?.result ? { ...p, result: hooked.result } : p,
       loopEventContext(s, signal),
     )
-    return (result.result ? result : (hooked ?? {})) as LoopEventReturnMap[E]
+    const final = result.result ? result : (hooked ?? {})
+    // A hook may replace the result; the replacement meets the same budget as the tool's own.
+    return (
+      final.result
+        ? { ...final, result: boundToolResult(final.result, s.preset.tools.outputMaxBytes) }
+        : final
+    ) as LoopEventReturnMap[E]
   }
   if (event === 'before_model_request') {
     const p = payload as HookPayloadMap['before_request']

@@ -59,6 +59,14 @@ const DEFERRED_KEYS = new Set(['jobId'])
 const TOOL_TEXT_MAX_LENGTH = 1_048_576
 const MIME_MAX_LENGTH = 128
 
+/** Ceilings on one tool result that no preset can raise; `outputMaxBytes` bounds the text on top of them. */
+export const TOOL_RESULT_LIMITS = Object.freeze({
+  maxBlocks: 256,
+  maxJsonBytes: 262_144,
+  maxJsonDepth: 32,
+  maxJsonNodes: 50_000,
+})
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -120,6 +128,80 @@ function isContentBlock(value: unknown): boolean {
   }
 }
 
+/** Approximate encoded size of a JSON-ish value, or undefined once it is over the depth, node or byte ceiling. */
+function boundedJsonSize(root: unknown): number | undefined {
+  const { maxJsonBytes, maxJsonDepth, maxJsonNodes } = TOOL_RESULT_LIMITS
+  let bytes = 0
+  let nodes = 0
+  const stack: Array<[unknown, number]> = [[root, 1]]
+  for (let item = stack.pop(); item; item = stack.pop()) {
+    const [value, depth] = item
+    if (++nodes > maxJsonNodes || depth > maxJsonDepth) return undefined
+    if (typeof value === 'string') bytes += value.length + 2
+    else if (typeof value !== 'object' || value === null) bytes += 8
+    else {
+      for (const [key, child] of Object.entries(value)) {
+        bytes += key.length + 4
+        stack.push([child, depth + 1])
+      }
+    }
+    if (bytes > maxJsonBytes) return undefined
+  }
+  return bytes
+}
+
+function truncateUtf8(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ''
+  const cut = Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8')
+  return cut.endsWith('\uFFFD') ? cut.slice(0, -1) : cut
+}
+
+/**
+ * Enforce the result budget on a value that has not been validated, cloned, hooked or persisted yet:
+ * total text bytes (`outputMaxBytes`), block count, and the size and depth of `structured`/`details`.
+ * An over-budget result keeps what fits and says what was dropped; a value that is not result-shaped is
+ * returned untouched for validation to refuse.
+ */
+export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
+  if (!isRecord(value) || !Array.isArray(value.content)) return value
+  const omitted: string[] = []
+  const limit = Number.isFinite(outputMaxBytes)
+    ? Math.max(0, Math.floor(outputMaxBytes))
+    : Number.POSITIVE_INFINITY
+  let remaining = limit
+  const blocks = value.content.slice(0, TOOL_RESULT_LIMITS.maxBlocks)
+  if (value.content.length > blocks.length)
+    omitted.push(`${value.content.length - blocks.length} blocks over the ${blocks.length}-block limit`)
+  let droppedText = 0
+  const content: unknown[] = []
+  for (const block of blocks) {
+    if (!isRecord(block) || block.type !== 'text' || typeof block.text !== 'string') {
+      content.push(block)
+      continue
+    }
+    const size = block.text.length > remaining ? Buffer.byteLength(block.text, 'utf8') : block.text.length
+    if (size <= remaining) {
+      remaining -= size
+      content.push(block)
+    } else {
+      droppedText += size - remaining
+      if (remaining > 0) content.push({ ...block, text: truncateUtf8(block.text, remaining) })
+      remaining = 0
+    }
+  }
+  if (droppedText) omitted.push(`${droppedText} text bytes over the ${limit}-byte limit`)
+  const json: Record<string, unknown> = {}
+  for (const key of ['details', 'structured'] as const) {
+    if (value[key] !== undefined && boundedJsonSize(value[key]) === undefined) {
+      json[key] = { truncated: true }
+      omitted.push(`${key} over the size or depth limit`)
+    }
+  }
+  if (!omitted.length) return value
+  content.push({ type: 'text', text: `[output truncated: ${omitted.join('; ')}]` })
+  return { ...value, ...json, content } as T
+}
+
 export function isToolResult(value: unknown): value is ToolResult {
   if (!isRecord(value) || !hasOnlyKeys(value, TOOL_RESULT_KEYS) || !Array.isArray(value.content)) return false
   if (!value.content.every(isContentBlock)) return false
@@ -171,6 +253,12 @@ function invalidObservation(reason: string): HostDispatchObservation {
     phase: 'may_have_sent',
     error: new CoreError('E_ENVELOPE', `invalid Host dispatch observation: ${reason}`),
   }
+}
+
+function boundObservation(value: unknown, outputMaxBytes: number): unknown {
+  return isRecord(value) && value.phase === 'responded'
+    ? { ...value, result: boundToolResult(value.result, outputMaxBytes) }
+    : value
 }
 
 function validateObservation(value: unknown, invoked: boolean): HostDispatchObservation {
@@ -260,7 +348,7 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
   }
   if (input.executionDomain === 'workspace') {
     try {
-      const result = await input.invoke()
+      const result = boundToolResult(await input.invoke(), input.context.outputMaxBytes)
       return isToolResult(result)
         ? { phase: 'responded', result }
         : invalidObservation('workspace tool returned an invalid ToolResult')
@@ -288,7 +376,7 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
       attempt: input.attempt,
       invoke,
     })
-    return validateObservation(value, invoked)
+    return validateObservation(boundObservation(value, input.context.outputMaxBytes), invoked)
   } catch (error) {
     return { phase: 'may_have_sent', error }
   }

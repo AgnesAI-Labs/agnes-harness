@@ -339,3 +339,48 @@ describe('session dispatch plumbing', () => {
     await session.close()
   })
 })
+
+describe('tool result budget', () => {
+  const dispatchWorkspace = (output: unknown, outputMaxBytes = 1024) =>
+    dispatchTool({
+      name: 'read',
+      args: {},
+      context: { outputMaxBytes } as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke: async () => output as never,
+    })
+
+  it('bounds the total text across blocks before the result is accepted', async () => {
+    const chunk = 'x'.repeat(1_048_576)
+    const observation = await dispatchWorkspace({
+      content: Array.from({ length: 128 }, () => ({ type: 'text', text: chunk })),
+    })
+    expect(observation.phase).toBe('responded')
+    if (observation.phase !== 'responded') return
+    const text = observation.result.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    expect(text.length).toBeLessThan(1024 + 200)
+    expect(text).toContain('[output truncated')
+  })
+
+  it('caps block count and replaces over-deep or over-large structured data with a marker', async () => {
+    let deep: unknown = 'leaf'
+    for (let i = 0; i < 100; i++) deep = { next: deep }
+    const observation = await dispatchWorkspace({
+      content: Array.from({ length: 1000 }, () => ({ type: 'text', text: '' })),
+      structured: deep,
+      details: { blob: 'y'.repeat(1_000_000) },
+    })
+    expect(observation.phase).toBe('responded')
+    if (observation.phase !== 'responded') return
+    expect(observation.result.content.length).toBeLessThanOrEqual(257)
+    expect(observation.result.structured).toEqual({ truncated: true })
+    expect(observation.result.details).toEqual({ truncated: true })
+  })
+
+  it('leaves an in-budget result untouched', async () => {
+    const small = { content: [{ type: 'text', text: 'ok' }], structured: { a: 1 } }
+    const observation = await dispatchWorkspace(small)
+    expect(observation).toEqual({ phase: 'responded', result: small })
+  })
+})
