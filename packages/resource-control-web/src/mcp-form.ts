@@ -161,7 +161,7 @@ export function createMcpForm(input: {
         ...(allow.length ? { toolPolicy: { allow } } : {}),
       }
     }
-    // The mcp-transport select option set lives in packages/web/public/resources.html, a
+    // The mcp-transport select option set lives in the workbench's MCP dialog scaffold, a
     // different package than this dispatch -- nothing guarantees they stay in sync. Fail loudly on an
     // unrecognized value instead of silently falling through to an SSE-shaped definition.
     throw new Error(t('error.invalid-transport', { value: mcpTransport.value }))

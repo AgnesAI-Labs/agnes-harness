@@ -7,8 +7,9 @@
     <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__" />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
-    <title data-i18n="shell.document-title">Skills and MCP · Agnes</title>
-    <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
+    <title>Agnes Harness</title>
+    <!-- This address is an alias of the workbench settings: the entry script forwards to it, and
+         the theme script keeps the forwarding frame on the reader's theme. -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/antd.css" />
@@ -33,84 +34,5 @@
     </script>
     <script type="module" src="/resources-standalone.js"></script>
   </head>
-  <body data-agnes-region="app" id="resource-admin-page" class="admin-page resource-admin-page">
-    <a class="skip-link" href="#resource-content" data-i18n="shell.skip">Skip to resource list</a>
-    <header data-agnes-region="topbar" class="admin-header resource-admin-header">
-      <button id="resource-return" class="secondary-button compact" type="button" data-i18n="shell.return">Return to workbench</button>
-      <div class="admin-heading"><p class="eyebrow" data-i18n="shell.eyebrow">Settings</p><h1 data-i18n="shell.heading">Skills and MCP</h1></div>
-    </header>
-    <main id="resource-content" class="admin-main resource-admin-main" tabindex="-1">
-      <p id="resource-notice" class="admin-notice" role="status" aria-live="polite"></p>
-      <div class="resource-toolbar">
-        <div class="plugin-tabs" role="tablist" data-i18n-aria="shell.tabs.aria" aria-label="Resource type">
-          <button id="skills-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="true" data-i18n="tab.skills">Skills</button>
-          <button id="mcp-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="false" tabindex="-1">MCP</button>
-        </div>
-        <div class="resource-toolbar-actions">
-          <button id="skill-refresh" class="secondary-button compact" type="button" data-i18n="button.refresh">Refresh Skill catalog</button>
-          <button id="mcp-create" class="primary-button" type="button" hidden data-i18n="button.create">Add MCP service</button>
-        </div>
-      </div>
-      <div id="resource-layout" class="plugin-layout resource-layout">
-        <section id="resource-list" class="plugin-list" aria-live="polite" data-i18n-aria="shell.list.aria" aria-label="Resource catalog"></section>
-      </div>
-    </main>
-
-    <!-- 详情从右侧固定抽屉改为独立模态框，与插件页一致。 -->
-    <dialog data-agnes-region="dialog" id="resource-detail" class="plugin-detail" data-i18n-aria="shell.detail.aria" aria-label="Resource details"></dialog>
-    <dialog data-agnes-region="dialog" id="mcp-dialog" aria-labelledby="mcp-dialog-title">
-      <form id="mcp-form" class="plugin-dialog-form">
-        <div class="dialog-heading"><h2 id="mcp-dialog-title">Add MCP service</h2></div>
-        <p class="dialog-intro" data-i18n="shell.dialog.description">Connect external tools and data. Review the connection before enabling it.</p>
-        <section class="agnes-settings-stack" id="mcp-methods" aria-label="Choose a connection method" data-i18n-aria="wizard.choose">
-          <div class="agh-list-row"><div class="agh-list-row-copy"><button id="mcp-method-local" class="agh-btn agh-btn--secondary" type="button" data-i18n="wizard.local">Local command</button><p data-i18n="wizard.localHelp">Run a tool on this computer, such as npx.</p></div></div>
-          <div class="agh-list-row"><div class="agh-list-row-copy"><button id="mcp-method-remote" class="agh-btn agh-btn--secondary" type="button" data-i18n="wizard.remote">Remote service</button><p data-i18n="wizard.remoteHelp">Connect using a service URL.</p></div></div>
-          <div class="agh-list-row"><div class="agh-list-row-copy"><a id="mcp-method-agent" class="agh-btn agh-btn--secondary" href="/?new=1" data-i18n="wizard.agent">Ask the agent</a><p data-i18n="wizard.agentHelp">Start a conversation with your connection details.</p></div></div>
-        </section>
-        <section class="agnes-settings-stack" id="mcp-connection-fields" hidden>
-<label class="form-field" for="mcp-name"><span data-i18n="shell.form.display-name">Display name</span><template data-agnes-control="input" class="agnes-settings-input" id="mcp-name" required maxlength="128" autocomplete="off" data-i18n-placeholder="shell.form.name-placeholder" placeholder="GitHub" ></template></label>
-<label id="mcp-url-row" class="form-field" hidden for="mcp-url"><span data-i18n="shell.form.url">HTTPS or local loopback address</span><template data-agnes-control="input" class="agnes-settings-input" id="mcp-url" type="url" autocomplete="off" data-i18n-placeholder="shell.form.url-placeholder" placeholder="https://example.com/mcp" ></template></label>
-        <label id="mcp-command-row" class="form-field" for="mcp-command"><span data-i18n="wizard.command">Command</span><template data-agnes-control="input" id="mcp-command" autocomplete="off" placeholder="npx -y @modelcontextprotocol/server-github"></template></label>
-        <label class="form-field" for="mcp-credential"><span data-i18n="wizard.credential">Saved credential (optional)</span><template data-agnes-control="select" id="mcp-credential"><option value="" data-i18n="shell.form.secret-none">No credentials</option></template></label>
-        <p id="mcp-credential-status" role="status"></p>
-        <a href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/mcp.md" target="_blank" rel="noopener" data-i18n="wizard.credentialHelp">How to save a credential</a>
-        <details class="agnes-settings-details" id="mcp-advanced"><summary data-i18n="wizard.advanced">Advanced options</summary><div class="agnes-settings-stack">
-        <label class="form-field" for="mcp-token-env"><span data-i18n="wizard.env">Token environment variable</span><template data-agnes-control="input" id="mcp-token-env" value="TOKEN" autocomplete="off"></template></label>
-<label class="form-field" for="mcp-id"><span data-i18n="shell.form.server-id">Service ID</span><template data-agnes-control="input" class="agnes-settings-input" id="mcp-id" required maxlength="128" autocomplete="off" data-i18n-placeholder="shell.form.id-placeholder" placeholder="github" ></template></label>
-<label class="form-field" for="mcp-transport"><span data-i18n="shell.form.transport">Transport</span><template data-agnes-control="select" class="agnes-settings-input" id="mcp-transport"><option value="stdio" data-i18n="shell.form.transport.stdio">Local stdio</option><option value="http" data-i18n="shell.form.transport.http">HTTPS / local HTTP</option><option value="sse" data-i18n="shell.form.transport.sse">SSE (remote, legacy protocol)</option></template></label>
-<label id="mcp-workspace-row" class="form-field" for="mcp-workspace"><span data-i18n="sandbox.workspace">Workspace folder (optional, absolute path)</span><template data-agnes-control="input" class="agnes-settings-input" id="mcp-workspace" autocomplete="off" ></template></label>
-<label id="mcp-sandbox-row" class="form-field" for="mcp-sandbox"><span data-i18n="sandbox.title">Sandbox profile</span><template data-agnes-control="select" class="agnes-settings-input" id="mcp-sandbox"><option value="strict" data-i18n="sandbox.strict">Strict: workspace read, no network</option><option value="workspace-write" data-i18n="sandbox.workspace-write">Workspace write, no network</option><option value="network" data-i18n="sandbox.network">Network, workspace read</option><option value="off-with-warning" data-i18n="sandbox.off-with-warning">Off: full host access (explicit approval)</option></template></label>
-<label id="mcp-executable-row" class="form-field" for="mcp-executable"><span data-i18n="shell.form.executable">Executable</span><template data-agnes-control="input" class="agnes-settings-input" id="mcp-executable" autocomplete="off" data-i18n-placeholder="shell.form.executable-placeholder" placeholder="mcp-github" ></template></label>
-<label id="mcp-args-row" class="form-field" for="mcp-args"><span data-i18n="shell.form.args">Arguments (one per line)</span><template data-agnes-control="textarea" class="agnes-settings-input" id="mcp-args" rows="3" spellcheck="false"></template></label>
-<label class="form-field" for="mcp-secret-kind"><span data-i18n="shell.form.secret-kind">Credential method</span><template data-agnes-control="select" class="agnes-settings-input" id="mcp-secret-kind"><option value="none" data-i18n="shell.form.secret-none">No credentials</option><option value="stdio-env" data-i18n="shell.form.secret-stdio">stdio environment variables</option><option value="http-bearer" data-i18n="shell.form.secret-bearer">HTTP Bearer</option><option value="http-header" data-i18n="shell.form.secret-header">HTTP API Key</option></template></label>
-<label id="mcp-header-row" class="form-field" hidden for="mcp-header-name"><span data-i18n="shell.form.header-name">HTTP Header</span><template data-agnes-control="select" class="agnes-settings-input" id="mcp-header-name"><option value="x-api-key">x-api-key</option><option value="x-api-token">x-api-token</option></template></label>
-<label id="mcp-secret-row" class="form-field" for="mcp-secret"><span data-i18n="shell.form.secret">SecretRef / environment mapping</span><template data-agnes-control="textarea" class="agnes-settings-input" id="mcp-secret" rows="3" spellcheck="false" data-i18n-placeholder="shell.form.secret-placeholder" placeholder="secret://namespace/name or TOKEN=secret://namespace/name"></template></label>
-<label class="form-field" for="mcp-tools"><span data-i18n="shell.form.tools">Allowed tools (one per line, optional)</span><template data-agnes-control="textarea" class="agnes-settings-input" id="mcp-tools" rows="3" spellcheck="false"></template></label>
-</div></details>
-
-</section>
-<p id="mcp-error" class="plugin-form-error" role="alert"></p>
-        <div class="dialog-actions"><button id="mcp-back" class="agh-btn agh-btn--ghost" type="button" data-i18n="wizard.back">Back</button><button id="mcp-cancel" class="agh-btn agh-btn--secondary" type="button" data-i18n="shell.form.cancel">Cancel</button><button class="agh-btn agh-btn--primary" type="submit" data-i18n="shell.form.submit">Add and confirm</button></div>
-      </form>
-    </dialog>
-    <!-- 共享确认弹窗（@agnes/web-ui 的 createConfirmController）。此前本页每个操作都弹
-         原生 window.confirm，与本页其余样式不搭且无法展示结构化事实。同一份标记也存在于
-         index.html 与 admin.html，由 admin-pane-contract.test.ts 断言三处都有。 -->
-    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
-      <div class="plugin-dialog-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow" data-i18n="shell.confirm.kicker">Confirmation required</p>
-            <h2 id="admin-confirm-title" data-i18n="confirmation.title">Confirm action</h2>
-          </div>
-        </div>
-        <p id="admin-confirm-description" class="dialog-intro"></p>
-        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
-        <div class="dialog-actions">
-          <button id="admin-confirm-cancel" class="secondary-button" type="button" data-i18n="confirmation.cancel">Cancel</button>
-          <button id="admin-confirm-action" class="primary-button" type="button" data-i18n="confirmation.confirm">Confirm</button>
-        </div>
-      </div>
-    </dialog>
-  </body>
+  <body data-agnes-region="app"></body>
 </html>

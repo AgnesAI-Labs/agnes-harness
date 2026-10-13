@@ -99,18 +99,10 @@ beforeEach(async () => {
   failPolling = false
   pendingPage = undefined
   document.documentElement.lang = 'en'
-  document.documentElement.innerHTML = (
-    await readFile(
-      resolve(
-        process.cwd().endsWith('/packages/resource-control-web')
-          ? '../web/public/resources.html'
-          : 'packages/web/public/resources.html',
-      ),
-      'utf8',
-    )
+  document.documentElement.innerHTML = await readFile(
+    resolve(import.meta.dirname, 'fixtures/resource-admin-host.html'),
+    'utf8',
   )
-    .replace('<script type="module" src="/resources.js"></script>', '')
-    .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -504,17 +496,13 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   expect(mcpEmpty?.querySelector('.admin-empty-state-hints')).toBeNull()
 })
 
-it('updates static shell and React labels when the document locale changes', () => {
-  expect(byId('skills-tab').textContent).toBe('Skills')
-  expect(byId('admin-confirm-action').textContent).toBe('Confirm')
+it('updates the labels it renders when the document locale changes', () => {
   expect(byId('resource-detail').textContent).toContain('View connection status')
 
   document.documentElement.lang = 'zh-CN'
   window.dispatchEvent(new Event('agnes:locale-changed'))
 
-  expect(byId('skills-tab').textContent).toBe('技能')
-  expect(byId('admin-confirm-title').textContent).toBe('确认操作')
-  expect(byId('admin-confirm-cancel').textContent).toBe('取消')
+  // The host shell around the surface is the workbench's own React tree and translates itself.
   expect(byId('resource-detail').textContent).toContain('查看连接状态')
 })
 
@@ -781,8 +769,8 @@ it('submits SSE transport with bearer token SecretRef from the form', async () =
 })
 
 it('rejects an unrecognized mcp-transport value instead of silently submitting an SSE definition', async () => {
-  // resources.html's <select id="mcp-transport"> option set lives in a different package
-  // (packages/web/public/resources.html) than definitionFromForm()'s dispatch logic, with nothing
+  // The <select id="mcp-transport"> option set lives in a different package (the workbench's MCP
+  // dialog scaffold) than definitionFromForm()'s dispatch logic, with nothing
   // guaranteeing they stay in sync. Simulate that drift with an option value neither package offers
   // today, and confirm the form fails loudly instead of silently producing an SSE definition.
   byId('mcp-create').click()

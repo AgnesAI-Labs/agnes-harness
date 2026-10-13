@@ -41,9 +41,9 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     dialog: ['dialog', 9],
     'settings-pane': ['section', 6],
   },
-  // These two pages intentionally use the static sampling path; they do not start the workbench.
-  'admin.html': { app: ['body', 1], topbar: ['header', 1], dialog: ['dialog', 4] },
-  'resources.html': { app: ['body', 1], topbar: ['header', 1], dialog: ['dialog', 3] },
+  // These two addresses forward to the workbench settings; only the themed page ground is theirs.
+  'admin.html': { app: ['body', 1] },
+  'resources.html': { app: ['body', 1] },
 }
 
 function hooks(root: ParentNode): RegionHook[] {
@@ -103,13 +103,12 @@ describe('skin region hooks', () => {
     expect(root.querySelectorAll('svg.icon:not([data-agnes-region="icon"])')).toHaveLength(0)
   })
 
-  it('keeps the shared shell hooks on every page', () => {
+  it('keeps the app ground hook on every page', () => {
     for (const { page, root } of skinSamples()) {
       const regions = new Set(hooks(root).map((hook) => hook.region))
-      // A skin that paints the app background or the header band must work on all three pages,
-      // including the standalone management pages reached from the workbench.
-      for (const shared of ['app', 'topbar', 'dialog'])
-        expect(regions.has(shared), `${page} is missing ${shared}`).toBe(true)
+      // A skin that paints the app background must also cover the frame the alias pages show
+      // while they forward to the workbench.
+      expect(regions.has('app'), `${page} is missing app`).toBe(true)
     }
   })
 
@@ -133,7 +132,8 @@ describe('skin region hooks', () => {
   })
 
   it('finds hooks at all instead of passing on an empty parse', () => {
-    for (const { root } of skinSamples()) expect(hooks(root).length).toBeGreaterThan(2)
+    for (const { page, root } of skinSamples())
+      expect(hooks(root).length).toBeGreaterThan(page === 'index.html' ? 2 : 0)
   })
 
   it('reports built-in slots from live registrations rather than their declared manifest', () => {

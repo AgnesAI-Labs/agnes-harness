@@ -1,12 +1,8 @@
-import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
-import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import {
   applyDocumentLocale,
-  applyLocaleText,
   isUiLocale,
   LOCALE_STORAGE_KEY,
   readLocalePreference,
-  type UiLocale,
 } from '@agnes/web-foundation/locale-preference'
 import {
   applySkinTokens,
@@ -47,33 +43,6 @@ let currentLocale = readLocalePreference(storage)
 const override = skinOverride(window.location.search)
 let writtenSkinTokens: Set<string> = new Set()
 let skinSheet: SkinSheetState = { sheet: undefined, css: undefined }
-let shellLocaleBootScheduled = false
-
-function staticShellCatalog() {
-  if (document.body?.id === 'plugin-admin-page') return pluginAdminShellLocaleCatalog
-  if (document.body?.id === 'resource-admin-page') return resourceAdminShellLocaleCatalog
-  return undefined
-}
-
-/** Apply the standalone page shell before its deferred application module can run. */
-function paintStaticShell(locale: UiLocale): void {
-  if (!document.body) {
-    if (shellLocaleBootScheduled) return
-    shellLocaleBootScheduled = true
-    document.addEventListener(
-      'DOMContentLoaded',
-      () => {
-        shellLocaleBootScheduled = false
-        paintStaticShell(currentLocale)
-      },
-      { once: true },
-    )
-    return
-  }
-  const catalog = staticShellCatalog()
-  if (!catalog) return
-  applyLocaleText(document, (key) => catalog[locale]?.[key] ?? catalog.en?.[key] ?? key)
-}
 
 /**
  * 皮肤样式表走**构造式样式表 + `adoptedStyleSheets`**。
@@ -98,7 +67,6 @@ const paintSkin = (mode: ResolvedTheme): void => {
 
 const paintLocale = (): void => {
   applyDocumentLocale(document.documentElement, currentLocale)
-  paintStaticShell(currentLocale)
 }
 
 /** 每次都重读偏好：这样系统主题变化时能按「当时的」偏好决定是否跟随。 */

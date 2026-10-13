@@ -23,7 +23,7 @@ export interface UiLocaleSource {
 
 export const UI_LOCALE_STORAGE_KEY = 'agnes-locale'
 
-/** Adapts the host document preference for standalone admin pages and their separate React roots. */
+/** Adapts the host document preference for admin surfaces mounted outside the client-module locale service. */
 export function createDocumentLocaleSource(
   catalogs: Readonly<Record<string, LocaleCatalog>>,
 ): Readonly<{ source: UiLocaleSource; dispose(): void }> {
@@ -38,34 +38,11 @@ export function createDocumentLocaleSource(
     }
     return key
   }
-  const translateStaticText = (): void => {
-    for (const node of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
-      const key = node.dataset.i18n
-      if (key) {
-        const value = translate(key)
-        if (value !== key) node.textContent = value
-      }
-    }
-    for (const [attribute, selector] of [
-      ['aria-label', 'data-i18n-aria'],
-      ['placeholder', 'data-i18n-placeholder'],
-      ['title', 'data-i18n-title'],
-    ] as const) {
-      for (const node of document.querySelectorAll<HTMLElement>(`[${selector}]`)) {
-        const key = node.getAttribute(selector)
-        if (key) {
-          const value = translate(key)
-          if (value !== key) node.setAttribute(attribute, value)
-        }
-      }
-    }
-  }
   const refresh = (): void => {
     const next = readLocale()
     if (next === locale) return
     locale = next
     version++
-    translateStaticText()
     for (const listener of [...listeners]) listener()
   }
   const onStorage = (event: StorageEvent): void => {
@@ -73,7 +50,6 @@ export function createDocumentLocaleSource(
   }
   window.addEventListener('agnes:locale-changed', refresh)
   window.addEventListener('storage', onStorage)
-  translateStaticText()
 
   const source: UiLocaleSource = {
     getSnapshot: () => locale,

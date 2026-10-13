@@ -282,12 +282,6 @@
     line-height: 1.1875rem;
     tab-size: 2;
   }
-  .resource-admin-page code {
-    padding: 0.125rem var(--s4);
-    border-radius: var(--radius-sm);
-    background: var(--agnes-bg-card);
-    color: var(--agnes-text-primary);
-  }
   .code-block pre code {
     display: block;
     width: max-content;

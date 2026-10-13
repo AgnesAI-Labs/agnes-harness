@@ -16,8 +16,8 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | --- | --- | --- | --- | --- |
 | 页面 / `home` | /; 新会话 | `packages/web/src/app.ts` | region slots; Composer; ConversationMessages | 原生控件或静态回退壳需归并；手写动作/选择呈现需复用共享组件 |
 | 页面 / `conversation` | /?session=<id> | `packages/web/src/conversation-message-adapter.tsx` | ConversationMessages; registered cards | 标题/骨架/动作位置需统一 |
-| 页面 / `standalone-plugins` | /admin.html | `packages/web/public/admin.html` | PluginAdminPage; PluginList; native shell | 原生控件或静态回退壳需归并；标题/骨架/动作位置需统一；对话框正文/页脚需统一 |
-| 页面 / `standalone-resources` | /resources.html | `packages/web/public/resources.html` | ResourceAdminPage; ResourceListContent; native shell | 原生控件或静态回退壳需归并；标题/骨架/动作位置需统一；对话框正文/页脚需统一 |
+| 页面 / `standalone-plugins` | /admin/plugins | `packages/web/public/admin.html` | 工作台设置的别名（`?settings=plugins`），没有独立外壳 | 已解决：该地址转到唯一的工作台外壳 |
+| 页面 / `standalone-resources` | /admin/resources | `packages/web/public/resources.html` | 工作台设置的别名（`?settings=skills`），没有独立外壳 | 已解决：该地址转到唯一的工作台外壳 |
 | 页面 / `settings-model` | / → 设置 → model | `packages/web-ui/src/settings-model-pane.tsx` | SettingsHub / SettingsModelPane; SettingsAccounts | 标题/骨架/动作位置需统一；对话框正文/页脚需统一 |
 | 页面 / `settings-models` | / → 设置 → models | `packages/web-admin/src/admin/plugins/session-defaults-panel.tsx` | SettingsHub / SettingsCard; Field; SettingsInput; SettingsSelect | 标题/骨架/动作位置需统一；空态、加载、错误或状态反馈需统一 |
 | 页面 / `settings-bundles` | / → 设置 → bundles | `packages/web-admin/src/admin/plugins/bundles-panel.tsx` | SettingsHub / SettingsCard; Field; Select; SettingsInput | 标题/骨架/动作位置需统一；列表/表格/元数据需统一呈现 |

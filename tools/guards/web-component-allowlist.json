@@ -86,14 +86,6 @@
       "intrinsic": 4,
       "className": 1
     },
-    "packages/web/public/admin.html": {
-      "intrinsic": 14,
-      "className": 9
-    },
-    "packages/web/public/resources.html": {
-      "intrinsic": 12,
-      "className": 23
-    },
     "packages/web/src/client-modules/reconcile/styles.ts": {
       "dom": 1
     },

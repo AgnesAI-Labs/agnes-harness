@@ -6,14 +6,20 @@ import { appNotice } from '../src/app-notices.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 /**
- * The admin surfaces live in two hosts: the full pages (`admin.html` / `resources.html`) and the
- * settings panes inside `index.html`. Both are static markup, so nothing but this test prevents the
- * two copies from drifting apart — and a drifted id means a silent `missing element` crash at mount.
+ * The admin controllers bind to host markup by id. The workbench renders that markup from React;
+ * the controller tests in web-admin and resource-control-web bind to static host fixtures. Nothing
+ * but this test keeps the fixtures in step with the workbench — and a drifted id means a silent
+ * `missing element` crash at mount.
  */
-const publicDir = join(resolve(import.meta.dirname, '../../..'), 'packages', 'web', 'public')
-const read = (name: string): string => readFileSync(join(publicDir, name), 'utf8')
+const packagesDir = join(resolve(import.meta.dirname, '../../..'), 'packages')
+const read = (name: string): string => readFileSync(join(packagesDir, 'web', 'public', name), 'utf8')
+const HOST_FIXTURES = {
+  plugin: join(packagesDir, 'web-admin', 'test', 'fixtures', 'plugin-admin-host.html'),
+  resources: join(packagesDir, 'resource-control-web', 'test', 'fixtures', 'resource-admin-host.html'),
+}
+const fixture = (name: keyof typeof HOST_FIXTURES): string => readFileSync(HOST_FIXTURES[name], 'utf8')
 
-/** Ids the full page carries around the surface (shell and <body>), not part of the surface itself. */
+/** Ids the fixture carries around the surface (its own shell and <body>), not part of the surface itself. */
 const STANDALONE_ONLY = new Set([
   'return-workbench',
   'plugin-content',
@@ -45,8 +51,8 @@ function embeddedIds(html: string, roots: readonly string[], selfIds: readonly s
   return [...found].sort()
 }
 
-it('embedded plugin pane and admin.html carry the same surface ids', async () => {
-  const standalone = idsIn(read('admin.html'))
+it('the workbench plugin pane and the plugin host fixture carry the same surface ids', async () => {
+  const standalone = idsIn(fixture('plugin'))
     .filter((id) => !STANDALONE_ONLY.has(id))
     .sort()
   const runtime = await mountRenderedIndex()
@@ -60,14 +66,14 @@ it('embedded plugin pane and admin.html carry the same surface ids', async () =>
   expect(embedded).toEqual(standalone)
 })
 
-it('embedded resource pane and resources.html carry the same surface ids', async () => {
-  const standalone = idsIn(read('resources.html'))
+it('the workbench resource pane and the resource host fixture carry the same surface ids', async () => {
+  const standalone = idsIn(fixture('resources'))
     .filter((id) => !STANDALONE_ONLY.has(id))
     .sort()
   // #admin-confirm is the shared confirmation dialog (@agnes/web-ui); it is host-level, so it
   // is compared in both surfaces rather than belonging to one of them.
   // #resource-detail is a body-level modal in both hosts, and the Skills / MCP tabs sit in the
-  // standalone page's toolbar but in the workbench's settings rail — same ids, different parent.
+  // fixture's toolbar but in the workbench's settings rail — same ids, different parent.
   const runtime = await mountRenderedIndex()
   const embedded = embeddedIds(
     document.documentElement.outerHTML,
@@ -97,8 +103,8 @@ it('the shared confirmation dialog exists in every host', async () => {
     'admin-confirm-cancel',
     'admin-confirm-action',
   ]
-  for (const file of ['admin.html', 'resources.html'])
-    for (const id of required) expect(idsIn(read(file)), `${file} is missing #${id}`).toContain(id)
+  for (const name of ['plugin', 'resources'] as const)
+    for (const id of required) expect(idsIn(fixture(name)), `${name} fixture is missing #${id}`).toContain(id)
   const runtime = await mountRenderedIndex()
   for (const id of required) expect(document.getElementById(id)).not.toBeNull()
   await runtime.dispose()
@@ -147,6 +153,19 @@ it('no admin form is nested inside the settings form', async () => {
   expect(settingsForm?.querySelector('#settings-dsh-shell-slots')).not.toBeNull()
   await runtime.dispose()
   resetWebDom()
+})
+
+it.each([
+  ['admin.html', '/admin-standalone.js'],
+  ['resources.html', '/resources-standalone.js'],
+])('%s is an alias of the workbench with no shell of its own', (page, entry) => {
+  const html = read(page)
+  expect(html).toContain(`<script type="module" src="${entry}"></script>`)
+  expect(html).toMatch(/<body data-agnes-region="app"><\/body>/)
+  expect(html).not.toContain('data-i18n')
+  expect(html.match(/<script type="importmap">[\s\S]*?<\/script>/)?.[0]).toBe(
+    read('index.html').match(/<script type="importmap">[\s\S]*?<\/script>/)?.[0],
+  )
 })
 
 it('the settings dialog no longer frames the admin pages', () => {

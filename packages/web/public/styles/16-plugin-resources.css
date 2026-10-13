@@ -65,12 +65,6 @@
     min-height: 0;
     margin-top: var(--s16);
   }
-  .resource-admin-page .admin-main {
-    max-width: 1240px;
-  }
-  .resource-admin-header {
-    align-items: center;
-  }
   .resource-toolbar {
     display: flex;
     align-items: center;
@@ -774,28 +768,12 @@
   }
 
   @media (max-width: 900px) {
-    .admin-header,
     .admin-main {
       width: min(100% - 2rem, 44rem);
     }
   }
 
   @media (max-width: 540px) {
-    .admin-header {
-      min-height: 6.5rem;
-      grid-template-columns: 1fr auto;
-      gap: var(--s12);
-    }
-    .admin-heading {
-      grid-column: 1 / -1;
-      grid-row: 1;
-    }
-    .admin-header > :first-child {
-      grid-row: 2;
-    }
-    .admin-header > :last-child {
-      grid-row: 2;
-    }
     .plugin-toolbar {
       display: grid;
       gap: var(--s8);
@@ -843,14 +821,8 @@
   }
 
   @media (max-width: 360px) {
-    .admin-header,
     .admin-main {
       width: calc(100% - 1.5rem);
-    }
-    .admin-header > :last-child,
-    .admin-header > :first-child {
-      padding-inline: 0.625rem;
-      font-size: var(--font-size-xs);
     }
     .plugin-row:not(.agh-list-row) > :last-child.secondary-button,
     .plugin-row:not(.agh-list-row) > :last-child .secondary-button {

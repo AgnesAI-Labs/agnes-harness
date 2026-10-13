@@ -47,6 +47,14 @@ it('keeps index.html bootstrap-only, rejecting business elements and static tran
     expect(isBootstrapHtml(change)).toBe(false)
 })
 
+it('keeps the admin addresses as aliases of the workbench with no shell of their own', () => {
+  for (const page of ['admin.html', 'resources.html']) {
+    const html = readFileSync(join(repoRoot(), 'packages/web/public', page), 'utf8')
+    expect(html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/)?.[1]?.trim(), page).toBe('')
+    expect(html, page).not.toMatch(/\bdata-i18n/)
+  }
+})
+
 // Settings and admin pages are redesigned on one template in their own change. These files keep
 // their native disclosures until then; delete a path here when its file moves to Disclosure.
 const NATIVE_DISCLOSURE_PENDING = new Set([

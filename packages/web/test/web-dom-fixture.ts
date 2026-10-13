@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
-import { materializeSettingsControls } from '@agnes/web-ui'
 import { vi } from 'vitest'
 import { mountAppShell } from '../src/app-shell.js'
 import {
@@ -28,14 +27,13 @@ function publicPath(page: WebPageName): string {
   return resolve(packageRoot, 'public', page)
 }
 
-/** Static pages are intentionally parsed without starting their standalone scripts. */
+/** The alias pages are parsed without running the script that forwards to the workbench. */
 export function readStaticPage(page: Exclude<WebPageName, 'index.html'>): Document {
   const markup = readFileSync(publicPath(page), 'utf8')
     .replace(/<script[\s\S]*?<\/script>/g, '')
     .replace(/<link\b[^>]*>/g, '')
   const parsed = new DOMParser().parseFromString(markup, 'text/html')
   if (!parsed) throw new Error(`unable to parse ${page}`)
-  materializeSettingsControls(parsed)
   return parsed
 }
 

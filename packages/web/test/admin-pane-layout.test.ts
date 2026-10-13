@@ -22,14 +22,9 @@ function ruleBody(css: string, selector: string): string {
   return match?.[1] ?? ''
 }
 
-it('both hosts share one scroll model: documents fixed, list scrolls, detail scrolls only in the middle', async () => {
+it('the admin panes keep one scroll model: document fixed, list scrolls, detail scrolls only in the middle', async () => {
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
 
-  // The standalone host must declare its own model instead of inheriting `overflow: hidden` from the
-  // workbench shell (style.css top). That inheritance, plus nothing to scroll, is exactly what made
-  // both admin documents unscrollable.
-  expect(ruleBody(css, 'body.admin-page')).toContain('overflow: hidden')
-  expect(ruleBody(css, 'body.admin-page')).toContain('flex-direction: column')
   expect(ruleBody(css, '.admin-pane-body')).toContain('overflow: hidden')
   expect(ruleBody(css, '.plugin-layout')).toContain('display: flex')
   expect(ruleBody(css, '.plugin-layout')).toContain('flex-direction: column')
@@ -80,7 +75,10 @@ it('settings mount the shared admin surface in-document without iframe-era overr
 })
 
 it('the resource toolbar keeps its actions with the tabs', async () => {
-  const html = await readFile(resolve(publicDirectory, 'resources.html'), 'utf8')
+  const html = await readFile(
+    resolve(publicDirectory, '../../resource-control-web/test/fixtures/resource-admin-host.html'),
+    'utf8',
+  )
   document.documentElement.innerHTML = html
     .replace(/<link\b[^>]*>/g, '')
     .replace(/<script[\s\S]*?<\/script>/g, '')
