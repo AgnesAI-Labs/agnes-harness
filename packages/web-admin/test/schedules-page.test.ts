@@ -3,7 +3,12 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { settingsCatalog } from '../src/settings/locales.js'
-import { type SchedulesApi, SchedulesPage } from '../src/settings/schedules.js'
+import {
+  describeSchedule,
+  localTimeZone,
+  type SchedulesApi,
+  SchedulesPage,
+} from '../src/settings/schedules.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const t = (key: string) => settingsCatalog.en[key] ?? key
@@ -107,11 +112,16 @@ it('creates a reminder and archives it after confirmation', async () => {
     sessionKey: 's1',
     title: 'Standup',
     prompt: 'Check mail',
-    selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+    // The reminder runs in this computer's time zone unless the user names another.
+    selector: { daily: { time: '09:00', timeZone: localTimeZone() } },
   })
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
   expect(host.querySelector('[data-testid="schedules-next"]')?.textContent).toContain(
-    new Date(reminder.nextRunAt).toLocaleString(document.documentElement.lang || 'en'),
+    // Minutes are enough for a reminder; seconds are noise.
+    new Date(reminder.nextRunAt).toLocaleString(document.documentElement.lang || 'en', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }),
   )
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
@@ -133,9 +143,6 @@ it('creates a reminder and archives it after confirmation', async () => {
   await act(async () =>
     must(host.querySelector<HTMLButtonElement>('[data-testid="schedules-archive"]'), 'archive').click(),
   )
-  await act(async () =>
-    must(document.querySelector<HTMLButtonElement>('[role="menuitem"]'), 'archive menu').click(),
-  )
   expect(document.querySelector('[role="dialog"]')).not.toBeNull()
   await act(async () =>
     must(
@@ -154,4 +161,78 @@ it('creates a reminder and archives it after confirmation', async () => {
     ).click(),
   )
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-empty"]')).not.toBeNull())
+})
+
+it('describes a schedule rule in words, and hosts its primary action where the page asks', async () => {
+  const ux = (key: string, vars?: Record<string, string | number>) =>
+    `${key}${vars ? `(${Object.values(vars).join(',')})` : ''}`
+  expect(describeSchedule({ daily: { time: '09:00', timeZone: 'UTC' } }, t, ux)).toBe('Daily 09:00')
+  expect(describeSchedule({ weekly: { time: '17:30', weekdays: [5] } }, t, ux)).toBe('Weekly Fri 17:30')
+  expect(describeSchedule({ cron: { expr: '0 9 * * 1-5' } }, t, ux)).toBe('Cron 0 9 * * 1-5')
+  expect(describeSchedule({ every_seconds: 1800 }, t, ux)).toBe('ruleEvery(minutes(30))')
+  expect(describeSchedule({ after_seconds: 7200 }, t, ux)).toBe('ruleAfter(hours(2))')
+  expect(describeSchedule({ after_seconds: 45 }, t, ux)).toBe('ruleAfter(seconds(45))')
+
+  const api: SchedulesApi = {
+    sessionKey: () => 's1',
+    list: async () => ({ schedules: [reminder] }),
+    upsert: async () => ({}),
+    archive: async () => ({ deleted: true }),
+  }
+  const slot = document.createElement('div')
+  document.body.append(slot)
+  const host = await mount(createElement(SchedulesPage, { api, t, actionsHost: slot }))
+  // The page header owns the action; the list does not repeat it or its own description.
+  expect(slot.querySelector('[data-testid="schedules-new"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="schedules-new"]')).toBeNull()
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
+  expect(host.querySelector('[data-testid="schedules-row"]')?.textContent).toContain('Weekly Tue')
+})
+
+it('keeps time zone and Cron under advanced options, opened when a schedule uses them', async () => {
+  const cron = { ...reminder, id: 'sched_cron', selector: { cron: { expr: '*/5 * * * *', timeZone: 'UTC' } } }
+  const upsert = vi.fn(async () => ({}))
+  const api: SchedulesApi = {
+    sessionKey: () => 's1',
+    list: async () => ({ schedules: [cron] }),
+    upsert,
+    archive: async () => ({ deleted: true }),
+  }
+  const host = await mount(createElement(SchedulesPage, { api, t }))
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="schedules-new"]')?.click())
+  // A new reminder offers everyday rules only; Cron is not one of the choices.
+  const kinds = [...document.querySelectorAll('[data-testid="schedules-kind"] option')].map(
+    (option) => (option as HTMLOptionElement).value,
+  )
+  expect(kinds).toEqual(['daily', 'weekly', 'at', 'after_seconds', 'every_seconds'])
+  expect(document.querySelector('[data-testid="schedules-advanced"]')?.getAttribute('data-open')).not.toBe(
+    'true',
+  )
+  await act(async () =>
+    document
+      .querySelector('form#schedules-editor')
+      ?.closest('[role="dialog"]')
+      ?.querySelector<HTMLButtonElement>('.ant-modal-close')
+      ?.click(),
+  )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
+  )
+  expect(document.querySelector('[data-testid="schedules-advanced"]')?.getAttribute('data-open')).toBe('true')
+  expect(document.querySelector<HTMLInputElement>('[data-testid="schedules-cron"]')?.value).toBe(
+    '*/5 * * * *',
+  )
+  expect(document.querySelector('[data-testid="schedules-kind"]')).toBeNull()
+  await act(async () => {
+    must(document.querySelector('form#schedules-editor'), 'form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    )
+  })
+  expect(upsert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: 'sched_cron',
+      selector: { cron: { expr: '*/5 * * * *', timeZone: 'UTC' } },
+    }),
+  )
 })

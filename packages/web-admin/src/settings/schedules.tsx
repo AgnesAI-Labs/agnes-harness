@@ -5,11 +5,11 @@ import {
   EmptyState,
   Field,
   Icon,
-  IconButton,
   ListRow,
-  Menu,
+  MetaText,
   SettingsDetails,
   SettingsInput,
+  SettingsList,
   SettingsPageActions,
   SettingsPageDescription,
   SettingsSelect,
@@ -17,10 +17,12 @@ import {
   SettingsTextArea,
   SettingsToolbar,
   StateSwitch,
+  StatusDot,
   Tag,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AUTOMATION_NAMESPACE, automationCatalog } from './automation-locale.js'
 import { useSettingsOverlay } from './overlay.js'
 
@@ -46,6 +48,63 @@ type ScheduleRow = {
 
 const KINDS = ['at', 'every_seconds', 'daily', 'weekly', 'cron', 'after_seconds'] as const
 type Kind = (typeof KINDS)[number]
+/** Everyday rules, in the order the form offers them; a Cron expression is an advanced option. */
+const COMMON_KINDS = ['daily', 'weekly', 'at', 'after_seconds', 'every_seconds'] as const
+type Text = (key: string, vars?: Record<string, string | number>) => string
+
+/** Reminders run in this computer's time zone unless the user names another one. */
+export function localTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+const moment = (value: number | string) => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleString(document.documentElement.lang || 'en', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function duration(seconds: number, ux: Text): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return String(seconds)
+  if (seconds % 3600 === 0) return ux('hours', { count: seconds / 3600 })
+  if (seconds % 60 === 0) return ux('minutes', { count: seconds / 60 })
+  return ux('seconds', { count: seconds })
+}
+
+/** A schedule's rule in words: "Daily 09:00", "Weekly Fri 17:30", "Every 30 minutes". */
+export function describeSchedule(selector: Record<string, unknown>, t: Text, ux: Text): string {
+  const kind = KINDS.find((item) => item in selector)
+  if (!kind) return ''
+  const value = selector[kind]
+  const fields = (value && typeof value === 'object' ? value : {}) as {
+    time?: string
+    weekdays?: number[]
+    expr?: string
+  }
+  if (kind === 'daily') return `${t('schedulesKind.daily')} ${fields.time ?? ''}`.trim()
+  if (kind === 'weekly')
+    return [
+      t('schedulesKind.weekly'),
+      (fields.weekdays ?? []).map((day) => t(`schedulesDay.${day}`)).join(ux('listSeparator')),
+      fields.time,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  if (kind === 'cron') return `${t('schedulesKind.cron')} ${fields.expr ?? ''}`.trim()
+  if (kind === 'at') return `${t('schedulesKind.at')} ${moment(String(value))}`
+  return ux(kind === 'every_seconds' ? 'ruleEvery' : 'ruleAfter', { duration: duration(Number(value), ux) })
+}
+
+/** A value typed for one kind of rule rarely fits another; switching kinds starts from a sensible one. */
+function whenFor(kind: Kind, current: string): string {
+  if (kind === 'daily' || kind === 'weekly') return /^\d{1,2}:\d{2}$/.test(current) ? current : '09:00'
+  if (kind === 'every_seconds' || kind === 'after_seconds') return /^\d+$/.test(current) ? current : '3600'
+  return /^\d{4}-/.test(current) ? current : ''
+}
 
 function isRow(value: unknown): value is ScheduleRow {
   if (!value || typeof value !== 'object') return false
@@ -73,8 +132,21 @@ function selectorOf(
   return zone ? { cron: { expr: cron, timeZone: zone } } : { cron: { expr: cron } }
 }
 
-export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(key: string): string }) {
+export function SchedulesPage({
+  api,
+  t,
+  actionsHost,
+}: {
+  api?: SchedulesApi | undefined
+  t(key: string): string
+  /**
+   * Where the page that hosts this list wants its primary action. Without one, the action and the
+   * one-line description go to the enclosing settings page header.
+   */
+  actionsHost?: HTMLElement | null | undefined
+}) {
   const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
+  const zoneDefault = localTimeZone()
   const alive = useRef(true)
   const epoch = useRef(0)
   const [loading, setLoading] = useState(false)
@@ -91,7 +163,8 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
   const [prompt, setPrompt] = useState('')
   const [kind, setKind] = useState<Kind>('daily')
   const [when, setWhen] = useState('09:00')
-  const [zone, setZone] = useState('UTC')
+  const [zone, setZone] = useState(zoneDefault)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [weekdays, setWeekdays] = useState<number[]>([1])
   const [cron, setCron] = useState('0 9 * * 1-5')
   useSettingsOverlay(formOpen || !!pending)
@@ -165,30 +238,40 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
       if (alive.current) setBusy(false)
     }
   }
+  const create = (
+    <Button
+      appearance="primary"
+      icon={<Icon name="plus" size={16} />}
+      data-testid="schedules-new"
+      disabled={!api || !sessionKey || busy}
+      disabledReason={t('schedulesOpenSession')}
+      onClick={() => {
+        setEditing(undefined)
+        setTitle('')
+        setPrompt('')
+        setKind('daily')
+        setWhen('09:00')
+        setZone(zoneDefault)
+        setWeekdays([1])
+        setCron('0 9 * * 1-5')
+        setAdvancedOpen(false)
+        setFormOpen(true)
+      }}
+    >
+      {ux('newSchedule')}
+    </Button>
+  )
+  const cronMode = kind === 'cron'
   return (
-    <section data-testid="schedules-page">
-      <SettingsPageActions>
-        <Button
-          appearance="primary"
-          data-testid="schedules-new"
-          disabled={!api || !sessionKey || busy}
-          disabledReason={t('schedulesOpenSession')}
-          onClick={() => {
-            setEditing(undefined)
-            setTitle('')
-            setPrompt('')
-            setKind('daily')
-            setWhen('09:00')
-            setZone('UTC')
-            setWeekdays([1])
-            setCron('0 9 * * 1-5')
-            setFormOpen(true)
-          }}
-        >
-          {ux('newSchedule')}
-        </Button>
-      </SettingsPageActions>
-      <SettingsPageDescription>{ux('schedulesIntro')}</SettingsPageDescription>
+    <section data-testid="schedules-page" className="automation-panel">
+      {actionsHost === undefined ? (
+        <>
+          <SettingsPageActions>{create}</SettingsPageActions>
+          <SettingsPageDescription>{ux('schedulesIntro')}</SettingsPageDescription>
+        </>
+      ) : (
+        actionsHost && createPortal(create, actionsHost)
+      )}
       {loading && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {!api && (
         <SettingsState tone="error" data-testid="schedules-error">
@@ -266,6 +349,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           </>
         }
       >
+        <p className="automation-dialog-lead">{ux('formLead')}</p>
         <form
           id="schedules-editor"
           aria-busy={busy}
@@ -292,41 +376,51 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
               onChange={(event) => setPrompt(event.target.value)}
             />
           </Field>
-          <Field label={t('schedulesKind')}>
-            <SettingsSelect
-              data-testid="schedules-kind"
-              value={kind}
-              onChange={(event) => setKind(event.target.value as Kind)}
+          {!cronMode && (
+            <Field label={ux('when')}>
+              <SettingsSelect
+                data-testid="schedules-kind"
+                value={kind}
+                onChange={(event) => {
+                  const next = event.target.value as Kind
+                  setKind(next)
+                  setWhen((current) => whenFor(next, current))
+                }}
+              >
+                {COMMON_KINDS.map((item) => (
+                  <option key={item} value={item}>
+                    {t(`schedulesKind.${item}`)}
+                  </option>
+                ))}
+              </SettingsSelect>
+            </Field>
+          )}
+          {!cronMode && (
+            <Field
+              label={
+                kind === 'at'
+                  ? ux('whenAt')
+                  : kind === 'every_seconds' || kind === 'after_seconds'
+                    ? ux('whenSeconds')
+                    : t('schedulesWhen')
+              }
             >
-              {KINDS.map((item) => (
-                <option key={item} value={item}>
-                  {t(`schedulesKind.${item}`)}
-                </option>
-              ))}
-            </SettingsSelect>
-          </Field>
-          {kind !== 'cron' && (
-            <Field label={t('schedulesWhen')}>
               <SettingsInput
                 data-testid="schedules-when"
+                {...(kind === 'daily' || kind === 'weekly'
+                  ? { type: 'time' }
+                  : kind === 'at'
+                    ? { placeholder: ux('whenAtExample') }
+                    : { type: 'number', min: 1, inputMode: 'numeric' as const })}
                 value={when}
                 onChange={(event) => setWhen(event.target.value)}
               />
             </Field>
           )}
-          {(kind === 'daily' || kind === 'weekly' || kind === 'cron') && (
-            <Field label={t('schedulesZone')}>
-              <SettingsInput
-                data-testid="schedules-zone"
-                value={zone}
-                onChange={(event) => setZone(event.target.value)}
-              />
-            </Field>
-          )}
           {kind === 'weekly' && (
-            <fieldset data-testid="schedules-weekdays">
+            <fieldset data-testid="schedules-weekdays" className="automation-weekdays">
               <legend>{t('schedulesWeekdays')}</legend>
-              {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+              {[1, 2, 3, 4, 5, 6, 0].map((day) => (
                 <label key={day} htmlFor={`schedule-weekday-${day}`}>
                   <StateSwitch
                     id={`schedule-weekday-${day}`}
@@ -345,15 +439,47 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
               ))}
             </fieldset>
           )}
-          {kind === 'cron' && (
-            <Field label={t('schedulesCron')}>
+          {/* Time zone and Cron are for the few who need them: collapsed, with the value in effect shown. */}
+          <SettingsDetails
+            card
+            title={ux('advanced')}
+            summary={cronMode ? `${t('schedulesKind.cron')} ${cron}` : zone}
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            data-testid="schedules-advanced"
+          >
+            <Field label={t('schedulesZone')} hint={ux('zoneHelp')}>
               <SettingsInput
-                data-testid="schedules-cron"
-                value={cron}
-                onChange={(event) => setCron(event.target.value)}
+                data-testid="schedules-zone"
+                disabled={kind !== 'daily' && kind !== 'weekly' && kind !== 'cron'}
+                value={zone}
+                onChange={(event) => setZone(event.target.value)}
               />
             </Field>
-          )}
+            <label className="agnes-settings-checkbox" htmlFor="schedules-cron-mode">
+              <StateSwitch
+                id="schedules-cron-mode"
+                testId="schedules-cron-mode"
+                label={ux('useCron')}
+                disabled={busy}
+                checked={cronMode}
+                onToggle={(checked) => {
+                  setKind(checked ? 'cron' : 'daily')
+                  if (!checked) setWhen((current) => whenFor('daily', current))
+                }}
+              />
+              {ux('useCron')}
+            </label>
+            {cronMode && (
+              <Field label={t('schedulesCron')}>
+                <SettingsInput
+                  data-testid="schedules-cron"
+                  value={cron}
+                  onChange={(event) => setCron(event.target.value)}
+                />
+              </Field>
+            )}
+          </SettingsDetails>
         </form>
         {error !== undefined && <SettingsState tone="error">{t('schedulesError')}</SettingsState>}
       </Dialog>
@@ -375,85 +501,125 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           description={t('schedulesHelp')}
         />
       )}
-      <div className="agnes-settings-list">
-        {rows.map((row) => (
-          <ListRow
-            key={row.id}
-            data-testid="schedules-row"
-            icon={<Icon name="clock" size={20} />}
-            title={row.title}
-            onOpen={() => {
-              setFormOpen(true)
-              setEditing(row.id)
-              setTitle(row.title)
-              setPrompt(row.prompt)
-              const selected = KINDS.find((item) => item in row.selector)
-              if (selected) {
-                setKind(selected)
-                const value = row.selector[selected]
-                if (value && typeof value === 'object') {
-                  const fields = value as {
-                    time?: string
-                    timeZone?: string
-                    weekdays?: number[]
-                    expr?: string
+      {rows.length > 0 && (
+        <SettingsList>
+          {rows.map((row) => {
+            const live = row.status === 'active'
+            return (
+              <ListRow
+                key={row.id}
+                data-testid="schedules-row"
+                data-status={row.status}
+                icon={<Icon name="clock" size={16} />}
+                title={row.title}
+                description={describeSchedule(row.selector, t, ux)}
+                onOpen={() => {
+                  setFormOpen(true)
+                  setEditing(row.id)
+                  setTitle(row.title)
+                  setPrompt(row.prompt)
+                  const selected = KINDS.find((item) => item in row.selector)
+                  let rowZone = zoneDefault
+                  if (selected) {
+                    setKind(selected)
+                    const value = row.selector[selected]
+                    if (value && typeof value === 'object') {
+                      const fields = value as {
+                        time?: string
+                        timeZone?: string
+                        weekdays?: number[]
+                        expr?: string
+                      }
+                      rowZone = fields.timeZone ?? zoneDefault
+                      setWhen(fields.time ?? '09:00')
+                      setWeekdays(fields.weekdays ?? [1])
+                      setCron(fields.expr ?? '0 9 * * 1-5')
+                    } else setWhen(String(value ?? ''))
                   }
-                  setWhen(fields.time ?? '09:00')
-                  setZone(fields.timeZone ?? 'UTC')
-                  setWeekdays(fields.weekdays ?? [1])
-                  setCron(fields.expr ?? '0 9 * * 1-5')
-                } else setWhen(String(value ?? ''))
-              }
-            }}
-            status={
-              row.status !== 'paused' && row.status !== 'failed' ? undefined : (
-                <Tag tone={row.status === 'failed' ? 'bad' : 'warn'}>
-                  {t(`schedulesStatus.${row.status}`)}
-                </Tag>
-              )
-            }
-            actions={
-              row.status === 'active' ? (
-                <Menu
-                  label={ux('actions')}
-                  trigger={
-                    <IconButton name="ellipsis" label={ux('actions')} data-testid="schedules-archive" />
-                  }
-                  items={[
-                    {
-                      id: 'archive',
-                      label: t('schedulesArchive'),
-                      danger: true,
-                      disabled: busy,
-                      onSelect: () => {
-                        setError(undefined)
-                        setPending(row.id)
-                      },
-                    },
-                  ]}
-                />
-              ) : undefined
-            }
-          >
-            <span data-testid="schedules-next">
-              {t('schedulesNext')}:{' '}
-              {row.nextRunAt === null
-                ? t('schedulesNone')
-                : new Date(row.nextRunAt).toLocaleString(document.documentElement.lang || 'en')}
-            </span>
-            <SettingsDetails title={t('schedulesHistory')} data-testid="schedules-history">
-              <ul>
-                {row.deliveries.map((delivery) => (
-                  <li key={`${delivery.at}:${delivery.seq ?? ''}`}>
-                    {new Date(delivery.at).toLocaleString(document.documentElement.lang || 'en')}
-                    {delivery.reason ? ` · ${t('schedulesDeliveryIssue')}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </SettingsDetails>
-          </ListRow>
-        ))}
-      </div>
+                  setZone(rowZone)
+                  // What differs from the defaults is shown, not left for the user to find.
+                  setAdvancedOpen(selected === 'cron' || rowZone !== zoneDefault)
+                }}
+                meta={
+                  <span data-testid="schedules-next">
+                    {t('schedulesNext')}:{' '}
+                    {row.nextRunAt === null ? t('schedulesNone') : moment(row.nextRunAt)}
+                  </span>
+                }
+                status={
+                  row.status === 'failed' || row.status === 'paused' ? (
+                    <Tag tone={row.status === 'failed' ? 'bad' : 'warn'}>
+                      {t(`schedulesStatus.${row.status}`)}
+                    </Tag>
+                  ) : live ? (
+                    <span className="automation-status">
+                      <StatusDot tone="success" />
+                      {t('schedulesStatus.active')}
+                    </span>
+                  ) : (
+                    <MetaText>
+                      {t(`schedulesStatus.${row.status === 'ended' ? 'completed' : row.status}`)}
+                    </MetaText>
+                  )
+                }
+                actions={
+                  <>
+                    {scope === 'all' && row.sessionKey !== sessionKey && (
+                      <Button
+                        size="small"
+                        appearance="ghost"
+                        data-testid="schedules-session"
+                        href={`/?session=${encodeURIComponent(row.sessionKey)}`}
+                      >
+                        {ux('openSession')}
+                      </Button>
+                    )}
+                    {live && (
+                      <Button
+                        size="small"
+                        appearance="ghost"
+                        data-testid="schedules-archive"
+                        disabled={busy}
+                        aria-label={ux('archiveLabel', { title: row.title })}
+                        onClick={() => {
+                          setError(undefined)
+                          setPending(row.id)
+                        }}
+                      >
+                        {t('schedulesArchive')}
+                      </Button>
+                    )}
+                  </>
+                }
+              >
+                {row.deliveries.length > 0 && (
+                  <SettingsDetails
+                    compact
+                    title={ux('historyCount', { count: row.deliveries.length })}
+                    data-testid="schedules-history"
+                  >
+                    <ul className="automation-history">
+                      {row.deliveries.map((delivery) => (
+                        <li
+                          key={`${delivery.at}:${delivery.seq ?? ''}`}
+                          data-failed={delivery.reason ? true : undefined}
+                        >
+                          <Icon name={delivery.reason ? 'x' : 'check'} size={16} />
+                          {moment(delivery.at)}
+                          <MetaText>
+                            {delivery.reason ? t('schedulesDeliveryIssue') : t('schedulesStatus.fired')}
+                          </MetaText>
+                        </li>
+                      ))}
+                    </ul>
+                  </SettingsDetails>
+                )}
+              </ListRow>
+            )
+          })}
+        </SettingsList>
+      )}
+      {rows.length > 0 && <p className="automation-note">{ux('missedNote')}</p>}
       <Dialog
         focusable={{ focusTriggerAfterClose: false }}
         scrollLock={false}

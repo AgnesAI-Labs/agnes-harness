@@ -1,18 +1,29 @@
+import { AUTOMATION_NAMESPACE, automationCatalog } from '@agnes/web-admin/settings/automation-locale'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { type SchedulesApi, SchedulesPage } from '@agnes/web-admin/settings/schedules'
 import { TriggersPanel } from '@agnes/web-admin/settings/triggers'
-import type { UiExtensionContext } from '@agnes/web-client'
+import { homeNavigation, type UiExtensionContext } from '@agnes/web-client'
 import { Tabs, useUiText } from '@agnes/web-ui'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { canEffect, useHomeAdmin } from './admin-api.js'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 
-/** Scheduled tasks and triggers. */
+type AutomationTab = 'schedules' | 'triggers'
+const tabOf = (selection: unknown): AutomationTab =>
+  (selection as { tab?: unknown } | undefined)?.tab === 'triggers' ? 'triggers' : 'schedules'
+
+/**
+ * 自动化: what happens by itself. Scheduled tasks continue a session at a set time; triggers start
+ * one when another system sends an event. The tab is part of the page's address.
+ */
 export function AutomationPage({ context }: { context: UiExtensionContext }) {
   const data = context.data as HomePageData
   const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
+  const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
   const admin = useHomeAdmin()
+  // The panel that is showing puts its "new" button in the page header.
+  const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null)
   const schedules = useMemo<SchedulesApi>(
     () => ({
       list: (params) => data.call('_agnes/v1/schedules.list', params),
@@ -22,28 +33,30 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
     }),
     [data],
   )
-  const tab = (context.selection as { tab?: unknown } | undefined)?.tab
+  const tab = tabOf(context.selection)
   return (
     <HomePageFrame
       id="automation"
       title={context.t('home.entry.automation')}
-      description={context.t('home.automation.description')}
+      description={ux('pageDescription')}
+      actions={<div className="home-page-action-slot" ref={setActionsHost} />}
+      tabs={
+        <Tabs
+          activeKey={tab}
+          aria-label={ux('tabs')}
+          onChange={(key) => homeNavigation.open('automation', { tab: key })}
+          items={[
+            { key: 'schedules', label: ux('tabSchedules') },
+            { key: 'triggers', label: ux('tabTriggers') },
+          ]}
+        />
+      }
     >
-      <Tabs
-        defaultActiveKey={tab === 'triggers' ? 'triggers' : 'schedules'}
-        items={[
-          {
-            key: 'schedules',
-            label: context.t('home.automation.schedules'),
-            children: <SchedulesPage api={schedules} t={t} />,
-          },
-          {
-            key: 'triggers',
-            label: context.t('home.automation.triggers'),
-            children: <TriggersPanel canSave={canEffect(admin, 'packages.activate')} />,
-          },
-        ]}
-      />
+      {tab === 'schedules' ? (
+        <SchedulesPage api={schedules} t={t} actionsHost={actionsHost} />
+      ) : (
+        <TriggersPanel canSave={canEffect(admin, 'packages.activate')} actionsHost={actionsHost} />
+      )}
     </HomePageFrame>
   )
 }

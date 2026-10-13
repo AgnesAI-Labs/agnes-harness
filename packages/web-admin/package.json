@@ -23,6 +23,7 @@
     "./provider-picker": "./src/provider-picker.ts",
     "./settings": "./src/settings.ts",
     "./settings/api": "./src/settings/api.ts",
+    "./settings/automation-locale": "./src/settings/automation-locale.ts",
     "./settings/child-engines": "./src/settings/child-engines.tsx",
     "./settings/choices": "./src/settings/choices.tsx",
     "./settings/config-schemas": "./src/settings/config-schemas.ts",

@@ -262,4 +262,108 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
+
+  /* ── Automation ─────────────────────────────────────────────────────────────
+   One column of parts under the page tabs: filters, a grouped list, a quiet note. */
+  .home-page-action-slot {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .home-page-action-slot:empty {
+    display: none;
+  }
+  .automation-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .automation-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .automation-note,
+  .automation-dialog-lead {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .automation-dialog-lead {
+    margin-bottom: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .automation-history {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding: var(--s8) 0 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .automation-history > li {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .automation-history > li > svg {
+    flex: 0 0 auto;
+    color: var(--agnes-status-success-text);
+  }
+  .automation-history > li[data-failed] > svg {
+    color: var(--agnes-status-danger-text);
+  }
+  /* Short fields sit two to a row; one to a row where the dialog is narrow. */
+  .automation-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: var(--s12) var(--s16);
+    align-items: start;
+  }
+  .automation-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .automation-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .automation-weekdays > legend {
+    padding: 0;
+    margin-bottom: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .automation-weekdays > label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    font-size: var(--font-size-sm);
+  }
+  /* A delivery's outcome mark: colour repeats what the row's text already says. */
+  .automation-mark {
+    display: inline-grid;
+    place-items: center;
+    color: var(--agnes-text-tertiary);
+  }
+  .automation-mark[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+  }
+  .automation-mark[data-tone="bad"] {
+    color: var(--agnes-status-danger-text);
+  }
 }
