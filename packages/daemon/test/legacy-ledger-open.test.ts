@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { appendRowAsOlderBuild } from '@agnes/host/testkit'
 import { describe, expect, it } from 'vitest'
 import { LocalEndpoint } from '../src/local/endpoint.js'
@@ -56,6 +58,47 @@ describe('opening a session an older build wrote', () => {
         message: 'SEMANTIC_REJECTED',
         data: { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' },
       })
+      await again.close()
+    } finally {
+      await h.close()
+    }
+  })
+})
+
+describe('opening a session a newer build wrote', () => {
+  it('answers a ledger in a newer format with a typed refusal and leaves it as it was', async () => {
+    const h = await openTestHost()
+    const first = h.endpoint({ pollMs: 5 })
+    try {
+      await first.handle(initialize)
+      await h.addWorkspace(h.dataDir)
+      const created = (await first.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const sessionId = created.result.sessionId
+      await first.close()
+      const db = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+      db.prepare('UPDATE sessions SET format_version = 3 WHERE session_key = ?').run(sessionId)
+      const rows = () => db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_key = ?').get(sessionId)
+      const before = rows()
+
+      const again = h.endpoint({ pollMs: 5 })
+      await again.handle(initialize)
+      const loaded = (await again.handle({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'session/load',
+        params: { sessionId, cwd: h.dataDir, mcpServers: [] },
+      })) as { error?: { message: string; data: Record<string, unknown> } }
+      expect(loaded.error).toMatchObject({
+        message: 'SEMANTIC_REJECTED',
+        data: { code: 'NEWER_LEDGER_FORMAT', reason: 'newer-ledger-format' },
+      })
+      expect(rows()).toEqual(before)
+      db.close()
       await again.close()
     } finally {
       await h.close()

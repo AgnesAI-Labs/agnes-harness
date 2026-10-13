@@ -128,7 +128,7 @@ export type CallOptions = {
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
-  _meta?: { agnes?: { agnesVersion?: string } }
+  _meta?: { agnes?: { agnesVersion?: string; attachmentRefs?: unknown } }
 }
 
 function knownMethod(method: string): method is MethodName {
@@ -166,6 +166,7 @@ export class Client {
   private readonly sessionTable = new Map<string, Session>()
   private readonly reconnector: Reconnector
   private brandingCache: BrandingCache | null = null
+  private serverAttachmentRefs = false
   // Latched by a `daemon.notice{kind:'shutting_down'}`: the next transport close is the
   // daemon going away on purpose, not a drop to retry through.
   shuttingDown = false
@@ -479,6 +480,11 @@ export class Client {
     if (sessionId) this.sessionTable.get(sessionId)?.onNotification(method, p)
   }
 
+  /** What the server said it supports at the last `initialize`; all false before one completes. */
+  get serverCapabilities(): Readonly<{ attachmentRefs: boolean }> {
+    return { attachmentRefs: this.serverAttachmentRefs }
+  }
+
   async clientId(): Promise<string> {
     this.clientIdCache ??= await this.journal.clientId()
     return this.clientIdCache
@@ -520,7 +526,8 @@ export class Client {
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          _meta: { [META_KEY]: { capabilities: { permission: true } } },
+          // attachmentRefs: this client reads attachment reference blocks as they are stored.
+          _meta: { [META_KEY]: { capabilities: { permission: true, attachmentRefs: 1 } } },
         },
       }
       const metadata: Record<string, unknown> = { clientId }
@@ -540,6 +547,7 @@ export class Client {
         abort.signal,
       )
       if (r.protocolVersion !== 1) throw new ProtocolViolation('unsupported negotiated protocol version')
+      this.serverAttachmentRefs = r._meta?.agnes?.attachmentRefs === 1
       return {
         agnesVersion: r._meta?.agnes?.agnesVersion ?? 'unknown',
         capabilities: r.agentCapabilities ?? {},

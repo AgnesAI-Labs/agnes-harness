@@ -333,8 +333,12 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     insertSession: db.prepare(
       'INSERT OR IGNORE INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
     ),
+    // A child reads its parent's rows up to the boundary, so it starts at the parent's format.
     insertChildSession: db.prepare(
-      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
+      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) SELECT ?, format_version, session_key, ?, ? FROM sessions WHERE session_key = ?',
+    ),
+    raiseFormat: db.prepare(
+      'UPDATE sessions SET format_version = MAX(format_version, ?) WHERE session_key = ?',
     ),
     lastSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE session_key = ?'),
     ledgerStats: db.prepare(
@@ -491,9 +495,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
         const parent = parentOf(key)
+        const row = q.session.get(key) as { format_version: number }
         return {
           lastSeq: lastSeq(key),
-          formatVersion: 1,
+          formatVersion: Number(row.format_version),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
         }
@@ -558,6 +563,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           }
           seqs.push(seq)
         }
+        if (c.formatVersion) q.raiseFormat.run(c.formatVersion, key)
         if (c.opState) {
           const lane = keyBytes(c.opState.lane)
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
@@ -627,7 +633,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey })
         }
         try {
-          q.insertChildSession.run(childKey, parentKey, boundarySeq, new Date(clock()).toISOString())
+          q.insertChildSession.run(childKey, boundarySeq, new Date(clock()).toISOString(), parentKey)
         } catch {
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey })
         }

@@ -227,6 +227,8 @@ const SESSION_DEFS: Record<string, TSchema> = {
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
   OmittedData: SessionGen.OmittedData,
+  AttachmentRef: SessionGen.AttachmentRef,
+  AttachmentThumbnail: SessionGen.AttachmentThumbnail,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
   SessionStart: SessionGen.SessionStart,
@@ -1200,6 +1202,31 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { type: 'file', mimeType: 'application/zip', dataOmitted: { bytes: 1 } }, // a lean file keeps its name
       { type: 'file', mimeType: '', name: 'a.zip', dataOmitted: { bytes: 1 } }, // boundary: lean file mimeType minLength:1
       { type: 'text', text: 't', dataOmitted: { bytes: 1 } }, // only image and file have a lean form
+      { type: 'image', mimeType: 'image/png', attachment: { sha256: rep64, bytes: 1 }, width: 1 }, // a reference image needs both dimensions
+      { type: 'image', mimeType: 'image/gif', attachment: { sha256: rep64, bytes: 1 }, width: 1, height: 1 }, // reference images are PNG or JPEG only
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        attachment: { sha256: rep64, bytes: 1 },
+        width: 65536,
+        height: 1,
+      }, // boundary: width maximum:65535
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        data: 'x',
+        attachment: { sha256: rep64, bytes: 1 },
+        width: 1,
+        height: 1,
+      }, // inline and reference at once
+      { type: 'file', mimeType: 'application/zip', attachment: { sha256: rep64, bytes: 1 } }, // a referenced file keeps its name
+      {
+        type: 'file',
+        mimeType: 'application/zip',
+        name: 'a.zip',
+        attachment: { sha256: rep64, bytes: 1 },
+        dataOmitted: { bytes: 1 },
+      }, // reference and lean at once
     ],
     note: 'valid reuses .data.content[0] from the user/message fixture; invalid are hand-written (no separate illegal-ContentBlock fixture)',
   },
@@ -1213,6 +1240,31 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { bytes: 1, extra: true }, // additionalProperties:false
     ],
     note: 'the lean read view of an inline attachment; no fixture writes it (append refuses it), so every sample is hand-written',
+  },
+  AttachmentRef: {
+    valid: { sha256: rep64, bytes: 9007199254740991 },
+    invalid: [
+      { sha256: 'A'.repeat(64), bytes: 1 }, // pattern: lowercase hex only
+      { sha256: `${rep64}0`, bytes: 1 }, // pattern: exactly 64 digits
+      { sha256: rep64, bytes: -1 }, // boundary: minimum:0
+      { sha256: rep64, bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
+      { sha256: rep64, bytes: 1.5 }, // integer
+      { sha256: rep64 }, // required
+      { sha256: rep64, bytes: 1, extra: true }, // additionalProperties:false
+    ],
+    note: 'a stored attachment named by digest; hand-written, as no fixture predates reference blocks',
+  },
+  AttachmentThumbnail: {
+    valid: { sha256: rep64, bytes: 262144, width: 320, height: 1 },
+    invalid: [
+      { sha256: rep64, bytes: 0, width: 1, height: 1 }, // boundary: bytes minimum:1
+      { sha256: rep64, bytes: 262145, width: 1, height: 1 }, // boundary: bytes maximum:262144
+      { sha256: rep64, bytes: 1, width: 321, height: 1 }, // boundary: width maximum:320
+      { sha256: rep64, bytes: 1, width: 1, height: 0 }, // boundary: height minimum:1
+      { sha256: rep64, bytes: 1, width: 1 }, // required
+      { sha256: 'x', bytes: 1, width: 1, height: 1 }, // pattern
+    ],
+    note: 'the browser-made preview of a reference image; hand-written, as no fixture predates reference blocks',
   },
   ToolCallState: {
     valid: toolCallStateOk,
@@ -4150,6 +4202,42 @@ function assertParity(target: ParityTarget, scope: string, name: string, x: unkn
   }
   expect(actual).toEqual({ ajv: expected, typebox: expected })
 }
+
+describe('attachment reference blocks ajv ↔ TypeBox parity', () => {
+  // ContentBlock registers one valid sample, so the two reference forms are pinned here as accepted.
+  it.each([
+    {
+      type: 'image',
+      mimeType: 'image/png',
+      attachment: { sha256: rep64, bytes: 1234 },
+      width: 640,
+      height: 480,
+    },
+    {
+      type: 'image',
+      mimeType: 'image/jpeg',
+      name: 'shot.jpg',
+      attachment: { sha256: rep64, bytes: 0 },
+      width: 65535,
+      height: 1,
+      thumbnail: { sha256: rep64, bytes: 1, width: 320, height: 240 },
+    },
+    {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'a.zip',
+      attachment: { sha256: rep64, bytes: 9007199254740991 },
+    },
+  ])('ContentBlock accepts the reference form %j', (block) => {
+    assertParity(
+      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
+      SESSION_ID,
+      'ContentBlock',
+      block,
+      true,
+    )
+  })
+})
 
 describe('lean attachment blocks ajv ↔ TypeBox parity', () => {
   // ContentBlock registers one valid sample, so the two lean forms are pinned here as accepted.

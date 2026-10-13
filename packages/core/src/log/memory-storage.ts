@@ -57,6 +57,8 @@ type Book = {
   parent?: { key: SessionKey; boundarySeq: Seq }
   /** Program-counter cells written as cells, by lane. A child never sees its parent's. */
   opCells?: Map<string, RegisterRow>
+  /** The ledger format, as `sessions.format_version` holds it; absent means 1. */
+  formatVersion?: number
 }
 
 /**
@@ -223,7 +225,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     b.opened = true
     return {
       lastSeq: this.lastSeq(b),
-      formatVersion: 1,
+      formatVersion: b.formatVersion ?? 1,
       ...(created ? { created: true } : {}),
       ...(b.parent ? { parent: b.parent } : {}),
     }
@@ -264,6 +266,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       seqs.push(e.seq)
     }
     b.events.push(...stamped)
+    if (tx.formatVersion) b.formatVersion = Math.max(b.formatVersion ?? 1, tx.formatVersion)
     for (const entry of tx.integrity ?? []) {
       const { seq: entrySeq, ...metadata } = entry
       b.integrity.set(entrySeq, metadata)
@@ -360,6 +363,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       registers: new RegisterMap(),
       opened: true,
       parent: { key: parentKey, boundarySeq },
+      ...(parent.formatVersion ? { formatVersion: parent.formatVersion } : {}),
     })
   }
 
@@ -614,6 +618,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       integrity: new Map(),
       registers: new RegisterMap(),
       parent: { key: input.parentKey, boundarySeq: input.boundarySeq },
+      ...(parent.formatVersion ? { formatVersion: parent.formatVersion } : {}),
     })
 
     let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId

@@ -16,6 +16,7 @@ import {
   type ComputerUsePermissionsStatusResult,
   type ComputerUseStatusResult,
   type CostLedger,
+  downgradeTimeline,
   type EventEnvelope,
   type ExtUiResponseParams,
   type ParticipantListResult,
@@ -67,7 +68,7 @@ import type {
   JournalResult,
   SessionLister,
 } from '../ports.js'
-import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
+import { type Feed, type LocalContext, legacyLedgerRpcError, newerLedgerRpcError } from './acp.js'
 import { registerExportRaw } from './export-raw.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -188,6 +189,11 @@ function rememberProjection(
     if (oldest === undefined) break
     baselines.delete(oldest)
   }
+}
+
+/** A projection as this connection may see it: links and text in place of reference blocks it never declared. */
+function projectionFor<T>(connection: { capabilities: { attachmentRefs: boolean } }, value: T): T {
+  return connection.capabilities.attachmentRefs ? value : downgradeTimeline(value)
 }
 
 const UI_HISTORY_CURSOR_SECRET = randomBytes(32)
@@ -774,7 +780,9 @@ export function registerAgnes(
       try {
         await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
       } catch (error) {
-        if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        const code = (error as { code?: unknown } | null)?.code
+        if (code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        if (code === 'E_FORMAT') throw newerLedgerRpcError()
         throw error
       }
     }
@@ -846,7 +854,7 @@ export function registerAgnes(
     const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
     const current = { ...timeline, generation } as UITimeline
     rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), current)
-    return current
+    return projectionFor(c.conn, current)
   })
   ep.register('_agnes/v1/session.projectUIOpening', async (params, c) => {
     const p = params as SessionProjectUIOpeningParams
@@ -903,10 +911,12 @@ export function registerAgnes(
         timeline: { ...core.timeline, generation: entry.generation, nodes, turns },
         history,
       }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) {
+      // Measured as sent: the links and text that replace references are not the same size.
+      const sent = projectionFor(c.conn, result)
+      if (Buffer.byteLength(JSON.stringify(sent), 'utf8') <= maxBytes) {
         windowedProjectionConnections.add(c.conn)
         rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), result.timeline, 'windowed')
-        return result
+        return sent
       }
       if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
       nodes = nodes.slice(1)
@@ -990,7 +1000,8 @@ export function registerAgnes(
         startIndex,
         totalNodes: core.totalNodes,
       }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) return result
+      const sent = projectionFor(c.conn, result)
+      if (Buffer.byteLength(JSON.stringify(sent), 'utf8') <= maxBytes) return sent
       if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
       nodes = nodes.slice(1)
       startIndex += 1
@@ -1053,7 +1064,7 @@ export function registerAgnes(
       const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
       const current = { ...timeline, generation: entry.generation } as UITimeline
       rememberProjection(c.conn, key, current)
-      return { kind: 'replace', timeline: current }
+      return projectionFor(c.conn, { kind: 'replace', timeline: current })
     }
     const update = (await entry.session.projectUIPatch(
       p.after,
@@ -1064,7 +1075,7 @@ export function registerAgnes(
       if (previous.mode === 'windowed') throw projectionResyncRequired()
       const current = { ...update.timeline, generation: entry.generation } as UITimeline
       rememberProjection(c.conn, key, current)
-      return { kind: 'replace', timeline: current }
+      return projectionFor(c.conn, { kind: 'replace', timeline: current })
     }
     const patch = { ...update.patch, generation: entry.generation } as UITimelinePatch
     const windowCoordinatesValid =
@@ -1081,7 +1092,7 @@ export function registerAgnes(
       windowCoordinatesValid
     ) {
       rememberProjection(c.conn, key, patch, previous.mode)
-      return { kind: 'patch', patch }
+      return projectionFor(c.conn, { kind: 'patch', patch })
     }
     if (previous.mode === 'windowed') throw projectionResyncRequired()
     // A corrupt or incompatible optimization result never crosses the client boundary. Rebuild
@@ -1089,7 +1100,7 @@ export function registerAgnes(
     const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
     const current = { ...timeline, generation: entry.generation } as UITimeline
     rememberProjection(c.conn, key, current)
-    return { kind: 'replace', timeline: current }
+    return projectionFor(c.conn, { kind: 'replace', timeline: current })
   })
   // `cx.lister` is declared optional on `AgnesContext` only because nothing outside this package's
   // own `createLocalEndpoint` constructs one directly; that one always supplies a `RegistryLister`

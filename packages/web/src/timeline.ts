@@ -137,7 +137,9 @@ function fingerprint(node: UINode): string {
         .map((block) =>
           'data' in block
             ? `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
-            : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`,
+            : 'attachment' in block
+              ? `${block.mimeType}:ref:${block.attachment.sha256}`
+              : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`,
         )
         .join('|')
       return `${node.kind}:${node.id}:${sampledPart(body)}:${images}`

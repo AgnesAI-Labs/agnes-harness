@@ -1,10 +1,18 @@
-import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import {
+  containsAttachmentRef,
+  describeValidationErrors,
+  type ThinkingLevel,
+  validateOpState,
+} from '@agnes/protocol'
 import {
   type Clock,
   CoreError,
   type Event,
   type EventInput,
   type IdMinter,
+  LEDGER_FORMAT_ATTACHMENT_REFS,
+  LEDGER_FORMAT_VERSION,
+  ledgerFormatError,
   type PreparedEvent,
   type Seq,
   type SessionKey,
@@ -181,6 +189,8 @@ export class SessionLogImpl {
     const startedAt = performance.now()
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      // A newer build wrote rows this one cannot read faithfully; nothing is read or written.
+      if (opened.formatVersion > LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
       const replay = o.replay
@@ -240,6 +250,7 @@ export class SessionLogImpl {
   ): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      if (opened.formatVersion > LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       if (
         opened.parent?.key !== parent.key ||
         opened.parent.boundarySeq !== parent.boundarySeq ||
@@ -418,6 +429,8 @@ export class SessionLogImpl {
       this.sealCheck()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
+      // The first reference block raises the session's format in the same transaction as its row.
+      const refs = stamped.some(carriesRefs)
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)
       const claim = { ttlMs: this.o.ttlMs, expectedLastSeq: this.lastSeqValue }
       const writtenAt = this.o.clock()
@@ -428,6 +441,7 @@ export class SessionLogImpl {
           expectedWriterRunId: this.o.writerRunId,
           ...(opts.expectedRegisterSeq ? { expectedRegisterSeq: opts.expectedRegisterSeq } : {}),
           ...(op ? { opState: op } : {}),
+          ...(refs ? { formatVersion: LEDGER_FORMAT_ATTACHMENT_REFS } : {}),
           claim,
         })
       } catch (err) {
@@ -780,4 +794,17 @@ async function verifiedRange(
   if (state.lastSeq !== toSeq)
     throw new LedgerIntegrityFailure('ledger exceeds advertised sequence', { seq: state.lastSeq })
   return { state, rows }
+}
+
+/** Whether a row holds an attachment reference block: user input, directly or queued in the inbox. */
+function carriesRefs(e: { type: string; data: unknown }): boolean {
+  const data = e.data as { content?: unknown; items?: unknown } | null
+  if (!data || typeof data !== 'object') return false
+  if (e.type === 'user/message') return Array.isArray(data.content) && containsAttachmentRef(data.content)
+  if (e.type === 'inbox' && Array.isArray(data.items))
+    return data.items.some((item) => {
+      const content = (item as { content?: unknown } | null)?.content
+      return Array.isArray(content) && containsAttachmentRef(content)
+    })
+  return false
 }

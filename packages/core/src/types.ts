@@ -71,6 +71,18 @@ export class CoreError extends Error {
   }
 }
 
+/** 1: every block inline. 2: the session holds attachment reference blocks; an older reader must refuse it. */
+export const LEDGER_FORMAT_VERSION = 2
+export const LEDGER_FORMAT_ATTACHMENT_REFS = 2
+
+export function ledgerFormatError(key: string, version: unknown): CoreError {
+  return new CoreError(
+    'E_FORMAT',
+    `session ${key} was written by a newer AGH (ledger format ${String(version)}; this build reads up to ${LEDGER_FORMAT_VERSION}); upgrade AGH. Nothing was changed.`,
+    { sessionKey: key, formatVersion: version, supported: LEDGER_FORMAT_VERSION },
+  )
+}
+
 export type Disposer = () => void
 export type Clock = () => number
 

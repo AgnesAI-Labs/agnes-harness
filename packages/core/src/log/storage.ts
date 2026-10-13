@@ -78,6 +78,11 @@ export type CommitTx = {
    * the batch's last row; null removes it. A batch that carries it must carry at least one row.
    */
   opState?: OpWrite
+  /**
+   * Raises the session's ledger format to at least this value in the same transaction as `events`;
+   * never lowers it. Set on the batch that writes the first attachment reference block.
+   */
+  formatVersion?: 2
 }
 
 /** One lane's program-counter value, written as a register cell rather than as a ledger row. */

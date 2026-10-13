@@ -7,6 +7,7 @@ import {
   type QueuedActivationInvocation,
 } from '@agnes/host'
 import {
+  downgradeEvent,
   type EventEnvelope,
   fromAcpPrompt,
   type HarnessMeta,
@@ -261,7 +262,10 @@ export class Feed {
     const prefs = this.prefs()
     // An attached client that asked for raw rows only gets no ACP projection; everyone else does.
     if (!prefs || prefs.filter.acpUpdates) {
-      const updates = toSessionUpdates(e, o)
+      // ACP has no content block for an attachment reference (its image needs inline data), so
+      // every client gets the link and text here; the reference itself travels on session.event
+      // and in UI projections to a connection that declared it.
+      const updates = toSessionUpdates(downgradeEvent(e), o)
       updates.forEach((u, i) => {
         const update = { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } }
         // One row, one ledger position: only its first update carries the row's meta, so each
@@ -349,6 +353,8 @@ export function throwSessionOpenRpcError(error: unknown): never {
   // A ledger holding a row type this build no longer knows was written by an older build; it fails
   // closed, and the caller is told so rather than handed an internal error.
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+  // The reverse: a newer build wrote it in a format this one does not read. Nothing was changed.
+  if (e?.code === 'E_FORMAT') throw newerLedgerRpcError()
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
@@ -360,6 +366,11 @@ export function throwSessionOpenRpcError(error: unknown): never {
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
 export function legacyLedgerRpcError(): RpcError {
   return rpcError('SEMANTIC_REJECTED', { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' })
+}
+
+/** The refusal for a session a newer build wrote in a ledger format this one does not read; upgrade. */
+export function newerLedgerRpcError(): RpcError {
+  return rpcError('SEMANTIC_REJECTED', { code: 'NEWER_LEDGER_FORMAT', reason: 'newer-ledger-format' })
 }
 
 export function registerAcp(
@@ -447,9 +458,10 @@ export function registerAcp(
     // is InitializeMeta { auth?, clientId? } with additionalProperties:false - it has no capabilities
     // key, and reading one from there leaves permission false for every client there is.
     const declared = pocket((params as { clientCapabilities?: unknown }).clientCapabilities).capabilities as
-      | { permission?: boolean }
+      | { permission?: boolean; attachmentRefs?: unknown }
       | undefined
     c.conn.capabilities.permission = declared?.permission === true
+    c.conn.capabilities.attachmentRefs = declared?.attachmentRefs === 1
     // A label, not an identity: it never becomes principalId, and nothing buckets on it. authGate
     // has already set it from this same pocket before this handler ever runs; setting it again here
     // is a no-op on the credentialed path and the only path that reaches it when there is no gate.
@@ -461,7 +473,7 @@ export function registerAcp(
         loadSession: true,
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
-      _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list' } },
+      _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list', attachmentRefs: 1 } },
     }
   }
   // Credential verification runs before anything else `initialize` does: a failing auth.kind never

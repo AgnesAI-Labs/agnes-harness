@@ -24,6 +24,18 @@ export function storageContract(
     ).toEqual([1, 2])
     await s.close()
   })
+  it(`${name}: raises the ledger format only when a batch asks, never lowers it, and children inherit it`, async () => {
+    const s = open()
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1', formatVersion: 2 })
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(2)
+    await s.createChild('k', 3, 'child')
+    expect((await s.open('child', { writerRunId: 'r2', ttlMs: 1000 })).formatVersion).toBe(2)
+    await s.close()
+  })
   it(`${name}: stores integrity metadata beside events without exposing it in public scans`, async () => {
     const s = open()
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })

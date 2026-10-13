@@ -357,6 +357,8 @@ export type {
   ArtifactRef,
   AssistantMessage,
   AssistantOutput,
+  AttachmentRef,
+  AttachmentThumbnail,
   Billing,
   BudgetState,
   ContentBlock,
@@ -424,6 +426,7 @@ export type {
   RuntimeTargetIdentity,
   WorkerGeneration,
 } from '../gen/ts/worker.js'
+export * from './attachment-blocks.js'
 export * from './attachments.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'

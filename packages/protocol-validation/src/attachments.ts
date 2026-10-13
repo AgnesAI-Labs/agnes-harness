@@ -44,9 +44,26 @@ function decodeAttachmentSize(data: string, maxBytes: number): number {
   }
 }
 
+function validReference(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const { sha256, bytes } = value as { sha256?: unknown; bytes?: unknown }
+  return (
+    typeof sha256 === 'string' &&
+    /^[0-9a-f]{64}$/u.test(sha256) &&
+    Number.isSafeInteger(bytes) &&
+    (bytes as number) >= 0
+  )
+}
+
 /** Applies to files and images together, independently of the model's image limits. */
 export function validateUserAttachments(
-  content: readonly { type: string; data?: string; name?: string; mimeType?: string }[],
+  content: readonly {
+    type: string
+    data?: string
+    name?: string
+    mimeType?: string
+    attachment?: unknown
+  }[],
 ): void {
   const attachments = content.filter((block) => block.type === 'file' || block.type === 'image')
   if (attachments.length > USER_MESSAGE_ATTACHMENT_LIMITS.maxCount)
@@ -56,7 +73,11 @@ export function validateUserAttachments(
     )
   let total = 0
   for (const block of attachments) {
-    if (typeof block.data !== 'string')
+    // A reference names bytes already in the attachment store: it counts toward the number of
+    // attachments, never toward the inline total. Anything else must carry its bytes inline; the
+    // lean form only ever travels out of storage and is not something to submit.
+    const reference = block.attachment !== undefined
+    if (reference ? !validReference(block.attachment) : typeof block.data !== 'string')
       throw new AttachmentValidationError('ATTACHMENT_DATA', 'Attachment data must be Base64.')
     if (
       block.type === 'file' &&
@@ -71,6 +92,7 @@ export function validateUserAttachments(
         block.mimeType.length > 128)
     )
       throw new AttachmentValidationError('ATTACHMENT_NAME', 'Attachment name or MIME type is invalid.')
+    if (reference || typeof block.data !== 'string') continue
     const remaining = USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes - total
     const decodedSize =
       (block.data.length / 4) * 3 - (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)

@@ -243,7 +243,9 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
           const imageKey =
             'data' in block
               ? `${block.mimeType}:${data.length}:${data.slice(0, 16)}:${data.slice(-16)}`
-              : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`
+              : 'attachment' in block
+                ? `${block.mimeType}:ref:${block.attachment.sha256}`
+                : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`
           const occurrence = imageKeys.get(imageKey) ?? 0
           imageKeys.set(imageKey, occurrence + 1)
           return (
@@ -283,7 +285,13 @@ function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> })
   return (
     <ul className="user-message-files">
       {files.map((file) => {
-        const key = `${file.name}:${file.mimeType}:${'data' in file ? file.data.length : file.dataOmitted.bytes}`
+        const size =
+          'data' in file
+            ? file.data.length
+            : 'attachment' in file
+              ? `ref:${file.attachment.sha256}`
+              : file.dataOmitted.bytes
+        const key = `${file.name}:${file.mimeType}:${size}`
         const occurrence = occurrences.get(key) ?? 0
         occurrences.set(key, occurrence + 1)
         return (

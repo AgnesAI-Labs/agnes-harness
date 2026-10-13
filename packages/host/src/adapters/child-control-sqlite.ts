@@ -235,8 +235,9 @@ export function sqliteChildControl(
       'UPDATE child_tasks SET state = ?, state_revision = state_revision + 1 WHERE child_key = ? AND state_revision = ?',
     ),
     session: db.prepare('SELECT session_key FROM sessions WHERE session_key = ?'),
+    // A child reads its parent's rows up to the boundary, so it starts at the parent's format.
     insertChildSession: db.prepare(
-      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
+      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) SELECT ?, format_version, session_key, ?, ? FROM sessions WHERE session_key = ?',
     ),
     scope: db.prepare('SELECT * FROM budget_scopes WHERE scope_id = ?'),
     insertScope: db.prepare(
@@ -534,7 +535,7 @@ export function sqliteChildControl(
           throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })
         if (q.session.get(input.childKey))
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey: input.childKey })
-        q.insertChildSession.run(input.childKey, input.parentKey, input.boundarySeq, new Date().toISOString())
+        q.insertChildSession.run(input.childKey, input.boundarySeq, new Date().toISOString(), input.parentKey)
         let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId
         if (input.childCapMicro !== null) {
           budgetScopeId = `child:${input.childKey}`
