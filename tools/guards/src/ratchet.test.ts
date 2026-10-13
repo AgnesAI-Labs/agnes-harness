@@ -2696,8 +2696,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
-  // 2026-10-13 attachments by reference: the streaming content-addressed attachment store. Reviewed exact countLines packages/host/src 39327; no exclusions or spare allocation.
-  'packages/host/src': 39327,
+  // 2026-10-13 attachments by reference: the streaming content-addressed attachment store. Reviewed exact countLines packages/host/src 39431; no exclusions or spare allocation.
+  'packages/host/src': 39431,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

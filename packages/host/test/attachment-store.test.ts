@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { open } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +20,7 @@ import {
   attachmentDeadlineMs,
   attachmentReceiptFor,
   createAttachmentStore,
+  createAttachmentStoreInternal,
 } from '../src/attachment-store.js'
 
 const dirs: string[] = []
@@ -59,7 +71,7 @@ describe('attachment store', () => {
 
   it('reads ranges, verifies whole reads and reports corruption', async () => {
     const dataDir = fresh()
-    const store = createAttachmentStore({ dataDir, verifyOnceAtBytes: 1024 })
+    const store = createAttachmentStoreInternal({ dataDir, verifyOnceAtBytes: 1024 })
     const small = bytes(100)
     const big = bytes(4096, 7)
     const a = await store.put(small, { kind: 'user-attachment', mimeType: 'image/png' })
@@ -77,13 +89,14 @@ describe('attachment store', () => {
 
   it('verifies a large object once per process until its file identity changes', async () => {
     const dataDir = fresh()
-    const store = createAttachmentStore({ dataDir, verifyOnceAtBytes: 1024 })
+    const store = createAttachmentStoreInternal({ dataDir, verifyOnceAtBytes: 1024 })
     const big = bytes(4096, 3)
     const b = await store.put(big, { kind: 'user-attachment', mimeType: 'application/zip' })
     await store.read(b.sha256)
     const path = join(dataDir, 'artifacts', 'sha256', b.sha256.slice(0, 2), b.sha256)
-    rmSync(path)
+    // Same size, explicit different mtime: the identity changes without relying on clock resolution.
     writeFileSync(path, bytes(4096, 4))
+    utimesSync(path, new Date(1_000), new Date(1_000))
     await expect(store.read(b.sha256)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
   })
 
@@ -109,42 +122,179 @@ describe('attachment store', () => {
   it('sweeps staging files older than a day and computes deadlines', async () => {
     const dataDir = fresh()
     const store = createAttachmentStore({ dataDir })
-    await (await store.stage({ kind: 'user-attachment', mimeType: 'image/png' })).write(bytes(3))
+    const leftover = await store.stage({ kind: 'user-attachment', mimeType: 'image/png' })
+    await leftover.write(bytes(3))
     expect(await store.sweepStaging(Date.now())).toBe(0)
     expect(await store.sweepStaging(Date.now() + 25 * 60 * 60 * 1000)).toBe(1)
     expect(existsSync(join(dataDir, 'artifacts', 'staging'))).toBe(true)
     expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
+    await leftover.abort()
     expect([attachmentDeadlineMs(0), attachmentDeadlineMs(100 * 1024 * 1024)]).toEqual([10_000, 200_000])
     expect(new AttachmentStoreError('ATTACHMENT_MISSING').code).toBe('ATTACHMENT_MISSING')
   })
 
-  it('bounds a stalled write, discards the staging file and reports a timeout', async () => {
+  it('bounds a write whose handle never settles, even when closing it never settles', async () => {
     const dataDir = fresh()
-    const store = createAttachmentStore({ dataDir, deadlineMs: () => 20 })
+    const store = createAttachmentStoreInternal({ dataDir, deadlineMs: () => 20 })
     const probe = await open(join(dataDir, 'probe'), 'w')
-    const stall = vi
-      .spyOn(Object.getPrototypeOf(probe), 'write')
-      .mockImplementation(() => new Promise(() => undefined))
-    await probe.close()
+    const proto = Object.getPrototypeOf(probe)
+    const held: { handle: { close: () => Promise<void> }; close: () => Promise<void> }[] = []
+    // The first write on the staging handle never settles, and neither does closing that handle.
+    const stall = vi.spyOn(proto, 'write').mockImplementation(function (this: {
+      close: () => Promise<void>
+    }) {
+      if (!held.some((entry) => entry.handle === this)) {
+        held.push({ handle: this, close: this.close })
+        this.close = () => new Promise(() => undefined)
+      }
+      return new Promise(() => undefined)
+    })
     try {
       const staging = await store.stage({ kind: 'user-attachment', mimeType: 'application/zip' })
+      expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toHaveLength(1)
       await expect(staging.write(bytes(16))).rejects.toMatchObject({ code: 'ATTACHMENT_TIMEOUT' })
       await expect(staging.write(bytes(1))).rejects.toMatchObject({ code: 'ATTACHMENT_STAGE_CLOSED' })
       expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
     } finally {
       stall.mockRestore()
+      for (const entry of held) {
+        entry.handle.close = entry.close
+        await entry.close()
+      }
+      await probe.close()
     }
   })
 
-  it('reports an unreadable user attachment marker as corrupt', async () => {
+  it('orders un-awaited writes and enforces maxBytes across queued writes', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const parts = [bytes(700_000, 1), bytes(300_000, 2), bytes(500_000, 3), bytes(1, 4)]
+    const whole = new Uint8Array(parts.reduce((n, part) => n + part.length, 0))
+    parts.reduce((at, part) => {
+      whole.set(part, at)
+      return at + part.length
+    }, 0)
+    const staging = await store.stage({ kind: 'user-attachment', mimeType: 'application/zip' })
+    const pending = parts.map((part) => staging.write(part))
+    await Promise.all(pending)
+    const object = await staging.commit(sha(whole))
+    expect(object).toEqual({ sha256: sha(whole), bytes: whole.length })
+    expect(await store.read(object.sha256)).toEqual(whole)
+
+    const capped = await store.stage({ kind: 'user-attachment', mimeType: 'image/png', maxBytes: 10 })
+    const settled = Promise.allSettled([capped.write(bytes(6)), capped.write(bytes(6))])
+    const [first, second] = await settled
+    expect(first).toMatchObject({ status: 'rejected', reason: { code: 'ATTACHMENT_STAGE_CLOSED' } })
+    expect(second).toMatchObject({ status: 'rejected', reason: { code: 'ATTACHMENT_TOO_LARGE' } })
+    expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
+  })
+
+  it('rejects writes after commit starts and a second concurrent commit', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const body = bytes(1000)
+    const staging = await store.stage({ kind: 'user-attachment', mimeType: 'image/png' })
+    await staging.write(body)
+    const committed = staging.commit()
+    await expect(staging.write(bytes(5))).rejects.toMatchObject({ code: 'ATTACHMENT_STAGE_CLOSED' })
+    await expect(staging.commit()).rejects.toMatchObject({ code: 'ATTACHMENT_STAGE_CLOSED' })
+    expect(await committed).toEqual({ sha256: sha(body), bytes: body.length })
+    expect(await store.read(sha(body))).toEqual(body)
+    await expect(staging.commit()).rejects.toMatchObject({ code: 'ATTACHMENT_STAGE_CLOSED' })
+  })
+
+  it('rejects a malformed expected digest as an invalid id and leaves nothing behind', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const staging = await store.stage({ kind: 'user-attachment', mimeType: 'image/png' })
+    await staging.write(bytes(4))
+    await expect(staging.commit('ABC')).rejects.toMatchObject({ code: 'ATTACHMENT_INVALID_ID' })
+    expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
+  })
+
+  it('rejects invalid ranges as such and keeps corrupt for short reads', async () => {
+    const store = createAttachmentStore({ dataDir: fresh() })
+    const object = await store.put(bytes(10), { kind: 'user-attachment', mimeType: 'image/png' })
+    for (const range of [
+      { offset: -1, length: 2 },
+      { offset: 0, length: -1 },
+      { offset: 1.5, length: 2 },
+      { offset: 0, length: Number.NaN },
+      { offset: Number.MAX_SAFE_INTEGER + 2, length: 1 },
+      { offset: 8, length: 5 },
+    ])
+      await expect(store.read(object.sha256, range)).rejects.toMatchObject({ code: 'ATTACHMENT_INVALID_ID' })
+    expect(await store.read(object.sha256, { offset: 10, length: 0 })).toEqual(new Uint8Array())
+  })
+
+  it('repairs a corrupt same-size object when the same bytes are stored again', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const body = bytes(2048, 5)
+    const object = await store.put(body, { kind: 'user-attachment', mimeType: 'image/png' })
+    const path = join(dataDir, 'artifacts', 'sha256', object.sha256.slice(0, 2), object.sha256)
+    writeFileSync(path, bytes(2048, 6))
+    await expect(store.read(object.sha256)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+    expect(await store.put(body, { kind: 'user-attachment', mimeType: 'image/png' })).toEqual(object)
+    expect(await store.read(object.sha256)).toEqual(body)
+    expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
+  })
+
+  it('refuses a whole read beyond what one read can hold and points at ranges', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const sha256 = 'a'.repeat(64)
+    const directory = join(dataDir, 'artifacts', 'sha256', 'aa')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, sha256), '')
+    truncateSync(join(directory, sha256), 2 ** 31)
+    await expect(store.read(sha256)).rejects.toMatchObject({
+      code: 'ATTACHMENT_TOO_LARGE',
+      message: expect.stringContaining('range'),
+    })
+    expect((await store.read(sha256, { offset: 2 ** 31 - 4, length: 4 })).byteLength).toBe(4)
+  })
+
+  it('honours an aborted signal on a whole read', async () => {
+    const store = createAttachmentStore({ dataDir: fresh() })
+    const object = await store.put(bytes(10), { kind: 'user-attachment', mimeType: 'image/png' })
+    await expect(store.read(object.sha256, undefined, AbortSignal.abort())).rejects.toThrow()
+  })
+
+  it('reports a damaged marker on query, treats it as absent on rewrite and leaves no temp files', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir, clock: () => 7 })
+    const object = await store.put(bytes(5), { kind: 'user-attachment', mimeType: 'image/png' })
+    await store.markUserAttachment(object, { mimeType: 'image/png' })
+    const shard = join(dataDir, 'artifacts', 'user-attachment-meta', object.sha256.slice(0, 2))
+    const marker = join(shard, `${object.sha256}.json`)
+    writeFileSync(marker, '{')
+    await expect(store.userAttachment(object.sha256)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+    await store.markUserAttachment(object, { mimeType: 'image/png', receiptFor: 'session-a' })
+    expect(await store.userAttachment(object.sha256)).toMatchObject({
+      firstSeenMs: 7,
+      receipts: [attachmentReceiptFor('session-a')],
+    })
+    expect(readdirSync(shard)).toEqual([`${object.sha256}.json`])
+    expect(JSON.parse(readFileSync(marker, 'utf8')).schemaVersion).toBe(1)
+  })
+
+  it('sweeps stale marker temp files and survives directories inside staging', async () => {
     const dataDir = fresh()
     const store = createAttachmentStore({ dataDir })
     const object = await store.put(bytes(5), { kind: 'user-attachment', mimeType: 'image/png' })
     await store.markUserAttachment(object, { mimeType: 'image/png' })
-    writeFileSync(
-      join(dataDir, 'artifacts', 'user-attachment-meta', object.sha256.slice(0, 2), `${object.sha256}.json`),
-      '{',
-    )
-    await expect(store.userAttachment(object.sha256)).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+    const shard = join(dataDir, 'artifacts', 'user-attachment-meta', object.sha256.slice(0, 2))
+    writeFileSync(join(shard, `${object.sha256}.json.abc.tmp`), 'x')
+    const stray = join(dataDir, 'artifacts', 'staging', 'stray')
+    mkdirSync(join(stray, 'inner'), { recursive: true })
+    writeFileSync(join(stray, 'inner', 'f'), 'x')
+    const leftover = await store.stage({ kind: 'user-attachment', mimeType: 'image/png' })
+    await leftover.write(bytes(3))
+    expect(await store.sweepStaging(Date.now())).toBe(0)
+    expect(await store.sweepStaging(Date.now() + 25 * 60 * 60 * 1000)).toBe(3)
+    expect(readdirSync(join(dataDir, 'artifacts', 'staging'))).toEqual([])
+    expect(readdirSync(shard)).toEqual([`${object.sha256}.json`])
+    await leftover.abort()
   })
 })
