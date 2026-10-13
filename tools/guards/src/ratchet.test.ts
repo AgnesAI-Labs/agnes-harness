@@ -1081,8 +1081,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
-  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 26812, exact.
-  'packages/core/src': 26812,
+  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache; measured 26853, exact.
+  'packages/core/src': 26853,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2696,8 +2696,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
-  // 2026-10-13 attachments by reference: the streaming content-addressed attachment store. Reviewed exact countLines packages/host/src 39431; no exclusions or spare allocation.
-  'packages/host/src': 39431,
+  // 2026-10-13 attachments by reference: the streaming content-addressed attachment store and the request version cache. Reviewed exact countLines packages/host/src 39700; no exclusions or spare allocation.
+  'packages/host/src': 39700,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
