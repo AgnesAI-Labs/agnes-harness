@@ -327,7 +327,9 @@ describe('delegated child wire prefixes', () => {
             name: 'standard',
             extends: 'base',
             disclosure: 'standard',
-            model: { route: { primary: 'gw', compaction: 'gw' }, id: { compaction: 'summary-model' } },
+            model: {
+              route: { primary: 'gw', compaction: { route: 'gw', model: 'summary-model' } },
+            },
             compaction: { enabled: true, reserve_tokens: 100, keep_recent_tokens: 0, agent_callable: true },
           },
         },
