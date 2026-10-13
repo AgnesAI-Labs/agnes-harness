@@ -18,6 +18,7 @@ import {
   SettingsSaveBar,
   SettingsToolbar,
   setAdvancedSettingsShown,
+  subscribeAdvancedSettings,
 } from '../src/index.js'
 
 const disposers: (() => void)[] = []
@@ -232,4 +233,40 @@ it('shows an advanced fold only while advanced settings are on, and remembers th
     blocked.mockRestore()
     localStorage.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
   }
+})
+
+it('synchronizes local storage changes without discarding an in-memory choice when storage is blocked', () => {
+  const changed = vi.fn()
+  const stop = subscribeAdvancedSettings(changed)
+  try {
+    localStorage.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '1')
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: ADVANCED_SETTINGS_STORAGE_KEY, storageArea: localStorage }),
+    )
+    expect(advancedSettingsShown()).toBe(true)
+    localStorage.clear()
+    window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: localStorage }))
+    expect(advancedSettingsShown()).toBe(false)
+    const blocked = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    try {
+      setAdvancedSettingsShown(true)
+      window.dispatchEvent(new StorageEvent('storage', { key: null, storageArea: sessionStorage }))
+      expect(advancedSettingsShown()).toBe(true)
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: ADVANCED_SETTINGS_STORAGE_KEY, storageArea: localStorage }),
+      )
+      expect(advancedSettingsShown()).toBe(true)
+    } finally {
+      blocked.mockRestore()
+    }
+  } finally {
+    stop()
+  }
+  // A change made while no view subscribes must be picked up on the next mount.
+  localStorage.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+  const restart = subscribeAdvancedSettings(changed)
+  expect(advancedSettingsShown()).toBe(false)
+  restart()
 })

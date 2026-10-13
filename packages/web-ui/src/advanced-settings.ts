@@ -5,14 +5,16 @@ export const ADVANCED_SETTINGS_STORAGE_KEY = 'agnes.settings.advanced'
 
 const listeners = new Set<() => void>()
 let cached: boolean | undefined
-let bound = false
+let unbind: (() => void) | undefined
+let memoryOnly = false
 
 function read(): boolean {
   try {
-    return globalThis.localStorage?.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === '1'
+    const storage = globalThis.localStorage
+    return storage ? storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === '1' : (cached ?? false)
   } catch {
     // Storage can be blocked; the switch then lasts for this page only.
-    return false
+    return cached ?? false
   }
 }
 
@@ -21,16 +23,27 @@ function emit(): void {
 }
 
 function bind(): void {
-  if (bound || typeof window === 'undefined') return
-  bound = true
+  if (unbind || typeof window === 'undefined') return
+  if (!memoryOnly) cached = read()
+  const target = window
   // Another tab changed the switch: follow it.
-  window.addEventListener('storage', (event) => {
+  const changed = (event: StorageEvent) => {
     if (event.key !== null && event.key !== ADVANCED_SETTINGS_STORAGE_KEY) return
-    const next = read()
+    let next: boolean
+    try {
+      const storage = globalThis.localStorage
+      if (!storage || (event.storageArea && event.storageArea !== storage)) return
+      next = storage.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === '1'
+      memoryOnly = false
+    } catch {
+      return
+    }
     if (next === cached) return
     cached = next
     emit()
-  })
+  }
+  target.addEventListener('storage', changed)
+  unbind = () => target.removeEventListener('storage', changed)
 }
 
 /** Whether 「显示高级设置」 is on: the advanced settings group and every advanced fold follow it. */
@@ -43,10 +56,13 @@ export function setAdvancedSettingsShown(shown: boolean): void {
   if (advancedSettingsShown() === shown) return
   cached = shown
   try {
-    if (shown) globalThis.localStorage?.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '1')
-    else globalThis.localStorage?.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
+    const storage = globalThis.localStorage
+    memoryOnly = !storage
+    if (shown) storage?.setItem(ADVANCED_SETTINGS_STORAGE_KEY, '1')
+    else storage?.removeItem(ADVANCED_SETTINGS_STORAGE_KEY)
   } catch {
     // Kept in memory for this page.
+    memoryOnly = true
   }
   emit()
 }
@@ -56,6 +72,10 @@ export function subscribeAdvancedSettings(listener: () => void): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
+    if (listeners.size === 0) {
+      unbind?.()
+      unbind = undefined
+    }
   }
 }
 
