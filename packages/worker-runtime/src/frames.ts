@@ -16,6 +16,7 @@ export type SessionMethod =
   | 'run'
   | 'abort'
   | 'scan'
+  | 'verifyHistory'
   | 'latest'
   | 'projectUI'
   | 'projectUIPatch'
@@ -133,6 +134,8 @@ export type SessionInterruptedFrame = {
   kind: 'session.interrupted'
   sessionKey: string
   reason: string
+  /** The error code, when the cause had one; E_LEDGER_INTEGRITY means the session cannot be reopened. */
+  code?: string
 }
 export type LogFrame = {
   kind: 'log'

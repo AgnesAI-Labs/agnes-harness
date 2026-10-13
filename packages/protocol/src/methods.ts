@@ -71,6 +71,7 @@ export type MethodName =
   | '_agnes/v1/session.attach'
   | '_agnes/v1/session.steer'
   | '_agnes/v1/session.budget'
+  | '_agnes/v1/session.verifyHistory'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
@@ -188,6 +189,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionIdParams,
     result: A.SessionBudgetResult,
   },
+  // Settles once every stored row of the session has been verified; refuses with E_LEDGER_INTEGRITY.
+  '_agnes/v1/session.verifyHistory': clientRequest(A.SessionIdParams, A.Empty),
   '_agnes/v1/session.projectUI': {
     kind: 'request',
     direction: 'c2s',

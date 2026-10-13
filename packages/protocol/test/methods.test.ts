@@ -177,6 +177,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.setYolo',
       '_agnes/v1/session.steer',
       '_agnes/v1/session.storedOpening',
+      '_agnes/v1/session.verifyHistory',
       '_agnes/v1/skills.priority.set',
       '_agnes/v1/skills.refresh',
       '_agnes/v1/skills.remove',
@@ -198,7 +199,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(119)
+    expect(Object.keys(METHODS)).toHaveLength(120)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

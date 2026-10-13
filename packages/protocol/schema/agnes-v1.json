@@ -1698,7 +1698,8 @@
                 "overloaded",
                 "job_dispatched",
                 "job_dead",
-                "shutting_down"
+                "shutting_down",
+                "integrity_failed"
               ]
             },
             "sessionId": { "type": "string", "maxLength": 512 },

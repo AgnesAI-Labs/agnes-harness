@@ -72,6 +72,7 @@ import {
   type Feed,
   isNewerLedgerFormat,
   type LocalContext,
+  ledgerIntegrityRpcError,
   legacyLedgerRpcError,
   newerLedgerRpcError,
 } from './acp.js'
@@ -436,6 +437,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.steer',
       'session.followUp',
       'session.budget',
+      'session.verifyHistory',
       'session.projectUI',
       'session.projectUIPatch',
       'session.projectUIOpening',
@@ -848,6 +850,19 @@ export function registerAgnes(
       }
     })
     return { state, ledger }
+  })
+  // Answers once every stored row has been verified, so a reader that hands the history on (export)
+  // does not hand on rows an open from a checkpoint has only folded so far.
+  ep.register('_agnes/v1/session.verifyHistory', async (params, c) => {
+    const sessionId = (params as { sessionId: string }).sessionId
+    requireOwner('session.verifyHistory', sessionId, c)
+    try {
+      await verifyHistory(cx.registry.require(sessionId).session)
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY') throw ledgerIntegrityRpcError()
+      throw error
+    }
+    return {}
   })
   ep.register('_agnes/v1/session.projectUI', async (params, c) => {
     const p = params as SessionProjectUIParams
@@ -1885,4 +1900,14 @@ export function registerAgnes(
       return cx.claims.withinRateLimit(bucket, p.value, p.limit, p.windowMs, now)
     return { granted: await cx.claims.once(bucket, p.value, p.expiresAtMs ?? now + 5 * 60_000, now) }
   })
+}
+
+/** An in-process session verifies through its log; a worker-backed one asks its worker to. */
+function verifyHistory(session: unknown): Promise<unknown> {
+  const s = session as {
+    verifyHistory?: () => Promise<unknown>
+    d?: { log?: { fullVerified?: () => Promise<void> } }
+  }
+  if (s.verifyHistory) return s.verifyHistory()
+  return s.d?.log?.fullVerified?.() ?? Promise.resolve()
 }

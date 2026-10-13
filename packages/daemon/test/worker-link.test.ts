@@ -286,6 +286,40 @@ describe('WorkerLink command settlement', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('carries the error code of an interrupted session to the failure observer', async () => {
+    const socket = new FakeSocket()
+    const failures: Array<{ key: string; code: unknown; message: string }> = []
+    new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onSessionFailure: (key, error) =>
+        failures.push({ key, code: (error as { code?: unknown }).code, message: (error as Error).message }),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'session.interrupted',
+        sessionKey: 'a',
+        reason: 'ledger digest mismatch',
+        code: 'E_LEDGER_INTEGRITY',
+      }),
+    )
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'session.interrupted',
+        sessionKey: 'b',
+        reason: 'tail failed',
+        code: 'not a code',
+      }),
+    )
+    await vi.waitFor(() => expect(failures).toHaveLength(2))
+    expect(failures).toEqual([
+      { key: 'a', code: 'E_LEDGER_INTEGRITY', message: 'ledger digest mismatch' },
+      { key: 'b', code: undefined, message: 'tail failed' },
+    ])
+  })
+
   it('clears every pending deadline when the link closes', async () => {
     vi.useFakeTimers()
     const { link } = setup()

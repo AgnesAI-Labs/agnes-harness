@@ -568,6 +568,7 @@ function isDaemonNotice(payload: unknown): payload is DaemonNotice {
       'job_dispatched',
       'job_dead',
       'shutting_down',
+      'integrity_failed',
     ].includes(notice.kind) &&
     'detail' in notice &&
     typeof notice.at === 'string'

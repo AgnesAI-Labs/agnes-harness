@@ -322,6 +322,10 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
+    case 'verifyHistory':
+      // Rejects with the integrity failure once the background verification has found one.
+      await session.d.log.fullVerified()
+      return {}
     case 'scan': {
       // Lean rows only: large inline attachment bytes stay in this process. A page that still would not
       // fit one frame ends early and says where the supervisor resumes, so no row is read twice.

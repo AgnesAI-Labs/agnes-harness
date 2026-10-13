@@ -355,12 +355,18 @@ export function throwSessionOpenRpcError(error: unknown): never {
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
   // The reverse: a newer build wrote it in a format this one does not read. Nothing was changed.
   if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
+  if (e?.code === 'E_LEDGER_INTEGRITY') throw ledgerIntegrityRpcError()
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
       reason: 'the profile declares no provider routes',
     })
   throwWorkspaceRpcError(error)
+}
+
+/** The refusal for a session whose stored history failed its integrity check: it stays refused. */
+export function ledgerIntegrityRpcError(): RpcError {
+  return rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY' })
 }
 
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */

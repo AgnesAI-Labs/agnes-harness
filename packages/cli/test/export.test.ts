@@ -63,6 +63,11 @@ function endpoint(
       restored = true
       return {}
     })
+    .on('_agnes/v1/session.verifyHistory', (params) => {
+      expect(params).toEqual({ sessionId })
+      expect(restored, 'the session is verified once it is open').toBe(true)
+      return {}
+    })
     .on('_agnes/v1/session.attach', (params, ep) => {
       expect(restored, 'cold session must be restored before attach').toBe(true)
       const cursor = (params as { cursor?: { fromSeq: number } }).cursor
@@ -119,6 +124,42 @@ describe('export', () => {
       expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
     } finally {
       await client.close()
+    }
+  })
+
+  it('reads nothing before the history is verified, and exports nothing when it fails', async () => {
+    const ok = endpoint()
+    const client = await clientFor(ok)
+    try {
+      await readLedger(client, SESSION_ID)
+      const order = ok.calls.map((call) => call.method)
+      expect(order.indexOf('_agnes/v1/session.verifyHistory')).toBeGreaterThan(-1)
+      expect(order.indexOf('_agnes/v1/session.verifyHistory')).toBeLessThan(
+        order.indexOf('_agnes/v1/session.attach'),
+      )
+    } finally {
+      await client.close()
+    }
+    const ep = endpoint().on('_agnes/v1/session.verifyHistory', () => {
+      throw Object.assign(new Error('SEMANTIC_REJECTED'), {
+        code: -32011,
+        data: { code: 'E_LEDGER_INTEGRITY' },
+      })
+    })
+    const failing = await clientFor(ep)
+    const writeFile = vi.fn()
+    try {
+      await expect(
+        exportSession(
+          parseArgs(['export', SESSION_ID, '--raw', '-o', 'out.agnes']),
+          { cwd: '/workspace', io: { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }, writeFile },
+          failing,
+        ),
+      ).rejects.toMatchObject({ data: { code: 'E_LEDGER_INTEGRITY' } })
+      expect(writeFile).not.toHaveBeenCalled()
+      expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
+    } finally {
+      await failing.close()
     }
   })
 

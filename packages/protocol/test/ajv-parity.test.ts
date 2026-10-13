@@ -6206,6 +6206,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   'session/load': { fileId: ACP_ID, params: 'LoadSessionRequest', result: 'LoadSessionResponse' },
   'session/set_mode': { fileId: ACP_ID, params: 'SetSessionModeRequest', result: 'SetSessionModeResponse' },
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
+  '_agnes/v1/session.verifyHistory': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
@@ -6401,6 +6402,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   'session/load': ACP_SAMPLES.LoadSessionRequest as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeRequest as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.SessionIdParams as Sample,
   // The windowed branch of the oneOf, so that between this entry and AGNES_SAMPLES.AuthClaimParams
   // (which takes the once-only branch) both shapes are accepted by a valid sample somewhere, not just
   // rejected by negatives.
@@ -6566,6 +6568,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   'session/load': ACP_SAMPLES.LoadSessionResponse as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeResponse as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/auth.claim': AGNES_SAMPLES.AuthClaimResult as Sample,
   '_agnes/v1/approval.decide': AGNES_SAMPLES.SeqResult as Sample,
   '_agnes/v1/participant.join': AGNES_SAMPLES.SeqResult as Sample,

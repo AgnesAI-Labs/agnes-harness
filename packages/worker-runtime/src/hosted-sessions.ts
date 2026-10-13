@@ -25,6 +25,8 @@ type HostedSession = {
   lastActivityAt: number
 }
 
+const ERROR_CODE = /^E_[A-Z0-9_]{1,64}$/
+
 /** What a hibernated session keeps: enough to reopen it, and nothing that grants authority. */
 type HibernatedStub = {
   binding: WorkspaceBinding
@@ -206,10 +208,12 @@ export class HostedSessions {
           } satisfies EventFrame)
       },
       onError: (error) => {
+        const code = (error as { code?: unknown } | null)?.code
         this.options.send({
           kind: 'session.interrupted',
           sessionKey,
           reason: error instanceof Error ? error.message : String(error),
+          ...(typeof code === 'string' && ERROR_CODE.test(code) ? { code } : {}),
         })
       },
     })
@@ -412,6 +416,14 @@ export class HostedSessions {
   }
 
   private recordOpen(sessionKey: string, session: HostSession, startedAt: number): void {
+    // A verified head past the stored head is the only trace rows were removed from the end of the
+    // ledger (the chain cannot show it); the open replaces that checkpoint, so say so here.
+    if (session.d.log.openStats.checkpoint.reason === 'beyond-head')
+      this.log(
+        sessionKey,
+        'warn',
+        `ledger ends at seq ${session.lastSeq}, before its verified checkpoint: rows after it may have been removed`,
+      )
     try {
       this.record(sessionKey, {
         ...session.d.log.openStats,

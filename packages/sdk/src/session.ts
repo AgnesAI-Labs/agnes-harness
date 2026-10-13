@@ -496,6 +496,14 @@ export class Session {
     return restoring
   }
 
+  /**
+   * Settles once the daemon has verified every stored row of this session; rejects when the
+   * history failed its integrity check. Call it before handing the history on, as export does.
+   */
+  verifyHistory(): Promise<Record<string, never>> {
+    return this.client.call<Record<string, never>>('_agnes/v1/session.verifyHistory', { sessionId: this.id })
+  }
+
   budget(): Promise<SessionBudgetResult> {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
   }

@@ -1026,6 +1026,72 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     await registry.closeAll()
   })
 
+  describe('a session whose ledger failed its integrity check', () => {
+    const integrity = () => Object.assign(new Error('ledger digest mismatch'), { code: 'E_LEDGER_INTEGRITY' })
+    const channel = (key: string, onExit?: (notify: () => void) => void) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token: 'token',
+        sessionKey: key,
+        writerRunId: 'run',
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      onExit: onExit ?? (() => undefined),
+      closeSession: vi.fn(async () => undefined),
+      command: vi.fn(async () => undefined),
+    })
+
+    it('is not reopened when its worker reports the integrity failure', async () => {
+      const key = 'tampered-interrupted'
+      const acquire = vi.fn().mockResolvedValue(channel(key))
+      const failed = vi.fn()
+      const registry = new WorkerRegistry(
+        { acquire, retire: vi.fn() } as unknown as WorkerPool,
+        undefined,
+        undefined,
+        failed,
+      )
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.subscribe(key, () => undefined)
+      registry.interrupt(key, integrity())
+      await new Promise((r) => setTimeout(r, 300))
+      expect(acquire).toHaveBeenCalledOnce()
+      expect(registry.get(key)).toBeUndefined()
+      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
+      await registry.closeAll()
+    })
+
+    it('stops recovering after a reopen fails the integrity check', async () => {
+      const key = 'tampered-recovery'
+      let crash: (() => void) | undefined
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(
+          channel(key, (notify) => {
+            crash = notify
+          }),
+        )
+        .mockRejectedValue(integrity())
+      const failed = vi.fn()
+      const registry = new WorkerRegistry(
+        { acquire, retire: vi.fn() } as unknown as WorkerPool,
+        undefined,
+        undefined,
+        failed,
+      )
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.subscribe(key, () => undefined)
+      crash?.()
+      await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce())
+      await new Promise((r) => setTimeout(r, 1_500))
+      expect(acquire).toHaveBeenCalledTimes(2)
+      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
+      await registry.closeAll()
+    })
+  })
+
   it('finishes pending and map cleanup after the first session close fails', async () => {
     const link = {
       alive: true,

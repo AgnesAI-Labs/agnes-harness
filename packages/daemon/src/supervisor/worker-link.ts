@@ -247,7 +247,9 @@ export class WorkerLink {
       return
     }
     if (frame.kind === 'session.interrupted') {
-      this.failSession(frame.sessionKey, new Error(frame.reason))
+      const code =
+        typeof frame.code === 'string' && /^E_[A-Z0-9_]{1,64}$/.test(frame.code) ? frame.code : undefined
+      this.failSession(frame.sessionKey, Object.assign(new Error(frame.reason), code ? { code } : {}))
       return
     }
     if (frame.kind === 'progress') {

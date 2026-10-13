@@ -1225,7 +1225,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, o.audit)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, o.audit, (sessionId) =>
+      notices.emit('integrity_failed', { sessionId, detail: { code: 'E_LEDGER_INTEGRITY' } }),
+    )
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({

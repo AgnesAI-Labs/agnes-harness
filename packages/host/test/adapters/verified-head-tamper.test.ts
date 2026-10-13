@@ -110,7 +110,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     const storage = sqlite(file)
     const log = await SessionLogImpl.open(options(storage, 'r1'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
-    expect(log.verifyingHistory).toBe(true)
+    expect(log.historyVerified).toBe(false)
     // Issued while the verification is still running: held, then refused, and nothing lands.
     const held = log.append([input('model-side write')])
     await expect(log.fullVerified()).rejects.toMatchObject({

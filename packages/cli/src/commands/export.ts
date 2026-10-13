@@ -92,6 +92,10 @@ export async function readLedger(client: Client, id: string): Promise<LedgerExpo
   if (client.sessions.has(id))
     throw new UsageError(`cannot export ${id} with a client that already opened that session`)
   await client.restoreSession(id, '')
+  // Nothing is read before every stored row has been verified: an open from a verified-head
+  // checkpoint shows the history first and verifies it in the background, and an export must not
+  // carry rows out (to be imported as a fresh, valid chain) that the verification would refuse.
+  await client.call('_agnes/v1/session.verifyHistory', { sessionId: id })
   // A caller may have installed a handle while restoration was awaiting the daemon.
   if (client.sessions.has(id))
     throw new UsageError(`cannot export ${id} with a client that already opened that session`)

@@ -35,6 +35,11 @@ type OpenTrace = {
   authorityReplayMs: number
 }
 
+/** A session whose ledger failed its integrity check: reopening it fails the same way. */
+function isIntegrityFailure(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY'
+}
+
 export type RemoteEntry = {
   key: string
   session: RemoteSession
@@ -113,6 +118,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
     private readonly audit?: (record: unknown) => void,
+    /** Called once a session is known to have failed its ledger integrity check: it is not reopened. */
+    private readonly onIntegrityFailure?: (key: string) => void,
   ) {}
 
   /**
@@ -176,6 +183,14 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         ...(typeof code === 'string' ? { code } : {}),
       },
     })
+  }
+
+  private integrityFailed(key: string): void {
+    try {
+      this.onIntegrityFailure?.(key)
+    } catch {
+      /* a notice must not change the outcome */
+    }
   }
 
   /** Diagnostics must not change the outcome of what they describe. */
@@ -793,6 +808,13 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       this.artifactReplayBuffers.delete(key)
     }
     if (this.resourceRetirements.get(key)?.entry === entry) this.resourceRetirements.delete(key)
+    // A ledger that failed its integrity check fails every reopen the same way: recovering would only
+    // verify it again and again. The session stays closed and its subscribers are told why.
+    if (isIntegrityFailure(reason)) {
+      entry.recover = false
+      this.integrityFailed(key)
+      return
+    }
     // Only a session somebody is still subscribed to is worth reopening eagerly.
     const watched = (): boolean => (this.listenerSets.get(key)?.size ?? 0) > 0
     // An entry that no longer holds the key leaves recovery to the one that does. Starting a
@@ -804,7 +826,11 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         try {
           await this.open({ key, ...open, resume: true })
           return
-        } catch {
+        } catch (error) {
+          if (isIntegrityFailure(error)) {
+            this.integrityFailed(key)
+            return
+          }
           await new Promise<void>((resolve) => {
             const timer = setTimeout(resolve, delayMs)
             timer.unref()

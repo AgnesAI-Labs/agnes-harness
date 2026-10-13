@@ -290,7 +290,7 @@ describe('verified head checkpoint under attack', () => {
     }
     const log = await SessionLogImpl.open(options(failing, 'b'))
     expect(log.openStats.checkpoint).toEqual({ used: false, reason: 'unsupported' })
-    expect(log.verifyingHistory).toBe(false)
+    expect(log.historyVerified).toBe(true)
     await log.close()
   })
 
@@ -357,6 +357,20 @@ describe('verified head checkpoint under attack', () => {
     expect((await storage.scan('k', { fromSeq: 1, limit: 100 })).length).toBe(10)
   })
 
+  it('a verification still running when the log closes writes no checkpoint afterwards', async () => {
+    // One page: once released, the verification has no page boundary left to notice the close at.
+    const storage = await seeded(10)
+    const before = await storage.readVerifiedHead('k')
+    const { storage: slow, release, reached } = held(storage)
+    const log = await SessionLogImpl.open({ ...options(slow, 'b'), clock: () => 99 })
+    await reached
+    await log.close()
+    release()
+    await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_CLOSED' })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(await storage.readVerifiedHead('k')).toEqual(before)
+  })
+
   it('no step starts before the history is verified, and none after it fails', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
@@ -365,10 +379,16 @@ describe('verified head checkpoint under attack', () => {
     await first.session.close()
     tamper(storage, 'k', 1)
     const { storage: slow, release } = held(storage)
+    // Step-level host code (the model snapshot wraps every step) stands in for any extension code.
+    const snapshots: number[] = []
     const second = await openSession({
       storage: slow as MemoryStorage,
       provider: fakeProvider([]),
       writerRunId: 'r2',
+      withModelSnapshot: <T>(fn: () => Promise<T>) => {
+        snapshots.push(1)
+        return fn()
+      },
     })
     let settled = false
     // Nothing is queued, so this step would write nothing: only the step itself can hold it.
@@ -379,6 +399,9 @@ describe('verified head checkpoint under attack', () => {
     expect(settled).toBe(false)
     release()
     await expect(step).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    // Once the verification has failed, a step is refused before any of it runs.
+    await expect(second.session.step()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(snapshots).toEqual([])
     await second.session.close()
   })
 
@@ -437,7 +460,7 @@ describe('verified head checkpoint under attack', () => {
     const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
     release()
     // The run reports the failure as its outcome; the model was never asked.
-    await expect(run).resolves.toMatchObject({ reason: 'error' })
+    await expect(run).resolves.toMatchObject({ reason: 'error', error: { code: 'E_LEDGER_INTEGRITY' } })
     expect(provider.calls).toBe(0)
     expect(second.log.faulted).toBe(true)
     await second.session.close()

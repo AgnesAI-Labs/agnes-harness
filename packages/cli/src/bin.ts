@@ -118,6 +118,8 @@ export function safeExpectedSessionRpcFailureLine(error: unknown): string | unde
     return 'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.'
   if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'LEGACY_LEDGER_FORMAT')
     return 'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.'
+  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'E_LEDGER_INTEGRITY')
+    return "E_LEDGER_INTEGRITY: this session's stored history failed its integrity check, so it cannot be opened or exported; start a new session."
   return undefined
 }
 

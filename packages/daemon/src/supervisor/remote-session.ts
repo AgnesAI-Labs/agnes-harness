@@ -194,6 +194,11 @@ export class RemoteSession {
     }>
   }
 
+  /** Settles once the worker has verified every stored row of the session. */
+  verifyHistory(): Promise<unknown> {
+    return this.link.command('verifyHistory', {})
+  }
+
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {
     return this.link.command('readToolDetail', input) as Promise<ToolDetailReadResult>
   }

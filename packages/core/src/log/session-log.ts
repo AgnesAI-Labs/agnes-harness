@@ -382,9 +382,12 @@ export class SessionLogImpl {
     return this.fullVerifyPromise
   }
 
-  /** Whether the history this log opened with is still being verified in the background. */
-  get verifyingHistory(): boolean {
-    return this.fullVerifyState === 'pending'
+  /**
+   * Whether every row this log opened with has been verified. False while the background
+   * verification runs, and for good once it failed or the log closed before it finished.
+   */
+  get historyVerified(): boolean {
+    return this.fullVerifyState === 'done'
   }
 
   /**
@@ -428,6 +431,7 @@ export class SessionLogImpl {
           state = verifyIntegrityRows([row], state)
           rows++
           await pageYield()
+          if (this.verifyAbort.signal.aborted) throw new CoreError('E_CLOSED', 'session closed')
         }
       }
       if (
@@ -442,7 +446,8 @@ export class SessionLogImpl {
         this.fullVerifyState = 'done'
         this.verifiedFullAtMs = this.o.clock()
         report({ outcome: 'ok' })
-        await this.writeHead().catch(() => undefined)
+        // A log that closed meanwhile has handed its lease back; it writes nothing more.
+        if (!this.closed) await this.writeHead().catch(() => undefined)
       },
       async (error: unknown) => {
         const integrity = error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY'

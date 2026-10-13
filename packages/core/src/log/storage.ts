@@ -119,7 +119,10 @@ export interface StorageAdapter {
   ledgerStats?(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }>
   /** The verified-head checkpoint of this session, if the adapter keeps one. */
   readVerifiedHead?(key: SessionKey): Promise<VerifiedHead | undefined>
-  /** Only moves forward; `force` exists for tests that plant a bad checkpoint. */
+  /**
+   * Only moves forward, unless `force`: an open that has just verified every row writes its head with
+   * it, replacing a checkpoint it could not use (one past the head, say).
+   */
   writeVerifiedHead?(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
   deleteVerifiedHead?(key: SessionKey): Promise<void>
   /**

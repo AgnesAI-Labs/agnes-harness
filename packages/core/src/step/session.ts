@@ -1464,9 +1464,10 @@ export class SessionImpl {
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
   async step(): Promise<StepOutcome> {
-    // Every model request and tool run starts in a step, so none starts on history that an open
-    // folded from a checkpoint until the background verification has hashed all of it.
-    if (this.d.log.verifyingHistory) await this.d.log.fullVerified()
+    // Every model request, tool run and step hook starts in a step, so none starts on history that an
+    // open folded from a checkpoint until the background verification has hashed all of it, and none
+    // at all once that verification failed: `fullVerified()` then rejects with the failure.
+    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -1765,7 +1766,9 @@ export class SessionImpl {
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
           const error = {
-            code: 'E_STEP_FAILED',
+            // A ledger that failed its integrity check is reported as itself: the session cannot go on.
+            code:
+              err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
           }
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
