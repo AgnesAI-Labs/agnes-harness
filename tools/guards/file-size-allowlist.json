@@ -7,7 +7,7 @@
   "packages/core/src/execution/turn/compaction.ts": 1051,
   "packages/core/src/execution/turn/inference.ts": 1402,
   "packages/core/src/execution/turn/tools.ts": 1750,
-  "packages/core/src/step/session.ts": 2303,
+  "packages/core/src/step/session.ts": 2312,
   "packages/daemon-admin/src/packages/admin-surface.ts": 993,
   "packages/daemon-admin/src/packages/client-modules.ts": 1476,
   "packages/daemon-admin/src/packages/handler.ts": 1961,
