@@ -140,7 +140,15 @@ describe('independent core web-unit implementations', () => {
         nativePane: 'model',
         navigationId: 'model-settings',
       },
-      { id: 'first', group: 'agent', titleKey: 'first', groupTitleKey: 'agent', icon: 'agent', order: 10 },
+      {
+        id: 'first',
+        group: 'agent',
+        titleKey: 'first',
+        groupTitleKey: 'agent',
+        icon: 'agent',
+        order: 10,
+        navigationId: 'plugin-management',
+      },
       { id: 'second', group: 'agent', titleKey: 'second', groupTitleKey: 'agent', icon: 'agent', order: 11 },
       {
         id: 'skills',
@@ -252,6 +260,12 @@ describe('independent core web-unit implementations', () => {
       ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
     expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(false)
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(true)
+    expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
+      'page',
+    )
+    // Reopening the pane, as its controller does after loading, keeps the group's rail entry current
+    // even though the page on screen is not the group's first.
+    region.current?.open('plugin')
     expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
       'page',
     )

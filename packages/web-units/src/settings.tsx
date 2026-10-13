@@ -123,7 +123,8 @@ function SettingsBuiltinImpl(
       for (const [name, ids] of Object.entries(NAV_IDS) as [SettingsPane, string[]][])
         for (const id of ids) {
           const item = root.querySelector<HTMLElement>(`#${id}`)
-          if (!item) continue
+          // A registry rail entry stands for its whole group; the navigation marks it current.
+          if (!item || item.dataset.settingsGroup) continue
           const active =
             name === pane &&
             (pane !== 'resources' || item.getAttribute('aria-selected') === 'true') &&
