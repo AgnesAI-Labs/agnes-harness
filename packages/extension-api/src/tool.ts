@@ -204,6 +204,20 @@ export interface ToolContext {
     readonly generationDepth: number
     /** Current session image originals and a paged index; unavailable in older runtimes. */
     readImages?(input: { path: string; offset?: number; limit?: number }): Promise<ToolResult>
+    /** Image limits of the active model and runtime for tool-supplied pixels; absent in older runtimes. */
+    imageInputPolicy?(): Promise<{
+      supported: boolean
+      maxWidth: number
+      maxHeight: number
+      maxBytes: number
+      maxPixels: number
+    }>
+    /** Checks prepared PNG/JPEG bytes and returns an artifact-backed image result for the model. */
+    imageInput?(input: {
+      bytes: Bytes
+      mimeType: 'image/png' | 'image/jpeg'
+      name: string
+    }): Promise<ToolResult>
     /** Uploaded originals in this session/lane only; names never become filesystem paths. */
     readAttachment?(input: { path: string; offset?: number; limit?: number; maxBytes?: number }): Promise<
       | {
