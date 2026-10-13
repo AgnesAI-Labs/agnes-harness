@@ -48,6 +48,9 @@
     font-size: var(--font-size-xs);
     font-weight: 400;
   }
+  .home-entry[aria-current="page"] .home-entry-sub {
+    color: var(--agnes-text-primary);
+  }
   .home-entry-badge {
     flex: 0 0 auto;
     min-width: 1.125rem;

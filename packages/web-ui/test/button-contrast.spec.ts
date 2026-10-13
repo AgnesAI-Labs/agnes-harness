@@ -41,6 +41,8 @@ test.beforeAll(async () => {
             createElement(Button, { type: 'text', role: 'tab', 'aria-selected': true }, 'Selected panel')),
           createElement('div', null,
             createElement(Button, { id: 'agent-chip', className: 'composer-agent' }, 'Agent Default agent')),
+          createElement('article', { className: 'timeline-node tool', 'data-expanded': 'true' },
+            createElement(Button, { appearance: 'link', 'data-testid': 'tool-fact-chain' }, 'Execution evidence')),
           createElement('fieldset', { className: 'appearance-options' },
             createElement('legend', null, 'Palette'),
             ...[true, false].map((checked, key) => createElement('label', { className: 'appearance-option', key },
@@ -73,7 +75,7 @@ async function readable(page: Page, state: string) {
   expect(
     scan.passes.find(({ id }) => id === 'color-contrast')?.nodes.length ?? 0,
     state,
-  ).toBeGreaterThanOrEqual(32)
+  ).toBeGreaterThanOrEqual(33)
 }
 
 for (const theme of ['light', 'dark'])
@@ -94,7 +96,7 @@ for (const theme of ['light', 'dark'])
       nodeId: documentNode.nodeId,
       selector: 'button, .appearance-option',
     })
-    expect(nodeIds).toHaveLength(36)
+    expect(nodeIds).toHaveLength(37)
     const agentSize = () =>
       page.locator('#agent-chip').evaluate((button) => {
         // Press feedback now scales the painted button; layout must still stay fixed.

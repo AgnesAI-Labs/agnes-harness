@@ -304,6 +304,9 @@
     :is([data-testid="tool-fact-chain"], [data-testid="tool-review-decision"]) {
     display: none;
   }
+  .timeline-node.tool [data-testid="tool-fact-chain"]:is(:hover, :focus-visible) {
+    color: var(--agnes-text-primary);
+  }
   .timeline-node.tool .agh-btn[data-testid="tool-fact-chain"] {
     height: auto;
     padding: 0;
