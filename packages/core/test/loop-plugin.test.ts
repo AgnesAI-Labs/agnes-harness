@@ -189,6 +189,36 @@ describe('loop plugins', () => {
     },
   )
 
+  it('ends the turn as an error and releases close when a driver step never settles', async () => {
+    const stuck: LoopFactory = {
+      ...echo,
+      id: 'test.stuck',
+      create: (ctx) => {
+        const driver = echoDriver(ctx)
+        return { ...driver, step: () => new Promise<never>(() => undefined) }
+      },
+      resume: (ctx) => {
+        const driver = echoDriver(ctx)
+        return { ...driver, step: () => new Promise<never>(() => undefined) }
+      },
+    }
+    const loops = defaultLoops()
+    loops.register('@test/stuck', stuck)
+    const k = kernel(new MemoryStorage(), loops, { loopStepTimeoutMs: 30 })
+    k.tools.add(readTool() as ToolDef, { source: 'test', trust: 'builtin' })
+    const session = await k.session('stuck-driver', { ...options, loop: stuck })
+    try {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.reason).toBe('error')
+      expect(outcome.error?.message).toContain('test.stuck@1.0.0')
+      const rows = await session.scan({ fromSeq: 1, limit: 200 })
+      expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
+    } finally {
+      await k.close()
+    }
+  })
+
   it.each(['loop', 'tool-runtime'] as const)(
     'aborts and drains a late %s constructor before closing Kernel storage',
     async (kind) => {

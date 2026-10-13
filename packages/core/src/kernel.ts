@@ -139,6 +139,7 @@ export type KernelOptions = {
   clock?: Clock
   ids?: IdMinter
   timers?: Timers
+  loopStepTimeoutMs?: number
   fsOps: FsOps
   /** Host selects one session-pinned memory provider; omission preserves deployments without it. */
   memoryFor?: (input: {
@@ -509,6 +510,7 @@ export class Kernel {
         lane,
         ...(forked ? { existing: forked } : {}),
         ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(this.o.loopStepTimeoutMs ? { loopStepTimeoutMs: this.o.loopStepTimeoutMs } : {}),
       })
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its
@@ -559,6 +561,7 @@ export class Kernel {
         clock: this.clock,
         onFailure: (f) => logger.warn('seam failed', { ...f }),
         ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(this.o.loopStepTimeoutMs ? { loopStepTimeoutMs: this.o.loopStepTimeoutMs } : {}),
         ...(workspaceInvocation ? { workspaceInvocation } : {}),
         ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
         ...(this.o.approvalGrants ? { approvalGrants: this.o.approvalGrants } : {}),
@@ -649,6 +652,7 @@ export class Kernel {
         invariants: this.invariants,
         segments,
         ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(this.o.loopStepTimeoutMs ? { loopStepTimeoutMs: this.o.loopStepTimeoutMs } : {}),
         ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
         ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
         ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),

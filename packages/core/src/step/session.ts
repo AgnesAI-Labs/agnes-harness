@@ -482,6 +482,8 @@ export type SessionDeps = {
   hostToolDispatch?: HostToolDispatchPort
   logger: Logger
   timers?: Timers
+  /** Longest one `loopDriver.step` may run before the turn ends as an error. Defaults to 30 minutes. */
+  loopStepTimeoutMs?: number
   hooks?: HookPort
   compaction?: CompactionPort
   /** Host-private request contribution; never exposed through extension hook payloads. */
@@ -563,6 +565,8 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
     take: (turn: UITurn) => build(turn).turn,
   }
 }
+
+const DEFAULT_LOOP_STEP_TIMEOUT_MS = 30 * 60_000
 
 export class SessionImpl {
   /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
@@ -1919,13 +1923,51 @@ export class SessionImpl {
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {
-      return await this.loopDriver.step(this.ac.signal)
+      return await this.stepWithinDeadline()
     } catch (error) {
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
         return { outcome: 'parked', phase: 'paused', reason: 'parked' }
       throw error
     }
   }
+
+  /**
+   * A driver that ignores both its signal and `cancel()` would hold the run lane and `close()` for ever.
+   * The deadline stops the wait, cancels the driver and revokes its scope so the next run builds a fresh
+   * one; the turn then ends as an error naming the loop.
+   */
+  private async stepWithinDeadline(): Promise<LoopStepOutcome> {
+    const driver = this.loopDriver
+    const timeoutMs = this.d.loopStepTimeoutMs ?? DEFAULT_LOOP_STEP_TIMEOUT_MS
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        this.loopStepExpired = true
+        this.decisions.revokeScope()
+        this.ac.abort()
+        void Promise.resolve()
+          .then(() => driver.cancel())
+          .catch(() => undefined)
+        reject(
+          new CoreError(
+            'E_LOOP_TIMEOUT',
+            `loop ${this.loop.id}@${this.loop.version} did not finish a step within ${timeoutMs} ms`,
+            { loop: this.loop.id, timeoutMs },
+          ),
+        )
+      }, timeoutMs)
+    })
+    const stepped = driver.step(this.ac.signal)
+    // A step that settles after the deadline has nothing left to report to.
+    stepped.catch(() => undefined)
+    try {
+      return await Promise.race([stepped, expired])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private loopStepExpired = false
 
   async drainCancelledTurn(): Promise<void> {
     if (this.running) await this.running
@@ -2079,7 +2121,9 @@ export class SessionImpl {
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
           // still records and closes the turn.
-          if (this.ac.signal.aborted) {
+          const expired = this.loopStepExpired
+          this.loopStepExpired = false
+          if (this.ac.signal.aborted && !expired) {
             try {
               await this.abort()
               const stopped = await finishAborted(this)

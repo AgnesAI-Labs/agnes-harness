@@ -47,6 +47,7 @@ export type CoreErrorCode =
   | 'E_REQUEST_KIND'
   | 'E_MODEL_UNKNOWN'
   | 'E_LOOP_MISSING'
+  | 'E_LOOP_TIMEOUT'
   | 'E_CHILD_LIMIT'
   | 'E_BUDGET'
   | 'E_CHILD_NOT_FOUND'
