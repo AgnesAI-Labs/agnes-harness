@@ -13,9 +13,12 @@ import {
   type ToolDef,
   type ToolRuntime,
 } from '@agnes/extension-api'
+import { defineWorkflowLoop } from '@agnes/plugin-runtime'
 import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createDagLoop } from '../../../examples/loops/dag-loop/index.mjs'
+import { createDecisionLoop } from '../../../examples/loops/decision-loop/index.mjs'
+import { createReactLoop } from '../../../examples/loops/react-loop/index.mjs'
 import { Kernel } from '../src/kernel.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
 import { createLoopContext, disposeLoopContext } from '../src/loop/ports.js'
@@ -1368,6 +1371,130 @@ describe('platform policy edges on the generic ports', () => {
       await k.close()
     }
   })
+
+  /** Real loops built on the author ports, each with the side effects its one turn must not repeat. */
+  type Session = Awaited<ReturnType<Kernel['session']>>
+  type ParkingLoop = {
+    loop: LoopFactory
+    scripts: Parameters<typeof fakeProvider>[0]
+    effects?: () => number
+    before?: (session: Session) => Promise<void>
+  }
+  const parkingLoops: Record<string, () => ParkingLoop> = {
+    'a generic loop': () => ({ loop: roundLoop('test.parks', { model: false }), scripts: [] }),
+    'the workflow helper': () => {
+      const stage = vi.fn(async () => ({ drafted: true }))
+      const loop = defineWorkflowLoop({
+        id: 'test.workflow',
+        version: '1.0.0',
+        name: 'workflow',
+        stages: [{ name: 'draft', run: stage }],
+      }).factory
+      return { loop, scripts: [], effects: () => stage.mock.calls.length }
+    },
+    'the DAG example': () => ({
+      loop: createDagLoop() as LoopFactory,
+      scripts: [textTurn('[{"id":"read","tool":"read","args":{},"after":[]}]'), textTurn('finished')],
+    }),
+    'the ReAct example': () => ({ loop: createReactLoop() as LoopFactory, scripts: [textTurn('answer')] }),
+    'the decision example, which opens no step': () => ({
+      loop: createDecisionLoop() as LoopFactory,
+      scripts: [],
+      // This loop first asks its own business question; the stop gate comes after that answer.
+      before: (session) => answer(session, 'business.confirm', 'continue'),
+    }),
+  }
+  async function answer(session: Session, purpose: string, option: string) {
+    const asked = (await session.decisions.list()).find(
+      (value) => value.request.spec.purpose === purpose && !value.result,
+    )
+    if (!asked) throw new Error(`no ${purpose} decision is waiting`)
+    await session.decideApproval({
+      command: {
+        handle: asked.handle,
+        revision: asked.revision,
+        commandId: `answer:${asked.handle.id}`,
+        response: { option, value: null },
+      },
+      context: { actor: { ...actor, id: 'reviewer' }, category: 'human', authorize() {} },
+    })
+  }
+
+  it.each(
+    Object.keys(parkingLoops).flatMap((name) =>
+      (['allowed-once', 'rejected'] as const).flatMap((verdict) =>
+        [false, true].map((restart) => [name, verdict, restart] as const),
+      ),
+    ),
+  )(
+    'settles a completion of %s that parked at the stop gate (%s, restart: %s)',
+    async (name, verdict, restart) => {
+      const { loop, scripts, effects, before } = parkingLoops[name]!()
+      const verify = vi.fn(async (scope: string) =>
+        scope === 'turn'
+          ? { verdict: 'fail' as const, reasons: ['no evidence'] }
+          : { verdict: 'pass' as const, reasons: [] },
+      )
+      const seams = fakeSeams({
+        verifier: { verify },
+        repair: { decide: async () => 'park' },
+        approval: {
+          ask: async () => ({ ticket: 'review', expiresAt: new Date(Date.now() + 600_000).toISOString() }),
+        },
+      })
+      const loops = defaultLoops()
+      loops.register('@test/parks', loop)
+      const provider = fakeProvider(scripts)
+      provider.models = () => [model]
+      const storage = new MemoryStorage()
+      const start = async () => {
+        const k = kernel(storage, loops, { provider, seams })
+        k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+        const workspaceInvocation = testWorkspaceInvocation(testFsOps(), seams)
+        return { k, session: await k.session('parks', { ...options, workspaceInvocation, loop }) }
+      }
+      let { k, session } = await start()
+      const run = () => session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const done = async () => ({
+        tools: (await session.scan({ type: 'tool/result', limit: 50 })).length,
+        model: provider.calls,
+        stages: effects?.(),
+      })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        if (before) {
+          expect((await run()).reason).toBe('parked')
+          await before(session)
+        }
+        expect((await run()).reason).toBe('parked')
+        const work = await done()
+        // Unanswered, the turn stays parked and nothing is written or run again.
+        const parkedAt = session.lastSeq
+        expect((await run()).reason).toBe('parked')
+        expect(session.lastSeq).toBe(parkedAt)
+        if (restart) {
+          await k.close()
+          ;({ k, session } = await start())
+        }
+        await answer(session, 'gate', verdict)
+        const reason = verdict === 'rejected' ? 'blocked' : 'completed'
+        expect((await run()).reason).toBe(reason)
+        expect(session.op()).toBeNull()
+        const ends = (await session.scan({ type: 'turn/end', limit: 50 })).map(
+          (row) => (row.data as { reason: string }).reason,
+        )
+        expect(ends.slice(-2)).toEqual(['parked', reason])
+        // The answer alone settled it: no business step, model request or verification ran twice.
+        expect(await done()).toEqual(work)
+        expect(verify.mock.calls.filter(([scope]) => scope === 'turn')).toHaveLength(1)
+        const settledAt = session.lastSeq
+        await run()
+        expect(session.lastSeq).toBe(settledAt)
+      } finally {
+        await k.close()
+      }
+    },
+  )
 
   it('ends the turn as blocked when the gate keeps it open and the loop takes no further step', async () => {
     const { k, session, run } = await open(roundLoop('test.held', { model: false }))

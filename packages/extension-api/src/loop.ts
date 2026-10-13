@@ -256,7 +256,8 @@ export interface GenericLoopPorts {
      * verifier and the repair decision), so the result is the gate's answer, not the request:
      * `running` means the turn stays open with the reason recorded in history, and the loop must
      * take another step before asking again. Asking again without one ends the turn as `blocked`.
-     * Every other reason ends the turn as given.
+     * `parked` means the gate is waiting on a person: the loop's part of the turn is over, and Core
+     * completes or blocks the turn when the answer arrives. Every other reason ends the turn as given.
      */
     finish(reason: LoopEndReason, error?: { code: string; message: string }): Promise<LoopStepOutcome>
   }

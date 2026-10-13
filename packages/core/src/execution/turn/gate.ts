@@ -279,8 +279,15 @@ export async function beforeStepGate(s: SessionImpl, step: number): Promise<'ok'
   return { phase: 'terminal', reason: 'parked' }
 }
 
+/**
+ * What an approval given after the turn parked at the gate does. The default loop continues the
+ * turn with another model round; a loop that asked to complete has no further step to take, so the
+ * approval completes the turn, exactly as it does when it is given before the turn parks.
+ */
+export type GateResume = 'continue' | 'complete'
+
 /** The gate a turn has to pass to be allowed to finish. */
-async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
+async function builtinStopGate(s: SessionImpl, resume: GateResume): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
   const persisted = [...s.state.registers.decisionStates.values()]
     .map((cell) => cell.value)
@@ -391,6 +398,7 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
         reasons: verdict.reasons,
         risk: finalAsked.risk,
         ...(rewrite ? { rewrite } : {}),
+        ...(resume === 'complete' ? { completes: true } : {}),
       },
       {
         ...finalAsked,
@@ -465,8 +473,8 @@ async function builtinStopGate(s: SessionImpl): Promise<StepOutcome> {
   return { phase: 'checkpoint' }
 }
 
-export async function stopGate(s: SessionImpl): Promise<StepOutcome> {
-  if (!s.d.segments?.StopGate) return builtinStopGate(s)
+export async function stopGate(s: SessionImpl, resume: GateResume = 'continue'): Promise<StepOutcome> {
+  if (!s.d.segments?.StopGate) return builtinStopGate(s, resume)
   const op = s.op() as OpStateObj
   let delegated = false
   const out = await runCoreReplacement(
@@ -476,7 +484,7 @@ export async function stopGate(s: SessionImpl): Promise<StepOutcome> {
     { turn: op.meta.turn, step: op.step, proposedReason: 'completed' },
     async () => {
       delegated = true
-      const outcome = await builtinStopGate(s)
+      const outcome = await builtinStopGate(s, resume)
       return { action: 'delegated', outcome } as StopGateReplacementOutput
     },
   )

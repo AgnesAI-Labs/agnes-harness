@@ -58,7 +58,9 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   verifier and the repair decision run for every loop, not only through the default loop's
   `turn.checkpoint`. A gate that keeps the turn open returns `running` with the reason recorded in
   history; a second `completed` request with no step in between ends the turn as `blocked`
-  (`STOP_GATE_HELD`). A driver returns the outcome it was given.
+  (`STOP_GATE_HELD`). A gate that has to ask a person returns `parked`: the loop's part of that
+  turn is over, and Core completes the turn when the person approves or ends it as `blocked`
+  otherwise, without calling the driver again for it. A driver returns the outcome it was given.
 - The step a generic model or tool port opens fires `before_step`. A park or block ends the turn in
   Core and the port throws `E_BUDGET` with `detail.reason` (`parked`, `blocked` or `aborted`),
   the same refusal a step or credit budget produces.

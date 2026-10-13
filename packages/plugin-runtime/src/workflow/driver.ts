@@ -142,6 +142,7 @@ export function workflowDriver(
       if (state.index === workflow.length) {
         // Core decides how the turn ends. A stop gate that keeps it open is asked once more on the
         // next step; a workflow has no further stage to offer, so Core then ends the turn as blocked.
+        // A gate that parks on a person is Core's to settle: the stages are done either way.
         const end = await ctx.events.finish('completed')
         if (end.outcome === 'running') return end
         state.completed = true

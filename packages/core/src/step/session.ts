@@ -178,6 +178,7 @@ import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.j
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { runToolsPhase } from './tools.js'
+import { settleParkedCompletion } from './verifier-continuation.js'
 
 type OperationCommon = {
   name: string
@@ -1965,6 +1966,10 @@ export class SessionImpl {
     const op = this.op()
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
+    if (!op) {
+      const settled = await settleParkedCompletion(this)
+      if (settled) return settled
+    }
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {

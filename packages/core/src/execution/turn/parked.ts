@@ -9,7 +9,7 @@ import {
 } from '../../registry/tool-policy.js'
 import { domainDecisionEvents, domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
-import { continueVerifier } from '../../step/verifier-continuation.js'
+import { continueVerifier, parkedGates } from '../../step/verifier-continuation.js'
 import { TOOL_DECISION_OWNER, toolDecisionSource } from './tool-decision.js'
 
 export async function approvalContinuation(
@@ -64,21 +64,13 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         ])
       })
   }
-  for (const { value } of s.state.registers.decisionStates.values()) {
-    if (
-      value.request.owner !== 'core/gate' ||
-      value.request.sourcePackage !== '@agnes/core' ||
-      value.request.lane !== s.lane ||
-      value.consumption ||
-      s.state.resumedRequests.has(value.handle.id)
-    )
-      continue
+  for (const value of parkedGates(s, false)) {
     if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
       return 'waiting'
     const snapshot = await s.decisions.get(value.handle)
     if (!snapshot.result && !snapshot.invalidation) return 'waiting'
     const continuation = await continueVerifier(s, snapshot)
-    if (continuation !== false) return continuation
+    if (continuation === 'opened' || continuation === 'blocked') return continuation
   }
   for (const { value } of s.state.registers.decisionStates.values()) {
     if (

@@ -1,21 +1,60 @@
 import { newOpState } from '@agnes/core-common/step/op-state'
 import { CoreError, type Seq } from '@agnes/core-common/types'
-import type { DecisionSnapshot } from '@agnes/extension-api'
+import type { DecisionSnapshot, LoopStepOutcome } from '@agnes/extension-api'
 import { domainDecisionEvents, domainDecisionSource } from './domain-decision.js'
 import type { SessionImpl } from './session.js'
+
+type GateSubject = {
+  turn: number
+  step: number
+  triggerSeq: Seq
+  round: number
+  verdict: string
+  /** Set when the loop asked to complete: an approval then ends the turn instead of continuing it. */
+  completes?: boolean
+}
+
+/** The stop-gate decisions of this lane that no continuation has read yet. */
+export function* parkedGates(s: SessionImpl, completes: boolean) {
+  for (const { value } of s.state.registers.decisionStates.values()) {
+    if (
+      value.request.owner !== 'core/gate' ||
+      value.request.sourcePackage !== '@agnes/core' ||
+      value.request.lane !== s.lane ||
+      value.consumption ||
+      s.state.resumedRequests.has(value.handle.id) ||
+      ((value.request.spec.subject as GateSubject).completes === true) !== completes
+    )
+      continue
+    yield value
+  }
+}
+
+/**
+ * A completion that parked at the stop gate is Core's to finish: the loop has no step left to take.
+ * Nothing runs until the person answers; an approval then completes the turn and anything else
+ * blocks it, and the driver is not asked to do its work again.
+ */
+export async function settleParkedCompletion(s: SessionImpl): Promise<LoopStepOutcome | undefined> {
+  for (const value of parkedGates(s, true)) {
+    const parked: LoopStepOutcome = { outcome: 'parked', phase: 'terminal', reason: 'parked' }
+    if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
+      return parked
+    const snapshot = await s.decisions.get(value.handle)
+    if (!snapshot.result && !snapshot.invalidation) return parked
+    const reason = await continueVerifier(s, snapshot)
+    if (reason === 'completed' || reason === 'blocked')
+      return { outcome: 'turn-ended', phase: 'terminal', reason }
+  }
+  return undefined
+}
 
 /** A verifier pause asks permission to continue, not whether a side effect happened. */
 export async function continueVerifier(
   s: SessionImpl,
   snapshot: DecisionSnapshot,
-): Promise<'opened' | 'blocked' | false> {
-  const subject = snapshot.request.spec.subject as {
-    turn: number
-    step: number
-    triggerSeq: Seq
-    round: number
-    verdict: string
-  }
+): Promise<'opened' | 'blocked' | 'completed' | false> {
+  const subject = snapshot.request.spec.subject as GateSubject
   const requestId = snapshot.handle.id
   const allowed =
     !snapshot.invalidation &&
@@ -81,9 +120,12 @@ export async function continueVerifier(
       limit: 1,
     })
   )[0]
-  if (!step) throw new CoreError('E_RELATION', 'verifier pause step missing')
   const originalTurn = (start.data as { turn: number }).turn
-  const originalStep = step.data as { turn: number; step: number }
+  // A loop that only decides and checkpoints parks at the gate without ever opening a step.
+  const originalStep = (step?.data as { turn: number; step: number } | undefined) ?? {
+    turn: originalTurn,
+    step: 0,
+  }
   if (originalStep.turn !== originalTurn) throw new CoreError('E_RELATION', 'verifier pause step mismatch')
   const turn = s.lastTurnNumber() + 1
   const event = s.ev('turn/start', {
@@ -98,6 +140,11 @@ export async function continueVerifier(
     // a refusal into a ready checkpoint that sends a request on reopen.
     await s.endTurn('blocked', { events: () => [event, ...consumed()] })
     return 'blocked'
+  }
+  if (subject.completes) {
+    // The approval accepts the verdict the person was shown; the same commit closes the turn.
+    await s.endTurn('completed', { events: () => [event, ...consumed()] })
+    return 'completed'
   }
   await s.transition(
     () => [event, ...consumed()],

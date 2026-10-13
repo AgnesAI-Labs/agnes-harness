@@ -657,7 +657,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
             await s.endTurn('blocked', { error: held })
             return { outcome: 'turn-ended', phase: 'terminal', reason: 'blocked' }
           }
-          const gated = await stopGate(s)
+          const gated = await stopGate(s, 'complete')
           heldCompletion = gated.phase === 'terminal' ? null : mark
           return publicOutcome(gated)
         } finally {
