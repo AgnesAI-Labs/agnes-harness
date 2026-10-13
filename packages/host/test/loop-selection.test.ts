@@ -204,7 +204,7 @@ async function fixture(
         accounts: [],
         defaultAccountId: null,
         inheritProvider: true,
-        sessionDefaults: { loop },
+        sessionDefaults: { providers: { loop: { provider: loop.id, version: loop.version } } },
       }),
     )
   }
@@ -279,8 +279,10 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
     ).rejects.toMatchObject({ code: 'E_SEAM_INIT', detail: { reason: 'provider-unknown' } })
     f.defaults({ id: '', version: '1' })
     await expect(f.host.createSession({ key: 'invalid-default', cwd: f.dataDir })).rejects.toMatchObject({
-      code: 'CONFIG_INVALID_STATE',
+      code: 'E_PRESET_UNSUPPORTED',
+      message: expect.stringContaining(join(f.profileDir, 'configuration.json')),
     })
+    expect(f.host.kernel.get('invalid-default')).toBeUndefined()
     expect(
       await readAdminLoopDefault(
         createConfigurationService({ home: join(f.dataDir, 'absent'), profile: 'local-dev' }),
