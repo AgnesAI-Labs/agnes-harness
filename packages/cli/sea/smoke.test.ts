@@ -6,14 +6,16 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hashDirectory } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
+import { probeImageRuntime } from '../tools/image-runtime.js'
 import { windowsChildren, windowsIdentities } from './windows-processes.js'
 
 const bin = process.env.AGNES_SEA_BIN
@@ -260,4 +262,14 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
     }
     // Multiple cold SEA launches plus daemon readiness and a real provider round-trip exceed 5s on Windows.
   }, 30000)
+
+  it('loads the image codec beside the bundled worker with the distributed Node runtime', () => {
+    const distribution = dirname(resolve(bin as string))
+    const runtime = join(distribution, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node')
+    const probe = probeImageRuntime(distribution, runtime)
+    expect(probe.width).toBe(4)
+    expect(relative(realpathSync(distribution), probe.resolved)).toBe(
+      join('node_modules', 'sharp', 'lib', 'index.js'),
+    )
+  }, 60_000)
 })

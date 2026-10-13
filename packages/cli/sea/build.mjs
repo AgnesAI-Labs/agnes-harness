@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import postject from 'postject'
+import { IMAGE_RUNTIME_ROOTS } from '../tools/image-runtime-roots.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'dist', 'sea')
@@ -179,7 +180,7 @@ cpSync(
   join(out, 'node_modules', '@agnes', 'system-node'),
   { recursive: true },
 )
-for (const name of readdirSync(join(local, 'node_modules')).filter((name) => name !== '@agnes'))
+for (const name of IMAGE_RUNTIME_ROOTS)
   cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
 const runtime = join(out, 'runtime')
 mkdirSync(runtime, { recursive: true })

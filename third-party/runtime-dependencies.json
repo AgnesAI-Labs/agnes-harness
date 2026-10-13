@@ -250,7 +250,7 @@
       "license": "Apache-2.0",
       "source": "https://github.com/lovell/sharp",
       "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
-      "rationale": "The shared safe-image validator does not decode raster pixels or resize images; the native codec (prebuilt @img/sharp-* and LGPL-3.0-or-later libvips packages; sharp's install script is neither needed nor run) and its transitive license notices ship with the runtime.",
+      "rationale": "The shared safe-image validator does not decode raster pixels or resize images. sharp loads the prebuilt codec for the host: on macOS and Linux @img/sharp-<platform> (Apache-2.0) with a separate @img/sharp-libvips-<platform> (LGPL-3.0-or-later); on Windows one @img/sharp-win32-<arch> (Apache-2.0 AND LGPL-3.0-or-later) that carries the libvips DLLs. sharp's install script is neither needed nor run; the codec and its license files and licensing tables ship with the runtime.",
       "consumers": ["packages/base"]
     }
   ]
