@@ -1,20 +1,23 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
   catchUpArtifactRefIndex,
   openArtifactRefIndex,
-  REF_INDEX_LOCKED_WAIT_MS,
-  verifyRootsUnderLedgerLock,
+  verifyRootsUnderLedgerLockNow,
 } from './artifact-ref-index.js'
-import { type AttachmentStore, attachmentReceiptFor } from './attachment-store.js'
+import { type AttachmentStore, attachmentReceiptFor, parseUserAttachmentMarker } from './attachment-store.js'
 
 const MARKER = /^[0-9a-f]{64}\.json$/u
 const CACHE_MAP = /^[0-9a-f]{32}\.json$/u
-/** The ledger write lock is handed back after this long; what is left waits for the next run. */
-const LOCKED_LIMIT_MS = 2_000
+/**
+ * Objects decided per hold of the ledger write lock, and the longest one hold may take: every hold is
+ * synchronous, so these bound how long the event loop and other processes' ledger writes wait.
+ */
+const BATCH_OBJECTS = 64
+const BATCH_MS = 50
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export type AttachmentOrphanOptions = Readonly<{
@@ -60,8 +63,8 @@ async function readCacheMaps(root: string): Promise<CacheMap[]> {
   return maps
 }
 
-/** How long putting set-aside bytes back waits for the ledger write lock before leaving it to later. */
-const RESTORE_LOCK_WAIT_MS = 10_000
+/** How long a restore or a batch waits for the ledger write lock before leaving its work to later. */
+const LEDGER_LOCK_WAIT_MS = 10_000
 
 const isBusy = (error: unknown) => {
   const e = error as { errcode?: unknown; message?: unknown } | null
@@ -107,7 +110,7 @@ export async function restoreSetAsideAttachments(o: {
   if (!existsSync(ledgerFile)) return true
   const ledger = new DatabaseSync(ledgerFile)
   try {
-    if (!(await lockLedger(ledger, RESTORE_LOCK_WAIT_MS, o.signal))) return false
+    if (!(await lockLedger(ledger, LEDGER_LOCK_WAIT_MS, o.signal))) return false
     try {
       for (const name of readdirSync(sweeping)) {
         const match = /^([0-9a-f]{64})\.[0-9a-f-]+$/u.exec(name)
@@ -147,9 +150,33 @@ export async function restoreSetAsideAttachments(o: {
  * they would with the screenshot collection. A cache map of a session that no longer
  * exists is removed once it is older than the grace period, and its copies with it. The returned
  * counts are the objects whose bytes were deleted.
+ *
+ * Objects are decided in small batches, each under its own hold of the ledger write lock in which
+ * nothing awaits (the roots are proven, then each object judged and deleted, synchronously); the lock
+ * is handed back and the event loop runs between batches, so a ledger write of this process never
+ * waits for the collection, and another process's waits at most one batch.
  */
 export async function collectAttachmentOrphans(
   o: AttachmentOrphanOptions,
+): Promise<{ deleted: number; bytes: number }> {
+  return collectAttachmentOrphansInternal(o)
+}
+
+/** The marker as the store reads it, read synchronously; undefined when it is absent or damaged. */
+function markerNow(markers: string, sha256: string) {
+  const path = join(markers, sha256.slice(0, 2), `${sha256}.json`)
+  try {
+    const text = readFileSync(path, 'utf8')
+    const seenMs = Math.floor(statSync(path, { throwIfNoEntry: false })?.mtimeMs ?? 0)
+    return parseUserAttachmentMarker(text, sha256, seenMs)
+  } catch {
+    return undefined
+  }
+}
+
+/** The collection with a test seam: `afterSetAside` runs, synchronously, once bytes are set aside. */
+export async function collectAttachmentOrphansInternal(
+  o: AttachmentOrphanOptions & { afterSetAside?(sha256: string): void },
 ): Promise<{ deleted: number; bytes: number }> {
   const none = { deleted: 0, bytes: 0 }
   const clock = o.clock ?? Date.now
@@ -177,81 +204,92 @@ export async function collectAttachmentOrphans(
   // Without a ledger nothing can be proven unreferenced.
   if (!existsSync(ledgerFile)) return none
   const signal = o.signal ?? new AbortController().signal
+  // A cache map written after this read names bytes its session has just marked, so the marker
+  // judged under the lock keeps them.
+  const maps = await readCacheMaps(o.store.root)
   const ledger = new DatabaseSync(ledgerFile)
   const index = await openArtifactRefIndex(o.dataDir).catch((error: unknown) => {
     ledger.close()
     throw error
   })
+  let deleted = 0
+  let bytes = 0
+  let first = true
   try {
-    if ((await catchUpArtifactRefIndex({ ledger, index, signal })) !== 'complete') return none
-    ledger.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
-    const locked = performance.now()
-    try {
-      const roots = await verifyRootsUnderLedgerLock({
-        ledger,
-        index,
-        candidates,
-        waitMs: REF_INDEX_LOCKED_WAIT_MS,
-      })
-      if (!roots || signal.aborted) {
-        ledger.exec('ROLLBACK')
-        return none
-      }
-      const live = new Set(
-        (ledger.prepare(SESSION_KEYS).all() as Array<{ session_key: string }>).map((row) =>
-          attachmentReceiptFor(row.session_key),
-        ),
-      )
-      const stale: string[] = []
-      for (const map of await readCacheMaps(o.store.root)) {
-        if (!live.has(map.receipt) && now - map.mtimeMs > Math.max(o.graceMs, DAY_MS)) stale.push(map.path)
-        else for (const sha256 of map.digests) candidates.delete(sha256)
-      }
-      let deleted = 0
-      let bytes = 0
-      for (const sha256 of candidates) {
-        if (performance.now() - locked > LOCKED_LIMIT_MS || signal.aborted) break
-        if (roots.ledger.has(sha256) || roots.requestMedia.has(sha256)) continue
-        // Stored or marked again since the scan above (an upload of the same bytes): kept.
-        const marker = await o.store.userAttachment(sha256).catch(() => undefined)
-        if (!marker || clock() - lastSeen(marker) <= o.graceMs) continue
-        const markerPath = join(markers, sha256.slice(0, 2), `${sha256}.json`)
-        if (existsSync(join(o.store.root, 'computer-use-meta', sha256.slice(0, 2), `${sha256}.json`))) {
-          await rm(markerPath, { force: true })
-          continue
+    while (candidates.size > 0 && !signal.aborted) {
+      if ((await catchUpArtifactRefIndex({ ledger, index, signal })) !== 'complete') break
+      if (!(await lockLedger(ledger, LEDGER_LOCK_WAIT_MS, signal))) break
+      // From here to the end of the batch nothing awaits: the lock is handed back before this process
+      // runs anything else, so a ledger write of this process never waits for the collection.
+      const locked = performance.now()
+      try {
+        const roots = verifyRootsUnderLedgerLockNow({ ledger, index, candidates })
+        if (!roots || signal.aborted) {
+          ledger.exec('ROLLBACK')
+          break
         }
-        const object = await o.store.stat(sha256)
-        if (object) {
-          // The bytes are moved aside first and the marker judged once more. A send touches the
-          // marker before it checks the bytes, so either it finds them gone and refuses, or this
-          // finds the marker fresh and puts them back: a reference never lands on deleted bytes.
-          const objectPath = join(o.store.root, 'sha256', sha256.slice(0, 2), sha256)
-          const aside = join(sweeping, `${sha256}.${randomUUID()}`)
-          await mkdir(sweeping, { recursive: true, mode: 0o700 })
-          await rename(objectPath, aside)
-          const again = await o.store.userAttachment(sha256).catch(() => undefined)
-          if (again && clock() - lastSeen(again) <= o.graceMs) {
-            await rename(aside, objectPath)
+        if (first) {
+          first = false
+          const live = new Set(
+            (ledger.prepare(SESSION_KEYS).all() as Array<{ session_key: string }>).map((row) =>
+              attachmentReceiptFor(row.session_key),
+            ),
+          )
+          for (const map of maps) {
+            if (!live.has(map.receipt) && now - map.mtimeMs > Math.max(o.graceMs, DAY_MS))
+              rmSync(map.path, { force: true })
+            else for (const sha256 of map.digests) candidates.delete(sha256)
+          }
+        }
+        let decided = 0
+        for (const sha256 of candidates) {
+          if (decided >= BATCH_OBJECTS || performance.now() - locked > BATCH_MS) break
+          decided++
+          candidates.delete(sha256)
+          if (roots.ledger.has(sha256) || roots.requestMedia.has(sha256)) continue
+          // Stored or marked again since the scan above (an upload of the same bytes): kept.
+          const marker = markerNow(markers, sha256)
+          if (!marker || clock() - lastSeen(marker) <= o.graceMs) continue
+          const markerPath = join(markers, sha256.slice(0, 2), `${sha256}.json`)
+          if (existsSync(join(o.store.root, 'computer-use-meta', sha256.slice(0, 2), `${sha256}.json`))) {
+            rmSync(markerPath, { force: true })
             continue
           }
-          // The bytes before the marker: a marker left behind by a crash makes them a candidate again.
-          await rm(aside, { force: true })
-          deleted++
-          bytes += object.bytes
+          const objectPath = join(o.store.root, 'sha256', sha256.slice(0, 2), sha256)
+          const object = statSync(objectPath, { throwIfNoEntry: false })
+          if (object?.isFile()) {
+            // The bytes are moved aside first and the marker judged once more. A send touches the
+            // marker before it checks the bytes, so either it finds them gone and refuses, or this
+            // finds the marker fresh and puts them back: a reference never lands on deleted bytes.
+            const aside = join(sweeping, `${sha256}.${randomUUID()}`)
+            mkdirSync(sweeping, { recursive: true, mode: 0o700 })
+            renameSync(objectPath, aside)
+            o.afterSetAside?.(sha256)
+            const again = markerNow(markers, sha256)
+            if (again && clock() - lastSeen(again) <= o.graceMs) {
+              renameSync(aside, objectPath)
+              continue
+            }
+            // The bytes before the marker: a marker left behind by a crash makes them a candidate again.
+            rmSync(aside, { force: true })
+            deleted++
+            bytes += object.size
+          }
+          rmSync(markerPath, { force: true })
         }
-        await rm(markerPath, { force: true })
+        ledger.exec('COMMIT')
+      } catch (error) {
+        try {
+          ledger.exec('ROLLBACK')
+        } catch {
+          // Preserve the collection failure.
+        }
+        throw error
       }
-      for (const path of stale) await rm(path, { force: true })
-      ledger.exec('COMMIT')
-      return { deleted, bytes }
-    } catch (error) {
-      try {
-        ledger.exec('ROLLBACK')
-      } catch {
-        // Preserve the collection failure.
-      }
-      throw error
+      // The event loop runs between batches.
+      await new Promise((done) => setImmediate(done))
     }
+    return { deleted, bytes }
   } finally {
     index.close()
     ledger.close()

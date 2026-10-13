@@ -117,6 +117,37 @@ async function withDeadline<T>(ms: number, run: () => Promise<T>, onTimeout: () 
   }
 }
 
+/**
+ * A marker file's text as the store reads it, with `seenMs` (the file's time) as when its bytes were
+ * last seen; undefined when it is damaged.
+ */
+export function parseUserAttachmentMarker(
+  text: string,
+  sha256: string,
+  seenMs: number,
+): UserAttachmentMarker | undefined {
+  let marker: UserAttachmentMarker | undefined
+  try {
+    marker = JSON.parse(text) as UserAttachmentMarker
+  } catch {
+    return undefined
+  }
+  // Its size feeds the quota count and its type the reads: either one malformed makes it damaged.
+  if (
+    marker?.schemaVersion !== 1 ||
+    marker.sha256 !== sha256 ||
+    !Array.isArray(marker.receipts) ||
+    !Number.isSafeInteger(marker.bytes) ||
+    marker.bytes < 0 ||
+    typeof marker.mimeType !== 'string' ||
+    marker.mimeType.length > 128 ||
+    !MIME_TYPE.test(marker.mimeType)
+  )
+    return undefined
+  const firstSeenMs = Number.isFinite(marker.firstSeenMs) ? marker.firstSeenMs : 0
+  return { ...marker, lastSeenMs: Math.max(firstSeenMs, seenMs) }
+}
+
 function checkId(sha256: string): void {
   if (!SHA256.test(sha256)) throw new AttachmentStoreError('ATTACHMENT_INVALID_ID')
 }
@@ -343,28 +374,10 @@ export function createAttachmentStoreInternal(o: {
     }
     // A marker replaced or removed between the two reads counts as seen when it was first seen.
     const seenMs = Math.floor((await stat(markerPath(sha256)).catch(() => undefined))?.mtimeMs ?? 0)
-    let marker: UserAttachmentMarker | undefined
-    try {
-      marker = JSON.parse(text) as UserAttachmentMarker
-    } catch {
-      marker = undefined
-    }
-    // Its size feeds the quota count and its type the reads: either one malformed makes it damaged.
-    if (
-      marker?.schemaVersion !== 1 ||
-      marker.sha256 !== sha256 ||
-      !Array.isArray(marker.receipts) ||
-      !Number.isSafeInteger(marker.bytes) ||
-      marker.bytes < 0 ||
-      typeof marker.mimeType !== 'string' ||
-      marker.mimeType.length > 128 ||
-      !MIME_TYPE.test(marker.mimeType)
-    ) {
-      if (strict) throw new AttachmentStoreError('ATTACHMENT_CORRUPT', 'unreadable attachment marker')
-      return undefined
-    }
-    const firstSeenMs = Number.isFinite(marker.firstSeenMs) ? marker.firstSeenMs : 0
-    return { ...marker, lastSeenMs: Math.max(firstSeenMs, seenMs) }
+    const marker = parseUserAttachmentMarker(text, sha256, seenMs)
+    if (!marker && strict)
+      throw new AttachmentStoreError('ATTACHMENT_CORRUPT', 'unreadable attachment marker')
+    return marker
   }
 
   /** The marker's file time is when its bytes were last seen; setting it rewrites nothing. */

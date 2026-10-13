@@ -445,13 +445,58 @@ export async function verifyRootsUnderLedgerLock(
     /** What is left of the locked phase's index-wait budget. */
     waitMs?: number
   }>,
-): Promise<(IndexedRoots & Readonly<{ activity: ReadonlyMap<string, SessionActivity> }>) | undefined> {
-  const { ledger: database, index, candidates } = input
+): Promise<LockedRoots | undefined> {
+  const { index, candidates } = input
   const snapshot = await withIndexTransaction(
     index,
     () => ({ cursors: readCursors(index), indexed: candidateRefs(index, candidates) }),
     input.waitMs ?? REF_INDEX_LOCKED_WAIT_MS,
   )
+  return rootsFromSnapshot(input.ledger, snapshot, candidates)
+}
+
+type LockedRoots = IndexedRoots & Readonly<{ activity: ReadonlyMap<string, SessionActivity> }>
+
+/**
+ * `verifyRootsUnderLedgerLock` for a caller that must not yield while it holds the ledger write lock:
+ * nothing here waits. The index is read only when its lock is free right now; undefined otherwise,
+ * as when the proof would exceed the locked budget.
+ */
+export function verifyRootsUnderLedgerLockNow(
+  input: Readonly<{ ledger: DatabaseSync; index: DatabaseSync; candidates: ReadonlySet<string> }>,
+): LockedRoots | undefined {
+  const { index, candidates } = input
+  index.exec('PRAGMA busy_timeout=0')
+  try {
+    index.exec('BEGIN IMMEDIATE')
+  } catch (error) {
+    const busy = (error as { errcode?: unknown }).errcode
+    if (busy === 5 || busy === 6) return undefined
+    throw error
+  }
+  let snapshot: Parameters<typeof rootsFromSnapshot>[1]
+  try {
+    snapshot = { cursors: readCursors(index), indexed: candidateRefs(index, candidates) }
+    index.exec('COMMIT')
+  } catch (error) {
+    try {
+      index.exec('ROLLBACK')
+    } catch {
+      // Preserve the index read failure.
+    }
+    throw error
+  }
+  return rootsFromSnapshot(input.ledger, snapshot, candidates)
+}
+
+function rootsFromSnapshot(
+  database: DatabaseSync,
+  snapshot: Readonly<{
+    cursors: ReturnType<typeof readCursors>
+    indexed: ReturnType<typeof candidateRefs>
+  }>,
+  candidates: ReadonlySet<string>,
+): LockedRoots | undefined {
   const ledger = new Set<string>()
   const requestMedia = new Set<string>()
   const states = sessionStates(database, snapshot.cursors)

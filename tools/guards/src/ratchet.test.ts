@@ -2772,7 +2772,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/host/src 40664; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachment markers with a malformed size or type count as absent, and a send only refreshes an existing marker; reviewed exact countLines packages/host/src 40692; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: set-aside bytes are put back under the ledger write lock, at host start as in every sweep; reviewed exact countLines packages/host/src 40745; no exclusions or spare allocation.
-  'packages/host/src': 40745,
+  // 2026-10-13 attachments by reference: the attachment sweep decides in synchronous batches under the ledger write lock, with a synchronous root proof and marker read; reviewed exact countLines packages/host/src 40810; no exclusions or spare allocation.
+  'packages/host/src': 40810,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
