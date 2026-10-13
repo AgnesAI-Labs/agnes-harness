@@ -21,7 +21,7 @@ const request = {
 
 /** The loop context of one turn: the real demo adapter and tools behind the public ports. */
 async function fixture(finish) {
-  const host = await createPluginTestHost(toolPlugin)
+  const host = await createPluginTestHost(toolPlugin, { exportName: 'toolPlugin' })
   const instance = adapter.create(config)
   const events = [],
     batches = [],

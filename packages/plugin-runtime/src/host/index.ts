@@ -46,6 +46,7 @@ export type {
   HostPluginImporterFactory,
   PackageSnapshotCandidateRef,
   PackageSnapshotVerifier,
+  PluginInjectDeclaration,
   RowImporter,
   ThirdPartyRowDescriptor,
   ThirdPartyRowMountFactory,

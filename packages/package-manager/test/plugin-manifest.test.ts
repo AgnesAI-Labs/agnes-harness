@@ -169,6 +169,19 @@ describe('package.json agnes.plugins', () => {
     ).toThrow(/provide/)
   })
 
+  it('declares optional injected services as a subset of inject', () => {
+    const [entry] = parseAgnesPluginEntries('@acme/example', [
+      { apiRange: '^4.0.0', export: 'main', inject: ['tools', 'clock'], optionalInject: ['clock'] },
+    ])
+    expect(entry?.optionalInject).toEqual(['clock'])
+    expect(Object.isFrozen(entry?.optionalInject)).toBe(true)
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [
+        { apiRange: '^4.0.0', export: 'main', inject: ['tools'], optionalInject: ['clock'] },
+      ]),
+    ).toThrow(/subset of inject/)
+  })
+
   it('rejects an invalid inject list the same way', () => {
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [{ apiRange: '^4.0.0', export: 'main', inject: 'clock' }]),

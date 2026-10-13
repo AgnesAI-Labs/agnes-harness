@@ -125,18 +125,31 @@ describe('verified row contract', () => {
     await host.adapter.unmount(installation)
   })
 
-  it('takes the injected services from the manifest when the export does not repeat them', () => {
+  it('takes the injected services, required or optional, from the manifest entry alone', () => {
     const apply = () => {}
-    // Exactly what the export would have declared itself.
+    // Exactly what an export that listed them itself would have resolved to.
     const repeated = normalizePluginExport({ apply, inject: ['tools', 'providers'] }).inject
     expect(Object.keys(repeated)).toEqual(['tools', 'providers'])
-    expect(normalizePluginExport({ apply }, ['tools', 'providers']).inject).toEqual(repeated)
-    expect(Object.keys(normalizePluginExport(apply, ['tools']).inject)).toEqual(['tools'])
-    // An export that states its own dependencies, including optional ones, keeps them.
+    expect(normalizePluginExport({ apply }, { inject: ['tools', 'providers'] }).inject).toEqual(repeated)
+    expect(Object.keys(normalizePluginExport(apply, { inject: ['tools'] }).inject)).toEqual(['tools'])
     expect(
-      normalizePluginExport({ apply, inject: { tools: { required: false } } }, ['tools', 'providers']).inject,
-    ).toEqual({ tools: { required: false } })
+      normalizePluginExport({ apply }, { inject: ['tools', 'providers'], optionalInject: ['tools'] }).inject,
+    ).toEqual({ tools: { required: false }, providers: null })
     expect(normalizePluginExport({ apply }).inject).toEqual({})
+  })
+
+  it('refuses an export whose own inject list disagrees with its manifest entry', () => {
+    const apply = () => {}
+    expect(() => normalizePluginExport({ apply, inject: ['tools'] }, { inject: ['tools', 'hooks'] })).toThrow(
+      'differs',
+    )
+    expect(() =>
+      normalizePluginExport({ apply, inject: { tools: { required: false } } }, { inject: ['tools'] }),
+    ).toThrow('differs')
+    // Agreement, in any order, is not a conflict.
+    expect(
+      normalizePluginExport({ apply, inject: ['hooks', 'tools'] }, { inject: ['tools', 'hooks'] }).inject,
+    ).toEqual({ tools: null, hooks: null })
   })
 
   it('freezes caller data before snapshot verification yields', async () => {

@@ -15,7 +15,6 @@
 ```ts
 import type { LoopEventsPluginContext } from '@agnes/extension-api'
 export const plugin = {
-  inject: ['loopEvents'],
   apply(ctx: LoopEventsPluginContext) {
     ctx.loopEvents.on('before_model_request', () => ({ patch: { maxTokens: 1024 } }))
     ctx.loopEvents.on('turn_end', ({ reason }) => { console.log(reason) })

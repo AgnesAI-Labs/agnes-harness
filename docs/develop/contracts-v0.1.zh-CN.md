@@ -139,7 +139,7 @@ Composition 发布是**独立收敛**，不是全局原子事务。Runtime-targe
 | --- | --- |
 | `agnes.plugins[].export`、`apiRange` | 必需导出名称与已测试合同范围；不兼容在代码导入前拒绝 |
 | `id`、`runtime`、`default`、`config` | 可选 row id（默认 `ext:<package-id>/<export>`，`web:` 保留）；runtime 默认 `in-process`；default-enabled 声明默认 true；detached JSON config；声明不能绕过包 enablement |
-| `provide`、`inject`、`services` | 可选、有界且唯一的 service 名称列表；提供/注入元数据须与 export 一致；Surface service 名在 dispatch 时再次检查 |
+| `provide`、`inject`、`optionalInject`、`services` | 可选、有界且唯一的 service 名称列表。`inject` 是插件注入内容的唯一声明（在进程内导出若重复列出，必须一致），`optionalInject` 标出其中非必需的子集；`provide` 须与 export 一致；Surface service 名在 dispatch 时再次检查 |
 | `agnes.kinds` | 可选唯一值 `tool`、`loop`、`model-adapter`、`mcp`、`skills`、`ui`、`bundle`；包类别不是八种 provider kind 名称 |
 | `agnes.plugins[].capabilities` | 可选 network/exec/secrets/credentials scope 数组、filesystem read/write 数组、model/childAgents/ui/device 布尔值，以及 `uiData` 精确能力名列表（无通配；每一项成为 atom `uiData:<permission>` 并计入能力哈希）；能力 atoms 经审阅及 allow/deny ceilings，deny 优先；省略是未声明，不证明无效果 |
 | `agnes.hostProvidedExternals` | 受控 external 依赖兼容声明，不能替代 row `apiRange` |

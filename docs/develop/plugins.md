@@ -80,7 +80,7 @@ export const example = {
 }
 ```
 
-Dependency names must agree between static declarations and exported metadata. The backend loader needs the dependency graph before executing arbitrary modules. `provide` must also match on both sides. Include every required build artifact. A local TypeScript deep path or an unpackaged dependency does not form a portable immutable snapshot.
+Declare what the plugin injects once, in its `agnes.plugins` entry: `inject` lists every service name and `optionalInject` marks the ones it can run without. The backend loader needs the dependency graph before executing arbitrary modules, and the export carries no list of its own (a repeated one must agree). `provide` must match the export. Include every required build artifact. A local TypeScript deep path or an unpackaged dependency does not form a portable immutable snapshot.
 
 <a id="配置依赖与清理"></a>
 

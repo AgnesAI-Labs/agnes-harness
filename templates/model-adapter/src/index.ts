@@ -35,7 +35,6 @@ export const adapter = defineModelAdapter({
 })
 
 export const main = defineAgnesPlugin({
-  inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
     ctx.providers.register(modelAdapterKind, adapter)
   },

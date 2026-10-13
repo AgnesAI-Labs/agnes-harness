@@ -16,7 +16,6 @@ export const echo = defineTool({
 })
 
 export const main = defineAgnesPlugin({
-  inject: ['tools'],
   apply(ctx: Context) {
     ctx.tools.register(echo)
   },

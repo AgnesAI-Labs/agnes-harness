@@ -33,14 +33,13 @@ import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
     ctx.providers.register(childAgentKind, provider)
   },
 })
 ```
 
-在 `package.json` 的 `agnes.plugins` 里声明 `main` 和相同的注入。重复 id 会被拒绝。卸载插件会移除目录项，先中止并等待启动任务，再等待通过该服务启动的句柄释放。注销函数返回幂等 Promise，并传播清理失败。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。
+在 `package.json` 的 `agnes.plugins` 条目里一次性声明 `main` 及其 `providers` 注入（`inject`）；导出本身不再带清单。重复 id 会被拒绝。卸载插件会移除目录项，先中止并等待启动任务，再等待通过该服务启动的句柄释放。注销函数返回幂等 Promise，并传播清理失败。`catalog()` 提供 id、版本、来源包和能力。`ctx.providers.catalog()` 列出同一提供者，能力名只包含值为 true 的项。Host 也提供 `Assembled.childAgentCatalog()`。
 
 `in-process` 随 `@agnes/base` 安装。插件行 id 是 `child-agent:in-process`，提供者 id 是 `in-process`。
 

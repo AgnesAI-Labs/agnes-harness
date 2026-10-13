@@ -10,7 +10,6 @@ export const mcpServer: McpServerDefinitionInput = {
   secretBinding: { kind: 'none' },
 }
 export const main = defineAgnesPlugin({
-  inject: ['skills'],
   apply(ctx: Context) {
     const body = readFileSync(new URL('../skills/__SKILL_NAME__/SKILL.md', import.meta.url), 'utf8')
     ctx.skills.register({

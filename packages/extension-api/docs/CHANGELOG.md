@@ -48,8 +48,13 @@ Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range mov
   before the next handler receives it.
 - `@agnes/plugin-runtime` re-exports the root of this package, so a plugin imports helpers and
   contracts from one package.
-- A plugin export without `inject` takes the `inject` list of its `agnes.plugins` manifest entry.
-  An export that declares its own, for example to mark a service optional, keeps it.
+- The `agnes.plugins` entry is the one declaration of what a plugin injects: `inject` lists every
+  service name and the new `optionalInject` (a subset of `inject`) marks those it can run without.
+  An export carries no list of its own; an in-process export that repeats one must agree with the
+  entry or the load fails with `plugin-export-shape`. `@agnes/host/author-testkit`'s
+  `createPluginTestHost` reads the same entry from the package.json in `packageDir` (default: the
+  working directory) for the export named by `exportName` (default `main`), so a test no longer
+  repeats the list.
 
 ### Changed
 

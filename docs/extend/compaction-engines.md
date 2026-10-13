@@ -15,14 +15,13 @@ import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
     ctx.providers.register(compactionKind, engine)
   },
 })
 ```
 
-Here `engine` is your implementation. Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Registrations belong to the plugin fiber; duplicate ids are refused, unloading removes catalog entries and aborts pending engine operations. Bind other resources to the plugin's effects. `catalog()` exposes id, version and source package; Host also exposes `Assembled.compactionEngineCatalog()`.
+Here `engine` is your implementation. Declare `main` and its `providers` injection once, in `package.json`'s `agnes.plugins` entry (`inject`); the export carries no list of its own. Registrations belong to the plugin fiber; duplicate ids are refused, unloading removes catalog entries and aborts pending engine operations. Bind other resources to the plugin's effects. `catalog()` exposes id, version and source package; Host also exposes `Assembled.compactionEngineCatalog()`.
 
 `input.conversation` contains the visible nodes, turn numbers, pin flags, estimated tokens and event payloads. Masked ledger rows are excluded. `input.system` is the fixed system text; it cannot be replaced. The budget includes the live reserve and retained-token target. `input.beforeCompact` preserves the existing planner vocabulary, including the trigger reason and manual instructions.
 

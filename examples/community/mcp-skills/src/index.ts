@@ -17,7 +17,6 @@ export const mcpServer: McpServerDefinitionInput = {
 }
 
 export const main = defineAgnesPlugin({
-  inject: ['skills'],
   apply(ctx: Context) {
     const body = readFileSync(new URL('../skills/mcp-skills/SKILL.md', import.meta.url), 'utf8')
     // Runtime contributions have no disk directory. The same packaged asset is

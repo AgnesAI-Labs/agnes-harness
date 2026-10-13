@@ -15,14 +15,13 @@ import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
     ctx.providers.register(compactionKind, engine)
   },
 })
 ```
 
-这里的 `engine` 是你的实现。在 `package.json` 的 `agnes.plugins` 中声明 `main` 和相同注入。注册项属于插件 fiber；重复 id 会被拒绝，卸载会移除目录项并取消进行中的引擎操作。其他资源绑定插件 effect。`catalog()` 提供 id、版本与来源包；Host 也提供 `Assembled.compactionEngineCatalog()`。
+这里的 `engine` 是你的实现。在 `package.json` 的 `agnes.plugins` 条目中一次性声明 `main` 及其 `providers` 注入（`inject`）；导出本身不再带清单。注册项属于插件 fiber；重复 id 会被拒绝，卸载会移除目录项并取消进行中的引擎操作。其他资源绑定插件 effect。`catalog()` 提供 id、版本与来源包；Host 也提供 `Assembled.compactionEngineCatalog()`。
 
 `input.conversation` 包含可见节点、轮次、pin 标记、token 估计与事件 payload，不包含已被遮蔽的账本行。`input.system` 是不可替换的固定系统文本。budget 包含当前预留与近期保留 token 目标。`input.beforeCompact` 保留已有计划器词汇，包括触发原因和手动指令。
 

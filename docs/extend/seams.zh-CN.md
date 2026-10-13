@@ -35,7 +35,6 @@ const checkpoint: CheckpointProvider = {
 }
 
 export const main = {
-  inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     ctx.providers.register(checkpointKind, checkpoint)
   },

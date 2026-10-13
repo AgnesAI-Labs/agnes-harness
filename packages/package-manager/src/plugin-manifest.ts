@@ -40,8 +40,13 @@ export interface AgnesPluginManifestEntry extends PluginConfigContract {
   /** Service names the export provides. Must equal the export's own `provide` metadata: the daemon
    * builds the row without importing the module, and the mount checks the two against each other. */
   readonly provide?: readonly string[]
-  /** Service names the export injects (names only; whether each is required stays in the export). */
+  /**
+   * Every service name the export injects. This list is the one declaration: the export carries none
+   * (one that repeats it must agree). A name also listed in `optionalInject` is not waited for.
+   */
   readonly inject?: readonly string[]
+  /** The subset of `inject` the plugin can run without; the mount does not wait for these services. */
+  readonly optionalInject?: readonly string[]
   /** Surface-callable services registered by this row; checked again at dispatch. */
   readonly services?: readonly string[]
   /** What the plugin registers and which authority it needs; one shape for every package. */
@@ -70,6 +75,7 @@ const ENTRY_FIELDS = new Set([
   'default',
   'provide',
   'inject',
+  'optionalInject',
   'services',
   'capabilities',
 ])
@@ -107,7 +113,7 @@ function freezeJson(value: unknown, seen = new Set<object>()): unknown {
 /** A declared list of service names: unique, trimmed, printable, bounded. */
 function serviceNames(
   index: number,
-  field: 'provide' | 'inject' | 'services',
+  field: 'provide' | 'inject' | 'optionalInject' | 'services',
   value: unknown,
 ): readonly string[] {
   if (value === undefined) return Object.freeze([])
@@ -236,6 +242,10 @@ export function parseAgnesPluginEntries(
             : { runtimeSupports: Object.freeze([...runtimeSupports]) as readonly AgnesPluginRuntime[] }),
         })
       : undefined
+    const optionalInject =
+      raw.optionalInject === undefined ? undefined : serviceNames(index, 'optionalInject', raw.optionalInject)
+    if (optionalInject?.some((name) => !(raw.inject as readonly string[] | undefined)?.includes(name)))
+      fail(`entry ${index} optionalInject`, 'must be a subset of inject')
     return Object.freeze({
       ...(raw.metadata === undefined ? {} : { metadata: freezeJson(raw.metadata) as PluginMetadata }),
       ...(capabilities === undefined ? {} : { capabilities }),
@@ -252,6 +262,7 @@ export function parseAgnesPluginEntries(
       default: enabledByDefault,
       ...(raw.provide === undefined ? {} : { provide: serviceNames(index, 'provide', raw.provide) }),
       ...(raw.inject === undefined ? {} : { inject: serviceNames(index, 'inject', raw.inject) }),
+      ...(optionalInject === undefined ? {} : { optionalInject }),
       ...(raw.services === undefined ? {} : { services: serviceNames(index, 'services', raw.services) }),
     })
   })

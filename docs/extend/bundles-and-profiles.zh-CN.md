@@ -49,7 +49,7 @@ Host 只读取已启用、已信任且完整性校验通过的已安装包。包
 
 数组整体替换，包引用按 id 合并，工具策略与各插件行按字段合并。拒绝保留对象键和非 JSON 数据。composition 不能越过包的信任或禁用状态。普通行的 composition 位于部署默认值之后、显式用户/工作区行覆盖之前。
 
-bundle 提供的 preset 使用已有继承规则，并可加入 `bundles` 与 `composition` 字段。这些 preset 加入 profile 的允许列表。新会话选择 preset 后采用其 loop 和调用策略。
+bundle 提供的 preset 使用已有继承规则，并可加入 `bundles`、`composition` 与 `providers` 字段；preset 的 `providers` 表还接受 `tool-runtime` 和 `tool-policy`，它的 `composition` 不再携带 provider 块。这些 preset 加入 profile 的允许列表。新会话选择 preset 后采用其 loop 和调用策略。
 
 ## 查看与管理
 

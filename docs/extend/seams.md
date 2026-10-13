@@ -35,14 +35,13 @@ const checkpoint: CheckpointProvider = {
 }
 
 export const main = {
-  inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     ctx.providers.register(checkpointKind, checkpoint)
   },
 }
 ```
 
-Declare `main` and its `providers` injection in `package.json`'s `agnes.plugins`. A package can register only under its own name. The Host places its binding rows after every registration row, so a provider is always registered before it is selected.
+Declare `main` and its `providers` injection once, in `package.json`'s `agnes.plugins` entry (`inject`); the export carries no list of its own. A package can register only under its own name. The Host places its binding rows after every registration row, so a provider is always registered before it is selected.
 
 `create(init, signal)` receives a `SeamInit`: `secrets`, an `adapters` view, a `profile` view that includes the active preset, `log` and `signal`. Bundled packages may receive a wider view; yours never does. The returned object may carry `close()`, which the Host calls when its container is torn down. The Host races `create` against a timer (`seamTimeoutMs`, 30 s by default) without trusting you to honour the signal; an instance that arrives after the timeout is closed at once.
 

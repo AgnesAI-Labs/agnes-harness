@@ -215,7 +215,7 @@ export function readNamedExports(
         try {
           return Object.freeze({
             declaration,
-            entry: normalizePluginExport(mod[declaration.export] as never, declaration.inject),
+            entry: normalizePluginExport(mod[declaration.export] as never, declaration),
           })
         } catch {
           throw new HostError('E_EXT_LOAD', `${id}: plugin export ${declaration.export} is invalid`, {

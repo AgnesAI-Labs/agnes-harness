@@ -10,7 +10,6 @@
 import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@agnes/extension-api'
 
 export const enterpriseMemoryPlugin = {
-  inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     ctx.providers.register(memoryKind, enterpriseMemory)
   },

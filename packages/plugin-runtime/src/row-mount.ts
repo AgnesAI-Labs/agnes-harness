@@ -241,19 +241,36 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
   )
 }
 
+/** The injected services a plugin's `agnes.plugins` entry declares: every name, and the optional subset. */
+export type PluginInjectDeclaration = Readonly<{
+  inject?: readonly string[]
+  optionalInject?: readonly string[]
+}>
+
+const sortedEntries = (record: Record<string, unknown>) =>
+  Object.entries(record).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+
+function declaredInjectRecord(declared: PluginInjectDeclaration): Record<string, unknown> {
+  const optional = new Set(declared.optionalInject)
+  return Object.fromEntries(
+    (declared.inject ?? []).map((name) => [name, optional.has(name) ? { required: false } : null]),
+  )
+}
+
 /**
- * `declaredInject` is the `inject` list of the plugin's manifest entry. The manifest is where a
- * plugin states its dependencies, so an export that does not repeat them gets the manifest's.
+ * The manifest entry (`declared`) is where a plugin states what it injects, required or optional; the
+ * export carries no list of its own. An in-process export that repeats one must say the same thing.
  */
 export function normalizePluginExport(
   exported: Plugin<unknown>,
-  declaredInject?: readonly string[],
+  declared?: PluginInjectDeclaration,
 ): VerifiedRowEntry {
-  const inject = deepFreeze(
-    cloneValue(
-      ownRecord(Inject.resolve(exported.inject ?? (declaredInject ? [...declaredInject] : undefined))),
-    ),
-  )
+  const own = exported.inject === undefined ? undefined : ownRecord(Inject.resolve(exported.inject))
+  const listed =
+    declared?.inject === undefined ? undefined : ownRecord(Inject.resolve(declaredInjectRecord(declared)))
+  if (own && listed && JSON.stringify(sortedEntries(own)) !== JSON.stringify(sortedEntries(listed)))
+    throw new TypeError('plugin export inject differs from its agnes.plugins entry')
+  const inject = deepFreeze(cloneValue(listed ?? own ?? {}))
   const provides = normalizeProvides(exported.provide)
   const prepared = preparePluginInvocation(exported, inject)
   return Object.freeze({ prepared, inject, provides })

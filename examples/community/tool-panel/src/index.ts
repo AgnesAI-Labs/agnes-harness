@@ -29,7 +29,6 @@ export function createEcho(config: Config = {}) {
 }
 
 export const main = defineAgnesPlugin({
-  inject: ['tools'],
   apply(ctx: Context, config: Config = {}) {
     ctx.tools.register(createEcho(config))
   },

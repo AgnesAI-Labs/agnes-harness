@@ -4,13 +4,12 @@ English | [简体中文](memory.zh-CN.md)
 
 One **memory** provider is selected and pinned to a session. The official `file@1.0.0` comes from `@agnes/base`, with its implementation in `@agnes/memory-file`. It uses only the public [MemoryProvider contract](../../packages/extension-api/src/memory.ts). Deployments without a memory provider retain their existing behavior.
 
-A plugin injects `providers` and registers its implementation:
+A plugin lists `providers` in its `agnes.plugins` entry's `inject` and registers its implementation:
 
 ```ts
 import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@agnes/extension-api'
 
 export const enterpriseMemoryPlugin = {
-  inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     ctx.providers.register(memoryKind, enterpriseMemory)
   },

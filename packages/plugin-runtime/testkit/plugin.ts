@@ -1,12 +1,14 @@
 import type { Plugin } from '@agnes/cordis'
 import { type ToolContext, type ToolResult, unavailableDecisions } from '@agnes/extension-api'
 import { Value } from '@sinclair/typebox/value'
-import { createPluginRow, normalizePluginExport } from '../src/host/index.js'
+import { createPluginRow, normalizePluginExport, type PluginInjectDeclaration } from '../src/host/index.js'
 import { createVerifiedTestRoot } from './index.js'
 import type { PluginTestRegistration } from './registration.js'
 
 export interface PluginTestOptions {
   config?: unknown
+  /** The plugin's `agnes.plugins` `inject` and `optionalInject`, exactly as the manifest states them. */
+  inject?: PluginInjectDeclaration
   /** Supply explicit ports for tools that need I/O; omitted ports refuse access. */
   context?: Partial<ToolContext>
   /** Supply a registration bridge, such as createPluginTestRegistration from @agnes/host/testkit. */
@@ -18,7 +20,7 @@ export async function createPluginTestHost(plugin: Plugin, options: PluginTestOp
   const registration = options?.registration
   if (!registration) throw new TypeError('Plugin test registration required')
   const world = createVerifiedTestRoot()
-  const entry = normalizePluginExport(plugin)
+  const entry = normalizePluginExport(plugin, options.inject)
   const snapshot = world.fixtures.snapshot({
     packageId: '@test/plugin',
     snapshotId: 'author',

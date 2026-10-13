@@ -150,6 +150,29 @@ describe('package plugin loader', () => {
     expect(Object.isFrozen(loaded[0])).toBe(true)
   })
 
+  it('reads required and optional injected services from the manifest entry alone', async () => {
+    const { snapshot } = packageSnapshot([
+      { apiRange: '^4.0.0', export: 'main', inject: ['tools', 'clock'], optionalInject: ['clock'] },
+    ])
+    const [loaded] = await loadPackagePlugins({
+      snapshot,
+      generation: 1,
+      importModule: async () => ({ main: { apply() {} } }),
+    })
+    expect(loaded?.entry.inject).toEqual({ tools: null, clock: { required: false } })
+  })
+
+  it('refuses an export whose own inject list disagrees with the manifest entry', async () => {
+    const { snapshot } = packageSnapshot([{ apiRange: '^4.0.0', export: 'main', inject: ['tools'] }])
+    await expect(
+      loadPackagePlugins({
+        snapshot,
+        generation: 1,
+        importModule: async () => ({ main: { inject: ['tools', 'hooks'], apply() {} } }),
+      }),
+    ).rejects.toMatchObject({ detail: { reason: 'plugin-export-shape' } })
+  })
+
   it('rejects a missing declared export and an invalid plugin shape', async () => {
     const missing = packageSnapshot([{ apiRange: '^4.0.0', export: 'main' }]).snapshot
     await expect(

@@ -4,7 +4,7 @@ English | [简体中文](loop-events.zh-CN.md)
 
 [Plugin author kit](README.md) · [Tool runtime and policies](tool-runtime.md)
 
-An ordinary plugin injects `loopEvents`. `on(name, handler)` returns a disposer and binds the listener to its plugin fiber. Handlers receive a payload snapshot and `{ session, signal }`; transformers return patches rather than mutate the input.
+An ordinary plugin lists `loopEvents` in its `agnes.plugins` entry's `inject`. `on(name, handler)` returns a disposer and binds the listener to its plugin fiber. Handlers receive a payload snapshot and `{ session, signal }`; transformers return patches rather than mutate the input.
 
 | Event | Payload / return | Existing hook |
 | --- | --- | --- |
@@ -17,7 +17,6 @@ An ordinary plugin injects `loopEvents`. `on(name, handler)` returns a disposer 
 ```ts
 import type { LoopEventsPluginContext } from '@agnes/extension-api'
 export const plugin = {
-  inject: ['loopEvents'],
   apply(ctx: LoopEventsPluginContext) {
     ctx.loopEvents.on('before_model_request', () => ({ patch: { maxTokens: 1024 } }))
     ctx.loopEvents.on('turn_end', ({ reason }) => { console.log(reason) })

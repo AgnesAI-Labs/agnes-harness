@@ -139,7 +139,7 @@ Ordinary packages declare `package.json` name/version/exports, dependency and li
 | --- | --- |
 | `agnes.plugins[].export`, `apiRange` | Required module export name and tested contract range; incompatibility refuses before code import |
 | `id`, `runtime`, `default`, `config` | Optional row id (default `ext:<package-id>/<export>`; `web:` reserved), runtime default `in-process`, default-enabled declaration true, detached JSON config; this declaration does not bypass package enablement |
-| `provide`, `inject`, `services` | Optional bounded unique service-name lists; provided/injected metadata must match the export; Surface service names are checked again at dispatch |
+| `provide`, `inject`, `optionalInject`, `services` | Optional bounded unique service-name lists. `inject` is the one declaration of what the plugin injects (an in-process export that repeats it must agree); `optionalInject` marks the subset that is not required. `provide` must match the export; Surface service names are checked again at dispatch |
 | `agnes.kinds` | Optional unique values `tool`, `loop`, `model-adapter`, `mcp`, `skills`, `ui`, `bundle`; package categories are not the eight provider kind names |
 | `agnes.plugins[].capabilities` | Optional network/exec/secrets/credentials scope arrays, filesystem read/write arrays, model/childAgents/ui/device booleans, and a `uiData` list of exact capability names (no globs; each becomes the atom `uiData:<permission>` and is included in the capability hash); capability atoms are reviewed and checked against allow/deny ceilings, deny wins; omission is undeclared, not proof of no effects |
 | `agnes.hostProvidedExternals` | Controlled external dependency compatibility declarations; not a replacement for row `apiRange` |

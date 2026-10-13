@@ -33,14 +33,13 @@ import type { ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
-  inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext) {
     ctx.providers.register(childAgentKind, provider)
   },
 })
 ```
 
-Declare `main` and the same injection in `package.json`'s `agnes.plugins`. Duplicate ids are refused. Unloading the plugin removes the catalog entry and aborts and joins starts, then awaits disposal of handles started through the service. The unregister function returns an idempotent Promise and propagates cleanup failures. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.
+Declare `main` and its `providers` injection once, in `package.json`'s `agnes.plugins` entry (`inject`); the export carries no list of its own. Duplicate ids are refused. Unloading the plugin removes the catalog entry and aborts and joins starts, then awaits disposal of handles started through the service. The unregister function returns an idempotent Promise and propagates cleanup failures. `catalog()` exposes id, version, source package, and capabilities. `ctx.providers.catalog()` lists the same provider with the capability names that are true. Host also exposes `Assembled.childAgentCatalog()`.
 
 The in-process provider is installed with the `@agnes/base` package. Its plugin row id is `child-agent:in-process` and its provider id is `in-process`.
 
