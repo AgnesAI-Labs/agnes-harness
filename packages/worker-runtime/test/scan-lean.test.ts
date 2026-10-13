@@ -188,7 +188,9 @@ describe('raw exporter holding', () => {
     }
   }
   const big = 'x'.repeat(EXPORT_RAW_CHUNK_BYTES + 10)
+  const verified = { d: { log: { fullVerified: async () => undefined } } }
   const fakeSession = () => ({
+    ...verified,
     scan: vi.fn(async (q: { fromSeq: number }) => [{ seq: q.fromSeq, data: big }]),
   })
 
@@ -226,7 +228,7 @@ describe('raw exporter holding', () => {
 
   it('does not keep a failed read', async () => {
     const exporter = createRawExporter({ timers: fakeTimers().timers })
-    const session = { scan: vi.fn(async () => []) }
+    const session = { ...verified, scan: vi.fn(async () => []) }
     await expect(exporter.chunk(session as never, 9, 0)).rejects.toMatchObject({
       data: { reason: 'row-not-found' },
     })
@@ -234,5 +236,38 @@ describe('raw exporter holding', () => {
       data: { reason: 'row-not-found' },
     })
     expect(session.scan).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads no row until the history is verified, and refuses every piece once it failed', async () => {
+    const exporter = createRawExporter({ timers: fakeTimers().timers })
+    let pass!: () => void
+    let fail!: (e: unknown) => void
+    let check = new Promise<void>((r) => {
+      pass = r
+    })
+    const session = {
+      d: { log: { fullVerified: () => check } },
+      scan: vi.fn(async (q: { fromSeq: number }) => [{ seq: q.fromSeq, data: big }]),
+    }
+    let settled = false
+    const first = exporter.chunk(session as never, 1, 0).finally(() => {
+      settled = true
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(settled).toBe(false)
+    expect(session.scan).not.toHaveBeenCalled()
+    pass()
+    expect((await first).nextOffset).toBe(EXPORT_RAW_CHUNK_BYTES)
+    // The row is held now; a failure found after that still stops its remaining pieces.
+    check = new Promise<void>((_, reject) => {
+      fail = reject
+    })
+    check.catch(() => undefined)
+    fail(Object.assign(new Error('ledger digest mismatch'), { code: 'E_LEDGER_INTEGRITY' }))
+    await expect(exporter.chunk(session as never, 1, EXPORT_RAW_CHUNK_BYTES)).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    await expect(exporter.chunk(session as never, 2, 0)).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(session.scan).toHaveBeenCalledTimes(1)
   })
 })

@@ -8,7 +8,10 @@ export const EXPORT_RAW_IDLE_MS = 60_000
 /** Rows held per session at once, so two exports interleaving their pieces do not re-read each piece. */
 const SLOTS_PER_SESSION = 2
 
-type ExportSession = Pick<HostSession, 'scan'>
+/** A session's stored rows, and the verification of its whole history that must pass before any leaves. */
+type ExportSession = Pick<HostSession, 'scan'> & {
+  readonly d: { readonly log: { fullVerified(): Promise<void> } }
+}
 type Page = { seq: number; base64: string; nextOffset: number | null }
 type Slot = { bytes: Promise<Buffer>; timer?: unknown }
 type Timers = { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(timer: unknown): void }
@@ -64,6 +67,10 @@ export function createRawExporter(o: { idleMs?: number; timers?: Timers } = {}):
     async chunk(session, seq, offset) {
       if (!Number.isSafeInteger(seq) || seq < 1 || !Number.isSafeInteger(offset) || offset < 0)
         throw rpcError('INVALID_PARAMS', { reason: 'invalid-position' })
+      // No piece leaves before the whole stored history has been verified: an open from a checkpoint
+      // has only folded the rows the checkpoint vouches for. Once the verification has failed, every
+      // piece is refused with the integrity error, including pieces of a row already held.
+      await session.d.log.fullVerified()
       let slots = held.get(session)
       if (!slots) {
         slots = new Map()

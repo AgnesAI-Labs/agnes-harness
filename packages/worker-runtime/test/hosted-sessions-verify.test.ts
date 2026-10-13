@@ -93,6 +93,30 @@ it('reports a history that fails the background verification and refuses new inp
   await expect(t.hosted.open(t.openFrame(key))).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
 })
 
+it('serves no raw row of a history that fails the background verification', async () => {
+  const key = 'verify-export'
+  const { t, file, storage } = await closedWithHistory(key)
+  const db = new DatabaseSync(file)
+  db.prepare(
+    `UPDATE events SET data = json_set(data, '$.agnesVersion', 'tampered') WHERE session_key = ? AND seq = 1`,
+  ).run(key)
+  db.close()
+  const release = holdBackgroundVerify(storage)
+  await t.hosted.open(t.openFrame(key))
+  let answered = false
+  const exported = t.hosted.dispatch(t.command(key, 'exportRaw', { seq: 1, offset: 0 })).finally(() => {
+    answered = true
+  })
+  exported.catch(() => undefined)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(answered).toBe(false)
+  release()
+  await expect(exported).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+  await expect(t.hosted.dispatch(t.command(key, 'exportRaw', { seq: 2, offset: 0 }))).rejects.toMatchObject({
+    code: 'E_LEDGER_INTEGRITY',
+  })
+})
+
 it('an open that the background verification fails before it settles leaves no session or lease behind', async () => {
   const key = 'verify-during-open'
   const { t, file, storage } = await closedWithHistory(key)
