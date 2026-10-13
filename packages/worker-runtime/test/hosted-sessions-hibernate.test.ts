@@ -82,8 +82,10 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     await t.idle()
     expect(t.hibernated('progress')).toBe(true)
     await t.hosted.dispatch(t.command('progress', 'latest', { register: 'op.state' }))
+    // Hibernating closed the session cleanly, so the wake opens from its verified-head checkpoint:
+    // the whole history is folded at once and verified in the background.
     expect(progress()).toEqual([
-      { kind: 'progress', sessionKey: 'progress', phase: 'verify', done: head, total: head },
+      { kind: 'progress', sessionKey: 'progress', phase: 'fold', done: head, total: head },
     ])
   })
 
