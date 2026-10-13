@@ -17,12 +17,11 @@ import {
   PluginPurposeSections,
   Popover,
   renderRegion,
+  SearchBar,
   SettingsDetails,
-  SettingsInput,
   SettingsPageHeader,
   SettingsSelect,
   SettingsState,
-  SettingsToolbar,
   SourceDialogContent,
   sourceLabel,
   Tabs,
@@ -186,25 +185,18 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             ]}
           />
 
-          <SettingsToolbar
+          <SearchBar
             data-testid="plugin-toolbar"
-            search={
-              <Field label={this.t('shell.search.aria')} htmlFor="plugin-search">
-                <SettingsInput
-                  id="plugin-search"
-                  type="search"
-                  value={this.queryRaw}
-                  placeholder={this.purposeText('search')}
-                  disabled={!context || !this.can('packages.read')}
-                  onChange={(event) => {
-                    this.queryRaw = event.target.value
-                    this.query = event.target.value.trim()
-                    if (this.tab === 'installed') this.render()
-                    else void this.loadCatalog()
-                  }}
-                />
-              </Field>
-            }
+            label={this.t('shell.search.aria')}
+            placeholder={this.purposeText('search')}
+            value={this.queryRaw}
+            onChange={(value) => {
+              this.queryRaw = value
+              this.query = value.trim()
+              if (this.tab === 'installed') this.render()
+              else void this.loadCatalog()
+            }}
+            inputProps={{ id: 'plugin-search', disabled: !context || !this.can('packages.read') }}
             filters={
               <Popover
                 trigger="click"

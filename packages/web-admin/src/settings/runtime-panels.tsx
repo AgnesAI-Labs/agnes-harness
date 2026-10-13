@@ -4,7 +4,6 @@ import {
   Button,
   Field,
   MetaText,
-  SettingsCard,
   SettingsDetails,
   SettingsInput,
   SettingsList,
@@ -14,7 +13,6 @@ import {
 } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
-import { PermissionDefaults } from './permission-defaults.js'
 import { SecurityStatusPanel } from './security-status.js'
 
 export const PROVIDER_KINDS = [
@@ -364,7 +362,6 @@ export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot;
   return (
     <>
       <SecurityStatusPanel status={snapshot.security} t={t} />
-      <PermissionDefaults available={snapshot.presets.map((preset) => preset.id)} />
       <SettingsDetails title={t('sandbox')}>
         <ProvidersPanel snapshot={snapshot} kinds={['sandbox']} t={t} />
       </SettingsDetails>

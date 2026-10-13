@@ -1,4 +1,12 @@
-import { Button, Field, SettingsCard, SettingsInput, SettingsState, SettingsToolbar } from '@agnes/web-ui'
+import {
+  Button,
+  EmptyState,
+  Icon,
+  SearchBar,
+  SettingsInput,
+  SettingsPageDescription,
+  SettingsState,
+} from '@agnes/web-ui'
 import { type FormEvent, useState } from 'react'
 
 export type HistoryHit = {
@@ -88,60 +96,89 @@ export function HistorySearchPanel({
 
   const next = page?.next
   return (
-    <SettingsCard>
-      <form className="history-search" data-testid="history-search-form" onSubmit={onSubmit}>
-        <p>{t('historyHelp')}</p>
-        <SettingsToolbar>
-          <Field htmlFor="history-search-query" label={t('historyQuery')}>
-            <SettingsInput id="history-search-query" data-testid="history-search-query" name="query" />
-          </Field>
-          <Field htmlFor="history-search-title" label={t('historyTitle')}>
-            <SettingsInput id="history-search-title" data-testid="history-search-title" name="title" />
-          </Field>
-          <Field htmlFor="history-search-workspace" label={t('historyWorkspace')}>
+    <form className="history-search" data-testid="history-search-form" onSubmit={onSubmit}>
+      <SettingsPageDescription>{t('historyHelp')}</SettingsPageDescription>
+      <SearchBar
+        label={t('historyQuery')}
+        placeholder={t('historyQueryPlaceholder')}
+        inputProps={{ id: 'history-search-query', 'data-testid': 'history-search-query', name: 'query' }}
+        filters={
+          <>
+            <label className="visually-hidden" htmlFor="history-search-title">
+              {t('historyTitle')}
+            </label>
+            <SettingsInput
+              id="history-search-title"
+              data-testid="history-search-title"
+              name="title"
+              placeholder={t('historyTitlePlaceholder')}
+            />
+            <label className="visually-hidden" htmlFor="history-search-workspace">
+              {t('historyWorkspace')}
+            </label>
             <SettingsInput
               id="history-search-workspace"
               data-testid="history-search-workspace"
               name="workspace"
+              placeholder={t('historyWorkspacePlaceholder')}
             />
-          </Field>
+          </>
+        }
+        actions={
           <Button htmlType="submit" data-testid="history-search-submit" disabled={busy}>
             {t('historySubmit')}
           </Button>
-        </SettingsToolbar>
+        }
+      />
+      {status === 'empty' ? (
+        <EmptyState
+          role="status"
+          data-testid="history-search-status"
+          icon={<Icon name="search" size={20} />}
+          title={t('historyEmpty')}
+          description={t('historyEmptyHelp')}
+        />
+      ) : (
         <SettingsState
           hidden={status === 'idle'}
-          tone={status === 'error' ? 'error' : 'empty'}
+          tone="error"
           data-testid="history-search-status"
           role={status === 'error' ? 'alert' : 'status'}
         >
-          {status === 'empty' ? t('historyEmpty') : status === 'error' ? t('historyUnavailable') : ''}
+          {status === 'error' ? t('historyUnavailable') : ''}
         </SettingsState>
-        <ul className="agnes-settings-list" data-testid="history-search-results">
-          {page?.items.map((item) => (
-            <li
-              className="agnes-settings-row"
-              key={`${item.sessionId}:${item.seq ?? ''}:${item.ts}`}
-              data-testid="history-hit"
-            >
-              <span>{item.title || item.sessionId}</span>
-              <span>{item.workspace}</span>
-              <span>{item.snippet}</span>
-            </li>
-          ))}
-        </ul>
-        {next && (
-          <Button
-            htmlType="button"
-            data-testid="history-search-next"
-            disabled={busy}
-            onClick={() => void run(filters, next)}
+      )}
+      {!page && status === 'idle' && (
+        <EmptyState
+          icon={<Icon name="history" size={20} />}
+          title={t('historyIdleTitle')}
+          description={t('historyIdleHelp')}
+        />
+      )}
+      <ul className="agnes-settings-list history-search-results" data-testid="history-search-results">
+        {page?.items.map((item) => (
+          <li
+            className="agnes-settings-row"
+            key={`${item.sessionId}:${item.seq ?? ''}:${item.ts}`}
+            data-testid="history-hit"
           >
-            {t('historyNext')}
-          </Button>
-        )}
-        {page?.truncated && <SettingsState>{t('historyCapped')}</SettingsState>}
-      </form>
-    </SettingsCard>
+            <span>{item.title || item.sessionId}</span>
+            <span>{item.workspace}</span>
+            <span>{item.snippet}</span>
+          </li>
+        ))}
+      </ul>
+      {next && (
+        <Button
+          htmlType="button"
+          data-testid="history-search-next"
+          disabled={busy}
+          onClick={() => void run(filters, next)}
+        >
+          {t('historyNext')}
+        </Button>
+      )}
+      {page?.truncated && <SettingsState>{t('historyCapped')}</SettingsState>}
+    </form>
   )
 }

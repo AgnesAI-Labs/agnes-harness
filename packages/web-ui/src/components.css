@@ -1297,8 +1297,19 @@
     gap: var(--s8);
     min-width: 0;
   }
-  .agh-search-bar-filters > * {
-    min-width: 8rem;
+  .agh-search-bar-filters > select {
+    width: auto;
+    max-width: 14rem;
+  }
+  .agh-search-bar-filters > :is(input, .agnes-ui-select) {
+    width: 10rem;
+  }
+  .agh-search-bar-filters > :is(input, select, .agnes-ui-select) {
+    min-width: 0;
+    height: var(--control-height-form);
+    min-height: var(--control-height-form);
+    padding-block: 0;
+    border-radius: var(--radius-control);
   }
 
   /* A switch always shows its state in words beside the knob. */
@@ -1406,6 +1417,65 @@
   }
   .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
     justify-content: flex-start;
+  }
+  /* A disclosure listed in a group is one of its rows; its content keeps the row's inset. */
+  .agnes-settings-group > .agh-disclosure[data-variant] {
+    padding-inline: var(--s16);
+  }
+  /* Disclosed settings content has one rhythm, whatever mix of text, fields and tables it holds. */
+  .agnes-settings-details > .agh-disclosure-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .agnes-settings-details > .agh-disclosure-body > :is(p, h3, h4, h5, dl, ul, ol) {
+    margin-block: 0;
+  }
+  .agnes-settings-section > div:empty {
+    display: none;
+  }
+  /* View filters of a list share one row: what is shown on the left, optional extras on the right. */
+  .agnes-settings-filters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+  }
+  /* A page's own panel keeps the page rhythm between its parts. */
+  .agnes-settings-stack
+  > :is(section, form):not(.agnes-settings-section, .agnes-settings-page, .agh-empty-state) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .agnes-settings-stack > :is(section, form) > :is(p, h3, h4) {
+    margin-block: 0;
+  }
+  .agnes-settings-details > .agh-disclosure-body > section:not([class]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    justify-items: start;
+  }
+  .agnes-settings-details > .agh-disclosure-body > section:not([class]) > .agnes-ui-field {
+    width: 100%;
+  }
+  .agnes-settings-summary {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* What a disclosure row reveals belongs to that row: a card directly inside it draws no second
+   outline. Cards further in are objects and keep theirs. */
+  .agnes-settings-details[data-variant="row"] > .agh-disclosure-body > .agnes-settings-card {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   .agnes-settings-technical {
     margin-top: calc(-1 * var(--s8));

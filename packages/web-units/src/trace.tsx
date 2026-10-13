@@ -37,7 +37,7 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import { buildTraceToolHierarchy, isTraceRowHiddenByTool, traceToolAncestors } from './trace-hierarchy.js'
-import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
+import { traceLocale, traceText } from './trace-locale.js'
 import { buildTraceRequestMetrics } from './trace-request-metrics.js'
 import { buildTraceTimelineDensity, pickTraceTimelineDensityMember } from './trace-timeline-density.js'
 import {

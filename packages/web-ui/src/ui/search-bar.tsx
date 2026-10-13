@@ -38,7 +38,7 @@ export function SearchBar({
 }: SearchBarProps) {
   return (
     <div {...props} role="search" className={['agh-search-bar', className].filter(Boolean).join(' ')}>
-      <label className="agh-search-bar-field">
+      <label className="agh-search-bar-field" htmlFor={inputProps?.id}>
         <Icon name="search" />
         <span className="visually-hidden">{label}</span>
         <input

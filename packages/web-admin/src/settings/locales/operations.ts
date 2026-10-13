@@ -18,7 +18,7 @@ export const operationsCatalog: LocaleCatalog = {
     examples: 'Examples',
     schedules: 'Schedules',
     schedulesHelp:
-      'Reminders start or resume a session. A recurring reminder delivers only its latest missed run after downtime. Archiving does not retract a message that is already queued.',
+      'When a reminder is due it starts or continues a session. After downtime, a repeating reminder makes up only its latest missed run.',
     schedulesUnavailable: 'Reminders are unavailable. Reconnect and try again.',
     schedulesEmpty: 'No reminders yet.',
     schedulesScope: 'Reminder scope',
@@ -81,8 +81,7 @@ export const operationsCatalog: LocaleCatalog = {
 
     examples: '示例',
     schedules: '日程',
-    schedulesHelp:
-      '提醒会启动或恢复会话。停机后，重复提醒只补上最近一次错过的运行。归档不会撤回已经排队的消息。',
+    schedulesHelp: '提醒到点后会开始或继续一个会话。电脑没开时错过的重复提醒，只补最近一次。',
     schedulesUnavailable: '提醒暂不可用，请重新连接后重试。',
     schedulesEmpty: '还没有提醒。',
     schedulesScope: '提醒范围',

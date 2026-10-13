@@ -104,6 +104,7 @@ export {
   SettingsList,
   SettingsPage,
   SettingsPageActions,
+  SettingsPageDescription,
   SettingsPageHeader,
   SettingsRow,
   SettingsSaveBar,

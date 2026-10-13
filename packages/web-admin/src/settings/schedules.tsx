@@ -1,4 +1,5 @@
 import {
+  Banner,
   Button,
   Dialog,
   EmptyState,
@@ -9,6 +10,8 @@ import {
   Menu,
   SettingsDetails,
   SettingsInput,
+  SettingsPageActions,
+  SettingsPageDescription,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
@@ -164,77 +167,77 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
   }
   return (
     <section data-testid="schedules-page">
-      <SettingsToolbar
-        controls={
-          <Button
-            appearance="primary"
-            data-testid="schedules-new"
-            disabled={!api || !sessionKey || busy}
-            disabledReason={t('schedulesOpenSession')}
-            onClick={() => {
-              setEditing(undefined)
-              setTitle('')
-              setPrompt('')
-              setKind('daily')
-              setWhen('09:00')
-              setZone('UTC')
-              setWeekdays([1])
-              setCron('0 9 * * 1-5')
-              setFormOpen(true)
-            }}
-          >
-            {ux('newSchedule')}
-          </Button>
-        }
-      />
-      <p>{t('schedulesHelp')}</p>
+      <SettingsPageActions>
+        <Button
+          appearance="primary"
+          data-testid="schedules-new"
+          disabled={!api || !sessionKey || busy}
+          disabledReason={t('schedulesOpenSession')}
+          onClick={() => {
+            setEditing(undefined)
+            setTitle('')
+            setPrompt('')
+            setKind('daily')
+            setWhen('09:00')
+            setZone('UTC')
+            setWeekdays([1])
+            setCron('0 9 * * 1-5')
+            setFormOpen(true)
+          }}
+        >
+          {ux('newSchedule')}
+        </Button>
+      </SettingsPageActions>
+      <SettingsPageDescription>{ux('schedulesIntro')}</SettingsPageDescription>
       {loading && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {!api && (
         <SettingsState tone="error" data-testid="schedules-error">
           {t('schedulesUnavailable')}
         </SettingsState>
       )}
-      <fieldset
-        className="agnes-settings-actions"
-        data-testid="schedules-scope"
-        aria-label={t('schedulesScope')}
-      >
-        <Button
-          htmlType="button"
-          data-testid="schedules-scope-session"
-          aria-pressed={scope === 'session'}
-          appearance="ghost"
-          onClick={() => setScope('session')}
+      <div className="agnes-settings-filters">
+        <fieldset
+          className="agnes-settings-actions"
+          data-testid="schedules-scope"
+          aria-label={t('schedulesScope')}
         >
-          {t('schedulesSession')}
-        </Button>
-        <Button
-          htmlType="button"
-          data-testid="schedules-scope-all"
-          aria-pressed={scope === 'all'}
-          appearance="ghost"
-          onClick={() => setScope('all')}
-        >
-          {t('schedulesAll')}
-        </Button>
-      </fieldset>
-      <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
-        <StateSwitch
-          id="schedules-include-archived"
-          testId="schedules-include-archived"
-          label={t('schedulesIncludeArchived')}
-          disabled={false}
-          checked={includeArchived}
-          onToggle={setIncludeArchived}
-        />
-        {t('schedulesIncludeArchived')}
-      </label>
+          <Button
+            htmlType="button"
+            data-testid="schedules-scope-session"
+            aria-pressed={scope === 'session'}
+            appearance="ghost"
+            onClick={() => setScope('session')}
+          >
+            {t('schedulesSession')}
+          </Button>
+          <Button
+            htmlType="button"
+            data-testid="schedules-scope-all"
+            aria-pressed={scope === 'all'}
+            appearance="ghost"
+            onClick={() => setScope('all')}
+          >
+            {t('schedulesAll')}
+          </Button>
+        </fieldset>
+        <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
+          <StateSwitch
+            id="schedules-include-archived"
+            testId="schedules-include-archived"
+            label={t('schedulesIncludeArchived')}
+            disabled={false}
+            checked={includeArchived}
+            onToggle={setIncludeArchived}
+          />
+          {t('schedulesIncludeArchived')}
+        </label>
+      </div>
       {scope === 'session' && !sessionKey && (
-        <p>
+        <Banner tone="info">
           <a data-testid="schedules-open-session" href="/">
             {t('schedulesOpenSession')}
           </a>
-        </p>
+        </Banner>
       )}
       <Dialog
         focusable={{ focusTriggerAfterClose: false }}

@@ -1,18 +1,16 @@
 import {
   Button,
   Count,
-  Field,
   Icon,
   IconButton,
   Menu,
   Popover,
   RESOURCE_LIST_LOCALE_NAMESPACE,
   resourceListLocaleCatalog,
+  SearchBar,
   SettingsDetails,
-  SettingsInput,
   SettingsPageHeader,
   SettingsState,
-  SettingsToolbar,
   Tabs,
   Toast,
   useUiText,
@@ -104,19 +102,13 @@ export function SkillsPage({
             label: t('skills.mine'),
             children: (
               <>
-                <SettingsToolbar
-                  search={
-                    <Field label={t('skills.search')} htmlFor="skill-search">
-                      <SettingsInput
-                        id="skill-search"
-                        type="search"
-                        placeholder={t('skills.search')}
-                        value={query}
-                        onChange={(event) => onQuery(event.currentTarget.value)}
-                      />
-                    </Field>
-                  }
-                  controls={
+                <SearchBar
+                  label={t('skills.search')}
+                  placeholder={t('skills.search')}
+                  value={query}
+                  onChange={onQuery}
+                  inputProps={{ id: 'skill-search' }}
+                  actions={
                     <IconButton
                       name="refresh-cw"
                       label={t('skills.refresh')}

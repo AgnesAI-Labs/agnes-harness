@@ -11,9 +11,10 @@ import {
   SettingsDetails,
   SettingsInput,
   SettingsList,
+  SettingsPageActions,
+  SettingsPageDescription,
   SettingsRow,
   SettingsState,
-  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -127,63 +128,58 @@ export function DiagnosticsPanel({
   const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
   return (
     <>
-      <SettingsToolbar
-        controls={
-          <>
-            <Button
-              data-testid="diagnostics-summary-copy"
-              disabled={!bundle}
-              onClick={() => {
-                if (!bundle) return
-                const summary = [
-                  t('title'),
-                  `${t('recent')}: ${bundle.errors.length}`,
-                  ...(doctorChecks
-                    ? doctorChecks.map(
-                        (check) =>
-                          `${doctorText(`doctor.check.${check.id}`)}: ${doctorText(`doctor.status.${check.status}`)}`,
-                      )
-                    : bundle.doctor.map(
-                        (check) =>
-                          `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
-                      )),
-                ].join('\n')
-                void navigator.clipboard.writeText(summary).then(
-                  () => {
-                    if (alive.current) setNotice('summaryCopied')
-                  },
-                  () => {
-                    if (alive.current) setNotice('copyFailed')
-                  },
-                )
-              }}
-            >
-              {t('copySummary')}
-            </Button>
-            <Button
-              appearance="primary"
-              data-testid="diagnostics-export"
-              disabled={busy || !bundle}
-              onClick={() =>
-                void run(async () => {
-                  const value = await api.export(
-                    selected ? { diagnosticId: selected } : {},
-                    controller.current?.signal,
+      <SettingsPageActions>
+        <Button
+          data-testid="diagnostics-summary-copy"
+          disabled={!bundle}
+          onClick={() => {
+            if (!bundle) return
+            const summary = [
+              t('title'),
+              `${t('recent')}: ${bundle.errors.length}`,
+              ...(doctorChecks
+                ? doctorChecks.map(
+                    (check) =>
+                      `${doctorText(`doctor.check.${check.id}`)}: ${doctorText(`doctor.status.${check.status}`)}`,
                   )
-                  if (alive.current) {
-                    download(value)
-                    setNotice('exported')
-                  }
-                })
+                : bundle.doctor.map(
+                    (check) =>
+                      `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
+                  )),
+            ].join('\n')
+            void navigator.clipboard.writeText(summary).then(
+              () => {
+                if (alive.current) setNotice('summaryCopied')
+              },
+              () => {
+                if (alive.current) setNotice('copyFailed')
+              },
+            )
+          }}
+        >
+          {t('copySummary')}
+        </Button>
+        <Button
+          appearance="primary"
+          data-testid="diagnostics-export"
+          disabled={busy || !bundle}
+          onClick={() =>
+            void run(async () => {
+              const value = await api.export(
+                selected ? { diagnosticId: selected } : {},
+                controller.current?.signal,
+              )
+              if (alive.current) {
+                download(value)
+                setNotice('exported')
               }
-            >
-              {t('export')}
-            </Button>
-          </>
-        }
-      >
-        <p>{t('help')}</p>
-      </SettingsToolbar>
+            })
+          }
+        >
+          {t('export')}
+        </Button>
+      </SettingsPageActions>
+      <SettingsPageDescription>{t('help')}</SettingsPageDescription>
       {doctorAvailable && (
         <SettingsCard title={t('doctor')} data-testid="diagnostics-doctor">
           <DoctorPanel load={loadChecks} />
@@ -204,20 +200,20 @@ export function DiagnosticsPanel({
         </SettingsState>
       )}
       <section data-testid="diagnostics-errors" aria-busy={busy}>
-        <SettingsToolbar
-          controls={
-            bundle &&
-            bundle.errors.length > 5 && (
+        <div className="agnes-settings-section-heading">
+          <div>
+            <h3>
+              {t('recent')} ({new Intl.NumberFormat(locale).format(bundle?.errors.length ?? 0)})
+            </h3>
+          </div>
+          {bundle && bundle.errors.length > 5 && (
+            <div className="agnes-settings-actions">
               <Button data-testid="diagnostics-view-all" onClick={() => setShowAll((value) => !value)}>
                 {t(showAll ? 'showLess' : 'viewAll')}
               </Button>
-            )
-          }
-        >
-          <h3>
-            {t('recent')} ({new Intl.NumberFormat(locale).format(bundle?.errors.length ?? 0)})
-          </h3>
-        </SettingsToolbar>
+            </div>
+          )}
+        </div>
         <SettingsDetails title={t('findById')} data-testid="diagnostics-find-id">
           <form
             onSubmit={(event) => {

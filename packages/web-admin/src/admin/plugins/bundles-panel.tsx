@@ -4,7 +4,6 @@ import { ChoiceLabel } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
-import { label } from './composition-labels.js'
 import type { Text } from './control-panel-types.js'
 
 export function BundlesPanel({

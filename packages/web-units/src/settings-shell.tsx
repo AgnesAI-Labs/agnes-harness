@@ -179,7 +179,8 @@ function SettingsSectionTabs({
     <>
       {/* A group of pages is named once, above its tabs; the pages do not repeat a title. */}
       <h2 id="settings-group-title" className="agnes-settings-group-title" hidden={!activeGroup}>
-        {selectedEntry ? t(selectedEntry.groupTitleKey) : null}
+        {/* The group is named as the navigation names it: by its first page. */}
+        {activeGroup?.[0] ? t(activeGroup[0].groupTitleKey) : null}
       </h2>
       <div
         id="settings-section-tabs"

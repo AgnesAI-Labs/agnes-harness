@@ -105,23 +105,26 @@
   }
   .history-search {
     display: grid;
-    gap: var(--s8);
-    max-width: 40rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
   }
-  .history-search input {
-    width: 100%;
+  /* A hit reads title, where it happened, then the matching line. */
+  .history-search-results:empty {
+    display: none;
   }
-  .history-search ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .history-search li {
+  .history-search-results > li {
     display: grid;
-    gap: var(--s4);
-    padding-block: var(--s8);
-    border-block-end: 1px solid var(--agnes-line-primary);
+    gap: var(--s2);
+    padding-block: var(--s12);
     overflow-wrap: anywhere;
+  }
+  .history-search-results > li > span:first-child {
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .history-search-results > li > span:nth-child(2) {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
   }
 
   .session-terminal {

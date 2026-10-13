@@ -6,7 +6,7 @@ import type {
 } from '@agnes/protocol'
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
-import { Banner, Button, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import { Banner, Button, SettingsDetails, SettingsState } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
@@ -19,6 +19,7 @@ import { FeedbackAdminPanel } from './feedback.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
 import { MemoryPanel } from './memory.js'
+import { PermissionDefaults } from './permission-defaults.js'
 import {
   GenerationsPanel,
   LocalPluginsPanel,
@@ -235,6 +236,8 @@ const definitions: readonly [
     (c, t) =>
       c.snapshot && (
         <>
+          {/* What a new session may do comes first; review and isolation qualify it. */}
+          <PermissionDefaults available={c.snapshot.presets.map((preset) => preset.id)} />
           <AutoReviewPanel canSave={c.canSave} />
           <SecurityPanel snapshot={c.snapshot} t={t} />
         </>
@@ -248,9 +251,7 @@ const definitions: readonly [
     (c, t) => (
       <>
         <Subsection defer id="models" title={t('agentExecution')}>
-          <SettingsCard>
-            <p>{t('modelsHelp')}</p>
-          </SettingsCard>
+          <p>{t('modelsHelp')}</p>
           <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
         </Subsection>
         <Subsection defer id="system-prompt" title={t('system-prompt')}>

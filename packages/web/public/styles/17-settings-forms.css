@@ -772,24 +772,87 @@
     border-radius: var(--radius-card);
     background: var(--agnes-bg-card);
   }
+  /* A choice is a row of its group: radio, name and what it means. The picked row is filled. */
   .appearance-option {
     position: relative;
     display: flex;
+    align-items: flex-start;
+    gap: var(--s10);
+    padding: var(--s10) var(--s16);
+    cursor: pointer;
+  }
+  .appearance-option-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .appearance-option-name {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .appearance-option-hint {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .appearance-option:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .appearance-option:has(input:checked) {
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .appearance-option:has(input:focus-visible) {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: -2px;
+  }
+  .appearance-option:has(input:disabled) {
+    cursor: not-allowed;
+  }
+  .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-tertiary);
+  }
+  #config-form .appearance-option input,
+  .runtime-settings .appearance-option input {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    min-height: 0;
+    margin: 0.125rem 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    accent-color: var(--agnes-brand-primary);
+  }
+  /* A group of choices is one outlined list; its fieldset draws no frame of its own. */
+  fieldset.agnes-settings-choices {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .agnes-settings-choices > * + * {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+
+  /* Segments: the same radios laid out as one compact set, for a few short, self-evident choices. */
+  .appearance-choices .appearance-option {
     align-items: center;
     min-height: var(--control-height-sm);
     box-sizing: border-box;
     padding: 0 var(--s12);
     border-radius: var(--radius-control);
     color: var(--agnes-text-secondary);
-    cursor: pointer;
   }
-  .appearance-option-name {
-    font-size: var(--font-size-sm);
-    line-height: var(--line-sm);
+  .appearance-choices .appearance-option-name {
+    color: inherit;
+    font-weight: var(--font-weight-regular);
     white-space: nowrap;
   }
-  /* The hint stays for assistive tech; the segment itself is self-explanatory. */
-  .appearance-option .appearance-option-hint {
+  /* The hint stays for assistive tech; a segment is self-explanatory. */
+  .appearance-choices .appearance-option .appearance-option-hint {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -797,39 +860,34 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  p.appearance-option-hint {
+  .appearance-choices p.appearance-option-hint {
     flex: 1 0 100%;
     margin: 0;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
     text-align: end;
   }
-  .appearance-option:hover {
+  .appearance-choices .appearance-option:hover {
     color: var(--agnes-text-primary);
+    background: transparent;
   }
-  .appearance-option:has(input:checked) {
+  .appearance-choices .appearance-option:has(input:checked) {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-surface);
     box-shadow:
       0 0 0 1px var(--agnes-line-primary),
       var(--shadow-hairline);
   }
-  .appearance-option:has(input:checked) .appearance-option-name {
+  .appearance-choices .appearance-option:has(input:checked) .appearance-option-name {
     font-weight: var(--font-weight-medium);
   }
-  .appearance-option:has(input:focus-visible) {
-    outline: 2px solid var(--agnes-brand-focus-ring);
+  .appearance-choices .appearance-option:has(input:focus-visible) {
     outline-offset: 1px;
   }
-  #config-form .appearance-option input {
+  #config-form .appearance-choices .appearance-option input {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    min-height: 0;
     margin: 0;
-    padding: 0;
-    border: 0;
     opacity: 0;
     cursor: pointer;
   }

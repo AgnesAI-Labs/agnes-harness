@@ -89,6 +89,12 @@ export function SettingsPageActions({ children }: { children: ReactNode }) {
   if (!frame) return <div className="agnes-settings-actions">{children}</div>
   return frame.actions ? createPortal(children, frame.actions) : null
 }
+/** The page's one-line description, declared by the component that owns the copy. */
+export function SettingsPageDescription({ children }: { children: ReactNode }) {
+  const frame = useContext(SettingsPageFrameContext)
+  if (!frame) return <p className="agnes-settings-page-description">{children}</p>
+  return frame.lead ? createPortal(<p>{children}</p>, frame.lead) : null
+}
 /** A titled part of a page. Its content sits below the heading, never inside a second frame. */
 export function SettingsSection({
   title,
@@ -167,6 +173,16 @@ export function SettingsCard({
     description?: ReactNode
     actions?: ReactNode
   }) {
+  // An object card that writes its own content is the outline itself.
+  if (!title && !description && !actions)
+    return (
+      <section
+        {...props}
+        className={['config-card', 'agnes-settings-card', props.className].filter(Boolean).join(' ')}
+      >
+        {children}
+      </section>
+    )
   return (
     <SettingsSection {...props} title={title} description={description} actions={actions}>
       <div className="config-card agnes-settings-card">{children}</div>

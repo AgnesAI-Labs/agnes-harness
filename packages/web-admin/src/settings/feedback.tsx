@@ -2,12 +2,12 @@ import type { AdminFeedbackResult, FeedbackItem } from '@agnes/protocol/gen/app-
 import {
   Badge,
   Button,
-  Field,
-  SettingsCard,
-  SettingsInput,
+  EmptyState,
+  Icon,
+  SearchBar,
+  SettingsPageDescription,
   SettingsSelect,
   SettingsState,
-  SettingsToolbar,
 } from '@agnes/web-ui'
 import { feedbackCategories, feedbackRequest, useFeedbackText } from '@agnes/web-units/message-feedback'
 import { useEffect, useState } from 'react'
@@ -45,68 +45,74 @@ export function FeedbackAdminPanel() {
     return () => abort.abort()
   }, [session, category, rating, hasCandidate, revision])
   return (
-    <SettingsCard title={t('admin')} data-testid="feedback-admin">
-      <p>{t('privacy')}</p>
-      <SettingsToolbar>
-        <Field label={t('sessionFilter')}>
-          <SettingsInput
-            aria-label={t('sessionFilter')}
-            data-testid="feedback-session-filter"
-            value={session}
-            maxLength={512}
-            onChange={(event) => setSession(event.target.value)}
-          />
-        </Field>
-        <Field label={t('category')}>
-          <SettingsSelect
-            aria-label={t('category')}
-            data-testid="feedback-category-filter"
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-          >
-            <option value="all">{t('all')}</option>
-            {feedbackCategories.map((value) => (
-              <option key={value} value={value}>
-                {t(`category.${value}`)}
+    <section data-testid="feedback-admin">
+      <SettingsPageDescription>{t('privacy')}</SettingsPageDescription>
+      <SearchBar
+        label={t('sessionFilter')}
+        placeholder={t('sessionFilterPlaceholder')}
+        value={session}
+        onChange={setSession}
+        inputProps={{ 'data-testid': 'feedback-session-filter', maxLength: 512 }}
+        filters={
+          <>
+            <SettingsSelect
+              aria-label={t('category')}
+              data-testid="feedback-category-filter"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+            >
+              <option value="all">
+                {t('category')} · {t('all')}
               </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-        <Field label={t('ratingFilter')}>
-          <SettingsSelect
-            aria-label={t('ratingFilter')}
-            data-testid="feedback-rating-filter"
-            value={rating}
-            onChange={(event) => setRating(event.target.value)}
-          >
-            <option value="all">{t('all')}</option>
-            <option value="up">{t('up')}</option>
-            <option value="down">{t('down')}</option>
-          </SettingsSelect>
-        </Field>
-        <Field label={t('candidateFilter')}>
-          <SettingsSelect
-            aria-label={t('candidateFilter')}
-            data-testid="feedback-candidate-filter"
-            value={hasCandidate}
-            onChange={(event) => setHasCandidate(event.target.value)}
-          >
-            {['all', 'yes', 'no'].map((value) => (
-              <option key={value} value={value}>
-                {t(value)}
+              {feedbackCategories.map((value) => (
+                <option key={value} value={value}>
+                  {t(`category.${value}`)}
+                </option>
+              ))}
+            </SettingsSelect>
+            <SettingsSelect
+              aria-label={t('ratingFilter')}
+              data-testid="feedback-rating-filter"
+              value={rating}
+              onChange={(event) => setRating(event.target.value)}
+            >
+              <option value="all">
+                {t('ratingFilter')} · {t('all')}
               </option>
-            ))}
-          </SettingsSelect>
-        </Field>
-        <Button onClick={() => setRevision((value) => value + 1)}>{t('refresh')}</Button>
-      </SettingsToolbar>
+              <option value="up">{t('up')}</option>
+              <option value="down">{t('down')}</option>
+            </SettingsSelect>
+            <SettingsSelect
+              aria-label={t('candidateFilter')}
+              data-testid="feedback-candidate-filter"
+              value={hasCandidate}
+              onChange={(event) => setHasCandidate(event.target.value)}
+            >
+              {['all', 'yes', 'no'].map((value) => (
+                <option key={value} value={value}>
+                  {t('candidateFilter')} · {t(value)}
+                </option>
+              ))}
+            </SettingsSelect>
+          </>
+        }
+        actions={<Button onClick={() => setRevision((value) => value + 1)}>{t('refresh')}</Button>}
+      />
       {!result && !error && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {error && <SettingsState tone="error">{t('error')}</SettingsState>}
       {result && (
         <>
-          <p data-testid="feedback-counts">{t('counts', result.counts)}</p>
+          <p className="agnes-settings-summary" data-testid="feedback-counts">
+            {t('counts', result.counts)}
+          </p>
           {result.truncated && <p>{t('truncated')}</p>}
-          {!result.items.length && <SettingsState>{t('empty')}</SettingsState>}
+          {!result.items.length && (
+            <EmptyState
+              icon={<Icon name="message-square" size={20} />}
+              title={t('empty')}
+              description={t('emptyHelp')}
+            />
+          )}
           <ul className="agnes-settings-list">
             {result.items.map((item) => (
               <li className="agnes-settings-row" key={item.id} data-testid="feedback-admin-item">
@@ -124,6 +130,6 @@ export function FeedbackAdminPanel() {
           </ul>
         </>
       )}
-    </SettingsCard>
+    </section>
   )
 }

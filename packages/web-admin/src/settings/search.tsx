@@ -10,13 +10,19 @@ import {
   Field,
   Icon,
   IconButton,
+  LabeledSwitch,
   ListRow,
   Menu,
   SchemaControl,
+  SearchBar,
   SettingsDetails,
+  SettingsGroup,
   SettingsInput,
+  SettingsItem,
+  SettingsPageActions,
+  SettingsPageDescription,
+  SettingsSection,
   SettingsState,
-  SettingsToolbar,
   StateSwitch,
   Tag,
   useUiText,
@@ -436,25 +442,22 @@ export function SearchPanel({
   )
   return (
     <section data-testid="search-providers" aria-busy={busy}>
-      <SettingsToolbar
-        controls={
-          <Button
-            appearance="primary"
-            data-testid="search-add"
-            disabled={!canSave || busy || !status}
-            disabledReason={t('searchReadOnly')}
-            onClick={() => edit(status?.providers.find((row) => !row.enabled)?.id ?? 'brave')}
-          >
-            {ux('add')}
-          </Button>
-        }
-      >
-        <p>
-          {status?.defaultProvider
-            ? `${ux('current')}: ${status.providers.find((row) => row.id === status.defaultProvider)?.label ?? ''}`
-            : ux('help')}
-        </p>
-      </SettingsToolbar>
+      <SettingsPageActions>
+        <Button
+          appearance="primary"
+          data-testid="search-add"
+          disabled={!canSave || busy || !status}
+          disabledReason={t('searchReadOnly')}
+          onClick={() => edit(status?.providers.find((row) => !row.enabled)?.id ?? 'brave')}
+        >
+          {ux('add')}
+        </Button>
+      </SettingsPageActions>
+      <SettingsPageDescription>
+        {status?.defaultProvider
+          ? `${ux('current')}: ${status.providers.find((row) => row.id === status.defaultProvider)?.label ?? ''}`
+          : ux('help')}
+      </SettingsPageDescription>
       {busy && !status && (
         <SettingsState tone="loading" data-testid="search-loading">
           {t('loading')}
@@ -491,27 +494,27 @@ export function SearchPanel({
           {status.providers.filter((row) => !configured(row)).map(serviceRow)}
         </SettingsDetails>
       )}
-      <SettingsToolbar
-        search={
-          <Field label={ux('trySearch')} htmlFor="search-test-query">
-            <SettingsInput
-              id="search-test-query"
-              data-testid="search-test-query"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </Field>
-        }
-        controls={
-          <Button
-            data-testid="search-test"
-            disabled={!canSave || busy || !status?.configured}
-            onClick={() => void testProvider()}
-          >
-            {ux('test')}
-          </Button>
-        }
-      />
+      <SettingsSection title={ux('trySearch')} description={ux('tryHelp')}>
+        <SearchBar
+          label={ux('trySearch')}
+          placeholder={ux('tryPlaceholder')}
+          value={query}
+          onChange={setQuery}
+          onSubmit={() => {
+            if (canSave && !busy && status?.configured) void testProvider()
+          }}
+          inputProps={{ id: 'search-test-query', 'data-testid': 'search-test-query' }}
+          actions={
+            <Button
+              data-testid="search-test"
+              disabled={!canSave || busy || !status?.configured}
+              onClick={() => void testProvider()}
+            >
+              {ux('test')}
+            </Button>
+          }
+        />
+      </SettingsSection>
       {probeFailure && (
         <SettingsState tone="error" data-testid="search-test-error">
           {probeFailure}
@@ -561,25 +564,31 @@ export function SearchPanel({
       >
         <form id="search-settings-editor" onSubmit={(event) => void save(event)}>
           <fieldset disabled={!canSave || busy || !status}>
-            <StateSwitch
-              id="search-editor-enabled"
-              testId="search-editor-enabled"
-              label={t('searchEnabled')}
-              checked={enabled}
-              disabled={!canSave || busy}
-              onToggle={(value) => {
-                setEnabled(value)
-                if (!value) setMakeDefault(false)
-              }}
-            />
-            <StateSwitch
-              id="search-editor-default"
-              testId="search-editor-default"
-              label={t('searchMakeDefault')}
-              checked={makeDefault}
-              disabled={!canSave || busy || !enabled}
-              onToggle={setMakeDefault}
-            />
+            <SettingsGroup>
+              <SettingsItem label={t('searchEnabled')}>
+                <LabeledSwitch
+                  id="search-editor-enabled"
+                  testId="search-editor-enabled"
+                  label={t('searchEnabled')}
+                  checked={enabled}
+                  disabled={!canSave || busy}
+                  onToggle={(value) => {
+                    setEnabled(value)
+                    if (!value) setMakeDefault(false)
+                  }}
+                />
+              </SettingsItem>
+              <SettingsItem label={t('searchMakeDefault')}>
+                <LabeledSwitch
+                  id="search-editor-default"
+                  testId="search-editor-default"
+                  label={t('searchMakeDefault')}
+                  checked={makeDefault}
+                  disabled={!canSave || busy || !enabled}
+                  onToggle={setMakeDefault}
+                />
+              </SettingsItem>
+            </SettingsGroup>
             <Field label={ux('provider')} htmlFor="search-edit-provider">
               <SchemaControl
                 schema={searchConfigSchema.properties.id}

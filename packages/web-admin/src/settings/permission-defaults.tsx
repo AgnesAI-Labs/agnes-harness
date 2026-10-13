@@ -1,5 +1,14 @@
 import { isSessionDefaultsSnapshot } from '@agnes/protocol'
-import { Banner, Button, Dialog, SettingsChoice, SettingsState, Toast, useUiText } from '@agnes/web-ui'
+import {
+  Banner,
+  Button,
+  Dialog,
+  SettingsChoice,
+  SettingsSection,
+  SettingsState,
+  Toast,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
 import { useSettingsOverlay } from './overlay.js'
@@ -86,9 +95,12 @@ export function PermissionDefaults({
     }
   }
   return (
-    <section data-testid="security-default-permissions" aria-busy={busy}>
-      <h3>{t('defaultPermissions')}</h3>
-      <p>{t('defaultHelp')}</p>
+    <SettingsSection
+      data-testid="security-default-permissions"
+      aria-busy={busy}
+      title={t('defaultPermissions')}
+      description={t('defaultHelp')}
+    >
       {busy && !snapshot && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {error && (
         <Banner
@@ -98,7 +110,11 @@ export function PermissionDefaults({
           {t('failed')}
         </Banner>
       )}
-      <fieldset aria-label={t('defaultPermissions')} disabled={!canSave || !snapshot || busy}>
+      <fieldset
+        className="agnes-settings-group agnes-settings-choices"
+        aria-label={t('defaultPermissions')}
+        disabled={!canSave || !snapshot || busy}
+      >
         {presets.map((preset) => (
           <div key={preset} data-testid={`security-${preset}`}>
             <SettingsChoice
@@ -149,6 +165,6 @@ export function PermissionDefaults({
         <p>{t('full-accessHelp')}</p>
         {error && <SettingsState tone="error">{t('failed')}</SettingsState>}
       </Dialog>
-    </section>
+    </SettingsSection>
   )
 }

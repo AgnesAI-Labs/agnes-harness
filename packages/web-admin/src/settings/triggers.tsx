@@ -6,6 +6,7 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
+  Banner,
   Button,
   Dialog,
   EmptyState,
@@ -16,10 +17,11 @@ import {
   Menu,
   SettingsDetails,
   SettingsInput,
+  SettingsPageActions,
+  SettingsPageDescription,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
-  SettingsToolbar,
   StateSwitch,
   Tag,
   useUiText,
@@ -145,26 +147,24 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
   )
   return (
     <section data-testid="triggers-panel" aria-busy={busy}>
-      <SettingsToolbar
-        controls={
-          <Button
-            appearance="primary"
-            data-testid="trigger-new"
-            disabled={!canSave || busy}
-            onClick={() => {
-              setRule(blank(workspaces[0] ?? ''))
-              setEditing(false)
-              setFilters('{"$.action":"opened"}')
-              setBundles('')
-              setFormOpen(true)
-            }}
-          >
-            {t('new')}
-          </Button>
-        }
-      />
-      <p>{t('help')}</p>
-      {snapshot && !snapshot.config.enabled && <p>{t('off')}</p>}
+      <SettingsPageActions>
+        <Button
+          appearance="primary"
+          data-testid="trigger-new"
+          disabled={!canSave || busy}
+          onClick={() => {
+            setRule(blank(workspaces[0] ?? ''))
+            setEditing(false)
+            setFilters('{"$.action":"opened"}')
+            setBundles('')
+            setFormOpen(true)
+          }}
+        >
+          {t('new')}
+        </Button>
+      </SettingsPageActions>
+      <SettingsPageDescription>{t('intro')}</SettingsPageDescription>
+      {snapshot && !snapshot.config.enabled && <Banner tone="info">{t('off')}</Banner>}
       {error && (
         <SettingsState tone="error" role="alert" data-testid="triggers-error">
           {t('failed')}

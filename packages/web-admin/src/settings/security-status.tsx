@@ -4,8 +4,11 @@ import {
   Button,
   Icon,
   SettingsDetails,
+  SettingsGroup,
+  SettingsItem,
   SettingsList,
   SettingsRow,
+  SettingsSection,
   SettingsState,
   useUiText,
 } from '@agnes/web-ui'
@@ -50,13 +53,22 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
     return { workspace, key: `${identity}:${occurrence}` }
   })
   return (
-    <section data-testid="sandbox-security-status">
+    <SettingsSection
+      data-testid="sandbox-security-status"
+      title={ux('isolation')}
+      description={ux('isolationHelp')}
+    >
       {status.platform.l1.level === 'full' ? (
-        <p>
-          <Icon name="check" /> {ux('protected')} · {t(`platform.${status.platform.os}`)}
-          <br />
-          {ux('platformOnly')}
-        </p>
+        <SettingsGroup>
+          <SettingsItem
+            label={
+              <>
+                <Icon name="shield-check" /> {ux('protected')} · {t(`platform.${status.platform.os}`)}
+              </>
+            }
+            description={ux('platformOnly')}
+          />
+        </SettingsGroup>
       ) : (
         <Banner
           tone="warning"
@@ -70,18 +82,22 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
             </Button>
           }
         >
-          {ux('partial')} {t(`enforcement.${status.platform.l1.level}`)}
-          {status.platform.l1.reason ? ` · ${t('securityProbeIssue')}` : ''}
+          {ux('partial')}
         </Banner>
       )}
       <SettingsDetails title={ux('details')} data-testid="security-details">
         <p>{t('probeHelp')}</p>
-        <h3>{t('platformProbe')}</h3>
+        <h4>{t('platformProbe')}</h4>
         <p>
           {t(`enforcement.${status.platform.l1.level}`)} · {scopes(status.platform.l1.scope) || '—'}
+          {status.platform.l1.reason ? ` · ${t('securityProbeIssue')}` : ''}
         </p>
-        {status.platform.l1.reason && <p>{status.platform.l1.reason}</p>}
-        <h3>{t('permissionRequirements')}</h3>
+        {status.platform.l1.reason && (
+          <p>
+            <code>{status.platform.l1.reason}</code>
+          </p>
+        )}
+        <h4>{t('permissionRequirements')}</h4>
         <section
           className="runtime-table-scroll"
           aria-label={t('permissionRequirements')}
@@ -113,7 +129,7 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
             </tbody>
           </table>
         </section>
-        <h3>{t('workspacePosture')}</h3>
+        <h4>{t('workspacePosture')}</h4>
         {!status.workspaces.length ? (
           <p>{t('noWorkspacePosture')}</p>
         ) : (
@@ -160,6 +176,6 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
           </SettingsList>
         )}
       </SettingsDetails>
-    </section>
+    </SettingsSection>
   )
 }

@@ -12,6 +12,7 @@ import {
   SessionPicker,
   SettingsCode,
   SettingsDetails,
+  SettingsPageDescription,
   SettingsState,
   SettingsToolbar,
   Tag,
@@ -154,7 +155,7 @@ export function JobsPanel({
   )
   return (
     <section data-testid="jobs-panel">
-      <p>{t('jobsHelp')}</p>
+      <SettingsPageDescription>{t('jobsHelp')}</SettingsPageDescription>
       {sessionsError ? (
         <Banner
           tone="error"

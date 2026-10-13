@@ -101,7 +101,7 @@ it.each([false, true])(
       )
       const selfCheck = host.querySelector('[data-testid="diagnostics-doctor"]')
       if (!selfCheck) throw new Error('Missing self-check block')
-      expect(host.querySelector('.agnes-settings-card')).toBe(selfCheck)
+      expect(host.querySelector('.agnes-settings-section')).toBe(selfCheck)
       expect(selfCheck.querySelector('[data-testid="doctor-check-node"]')?.textContent).toBe(
         'Node.js runtimeReady',
       )

@@ -589,22 +589,28 @@
     justify-self: start;
     max-width: 100%;
   }
-  .agnes-settings-card table {
+  /* A plain table in a settings page: headers start where their cells start. */
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) {
     width: 100%;
     border-collapse: collapse;
     font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
   }
-  .agnes-settings-card th,
-  .agnes-settings-card td {
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) :is(th, td) {
     text-align: start;
-    padding: var(--s10);
+    padding: var(--s8) var(--s12) var(--s8) 0;
     border-bottom: 1px solid var(--agnes-line-primary);
     overflow-wrap: anywhere;
     vertical-align: top;
   }
-  .agnes-settings-card th {
-    color: var(--agnes-text-secondary);
-    font-weight: 500;
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) th {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) tr:last-child > td {
+    border-bottom: 0;
   }
   /* A disclosure inside a card is a divided row of that card, not a second box within it. */
   .agnes-settings-card details:not(.agh-disclosure) {
@@ -626,6 +632,9 @@
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+  .agnes-settings-list:empty {
+    display: none;
   }
   .agnes-settings-list > li {
     display: grid;

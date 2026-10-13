@@ -149,7 +149,8 @@
     scrollbar-gutter: stable;
   }
   /* The page inside the plugin list brings its own sticky header, so the scroller starts flush. */
-  .settings-shell #plugin-list {
+  .settings-shell #plugin-list,
+  .settings-shell #resource-list:has(> .agnes-settings-page-heading) {
     padding-top: 0;
   }
   .settings-shell .config-workspace > *,

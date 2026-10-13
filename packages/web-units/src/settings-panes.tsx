@@ -218,19 +218,21 @@ export function SettingsStaticPane({
                 </span>
               </>
             }
+            actions={
+              <div className="resource-toolbar" hidden={resourcesHidden}>
+                <div className="resource-toolbar-actions">
+                  <Button id="skill-refresh" htmlType="button" appearance="secondary" size="small">
+                    <span>{text('button.refresh', '刷新技能目录')}</span>
+                  </Button>
+                  <Button id="mcp-create" hidden htmlType="button" appearance="primary">
+                    <span>{text('button.create', '添加 MCP')}</span>
+                  </Button>
+                </div>
+              </div>
+            }
           />
           <div className="admin-pane-body">
             <AdminPaneNoticeLine id="resource-notice" notice={admin?.resources.notice} />
-            <div className="resource-toolbar" hidden={resourcesHidden}>
-              <div className="resource-toolbar-actions">
-                <Button id="skill-refresh" htmlType="button" appearance="secondary" size="small">
-                  <span>{text('button.refresh', '刷新技能目录')}</span>
-                </Button>
-                <Button id="mcp-create" hidden htmlType="button" appearance="primary">
-                  <span>{text('button.create', '添加 MCP')}</span>
-                </Button>
-              </div>
-            </div>
             <div id="resource-layout" className="plugin-layout resource-layout">
               <section
                 id="resource-list"
