@@ -333,6 +333,7 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
       'antd',
       'recharts',
       'assistant-ui',
+      'x',
       'cordis',
       'web-client',
       'chunk-ABCDEF12',

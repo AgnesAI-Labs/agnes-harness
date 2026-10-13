@@ -16,6 +16,7 @@ import {
   readWebStyleSource,
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
+import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { bundledManifests } from './bundled-manifests.mjs'
@@ -212,6 +213,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     '@agnes/cordis',
     '@agnes/web-client',
     '@agnes/web-ui/assistant-ui',
+    '@agnes/web-ui/x',
     'antd',
     'recharts',
   ]
@@ -277,11 +279,12 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
       'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
       'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
       'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
+      x: join(repoPackages, 'web', 'tools', 'vendor', 'x-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),
     },
     ...vendorOptions,
-    plugins: [scrollbarCsp],
+    plugins: [scrollbarCsp, xSurface],
     external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
     banner: {
       js: "import * as __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",

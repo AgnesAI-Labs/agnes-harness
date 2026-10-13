@@ -51,6 +51,7 @@ const requiredWebAssets = [
   'vendor/antd.js',
   'vendor/recharts.js',
   'vendor/assistant-ui.js',
+  'vendor/x.js',
   'vendor/cordis.js',
   'vendor/web-client.js',
   // 侧栏品牌位与过程行头像用的位图：缺了它页面不会报错，只会静默地没有 logo 和头像

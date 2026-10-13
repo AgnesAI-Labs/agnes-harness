@@ -34,6 +34,7 @@ async function writeWebFixture(directory: string): Promise<void> {
       'vendor/antd.js',
       'vendor/recharts.js',
       'vendor/assistant-ui.js',
+      'vendor/x.js',
       'vendor/cordis.js',
       'vendor/web-client.js',
       'brand-mark.png',

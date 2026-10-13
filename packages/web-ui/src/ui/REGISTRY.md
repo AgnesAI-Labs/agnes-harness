@@ -93,3 +93,5 @@ Recharts and its React-18-matched `react-is` peer are owned by web-ui. Both Web 
 `recharts`, supply `/vendor/recharts.js` and keep React/ReactDOM resolved through the existing import map.
 The Chart primitive supports area plots; the Intelligent UI surface contract remains bar/line/pie.
 Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain custom.
+
+| `@agnes/web-ui/x` (`XProvider`, `Bubble`, `Sender`, `Conversations`, `ThoughtChain`, `Think`, `Actions`, `Welcome`, `Prompts`, `Attachments`, `FileCard`, `Sources`, `Suggestion`) | Shared | Ant Design X | Presentational conversation components fed from caller-owned stores; no x-sdk runtime, Mermaid or CodeHighlighter. Every use sits under `XProvider`, which keeps the application nonce, locale and overlay layers and lets X generate its styles in the `vendor` layer under the `agnes-theme` variable key. Served as the `/vendor/x.js` import-map entry. |

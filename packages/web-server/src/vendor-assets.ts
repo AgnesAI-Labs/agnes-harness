@@ -9,6 +9,7 @@ export const VENDOR_ENTRY_NAMES = new Set([
   'antd-en-us',
   'antd-zh-cn',
   'assistant-ui',
+  'x',
   'cordis',
   'web-client',
 ])

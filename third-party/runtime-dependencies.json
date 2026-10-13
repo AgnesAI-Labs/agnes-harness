@@ -19,6 +19,15 @@
       ]
     },
     {
+      "name": "@ant-design/x",
+      "version": "2.9.0",
+      "license": "MIT",
+      "source": "https://github.com/ant-design/x/tree/main/packages/x",
+      "purpose": "Conversation components (bubbles, sender, conversation list, thought chain, actions, welcome and prompts) rendered from Agnes stores through the shared Web UI layer.",
+      "rationale": "Same Ant Design 6 family as the pinned antd and x-markdown; only the presentational components are exposed, without the x-sdk chat runtime.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "@ant-design/x-markdown",
       "version": "2.9.0",
       "license": "MIT",

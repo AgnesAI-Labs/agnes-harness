@@ -12,6 +12,7 @@ import {
   readWebStyleSource,
   readWebUiStyleSource,
 } from '../../../tools/web-style-source.mjs'
+import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -42,6 +43,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     '@agnes/cordis',
     '@agnes/web-client',
     '@agnes/web-ui/assistant-ui',
+    '@agnes/web-ui/x',
     'antd',
     'recharts',
   ]
@@ -113,11 +115,12 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
         'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
         'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
         'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),
+        x: join(root, 'tools', 'vendor', 'x-entry.js'),
         cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
       },
       ...vendorOptions,
-      plugins: [scrollbarCsp],
+      plugins: [scrollbarCsp, xSurface],
       external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
       // html-react-parser's ESM wrapper enters CJS and calls require('react'). Bind exactly that
       // call to the import-map singleton in every generated vendor chunk; reject other requires.

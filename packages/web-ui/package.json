@@ -3,10 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Web UI component layer: the only package allowed to import antd/@assistant-ui (spec 2026-09-24-web-ui-component-system-design)",
+  "description": "Web UI component layer: the only package allowed to import antd/@ant-design/x/@assistant-ui (spec 2026-09-24-web-ui-component-system-design)",
   "exports": {
     ".": "./src/index.ts",
     "./assistant-ui": "./src/assistant-ui-vendor.ts",
+    "./x": "./src/x-vendor.ts",
     "./layers.css": "./src/layers.css",
     "./components.css": "./src/components.css",
     "./tokens.css": "./src/tokens.css",
@@ -18,6 +19,7 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/protocol-validation": "workspace:*",
+    "@ant-design/x": "2.9.0",
     "@ant-design/x-markdown": "2.9.0",
     "@assistant-ui/react": "0.11.27",
     "@assistant-ui/tap": "0.1.2",
