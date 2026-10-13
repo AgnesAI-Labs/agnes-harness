@@ -139,6 +139,57 @@ describe('ledger format version', () => {
     )
   })
 
+  it('refuses a newer-format session that has a verified checkpoint before reading the checkpoint', async () => {
+    const log = await openLog('k', 'w1')
+    await log.append([refMessage()])
+    await log.append([textMessage()])
+    await log.close()
+    const checkpoint = await storage.readVerifiedHead('k')
+    expect(checkpoint?.throughSeq).toBe(2)
+    const writer = new DatabaseSync(file)
+    writer.prepare('UPDATE sessions SET format_version = 3 WHERE session_key = ?').run('k')
+    writer.close()
+    const reads: string[] = []
+    const watched: SqliteStorage = Object.create(storage)
+    watched.readVerifiedHead = async (key) => {
+      reads.push('readVerifiedHead')
+      return storage.readVerifiedHead(key)
+    }
+    watched.integrityDigestAt = async (key, seq) => {
+      reads.push('integrityDigestAt')
+      return storage.integrityDigestAt(key, seq)
+    }
+    watched.scanIntegrity = async (key, q) => {
+      reads.push('scanIntegrity')
+      return storage.scanIntegrity(key, q)
+    }
+    watched.registers = async (key) => {
+      reads.push('registers')
+      return storage.registers(key)
+    }
+    const error = await SessionLogImpl.open({
+      storage: watched,
+      key: 'k',
+      writerRunId: 'w2',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers: { setTimeout: () => 0, clearTimeout: () => undefined },
+    }).then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    expect(error).toBeInstanceOf(CoreError)
+    expect((error as CoreError).code).toBe('E_FORMAT')
+    expect((error as CoreError).detail).toMatchObject({ formatVersion: 3, reason: 'newer-ledger-format' })
+    // Neither the checkpoint nor the row it names was read, and the checkpoint is left as it was.
+    expect(reads).toEqual([])
+    expect(await storage.readVerifiedHead('k')).toEqual(checkpoint)
+    expect(read<{ n: number }>('SELECT COUNT(*) AS n FROM writer_claims WHERE session_key = ?', 'k').n).toBe(
+      0,
+    )
+  })
+
   it('gives a child the format of the parent it branches from', async () => {
     const log = await openLog('parent', 'w1')
     await log.append([refMessage()])
