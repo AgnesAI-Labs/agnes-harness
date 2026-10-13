@@ -114,6 +114,34 @@ describe('stored opening reader', () => {
     }
   })
 
+  it('stays an unverified read: no integrity check, and the verified-head checkpoint is left alone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stored-opening-'))
+    dirs.push(dir)
+    const key = 'agnes:local:default:cli:workspace:unverified'
+    const file = await writeSession(dir, key, randomBytes(1024).toString('base64'))
+    const db = new DatabaseSync(file)
+    const checkpoint = () =>
+      db.prepare('SELECT * FROM ledger_verified_head_v1 WHERE session_key = ?').get(key) as
+        | Record<string, unknown>
+        | undefined
+    const before = checkpoint()
+    expect(before).toBeDefined()
+    // A changed row fails the chain; this read is not the open that would notice.
+    db.prepare(
+      `UPDATE events SET data = json_set(data, '$.agnesVersion', 'tampered') WHERE session_key = ? AND seq = 1`,
+    ).run(key)
+    const reader = createStoredOpeningReader({ file })
+    try {
+      const result = await reader.opening(key, 200)
+      expect(result.lastSeq).toBe(61)
+      expect((result.timeline as { nodes: unknown[] }).nodes.length).toBeGreaterThan(30)
+      expect(checkpoint()).toEqual(before)
+    } finally {
+      reader.close()
+      db.close()
+    }
+  })
+
   it('reads while another connection holds the writer lease and an open write transaction', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-stored-opening-'))
     dirs.push(dir)
