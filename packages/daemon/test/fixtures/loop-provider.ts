@@ -22,7 +22,9 @@ export async function startLoopProvider() {
     }
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
-    const body = JSON.parse(Buffer.concat(chunks).toString()) as { messages: unknown[] }
+    const body = JSON.parse(Buffer.concat(chunks).toString()) as {
+      messages: Array<{ role: string; content?: unknown }>
+    }
     const messages = JSON.stringify(body.messages)
     requests.push(messages)
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -49,6 +51,19 @@ export async function startLoopProvider() {
         disconnected?.()
       })
       entered?.()
+      return
+    }
+    if (
+      messages.includes('BUNDLE_WRITE_PROBE') &&
+      !body.messages.some((message) => message.role === 'tool')
+    ) {
+      const event = { id: 'write-fixture', object: 'chat.completion.chunk', created: 0, model: 'loop-script' }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'bundle-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'bundle-must-not-write.txt', content: 'forbidden' }) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
       return
     }
     const content = messages.includes('<dag-planner-protocol>')

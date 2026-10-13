@@ -1,10 +1,19 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
-import type { PackageOperationReceipt } from '@agnes/protocol'
+import { HARNESS_VERSION, type PackageOperationReceipt, type RuntimeAdminSnapshot } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
@@ -54,10 +63,64 @@ async function stop(child: ChildProcess, exited: Promise<number | null>) {
 }
 
 async function runExample(kind: 'react' | 'dag') {
-  const root = mkdtempSync(join(tmpdir(), 'agnes-source-loop-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-source-loop-')))
   const provider = await startLoopProvider()
   const profileDir = join(root, 'profiles', 'local-dev')
   initializeHome(root, 'local-dev')
+  // Keep the example itself intact; the installed copy adds a session-only review bundle.
+  const loopPackage = join(root, 'loop-package')
+  cpSync(join(examples, `${kind}-loop`), loopPackage, { recursive: true })
+  const packageFile = join(loopPackage, 'package.json')
+  const manifest = JSON.parse(readFileSync(packageFile, 'utf8'))
+  manifest.agnes.plugins[0].export = 'reviewFixture'
+  manifest.agnes.kinds = ['bundle', 'loop']
+  manifest.agnes.bundles = {
+    review: {
+      profile: {
+        providers: { loop: { provider: `example.${kind}`, version: '1.0.0' } },
+        toolPolicy: { readOnly: true },
+      },
+      presets: {
+        review: {
+          name: 'review',
+          extends: 'standard',
+          providers: { 'tool-policy': { provider: `fixture.${kind}` } },
+        },
+      },
+    },
+  }
+  writeFileSync(packageFile, JSON.stringify(manifest))
+  const entry = join(loopPackage, 'index.mjs')
+  writeFileSync(
+    entry,
+    readFileSync(entry, 'utf8') +
+      `
+    import { defaultToolPolicy, toolPolicyKind } from '@agnes/extension-api';
+    export const reviewFixture = {
+      inject: ['providers'],
+      apply(ctx, config) {
+        plugin.apply(ctx, config);
+        ctx.providers.register(toolPolicyKind, { ...defaultToolPolicy, id: 'fixture.${kind}' });
+      }
+    };
+  `,
+  )
+  const deployDir = join(profileDir, 'deploy', 'review')
+  mkdirSync(join(deployDir, 'profile'), { recursive: true })
+  mkdirSync(join(deployDir, 'fixtures'))
+  writeFileSync(join(deployDir, 'profile', 'profile.yaml'), '{}')
+  writeFileSync(
+    join(deployDir, 'manifest.json'),
+    JSON.stringify({
+      id: 'review',
+      version: '1.0.0',
+      harnessRange: `^${HARNESS_VERSION}`,
+      extensions: [],
+      profileFragment: 'profile/profile.yaml',
+      presets: [],
+      fixtures: 'fixtures/in',
+    }),
+  )
   const secretDir = join(root, 'secrets')
   mkdirSync(join(secretDir, 'fixture'), { mode: 0o700 })
   writeFileSync(join(secretDir, 'fixture', 'model'), 'synthetic-loop-fixture', { mode: 0o600 })
@@ -128,8 +191,42 @@ async function runExample(kind: 'react' | 'dag') {
     socketPath = owner.socketPath
     sdk = createClient({ journal: memoryJournal(), transport: { kind: 'unix', path: owner.socketPath } })
     await sdk.initialize()
+    stage = 'workspace trust'
+    const runtime = () => sdk!.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
+    const deployment = { deployDir, path: 'deploy/review', manifestId: 'review' }
+    expect((await runtime()).workspaceDeployments).toContainEqual({ ...deployment, state: 'untrusted' })
+    const trust = await sdk.packages.trustWorkspace({
+      profile: 'local-dev',
+      clientId: await sdk.clientId(),
+      commandId: 'trust-workspace',
+      deployDir,
+    })
+    expect(trust.hash).toMatch(/^sha256-[a-f0-9]{64}$/)
+    expect((await runtime()).workspaceDeployments).toContainEqual({ ...deployment, state: 'trusted' })
+    writeFileSync(join(deployDir, 'fixtures', 'changed.txt'), 'changed fixture')
+    expect((await runtime()).workspaceDeployments).toContainEqual({ ...deployment, state: 'changed' })
+    rmSync(join(deployDir, 'fixtures', 'changed.txt'))
+    // A manifest outside the running harness range is neither offered nor accepted.
+    const incompatible = join(profileDir, 'deploy', 'incompatible')
+    cpSync(deployDir, incompatible, { recursive: true })
+    const deployManifest = JSON.parse(readFileSync(join(incompatible, 'manifest.json'), 'utf8'))
+    writeFileSync(
+      join(incompatible, 'manifest.json'),
+      JSON.stringify({ ...deployManifest, harnessRange: '^99.0.0' }),
+    )
+    expect((await runtime()).workspaceDeployments?.some((item) => item.deployDir === incompatible)).toBe(
+      false,
+    )
+    await expect(
+      sdk.packages.trustWorkspace({
+        profile: 'local-dev',
+        clientId: await sdk.clientId(),
+        commandId: 'trust-incompatible',
+        deployDir: incompatible,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'SEMANTIC_REJECTED', reason: 'E_PACKAGE_BLOCKED' } })
     stage = 'install'
-    const source = { type: 'file' as const, ref: `file:${join(examples, `${kind}-loop`)}` }
+    const source = { type: 'file' as const, ref: `file:${loopPackage}` }
     const common = { profile: 'local-dev', clientId: await sdk.clientId() }
     const inspection = await operation(
       sdk,
@@ -183,12 +280,54 @@ async function runExample(kind: 'react' | 'dag') {
     if (kind === 'dag')
       expect(provider.requests.some((request) => request.includes('<dag-planner-protocol>'))).toBe(true)
 
+    stage = 'session bundle'
+    const bundle = `@agnes-example/${kind}-loop#review`
+    const selected = await sdk.session.new({ cwd: root, bundles: [bundle] })
+    const selectedRuntime = await sdk.session.runtime(selected.id)
+    expect(selectedRuntime).toMatchObject({
+      preset: { name: 'review', bundles: [bundle] },
+      loop,
+      policy: { readOnly: true, toolPolicy: `fixture.${kind}` },
+    })
+    expect(await sdk.session.runtime(session.id)).toMatchObject({
+      preset: { name: 'standard' },
+      policy: { readOnly: false, toolPolicy: 'default' },
+    })
+    await expect(sdk.session.new({ cwd: root, preset: 'review' })).rejects.toMatchObject({
+      data: { code: 'PRESET_SWITCH_REJECTED' },
+    })
+    await expect(sdk.session.new({ cwd: root, bundles: ['@fixture/missing#review'] })).rejects.toMatchObject({
+      code: -32011,
+      data: { code: 'BUNDLE_UNAVAILABLE' },
+    })
+    await expect(sdk.session.new({ cwd: root, bundles: [bundle], preset: 'absent' })).rejects.toMatchObject({
+      data: { code: 'PRESET_SWITCH_REJECTED' },
+    })
+    if (kind === 'react') {
+      // Read-only compositions hide mutating tools. Even a scripted native call must fail closed.
+      expect((await selected.tools()).tools.some((tool) => tool.name === 'write')).toBe(false)
+      await expect(selected.prompt('BUNDLE_WRITE_PROBE')).rejects.toMatchObject({
+        data: { code: 'TURN_ERROR', error: { code: 'REACT_FAILED', message: 'Error: unknown tool write' } },
+      })
+      expect(existsSync(join(root, 'bundle-must-not-write.txt'))).toBe(false)
+    }
     stage = 'cancel'
     const blocked = provider.block()
     const cancelled = session.prompt('Cancel this blocked turn')
     void cancelled.catch(() => undefined)
     await bounded(blocked.entered, `${kind} active inference`)
     cancelSessionId = session.id
+    await sdk.session.rename(session.id, 'Review fixture session')
+    const generationSession = async () =>
+      (await sdk!.packages.generations({ profile: 'local-dev' })).generations
+        .flatMap((generation) => generation.sessions ?? [])
+        .find((item) => item.key === session.id)
+    expect(await generationSession()).toMatchObject({
+      key: session.id,
+      open: true,
+      title: 'Review fixture session',
+      run: 'running',
+    })
     cancellation.requestedAt = Date.now()
     await bounded(session.cancel(), `${kind} cancel acknowledgement`)
     cancellation.acknowledgedAt = Date.now()
@@ -196,6 +335,7 @@ async function runExample(kind: 'react' | 'dag') {
     cancellation.turnReturnedAt = Date.now()
     cancellation.turnReason = cancelledTurn.reason
     expect(cancelledTurn.reason).toBe('aborted')
+    expect(await generationSession()).toMatchObject({ title: 'Review fixture session', run: 'idle' })
     await bounded(blocked.disconnected, `${kind} provider abort`)
     provider.unblock()
     stage = 'recover'
