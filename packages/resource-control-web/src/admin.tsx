@@ -828,7 +828,6 @@ class ResourceAdminPage {
   }
 }
 
-let mcpSubmitting = false
 let editing: McpServerDescriptor | undefined
 function writeDefinition(definition: McpServerDefinitionInput): void {
   $('mcp-workspace', 'input').value =
@@ -926,6 +925,7 @@ export type ResourceAdminMount = Readonly<{
  * Importing this module never touches the DOM; the host decides when to mount.
  */
 export function mountResourceAdmin(options: ResourceAdminOptions = {}): ResourceAdminMount {
+  let mcpSubmitting = false
   activePage?.dispose()
   surface = options.surface
   list = surface?.list ?? $('resource-list', 'section')
@@ -1049,6 +1049,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         if (!stop.signal.aborted) dialog.showModal()
         throw cause
       }
+      if (stop.signal.aborted) return
       editing = undefined
       await page.track(receipt)
       // track() already reported success generically; a new server still needs an explicit enable.

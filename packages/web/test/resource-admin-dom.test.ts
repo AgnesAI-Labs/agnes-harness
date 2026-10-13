@@ -297,6 +297,50 @@ it('hands the shared form to the new controller before the old mount is disposed
   expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false)
 })
 
+it('lets a new mount submit while the previous mount still awaits its creation receipt', async () => {
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const originalFetch = fetch
+  let held = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string, init?: RequestInit) => {
+      const response = await originalFetch(input, init)
+      if (input.endsWith('/mcp/create') && !held) {
+        held = true
+        await pending
+      }
+      return response
+    }),
+  )
+  const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
+  resourceMount = mountResourceAdmin({ tab: 'mcp' })
+  await resourceMount.ready
+  try {
+    byId('mcp-create').click()
+    byId('mcp-method-local').click()
+    change('mcp-command', 'fixture --old-request')
+    await submitMcpForm()
+    await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+    resourceMount = mountResourceAdmin({ tab: 'mcp' })
+    await resourceMount.ready
+    byId('mcp-create').click()
+    byId('mcp-method-local').click()
+    change('mcp-command', 'fixture --new-request')
+    await submitMcpForm()
+    await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(2))
+    await settle()
+    release()
+    await settle()
+    expect(submitted('operations/get')).toHaveLength(1)
+  } finally {
+    release()
+    await settle()
+  }
+})
+
 it('does not append a stale load-more response after switching tabs', async () => {
   let resolvePage!: (response: Response) => void
   pendingPage = {
