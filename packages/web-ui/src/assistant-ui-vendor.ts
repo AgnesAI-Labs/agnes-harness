@@ -1,5 +1,11 @@
 /** One declared web-ui boundary for the headless conversation runtime and its vendor entry. */
 export { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
+export {
+  AttachmentReaderContext,
+  type AttachmentWindowReader,
+  type ReferenceImageState,
+  useReferenceImage,
+} from './conversation/attachment-image.js'
 export { ConversationCost } from './conversation/cost.js'
 export { type CostNode, costDetails, costSummary } from './conversation/cost-format.js'
 export {

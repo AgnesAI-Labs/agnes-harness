@@ -76,6 +76,38 @@ describe('methods (I1 set)', () => {
       ]),
     ).toThrow()
   })
+  it('carries attachment references through ACP prompts as resource links', () => {
+    const sha256 = 'b'.repeat(64)
+    const blocks = [
+      { type: 'text' as const, text: 'see' },
+      {
+        type: 'image' as const,
+        mimeType: 'image/png',
+        attachment: { sha256, bytes: 9 },
+        width: 8,
+        height: 8,
+        thumbnail: { sha256: 'c'.repeat(64), bytes: 4, width: 8, height: 8 },
+      },
+      { type: 'file' as const, mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 9 } },
+    ] as Parameters<typeof toAcpPrompt>[0]
+    const prompt = toAcpPrompt(blocks)
+    expect(validateMethod('session/prompt', 'params', { sessionId: 's', prompt }).ok).toBe(true)
+    expect(prompt[1]).toMatchObject({ type: 'resource_link', uri: `artifact://${sha256}`, name: 'image' })
+    expect(fromAcpPrompt(prompt)).toEqual(blocks)
+    // An ordinary link, or one whose carried block does not match its own link, stays a link.
+    const link = { type: 'resource_link', uri: `artifact://${sha256}`, name: 'a.zip' }
+    expect(fromAcpPrompt([link])).toEqual([link])
+    const mismatched = {
+      ...(prompt[2] as object),
+      uri: `artifact://${'d'.repeat(64)}`,
+    }
+    expect(fromAcpPrompt([mismatched])).toEqual([mismatched])
+    const malformed = {
+      ...link,
+      _meta: { 'ai.agnes.harness': { attachment: { type: 'file', mimeType: 'a/b', name: 'a', data: 'QUJD' } } },
+    }
+    expect(fromAcpPrompt([malformed])).toEqual([malformed])
+  })
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual([
       '_agnes/v1/apis.list',
@@ -84,6 +116,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/approvalGrants.revoke',
       '_agnes/v1/artifact.job.status',
       '_agnes/v1/artifact.read',
+      '_agnes/v1/attachment.upload',
       '_agnes/v1/auth.claim',
       '_agnes/v1/clientModules.callEffect',
       '_agnes/v1/clientModules.callService',
@@ -200,7 +233,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(121)
+    expect(Object.keys(METHODS)).toHaveLength(122)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
@@ -241,6 +274,68 @@ describe('methods (I1 set)', () => {
 
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
+  })
+
+  it('closes each upload step and bounds a chunk to one MiB of base64', () => {
+    const method = '_agnes/v1/attachment.upload'
+    const uploadId = '0f0e0d0c-0b0a-4908-8706-050403020100'
+    const sha256 = 'a'.repeat(64)
+    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
+    for (const ok of [
+      { operation: 'limits', sessionId: 's' },
+      { operation: 'start', sessionId: 's', uploadId, name: 'a.zip', mimeType: 'application/zip', size: 0 },
+      {
+        operation: 'start',
+        sessionId: 's',
+        uploadId,
+        name: 't.jpg',
+        mimeType: 'image/jpeg',
+        size: 9,
+        purpose: 'thumbnail',
+      },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398104), sha256 },
+      { operation: 'status', sessionId: 's', uploadId },
+      { operation: 'cancel', sessionId: 's', uploadId },
+      { operation: 'finish', sessionId: 's', uploadId },
+      { operation: 'finish', sessionId: 's', uploadId, sha256 },
+    ])
+      expect(validateMethod(method, 'params', ok).ok, JSON.stringify(ok).slice(0, 80)).toBe(true)
+    const start = { operation: 'start', sessionId: 's', uploadId, name: 'a', mimeType: 'a/b', size: 1 }
+    for (const bad of [
+      { operation: 'limits', sessionId: 's', uploadId },
+      { ...start, uploadId: 'not-a-uuid' },
+      { ...start, uploadId: uploadId.toUpperCase() },
+      { ...start, name: '' },
+      { ...start, name: 'n'.repeat(257) },
+      { ...start, mimeType: 'm'.repeat(129) },
+      { ...start, size: -1 },
+      { ...start, size: 2 ** 53 },
+      { ...start, purpose: 'other' },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398105), sha256 },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: '', sha256 },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'QUJD', sha256: 'A'.repeat(64) },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: -1, data: 'QUJD', sha256 },
+      { operation: 'status', sessionId: 's' },
+      { operation: 'finish', sessionId: 's', uploadId, extra: 1 },
+      { operation: 'resume', sessionId: 's', uploadId },
+    ])
+      expect(validateMethod(method, 'params', bad).ok, JSON.stringify(bad).slice(0, 80)).toBe(false)
+    const ref = { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 3 } }
+    for (const ok of [
+      { limits: { maxBytes: 2 ** 31, chunkBytes: 1048576, maxConcurrent: 4 } },
+      { offset: 3 },
+      {},
+      { offset: 3, attachment: ref },
+      { offset: 3, attachment: { sha256, bytes: 3, width: 320, height: 200 } },
+    ])
+      expect(validateMethod(method, 'result', ok).ok).toBe(true)
+    for (const bad of [
+      { limits: { maxBytes: 1, chunkBytes: 1048577, maxConcurrent: 4 } },
+      { offset: -1 },
+      { offset: 3, attachment: { sha256, bytes: 3, width: 321, height: 200 } },
+      { offset: 3, extra: true },
+    ])
+      expect(validateMethod(method, 'result', bad).ok).toBe(false)
   })
 
   it('bounds attachment windows to one MiB and names the attachment by place', () => {

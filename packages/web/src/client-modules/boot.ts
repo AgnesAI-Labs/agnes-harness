@@ -126,6 +126,8 @@ export async function startClientModules(options: {
     nodeHost?: 'react'
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
+    /** Reads attachment bytes of the open session, for images sent by reference. */
+    readAttachment?: import('@agnes/web-ui/assistant-ui').AttachmentWindowReader
   }
   conversationContainer?: HTMLElement | undefined
   topbarContainer?: HTMLElement | undefined

@@ -952,6 +952,40 @@ describe('production supervisor storage', () => {
     expect(events).toEqual(['supervisor.close', 'storage.close'])
   })
 
+  it('serves uploads exactly where attachments are stored by reference', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-production-upload-'))
+    try {
+      const startedWith = async (attachments: unknown, artifacts: string) => {
+        let received: StartSupervisorOptions | undefined
+        const base = options(dir)
+        const supervisor = await startProductionSupervisor(
+          {
+            ...base,
+            profile: { ...base.profile, attachments, seams: { artifacts } } as unknown as ResolvedProfile,
+          },
+          {
+            createStorage: (() => ({
+              crashReclaim: reclaim,
+              tables: () => ({ table: () => ({}) }),
+              async close() {},
+            })) as never,
+            start: (async (o: StartSupervisorOptions) => {
+              received = o
+              return { socketPath: join(dir, 'agnesd.sock'), async close() {} }
+            }) as never,
+          },
+        )
+        await supervisor.close()
+        return received?.attachmentUpload
+      }
+      expect(await startedWith({ storeByReference: true }, '@agnes/base')).toBeDefined()
+      expect(await startedWith({ storeByReference: false }, '@agnes/base')).toBeUndefined()
+      expect(await startedWith({ storeByReference: true }, '@acme/artifacts')).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('closes storage after startup failure and after a supervisor shutdown failure', async () => {
     const startup = new Error('startup failed')
     let startupCloses = 0

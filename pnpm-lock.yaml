@@ -321,6 +321,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/protocol-validation':
+        specifier: workspace:*
+        version: link:../protocol-validation
       '@agnes/resource-control-daemon':
         specifier: workspace:*
         version: link:../resource-control-daemon

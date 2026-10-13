@@ -1,3 +1,4 @@
+import type { AttachmentRefusalCode } from '@agnes/protocol'
 import {
   AttachmentValidationError,
   SafeImageError,
@@ -20,7 +21,23 @@ export type AttachmentErrorNotice = Readonly<{
  * 词条都在 `composer.*` 下：同一批限制由输入框先报一次、提交时兜底再报一次，两处取同一份
  * 文案才不会各自漂移。
  */
+/** The daemon's attachment refusals (`data.code` of the RPC error) and the sentence each gets. */
+const REFUSAL_KEYS: Readonly<Partial<Record<AttachmentRefusalCode, string>>> = {
+  UPLOAD_QUOTA: 'composer.upload.quota',
+  UPLOAD_SIZE_LIMIT: 'composer.upload.tooLarge',
+  UPLOAD_NOT_IMAGE: 'composer.image.invalid',
+  ATTACHMENT_NOT_AUTHORIZED: 'composer.upload.notAuthorized',
+  ATTACHMENT_MISSING: 'composer.upload.missing',
+  ATTACHMENT_CORRUPT: 'composer.upload.missing',
+  ATTACHMENT_HASH_MISMATCH: 'composer.upload.missing',
+  ATTACHMENT_DATA: 'composer.attachment.dataInvalid',
+  ATTACHMENT_BYTES: 'composer.attachment.tooLarge',
+}
+
 export function attachmentErrorNotice(error: unknown): AttachmentErrorNotice | undefined {
+  const refusal = (error as { data?: { code?: unknown } } | null)?.data?.code
+  if (typeof refusal === 'string' && Object.hasOwn(REFUSAL_KEYS, refusal))
+    return { key: REFUSAL_KEYS[refusal as AttachmentRefusalCode] as string }
   if (error instanceof AttachmentValidationError) {
     switch (error.code) {
       case 'ATTACHMENT_COUNT':

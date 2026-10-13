@@ -46,6 +46,7 @@ import {
   requireSessionOwner,
 } from './methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from './methods/artifacts.js'
+import { type AttachmentUploadService, registerAttachmentUpload } from './methods/attachment-upload.js'
 import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
@@ -210,6 +211,11 @@ export {
   type ArtifactReadScopeAuthority,
   registerArtifactRead,
 } from './methods/artifacts.js'
+export {
+  type AttachmentUploadService,
+  createAttachmentUploadService,
+  registerAttachmentUpload,
+} from './methods/attachment-upload.js'
 export { type ExtensionMethodsContext, registerExtensions } from './methods/extensions.js'
 export { registerWorkspaces, throwWorkspaceRpcError } from './methods/workspaces.js'
 export {
@@ -284,6 +290,8 @@ export type LocalEndpointOptions = {
   artifactRead?: ArtifactReadRpcOptions
   /** Where diagnostics.collect reads `audit/*.jsonl` tails. Omitted: both logs report missing. */
   dataDir?: string
+  /** Chunked attachment uploads into the attachment store. Omitted: every upload step is refused as unavailable. */
+  attachmentUpload?: AttachmentUploadService
 }
 
 /**
@@ -414,6 +422,7 @@ export function createLocalEndpoint(
       authKind: identity.authKind,
       credentialKind: identity.credentialKind,
       artifactRead: artifactReadConfigured,
+      attachmentUpload: opts.attachmentUpload !== undefined,
       ...(lockedPackageMutations ? { lockedPackageMutations } : {}),
       ...(computerUse ? { computerUse } : {}),
       forkSession: async (sessionId, at, childKey, credential, principalId) => {
@@ -467,6 +476,7 @@ export function createLocalEndpoint(
   // In process there is no separate read path: the request is answered with a refusal.
   registerStoredOpening(ep, { requireSessionOwner: requireSessionOwner(cx) })
   if (artifactReadConfigured) registerArtifactRead(ep, opts.artifactRead as ArtifactReadRpcOptions)
+  registerAttachmentUpload(ep, requireSessionOwner(cx), opts.attachmentUpload)
   if (opts.packageAdmin) {
     // The loopback Web connection is authenticated as the local owner but is not an administration
     // channel; it gets the one skin read the workbench actually needs (design §23.3). Every other

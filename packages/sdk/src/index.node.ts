@@ -77,6 +77,7 @@ export type {
   WorkspaceListResult,
 } from '@agnes/protocol'
 export * from './auth.js'
+export * from './attachment-upload.js'
 export * from './branding.js'
 export * from './client.js'
 export * from './errors.js'

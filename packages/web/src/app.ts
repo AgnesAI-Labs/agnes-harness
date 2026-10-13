@@ -26,7 +26,7 @@ import {
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createAntdRoot, NotificationHost, type Notifier, type NotifyInput } from '@agnes/web-ui'
-import { attachmentErrorNotice } from '@agnes/web-units'
+import { attachmentErrorNotice, type ComposerAttachmentBlock } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
@@ -347,7 +347,20 @@ const clientModules = await startClientModules({
         }),
     },
   },
-  transcript: { nodeHost: 'react', onFork: forkTurn },
+  transcript: {
+    nodeHost: 'react',
+    onFork: forkTurn,
+    // Images sent by reference are read back from the session shown, a window at a time.
+    readAttachment: (input, signal) => {
+      const session = current
+      if (!session) return Promise.reject(new Error(t('app.trace.noSession')))
+      return client.call(
+        '_agnes/v1/session.attachmentRead',
+        { sessionId: session.id, ...input },
+        signal ? { signal } : {},
+      )
+    },
+  },
   conversationContainer: conversation,
   topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
   approvalContainer: document.getElementById('approval') ?? undefined,
@@ -365,6 +378,27 @@ const clientModules = await startClientModules({
     onSendNow: (itemId) => handleQueuedAction(itemId, 'sendNow'),
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
+    // Attachments are uploaded by reference into the open session when the daemon stores them that
+    // way; otherwise (no session yet, an older daemon, or the store off) they go inline.
+    upload: {
+      open: async () => {
+        const session = current
+        if (!session || !client.serverCapabilities.attachmentRefs) return undefined
+        try {
+          const { limits } = await client.call<{ limits: { maxBytes: number; maxConcurrent: number } }>(
+            '_agnes/v1/attachment.upload',
+            { operation: 'limits', sessionId: session.id },
+          )
+          return {
+            maxBytes: limits.maxBytes,
+            maxConcurrent: limits.maxConcurrent,
+            upload: (input, o) => client.attachments.upload(session.id, input, o),
+          }
+        } catch {
+          return undefined
+        }
+      },
+    },
   },
   traceContainer: document.getElementById('trace-panel') ?? undefined,
   trace: {
@@ -377,6 +411,8 @@ const clientModules = await startClientModules({
       if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
     },
+    readAttachment: (sessionId, input, signal) =>
+      client.call('_agnes/v1/session.attachmentRead', { sessionId, ...input }, signal ? { signal } : {}),
   },
   rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
   settingsPaneContainer: document.getElementById('config') ?? undefined,
@@ -2127,6 +2163,10 @@ function submitComposer(): void {
   const input = originalDraft.trim()
   const attachments = composerRuntime.getAttachmentBlocks()
   const images = attachments.filter((block) => block.type === 'image')
+  // Only inline attachments carry bytes in the message; a reference is a few hundred bytes.
+  const inlineImages = images.filter(
+    (block): block is Extract<ComposerAttachmentBlock, { type: 'image' }> => 'data' in block,
+  )
   let session = current
   if (
     (!input && attachments.length === 0) ||
@@ -2145,7 +2185,7 @@ function submitComposer(): void {
   )
   try {
     validateUserAttachments(attachments)
-    decodeSafeImages(images, USER_MESSAGE_IMAGE_LIMITS)
+    decodeSafeImages(inlineImages, USER_MESSAGE_IMAGE_LIMITS)
   } catch (error) {
     showError(error)
     return
@@ -2158,7 +2198,7 @@ function submitComposer(): void {
   const content: ContentBlock[] = [...(input ? [{ type: 'text' as const, text: input }] : []), ...attachments]
   const busy = projection?.opState !== null && projection?.opState !== undefined
   if (
-    attachments.length > 0 &&
+    attachments.some((block) => 'data' in block) &&
     imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy) > MAX_FRAME_BYTES
   ) {
     showError(new Error(t('app.error.messageTooLarge')))

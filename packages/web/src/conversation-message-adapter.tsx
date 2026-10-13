@@ -9,6 +9,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import {
+  type AttachmentWindowReader,
   ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
@@ -123,6 +124,7 @@ export function WebConversationMessages({
   turns,
   visibleNodeIds,
   onFork,
+  readAttachment,
 }: {
   registry?: SlotRegistry
   claim?: ClaimResolver
@@ -132,6 +134,8 @@ export function WebConversationMessages({
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
+  /** Reads attachment bytes of the open session, for images sent by reference. */
+  readAttachment?: AttachmentWindowReader
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }) {
@@ -143,6 +147,7 @@ export function WebConversationMessages({
     t: (key, vars) => locale?.t(key, vars) ?? key,
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
+    ...(readAttachment ? { readAttachment } : {}),
     renderTurnActions: (turn, finalText, settled) => (
       <ConversationTurnActions
         key={turn.id}

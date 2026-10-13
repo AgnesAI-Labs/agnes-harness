@@ -6,6 +6,7 @@ import {
   ActivationInProgressError,
   type ConfigurationService,
   composeSecrets,
+  createAttachmentStore,
   createExtensionActivationBarrier,
   createFileAudit,
   createPlatform,
@@ -13,6 +14,7 @@ import {
   createSecretsFile,
   createSqliteStorage,
   createStoredOpeningReader,
+  createUserAttachmentPort,
   defaultProcessIdentity,
   type ExtensionActivationBarrier,
   type Host,
@@ -86,6 +88,11 @@ import {
   requireSessionOwner,
 } from '../local/methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '../local/methods/artifacts.js'
+import {
+  type AttachmentUploadService,
+  createAttachmentUploadService,
+  registerAttachmentUpload,
+} from '../local/methods/attachment-upload.js'
 import { registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
@@ -660,6 +667,11 @@ export type StartSupervisorOptions = {
    * whose full open is slow or failed. Absent, `session.storedOpening` is refused.
    */
   storedOpening?: Pick<StoredOpeningReader, 'opening'>
+  /**
+   * Chunked attachment uploads into the attachment store, shared by every connection so an upload
+   * resumes across reconnects. Absent, every upload step is refused as unavailable.
+   */
+  attachmentUpload?: AttachmentUploadService
   /** Resolved remote credentials. Secret references are resolved only by the executable composition
    * root and never stored in the profile snapshot written for workers. */
   remoteAuth?: Omit<AuthConfig, 'transport'> & {
@@ -1773,6 +1785,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         authKind: 'local',
         credentialKind: 'local',
         artifactRead: artifactReadConfigured,
+        attachmentUpload: o.attachmentUpload !== undefined,
         ...(o.lockedPackageMutations !== undefined
           ? { lockedPackageMutations: o.lockedPackageMutations }
           : {}),
@@ -1843,6 +1856,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ...(o.storedOpening ? { storedOpening: o.storedOpening } : {}),
       })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
+      registerAttachmentUpload(ep, requireSessionOwner(cx), o.attachmentUpload)
       if (effectivePackageAdmin)
         registerPackageAdmin(
           ep,
@@ -2136,11 +2150,13 @@ export async function startProductionSupervisor(
     }
     reader = undefined
   }
+  const attachmentUpload = productionAttachmentUpload(o.profile)
   let supervisor: SupervisorHandle
   try {
     supervisor = await (deps.start ?? startSupervisor)({
       ...o,
       storedOpening,
+      ...(attachmentUpload ? { attachmentUpload } : {}),
       jobTables: adaptHostTables(storage.tables('@agnes/daemon')),
       artifactAuthorityTable: adaptHostTables(storage.tables('@agnes/daemon/artifact-read-authority')).table(
         'artifact_read_authority',
@@ -2189,6 +2205,21 @@ export async function startProductionSupervisor(
       return closePromise
     },
   }
+}
+
+/**
+ * Uploads go to the same attachment store the session workers read, under the profile's data
+ * directory. They are served only where attachments are stored by reference: with the switch off, or
+ * another artifacts implementation owning the tree, clients keep sending attachments inline. Staging
+ * files an earlier process left behind are swept once they are a day old.
+ */
+function productionAttachmentUpload(profile: ResolvedProfile): AttachmentUploadService | undefined {
+  // The same condition the worker's assembly applies to storing attachments by reference.
+  if (!profile.attachments?.storeByReference || profile.seams?.artifacts !== '@agnes/base') return undefined
+  const store = createAttachmentStore({ dataDir: profile.dataDir })
+  void store.sweepStaging(Date.now()).catch(() => undefined)
+  const port = createUserAttachmentPort({ store, limits: profile.limits, storeByReference: true })
+  return createAttachmentUploadService({ store, limits: profile.limits, reserve: port.reserve })
 }
 
 /**

@@ -4,11 +4,12 @@
 // supervisor and worker; the queue rows are written to the stored ledger directly, because the
 // current build no longer produces them.
 import { randomBytes } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { existsSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appendInboxRowsAsOlderBuild } from '@agnes/host/testkit'
-import { toAcpPrompt } from '@agnes/protocol'
-import { openSupervisor } from './harness.js'
+import { type ContentBlock, toAcpPrompt } from '@agnes/protocol'
+import { uploadAttachment } from '@agnes/sdk'
+import { openSupervisor, type Session } from './harness.js'
 
 export type LegacySessionOptions = {
   /**
@@ -90,4 +91,59 @@ export async function buildLegacySession(
   }
   writeFileSync(join(dir, 'session-id'), sessionId)
   return { sessionId }
+}
+
+/** The SDK's chunked upload over the harness connection. */
+export function uploadOver(session: Session) {
+  return (sessionId: string, bytes: Uint8Array, name: string, mimeType: string) =>
+    uploadAttachment(
+      <T>(method: string, params: unknown) => session.must(method, params) as Promise<T>,
+      sessionId,
+      { bytes, name, mimeType },
+    )
+}
+
+/**
+ * The same conversation sent the way this build sends it: the zip is uploaded by reference through the
+ * SDK first, and the prompt carries only its reference block. Returns the `sessions.db` size before
+ * the upload, so the growth the attachment caused can be measured.
+ */
+export async function buildByReferenceSession(
+  dir: string,
+  o: { attachmentMB: number; prefixTurns: number },
+): Promise<{ sessionId: string; dbBytes: number }> {
+  const first = await openSupervisor(dir)
+  let sessionId: string
+  try {
+    sessionId = (await first.must('session/new', { cwd: dir, mcpServers: [] })).sessionId as string
+    for (let turn = 0; turn < o.prefixTurns; turn++)
+      await first.must('session/prompt', {
+        sessionId,
+        prompt: toAcpPrompt([{ type: 'text', text: `small user turn ${turn} `.repeat(10) }]),
+      })
+  } finally {
+    await first.close()
+  }
+  // Measured after a clean close, as the cold load measures it, so the write-ahead log is folded in both.
+  const dbBytes = databaseBytes(dir)
+  const second = await openSupervisor(dir)
+  try {
+    await second.must('session/load', { sessionId, cwd: dir, mcpServers: [] })
+    const zip = randomBytes(Math.floor((o.attachmentMB * MIB) / 4) * 3)
+    const block = (await uploadOver(second)(sessionId, zip, 'insects.zip', 'application/zip')) as ContentBlock
+    await second.must('session/prompt', {
+      sessionId,
+      prompt: toAcpPrompt([{ type: 'text', text: 'unpack it' }, block]),
+    })
+  } finally {
+    await second.close()
+  }
+  writeFileSync(join(dir, 'session-id'), sessionId)
+  return { sessionId, dbBytes }
+}
+
+function databaseBytes(dir: string): number {
+  const file = join(dir, 'sessions.db')
+  const wal = `${file}-wal`
+  return statSync(file).size + (existsSync(wal) ? statSync(wal).size : 0)
 }

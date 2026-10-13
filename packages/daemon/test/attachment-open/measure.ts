@@ -1,9 +1,12 @@
 // Opens a built session cold through a real supervisor and worker, the way a client reopening the
 // session does, and measures what that cost.
+
+import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { openRuntimeLog } from '../../src/runtime-log.js'
+import { uploadOver } from './build.js'
 import { openSupervisor, sampleChildPeaks } from './harness.js'
 
 export type ColdLoadResult = {
@@ -112,5 +115,22 @@ export async function measureColdLoad(dir: string): Promise<ColdLoadResult> {
     ...ledgerShape(dir),
     verifyFullMs: typeof verify?.detail?.ms === 'number' ? verify.detail.ms : null,
     records,
+  }
+}
+
+/** Uploads `mb` MiB end to end over a real supervisor connection and times it, commit included. */
+export async function measureUpload(dir: string, mb: number): Promise<{ ms: number; bytes: number }> {
+  const session = await openSupervisor(dir)
+  try {
+    const sessionId = (await session.must('session/new', { cwd: dir, mcpServers: [] })).sessionId as string
+    const bytes = randomBytes(mb * 1024 * 1024)
+    const startedAt = performance.now()
+    const block = await uploadOver(session)(sessionId, bytes, 'upload.bin', 'application/octet-stream')
+    const ms = performance.now() - startedAt
+    if ((block as { attachment?: { bytes?: number } }).attachment?.bytes !== bytes.length)
+      throw new Error('the upload did not store every byte')
+    return { ms, bytes: bytes.length }
+  } finally {
+    await session.close()
   }
 }

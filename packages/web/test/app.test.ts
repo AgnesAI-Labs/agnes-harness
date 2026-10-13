@@ -2191,6 +2191,7 @@ describe('image composer submissions', () => {
     sessionValue: SessionDouble,
     busy = false,
     inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
+    uploads?: { upload: ReturnType<typeof vi.fn> },
   ): Promise<void> {
     installPublicFixture()
     const imageUrl = `blob:${sessionValue.id}-image`
@@ -2213,6 +2214,17 @@ describe('image composer submissions', () => {
         list: vi.fn(async () => ({ items: [{ sessionId: sessionValue.id }] })),
         load: vi.fn(async () => sessionValue),
       },
+      ...(uploads
+        ? {
+            serverCapabilities: { attachmentRefs: true },
+            call: vi.fn(async (method: string) =>
+              method === '_agnes/v1/attachment.upload'
+                ? { limits: { maxBytes: 2 * 1024 ** 3, chunkBytes: 1024 * 1024, maxConcurrent: 4 } }
+                : undefined,
+            ),
+            attachments: { upload: uploads.upload },
+          }
+        : {}),
     })
     binding.loadWebSession.mockResolvedValue({ session: sessionValue, offPermission: vi.fn() })
     binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
@@ -2247,15 +2259,15 @@ describe('image composer submissions', () => {
       await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
   }
 
-  it.each(['PNG', '10 MiB JPEG'])(
+  it.each(['PNG', '7 MiB JPEG'])(
     'enables and sends a %s without text through session.prompt',
     async (format) => {
       const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
       await start(active)
       let bytes = imagePngBytes
       let mimeType = 'image/png'
-      if (format === '10 MiB JPEG') {
-        bytes = new Uint8Array(10 * 1024 * 1024)
+      if (format === '7 MiB JPEG') {
+        bytes = new Uint8Array(7 * 1024 * 1024)
         bytes.set([
           0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
         ])
@@ -2275,6 +2287,62 @@ describe('image composer submissions', () => {
       )
     },
   )
+
+  it('keeps an attachment over 8 MiB out when it cannot be uploaded by reference', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng(
+      false,
+      new File([new Uint8Array(9 * 1024 * 1024)], 'data.zip', { type: 'application/zip' }),
+    )
+    await vi.waitFor(() => expect(notices()).toContain('超过 8 MiB 的附件无法从这里发送'))
+    expect(document.querySelector('.composer-file-preview')).toBeNull()
+  })
+
+  it('uploads attachments by reference and sends only the references', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const zip = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'data.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 10 * 1024 * 1024 },
+    }
+    const png = {
+      type: 'image',
+      mimeType: 'image/png',
+      attachment: { sha256: 'b'.repeat(64), bytes: imagePngBytes.length },
+      width: 1,
+      height: 1,
+      name: 'one.png',
+    }
+    const finishers = new Map<string, (value: unknown) => void>()
+    const upload = vi.fn(
+      (_session: string, input: { name: string }) =>
+        new Promise((resolve) => finishers.set(input.name, resolve)),
+    )
+    await start(active, false, ['text', 'image'], { upload })
+    await attachPng(
+      false,
+      new File([new Uint8Array(10 * 1024 * 1024)], 'data.zip', { type: 'application/zip' }),
+    )
+    await attachPng()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+    expect(upload).toHaveBeenCalledWith(
+      'old',
+      expect.objectContaining({ name: 'data.zip', mimeType: 'application/zip' }),
+      expect.anything(),
+    )
+    const send = document.getElementById('send') as HTMLButtonElement
+    // Not sendable while an upload runs.
+    expect(send.disabled).toBe(true)
+    finishers.get('data.zip')?.(zip)
+    finishers.get('one.png')?.(png)
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+    // References only: neither the frame estimate nor the inline image check refuses them.
+    expect(active.prompt).toHaveBeenCalledWith([zip, png], { titleLocale: 'zh-CN' })
+  })
 
   it('sends mixed text and images through session.followUp and restores both on failure', async () => {
     const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))

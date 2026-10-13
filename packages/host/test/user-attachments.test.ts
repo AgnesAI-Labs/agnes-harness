@@ -201,8 +201,31 @@ describe('user attachment port', () => {
       storeByReference: true,
       diskFree: plenty,
     })
-    await expect(port.store(input(bytes(101)), signal)).rejects.toMatchObject({ code: 'UPLOAD_QUOTA' })
+    await expect(port.store(input(bytes(101)), signal)).rejects.toMatchObject({ code: 'UPLOAD_SIZE_LIMIT' })
     expect(objectFiles(dataDir)).toEqual([])
+  })
+
+  it('holds the room for an upload until it settles, and counts what it stored', async () => {
+    const store = createAttachmentStore({ dataDir: fresh() })
+    const port = createUserAttachmentPort({
+      store,
+      limits: { 'attachments.global_quota_bytes': 1000 },
+      storeByReference: true,
+      diskFree: plenty,
+    })
+    const first = await port.reserve({ add: 600, sessionBytes: 0 })
+    // The room is held while the first upload is in flight.
+    await expect(port.reserve({ add: 600, sessionBytes: 0 })).rejects.toMatchObject({ code: 'UPLOAD_QUOTA' })
+    first(600)
+    expect(await port.usage()).toBe(600)
+    await expect(port.reserve({ add: 600, sessionBytes: 0 })).rejects.toMatchObject({ code: 'UPLOAD_QUOTA' })
+    // A cancelled upload gives its room back and counts nothing; settling twice changes nothing.
+    const cancelled = await port.reserve({ add: 400, sessionBytes: 0 })
+    cancelled()
+    cancelled(400)
+    expect(await port.usage()).toBe(600)
+    const again = await port.reserve({ add: 400, sessionBytes: 0 })
+    again(0)
   })
 
   it('reads the five limits with their defaults', () => {

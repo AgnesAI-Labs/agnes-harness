@@ -62,7 +62,8 @@ const refused = (code: string, message: string) =>
 // The store's own refusals keep their code and get a fixed message; anything else (a raw file system
 // error, whose message names paths in the data directory) is reported as unavailable.
 const STORE_REFUSALS: Readonly<Record<string, string>> = {
-  UPLOAD_QUOTA: 'There is no room for this attachment: a size limit or storage quota was reached.',
+  UPLOAD_QUOTA: 'There is no room for this attachment: a storage quota was reached.',
+  UPLOAD_SIZE_LIMIT: 'The attachment is larger than the upload limit.',
   ATTACHMENT_MISSING: 'The attachment is no longer stored. Upload it again.',
   ATTACHMENT_CORRUPT: 'The stored attachment is damaged. Upload it again.',
   ATTACHMENT_HASH_MISMATCH: 'The stored attachment is damaged. Upload it again.',

@@ -17,6 +17,12 @@ import {
 import { createPortal, flushSync } from 'react-dom'
 import { formatMegabytes } from '../format-bytes.js'
 import type { Translate } from '../locales/index.js'
+import {
+  AttachmentReaderContext,
+  type AttachmentWindowReader,
+  useAttachmentReader,
+  useReferenceImage,
+} from './attachment-image.js'
 import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
@@ -48,6 +54,8 @@ export interface ConversationMessagesProps {
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
+  /** Reads attachment bytes of the open session, for images sent by reference. */
+  readAttachment?: AttachmentWindowReader
 }
 
 type ConversationMessageContextValue = {
@@ -217,6 +225,46 @@ function UserMessageImage({
   )
 }
 
+/** An image sent by reference: its thumbnail, or the original when small enough, read from the session. */
+function UserMessageReferenceImage({
+  image,
+  seq,
+  index,
+  t,
+}: {
+  image: Extract<ContentBlock, { type: 'image'; attachment: unknown }>
+  seq: number
+  index: number
+  t: Translate
+}) {
+  const state = useReferenceImage(image, { seq, index }, useAttachmentReader())
+  if (state.status === 'large')
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.image.reference', {
+          name: image.name ?? t('conversation.imageAlt', { index }),
+          size: formatMegabytes(image.attachment.bytes),
+        })}
+      </span>
+    )
+  if (state.status === 'unavailable')
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.imageUnavailable')}
+      </span>
+    )
+  if (state.status === 'loading') return null
+  return (
+    <Image
+      className="user-message-image"
+      src={state.url}
+      alt={t('conversation.imageAlt', { index })}
+      width={USER_MESSAGE_IMAGE_THUMBNAIL.width}
+      height={USER_MESSAGE_IMAGE_THUMBNAIL.height}
+    />
+  )
+}
+
 /**
  * 一条用户消息的全部内联图片。原生兜底与 assistant-ui 门户是两棵各渲染一份的 DOM：
  * 门户负责可见内容，兜底只是 CSS 隐藏的备份，两条路径都要带上图片，否则门户一份只剩文字。
@@ -248,6 +296,17 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
                 : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`
           const occurrence = imageKeys.get(imageKey) ?? 0
           imageKeys.set(imageKey, occurrence + 1)
+          // Its place among the message's images is how the session reads it back.
+          if ('attachment' in block)
+            return (
+              <UserMessageReferenceImage
+                key={`${imageKey}:${occurrence}`}
+                image={block}
+                seq={node.seq}
+                index={index + 1}
+                t={t}
+              />
+            )
           return (
             <UserMessageImage
               key={`${imageKey}:${occurrence}`}
@@ -977,43 +1036,47 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.turns.flatMap((turn) => turn.nodeIds.map((id) => [id, turn.id] as const)),
     )
     return (
+      <AttachmentReaderContext.Provider value={props.readAttachment}>
+        <ConversationMessageTargetContext.Provider value={targetContext}>
+          <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
+            <section data-agnes-conversation-messages="">
+              <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
+              {props.turns.map((turn) => (
+                <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
+              ))}
+              <section
+                className="timeline-unassigned"
+                hidden={[...nodes.keys()].every((id) => assigned.has(id))}
+              >
+                {[...nodes]
+                  .filter(([id]) => !assigned.has(id))
+                  .map(([id, node]) => (
+                    <Message key={id} node={node} props={props} />
+                  ))}
+              </section>
+            </section>
+          </registerConversationMessageTargetContext.Provider>
+        </ConversationMessageTargetContext.Provider>
+      </AttachmentReaderContext.Provider>
+    )
+  }
+  return (
+    <AttachmentReaderContext.Provider value={props.readAttachment}>
       <ConversationMessageTargetContext.Provider value={targetContext}>
         <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
           <section data-agnes-conversation-messages="">
             <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
-            {props.turns.map((turn) => (
-              <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
-            ))}
-            <section
-              className="timeline-unassigned"
-              hidden={[...nodes.keys()].every((id) => assigned.has(id))}
-            >
-              {[...nodes]
-                .filter(([id]) => !assigned.has(id))
-                .map(([id, node]) => (
-                  <Message key={id} node={node} props={props} />
-                ))}
-            </section>
+            {messages.map((message) => {
+              if (visible && !visible.has(message.id)) return null
+              const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
+              const node = custom?.node
+              return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
+                <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
+              ) : null
+            })}
           </section>
         </registerConversationMessageTargetContext.Provider>
       </ConversationMessageTargetContext.Provider>
-    )
-  }
-  return (
-    <ConversationMessageTargetContext.Provider value={targetContext}>
-      <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
-        <section data-agnes-conversation-messages="">
-          <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
-          {messages.map((message) => {
-            if (visible && !visible.has(message.id)) return null
-            const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
-            const node = custom?.node
-            return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
-              <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
-            ) : null
-          })}
-        </section>
-      </registerConversationMessageTargetContext.Provider>
-    </ConversationMessageTargetContext.Provider>
+    </AttachmentReaderContext.Provider>
   )
 }

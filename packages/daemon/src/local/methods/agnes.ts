@@ -70,6 +70,7 @@ import type {
   SessionLister,
 } from '../ports.js'
 import {
+  attachmentRefusal,
   type Feed,
   isNewerLedgerFormat,
   type LocalContext,
@@ -95,6 +96,8 @@ export type AgnesContext = LocalContext & {
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
+  /** Whether chunked attachment uploads are served (the method answers either way). */
+  attachmentUpload?: boolean
   /** Host-owned, read-only locked-package mutation readiness. Absence is reported as unknown. */
   lockedPackageMutations?: Readonly<{ status(): unknown }>
   /** Present only when Host completed platform-scoped production admission. */
@@ -490,6 +493,13 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     methods: ['_agnes/v1/artifact.read'],
     guidance: 'authenticated content-addressed reads; session and lane are authorization targets',
     when: (x) => x.artifactRead === true,
+  },
+  {
+    name: 'attachment',
+    methods: ['_agnes/v1/attachment.upload'],
+    guidance:
+      'upload an attachment in 1 MiB chunks for a session you own, then send the returned reference block',
+    when: (x) => x.attachmentUpload === true,
   },
   // Local authentication is the whole condition. The old `|| !!x.jobs` advertised the protected
   // enqueue to every remote connection on any daemon that runs a jobs service, which is the opposite
@@ -1583,13 +1593,18 @@ export function registerAgnes(
         try {
           const invocation = await queued.start()
           return await invocation.run(async () => {
-            const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-              content: payload.content as never,
-              actor: connActor(c.conn),
-              kind: kind === 'steer' ? 'steer' : 'follow_up',
-              commandId,
-              admissionId,
-            })
+            const seq = await entry.session
+              .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
+                content: payload.content as never,
+                actor: connActor(c.conn),
+                kind: kind === 'steer' ? 'steer' : 'follow_up',
+                commandId,
+                admissionId,
+              })
+              .catch((error: unknown) => {
+                // An input refused for its attachments answers with the refusal's own code.
+                throw attachmentRefusal(error) ?? error
+              })
             if (kind === 'followUp') cx.continueFollowUps?.(entry)
             return { seq }
           })

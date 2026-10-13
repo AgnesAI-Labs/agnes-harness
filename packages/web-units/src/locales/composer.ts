@@ -48,6 +48,17 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
     'composer.image.tooLargePixels':
       'The image has too many pixels to attach. Crop or scale it down and try again.',
+    'composer.upload.unavailableLarge':
+      'Attachments over 8 MiB cannot be sent from here. Use the local Web or the CLI to upload them.',
+    'composer.upload.tooLarge': 'The attachment is larger than the upload limit.',
+    'composer.upload.quota': 'There is no room for this attachment: a storage quota was reached.',
+    'composer.upload.notAuthorized':
+      'An attachment was not uploaded to this session. Remove it and add it again.',
+    'composer.upload.missing': 'An attachment is no longer stored. Remove it and add it again.',
+    'composer.upload.failed': '“{name}” could not be uploaded.',
+    'composer.upload.retry': 'Retry',
+    'composer.upload.retryAccessible': 'Retry uploading {name}',
+    'composer.upload.progress': 'Uploading {name}: {percent}%',
   },
   'zh-CN': {
     'composer.attachment.add': '添加附件',
@@ -91,5 +102,14 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooMany': '一条消息最多添加 {count} 张图片。',
     'composer.image.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
     'composer.image.tooLargePixels': '图片像素过多，无法添加。请裁剪或缩小后重试。',
+    'composer.upload.unavailableLarge': '超过 8 MiB 的附件无法从这里发送，请改用本地 Web 或 CLI 上传。',
+    'composer.upload.tooLarge': '附件超过了上传大小上限。',
+    'composer.upload.quota': '没有空间存放这个附件：已达到存储配额。',
+    'composer.upload.notAuthorized': '有附件不是上传到本会话的，请移除后重新添加。',
+    'composer.upload.missing': '有附件已不在存储中，请移除后重新添加。',
+    'composer.upload.failed': '“{name}”上传失败。',
+    'composer.upload.retry': '重试',
+    'composer.upload.retryAccessible': '重新上传 {name}',
+    'composer.upload.progress': '正在上传 {name}：{percent}%',
   },
 }

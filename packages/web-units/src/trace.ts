@@ -1,5 +1,5 @@
 import type { ToolCall, ToolResult, UINode, UISpan, UITurn } from '@agnes/protocol'
-import { formatMegabytes } from '@agnes/web-ui'
+import { type AttachmentWindowReader, formatMegabytes, useReferenceImage } from '@agnes/web-ui'
 import {
   createElement,
   type ForwardedRef,
@@ -79,6 +79,11 @@ export type TracePanelOptions = {
     resultSeq?: number,
     signal?: AbortSignal,
   ) => Promise<{ call: ToolCall; result?: ToolResult }>
+  /** Reads attachment bytes of the session shown, for input images sent by reference. */
+  readAttachment?: (
+    sessionId: string,
+    ...read: Parameters<AttachmentWindowReader>
+  ) => ReturnType<AttachmentWindowReader>
 }
 
 export type TraceRow = {
@@ -562,6 +567,47 @@ function buildGantt(
   return projectTimedEvents(events, mode)
 }
 
+type ReferenceImageBlock = Extract<UINode, { kind: 'user' }>['content'][number] & {
+  type: 'image'
+  mimeType: string
+  attachment: { sha256: string; bytes: number }
+  thumbnail?: { sha256: string; bytes: number; width: number; height: number }
+}
+
+/** An input image sent by reference: its thumbnail (or small original) read from the session as a blob. */
+function TraceReferenceImage({
+  image,
+  seq,
+  index,
+  read,
+  onOpen,
+}: {
+  image: ReferenceImageBlock
+  seq: number
+  index: number
+  read: AttachmentWindowReader | undefined
+  onOpen(src: string, alt: string): void
+}): ReactElement {
+  const state = useReferenceImage(image, { seq, index }, read)
+  const alt = traceText('trace.image.inputAlt', { n: index })
+  if (state.status !== 'ready')
+    return createElement(
+      'span',
+      { className: 'trace-image-omitted', role: 'status' },
+      traceText('trace.image.omitted', { size: formatMegabytes(image.attachment.bytes) }),
+    )
+  return createElement(
+    'button',
+    {
+      className: 'trace-image-thumb',
+      type: 'button',
+      'aria-label': traceText('trace.image.viewInput', { n: index }),
+      onClick: () => onOpen(state.url, alt),
+    },
+    createElement('img', { src: state.url, alt }),
+  )
+}
+
 export interface TraceProps {
   root: HTMLElement
   options: Omit<TracePanelOptions, 'root'>
@@ -644,6 +690,18 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const [pane, setPane] = useState<InspectorPane>('overview')
   const [toolDetail, setToolDetail] = useState<ToolDetailState | undefined>(undefined)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  // One reader per session, so the images it reads are fetched once however often the panel renders.
+  const readers = useRef(new Map<string, AttachmentWindowReader>())
+  const referenceReader = (sessionId: string | undefined): AttachmentWindowReader | undefined => {
+    const read = options.readAttachment
+    if (!sessionId || !read) return undefined
+    let reader = readers.current.get(sessionId)
+    if (!reader) {
+      reader = (input, signal) => read(sessionId, input, signal)
+      readers.current.set(sessionId, reader)
+    }
+    return reader
+  }
   useEffect(() => {
     if (!lightbox) return
     const previousFocus = document.activeElement
@@ -1325,6 +1383,23 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             : []),
           ...(selectedUserNode?.kind === 'user'
             ? selectedUserNode.content.flatMap((block, index): ReactElement[] => {
+                // Sent by reference: read back from the session by its place among the message's images.
+                if (block.type === 'image' && 'attachment' in block) {
+                  const sessionId = snapshot.meta?.sessionId
+                  const imageIndex = selectedUserNode.content
+                    .slice(0, index + 1)
+                    .filter((b) => b.type === 'image').length
+                  return [
+                    createElement(TraceReferenceImage, {
+                      key: `user-image:${index}`,
+                      image: block as ReferenceImageBlock,
+                      seq: selectedUserNode.seq,
+                      index: imageIndex,
+                      read: referenceReader(sessionId),
+                      onOpen: (src, alt) => setLightbox({ src, alt }),
+                    }),
+                  ]
+                }
                 // A lean block's bytes stayed on the server: name its size rather than drop it.
                 if (block.type === 'image' && 'dataOmitted' in block)
                   return [

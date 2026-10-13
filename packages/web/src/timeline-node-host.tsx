@@ -2,6 +2,7 @@ import type { UINode, UITurn } from '@agnes/protocol'
 import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
 import {
   AssistantRuntimeProvider,
+  type AttachmentWindowReader,
   createConversationProjectionStore,
   useConversationRuntime,
 } from '@agnes/web-ui/assistant-ui'
@@ -32,12 +33,14 @@ export interface TimelineNodeHostProps {
   locale?: LocaleService
   resources?: ClientResourceService
   onFork?: (turn: UITurn) => Promise<void>
+  /** Reads attachment bytes of the open session, for images sent by reference. */
+  readAttachment?: AttachmentWindowReader
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }
 
 /** The opt-in transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources, onFork, markdownRenderer },
+  { registry, claim, newContentButton, session, locale, resources, onFork, readAttachment, markdownRenderer },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
@@ -195,6 +198,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
             {...(projection.turns ? { turns: projection.turns } : {})}
             visibleNodeIds={projection.nodes.map((node) => node.id)}
             {...(onFork ? { onFork } : {})}
+            {...(readAttachment ? { readAttachment } : {})}
             {...(claim ? { claim } : {})}
             {...(session ? { session } : {})}
             {...(locale ? { locale } : {})}

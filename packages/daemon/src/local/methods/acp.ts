@@ -7,6 +7,7 @@ import {
   type QueuedActivationInvocation,
 } from '@agnes/host'
 import {
+  ATTACHMENT_REFUSAL_CODES,
   downgradeEvent,
   type EventEnvelope,
   fromAcpPrompt,
@@ -381,6 +382,23 @@ export function ledgerIntegrityRefusal(error: unknown): RpcError | undefined {
     : undefined
 }
 
+const ATTACHMENT_REFUSALS: ReadonlySet<string> = new Set(ATTACHMENT_REFUSAL_CODES)
+
+/**
+ * The one mapping of an input refused because of its attachments (not uploaded to this session, no
+ * longer stored, malformed, too large, over a quota): SEMANTIC_REJECTED with the refusal's code, or
+ * undefined for any other error. Core names the refusal in `detail.reason`; a worker forwards it as
+ * `reason`, the only part of the detail that crosses the boundary.
+ */
+export function attachmentRefusal(error: unknown): RpcError | undefined {
+  const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  if (e?.code !== 'E_ENVELOPE') return undefined
+  const reason = e.reason ?? e.detail?.reason
+  if (typeof reason !== 'string') return undefined
+  const code = reason.toUpperCase().replaceAll('-', '_')
+  return ATTACHMENT_REFUSALS.has(code) ? rpcError('SEMANTIC_REJECTED', { code, reason }) : undefined
+}
+
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
 export function legacyLedgerRpcError(): RpcError {
   return rpcError('SEMANTIC_REJECTED', { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' })
@@ -748,8 +766,9 @@ export function registerAcp(
         _meta: { [HARNESS]: { phase: 'terminalQuiescence', turnEnd: { reason: out.reason } } },
       }
     } catch (error) {
-      // The prompt's own input is refused the same way once the history failed verification.
-      throw ledgerIntegrityRefusal(error) ?? error
+      // The prompt's own input is refused the same way once the history failed verification, and with
+      // its typed code when an attachment was refused.
+      throw ledgerIntegrityRefusal(error) ?? attachmentRefusal(error) ?? error
     } finally {
       queued.cancel()
       const followUps =

@@ -1,6 +1,7 @@
 // The client object: one connection, one handshake, one validated call path.
 // Everything above it (sessions, jobs, approvals) is built out of `call` / `notify`,
 // so schema checking and the lazy handshake happen in exactly one place.
+
 import {
   type ApisListResult,
   type ApprovalGrantListResult,
@@ -19,6 +20,7 @@ import {
   type ConfigSnapshot,
   type ConfigTestInput,
   type ConfigTestResult,
+  type ContentBlock,
   type Credential,
   type Cursor,
   describeValidationErrors,
@@ -45,6 +47,12 @@ import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
 } from '@agnes/protocol/gen/package-admin'
+import {
+  type AttachmentUploadInput,
+  type AttachmentUploadOptions,
+  type UploadedThumbnail,
+  uploadAttachment,
+} from './attachment-upload.js'
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 import { BrandingCache } from './branding.js'
 import { type Claim, makeClaim } from './claim.js'
@@ -341,6 +349,16 @@ export class Client {
           ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
           : {},
       ),
+  }
+
+  /** Attachments uploaded by reference: the returned block is what a prompt, steer or follow-up then carries. */
+  readonly attachments = {
+    upload: (
+      sessionId: string,
+      input: AttachmentUploadInput,
+      o?: AttachmentUploadOptions,
+    ): Promise<ContentBlock | UploadedThumbnail> =>
+      uploadAttachment((method, params, c) => this.call(method, params, c), sessionId, input, o),
   }
 
   readonly workspace = {

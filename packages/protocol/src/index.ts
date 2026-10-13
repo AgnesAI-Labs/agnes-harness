@@ -39,6 +39,8 @@ export type {
   ArtifactReadParams,
   ArtifactReadResult,
   AttachFilter,
+  AttachmentUploadParams,
+  AttachmentUploadResult,
   Auth,
   AuthClaimParams,
   AuthClaimResult,

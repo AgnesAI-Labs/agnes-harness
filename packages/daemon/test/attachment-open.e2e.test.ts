@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { buildLegacySession } from './attachment-open/build.js'
-import { measureColdLoad } from './attachment-open/measure.js'
+import { buildByReferenceSession, buildLegacySession } from './attachment-open/build.js'
+import { measureColdLoad, measureUpload } from './attachment-open/measure.js'
 
 type Budget = {
   enforce: boolean
@@ -66,5 +66,24 @@ describe('opening a session that carries a large attachment', () => {
     const r = await measureColdLoad(dir)
     results.legacyImages = r
     expect(r.records.map((row) => (row as { kind: string }).kind)).toContain('session.open')
+  }, 600_000)
+
+  it('opens a session whose 95 MB zip was uploaded by reference within budget', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-open-ref-'))
+    dirs.push(dir)
+    const before = await buildByReferenceSession(dir, { attachmentMB: 95, prefixTurns: 20 })
+    const r = await measureColdLoad(dir)
+    results.byReference = { ...r, dbGrowthBytes: r.dbBytes - before.dbBytes }
+    expect(r.maxRowBytes).toBeLessThanOrEqual(budget.byReference.maxRowBytes)
+    expect(r.dbBytes - before.dbBytes).toBeLessThan(budget.byReference.dbGrowthBytes)
+    if (enforce) expect(r.loadMs).toBeLessThanOrEqual(budget.byReference.loadMs)
+  }, 600_000)
+
+  it('uploads 100 MB end to end', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-upload-'))
+    dirs.push(dir)
+    const r = await measureUpload(dir, 100)
+    results.upload100Mb = r
+    if (enforce) expect(r.ms).toBeLessThanOrEqual(budget.upload100MbMs)
   }, 600_000)
 })

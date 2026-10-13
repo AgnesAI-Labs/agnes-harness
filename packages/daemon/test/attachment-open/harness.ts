@@ -5,8 +5,17 @@ import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
-import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
+import {
+  canonicalJson,
+  createAttachmentStore,
+  createUserAttachmentPort,
+  DEFAULT_COMPUTER_USE,
+  hashInput,
+  type ResolvedProfile,
+  sha256hex,
+} from '@agnes/host'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../../src/config.js'
+import { createAttachmentUploadService } from '../../src/local/methods/attachment-upload.js'
 import type { RuntimeLog } from '../../src/runtime-log.js'
 import { encodeFrame, JsonlDecoder } from '../../src/supervisor/framing.js'
 import { daemonSocketPaths } from '../../src/supervisor/socket-paths.js'
@@ -74,6 +83,12 @@ export async function openSupervisor(dir: string, o: { runtimeLog?: RuntimeLog }
     workerEntry,
     workerExecArgv: ['--import', 'tsx'],
     ...(o.runtimeLog ? { audit: (record: unknown) => o.runtimeLog?.record(record) } : {}),
+    // Uploads go to the store the worker reads, as in production.
+    attachmentUpload: (() => {
+      const store = createAttachmentStore({ dataDir: dir })
+      const port = createUserAttachmentPort({ store, limits: {}, storeByReference: true })
+      return createAttachmentUploadService({ store, limits: {}, reserve: port.reserve })
+    })(),
   })
   const socket = connect(paths.socketPath)
   await new Promise<void>((resolve, reject) => {

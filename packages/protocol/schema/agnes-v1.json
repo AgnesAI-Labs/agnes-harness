@@ -1928,6 +1928,109 @@
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "AttachmentUploadParams": {
+      "description": "One step of a chunked upload of a user attachment into the attachment store, over the client connection, for one session. The daemon authenticates session ownership first. 'limits' reports the upload limits; 'start' opens an upload (starting the same uploadId again reports the bytes received so far); 'chunk' appends at most 1 MiB at exactly the received offset, with the chunk's SHA-256; 'status' reports the received offset; 'cancel' drops the upload; 'finish' stores the object, records that this session uploaded it, and returns the reference block to send (for a thumbnail, its digest, size and dimensions). Refusals are SEMANTIC_REJECTED with an UPLOAD_* code.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId"],
+          "properties": {
+            "operation": { "const": "limits" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId", "name", "mimeType", "size"],
+          "properties": {
+            "operation": { "const": "start" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "size": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "purpose": { "enum": ["attachment", "thumbnail"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId", "offset", "data", "sha256"],
+          "properties": {
+            "operation": { "const": "chunk" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "data": {
+              "description": "Standard base64 for at most 1048576 bytes.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1398104
+            },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId"],
+          "properties": {
+            "operation": { "enum": ["status", "cancel"] },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId"],
+          "properties": {
+            "operation": { "const": "finish" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      ]
+    },
+    "AttachmentUploadResult": {
+      "description": "'limits' answers limits; 'start', 'chunk' and 'status' answer the offset received so far; 'cancel' answers {}; 'finish' answers the offset and the attachment: a reference block, or for a thumbnail its digest, size and dimensions.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "chunkBytes", "maxConcurrent"],
+          "properties": {
+            "maxBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "chunkBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+            "maxConcurrent": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "attachment": {
+          "anyOf": [
+            { "$ref": "#/$defs/ContentBlock" },
+            { "$ref": "session-v1.json#/$defs/AttachmentThumbnail" }
+          ]
+        }
+      }
+    },
     "SessionExportRawParams": {
       "description": "Read one stored ledger row's envelope as one JSONL line (its UTF-8 JSON and a newline), in pieces of at most 8 MiB. Replays of worker-hosted sessions leave large inline attachment data out and name it; this returns the full row. The daemon authenticates session ownership first.",
       "type": "object",

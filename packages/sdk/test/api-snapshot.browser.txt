@@ -22,6 +22,7 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+attachmentRefusal
 classify
 createClient
 encodeFrame
@@ -38,4 +39,5 @@ randomId
 snapshotPending
 textFor
 toContentBlocks
+uploadAttachment
 wsTransport

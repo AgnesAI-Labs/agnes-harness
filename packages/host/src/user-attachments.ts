@@ -24,10 +24,12 @@ export function attachmentLimit(limits: Readonly<Record<string, number>>, key: A
     : ATTACHMENT_LIMIT_DEFAULTS[key]
 }
 
-/** Refusal of an attachment write because a size limit or quota would be passed. */
+/** Refusal of an attachment write because a quota (`UPLOAD_QUOTA`) or the upload size limit would be passed. */
 export class AttachmentQuotaError extends Error {
-  readonly code = 'UPLOAD_QUOTA'
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: 'UPLOAD_QUOTA' | 'UPLOAD_SIZE_LIMIT' = 'UPLOAD_QUOTA',
+  ) {
     super(message)
     this.name = 'AttachmentQuotaError'
   }
@@ -50,6 +52,11 @@ export type HostUserAttachmentPort = UserAttachmentPort & {
   usage(): Promise<number>
   /** Throws `UPLOAD_QUOTA` when `add` more bytes would pass the session or global quota or the free-space floor. */
   checkQuota(input: { add: number; sessionBytes: number }): Promise<void>
+  /**
+   * Like `checkQuota`, but holds the room until the returned function is called: with the bytes a
+   * finished write newly stored (they are then counted), or with nothing when it was abandoned.
+   */
+  reserve(input: { add: number; sessionBytes: number }): Promise<(stored?: number) => void>
 }
 
 /**
@@ -121,7 +128,7 @@ export function createUserAttachmentPort(o: {
   /** Stores and marks (without a receipt) one attachment's bytes within the limits and quotas. */
   const keep = async (bytes: Uint8Array, mimeType: string, sessionBytes: number) => {
     if (bytes.byteLength > limit('attachments.max_upload_bytes'))
-      throw new AttachmentQuotaError('The attachment is larger than the upload limit.')
+      throw new AttachmentQuotaError('The attachment is larger than the upload limit.', 'UPLOAD_SIZE_LIMIT')
     const sha256 = createHash('sha256').update(bytes).digest('hex')
     // The session quota applies to every reference, so whether the bytes are already stored makes no
     // difference to the answer. Bytes already marked are counted and need no room on the volume.
@@ -149,6 +156,16 @@ export function createUserAttachmentPort(o: {
     storeByReference: o.storeByReference,
     usage,
     checkQuota,
+    async reserve({ add, sessionBytes }) {
+      const release = await reserve(add, sessionBytes)
+      let settled = false
+      return (stored = 0) => {
+        if (settled) return
+        settled = true
+        release()
+        global += stored
+      }
+    },
     store: ({ bytes, mimeType, sessionBytes }) => keep(bytes, mimeType, sessionBytes),
     async forgetReceipts(sessionKey) {
       await o.store.forgetReceipts?.(sessionKey)
