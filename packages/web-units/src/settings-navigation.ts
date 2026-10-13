@@ -9,6 +9,8 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   context: ['models', 'context'],
   providers: ['diagnostics', 'providers'],
   examples: ['discover', 'examples'],
+  // Skill feedback is the third tab of the Skills page, not a page of its own.
+  feedback: ['skills', 'feedback'],
 }
 
 /** Existing links keep their destination after sections are consolidated. */

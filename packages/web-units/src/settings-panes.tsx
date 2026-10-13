@@ -1,6 +1,7 @@
 import {
   Button,
   Icon,
+  IconButton,
   SearchBar,
   SettingsChoice,
   SettingsGroup,
@@ -262,9 +263,12 @@ export function SettingsStaticPane({
               </span>
             }
             actions={
-              <Button id="archived-refresh" htmlType="button" appearance="secondary" size="small">
-                <span>{text('settings-shell.refreshList', '刷新列表')}</span>
-              </Button>
+              <IconButton
+                id="archived-refresh"
+                htmlType="button"
+                name="refresh-cw"
+                label={text('settings-shell.refreshList', '刷新列表')}
+              />
             }
           />
           <div className="archived-pane-body">

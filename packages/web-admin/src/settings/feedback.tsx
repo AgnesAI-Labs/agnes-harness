@@ -4,6 +4,7 @@ import {
   Button,
   EmptyState,
   Icon,
+  IconButton,
   SearchBar,
   SettingsPageDescription,
   SettingsSelect,
@@ -96,7 +97,13 @@ export function FeedbackAdminPanel() {
             </SettingsSelect>
           </>
         }
-        actions={<Button onClick={() => setRevision((value) => value + 1)}>{t('refresh')}</Button>}
+        actions={
+          <IconButton
+            name="refresh-cw"
+            label={t('refresh')}
+            onClick={() => setRevision((value) => value + 1)}
+          />
+        }
       />
       {!result && !error && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {error && <SettingsState tone="error">{t('error')}</SettingsState>}

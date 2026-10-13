@@ -149,14 +149,13 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
       data-testid="credentials-page"
       actions={
         <>
-          <Button
-            appearance="ghost"
+          <IconButton
+            name="refresh-cw"
+            label={t('retry')}
             data-testid="credentials-refresh"
             disabled={busy}
             onClick={() => setRevision((value) => value + 1)}
-          >
-            {t('retry')}
-          </Button>
+          />
           <Button
             appearance="primary"
             data-testid="credential-create"

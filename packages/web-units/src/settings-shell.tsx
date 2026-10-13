@@ -133,7 +133,17 @@ function SettingsRegistryNavigation({
           {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
         </Disclosure>
         <div id="settings-navigation-reserve" hidden>
-          {['bundles', 'engines', 'system-prompt', 'memory', 'context', 'providers', 'examples', 'terminal']
+          {[
+            'bundles',
+            'engines',
+            'system-prompt',
+            'memory',
+            'context',
+            'providers',
+            'examples',
+            'feedback',
+            'terminal',
+          ]
             .filter((id) => !entries.some((entry) => entry.id === id))
             .map((id) => (
               <Button

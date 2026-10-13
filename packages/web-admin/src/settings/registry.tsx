@@ -6,7 +6,7 @@ import type {
 } from '@agnes/protocol'
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
-import { Banner, Button, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import { Banner, Button, type IconName, SettingsDetails, SettingsState } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
@@ -15,7 +15,6 @@ import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
-import { FeedbackAdminPanel } from './feedback.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
 import { MemoryPanel } from './memory.js'
@@ -83,17 +82,26 @@ function Subsection({
   title,
   children,
   defer = false,
+  icon,
+  description,
+  summary,
 }: {
   id: string
   title: string
   children: ReactNode
   defer?: boolean
+  icon?: IconName
+  description?: string
+  summary?: string | undefined
 }) {
   const [visited, setVisited] = useState(!defer)
   return (
     <SettingsDetails
       id={`settings-subsection-${id}`}
       title={title}
+      icon={icon}
+      description={description}
+      summary={summary}
       data-testid={`settings-subsection-${id}`}
       onOpenChange={(open) => {
         if (open) setVisited(true)
@@ -223,7 +231,6 @@ const definitions: readonly [
       </>
     ),
   ],
-  ['skills', 'feedback', 21, () => <FeedbackAdminPanel />],
   ['tools', 'credentials', 33, () => <CredentialsPage />],
   ['tools', 'search', 31, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
   ['automation', 'schedules', 40, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
@@ -248,35 +255,89 @@ const definitions: readonly [
     'agent',
     'models',
     80,
-    (c, t) => (
-      <>
-        <Subsection defer id="models" title={t('agentExecution')}>
-          <p>{t('modelsHelp')}</p>
-          <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
-        </Subsection>
-        <Subsection defer id="system-prompt" title={t('system-prompt')}>
-          <SystemPromptPanel canSave={c.canSave} />
-        </Subsection>
-        <Subsection defer id="memory" title={t('agentMemory')}>
-          <MemoryPanel canSave={c.canSave} />
-        </Subsection>
-        <Subsection defer id="context" title={t('agentContext')}>
-          <ContextPanel canSave={c.canSave} />
-        </Subsection>
-        <Subsection defer id="engines" title={t('agentEngines')}>
-          <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
-        </Subsection>
-        <Subsection defer id="bundles" title={t('bundles')}>
-          <BundlesPanel
-            api={c.api}
-            canSave={c.canSave}
-            t={c.pluginText}
-            presets={c.snapshot?.presets ?? []}
-          />
-          {c.snapshot && <PresetsPanel snapshot={c.snapshot} t={t} />}
-        </Subsection>
-      </>
-    ),
+    (c, t) => {
+      // What is in effect, read from the runtime catalog the page already holds.
+      const active = (kind: string) => {
+        const provider = c.snapshot?.providers.find((entry) => entry.kind === kind && entry.active)
+        if (!provider) return undefined
+        const name = t(`providerName.${provider.id}`)
+        return name === `providerName.${provider.id}` ? provider.id : name
+      }
+      const engines = c.snapshot?.providers.filter((entry) => entry.kind === 'child-agent').length
+      const preset = c.snapshot?.presets.find((entry) => entry.isDefault)?.id
+      const presetName =
+        preset && t(`choice.${preset}`) !== `choice.${preset}` ? t(`choice.${preset}`) : preset
+      return (
+        <>
+          <Subsection
+            defer
+            id="models"
+            icon="bot"
+            title={t('agentExecution')}
+            description={t('agentExecutionHelp')}
+            summary={active('loop')}
+          >
+            <p>{t('modelsHelp')}</p>
+            <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
+          </Subsection>
+          <Subsection
+            defer
+            id="system-prompt"
+            icon="file-text"
+            title={t('system-prompt')}
+            description={t('agentPromptHelp')}
+          >
+            <SystemPromptPanel canSave={c.canSave} />
+          </Subsection>
+          <Subsection
+            defer
+            id="memory"
+            icon="history"
+            title={t('agentMemory')}
+            description={t('agentMemoryHelp')}
+            summary={active('memory')}
+          >
+            <MemoryPanel canSave={c.canSave} />
+          </Subsection>
+          <Subsection
+            defer
+            id="context"
+            icon="sliders-horizontal"
+            title={t('agentContext')}
+            description={t('agentContextHelp')}
+            summary={active('compaction')}
+          >
+            <ContextPanel canSave={c.canSave} />
+          </Subsection>
+          <Subsection
+            defer
+            id="engines"
+            icon="git-branch"
+            title={t('agentEngines')}
+            description={t('agentEnginesHelp')}
+            summary={engines ? t('agentEnginesCount', { count: engines }) : undefined}
+          >
+            <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
+          </Subsection>
+          <Subsection
+            defer
+            id="bundles"
+            icon="folder"
+            title={t('bundles')}
+            description={t('agentBundlesHelp')}
+            summary={presetName ? t('agentPresetDefault', { name: presetName }) : undefined}
+          >
+            <BundlesPanel
+              api={c.api}
+              canSave={c.canSave}
+              t={c.pluginText}
+              presets={c.snapshot?.presets ?? []}
+            />
+            {c.snapshot && <PresetsPanel snapshot={c.snapshot} t={t} />}
+          </Subsection>
+        </>
+      )
+    },
   ],
   [
     'diagnostics',

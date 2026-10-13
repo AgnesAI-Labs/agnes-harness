@@ -19,6 +19,7 @@ import {
   SettingsInput,
   SettingsPageActions,
   SettingsPageDescription,
+  SettingsSection,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
@@ -505,14 +506,18 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
         </SettingsDetails>
       </Dialog>
       <SettingsDetails title={t('recent')} data-testid="trigger-recent-details">
-        <h3>{t('recent')}</h3>
-        <Button
-          data-testid="triggers-refresh"
-          disabled={busy}
-          onClick={() => void request({ action: 'list' })}
-        >
-          {t('refresh')}
-        </Button>
+        <SettingsSection
+          title={t('recent')}
+          actions={
+            <IconButton
+              name="refresh-cw"
+              label={t('refresh')}
+              data-testid="triggers-refresh"
+              disabled={busy}
+              onClick={() => void request({ action: 'list' })}
+            />
+          }
+        />
         {snapshot?.deliveries.length === 0 && <SettingsState>{t('empty')}</SettingsState>}
         <ul className="agnes-settings-list">
           {snapshot?.deliveries.map((item) => (

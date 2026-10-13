@@ -2,7 +2,6 @@ import type { RuntimeSecurityStatus } from '@agnes/protocol'
 import {
   Banner,
   Button,
-  Icon,
   SettingsDetails,
   SettingsGroup,
   SettingsItem,
@@ -61,11 +60,8 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
       {status.platform.l1.level === 'full' ? (
         <SettingsGroup>
           <SettingsItem
-            label={
-              <>
-                <Icon name="shield-check" /> {ux('protected')} · {t(`platform.${status.platform.os}`)}
-              </>
-            }
+            icon="shield-check"
+            label={`${ux('protected')} · ${t(`platform.${status.platform.os}`)}`}
             description={ux('platformOnly')}
           />
         </SettingsGroup>

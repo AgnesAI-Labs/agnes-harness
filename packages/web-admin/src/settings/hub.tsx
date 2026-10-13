@@ -10,6 +10,7 @@ import {
   Button,
   Disclosure,
   Icon,
+  IconButton,
   type IconName,
   SettingsInput,
   SettingsPage as SettingsPageLayout,
@@ -367,17 +368,16 @@ export function SettingsHub({
             variant={['plugins', 'discover', 'history'].includes(page) ? 'list' : 'form'}
             actions={
               needsRuntimeCatalog ? (
-                <Button
-                  appearance="ghost"
+                // The page loads on open and after each action; a manual reload stays one quiet icon.
+                <IconButton
+                  name="refresh-cw"
+                  label={t('retry')}
                   data-testid="settings-refresh"
                   {...(!api ? { disabledReason: t('unavailable') } : {})}
                   disabled={!api || busy}
                   aria-busy={busy}
-                  loading={busy}
                   onClick={() => setRevision((value) => value + 1)}
-                >
-                  {t('retry')}
-                </Button>
+                />
               ) : undefined
             }
           >

@@ -93,6 +93,14 @@ export function SkillsPage({
           ) : undefined
         }
       />
+      {/* Existing links to skill feedback land here: revealing the anchor opens that tab. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a focus target for the settings router, never reached by Tab or pointer. */}
+      <span
+        id="settings-subsection-feedback"
+        className="visually-hidden"
+        tabIndex={-1}
+        onFocus={() => setTab('feedback')}
+      />
       <Tabs
         activeKey={tab}
         onChange={setTab}

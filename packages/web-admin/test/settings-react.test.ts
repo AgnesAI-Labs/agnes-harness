@@ -118,7 +118,10 @@ it('operates the React settings pane and account dialog without losing native fo
     expect(dialog.querySelectorAll('[data-testid="settings-nav-skills"]')).toHaveLength(1)
     expect(dialog.querySelectorAll('#computer-use-management')).toHaveLength(1)
     expect(dialog.querySelectorAll('#archived-settings')).toHaveLength(1)
-    expect(dialog.querySelectorAll('#settings-section-tabs [aria-selected="true"]')).toHaveLength(1)
+    // Skills is one page: its feedback is a tab inside it, so the group shows no page tabs.
+    expect(dialog.querySelectorAll('#settings-section-tabs [aria-selected="true"]')).toHaveLength(
+      id === 'skills' || id === 'feedback' ? 0 : 1,
+    )
   }
   await vi.waitFor(() =>
     expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull(),
