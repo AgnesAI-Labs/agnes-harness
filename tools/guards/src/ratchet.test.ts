@@ -305,7 +305,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-ui/src 6691; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the omitted image size label; reviewed exact countLines packages/web-ui/src 6702; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web-ui/src 6710; no exclusions or spare allocation.
-  'packages/web-ui/src': 6710,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web-ui/src 6922; no exclusions or spare allocation.
+  'packages/web-ui/src': 6922,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -325,7 +326,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6273, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6290; no exclusions or spare allocation.
-  'packages/web-units/src': 6290,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web-units/src 6884; no exclusions or spare allocation.
+  'packages/web-units/src': 6884,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
@@ -510,7 +512,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // notice writer now goes through, and the dismiss on submit. Measured: 2222, exact, no spare.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src/app 2368; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src/app 2406; no exclusions or spare allocation.
-  'packages/web/src/app': 2406,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web/src/app 2481; no exclusions or spare allocation.
+  'packages/web/src/app': 2481,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1102,7 +1105,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28595; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/core/src 28630; no exclusions or spare allocation.
-  'packages/core/src': 28630,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/core/src 28687; no exclusions or spare allocation.
+  'packages/core/src': 28687,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1425,7 +1429,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/protocol/src 2402; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/protocol/src 2404; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/protocol/src 2411; no exclusions or spare allocation.
-  'packages/protocol/src': 2411,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/protocol/src 2476; no exclusions or spare allocation.
+  'packages/protocol/src': 2476,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1622,7 +1627,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/sdk/src 5284; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/sdk/src 5287; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: a session refused for good ends its recovery; verifyHistory and exportRaw without a request deadline; reviewed exact countLines packages/sdk/src 5345; no exclusions or spare allocation.
-  'packages/sdk/src': 5345,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/sdk/src 5491; no exclusions or spare allocation.
+  'packages/sdk/src': 5491,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1996,7 +2002,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/daemon/src 27523; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one typed mapping for integrity refusals, the in-process integrity notice and a typed interrupted open; reviewed exact countLines packages/daemon/src 27564; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/daemon/src 27613; no exclusions or spare allocation.
-  'packages/daemon/src': 27613,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/daemon/src 28203; no exclusions or spare allocation.
+  'packages/daemon/src': 28203,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2259,7 +2266,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src 17193; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src 17239; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/web/src 17242; no exclusions or spare allocation.
-  'packages/web/src': 17242,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web/src 17341; no exclusions or spare allocation.
+  'packages/web/src': 17341,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2757,7 +2765,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/host/src 40352; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src 40380; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/host/src 40651; no exclusions or spare allocation.
-  'packages/host/src': 40651,
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/host/src 40664; no exclusions or spare allocation.
+  'packages/host/src': 40664,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
