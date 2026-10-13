@@ -1,10 +1,26 @@
 import { readFile } from 'node:fs/promises'
 
-// rc-util's temporary scrollbar measurement stylesheet does not inherit ConfigProvider.csp.
-// Keep the upstream measurement and cleanup, supplying the shell's existing authorized nonce.
+// Keep upstream measurements and cleanup under the shell's existing CSP: rc-util needs the
+// document nonce, and rc-input must write its hidden measurement node through the CSSOM.
 export const scrollbarCsp = {
   name: 'agnes-scrollbar-csp',
   setup(build) {
+    build.onLoad(
+      { filter: /[/\\]@rc-component[/\\]input[/\\](?:es|lib)[/\\]calculateNodeHeight\.js$/ },
+      async ({ path }) => {
+        const source = await readFile(path, 'utf8')
+        const target = "hiddenTextarea.setAttribute('style', `${sizingStyle};${HIDDEN_TEXTAREA_STYLE}`);"
+        if (source.split(target).length !== 2)
+          throw new Error('Textarea CSP adapter needs review for this rc-input version')
+        return {
+          contents: source.replace(
+            target,
+            'hiddenTextarea.style.cssText = `${sizingStyle};${HIDDEN_TEXTAREA_STYLE}`;',
+          ),
+          loader: 'js',
+        }
+      },
+    )
     build.onLoad(
       { filter: /[/\\]@rc-component[/\\]util[/\\](?:es|lib)[/\\]getScrollBarSize\.js$/ },
       async ({ path }) => {
