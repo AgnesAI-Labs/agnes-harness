@@ -935,6 +935,11 @@
     padding: var(--s16) 0;
     overflow: visible;
   }
+  /* Popular providers, then the rest in a fold. */
+  .account-provider-groups {
+    display: grid;
+    gap: var(--s8);
+  }
   .account-provider-choices {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));

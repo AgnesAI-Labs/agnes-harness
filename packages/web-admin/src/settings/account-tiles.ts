@@ -1,11 +1,38 @@
-import { Button } from '@agnes/web-ui'
+import { Button, Disclosure } from '@agnes/web-ui'
 import { createElement, type ReactElement } from 'react'
 
 type Provider = Readonly<{ id: string; label: string; authMethods?: readonly string[] }>
 
 /**
- * The first step of adding an account: one tile per provider the backend offers, in the order
- * given (Agnes AI first), each saying how it connects, then a custom OpenAI-compatible address.
+ * The providers most people connect, in the order they are offered. Agnes AI is always first; the
+ * rest of what the backend offers follows under "More providers".
+ */
+const POPULAR_PROVIDERS = [
+  'agnes-ai',
+  'deepseek',
+  'openai',
+  'anthropic',
+  'google',
+  'qwen',
+  'moonshot',
+  'zai',
+] as const
+/** A short remainder is listed with the others; a fold is only worth it for a long one. */
+const FOLD_REMAINDER_FROM = 4
+
+/** Split the backend's providers into the popular ones, in their fixed order, and the remainder. */
+export function groupProviders<T extends { id: string }>(
+  providers: readonly T[],
+): { popular: T[]; more: T[] } {
+  const popular = POPULAR_PROVIDERS.flatMap((id) => providers.filter((provider) => provider.id === id))
+  const more = providers.filter((provider) => !popular.includes(provider))
+  return more.length < FOLD_REMAINDER_FROM ? { popular: [...popular, ...more], more: [] } : { popular, more }
+}
+
+/**
+ * The first step of adding an account: a tile per popular provider (Agnes AI first), each saying
+ * how it connects, then a custom OpenAI-compatible address; every other provider the backend
+ * offers sits in a fold below.
  */
 export function providerTiles(
   providers: readonly Provider[],
@@ -15,30 +42,46 @@ export function providerTiles(
   const tile = (key: string, name: string, hint: string, onClick: () => void) =>
     createElement(
       Button,
-      { key, htmlType: 'button', onClick },
+      { key, htmlType: 'button', onClick, 'data-provider': key },
       createElement('strong', {}, name),
       createElement('small', {}, hint),
     )
+  const providerTile = (provider: Provider) =>
+    tile(
+      provider.id,
+      provider.label,
+      tr(
+        provider.id === 'agnes-ai'
+          ? 'accounts.recommended'
+          : (provider.authMethods ?? []).includes('oauth')
+            ? 'accounts.keyOrLoginHint'
+            : 'accounts.keyApiHint',
+      ),
+      () => select(provider.id),
+    )
+  const { popular, more } = groupProviders(providers)
   return createElement(
     'div',
-    { className: 'account-provider-choices' },
-    ...providers.map((provider) =>
-      tile(
-        provider.id,
-        provider.label,
-        tr(
-          provider.id === 'agnes-ai'
-            ? 'accounts.recommended'
-            : (provider.authMethods ?? []).includes('oauth')
-              ? 'accounts.keyOrLoginHint'
-              : 'accounts.keyApiHint',
-        ),
-        () => select(provider.id),
-      ),
+    { className: 'account-provider-groups' },
+    createElement(
+      'div',
+      { className: 'account-provider-choices' },
+      ...popular.map(providerTile),
+      ...(providers.some((provider) => provider.id === 'openai')
+        ? [tile('custom', tr('accounts.custom'), tr('accounts.customHint'), () => select('openai', true))]
+        : []),
     ),
-    ...(providers.some((provider) => provider.id === 'openai')
-      ? [tile('custom', tr('accounts.custom'), tr('accounts.customHint'), () => select('openai', true))]
-      : []),
+    more.length > 0 &&
+      createElement(
+        Disclosure,
+        {
+          variant: 'plain',
+          summary: tr('accounts.moreProviders'),
+          meta: String(more.length),
+          'data-testid': 'account-more-providers',
+        },
+        createElement('div', { className: 'account-provider-choices' }, ...more.map(providerTile)),
+      ),
   )
 }
 
