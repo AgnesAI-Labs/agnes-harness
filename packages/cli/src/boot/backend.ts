@@ -92,7 +92,13 @@ const CLIENT_CLEANUP_TIMEOUT_MS = 250
 function asBootError(stage: string, error: unknown): BootError {
   if (error instanceof BootError) return error
   const message = error instanceof Error ? error.message : String(error)
-  return new BootError(`local daemon ${stage} failed: ${message}`, error)
+  // A source checkout that never built its native helpers cannot tell whether the daemon it just
+  // started is alive; the bare refusal reads like a daemon fault, so name the missing step.
+  const hint =
+    (error as { reason?: unknown } | null)?.reason === 'helper unavailable'
+      ? ' (the native process-identity helper is missing; run `pnpm --filter @agnes/host build:native`)'
+      : ''
+  return new BootError(`local daemon ${stage} failed: ${message}${hint}`, error)
 }
 
 function signalError(signal: AbortSignal | undefined): BootError | undefined {

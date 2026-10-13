@@ -199,6 +199,24 @@ describe('ensureLocalBackend', () => {
     },
   )
 
+  it('names the missing native helper when the daemon owner cannot be identified', async () => {
+    const refusal = (reason: string) =>
+      Object.assign(new Error('daemon discovery owner identity is unavailable'), {
+        code: 'E_DAEMON_DISCOVERY',
+        reason,
+      })
+    vi.mocked(daemon.readDaemonDiscovery).mockRejectedValue(refusal('helper unavailable'))
+    await expect(ensureLocalBackend({ createClientImpl: () => fakeClient() })).rejects.toThrow(
+      'pnpm --filter @agnes/host build:native',
+    )
+    // Any other cause keeps the plain refusal: the hint would send people the wrong way.
+    vi.mocked(daemon.readDaemonDiscovery).mockRejectedValue(refusal('EPERM'))
+    const other = await ensureLocalBackend({ createClientImpl: () => fakeClient() }).catch((e: Error) => e)
+    expect((other as Error).message).toBe(
+      'local daemon discovery read failed: daemon discovery owner identity is unavailable',
+    )
+  })
+
   it('does not relax an explicit Web origin to the discovered one', async () => {
     vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(
       descriptor({

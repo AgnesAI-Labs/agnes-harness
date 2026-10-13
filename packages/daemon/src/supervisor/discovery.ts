@@ -49,9 +49,12 @@ type WebCredentialFile = {
 export class DaemonDiscoveryError extends Error {
   override name = 'DaemonDiscoveryError'
   readonly code: string
-  constructor(message: string, code = 'E_DAEMON_DISCOVERY') {
+  /** Why the owner's process identity could not be established, when that is the refusal. */
+  readonly reason?: string
+  constructor(message: string, code = 'E_DAEMON_DISCOVERY', reason?: string) {
     super(message)
     this.code = code
+    if (reason !== undefined) this.reason = reason
   }
 }
 
@@ -324,7 +327,11 @@ export async function readDaemonDiscovery(
   )
   if (found.state === 'dead') return null
   if (found.state !== 'alive')
-    throw new DaemonDiscoveryError('daemon discovery owner identity is unavailable')
+    throw new DaemonDiscoveryError(
+      'daemon discovery owner identity is unavailable',
+      'E_DAEMON_DISCOVERY',
+      found.reason,
+    )
   if (found.startId !== owner.processStartId) return null
   if (
     parsed.scopeID !== scope.scopeID ||

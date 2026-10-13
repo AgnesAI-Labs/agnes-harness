@@ -506,6 +506,12 @@ describe('generation-bound discovery and Web credential', () => {
         processIdentity: async () => ({ state: 'unknown' as const, reason: 'EPERM' }),
       }),
     ).rejects.toThrow('identity is unavailable')
+    // The refusal says why, so a launcher can tell a missing native helper from a permission fault.
+    await expect(
+      readDaemonDiscovery(scope, {
+        processIdentity: async () => ({ state: 'unknown' as const, reason: 'helper unavailable' }),
+      }),
+    ).rejects.toMatchObject({ code: 'E_DAEMON_DISCOVERY', reason: 'helper unavailable' })
     await lock.release()
 
     // A newly acquired owner may briefly see the previous generation's descriptor before it
