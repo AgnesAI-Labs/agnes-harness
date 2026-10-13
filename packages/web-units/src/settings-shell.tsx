@@ -1,4 +1,4 @@
-import { Button, Field, Icon, type IconName, icons, SettingsInput } from '@agnes/web-ui'
+import { Button, Disclosure, Field, Icon, type IconName, icons, SettingsInput } from '@agnes/web-ui'
 import { Fragment, useSyncExternalStore } from 'react'
 import { type AdminPaneSnapshot, type AdminPaneStore, adminPaneControl } from './admin-pane-store.js'
 import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
@@ -124,10 +124,14 @@ function SettingsRegistryNavigation({
           <SettingsDshHost name="settings.action" />
           {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
         </div>
-        <details id="settings-advanced" data-testid="settings-advanced">
-          <summary>{t('settings-shell.advanced')}</summary>
+        <Disclosure
+          id="settings-advanced"
+          data-testid="settings-advanced"
+          variant="plain"
+          summary={t('settings-shell.advanced')}
+        >
           {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
-        </details>
+        </Disclosure>
         <div id="settings-navigation-reserve" hidden>
           {['bundles', 'engines', 'system-prompt', 'memory', 'context', 'providers', 'examples', 'terminal']
             .filter((id) => !entries.some((entry) => entry.id === id))
@@ -172,37 +176,43 @@ function SettingsSectionTabs({
   const activeGroup = groups.find((group) => settingsGroup(group[0]?.group ?? '') === groupKey)
   // Keep native tab buttons at stable positions: resource controllers bind their IDs once.
   return (
-    <div
-      id="settings-section-tabs"
-      className="agnes-settings-section-tabs"
-      role="tablist"
-      hidden={!activeGroup}
-      aria-label={selectedEntry ? t(selectedEntry.groupTitleKey) : undefined}
-    >
-      {groups.flat().map((entry) => {
-        const visible = settingsGroup(entry.group) === groupKey
-        const id = entry.nativePane
-          ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
-          : `settings-section-tab-${entry.id}`
-        return (
-          <Button
-            key={entry.id}
-            appearance="ghost"
-            id={id}
-            data-settings-section={entry.id}
-            data-testid={`settings-nav-${entry.id}-tab`}
-            role={visible ? 'tab' : undefined}
-            hidden={!visible}
-            aria-controls={PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane]}
-            aria-selected={visible ? entry.id === selected : undefined}
-            tabIndex={entry.id === selected ? 0 : -1}
-            {...adminControlProps(admin, id)}
-          >
-            <span>{t(entry.titleKey)}</span>
-          </Button>
-        )
-      })}
-    </div>
+    <>
+      {/* A group of pages is named once, above its tabs; the pages do not repeat a title. */}
+      <h2 id="settings-group-title" className="agnes-settings-group-title" hidden={!activeGroup}>
+        {selectedEntry ? t(selectedEntry.groupTitleKey) : null}
+      </h2>
+      <div
+        id="settings-section-tabs"
+        className="agnes-settings-section-tabs"
+        role="tablist"
+        hidden={!activeGroup}
+        aria-labelledby="settings-group-title"
+      >
+        {groups.flat().map((entry) => {
+          const visible = settingsGroup(entry.group) === groupKey
+          const id = entry.nativePane
+            ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
+            : `settings-section-tab-${entry.id}`
+          return (
+            <Button
+              key={entry.id}
+              appearance="ghost"
+              id={id}
+              data-settings-section={entry.id}
+              data-testid={`settings-nav-${entry.id}-tab`}
+              role={visible ? 'tab' : undefined}
+              hidden={!visible}
+              aria-controls={PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane]}
+              aria-selected={visible ? entry.id === selected : undefined}
+              tabIndex={entry.id === selected ? 0 : -1}
+              {...adminControlProps(admin, id)}
+            >
+              <span>{t(entry.titleKey)}</span>
+            </Button>
+          )
+        })}
+      </div>
+    </>
   )
 }
 

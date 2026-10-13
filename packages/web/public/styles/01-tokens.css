@@ -381,6 +381,10 @@
     --chat-content-width: 57.5rem;
     --composer-card-max-width: calc(var(--chat-content-width) + 2rem);
     --admin-content-width: 70rem;
+    /* Settings pages share one content column and one gutter. */
+    --settings-column: 47.5rem;
+    --settings-gutter: var(--s32);
+    --settings-frame: calc(var(--settings-column) + 2 * var(--settings-gutter));
     --control-height: 2.25rem;
     --control-height-sm: 28px;
     /* Text fields match the buttons beside them; touch widths raise both to the touch target. */

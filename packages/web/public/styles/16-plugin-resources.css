@@ -874,9 +874,6 @@
     border-radius: var(--radius-control);
     color: var(--agnes-text-primary);
   }
-  #config-form:has(#settings-section-tabs[hidden]) .agnes-settings-page-header {
-    padding-inline-end: var(--s32);
-  }
 
   /* Plugins owns its page header and add menu; suppress the outer runtime shell's duplicate heading. */
   :is([data-testid="settings-page-plugins"], [data-testid="settings-page-discover"])

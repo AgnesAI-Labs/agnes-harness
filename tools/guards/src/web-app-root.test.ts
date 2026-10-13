@@ -70,9 +70,7 @@ const NATIVE_DISCLOSURE_PENDING = new Set([
   'packages/web-ui/src/resource-detail.tsx',
   'packages/web-ui/src/resource-list.tsx',
   'packages/web-ui/src/settings-account-dialog.tsx',
-  'packages/web-ui/src/settings-layout.tsx',
   'packages/web-units/src/settings-fixture.tsx',
-  'packages/web-units/src/settings-shell.tsx',
 ])
 
 it('keeps collapsible sections on the one Disclosure primitive', () => {

@@ -333,27 +333,9 @@
   .runtime-settings > section {
     min-width: 0;
   }
-  /* One content column for every settings page: it starts at the pane gutter, under the section
-   tabs, and shares one maximum width. Form and list pages differ in content, not in their edges. */
-  .settings-shell .agnes-settings-page[data-layout],
-  .settings-shell .config-workspace,
-  .runtime-settings .agnes-settings-page[data-layout] {
-    width: 100%;
-    max-width: 60rem;
-    margin-inline: 0;
-  }
   .settings-shell .agnes-settings-section-tabs button,
   .runtime-settings .agnes-settings-section-tabs button {
-    min-height: var(--control-height-touch);
     box-shadow: none;
-    font-size: var(--font-size-sm);
-  }
-  @media (min-width: 768px) {
-    .settings-shell .agnes-settings-section-tabs button,
-    .runtime-settings .agnes-settings-section-tabs button {
-      /* With its hairline the strip is 44px, the height of the top bar and the rail heading. */
-      min-height: 43px;
-    }
   }
   .settings-shell .agnes-settings-section-tabs button[aria-selected="true"],
   .runtime-settings .agnes-settings-section-tabs button[aria-selected="true"] {

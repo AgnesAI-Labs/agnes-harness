@@ -1,0 +1,223 @@
+@layer app {
+  /* ── One settings page template ─────────────────────────────────────────────
+   Every settings page, whichever host renders it, is the same three parts: a header (title, one
+   line of description, page actions), optional tabs, and a body that scrolls inside the dialog.
+   They share one left edge and one column width, so nothing reaches the dialog edge or the
+   close button. */
+  #config-form.settings-shell #settings-content-slots {
+    container: settings-content / inline-size;
+  }
+  .settings-shell .settings-content {
+    flex: 1 1 auto;
+  }
+
+  /* Header: the page names itself once. Actions sit on the title's line, inside the column. */
+  .settings-shell .settings-content > .agnes-settings-page-heading,
+  .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--settings-frame);
+    min-height: 0;
+    margin: 0;
+    padding: var(--s24) var(--settings-gutter) 0;
+    border: 0;
+    background: var(--agnes-bg-surface);
+  }
+  /* A page rendered in a scrolling list keeps its header in view while the body moves under it. */
+  .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    max-width: none;
+    padding-inline: 0;
+    padding-bottom: var(--s20);
+  }
+  .settings-shell .agnes-settings-page-heading > div:first-child,
+  .runtime-settings .agnes-settings-page-heading > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-settings-group-title,
+  .settings-shell .agnes-settings-page-heading h2,
+  .runtime-settings .agnes-settings-page-heading h2 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-lg);
+    letter-spacing: 0;
+  }
+  .settings-shell .agnes-settings-page-heading > div > p,
+  .runtime-settings .agnes-settings-page-heading > div > p {
+    max-width: 60ch;
+    margin: var(--s2) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
+  .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    min-height: var(--line-lg);
+    max-width: 60%;
+  }
+  .agnes-settings-page-heading > .agnes-settings-actions:empty {
+    display: none;
+  }
+
+  /* Tabs: a group of pages carries the title; its tabs sit under it and the page adds no second
+   heading, only its description and actions. */
+  .agnes-settings-group-title {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--settings-frame);
+    padding: var(--s24) var(--settings-gutter) 0;
+  }
+  .agnes-settings-group-title[hidden] {
+    display: none;
+  }
+  .settings-shell .agnes-settings-section-tabs,
+  .runtime-settings .agnes-settings-section-tabs {
+    box-sizing: border-box;
+    width: calc(100% - 2 * var(--settings-gutter));
+    max-width: var(--settings-column);
+    margin: var(--s8) var(--settings-gutter) 0;
+    padding: 0;
+    gap: var(--s20);
+  }
+  .runtime-settings .agnes-settings-section-tabs {
+    width: 100%;
+    margin-inline: 0;
+  }
+  .settings-shell .agnes-settings-section-tabs button,
+  .runtime-settings .agnes-settings-section-tabs button {
+    min-height: 2.25rem;
+    padding: var(--s8) 0;
+    font-size: var(--font-size-sm);
+  }
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading,
+  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading {
+    align-items: center;
+    padding-top: var(--s16);
+  }
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading h2,
+  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden])) .agnes-settings-page-heading > div > p,
+  .runtime-settings > section:has(> .agnes-settings-section-tabs) .agnes-settings-page-heading > div > p {
+    margin: 0;
+  }
+  /* A tabbed page with neither description nor actions starts straight at its body. */
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden]))
+  .agnes-settings-page-heading:not(:has(p, .agnes-settings-actions > *)),
+  .runtime-settings
+    > section:has(> .agnes-settings-section-tabs)
+    .agnes-settings-page-heading:not(:has(p, .agnes-settings-actions > *)) {
+    padding-block: 0 var(--s4);
+  }
+
+  /* Body: the one vertical scroller of a page. */
+  .settings-shell .config-workspace,
+  .settings-shell #model-settings-pane .config-workspace,
+  .settings-shell .archived-pane-body,
+  .settings-shell #plugin-list,
+  .settings-shell #resource-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: var(--s20) var(--settings-gutter) var(--s32);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  /* The page inside the plugin list brings its own sticky header, so the scroller starts flush. */
+  .settings-shell #plugin-list {
+    padding-top: 0;
+  }
+  .settings-shell .config-workspace > *,
+  .settings-shell .archived-pane-body > *,
+  .settings-shell #plugin-list > *,
+  .settings-shell #resource-list > * {
+    box-sizing: border-box;
+    max-width: var(--settings-column);
+  }
+  .settings-shell .config-workspace > * + *,
+  .settings-shell .agnes-settings-stack > * + * {
+    margin-top: 0;
+  }
+  .settings-shell .config-workspace,
+  .settings-shell .agnes-settings-stack,
+  .runtime-settings .agnes-settings-stack {
+    gap: var(--s32);
+  }
+  .settings-shell .config-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  .settings-shell .admin-pane-body {
+    padding: 0;
+  }
+  .settings-shell .admin-pane-body > :not(.plugin-layout) {
+    box-sizing: border-box;
+    width: calc(100% - 2 * var(--settings-gutter));
+    max-width: var(--settings-column);
+    margin-inline: var(--settings-gutter);
+  }
+  .settings-shell .plugin-layout {
+    margin-top: 0;
+  }
+  .settings-shell .agnes-settings-page[data-layout]:not(.settings-content),
+  .runtime-settings .agnes-settings-page[data-layout] {
+    width: 100%;
+    max-width: var(--settings-column);
+    margin-inline: 0;
+  }
+  /* The first row of a narrow dialog leaves room for the close button; wide dialogs never need to,
+   because the column ends before it. */
+  @container settings-content (max-width: 54rem) {
+    .agnes-settings-group-title,
+    #settings-group-title[hidden] ~ #settings-pane-slots .settings-content > .agnes-settings-page-heading,
+    #settings-group-title[hidden] ~ #settings-pane-slots #plugin-list .agnes-settings-page-heading {
+      padding-inline-end: calc(var(--settings-gutter) + var(--s24));
+    }
+  }
+
+  @media (max-width: 767px) {
+    .settings-shell,
+    .runtime-settings,
+    .admin-page {
+      --settings-gutter: var(--s16);
+    }
+    .settings-shell .settings-content > .agnes-settings-page-heading,
+    .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+      flex-wrap: wrap;
+      padding-top: var(--s8);
+    }
+    .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
+    .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+    .agnes-settings-group-title {
+      padding-top: var(--s8);
+    }
+  }
+}

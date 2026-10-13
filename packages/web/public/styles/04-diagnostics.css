@@ -67,69 +67,11 @@
   .archived-heading {
     align-items: flex-start;
   }
-  /* #config-close 绝对定位在面板右上（right:14px、宽 28px），横幅右侧的
-   「刷新列表」按钮按常规 1.5rem 内边距会伸进 ×底下被压住；右缘让出
-   42px + 10px 缝。选择器带 ID 压过 ≤900px 媒体查询里的 padding-inline 覆盖。 */
-  #config-form .config-heading.archived-heading {
-    padding-right: 3.25rem;
-  }
   .archived-heading > div {
     min-width: 0;
   }
   .archived-pane-body {
     min-width: 0;
-    min-height: 0;
-    flex: 1;
-    padding: var(--s32) var(--s24) var(--s24);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-  .archived-heading p {
-    margin: 0.35rem 0 0;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.375rem;
-  }
-  .archived-toolbar {
-    display: flex;
-    align-items: flex-end;
-    width: auto;
-    margin-top: 0;
-  }
-  .archived-search-field {
-    display: grid;
-    gap: var(--s8);
-    width: 100%;
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-  }
-  .archived-search-field input {
-    width: 100%;
-    min-width: 0;
-    min-height: 2.75rem;
-    padding: 0.625rem var(--s12);
-    border: 1px solid var(--agnes-input-border);
-    border-radius: var(--radius-md);
-    color: var(--agnes-input-content-strong);
-    background: var(--agnes-input-surface);
-    font-size: var(--agnes-ui-input-font-size);
-    transition:
-      border-color var(--transition-fast),
-      box-shadow var(--transition-fast),
-      background-color var(--transition-fast);
-  }
-  .archived-search-field input::placeholder {
-    color: var(--agnes-text-tertiary);
-  }
-  .archived-search-field input:hover:not(:disabled) {
-    border-color: var(--agnes-input-border-emphasis);
-    background: var(--agnes-input-surface);
-  }
-  .archived-search-field input:focus {
-    border-color: var(--agnes-input-border-focus);
-    outline: none;
-    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
   }
   .archived-message {
     min-height: 0;
@@ -141,23 +83,30 @@
     display: none;
   }
   .archived-list-shell {
-    margin-top: var(--s20);
-    margin-bottom: 0;
-    min-height: 12rem;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    background: var(--agnes-bg-surface);
-    overflow: hidden;
+    margin-top: var(--s16);
+  }
+  /* Nothing archived: a mark and one sentence in the page, not a box inside a box. */
+  .archived-empty-state {
+    display: grid;
+    justify-items: center;
+    gap: var(--s8);
+    padding: var(--s48) var(--s24);
+    color: var(--agnes-text-tertiary);
+    text-align: center;
+  }
+  .archived-empty-state:has(> .archived-empty:empty) {
+    display: none;
   }
   .archived-empty {
     margin: 0;
-    padding: var(--s48) var(--s24);
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
-    text-align: center;
   }
-  .archived-empty:empty {
-    display: none;
+  /* Archived sessions are objects: one outlined list of rows. */
+  .archived-sessions:not(:empty) {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    overflow: hidden;
   }
   .archived-sessions {
     list-style: none;
@@ -169,8 +118,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--s16);
-    min-height: 4.25rem;
-    padding: var(--s12) var(--s16) var(--s12) var(--s20);
+    min-height: 3.25rem;
+    padding: var(--s10) var(--s16);
     border-bottom: 1px solid var(--agnes-line-primary);
     transition: background 120ms ease;
   }
