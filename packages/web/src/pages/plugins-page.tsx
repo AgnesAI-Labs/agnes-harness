@@ -141,13 +141,16 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
           description={context.t('home.plugins.description')}
           actions={
             <>
-              <IconButton
-                name="refresh-cw"
-                label={t('refresh')}
-                data-testid="plugins-refresh"
-                disabled={!view || view.state.loading}
-                onClick={() => void view?.refresh()}
-              />
+              {/* Skills and MCP refresh from their own toolbars. */}
+              {route.tab === 'skills' || route.tab === 'mcp' ? null : (
+                <IconButton
+                  name="refresh-cw"
+                  label={t('refresh')}
+                  data-testid="plugins-refresh"
+                  disabled={!view || view.state.loading}
+                  onClick={() => void view?.refresh()}
+                />
+              )}
               {route.tab === 'plugins' || route.tab === 'market' ? add : null}
             </>
           }

@@ -1200,6 +1200,7 @@ export class PluginAdminPage {
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => this.openSourceDialog('update', installed),
       })
+      const quiet = 'agh-btn agh-btn--secondary'
       const target = installed.rollbackTarget
       const rollbackReady =
         !!target &&
@@ -1214,7 +1215,7 @@ export class PluginAdminPage {
         label: target
           ? this.#t('action.rollback', { version: target.version })
           : this.#t('action.rollback-unknown'),
-        className: 'agh-btn agh-btn--secondary',
+        className: quiet,
         disabled: !rollbackReady,
         title: rollbackReady ? this.#t('action.rollback-ready') : this.#t('action.rollback-unavailable'),
         onClick: () => this.confirmRollback(installed),
@@ -1222,7 +1223,7 @@ export class PluginAdminPage {
       if (installed.trusted)
         specs.push({
           label: this.#t('action.untrust'),
-          className: 'agh-btn agh-btn--secondary plugin-untrust',
+          className: quiet,
           disabled: !this.canEffect('packages.trust') || !installed.capabilityHash || busy,
           onClick: () => confirmSimple(this, 'untrust', installed, this.nameOf(installed)),
         })

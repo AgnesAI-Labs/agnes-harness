@@ -23,6 +23,7 @@ import {
   Tag,
 } from '@agnes/web-ui'
 import type { ComponentProps } from 'react'
+import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
 import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
@@ -37,9 +38,8 @@ const BUSINESS = 'business-agent'
 
 const flag = (item: Row, name: string): unknown =>
   (item.metadata as Record<string, unknown> | undefined)?.[name]
-/** A business agent says so in its metadata; older bundles are known by their package scope. */
-export const isBusinessAgent = (item: Row): boolean =>
-  flag(item, 'category') === BUSINESS || item.id.startsWith('@agnes-fde/')
+/** One rule for what counts as a business agent, shared with the gallery and the empty state. */
+export const isBusinessAgent = (item: Row): boolean => sharedBusinessAgent(item as PackageCatalogDescriptor)
 export const isExperimental = (item: Row): boolean => flag(item, 'experimental') === true
 
 /** What one row of the installed list or the marketplace needs from the controller. */
