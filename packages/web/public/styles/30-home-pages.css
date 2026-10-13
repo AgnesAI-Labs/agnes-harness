@@ -1,0 +1,19 @@
+@layer app {
+  /* ── Session runtime info ───────────────────────────────────────────────────
+   The full tool list of one source: names wrap as chips of text, never a table. */
+  .session-runtime-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    margin: 0;
+    padding: var(--s8) 0 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+  }
+  .session-runtime-tools > li {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--s4);
+    min-width: 0;
+  }
+}
