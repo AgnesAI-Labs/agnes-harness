@@ -44,11 +44,7 @@ it('no admin form is nested inside the settings form', async () => {
   // A nested <form> is dropped by the parser and its </form> closes the outer form early, which would
   // silently move the settings rail out of the grid container. Assert both the symptom and the cause.
   expect(settingsForm?.querySelectorAll('form').length).toBe(0)
-  for (const id of [
-    'model-settings-pane',
-    'appearance-settings-pane',
-    'settings-sections-pane',
-  ])
+  for (const id of ['model-settings-pane', 'appearance-settings-pane', 'settings-sections-pane'])
     expect(settingsForm?.contains(document.getElementById(id)), `#${id} left #config-form`).toBe(true)
   expect(settingsForm?.querySelector('.settings-rail')).not.toBeNull()
   const settingsContent = document.getElementById('settings-content-slots')
