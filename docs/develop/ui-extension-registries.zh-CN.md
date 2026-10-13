@@ -9,15 +9,15 @@
 ```tsx
 import { settingsSections } from '@agnes/web-client'
 const dispose = settingsSections.register({
-  group: 'tools', id: 'example.inspector', order: 52,
-  titleKey: 'example.inspector.title', groupTitleKey: 'settings-shell.group.tools',
-  icon: 'tools', component: Inspector,
+  group: 'example', id: 'example.inspector', order: 52,
+  titleKey: 'example.inspector.title', groupTitleKey: 'example.title',
+  icon: 'plug', component: Inspector,
 })
 ```
 
-统一设置外壳拥有分类导航、页签键盘操作、布局和 `?settings=<id>` 深链接。内置账户、资源、归档、Computer Use 和通用页通过原生面板生命周期桥接字段 nativePane、navigationId 保留已有 DOM、控制器和皮肤钩子，其余页面通过同一注册表在运行设置面板渲染。宿主的运行上下文不透明；扩展读取和操作自己的数据应使用已声明的客户端服务。
+设置弹窗固定列出三页（通用、模型与账户、权限与安全）；读者打开「显示高级设置」后多出「高级」分组。`group` 决定设置区出现的位置：`general`、`accounts`、`security` 作为对应页面的一个页签；`advanced` 列在「高级」分组里，只在开关打开时可见；其他取值按设置区自己的标题列在「扩展」下，始终可见。外壳拥有导航、页签键盘操作、布局和 `?settings=<id>` 深链接。内置账户页和通用页通过原生面板生命周期桥接字段 nativePane、navigationId 保留已有 DOM、控制器和皮肤钩子，其余设置区通过同一注册表在弹窗自己的页面宿主里渲染。插件、技能、MCP、自动化、会话搜索和归档不再是设置页；旧的 `?settings=<id>` 链接会打开取代它们的整页或侧栏视图。页面内的高级选项用 `@agnes/web-ui` 的 `SettingsAdvanced`，它跟随同一个开关（`useAdvancedSettings`）。宿主的运行上下文不透明；扩展读取和操作自己的数据应使用已声明的客户端服务。
 
-导航 test id 为 settings-navigation；分类按钮为 settings-nav-首个页面ID；组内页签为 settings-nav-ID-tab，保留 role=tab、aria-selected 和游走焦点。内置控制器 ID 保留，运行页面使用 settings-page-ID。SettingsPage、SettingsCard、Field、共享表单控件和 SettingsState 负责视觉模式。
+导航 test id 为 settings-navigation；导航项为 settings-nav-ID（带页签的内置页用其首个设置区的 ID）；页签为 settings-nav-ID-tab，保留 role=tab、aria-selected 和游走焦点。内置控制器 ID 保留，运行页面使用 settings-page-ID。SettingsPage、SettingsCard、Field、共享表单控件和 SettingsState 负责视觉模式。
 
 会话卡片注册 `{ id, order, matches, component }`。matches 接收 `{ kind, data }`；按 order、ID 排序后第一个匹配的注册项负责渲染。匹配函数只检查展示数据，不发请求或执行副作用。组件接收 `{ card, context }`。具体渲染器应排在通用兜底之前。内置问题、计划、交付物、作业、子代理、工作流、目标、日程、插件和工具卡片均通过同一 API 注册。插件插槽归属及资源访问仍经过现有插槽与客户端资源服务。
 

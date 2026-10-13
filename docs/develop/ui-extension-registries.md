@@ -9,15 +9,15 @@ Register a settings section with `{ group, id, titleKey, groupTitleKey, icon, or
 ```tsx
 import { settingsSections } from '@agnes/web-client'
 const dispose = settingsSections.register({
-  group: 'tools', id: 'example.inspector', order: 52,
-  titleKey: 'example.inspector.title', groupTitleKey: 'settings-shell.group.tools',
-  icon: 'tools', component: Inspector,
+  group: 'example', id: 'example.inspector', order: 52,
+  titleKey: 'example.inspector.title', groupTitleKey: 'example.title',
+  icon: 'plug', component: Inspector,
 })
 ```
 
-The settings shell owns group navigation, tab keyboard behavior, layout and `?settings=<id>` deep links. Built-in account, resource, archive, Computer Use and general panes use a native-pane lifecycle bridge (`nativePane`, `navigationId`) to preserve their existing DOM, controllers and skin hooks. Other sections render through the same registry in the runtime pane. The optional opaque runtime context belongs to the host; extension authors should use supported client services for their own reads and actions.
+The settings dialog lists three built-in pages (General, Models & accounts, Permissions & security) and, while the reader's "Show advanced settings" switch is on, an Advanced group. `group` places a section: `general`, `accounts` or `security` adds it as a tab of that page; `advanced` lists it in the Advanced group, so it is visible only while the switch is on; any other value lists it by its own title under Extensions, always visible. The shell owns navigation, tab keyboard behavior, layout and `?settings=<id>` deep links. The built-in account and general panes use a native-pane lifecycle bridge (`nativePane`, `navigationId`) to preserve their DOM, controllers and skin hooks. Other sections render through the same registry in the dialog's own page host. Plugins, skills, MCP, automation, session search and the archive are no longer settings pages; their old `?settings=<id>` links open the page or sidebar view that replaced them. An advanced option inside a page uses `SettingsAdvanced` from `@agnes/web-ui`, which follows the same switch (`useAdvancedSettings`). The optional opaque runtime context belongs to the host; extension authors should use supported client services for their own reads and actions.
 
-The rail uses `data-testid="settings-navigation"`. Group buttons use `settings-nav-<first-section-id>`; group tabs use `settings-nav-<id>-tab`, `role="tab"`, `aria-selected` and roving focus. Built-in controller IDs remain available. Runtime sections use `settings-page-<id>`; `SettingsPage`, `SettingsCard`, `Field`, shared form controls and `SettingsState` own the visual patterns.
+The rail uses `data-testid="settings-navigation"`. Entries use `settings-nav-<id>` (a built-in page with tabs uses its first section's ID); tabs use `settings-nav-<id>-tab`, `role="tab"`, `aria-selected` and roving focus. Built-in controller IDs remain available. Runtime sections use `settings-page-<id>`; `SettingsPage`, `SettingsCard`, `Field`, shared form controls and `SettingsState` own the visual patterns.
 
 A conversation registration has `{ id, order, matches, component }`. `matches` receives `{ kind, data }`; the first matching registration by order, then ID, renders. Predicates should inspect presentation data without requests or side effects. Components receive `{ card, context }`. Register more specific renderers before broad fallbacks. Built-ins register question, plan, deliverable, job, child, workflow, goal, schedule, plugin and tool categories. Plugin slot ownership and resource authorization continue through the existing slot and client resource services.
 

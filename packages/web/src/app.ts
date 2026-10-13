@@ -50,6 +50,7 @@ import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
+import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
@@ -988,6 +989,14 @@ const openSettingsTerminal = (event: Event) => {
   if (workbenchNavigation.open('terminal')) event.preventDefault()
 }
 const stopSettingsTerminal = onSurfaceEvent('agnes:settings-terminal', openSettingsTerminal)
+const statusCheck = mountStatusCheck({
+  details: () =>
+    run(async () => {
+      settingsRegion.open('model')
+      await settings.open()
+      settingsRegion.route('diagnostics')
+    }),
+})
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
@@ -1317,11 +1326,8 @@ const firstRun = createFirstRunController({
     settings.close()
     homeNavigation.open('agents')
   },
-  details: async () => {
-    settingsRegion.open('model')
-    await settings.open()
-    settingsRegion.route('diagnostics')
-  },
+  // A run notice opens the status check on its own; the full page is one step further.
+  details: async () => statusCheck.open(),
   start: async () => {
     settings.close()
     homeNavigation.close()
@@ -2238,6 +2244,7 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  statusCheck.dispose()
   stopHomeRouting()
   for (const stop of stopHomeSelection) stop()
   sessionSearch.dispose()
