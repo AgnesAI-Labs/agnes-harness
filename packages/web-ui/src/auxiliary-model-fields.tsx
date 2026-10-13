@@ -54,6 +54,7 @@ export function AuxiliaryModelFields({
   t = fallbackT,
   prefix = 'model-slot',
   allowUnset = true,
+  unsetLabel,
 }: {
   slots: AuxiliaryModelSlots
   models: readonly AuxiliaryModelOption[]
@@ -62,6 +63,8 @@ export function AuxiliaryModelFields({
   t?: Translate
   allowUnset?: boolean
   prefix?: string
+  /** What the empty choice of a slot reads as, when it is more than "not set": "Automatic · <model>". */
+  unsetLabel?: Partial<Record<'fast' | 'verifier', string>>
 }) {
   return (
     <SettingsGroup>
@@ -92,7 +95,7 @@ export function AuxiliaryModelFields({
                   ) : target ? (
                     `${target.route} / ${target.model}`
                   ) : (
-                    t('modelSettings.slots.unset')
+                    (unsetLabel?.[slot] ?? t('modelSettings.slots.unset'))
                   )}
                 </span>
               </>
@@ -111,7 +114,9 @@ export function AuxiliaryModelFields({
               }}
             >
               <option value="" disabled={!allowUnset}>
-                {t(allowUnset ? 'modelSettings.slots.unset' : 'modelSettings.slots.choose')}
+                {allowUnset
+                  ? (unsetLabel?.[slot] ?? t('modelSettings.slots.unset'))
+                  : t('modelSettings.slots.choose')}
               </option>
               {stale && (
                 <option value={value} disabled>

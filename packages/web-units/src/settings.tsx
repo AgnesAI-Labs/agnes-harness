@@ -375,11 +375,8 @@ function SettingsBuiltinImpl(
         } catch {
           return
         }
-        requestAnimationFrame(() => {
-          const section = document.getElementById(fragment)
-          section?.scrollIntoView({ block: 'start' })
-          section?.focus()
-        })
+        // The target may sit in a fold: open what encloses it, then bring it into view.
+        requestAnimationFrame(() => revealSettingsAnchor(fragment))
       }
       const onRoute = (event: Event) => {
         const id = String((event as CustomEvent).detail)

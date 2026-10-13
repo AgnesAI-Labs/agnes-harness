@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { modelSettingsLocaleCatalog } from '@agnes/web-ui'
+import { modelSettingsLocaleCatalog, setAdvancedSettingsShown } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -9,7 +9,22 @@ import { ModelSlotsPanel, modelSlotOptions } from '../src/settings/model-slots.j
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root | undefined
-let state = {
+const en = (key: string, vars?: Record<string, string | number>) =>
+  (modelSettingsLocaleCatalog.en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars?.[name] ?? ''))
+let state: {
+  revision: number
+  slots: Record<string, unknown>
+  auto?: { fast?: { accountId: string; route: string; model: string } }
+  canSave: boolean
+  modelAdapters: {
+    id: string
+    version: string
+    wireApi: string
+    sourcePackage: string
+    capabilities: { imageInput: boolean; tools: boolean; streaming: boolean }
+    models: { route: string; id: string; label: string }[]
+  }[]
+} = {
   revision: 1,
   slots: {},
   canSave: true,
@@ -34,8 +49,12 @@ afterEach(async () => {
   vi.unstubAllGlobals()
   writes.length = 0
   failSave = false
+  delete state.auto
+  setAdvancedSettingsShown(false)
 })
 async function mount(canSave = true) {
+  // Auxiliary models are an advanced fold: it exists only while advanced settings show.
+  setAdvancedSettingsShown(true)
   state = { ...state, revision: 1, slots: {}, canSave }
   vi.spyOn(PluginAdminApi, 'context').mockResolvedValue({} as never)
   vi.stubGlobal(
@@ -58,7 +77,7 @@ async function mount(canSave = true) {
       createElement(
         'div',
         {},
-        createElement(ModelSlotsPanel, { t: (key) => modelSettingsLocaleCatalog.en[key] ?? key }),
+        createElement(ModelSlotsPanel, { t: en }),
         createElement(AutoReviewPanel, { canSave }),
       ),
     ),
@@ -72,34 +91,72 @@ async function choose(host: HTMLElement, slot: string, value: string) {
     select.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
-it('shows unset reviewer status, saves explicit profile targets and refreshes the security card', async () => {
+it('saves each choice as it is made and refreshes the security card', async () => {
   const host = await mount()
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain('not set')
   expect(host.querySelector('a')?.getAttribute('href')).toBe('?settings=model#auxiliary-models')
+  // No save or reload buttons: choosing is saving, at the revision the page read.
+  expect(host.querySelector('[data-testid="model-slots-save"]')).toBeNull()
+  expect(host.querySelector('[data-testid="model-slots-reload"]')).toBeNull()
   await choose(host, 'fast', JSON.stringify(['local', 'reviewer']))
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="model-slots-save"]')?.click())
   expect(writes).toEqual([{ revision: 1, slots: { fast: { route: 'local', model: 'reviewer' } } }])
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain(
     'local / reviewer',
   )
-  expect(host.querySelector('[data-testid="model-slots-status"]')?.textContent).toContain('new sessions')
+  expect(host.querySelector('[data-testid="model-slots-status"]')?.textContent).toContain('New sessions')
+  // Emptying the fast slot leaves it unset, so it follows the default account again.
   await choose(host, 'fast', '')
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="model-slots-save"]')?.click())
+  expect(writes[1]).toEqual({ revision: 2, slots: {} })
   expect(host.querySelector('[data-testid="auto-review-slot-status"]')?.textContent).toContain('not set')
-})
-it('retains a rejected draft and disables writes without administrator permission', async () => {
-  const host = await mount()
+  // The verifier is only ever what was chosen: emptying it records that nothing verifies.
   await choose(host, 'verifier', JSON.stringify(['local', 'reviewer']))
+  await choose(host, 'verifier', '')
+  expect(writes[3]).toEqual({ revision: 4, slots: { verifier: null } })
+})
+it('says the settings changed elsewhere, keeps the choice and reloads on request', async () => {
+  const host = await mount()
   failSave = true
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="model-slots-save"]')?.click())
+  await choose(host, 'verifier', JSON.stringify(['local', 'reviewer']))
   expect(host.querySelector<HTMLSelectElement>('#model-slot-verifier')?.value).toBe(
     JSON.stringify(['local', 'reviewer']),
   )
-  expect(host.querySelector('[data-testid="model-slots-status"]')?.getAttribute('role')).toBe('alert')
+  const status = host.querySelector('[data-testid="model-slots-status"]')
+  expect(status?.getAttribute('role')).toBe('alert')
+  expect(status?.textContent).toContain('Changed elsewhere')
+  failSave = false
+  // Someone else saved meanwhile: reloading shows what is saved now.
+  state = { ...state, revision: 7, slots: { fast: { route: 'local', model: 'reviewer' } } }
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="model-slots-reload"]')?.click())
+  expect(host.querySelector('[data-testid="model-slots-status"]')).toBeNull()
+  expect(host.querySelector<HTMLSelectElement>('#model-slot-verifier')?.value).toBe('')
+  expect(host.querySelector<HTMLSelectElement>('#model-slot-fast')?.value).toBe(
+    JSON.stringify(['local', 'reviewer']),
+  )
+  await choose(host, 'verifier', JSON.stringify(['local', 'reviewer']))
+  expect(writes.at(-1)).toMatchObject({ revision: 7 })
+})
+it('shows the model an unset fast slot follows, and nothing automatic for the verifier', async () => {
+  state.auto = { fast: { accountId: 'account-1', route: 'local', model: 'reviewer' } }
+  const host = await mount()
+  const first = (slot: string) =>
+    host.querySelector<HTMLSelectElement>(`#model-slot-${slot}`)?.options[0]?.textContent
+  expect(first('fast')).toBe('Automatic · reviewer')
+  expect(first('verifier')).toBe('Not set')
+  expect(host.querySelector('[data-testid="auxiliary-models"] .agh-disclosure-meta')?.textContent).toBe(
+    'Fast model Automatic · reviewer · Verifier model Not set',
+  )
+  // Without the backend's answer the slot reads as before.
   await act(async () => root?.unmount())
+  delete state.auto
+  expect((await mount()).querySelector<HTMLSelectElement>('#model-slot-fast')?.options[0]?.textContent).toBe(
+    'Not set',
+  )
+})
+it('is absent while advanced settings are off, and read-only without administrator permission', async () => {
   const readonly = await mount(false)
   expect(readonly.querySelector<HTMLSelectElement>('#model-slot-fast')?.disabled).toBe(true)
-  expect(readonly.querySelector<HTMLButtonElement>('[data-testid="model-slots-save"]')?.disabled).toBe(true)
+  await act(async () => setAdvancedSettingsShown(false))
+  expect(readonly.querySelector('[data-testid="auxiliary-models"]')).toBeNull()
 })
 it('names each model by its account and display name, and picks through the themed picker', async () => {
   const route = 'account-acct-1192aece-ff60-4c1e-9d0b-000000000001'
@@ -124,11 +181,8 @@ it('names each model by its account and display name, and picks through the them
   const host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () =>
-    root?.render(
-      createElement(ModelSlotsPanel, { t: (key) => modelSettingsLocaleCatalog.en[key] ?? key, accounts }),
-    ),
-  )
+  setAdvancedSettingsShown(true)
+  await act(async () => root?.render(createElement(ModelSlotsPanel, { t: en, accounts })))
   const select = host.querySelector<HTMLSelectElement>('#model-slot-fast')!
   const labels = [...select.options].map((option) => option.textContent)
   expect(labels).toContain('DeepSeek · DeepSeek V4.1 Flash')

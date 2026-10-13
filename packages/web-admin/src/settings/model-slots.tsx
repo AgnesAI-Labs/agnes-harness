@@ -4,9 +4,19 @@ import {
   ModelSlotsSnapshot,
   validateAgainst,
 } from '@agnes/protocol'
-import { AuxiliaryModelFields, Button, SettingsSection, SettingsState, type Translate } from '@agnes/web-ui'
+import {
+  AuxiliaryModelFields,
+  Banner,
+  Button,
+  SettingsAdvanced,
+  SettingsState,
+  type Translate,
+} from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
+
+/** A save refused because the settings changed elsewhere since they were read. */
+class ModelSlotsConflict extends Error {}
 
 export type ModelSlotsState = ModelSlotsSnapshot & { modelAdapters: AdminModelAdapter[]; canSave: boolean }
 export async function modelSlotsSettings(
@@ -23,6 +33,8 @@ export async function modelSlotsSettings(
       ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }
       : {}),
   })
+  // 409 on a save: the revision this page read is no longer the saved one.
+  if (input && response.status === 409) throw new ModelSlotsConflict('Model slots changed elsewhere')
   const value: unknown = await response.json()
   if (
     !response.ok ||
@@ -30,7 +42,11 @@ export async function modelSlotsSettings(
     typeof value !== 'object' ||
     !('revision' in value) ||
     !('slots' in value) ||
-    !validateAgainst(ModelSlotsSnapshot, { revision: value.revision, slots: value.slots }).ok ||
+    !validateAgainst(ModelSlotsSnapshot, {
+      revision: value.revision,
+      slots: value.slots,
+      ...('auto' in value && value.auto !== undefined ? { auto: value.auto } : {}),
+    }).ok ||
     !('modelAdapters' in value) ||
     !Array.isArray(value.modelAdapters) ||
     value.modelAdapters.length > 4096 ||
@@ -86,7 +102,7 @@ export function ModelSlotsPanel({
   const [state, setState] = useState<ModelSlotsState>()
   const [busy, setBusy] = useState(true)
   const lifetime = useRef<AbortController>()
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<'' | 'saved' | 'failed' | 'conflict'>('')
   const load = useCallback(async (signal?: AbortSignal) => {
     setBusy(true)
     try {
@@ -107,74 +123,91 @@ export function ModelSlotsPanel({
     void load(controller.signal)
     return () => controller.abort()
   }, [load])
-  async function save() {
+  /** A choice is saved as it is made: the whole document, at the revision it was read at. */
+  async function save(slots: ModelSlotsState['slots']) {
     if (!state || !state.canSave || busy) return
+    // The choice shows at once and stays if the save is refused, so nothing has to be picked twice.
+    setState({ ...state, slots })
+    setMessage('')
     setBusy(true)
     try {
-      const next = await modelSlotsSettings(
-        { revision: state.revision, slots: state.slots },
-        lifetime.current?.signal,
-      )
+      const next = await modelSlotsSettings({ revision: state.revision, slots }, lifetime.current?.signal)
       if (lifetime.current?.signal.aborted) return
       setState(next)
       setMessage('saved')
       window.dispatchEvent(new Event('agnes:model-slots-changed'))
-    } catch {
-      if (!lifetime.current?.signal.aborted) setMessage('failed')
+    } catch (cause) {
+      if (!lifetime.current?.signal.aborted)
+        setMessage(cause instanceof ModelSlotsConflict ? 'conflict' : 'failed')
     } finally {
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
+  const models = state ? modelSlotOptions(state, accounts) : []
+  const named = (target: { route: string; model: string } | null | undefined) => {
+    if (!target) return undefined
+    const option = models.find((model) => model.route === target.route && model.id === target.model)
+    return option?.name ?? target.model
+  }
+  // While the fast slot is unset the backend follows the default account and says which model that is.
+  const automatic = state?.auto?.fast && !state.slots.fast ? named(state.auto.fast) : undefined
+  const fastUnset = automatic
+    ? t('modelSettings.slots.auto', { model: automatic })
+    : t('modelSettings.slots.unset')
   return (
-    <SettingsSection
+    <SettingsAdvanced
       id="auxiliary-models"
       tabIndex={-1}
       title={t('modelSettings.slots.title')}
-      description={t('modelSettings.slots.help')}
       data-testid="auxiliary-models"
-      actions={
-        <>
-          <Button
-            appearance="ghost"
-            data-testid="model-slots-reload"
-            disabled={busy}
-            onClick={() => void load(lifetime.current?.signal)}
-          >
-            {t('modelSettings.slots.reload')}
-          </Button>
-          <Button
-            data-testid="model-slots-save"
-            disabled={!state?.canSave || busy}
-            loading={busy}
-            onClick={() => void save()}
-          >
-            {t('modelSettings.slots.save')}
-          </Button>
-        </>
+      summary={
+        state
+          ? `${t('modelSettings.slots.fast')} ${named(state.slots.fast) ?? fastUnset} · ${t('modelSettings.slots.verifier')} ${named(state.slots.verifier) ?? t('modelSettings.slots.unset')}`
+          : undefined
       }
     >
+      <p>{t('modelSettings.slots.help')}</p>
       {state ? (
         <AuxiliaryModelFields
           slots={state.slots}
-          models={modelSlotOptions(state, accounts)}
+          models={models}
           disabled={!state.canSave || busy}
           t={t}
+          unsetLabel={{ fast: fastUnset }}
           onChange={(slot, target) => {
-            setState((current) =>
-              current ? { ...current, slots: { ...current.slots, [slot]: target } } : current,
-            )
-            setMessage('')
+            const { [slot]: _replaced, ...rest } = state.slots
+            // An emptied fast slot goes back to following the default account; the verifier is
+            // only ever what was chosen.
+            void save(target || slot === 'verifier' ? { ...rest, [slot]: target } : rest)
           }}
         />
       ) : (
         !message && <SettingsState tone="loading">{t('modelSettings.slots.loading')}</SettingsState>
       )}
-      {message && (
-        <SettingsState tone={message === 'saved' ? 'success' : 'error'} data-testid="model-slots-status">
-          {t(`modelSettings.slots.${message}`)}
+      {message === 'saved' && (
+        <SettingsState tone="success" data-testid="model-slots-status">
+          {t('modelSettings.slots.saved')}
         </SettingsState>
       )}
-    </SettingsSection>
+      {(message === 'failed' || message === 'conflict') && (
+        <Banner
+          tone="error"
+          data-testid="model-slots-status"
+          action={
+            <Button
+              size="small"
+              data-testid="model-slots-reload"
+              disabled={busy}
+              onClick={() => void load(lifetime.current?.signal)}
+            >
+              {t('modelSettings.slots.reload')}
+            </Button>
+          }
+        >
+          {t(`modelSettings.slots.${message}`)}
+        </Banner>
+      )}
+    </SettingsAdvanced>
   )
 }
 /** The panel for one saved configuration: a new revision remounts it, and its accounts name the models. */
