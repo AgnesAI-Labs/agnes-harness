@@ -506,7 +506,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // `notify`. Two rounds of review fixes on that work added the bfcache guards on all three pagehide
   // listeners, the detached-notifier reset, the shared noticeHoldsPersistentContent predicate every
   // notice writer now goes through, and the dismiss on submit. Measured: 2222, exact, no spare.
-  'packages/web/src/app': 2222,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src/app 2368; no exclusions or spare allocation.
+  'packages/web/src/app': 2368,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1092,7 +1093,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/core/src 26994; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/core/src 27083; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/core/src 27125; no exclusions or spare allocation.
-  'packages/core/src': 27125,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/core/src 27144; no exclusions or spare allocation.
+  'packages/core/src': 27144,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1408,7 +1410,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/protocol/src 2306; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: the raw row export method; reviewed exact countLines packages/protocol/src 2310; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/protocol/src 2390; no exclusions or spare allocation.
-  'packages/protocol/src': 2390,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/protocol/src 2400; no exclusions or spare allocation.
+  'packages/protocol/src': 2400,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1601,7 +1604,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
   // Measured: 5176, exact, no spare.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/sdk/src 5194; no exclusions or spare allocation.
-  'packages/sdk/src': 5194,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/sdk/src 5284; no exclusions or spare allocation.
+  'packages/sdk/src': 5284,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1971,7 +1975,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/daemon/src 27243; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27281; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/daemon/src 27312; no exclusions or spare allocation.
-  'packages/daemon/src': 27312,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/daemon/src 27459; no exclusions or spare allocation.
+  'packages/daemon/src': 27459,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2231,7 +2236,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 17030, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src 17031; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web/src 17033; no exclusions or spare allocation.
-  'packages/web/src': 17033,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src 17193; no exclusions or spare allocation.
+  'packages/web/src': 17193,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2721,7 +2727,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src 39757; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean helpers re-exported for workers; reviewed exact countLines packages/host/src 39760; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src 39765; no exclusions or spare allocation.
-  'packages/host/src': 39765,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src 39897; no exclusions or spare allocation.
+  'packages/host/src': 39897,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2894,7 +2901,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters 5579; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters 5631; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters 5636; no exclusions or spare allocation.
-  'packages/host/src/adapters': 5636,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters 5639; no exclusions or spare allocation.
+  'packages/host/src/adapters': 5639,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2918,7 +2926,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters/storage-sqlite 642; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters/storage-sqlite 653; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters/storage-sqlite 658; no exclusions or spare allocation.
-  'packages/host/src/adapters/storage-sqlite': 658,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters/storage-sqlite 661; no exclusions or spare allocation.
+  'packages/host/src/adapters/storage-sqlite': 661,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
