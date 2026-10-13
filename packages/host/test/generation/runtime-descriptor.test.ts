@@ -2,6 +2,7 @@ import type { ProviderCatalogEntry } from '@agnes/extension-api'
 import { type SessionCapabilitySet, SessionRuntimeDescriptor, validateAgainst } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
+  coldHeadId,
   describeColdSession,
   describeSessionRuntime,
   type SessionRuntimeInput,
@@ -210,7 +211,7 @@ describe('cold session descriptor', () => {
         loop: { id: 'acme.loop', version: '1.0.0' },
         seams: [{ kind: 'billing', provider: 'acme.bill', version: '2.0.0' }],
       },
-      headId: 'gen-new',
+      head: { scoped: false, ownKey: 'sha256-x', ownHeadId: 'gen-new', durableHeadId: () => undefined },
       failed: false,
       composition: { hash: 'sha256-x', preset: 'review', bundles: ['b1'] },
     })
@@ -235,10 +236,44 @@ describe('cold session descriptor', () => {
     expect(validateAgainst(SessionRuntimeDescriptor, cold).ok).toBe(true)
   })
 
-  it('leaves everything unknown when no durable record exists', () => {
-    const cold = describeColdSession({ sessionKey: 'bare', failed: false })
+  it('claims no newer generation when no durable record exists', () => {
+    const cold = describeColdSession({
+      sessionKey: 'bare',
+      head: { scoped: false, ownKey: 'default', durableHeadId: () => undefined },
+      failed: false,
+    })
     expect(cold).toMatchObject({ loaded: false, generation: { current: true, state: 'active' } })
     expect(cold.preset).toBeUndefined()
     expect(cold.loop).toBeUndefined()
+  })
+})
+
+describe('cold head of a session composition', () => {
+  const durable = (hash: string) => ({ 'sha256-b': 'gen-b' })[hash]
+  const head = (input: Partial<Parameters<typeof coldHeadId>[0]>) =>
+    coldHeadId({ scoped: true, ownKey: 'sha256-a', ownHeadId: 'gen-a', durableHeadId: durable, ...input })
+
+  it('answers with the host head only for its own composition or an unscoped deployment', () => {
+    expect(head({ compositionHash: 'sha256-a' })).toBe('gen-a')
+    expect(head({ scoped: false })).toBe('gen-a')
+  })
+
+  it('reads another composition head from the durable record, never the default composition head', () => {
+    expect(head({ compositionHash: 'sha256-b' })).toBe('gen-b')
+    // B was not upgraded: its session on gen-b is current, whatever composition A runs.
+    const cold = describeColdSession({
+      sessionKey: 's',
+      pin: { generationId: 'gen-b' },
+      composition: { hash: 'sha256-b', preset: 'standard', bundles: [] },
+      head: { scoped: true, ownKey: 'sha256-a', ownHeadId: 'gen-a', durableHeadId: durable },
+      failed: false,
+    })
+    expect(cold.generation).toMatchObject({ id: 'gen-b', current: true, state: 'active' })
+    expect(cold.generation.newer).toBeUndefined()
+  })
+
+  it('claims no head when the composition is unknown or has none recorded', () => {
+    expect(head({})).toBeUndefined()
+    expect(head({ compositionHash: 'sha256-c' })).toBeUndefined()
   })
 })
