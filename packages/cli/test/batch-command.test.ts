@@ -250,7 +250,7 @@ describe('terminal safety', () => {
 describe('exit status', () => {
   it.each([
     ['completed', 0],
-    ['running', 1],
+    ['running', 0],
     ['failed', 1],
     ['budget_exhausted', 1],
     ['cancelled', 1],

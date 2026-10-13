@@ -44,8 +44,8 @@ export const BATCH_USAGE = [
   '          [--concurrency <1-8>] [--max-edge <256-1456>] [--budget <credits>] [--out <dir>] [--item-timeout <60-3600 sec>]',
   'agh batch status <id> [--watch] | results <id> | cancel <id> | list      [--cwd <dir>] [--profile <p>] [--json]',
   'agh batch --help',
-  'Exit status of `status` (also with --watch): 0 only when the batch completed; 1 when it failed, ran out of budget,',
-  'was cancelled or is still running; 2 for a usage error.',
+  'Exit status of `status`: 0 when the batch completed or is still running; 1 when it failed, ran out of budget or was',
+  'cancelled; 2 for a usage error. With --watch it returns only at a final state, so 0 means the batch completed.',
 ].join('\n')
 
 // The same ranges as the protocol's BatchSpec and BatchIdParams. They are repeated here so a bad value is a
@@ -265,7 +265,7 @@ export async function runBatchCommand(
           const finished = s.status !== 'running'
           if (!command.watch || finished) {
             show(s)
-            return s.status === 'completed' ? 0 : 1
+            return finished && s.status !== 'completed' ? 1 : 0
           }
           const mark = progress(s)
           if (mark !== last) show(s, true)

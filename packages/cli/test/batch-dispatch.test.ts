@@ -92,7 +92,7 @@ describe('agh batch dispatch', () => {
     const code = await main(['batch', 'status', '--help'], { ...run.io, stdout }, { lock: TEST_LOCK })
     expect(code).toBe(0)
     expect(out).toContain('agh batch start')
-    expect(out).toContain('0 only when the batch completed')
+    expect(out).toContain('0 when the batch completed or is still running')
   })
 
   it('answers a malformed batch command with usage before any boot', async () => {
