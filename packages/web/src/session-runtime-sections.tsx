@@ -1,4 +1,4 @@
-import type { ApprovalGrantRecord, SessionToolsResult } from '@agnes/protocol'
+import type { SessionApprovalGrant, SessionToolsResult } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import {
   Button,
@@ -9,52 +9,22 @@ import {
   SettingsList,
   SettingsSection,
   SettingsState,
+  Tag,
 } from '@agnes/web-ui'
 
 type Tool = SessionToolsResult['tools'][number]
-export type GrantBinding = { toolId: string; scope: string; policyVersion: string }
-/** Undefined while the daemon has not answered; `unavailable` when it does not manage grants here. */
-export type SessionGrants = readonly ApprovalGrantRecord[] | 'unavailable' | undefined
+/** Undefined while the daemon has not answered; `unavailable` when it could not list them. */
+export type SessionGrants = readonly SessionApprovalGrant[] | 'unavailable' | undefined
 
-const GRANT_LOOKUPS = 64
-const GRANT_CONCURRENCY = 6
-
-/**
- * The binding a tool gets when it declares no approval scope and no classifier of its own. Grants
- * are stored per exact binding and the daemon offers no per-session listing, so these are the
- * bindings a client can ask about.
- */
-export const defaultGrantBinding = (toolId: string): GrantBinding => ({
-  toolId,
-  scope: `tool:${toolId}:execute`,
-  policyVersion: 'static-v1',
-})
-
-/** Reads the remembered approvals of a session's tools; one refusal means the daemon keeps none here. */
-export async function readSessionGrants(
-  tools: readonly Pick<Tool, 'name'>[],
-  list: (binding: GrantBinding) => Promise<{ grants: readonly ApprovalGrantRecord[] }>,
-): Promise<Exclude<SessionGrants, undefined>> {
-  const names = [...new Set(tools.map((tool) => tool.name))].slice(0, GRANT_LOOKUPS)
-  const found: ApprovalGrantRecord[] = []
-  let refused = false
-  let next = 0
-  const worker = async () => {
-    while (!refused && next < names.length) {
-      const name = names[next++]
-      if (name === undefined) return
-      try {
-        const result = await list(defaultGrantBinding(name))
-        found.push(...result.grants.filter((grant) => !grant.revokedAt))
-      } catch {
-        refused = true
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(GRANT_CONCURRENCY, names.length) }, worker))
-  if (refused) return 'unavailable'
-  return found.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-}
+/** Session allowances lead, then standing ones; newest first within each. */
+export const orderGrants = (grants: readonly SessionApprovalGrant[]): SessionApprovalGrant[] =>
+  grants
+    .filter((grant) => !grant.revokedAt)
+    .sort(
+      (a, b) =>
+        Number(a.lifetime === 'always') - Number(b.lifetime === 'always') ||
+        b.createdAt.localeCompare(a.createdAt),
+    )
 
 const when = (iso: string) => {
   const date = new Date(iso)
@@ -63,7 +33,7 @@ const when = (iso: string) => {
     : date.toLocaleString(document.documentElement.lang || 'en', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-/** What the user told this session's tools they may always do, each with its own undo. */
+/** What this session may do without asking: for this session only, or always. Each has its own undo. */
 export function SessionGrantList({
   grants,
   revoking,
@@ -72,10 +42,10 @@ export function SessionGrantList({
 }: {
   grants: SessionGrants
   revoking?: string | undefined
-  onRevoke(grant: ApprovalGrantRecord): void
+  onRevoke(grant: SessionApprovalGrant): void
   t: Translate
 }) {
-  // A daemon that does not manage grants for this session has nothing to list or undo.
+  // A daemon that cannot list them has nothing to show or undo here.
   if (grants === 'unavailable') return null
   return (
     <SettingsSection
@@ -89,28 +59,45 @@ export function SessionGrantList({
         <SettingsState>{t('session.runtime.grantsEmpty')}</SettingsState>
       ) : (
         <SettingsList>
-          {grants.map((grant) => (
-            <ListRow
-              key={grant.grantId}
-              data-testid="session-runtime-grant"
-              icon={<Icon name="shield-check" size={16} />}
-              title={<code translate="no">{grant.toolId}</code>}
-              titleLabel={grant.toolId}
-              description={t('session.runtime.grantSince', { time: when(grant.createdAt) })}
-              actions={
-                <Button
-                  size="small"
-                  data-testid="session-runtime-grant-revoke"
-                  loading={revoking === grant.grantId}
-                  disabled={revoking !== undefined}
-                  aria-label={t('session.runtime.grantRevokeLabel', { tool: grant.toolId })}
-                  onClick={() => onRevoke(grant)}
-                >
-                  {t('session.runtime.grantRevoke')}
-                </Button>
-              }
-            />
-          ))}
+          {grants.map((grant) => {
+            const always = grant.lifetime === 'always'
+            return (
+              <ListRow
+                key={grant.grantId}
+                data-testid="session-runtime-grant"
+                data-lifetime={grant.lifetime}
+                icon={<Icon name="shield-check" size={16} />}
+                title={<code translate="no">{grant.toolId}</code>}
+                titleLabel={grant.toolId}
+                description={t(
+                  always ? 'session.runtime.grantAlwaysHelp' : 'session.runtime.grantSessionHelp',
+                  {
+                    time: when(grant.createdAt),
+                  },
+                )}
+                status={
+                  <Tag tone={always ? 'warn' : 'info'}>
+                    {t(always ? 'session.runtime.grantAlways' : 'session.runtime.grantSession')}
+                  </Tag>
+                }
+                actions={
+                  <Button
+                    size="small"
+                    data-testid="session-runtime-grant-revoke"
+                    loading={revoking === grant.grantId}
+                    disabled={revoking !== undefined}
+                    aria-label={t(
+                      always ? 'session.runtime.grantRevokeAlwaysLabel' : 'session.runtime.grantRevokeLabel',
+                      { tool: grant.toolId },
+                    )}
+                    onClick={() => onRevoke(grant)}
+                  >
+                    {t('session.runtime.grantRevoke')}
+                  </Button>
+                }
+              />
+            )
+          })}
         </SettingsList>
       )}
     </SettingsSection>

@@ -1,13 +1,12 @@
 /** @vitest-environment happy-dom */
-import type { ApprovalGrantRecord, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
+import type { SessionApprovalGrant, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 import { RuntimeInfo } from '../src/session-runtime-dialog.js'
 import {
-  defaultGrantBinding,
   groupTools,
-  readSessionGrants,
+  orderGrants,
   SessionGrantList,
   SessionToolList,
 } from '../src/session-runtime-sections.js'
@@ -34,8 +33,15 @@ const tool = (name: string, source: string) => ({
   deferred: false,
   readOnly: false,
 })
-const grant = (toolId: string, extra: Partial<ApprovalGrantRecord> = {}) =>
-  ({ grantId: `g-${toolId}`, toolId, createdAt: '2026-10-14T01:00:00.000Z', ...extra }) as ApprovalGrantRecord
+const grant = (toolId: string, extra: Partial<SessionApprovalGrant> = {}) =>
+  ({
+    grantId: `g-${toolId}`,
+    lifetime: 'session',
+    toolId,
+    scope: `tool:${toolId}:execute`,
+    createdAt: '2026-10-14T01:00:00.000Z',
+    ...extra,
+  }) as SessionApprovalGrant
 
 async function mount(node: ReturnType<typeof createElement>) {
   const host = document.createElement('div')
@@ -111,54 +117,39 @@ it('falls back to the loop id and to unknown when the session is not open', asyn
   await view.close()
 })
 
-it('asks about each tool once with its default binding and drops revoked grants', async () => {
-  const asked: string[] = []
-  const result = await readSessionGrants(
-    [tool('shell', 'a'), tool('edit', 'a'), tool('shell', 'b')],
-    async (binding) => {
-      expect(binding).toEqual(defaultGrantBinding(binding.toolId))
-      asked.push(binding.toolId)
-      return {
-        grants:
-          binding.toolId === 'shell'
-            ? [grant('shell'), grant('shell', { grantId: 'old', revokedAt: '2026-10-13T00:00:00.000Z' })]
-            : [],
-      }
-    },
-  )
-  expect(asked.sort()).toEqual(['edit', 'shell'])
-  expect(result).toEqual([grant('shell')])
-  expect(defaultGrantBinding('shell')).toEqual({
-    toolId: 'shell',
-    scope: 'tool:shell:execute',
-    policyVersion: 'static-v1',
-  })
+it('puts session allowances before standing ones and drops revoked grants', () => {
+  const result = orderGrants([
+    grant('write', { lifetime: 'always', createdAt: '2026-10-14T03:00:00.000Z' }),
+    grant('shell', { createdAt: '2026-10-14T01:00:00.000Z' }),
+    grant('edit', { createdAt: '2026-10-14T02:00:00.000Z' }),
+    grant('old', { revokedAt: '2026-10-13T00:00:00.000Z' }),
+  ])
+  expect(result.map((item) => item.toolId)).toEqual(['edit', 'shell', 'write'])
 })
 
-it('reports grants as unavailable when the daemon refuses, and then shows no section', async () => {
-  const result = await readSessionGrants([tool('shell', 'a')], async () => {
-    throw new Error('CAPABILITY_DENIED')
-  })
-  expect(result).toBe('unavailable')
-  const view = await mount(createElement(SessionGrantList, { grants: result, onRevoke() {}, t: enT }))
+it('shows no section when the daemon cannot list what the session may do', async () => {
+  const view = await mount(createElement(SessionGrantList, { grants: 'unavailable', onRevoke() {}, t: enT }))
   expect(view.host.textContent).toBe('')
   await view.close()
 })
 
-it('lists remembered approvals with a revoke action each, and an honest empty state', async () => {
+it('labels session and always allowances apart, revokes by grant id, and has an honest empty state', async () => {
   const revoked: string[] = []
   const view = await mount(
     createElement(SessionGrantList, {
-      grants: [grant('shell')],
+      grants: [grant('shell'), grant('write', { lifetime: 'always' })],
       onRevoke: (value) => revoked.push(value.grantId),
       t: enT,
     }),
   )
-  expect(view.host.querySelectorAll('[data-testid="session-runtime-grant"]')).toHaveLength(1)
-  await act(async () =>
-    view.host.querySelector<HTMLElement>('[data-testid="session-runtime-grant-revoke"]')?.click(),
-  )
-  expect(revoked).toEqual(['g-shell'])
+  const rows = [...view.host.querySelectorAll<HTMLElement>('[data-testid="session-runtime-grant"]')]
+  expect(rows.map((row) => row.dataset.lifetime)).toEqual(['session', 'always'])
+  expect(rows[0]?.textContent).toContain(enT('session.runtime.grantSession'))
+  expect(rows[1]?.textContent).toContain(enT('session.runtime.grantAlways'))
+  expect(rows[1]?.textContent).toContain('other sessions')
+  const buttons = view.host.querySelectorAll<HTMLElement>('[data-testid="session-runtime-grant-revoke"]')
+  await act(async () => buttons[1]?.click())
+  expect(revoked).toEqual(['g-write'])
   await view.render(createElement(SessionGrantList, { grants: [], onRevoke() {}, t: enT }))
   expect(view.host.textContent).toContain(enT('session.runtime.grantsEmpty'))
   await view.close()

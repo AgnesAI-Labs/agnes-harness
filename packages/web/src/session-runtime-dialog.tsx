@@ -1,4 +1,4 @@
-import type { ApprovalGrantRecord, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
+import type { SessionApprovalGrant, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import {
@@ -18,8 +18,7 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import {
-  defaultGrantBinding,
-  readSessionGrants,
+  orderGrants,
   SessionGrantList,
   type SessionGrants,
   SessionToolList,
@@ -293,15 +292,19 @@ export function createRuntimeDialog(options: {
     )
   }
   const render = () => renderRegion(host, <RuntimeDialog />)
-  const readGrants = async (mine: number, id: string, value: SessionToolsResult) => {
-    const next = await readSessionGrants(value.tools, (binding) =>
-      options.client.approval.listGrants(id, binding),
-    )
+  /** The daemon lists what this session may do without asking; a refusal hides the section. */
+  const readGrants = async (mine: number, id: string) => {
+    let next: SessionGrants
+    try {
+      next = orderGrants((await options.client.approval.sessionGrants(id)).grants)
+    } catch {
+      next = 'unavailable'
+    }
     if (mine !== version) return
     grants = next
     render()
   }
-  /** Tools and remembered approvals need a live session; a session nobody has open reports neither. */
+  /** Tools need a live session; a session nobody has open reports none. */
   const readTools = async (mine: number) => {
     const id = sessionId
     if (!id || toolsBusy) return
@@ -314,11 +317,9 @@ export function createRuntimeDialog(options: {
       })) as SessionToolsResult
       if (mine !== version) return
       tools = value
-      void readGrants(mine, id, value)
     } catch {
       if (mine !== version) return
       toolsFailed = true
-      grants = 'unavailable'
     } finally {
       if (mine === version) {
         toolsBusy = false
@@ -326,15 +327,15 @@ export function createRuntimeDialog(options: {
       }
     }
   }
-  const revoke = (grant: ApprovalGrantRecord) => {
+  const revoke = (grant: SessionApprovalGrant) => {
     const id = sessionId
     const mine = version
     if (!id || revoking) return
     revoking = grant.grantId
     render()
     void options.client.approval
-      .revokeGrant(id, defaultGrantBinding(grant.toolId), grant.grantId)
-      .then(() => (tools && mine === version ? readGrants(mine, id, tools) : undefined))
+      .revokeSessionGrant(id, grant.grantId)
+      .then(() => (mine === version ? readGrants(mine, id) : undefined))
       .catch((failure: unknown) => {
         if (mine === version) options.error(failure)
       })
@@ -366,6 +367,7 @@ export function createRuntimeDialog(options: {
         loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
         render()
         void readTools(mine)
+        void readGrants(mine, id)
       } catch (failure) {
         if (mine !== version) return
         close()
