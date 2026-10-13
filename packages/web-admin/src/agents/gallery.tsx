@@ -111,11 +111,13 @@ export function useBusinessAgents(source: BusinessAgentsSource = {}) {
 function AgentCard({
   agent,
   state,
+  focused,
   disabledReason,
   onStart,
 }: {
   agent: BusinessAgent
   state: BusinessAgentState
+  focused: boolean
   /** Set when the user may not change packages; a ready agent can still open a session. */
   disabledReason: string | undefined
   onStart(): void
@@ -124,7 +126,13 @@ function AgentCard({
   const ready = state === 'ready'
   const blocked = !ready && disabledReason !== undefined
   return (
-    <article className="agent-card" data-state={state} data-testid={`business-agent-${agent.slug}`}>
+    <article
+      className="agent-card"
+      data-state={state}
+      data-package={agent.entry.id}
+      data-focused={focused || undefined}
+      data-testid={`business-agent-${agent.slug}`}
+    >
       <header>
         <span className="agent-tile" data-tint={agent.tint} aria-hidden="true" translate="no">
           {agent.glyph}
@@ -177,10 +185,16 @@ export type BusinessAgentsData = ReturnType<typeof useBusinessAgents>
  */
 export function BusinessAgentGallery({
   data,
+  focus,
   openSession,
   onOpenPlugins,
 }: {
   data: BusinessAgentsData
+  /**
+   * A card another surface points at: it is scrolled into view and marked. With `start`, one-click
+   * start begins for it once, exactly as if its button had been pressed. A new object asks again.
+   */
+  focus?: { id: string; start?: boolean } | undefined
   openSession?: (target: StartedSession) => void
   onOpenPlugins?: (agent: BusinessAgent) => void
 }) {
@@ -212,6 +226,20 @@ export function BusinessAgentGallery({
         )),
   )
   const disabledReason = data.denied ? t(data.denied) : undefined
+  const gallery = useRef<HTMLDivElement>(null)
+  const handled = useRef<object>()
+  const focused = focus ? data.agents.find((agent) => agent.entry.id === focus.id) : undefined
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a focus request is acted on once, when its card exists.
+  useEffect(() => {
+    if (!focus || !focused || data.busy || handled.current === focus) return
+    handled.current = focus
+    for (const card of gallery.current?.querySelectorAll<HTMLElement>('[data-package]') ?? [])
+      if (card.dataset.package === focus.id) card.scrollIntoView({ block: 'center' })
+    if (!focus.start) return
+    const state = stateOf(focused)
+    // Without permission to change packages only a ready agent can start; the card says why.
+    if (state === 'ready' || !data.denied) starter.start(focused, { quiet: state === 'ready' })
+  }, [focus, focused, data.busy])
   return (
     <div className="agent-gallery-page" data-testid="business-agents" aria-busy={data.busy}>
       {data.agents.length > 0 && (
@@ -266,7 +294,7 @@ export function BusinessAgentGallery({
         />
       )}
       {shown.length > 0 && (
-        <div className="agent-gallery" data-testid="business-agents-gallery">
+        <div className="agent-gallery" data-testid="business-agents-gallery" ref={gallery}>
           {shown.map((agent) => {
             const state = stateOf(agent)
             return (
@@ -274,6 +302,7 @@ export function BusinessAgentGallery({
                 key={agent.entry.id}
                 agent={agent}
                 state={state}
+                focused={focus?.id === agent.entry.id}
                 disabledReason={disabledReason}
                 onStart={() => starter.start(agent, { quiet: state === 'ready' })}
               />

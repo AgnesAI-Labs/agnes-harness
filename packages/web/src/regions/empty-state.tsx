@@ -18,7 +18,7 @@ const APP_BRAND = 'Agnes Harness'
 
 type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
-/** Up to three business agents to start from, each opening its card on the business agents page. */
+/** Up to three business agents to start from; a click runs one-click start for that agent on its page. */
 function BusinessAgentSuggestions({
   t,
   source,
@@ -44,7 +44,7 @@ function BusinessAgentSuggestions({
               className={'empty-state-agent'}
               data-testid={'agent-suggestion'}
               data-package={row.id}
-              onClick={() => homeNavigation.open('agents', { focus: row.id })}
+              onClick={() => homeNavigation.open('agents', { focus: row.id, start: true })}
             >
               <span className={'empty-state-agent-heading'}>
                 <span className={'empty-state-agent-tile'} data-tone={index % 3} aria-hidden={'true'}>

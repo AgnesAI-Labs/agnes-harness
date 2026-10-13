@@ -134,9 +134,10 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
 async function mount(
   source: ReturnType<typeof setup>['source'],
   openSession: (target: StartedSession) => void,
+  focus?: { id: string; start?: boolean },
 ) {
   function Page() {
-    return createElement(BusinessAgentGallery, { data: useBusinessAgents(source), openSession })
+    return createElement(BusinessAgentGallery, { data: useBusinessAgents(source), openSession, focus })
   }
   const host = document.createElement('div')
   document.body.append(host)
@@ -214,4 +215,21 @@ it('opens a session at once for a ready agent, and refuses package changes witho
   expect(
     denied.querySelector<HTMLButtonElement>('[data-testid="business-agent-start-data-report"]')?.disabled,
   ).toBe(true)
+})
+
+it('marks the card another surface points at, and starts it when asked to', async () => {
+  const kit = setup()
+  const host = await mount(kit.source, () => {}, { id: ID })
+  expect(host.querySelector('[data-focused]')?.getAttribute('data-package')).toBe(ID)
+  // Pointing at a card is not consent to anything.
+  expect(kit.calls).toEqual([])
+  expect(document.querySelector('[data-testid="agent-start-confirm"]')).toBeNull()
+
+  for (const root of roots.splice(0)) await act(async () => root.unmount())
+  document.body.replaceChildren()
+  const started = setup()
+  await mount(started.source, () => {}, { id: ID, start: true })
+  // The same confirmation as the card's own button: nothing is installed before the user agrees.
+  await vi.waitFor(() => expect(document.querySelector('[data-testid="agent-start-confirm"]')).not.toBeNull())
+  expect(started.calls).toEqual(['inspect'])
 })

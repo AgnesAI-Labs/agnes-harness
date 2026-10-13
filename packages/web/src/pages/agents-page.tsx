@@ -1,16 +1,12 @@
 import {
   AGENTS_NAMESPACE,
   agentsCatalog,
-  type BusinessAgent,
   BusinessAgentGallery,
-  businessAgentState,
-  suggestedBusinessAgents,
-  useBusinessAgentStart,
   useBusinessAgents,
 } from '@agnes/web-admin/agents'
 import { homeNavigation, type UiExtensionContext } from '@agnes/web-client'
 import { IconButton, useUiText } from '@agnes/web-ui'
-import type { ReactNode } from 'react'
+import { useMemo } from 'react'
 import { homeAdmin } from './admin-api.js'
 import { HomePageFrame } from './page-frame.js'
 
@@ -21,6 +17,14 @@ const openPlugins = () => homeNavigation.open('plugins')
 export function AgentsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const data = useBusinessAgents(source)
+  // Another surface may point at one agent: `focus` names its package, `start` begins one-click start.
+  const selection = context.selection as { focus?: unknown; start?: unknown } | undefined
+  const focusId = typeof selection?.focus === 'string' ? selection.focus : undefined
+  const focus = useMemo(
+    () => (focusId ? { id: focusId, start: selection?.start === true } : undefined),
+    // The selection object is new for every request, so the same card can be asked for again.
+    [selection, focusId],
+  )
   return (
     <HomePageFrame
       id="agents"
@@ -41,38 +45,7 @@ export function AgentsPage({ context }: { context: UiExtensionContext }) {
         />
       }
     >
-      <BusinessAgentGallery data={data} onOpenPlugins={openPlugins} />
+      <BusinessAgentGallery data={data} focus={focus} onOpenPlugins={openPlugins} />
     </HomePageFrame>
   )
-}
-
-/**
- * Business agents for a surface that suggests a few, such as the new-session empty state: the
- * suggestions (ready ones first), `start` to run one-click start for one of them, and the dialog
- * to render once. Starting ends in a new-session draft with the agent's loop selected and its
- * sample prompt filled in.
- */
-export function useBusinessAgentSuggestions(count = 3): {
-  agents: readonly BusinessAgent[]
-  total: number
-  start(agent: BusinessAgent): void
-  dialog: ReactNode
-} {
-  const data = useBusinessAgents(source)
-  const starter = useBusinessAgentStart({
-    api: data.api,
-    features: data.features,
-    onChanged: data.refreshInstalled,
-    onOpenPlugins: openPlugins,
-  })
-  return {
-    agents: suggestedBusinessAgents(data.agents, data.installed, count),
-    total: data.agents.length,
-    // A ready agent needs no confirmation: it goes straight to the new session.
-    start: (agent) =>
-      starter.start(agent, {
-        quiet: businessAgentState(data.installed.find((item) => item.id === agent.entry.id)) === 'ready',
-      }),
-    dialog: starter.dialog,
-  }
 }

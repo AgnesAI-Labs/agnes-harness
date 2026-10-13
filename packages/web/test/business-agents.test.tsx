@@ -98,7 +98,8 @@ it('suggests business agents with their sample prompt, and plain tasks when ther
     await act(async () => cards[1]?.click())
     expect(homeNavigation.getSnapshot()).toEqual({
       id: 'agents',
-      selection: { focus: '@agnes-fde/data-report' },
+      // The page it opens runs one-click start for that agent.
+      selection: { focus: '@agnes-fde/data-report', start: true },
     })
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="agent-suggestions-all"]')?.click(),
