@@ -3,6 +3,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const shellCatalog: LocaleCatalog = {
   en: {
     runtimeDetails: 'Plugin runtime details',
+    runConfigIntro: 'How new sessions run by default. For people who configure Agnes.',
     providerTypes: 'Plugin types',
     agentExecution: 'How the agent works (Agent Loop)',
     agentExecutionHelp: 'The loop new sessions run and its default limits.',
@@ -142,6 +143,7 @@ export const shellCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     runtimeDetails: '插件运行详情',
+    runConfigIntro: '新会话的默认运行方式；给配置人员用。',
     providerTypes: '插件类型',
     agentExecution: '执行方式（Agent Loop）',
     agentExecutionHelp: '新会话使用的执行循环及其默认限制。',

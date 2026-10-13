@@ -1,9 +1,23 @@
-import { Button, Disclosure, Field, Icon, type IconName, icons, SettingsInput } from '@agnes/web-ui'
-import { Fragment, useSyncExternalStore } from 'react'
+import { Button, Icon, type IconName, icons, useAdvancedSettings } from '@agnes/web-ui'
+import { Fragment, type ReactNode, useSyncExternalStore } from 'react'
 import { type AdminPaneSnapshot, type AdminPaneStore, adminPaneControl } from './admin-pane-store.js'
 import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
-import { PANE_IDS, settingsDshSlotHostId, settingsPaneSlotHostId } from './settings.js'
-import { advancedSettings, settingsGroup, settingsNavigationGroups } from './settings-navigation.js'
+import {
+  PANE_IDS,
+  SETTINGS_SECTIONS_HOST_ID,
+  settingsDshSlotHostId,
+  settingsEntryPane,
+  settingsPaneSlotHostId,
+} from './settings.js'
+import {
+  advancedSettings,
+  listedSettingsGroup,
+  settingsGroup,
+  settingsListedEntries,
+  settingsMoved,
+  settingsNavigationGroups,
+  settingsTabGroup,
+} from './settings-navigation.js'
 
 export function SettingsDshHost({ name }: { name: SettingsDshSlotName }) {
   return <div id={settingsDshSlotHostId(name)} data-agnes-dsh-slot={name} />
@@ -43,7 +57,7 @@ export function createSettingsNavigationStore(entries: readonly SettingsNavigati
 export type SettingsNavigationStore = ReturnType<typeof createSettingsNavigationStore>
 const navigationIcons: Record<string, IconName> = {
   accounts: 'list',
-  agent: 'bot',
+  agent: 'sliders-horizontal',
   plugins: 'plug',
   tools: 'sliders-horizontal',
   diagnostics: 'activity',
@@ -65,20 +79,27 @@ function SettingsRegistryNavigation({
   adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
-  const { entries } = useSyncExternalStore(store.subscribe, store.snapshot)
+  const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
   const admin = useAdminPanes(adminPanes)
+  const advanced = useAdvancedSettings()
+  const current = entries.find((entry) => entry.id === selected && !settingsMoved(entry.id))
   const t = translate ?? ((key: string) => key)
-  const groups = settingsNavigationGroups(entries)
+  const groups = settingsNavigationGroups(settingsListedEntries(entries, advanced))
   const renderGroup = (group: readonly SettingsNavigationEntry[]) => {
     const first = group[0]
     if (!first) return null
     const key = settingsGroup(first.group)
+    const listed = listedSettingsGroup(first.group)
     return (
       <Fragment key={key}>
-        {key === 'extensions' && <p className="settings-nav-label">{t('settings-shell.extensions')}</p>}
-        {(key === 'extensions' ? group : [first]).map((entry) => {
+        {listed && (
+          <p className="settings-nav-label">
+            {t(key === 'advanced' ? 'settings-shell.advanced' : 'settings-shell.extensions')}
+          </p>
+        )}
+        {(listed ? group : [first]).map((entry) => {
           const id =
-            group.length > 1 && entry.nativePane
+            group.length > 1 && entry.nativePane && !listed
               ? `settings-group-${key}`
               : (entry.navigationId ?? `runtime-settings-${entry.id}`)
           return (
@@ -90,79 +111,55 @@ function SettingsRegistryNavigation({
               data-settings-section={entry.id}
               data-testid={`settings-nav-${entry.id}`}
               data-settings-group={key}
+              aria-current={
+                current && settingsGroup(current.group) === key && (!listed || current.id === entry.id)
+                  ? 'page'
+                  : undefined
+              }
               {...adminControlProps(admin, id)}
             >
               <NavigationIcon name={entry.icon} />
-              <span>{t(key === 'extensions' ? entry.titleKey : entry.groupTitleKey)}</span>
-              {key === 'extensions' && <small>{t(entry.groupTitleKey)}</small>}
+              <span>{t(listed ? entry.titleKey : entry.groupTitleKey)}</span>
             </Button>
           )
         })}
       </Fragment>
     )
   }
+  // Controllers of pages that left the dialog still look their old entry up by ID: keep each one
+  // that neither the list nor the page tabs render.
+  const tabSizes = new Map<string, number>()
+  for (const entry of entries)
+    tabSizes.set(settingsTabGroup(entry), (tabSizes.get(settingsTabGroup(entry)) ?? 0) + 1)
+  const present = new Set<string>()
+  for (const group of groups)
+    for (const entry of group)
+      if (!(group.length > 1 && entry.nativePane && !listedSettingsGroup(entry.group)))
+        present.add(entry.navigationId ?? `runtime-settings-${entry.id}`)
+  for (const entry of entries)
+    if (entry.nativePane && entry.navigationId && (tabSizes.get(settingsTabGroup(entry)) ?? 0) > 1)
+      present.add(entry.navigationId)
   return (
-    <>
-      <Field
-        className="settings-navigation-search"
-        htmlFor="settings-search"
-        label={<span className="visually-hidden">{t('settings-shell.findSettings')}</span>}
-      >
-        <SettingsInput
-          id="settings-search"
-          type="search"
-          autoComplete="off"
-          data-testid="settings-search"
-          placeholder={t('settings-shell.findSettings')}
-        />
-      </Field>
-      <nav className="settings-nav-group" aria-label={t('settings-shell.railAria')}>
-        <div id="settings-everyday">
-          <p className="settings-nav-label">{t('settings-shell.basicLabel')}</p>
-          <SettingsDshHost name="settings.trigger" />
-          <SettingsDshHost name="settings.onboarding" />
-          <SettingsDshHost name="settings.action" />
-          {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
-        </div>
-        <Disclosure
-          id="settings-advanced"
-          data-testid="settings-advanced"
-          variant="plain"
-          summary={t('settings-shell.advanced')}
-        >
+    <nav className="settings-nav-group" aria-label={t('settings-shell.railAria')}>
+      <div id="settings-everyday">
+        <SettingsDshHost name="settings.trigger" />
+        <SettingsDshHost name="settings.onboarding" />
+        <SettingsDshHost name="settings.action" />
+        {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
+      </div>
+      {advanced && (
+        <div id="settings-advanced" data-testid="settings-advanced">
           {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
-        </Disclosure>
-        <div id="settings-navigation-reserve" hidden>
-          {[
-            'bundles',
-            'engines',
-            'system-prompt',
-            'memory',
-            'context',
-            'providers',
-            'examples',
-            'feedback',
-            'terminal',
-          ]
-            .filter((id) => !entries.some((entry) => entry.id === id))
-            .map((id) => (
-              <Button
-                key={id}
-                id={`runtime-settings-${id}`}
-                appearance="ghost"
-                data-settings-section={id}
-                data-testid={`settings-nav-${id}`}
-              />
-            ))}
-          {!entries.some((entry) => entry.id === 'computer-use') && (
-            <Button id="computer-use-management" appearance="ghost" data-settings-section="computer-use" />
-          )}
         </div>
-      </nav>
-      <p id="settings-search-empty" className="agnes-settings-state" role="status" hidden>
-        {t('settings-shell.noSettings')}
-      </p>
-    </>
+      )}
+      <div id="settings-navigation-reserve" hidden>
+        {['plugin-management', 'archived-settings', 'computer-use-management', 'skills-tab', 'mcp-tab']
+          .filter((id) => !present.has(id))
+          .map((id) => (
+            <Button key={id} id={id} appearance="ghost" />
+          ))}
+      </div>
+    </nav>
   )
 }
 
@@ -179,11 +176,12 @@ function SettingsSectionTabs({
   const admin = useAdminPanes(adminPanes)
   const t = translate ?? ((key: string) => key)
   const selectedEntry = entries.find((entry) => entry.id === selected)
-  const groupKey = settingsGroup(selectedEntry?.group ?? '')
-  const groups = settingsNavigationGroups(entries).filter(
-    (group) => group.length > 1 && settingsGroup(group[0]?.group ?? '') !== 'extensions',
-  )
-  const activeGroup = groups.find((group) => settingsGroup(group[0]?.group ?? '') === groupKey)
+  const groupKey = selectedEntry ? settingsTabGroup(selectedEntry) : ''
+  const groups = new Map<string, SettingsNavigationEntry[]>()
+  for (const entry of [...entries].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)))
+    groups.set(settingsTabGroup(entry), [...(groups.get(settingsTabGroup(entry)) ?? []), entry])
+  const tabbed = [...groups.values()].filter((group) => group.length > 1)
+  const activeGroup = tabbed.find((group) => group[0] && settingsTabGroup(group[0]) === groupKey)
   // Keep native tab buttons at stable positions: resource controllers bind their IDs once.
   return (
     <>
@@ -199,8 +197,8 @@ function SettingsSectionTabs({
         hidden={!activeGroup}
         aria-labelledby="settings-group-title"
       >
-        {groups.flat().map((entry) => {
-          const visible = settingsGroup(entry.group) === groupKey
+        {tabbed.flat().map((entry) => {
+          const visible = settingsTabGroup(entry) === groupKey
           const id = entry.nativePane
             ? (entry.navigationId ?? `settings-section-tab-${entry.id}`)
             : `settings-section-tab-${entry.id}`
@@ -213,7 +211,11 @@ function SettingsSectionTabs({
               data-testid={`settings-nav-${entry.id}-tab`}
               role={visible ? 'tab' : undefined}
               hidden={!visible}
-              aria-controls={PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane]}
+              aria-controls={
+                settingsEntryPane(entry) === 'sections'
+                  ? SETTINGS_SECTIONS_HOST_ID
+                  : PANE_IDS[settingsEntryPane(entry) as SettingsPane]
+              }
               aria-selected={visible ? entry.id === selected : undefined}
               tabIndex={entry.id === selected ? 0 : -1}
               {...adminControlProps(admin, id)}
@@ -231,10 +233,12 @@ export function SettingsShell({
   store,
   adminPanes,
   translate,
+  sectionPages,
 }: {
   store?: SettingsNavigationStore | undefined
   adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
+  sectionPages?: ReactNode
 }) {
   const t = translate ?? ((key: string) => key)
   return (
@@ -277,6 +281,15 @@ export function SettingsShell({
             <div key={pane} id={settingsPaneSlotHostId(pane)} data-agnes-settings-pane-slot={pane} />
           ))}
         </div>
+        {/* Sections without a native pane: the shell owns this host and shows one page in it. */}
+        <section
+          id={SETTINGS_SECTIONS_HOST_ID}
+          className="settings-content"
+          data-agnes-region="settings-pane"
+          hidden
+        >
+          {sectionPages}
+        </section>
       </div>
     </form>
   )

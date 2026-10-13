@@ -171,7 +171,7 @@
   }
   /* Settings IA: scoped after the legacy responsive cascade by an explicit shell class. */
   #config-form.settings-shell {
-    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-columns: 208px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
   #config-form.settings-shell[data-settings-view] .settings-rail {

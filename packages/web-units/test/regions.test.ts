@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode } from '@agnes/protocol'
-import { setDisclosureOpen } from '@agnes/web-ui'
+import { ADVANCED_SETTINGS_STORAGE_KEY, advancedSettingsShown, setAdvancedSettingsShown } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -20,7 +20,7 @@ import type { SettingsNavigationEntry, SettingsRegionHandle } from '../src/setti
 
 const roots: Root[] = []
 const englishText: Record<string, string> = {
-  'settings-shell.appearanceTitle': 'General settings',
+  'settings-shell.appearanceTitle': 'General',
   'settings-shell.fontScale': 'Font size',
   'shell.install': 'Install from source',
   'button.refresh': 'Refresh Skill catalog',
@@ -38,6 +38,7 @@ afterEach(() => {
   while (roots.length) roots.pop()?.unmount()
   document.body.replaceChildren()
   document.documentElement.lang = 'en'
+  setAdvancedSettingsShown(false)
 })
 
 describe('independent core web-unit implementations', () => {
@@ -122,7 +123,7 @@ describe('independent core web-unit implementations', () => {
     expect(control('plugin-management').hasAttribute('aria-busy')).toBe(false)
   })
 
-  it('keeps one rail entry per registry group, routes tabs by keyboard and removes disposed sections', () => {
+  it('keeps one rail entry per everyday group, routes tabs by keyboard and removes disposed sections', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
@@ -141,14 +142,21 @@ describe('independent core web-unit implementations', () => {
       },
       {
         id: 'first',
-        group: 'agent',
+        group: 'security',
         titleKey: 'first',
-        groupTitleKey: 'agent',
-        icon: 'agent',
+        groupTitleKey: 'security',
+        icon: 'security',
         order: 10,
-        navigationId: 'plugin-management',
       },
-      { id: 'second', group: 'agent', titleKey: 'second', groupTitleKey: 'agent', icon: 'agent', order: 11 },
+      {
+        id: 'second',
+        group: 'security',
+        titleKey: 'second',
+        groupTitleKey: 'security',
+        icon: 'security',
+        order: 11,
+      },
+      // Pages that moved out of settings stay registered until their new home replaces them.
       {
         id: 'skills',
         group: 'tools',
@@ -177,6 +185,7 @@ describe('independent core web-unit implementations', () => {
           ref: region,
           options: {
             translate: (key) => key,
+            sectionPages: createElement('p', { id: 'section-pages' }),
             sections: {
               entries: () => [...entries],
               subscribe: (listener) => {
@@ -198,12 +207,18 @@ describe('independent core web-unit implementations', () => {
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
     const nav = () => host.querySelectorAll('.settings-nav-group button[data-settings-group]')
-    expect(nav()).toHaveLength(3)
-    expect(host.querySelector<HTMLElement>('#settings-advanced')?.dataset.open).toBe('false')
-    const initialAdvanced = host.querySelector<HTMLElement>('#settings-advanced')
-    if (!initialAdvanced) throw new Error('Missing Advanced settings')
-    setDisclosureOpen(initialAdvanced, true)
+    // Models, and one entry for the two security pages; the moved pages are not listed.
+    expect(nav()).toHaveLength(2)
+    expect(host.querySelector('#settings-search')).toBeNull()
+    expect(host.querySelector('[data-testid="settings-nav-skills"]')).toBeNull()
+    const sections = () => host.querySelector<HTMLElement>('#settings-sections-pane')
+    expect(sections()?.hidden).toBe(true)
+    expect(sections()?.querySelector('#section-pages')).toBeTruthy()
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
+    // A section without a native pane shows in the dialog's own host, not in the plugin pane.
+    expect(sections()?.hidden).toBe(false)
+    expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(true)
+    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
     host
       .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
@@ -217,6 +232,7 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#settings-pane-slots')?.parentElement).toBe(content)
     expect(host.querySelector('#settings-dsh-shell-slots')?.parentElement).toBe(content)
     expect(host.querySelector('#settings-section-tabs')?.parentElement).toBe(content)
+    expect(sections()?.parentElement).toBe(content)
     const outlets = [...host.querySelectorAll('[data-agnes-dsh-slot]')]
     for (const listener of changed) listener()
     expect(host.querySelector('#model-settings')).toBe(nativeControl)
@@ -229,21 +245,25 @@ describe('independent core web-unit implementations', () => {
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(document.activeElement?.getAttribute('role')).toBe('tab')
     const field = document.createElement('input')
-    host.querySelector('#plugin-settings-pane')?.append(field)
+    sections()?.append(field)
     field.focus()
     for (const listener of changed) listener()
     expect(document.activeElement).toBe(field)
+    // A moved page still opens when something asks for it by name; its siblings are its tabs.
+    host
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'skills', bubbles: true }))
+    expect(host.querySelector('#resource-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    expect(sections()?.hidden).toBe(true)
+    expect(host.querySelector('[data-testid="settings-nav-first"]')?.hasAttribute('aria-current')).toBe(false)
     const resourceTab = host.querySelector<HTMLButtonElement>('#mcp-tab')
     let resourceClicks = 0
     resourceTab?.addEventListener('click', () => resourceClicks++)
     resourceTab?.click()
-    expect(host.querySelector('#resource-settings-pane')?.hasAttribute('hidden')).toBe(false)
     expect(resourceTab?.getAttribute('aria-selected')).toBe('true')
     host.querySelector<HTMLButtonElement>('#model-settings')?.click()
     expect(resourceTab?.hidden).toBe(true)
-    host.querySelector<HTMLButtonElement>('#settings-group-tools')?.click()
-    resourceTab?.click()
-    expect(resourceClicks).toBe(2)
+    expect(resourceClicks).toBe(1)
     expect(host.querySelector('#mcp-tab')).toBe(resourceTab)
     expect(host.querySelector('#resource-list')?.getAttribute('aria-labelledby')).toBe('mcp-tab')
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
@@ -253,18 +273,13 @@ describe('independent core web-unit implementations', () => {
     expect(document.activeElement).toBe(tabControl)
     // A shell reopen can reset the native pane before restoring the same deep link.
     region.current?.open('model')
-    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
+    expect(sections()?.hidden).toBe(true)
     host
       .querySelector('#config-form')
       ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
-    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(false)
+    expect(sections()?.hidden).toBe(false)
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(true)
-    expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
-      'page',
-    )
-    // Reopening the pane, as its controller does after loading, keeps the group's rail entry current
-    // even though the page on screen is not the group's first.
-    region.current?.open('plugin')
+    // The group's rail entry stays current even though the page on screen is not the group's first.
     expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
       'page',
     )
@@ -275,23 +290,30 @@ describe('independent core web-unit implementations', () => {
     const link = document.createElement('a')
     link.href = '?settings=model#auxiliary-models'
     link.textContent = 'Models'
-    host.querySelector('#plugin-settings-pane')?.append(link)
+    sections()?.append(link)
     link.click()
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(false)
-    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
+    expect(sections()?.hidden).toBe(true)
     expect(new URL(location.href).searchParams.get('settings')).toBe('model')
     expect(new URL(location.href).hash).toBe('#auxiliary-models')
     host
       .querySelector('#config-form')
       ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
-    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(false)
+    expect(sections()?.hidden).toBe(false)
 
     entries = [
       ...entries,
-      { id: 'third', group: 'agent', titleKey: 'third', groupTitleKey: 'agent', icon: 'agent', order: 12 },
+      {
+        id: 'third',
+        group: 'security',
+        titleKey: 'third',
+        groupTitleKey: 'security',
+        icon: 'security',
+        order: 12,
+      },
     ]
     for (const listener of changed) listener()
-    expect(nav()).toHaveLength(3)
+    expect(nav()).toHaveLength(2)
     expect(host.querySelectorAll('#settings-section-tabs [role="tab"]')).toHaveLength(3)
     // A group of pages is named once above its tabs, and the tab list takes that name.
     const groupTitle = host.querySelector<HTMLElement>('#settings-group-title')
@@ -307,7 +329,7 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
   })
 
-  it('searches everyday and advanced settings, routes merged links and restores search focus', async () => {
+  it('lists advanced pages only while the switch is on, routes merged links and the terminal', async () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
@@ -328,19 +350,19 @@ describe('independent core web-unit implementations', () => {
       },
       {
         id: 'models',
-        group: 'agent',
-        titleKey: 'Agent behavior',
-        groupTitleKey: 'Agent behavior',
+        group: 'advanced',
+        titleKey: 'Run configuration',
+        groupTitleKey: 'Advanced',
         icon: 'agent',
         order: 80,
       },
       {
-        id: 'jobs',
-        group: 'automation',
-        titleKey: 'Background tasks',
-        groupTitleKey: 'Automation',
-        icon: 'automation',
-        order: 40,
+        id: 'diagnostics',
+        group: 'advanced',
+        titleKey: 'Runtime & diagnostics',
+        groupTitleKey: 'Advanced',
+        icon: 'diagnostics',
+        order: 81,
       },
       {
         id: 'custom',
@@ -353,55 +375,45 @@ describe('independent core web-unit implementations', () => {
     ]
     const options = {
       sections: { entries: () => entries, subscribe: () => () => undefined },
-      translate: (key: string) =>
-        key === 'settings-shell.keywords.accounts'
-          ? 'model account provider key connection'
-          : key === 'settings-shell.keywords.agent'
-            ? 'loop system prompt memory context engine bundle'
-            : key,
+      translate: (key: string) => key,
       onClose: () => closed++,
     }
     flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
-    for (const pane of ['model', 'plugin'] as const) {
+    for (const pane of ['model', 'plugin', 'appearance'] as const) {
       const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
       if (!slot) throw new Error('Missing settings pane slot')
       const paneRoot = createRoot(slot)
       roots.push(paneRoot)
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
-    const advanced = host.querySelector<HTMLElement>('#settings-advanced')
-    const search = host.querySelector<HTMLInputElement>('#settings-search')
     const form = host.querySelector<HTMLFormElement>('#config-form')
-    if (!advanced || !search || !form) throw new Error('Missing settings navigation controls')
+    if (!form) throw new Error('Missing settings navigation controls')
     form.dataset.settingsView = 'detail'
-    expect(advanced.dataset.open).toBe('false')
-    expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Example plugin')
-    host
-      .querySelector('#config-form')
-      ?.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
-    expect(document.activeElement).toBe(search)
-    expect(form.dataset.settingsView).toBe('detail')
-    search.value = 'agt bvr'
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(advanced.dataset.open).toBe('true')
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
-    search.value = 'memory'
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
-    search.value = 'no-such-setting'
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(false)
-    search.value = ''
-    search.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(advanced.dataset.open).toBe('false')
-    expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(true)
+    // Off by default: no advanced group, and a plugin's own section is listed by name.
+    expect(host.querySelector('#settings-advanced')).toBeNull()
+    expect(host.querySelector('[data-testid="settings-nav-models"]')).toBeNull()
+    expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Preferences')
+    // An old link to an advanced page still opens it; the switch stays the reader's choice.
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'memory', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
     expect(new URL(location.href).searchParams.get('settings')).toBe('models')
     expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
-    expect(advanced.dataset.open).toBe('true')
+    expect(host.querySelector<HTMLElement>('#settings-sections-pane')?.hidden).toBe(false)
+    expect(host.querySelector('#settings-advanced')).toBeNull()
+    const toggle = host.querySelector<HTMLElement>('[data-testid="settings-advanced-switch"]')
+    if (!toggle) throw new Error('Missing the advanced settings switch')
+    await act(async () => toggle.click())
+    expect(advancedSettingsShown()).toBe(true)
+    expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBe('1')
+    const advanced = host.querySelector<HTMLElement>('#settings-advanced')
+    expect(advanced?.querySelectorAll('button[data-settings-section]')).toHaveLength(2)
+    // The page already on screen is the current entry of the group that just appeared.
+    expect(host.querySelector('[data-testid="settings-nav-models"]')?.getAttribute('aria-current')).toBe(
+      'page',
+    )
+    expect(host.querySelector('[data-testid="settings-nav-diagnostics"]')?.hasAttribute('aria-current')).toBe(
+      false,
+    )
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
     history.replaceState(history.state, '', '?settings=memory')
@@ -411,12 +423,18 @@ describe('independent core web-unit implementations', () => {
     host.querySelector<HTMLButtonElement>('#settings-back')?.click()
     expect(form.dataset.settingsView).toBe('list')
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')
-    await act(async () => {
-      form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true }))
-    })
-    expect(closed).toBe(1)
-    expect(terminal).toBe(1)
-    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    await act(async () => toggle.click())
+    expect(host.querySelector('#settings-advanced')).toBeNull()
+    expect(localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY)).toBeNull()
+    // The background tasks page is gone: its links open the workbench terminal, like the terminal's.
+    for (const [index, id] of ['terminal', 'jobs'].entries()) {
+      await act(async () => {
+        form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true }))
+      })
+      expect(closed).toBe(index + 1)
+      expect(terminal).toBe(index + 1)
+      expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    }
     await vi.waitFor(() => expect(document.querySelector('.agh-toast')?.textContent).toBeTruthy())
     expect(document.body.contains(document.querySelector('.agh-toast'))).toBe(true)
     expect(document.querySelector('.agh-toast-host')?.parentElement).toBe(document.body)
@@ -432,7 +450,7 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('input[name="agnes-font-scale"][value="normal"]')).toBeInstanceOf(
       HTMLInputElement,
     )
-    expect(host.querySelector('#appearance-settings-pane h2')?.textContent).toBe('General settings')
+    expect(host.querySelector('#appearance-settings-pane h2')?.textContent).toBe('General')
     expect(host.querySelector('[aria-label="Font size"]')?.getAttribute('aria-label')).toBe('Font size')
     // 语言切换必须留在通用设置里：合并 origin/main 时它一度被整段冲掉，
     // 而当时的用例断言被改成只查配色和字号，回归没有被兜住。

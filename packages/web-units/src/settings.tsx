@@ -1,10 +1,4 @@
-import {
-  isDisclosureOpen,
-  SettingsAccountDialog,
-  SettingsModelPane,
-  setDisclosureOpen,
-  Toast,
-} from '@agnes/web-ui'
+import { SettingsAccountDialog, SettingsModelPane, Toast } from '@agnes/web-ui'
 import {
   forwardRef,
   type ReactNode,
@@ -22,11 +16,12 @@ import { createSettingsNavigationStore, SettingsDshHost, SettingsShell } from '.
 export { renderSettingsMarkup } from './settings-fixture.js'
 
 import {
-  advancedSettings,
-  matchesSettings,
+  listedSettingsGroup,
   revealSettingsAnchor,
   settingsGroup,
+  settingsMoved,
   settingsRoute,
+  settingsTabGroup,
 } from './settings-navigation.js'
 
 export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'computer-use' | 'appearance'
@@ -54,6 +49,8 @@ export interface SettingsRegionOptions {
   onClose?: () => void
   /** Locale-bound translate for the React shell and pane controls. */
   translate?: (key: string) => string
+  /** What the dialog's own page host shows: the pages of sections without a native pane. */
+  sectionPages?: ReactNode
 }
 
 export interface SettingsRegionHandle {
@@ -71,6 +68,20 @@ export const PANE_IDS: Record<SettingsPane, string> = {
   archived: 'archived-settings-pane',
   'computer-use': 'computer-use-settings-pane',
   appearance: 'appearance-settings-pane',
+}
+
+/** The dialog's own page host: sections that have no native pane render here. */
+export const SETTINGS_SECTIONS_HOST_ID = 'settings-sections-pane'
+
+/**
+ * Where a section shows. Sections without a native pane render in the dialog's own section host;
+ * one that moved out of settings still renders through the plugin pane that used to list it.
+ */
+export function settingsEntryPane(
+  entry: Pick<SettingsNavigationEntry, 'id' | 'nativePane'>,
+): SettingsPane | 'sections' {
+  if (entry.nativePane) return entry.nativePane as SettingsPane
+  return settingsMoved(entry.id) ? 'plugin' : 'sections'
 }
 
 export const SETTINGS_DSH_SLOT_NAMES = Object.freeze([
@@ -113,21 +124,25 @@ function SettingsBuiltinImpl(
   const [terminalNotice, setTerminalNotice] = useState<'moved' | 'needs-session' | false>(false)
   const form = useCallback(() => host.current?.querySelector<HTMLFormElement>('#config-form') ?? null, [])
   const open = useCallback(
-    (pane: SettingsPane): void => {
-      activePane.current = pane
+    (pane: SettingsPane, sections = false): void => {
+      if (!sections) activePane.current = pane
       const shell = form()
-      if (shell && !shell.dataset.settingsNavigating) {
+      if (shell && !shell.dataset.settingsNavigating && !sections) {
         const selected = shell.dataset.settingsSection
         const entry = options.sections?.entries().find((entry) => entry.id === selected)
-        if ((entry?.nativePane ?? 'plugin') !== pane || !selected) {
-          const first = options.sections?.entries().find((entry) => (entry.nativePane ?? 'plugin') === pane)
+        if (!entry || settingsEntryPane(entry) !== pane) {
+          const first = options.sections?.entries().find((entry) => settingsEntryPane(entry) === pane)
           if (first) navigateRef.current?.(first.id, false)
         }
       }
       const root = host.current
       if (!root) return
       for (const id of Object.values(PANE_IDS))
-        root.querySelector<HTMLElement>(`#${id}`)?.toggleAttribute('hidden', id !== PANE_IDS[pane])
+        root
+          .querySelector<HTMLElement>(`#${id}`)
+          ?.toggleAttribute('hidden', sections || id !== PANE_IDS[pane])
+      root.querySelector<HTMLElement>(`#${SETTINGS_SECTIONS_HOST_ID}`)?.toggleAttribute('hidden', !sections)
+      if (sections) return
       for (const [name, ids] of Object.entries(NAV_IDS) as [SettingsPane, string[]][])
         for (const id of ids) {
           const item = root.querySelector<HTMLElement>(`#${id}`)
@@ -160,7 +175,7 @@ function SettingsBuiltinImpl(
   useImperativeHandle(
     ref,
     () => ({
-      open,
+      open: (pane) => open(pane),
       active: () => activePane.current,
       pane: (pane) => host.current?.querySelector(`#${PANE_IDS[pane]}`) ?? null,
       form,
@@ -217,44 +232,6 @@ function SettingsBuiltinImpl(
         return computerUseSupported ? entries : entries.filter((entry) => entry.id !== 'computer-use')
       }
       const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
-      const search = root.querySelector<HTMLInputElement>('#settings-search')
-      let advanced = root.querySelector<HTMLElement>('#settings-advanced')
-      let searchWasAdvanced = false
-      const filter = () => {
-        const query = search?.value.trim() ?? ''
-        if (query && !root.dataset.settingsSearching) searchWasAdvanced = isDisclosureOpen(advanced)
-        const wasSearching = !!root.dataset.settingsSearching
-        root.dataset.settingsSearching = query ? 'true' : ''
-        let count = 0
-        const entries = navigationEntries()
-        for (const button of root.querySelectorAll<HTMLButtonElement>(
-          '.settings-nav-group button[data-settings-group]',
-        )) {
-          const group = entries.filter((entry) => settingsGroup(entry.group) === button.dataset.settingsGroup)
-          const choices =
-            button.dataset.settingsGroup === 'extensions'
-              ? group.filter((entry) => entry.id === button.dataset.settingsSection)
-              : group
-          const match = choices.find((entry) =>
-            matchesSettings(
-              query,
-              [entry.titleKey, entry.groupTitleKey, `settings-shell.keywords.${settingsGroup(entry.group)}`]
-                .map((key) => options.translate?.(key) ?? key)
-                .join(' '),
-            ),
-          )
-          button.hidden = !match
-          if (match) count++
-        }
-        if (advanced) {
-          if (query) setDisclosureOpen(advanced, true)
-          else if (wasSearching) setDisclosureOpen(advanced, searchWasAdvanced)
-          advanced.hidden = ![...advanced.querySelectorAll<HTMLButtonElement>('button')].some(
-            (button) => !button.hidden,
-          )
-        }
-        root.querySelector('#settings-search-empty')?.toggleAttribute('hidden', count > 0)
-      }
       const navigate = (requested: string, notify = true) => {
         const route = settingsRoute(requested)
         let id = route.id
@@ -263,9 +240,8 @@ function SettingsBuiltinImpl(
         const selected =
           entries.find((entry) => entry.id === id) ??
           (id === 'computer-use' ? entries.find((entry) => entry.id === 'mcp') : undefined)
-        if (!selected) return
-        id = selected.id
-        if (route.terminal) {
+        if (!selected && !route.terminal) return
+        if (route.terminal || !selected) {
           options.onClose?.()
           // Preventing the default acknowledges that the workbench opened the terminal.
           const opened = !root.dispatchEvent(
@@ -277,7 +253,9 @@ function SettingsBuiltinImpl(
           history.replaceState(history.state, '', url)
           return
         }
-        const pane = (selected.nativePane ?? 'plugin') as SettingsPane
+        const target = settingsEntryPane(selected)
+        const pane = target === 'sections' ? activePane.current : target
+        id = selected.id
         root.dataset.settingsSection = id
         const shell = form()
         if (shell) {
@@ -289,11 +267,13 @@ function SettingsBuiltinImpl(
           root.dataset.runtimePage = id
           if (shell) shell.dataset.runtimePage = id
         }
-        open(pane)
+        open(pane, target === 'sections')
         if (shell) delete shell.dataset.settingsNavigating
-        const group = entries.filter((entry) => settingsGroup(entry.group) === settingsGroup(selected.group))
-        const panel = root.querySelector(`#${PANE_IDS[pane]}`)
-        const pageTabs = group.length > 1 && settingsGroup(selected.group) !== 'extensions'
+        const group = entries.filter((entry) => settingsTabGroup(entry) === settingsTabGroup(selected))
+        const panel = root.querySelector(
+          `#${target === 'sections' ? SETTINGS_SECTIONS_HOST_ID : PANE_IDS[pane]}`,
+        )
+        const pageTabs = group.length > 1
         panel?.toggleAttribute('role', false)
         if (pageTabs) {
           panel?.setAttribute('role', 'tabpanel')
@@ -308,13 +288,13 @@ function SettingsBuiltinImpl(
           '.settings-nav-group button[data-settings-group]',
         )) {
           const active =
+            !settingsMoved(id) &&
             button.dataset.settingsGroup === settingsGroup(selected.group) &&
-            (button.dataset.settingsGroup !== 'extensions' || button.dataset.settingsSection === id)
+            (!listedSettingsGroup(selected.group) || button.dataset.settingsSection === id)
           button.classList.toggle('active', active)
           if (active) button.setAttribute('aria-current', 'page')
           else button.removeAttribute('aria-current')
         }
-        if (notify && advancedSettings(selected.group) && advanced) setDisclosureOpen(advanced, true)
         if (tabs) {
           const current = navigation.snapshot()
           // The initial layout effect already has this snapshot; later controller events commit
@@ -331,7 +311,8 @@ function SettingsBuiltinImpl(
             .querySelector('#resource-list')
             ?.setAttribute('aria-labelledby', selected.navigationId ?? `${id}-tab`)
         if (notify) {
-          options.onChange?.({ pane, ...(pane === 'resources' ? { tab: id as SettingsResourceTab } : {}) })
+          if (target !== 'sections')
+            options.onChange?.({ pane, ...(pane === 'resources' ? { tab: id as SettingsResourceTab } : {}) })
           if (!selected.nativePane)
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
           const url = new URL(location.href)
@@ -346,9 +327,6 @@ function SettingsBuiltinImpl(
           tabs?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus({ preventScroll: true })
       }
       navigateRef.current = navigate
-      const onSearch = () => filter()
-      search?.addEventListener('input', onSearch)
-      listeners.push(() => search?.removeEventListener('input', onSearch))
       const back = root.querySelector<HTMLButtonElement>('#settings-back')
       const onBack = () => {
         const shell = form()
@@ -367,20 +345,7 @@ function SettingsBuiltinImpl(
           'button[data-settings-section], a[href]',
         )
         if (target?.dataset.settingsSection) {
-          const entry = options.sections
-            ?.entries()
-            .find((entry) => entry.id === target.dataset.settingsSection)
-          navigate(
-            entry && search?.value && target.dataset.settingsGroup
-              ? (options.sections
-                  ?.entries()
-                  .find(
-                    (item) =>
-                      settingsGroup(item.group) === settingsGroup(entry.group) &&
-                      matchesSettings(search.value, options.translate?.(item.titleKey) ?? item.titleKey),
-                  )?.id ?? entry.id)
-              : target.dataset.settingsSection,
-          )
+          navigate(target.dataset.settingsSection)
           return
         }
         if (!(target instanceof HTMLAnchorElement) || !(event instanceof MouseEvent)) return
@@ -439,19 +404,6 @@ function SettingsBuiltinImpl(
         const modal = root.closest<HTMLDialogElement>('dialog')
         if (!root.contains(target) && !modal?.open) return
         if (target.closest?.('dialog') && target.closest('dialog') !== modal) return
-        if (
-          event.key === '/' &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !target.closest('input, textarea, select, [contenteditable=true]')
-        ) {
-          event.preventDefault()
-          const shell = form()
-          if (shell && window.matchMedia('(max-width: 767px)').matches) shell.dataset.settingsView = 'list'
-          search?.focus()
-          return
-        }
         if (target.getAttribute('role') !== 'tab' || !tabs?.contains(target)) return
         const choices = [...tabs.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
         const index = choices.indexOf(target as HTMLButtonElement)
@@ -488,18 +440,11 @@ function SettingsBuiltinImpl(
         const focusedSection = focused?.dataset.settingsSection
         const tabFocused = focused && tabs?.contains(focused)
         const entries = navigationEntries()
-        const query = search?.value ?? ''
-        const wasAdvanced = isDisclosureOpen(advanced)
-        // React reconciles the navigation while retaining search, native controls and outlets.
+        // React reconciles the navigation while retaining native controls and outlets.
         flushSync(() => navigation.update({ entries, selected: root.dataset.settingsSection ?? 'model' }))
-        const nextAdvanced = rail.querySelector<HTMLElement>('#settings-advanced')
-        if (nextAdvanced) setDisclosureOpen(nextAdvanced, wasAdvanced)
-        advanced = nextAdvanced
-        if (search) search.value = query
         const selected = root.dataset.settingsSection ?? 'model'
         const present = entries.some((entry) => entry.id === selected)
-        navigate(present ? selected : (entries[0]?.id ?? 'model'), !present)
-        filter()
+        navigate(present ? selected : 'model', !present)
         if (focused) {
           const target = tabFocused
             ? tabs?.querySelector<HTMLButtonElement>('[aria-selected="true"]')
@@ -511,7 +456,6 @@ function SettingsBuiltinImpl(
       }
       listeners.push(options.sections.subscribe(syncEntries))
       navigate('model', false)
-      filter()
       let alive = true
       if (options.computerUseSupported)
         void options
@@ -565,6 +509,7 @@ function SettingsBuiltinImpl(
           store={options.sections ? navigation : undefined}
           adminPanes={options.adminPanes}
           translate={options.translate}
+          sectionPages={options.sectionPages}
         />
       </div>
       <SettingsAccountDialog {...(options.translate ? { t: options.translate } : {})} />

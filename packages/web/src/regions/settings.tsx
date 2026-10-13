@@ -1,5 +1,6 @@
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
 import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
+import { SettingsPages } from '@agnes/web-admin/settings/pages'
 import {
   dshSlotSpec,
   type LocaleService,
@@ -73,7 +74,14 @@ export function mountSettingsPaneRegion(
   }
   const handle = { current: null as SettingsRegionHandle | null }
   const root = createRegionRenderer(container)
-  const shellOptions = locale ? { ...options, translate: (key: string) => locale.t(key) } : options
+  // The dialog's own pages (permissions, run configuration, diagnostics, plugin sections) render
+  // in the shell's section host, independent of the plugin pane.
+  const sectionPages = <SettingsPages {...(locale ? { hostText: (key, vars) => locale.t(key, vars) } : {})} />
+  const shellOptions = {
+    ...options,
+    sectionPages,
+    ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
+  }
   const paneText = (pane: SettingsPane, key: string): string => {
     if (!locale) return key
     const catalog =

@@ -22,6 +22,7 @@ import {
   matchesSettings,
   revealSettingsAnchor,
   settingsGroup,
+  settingsMoved,
   settingsNavigationGroups,
   settingsRoute,
 } from '@agnes/web-units'
@@ -37,13 +38,22 @@ export const SETTINGS_PAGES = settingsSections
 export type SettingsPage = string
 const groupIcons: Readonly<Record<string, IconName>> = {
   plugins: 'plug',
-  agent: 'bot',
+  advanced: 'sliders-horizontal',
   tools: 'sliders-horizontal',
   automation: 'clock',
   security: 'shield-check',
   history: 'history',
   diagnostics: 'activity',
   skills: 'sparkles',
+}
+/**
+ * Inside the settings dialog this hub only shows the pages that moved out of it (plugins and their
+ * siblings, until the plugins page hosts them); the dialog's own pages have their own host.
+ */
+function hubSection(id: string) {
+  const entry = settingsSections.get(id)
+  if (!entry || entry.nativePane) return undefined
+  return document.getElementById('config-form') && !settingsMoved(entry.id) ? undefined : entry
 }
 function initialPage(): SettingsPage {
   const value = new URLSearchParams(location.search).get('settings')
@@ -58,7 +68,7 @@ function initialPage(): SettingsPage {
       history.replaceState(history.state, '', url)
     }
   }
-  return settingsSections.get(route.id)?.id ?? 'plugins'
+  return hubSection(route.id)?.id ?? 'plugins'
 }
 export function SettingsHub({
   api,
@@ -104,7 +114,7 @@ export function SettingsHub({
     const listener = (event: Event) => {
       const value = (event as CustomEvent<SettingsPage>).detail
       const route = settingsRoute(value)
-      if (settingsSections.get(route.id)) setPage(route.id)
+      if (hubSection(route.id)) setPage(route.id)
     }
     document.addEventListener('agnes:settings-page', listener)
     return () => document.removeEventListener('agnes:settings-page', listener)

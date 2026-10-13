@@ -15,8 +15,22 @@
     margin-inline: 0;
   }
 
+  /* The dialog's own section host shows one page; that page is the pane's header and body. */
+  #settings-sections-pane[hidden] {
+    display: none;
+  }
+  #settings-sections-pane > div,
+  #settings-sections-pane > div > .agnes-settings-page {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
   /* Header: the page names itself once. Actions sit on the title's line, inside the column. */
   .settings-shell .settings-content > .agnes-settings-page-heading,
+  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-page-heading,
   .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
     flex: 0 0 auto;
     display: flex;
@@ -136,6 +150,7 @@
 
   /* Body: the one vertical scroller of a page. */
   .settings-shell .config-workspace,
+  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack,
   .settings-shell .archived-pane-body,
   .settings-shell #plugin-list,
   .settings-shell #resource-list {
@@ -161,6 +176,7 @@
     flex-shrink: 0;
   }
   .settings-shell .config-workspace > *,
+  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack > *,
   .settings-shell .archived-pane-body > *,
   .settings-shell #plugin-list > *,
   .settings-shell #resource-list > * {
@@ -176,7 +192,8 @@
   .runtime-settings .agnes-settings-stack {
     gap: var(--s24);
   }
-  .settings-shell .config-workspace {
+  .settings-shell .config-workspace,
+  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
@@ -204,6 +221,14 @@
     width: 100%;
     max-width: var(--settings-column);
     margin-inline: 0;
+  }
+  /* The page shown by the section host spans the pane, like a native pane does. */
+  .settings-shell #settings-sections-pane > div > .agnes-settings-page[data-layout] {
+    max-width: none;
+  }
+  /* The advanced pages are listed under their own small label, a step below the everyday three. */
+  .settings-shell #settings-advanced {
+    margin-top: var(--s8);
   }
   /* ── Dialog chrome ────────────────────────────────────────────────────────
    Navigation rail: soft filled search, small muted group labels, rounded rows; the current page
@@ -339,6 +364,7 @@
   @container settings-content (max-width: 54rem) {
     .agnes-settings-group-title,
     #settings-group-title[hidden] ~ #settings-pane-slots .settings-content > .agnes-settings-page-heading,
+    #settings-group-title[hidden] ~ #settings-sections-pane .agnes-settings-page-heading,
     #settings-group-title[hidden] ~ #settings-pane-slots #plugin-list .agnes-settings-page-heading {
       padding-inline-end: calc(var(--settings-gutter) + var(--s24));
     }

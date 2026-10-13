@@ -39,6 +39,7 @@
     "./settings/jobs-panel": "./src/settings/jobs-panel.tsx",
     "./settings/locales": "./src/settings/locales.ts",
     "./settings/memory": "./src/settings/memory.tsx",
+    "./settings/pages": "./src/settings/pages.tsx",
     "./settings/registry": "./src/settings/registry.tsx",
     "./settings/runtime-panels": "./src/settings/runtime-panels.tsx",
     "./settings/schedules": "./src/settings/schedules.tsx",

@@ -40,7 +40,6 @@ export function SettingsModelPane({
         className="config-accounts-section"
         aria-label={t('settings-shell.accountsAria')}
         title={t('settings-shell.accountsTitle')}
-        description={t('settings-shell.accountsIntro')}
       >
         <div
           id="config-accounts"

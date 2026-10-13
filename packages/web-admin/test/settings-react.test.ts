@@ -8,14 +8,14 @@ import { settingsSections } from '@agnes/web-client'
 import '../src/settings/registry.js'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { zhT } from '@agnes/web-foundation/testkit/locale'
-import { setDisclosureOpen, unmountRegion } from '@agnes/web-ui'
+import { setAdvancedSettingsShown, unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
-import { SettingsHub } from '../src/settings/hub.js'
+import { type SettingsAdmin, SettingsPages } from '../src/settings/pages.js'
 import { createSettingsController } from '../src/settings.js'
 
 const diagnosticsFetch = vi.hoisted(() => {
@@ -38,6 +38,13 @@ function styleRule(css: string, selector: string): string {
 
 afterEach(() => {
   document.body.replaceChildren()
+  setAdvancedSettingsShown(false)
+})
+
+/** The admin connection a settings page reads; only the calls a test names are answered. */
+const adminOf = (api: Partial<PluginAdminApi>) => async (): Promise<SettingsAdmin> => ({
+  api: { generations: async () => undefined, ...api } as unknown as PluginAdminApi,
+  context: { permissions: [], readOnly: false } as unknown as SettingsAdmin['context'],
 })
 
 it('keeps the account dialog close control anchored and the action footer visible in short viewports', () => {
@@ -101,11 +108,18 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
   expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
   expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
-  expect(dialog.querySelectorAll('[data-testid="settings-nav-mcp"]')).toHaveLength(1)
-  expect(dialog.querySelectorAll('[data-testid="settings-nav-skills"]')).toHaveLength(1)
+  // The dialog lists three pages; everything else moved out and is no longer listed.
   const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
-  expect(everyday).toHaveLength(8)
-  expect(dialog.querySelector<HTMLElement>('#settings-advanced')?.dataset.open).toBe('false')
+  expect([...everyday].map((item) => item.getAttribute('data-settings-section'))).toEqual([
+    'general',
+    'model',
+    'security',
+  ])
+  expect(dialog.querySelector('#settings-advanced')).toBeNull()
+  expect(dialog.querySelector('#settings-search')).toBeNull()
+  for (const id of ['plugins', 'skills', 'mcp', 'schedules', 'history', 'archived', 'jobs'])
+    expect(dialog.querySelector(`[data-testid="settings-nav-${id}"]`)).toBeNull()
+  // A moved page that is still registered opens by name, with its siblings as tabs.
   for (const id of ['mcp', 'search', 'mcp', 'skills', 'feedback', 'mcp']) {
     flushSync(() =>
       dialog
@@ -114,14 +128,15 @@ it('operates the React settings pane and account dialog without losing native fo
     )
     expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
     expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
-    expect(dialog.querySelectorAll('[data-testid="settings-nav-mcp"]')).toHaveLength(1)
-    expect(dialog.querySelectorAll('[data-testid="settings-nav-skills"]')).toHaveLength(1)
     expect(dialog.querySelectorAll('#computer-use-management')).toHaveLength(1)
     expect(dialog.querySelectorAll('#archived-settings')).toHaveLength(1)
-    // Skills is one page: its feedback is a tab inside it, so the group shows no page tabs.
-    expect(dialog.querySelectorAll('#settings-section-tabs [aria-selected="true"]')).toHaveLength(
-      id === 'skills' || id === 'feedback' ? 0 : 1,
-    )
+    expect(dialog.querySelectorAll('#plugin-management')).toHaveLength(1)
+    expect(
+      dialog
+        .querySelector('#settings-section-tabs [aria-selected="true"]')
+        ?.getAttribute('data-settings-section'),
+    ).toBe(id === 'feedback' ? 'skills' : id)
+    expect(dialog.querySelector('#settings-everyday [aria-current="page"]')).toBeNull()
   }
   await vi.waitFor(() =>
     expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull(),
@@ -137,7 +152,12 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull()
   const onPage = vi.fn()
   dialog.addEventListener('agnes:settings-page', onPage)
-  setDisclosureOpen(dialog.querySelector<HTMLElement>('#settings-advanced')!, true)
+  await act(async () => setAdvancedSettingsShown(true))
+  expect(
+    [...dialog.querySelectorAll('#settings-advanced button[data-settings-section]')].map((item) =>
+      item.getAttribute('data-settings-section'),
+    ),
+  ).toEqual(['models', 'diagnostics'])
   flushSync(() => dialog.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.click())
   expect(onPage.mock.calls[0]?.[0].detail).toBe('models')
   const paneSlot = dialog.querySelector<HTMLElement>('#settings-pane-slot-model')
@@ -263,25 +283,13 @@ for (const outcome of ['success', 'failure'] as const) {
       resolveRuntime = resolve
       rejectRuntime = reject
     })
-    const api = { runtime: () => pending } as PluginAdminApi
     try {
       flushSync(() =>
-        root.render(
-          createElement(SettingsHub, {
-            api,
-            canSave: false,
-            pluginText: zhT,
-            installed: [],
-            generations: undefined,
-            onPage: () => undefined,
-            onRefresh: async () => undefined,
-            onReview: () => undefined,
-          }),
-        ),
+        root.render(createElement(SettingsPages, { admin: adminOf({ runtime: () => pending }) })),
       )
       const refresh = host.querySelector<HTMLButtonElement>('[data-testid="settings-refresh"]')
-      await vi.waitFor(() => expect(refresh?.disabled).toBe(true))
-      expect(refresh?.getAttribute('aria-busy')).toBe('true')
+      await vi.waitFor(() => expect(refresh?.getAttribute('aria-busy')).toBe('true'))
+      expect(refresh?.disabled).toBe(true)
       if (outcome === 'success') {
         resolveRuntime({
           providers: [],
@@ -316,34 +324,36 @@ it.each(['success', 'failure'] as const)(
       finish = resolve
       fail = reject
     })
+    const cleanup: Array<() => void> = []
     try {
+      const remove = settingsSections.register({
+        id: 'independent',
+        group: 'vendor',
+        order: 200,
+        icon: 'plug',
+        titleKey: 'independent',
+        groupTitleKey: 'vendor',
+        runtimeCatalog: false,
+        component: () => createElement('p', { 'data-testid': 'independent-content' }, 'Plugin section'),
+      })
+      cleanup.push(remove)
       flushSync(() =>
-        root.render(
-          createElement(
-            SettingsHub,
-            {
-              api: { runtime: () => pending } as PluginAdminApi,
-              canSave: false,
-              pluginText: zhT,
-              installed: [],
-              generations: undefined,
-              onPage() {},
-              async onRefresh() {},
-              onReview() {},
-            },
-            createElement('p', { 'data-testid': 'independent-content' }, 'Plugin discovery'),
-          ),
-        ),
+        root.render(createElement(SettingsPages, { admin: adminOf({ runtime: () => pending }) })),
       )
       await vi.waitFor(() =>
         expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe(
           'true',
         ),
       )
-      flushSync(() => document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })))
-      expect(host.querySelector('[data-testid="settings-page-discover"]')).not.toBeNull()
+      flushSync(() =>
+        document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'independent' })),
+      )
+      expect(host.querySelector('[data-testid="settings-page-independent"]')).not.toBeNull()
       expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
       expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
+      // A page that moved out of the dialog is not this host's to show.
+      flushSync(() => document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })))
+      expect(host.querySelector('[data-testid="settings-page-independent"]')).not.toBeNull()
       await act(async () => {
         if (outcome === 'success')
           finish({
@@ -354,11 +364,12 @@ it.each(['success', 'failure'] as const)(
         else fail(new Error('Synthetic runtime unavailable'))
         await pending.catch(() => undefined)
       })
-      expect(host.querySelector('[data-testid="independent-content"]')?.textContent).toBe('Plugin discovery')
+      expect(host.querySelector('[data-testid="independent-content"]')?.textContent).toBe('Plugin section')
       expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
       expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
     } finally {
       flushSync(() => root.unmount())
+      for (const dispose of cleanup) dispose()
       host.remove()
     }
   },
@@ -407,20 +418,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     ),
   )
   try {
-    flushSync(() =>
-      root.render(
-        createElement(SettingsHub, {
-          api: { runtime } as unknown as PluginAdminApi,
-          canSave: false,
-          pluginText: (key: string) => key,
-          installed: [],
-          generations: undefined,
-          onPage() {},
-          async onRefresh() {},
-          onReview() {},
-        }),
-      ),
-    )
+    flushSync(() => root.render(createElement(SettingsPages, { admin: adminOf({ runtime }) })))
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
     expect(occupancy.closest('[data-testid="runtime-occupancy"]')).not.toBeNull()

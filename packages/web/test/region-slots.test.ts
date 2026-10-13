@@ -374,10 +374,11 @@ describe('migrated settings panes', () => {
     mounts.push(mount)
 
     await vi.waitFor(
-      () => expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用设置'),
+      () =>
+        expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('界面外观和语言'),
       committed,
     )
-    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型账户')
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型与账户')
     const hosts = [
       ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
     ]
@@ -393,7 +394,7 @@ describe('migrated settings panes', () => {
     await vi.waitFor(
       () =>
         expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain(
-          'Adjust interface language',
+          'Appearance and language',
         ),
       committed,
     )
@@ -401,8 +402,8 @@ describe('migrated settings panes', () => {
     expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('Font size')
     expect(config.querySelector('#computer-use-settings-pane')?.textContent).toContain('Computer Use')
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
-    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Model accounts')
-    expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型账户')
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Models & accounts')
+    expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型与账户')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
     expect(config.querySelector('#archived-refresh')).toBe(refresh)
     refresh?.click()
@@ -412,7 +413,7 @@ describe('migrated settings panes', () => {
     expect(dark?.checked).toBe(true)
     expect(document.activeElement).toBe(dark)
     locale.setLocale('zh-CN')
-    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用设置')
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('界面外观和语言')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
   })
 

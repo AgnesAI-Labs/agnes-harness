@@ -93,8 +93,8 @@ import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 import { mountSessionSearch } from './session-search.js'
-
 import { createTitleRefresh } from './session-title.js'
+import { rewriteMovedSettingsLink } from './settings-redirects.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 
@@ -104,6 +104,8 @@ installBrowserLogCapture()
 const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
 
 const unbindDialogSheets = bindDialogSheets(document)
+// An old link to a page that left settings opens that page's new home.
+rewriteMovedSettingsLink()
 
 /** Live bindings keep selection guards and asynchronous cleanup on the app's shared state. */
 export interface AppSessionContext {

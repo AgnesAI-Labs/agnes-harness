@@ -6,7 +6,14 @@ import type {
 } from '@agnes/protocol'
 import { CredentialsPage } from '@agnes/resource-control-web/credentials'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
-import { Banner, Button, type IconName, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import {
+  Banner,
+  Button,
+  type IconName,
+  SettingsDetails,
+  SettingsPageDescription,
+  SettingsState,
+} from '@agnes/web-ui'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
@@ -16,7 +23,6 @@ import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
-import { JobsPanel } from './jobs-panel.js'
 import { MemoryPanel } from './memory.js'
 import { PermissionDefaults } from './permission-defaults.js'
 import {
@@ -25,10 +31,10 @@ import {
   PresetsPanel,
   ProvidersPanel,
   PublicationPanel,
-  SecurityPanel,
 } from './runtime-panels.js'
 import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
+import { SecurityStatusPanel } from './security-status.js'
 import { SystemPromptPanel } from './system-prompt.js'
 import { systemPromptApi } from './system-prompt-api.js'
 import { TriggersPanel } from './triggers.js'
@@ -51,12 +57,14 @@ const promptSummaryApi = systemPromptApi()
 // Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
-  ['model', 'accounts', 'model', 'model-settings', 'modelNav', 0],
-  ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 20],
-  ['mcp', 'tools', 'resources', 'mcp-tab', 'toolsNav', 30],
-  ['computer-use', 'tools', 'computer-use', 'computer-use-management', 'toolsNav', 32],
-  ['archived', 'history', 'archived', 'archived-settings', 'historyNav', 61],
-  ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 70],
+  // The dialog lists three pages: General, Models & accounts, Permissions & security.
+  ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 0],
+  ['model', 'accounts', 'model', 'model-settings', 'modelNav', 10],
+  // Moved to the plugins page and the sidebar (see SETTINGS_MOVED); registered until those replace them.
+  ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 120],
+  ['mcp', 'tools', 'resources', 'mcp-tab', 'toolsNav', 130],
+  ['computer-use', 'tools', 'computer-use', 'computer-use-management', 'toolsNav', 132],
+  ['archived', 'history', 'archived', 'archived-settings', 'historyNav', 161],
 ] as const) {
   if (!settingsSections.get(id))
     settingsSections.register({
@@ -71,7 +79,9 @@ for (const [id, group, pane, navigationId, key, order] of [
             ? 'settings-shell.computerUseNav'
             : id === 'archived'
               ? 'settings-shell.archivedNav'
-              : `settings-shell.${key}`,
+              : id === 'skills'
+                ? 'settings-shell.skillsNav'
+                : `settings-shell.${key}`,
       groupTitleKey: `settings-shell.${key}`,
       icon: group === 'skills' ? 'sparkles' : group,
       order,
@@ -245,11 +255,35 @@ const definitions: readonly [
   number,
   (c: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
 ][] = [
-  ['plugins', 'plugins', 10, (c) => c.children],
+  [
+    'security',
+    'security',
+    20,
+    (c, t) => (
+      <>
+        <SettingsPageDescription>{t('securityIntro')}</SettingsPageDescription>
+        {c.snapshot && (
+          <>
+            {/* What a new session may do comes first; review and isolation qualify it. */}
+            <PermissionDefaults available={c.snapshot.presets.map((preset) => preset.id)} />
+            <AutoReviewPanel canSave={c.canSave} />
+            <SecurityStatusPanel status={c.snapshot.security} t={t} />
+          </>
+        )}
+        {/* Keys are part of what the agent may use; they need no runtime catalog to list. */}
+        <div id="settings-subsection-credentials" tabIndex={-1}>
+          <CredentialsPage section />
+        </div>
+      </>
+    ),
+  ],
+  // Moved to full pages (see SETTINGS_MOVED). They stay registered, unlisted, until those pages
+  // host the same panels; a page that still links here by name keeps working meanwhile.
+  ['plugins', 'plugins', 110, (c) => c.children],
   [
     'plugins',
     'discover',
-    11,
+    111,
     (c, t) => (
       <>
         <div id="settings-subsection-examples" tabIndex={-1}>
@@ -266,28 +300,12 @@ const definitions: readonly [
       </>
     ),
   ],
-  ['tools', 'credentials', 33, () => <CredentialsPage />],
-  ['tools', 'search', 31, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
-  ['automation', 'schedules', 40, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
-  ['automation', 'triggers', 41, (c) => <TriggersPanel canSave={c.canSave} />],
-  ['automation', 'jobs', 42, () => <JobsPanel />],
+  ['tools', 'search', 131, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
+  ['automation', 'schedules', 140, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
+  ['automation', 'triggers', 141, (c) => <TriggersPanel canSave={c.canSave} />],
+  ['history', 'history', 160, (_, t) => <HistorySearchPanel t={t} />],
   [
-    'security',
-    'security',
-    50,
-    (c, t) =>
-      c.snapshot && (
-        <>
-          {/* What a new session may do comes first; review and isolation qualify it. */}
-          <PermissionDefaults available={c.snapshot.presets.map((preset) => preset.id)} />
-          <AutoReviewPanel canSave={c.canSave} />
-          <SecurityPanel snapshot={c.snapshot} t={t} />
-        </>
-      ),
-  ],
-  ['history', 'history', 60, (_, t) => <HistorySearchPanel t={t} />],
-  [
-    'agent',
+    'advanced',
     'models',
     80,
     (c, t) => {
@@ -304,6 +322,7 @@ const definitions: readonly [
         preset && t(`choice.${preset}`) !== `choice.${preset}` ? t(`choice.${preset}`) : preset
       return (
         <>
+          <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
           <Subsection
             defer
             id="models"
@@ -367,7 +386,7 @@ const definitions: readonly [
     },
   ],
   [
-    'diagnostics',
+    'advanced',
     'diagnostics',
     81,
     (c, t) => (
@@ -383,9 +402,9 @@ for (const [group, id, order, render] of definitions) {
     group,
     id,
     order,
-    icon: group,
+    icon: id === 'models' ? 'agent' : id === 'diagnostics' ? 'diagnostics' : group,
     titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
-    groupTitleKey: `settings-shell.group.${group}`,
+    groupTitleKey: group === 'advanced' ? 'settings-shell.advanced' : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
     runtimeCatalog: ['models', 'security'].includes(id),

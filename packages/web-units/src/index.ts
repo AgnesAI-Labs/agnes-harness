@@ -92,18 +92,26 @@ export {
   PANE_IDS,
   renderSettingsMarkup,
   SETTINGS_DSH_SLOT_NAMES,
+  SETTINGS_SECTIONS_HOST_ID,
   SettingsBuiltin,
   SettingsPaneBuiltin,
   settingsDshSlotHostId,
+  settingsEntryPane,
   settingsPaneSlotHostId,
 } from './settings.js'
 export {
   advancedSettings,
+  listedSettingsGroup,
   matchesSettings,
   revealSettingsAnchor,
+  SETTINGS_MOVED,
+  type SettingsMoveTarget,
   settingsGroup,
+  settingsListedEntries,
+  settingsMoved,
   settingsNavigationGroups,
   settingsRoute,
+  settingsTabGroup,
 } from './settings-navigation.js'
 export {
   EMPTY_SIDEBAR_STATE,

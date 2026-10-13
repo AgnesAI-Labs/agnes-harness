@@ -6,8 +6,12 @@ import {
   SettingsChoice,
   SettingsGroup,
   SettingsInput,
+  SettingsItem,
   SettingsOptionSelect,
   SettingsPageHeader,
+  StateSwitch,
+  setAdvancedSettingsShown,
+  useAdvancedSettings,
 } from '@agnes/web-ui'
 import { useLayoutEffect, useRef } from 'react'
 import type { AdminPaneNotice, AdminPaneStore } from './admin-pane-store.js'
@@ -43,6 +47,7 @@ export function SettingsStaticPane({
   translate?: (key: string) => string
 }) {
   const admin = useAdminPanes(adminPanes)
+  const advanced = useAdvancedSettings()
   const resourcesHidden = admin ? !admin.resources.ready : false
   const text = (key: string, fallback: string) => {
     const value = translate?.(key) ?? key
@@ -77,7 +82,6 @@ export function SettingsStaticPane({
               <div className="config-accounts-heading">
                 <div>
                   <h3>{text('settings-shell.accountsTitle', '我的账户')}</h3>
-                  <p>{text('settings-shell.accountsIntro', '每个账户独立保存地址、密钥和模型。')}</p>
                 </div>
                 <Button
                   id="config-add-account"
@@ -410,11 +414,9 @@ export function SettingsStaticPane({
           hidden
         >
           <SettingsPageHeader
-            title={<span>{text('settings-shell.appearanceTitle', '通用设置')}</span>}
+            title={<span>{text('settings-shell.appearanceTitle', '通用')}</span>}
             description={
-              <span>
-                {text('settings-shell.appearanceIntro', '调整界面配色与字号。设置只保存在本机浏览器中。')}
-              </span>
+              <span>{text('settings-shell.appearanceIntro', '界面外观和语言；只保存在这台电脑上。')}</span>
             }
           />
           <div className="config-workspace">
@@ -494,6 +496,24 @@ export function SettingsStaticPane({
                   <SettingsOptionSelect id="locale-select" />
                 </div>
               </fieldset>
+            </SettingsGroup>
+            <SettingsGroup>
+              <SettingsItem
+                icon="sliders-horizontal"
+                label={<span>{text('settings-shell.showAdvanced', '显示高级设置')}</span>}
+                description={
+                  <span>{text('settings-shell.showAdvancedHelp', '运行配置、诊断和各页里的高级选项。')}</span>
+                }
+              >
+                <StateSwitch
+                  id="settings-advanced-switch"
+                  testId="settings-advanced-switch"
+                  label={text('settings-shell.showAdvanced', '显示高级设置')}
+                  checked={advanced}
+                  disabled={false}
+                  onToggle={setAdvancedSettingsShown}
+                />
+              </SettingsItem>
             </SettingsGroup>
           </div>
         </section>
