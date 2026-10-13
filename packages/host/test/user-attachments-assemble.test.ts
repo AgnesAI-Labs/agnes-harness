@@ -2,9 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import type { ContentBlock } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createAttachmentStore } from '../src/attachment-store.js'
 import type { Host } from '../src/host.js'
 import { createTestHost, type TestHostOptions } from '../testkit/index.js'
@@ -120,12 +119,10 @@ describe('host attachment admission', () => {
     const objectPath = join(root, 'artifacts', 'sha256', sha.slice(0, 2), sha)
     const sweeping = join(root, 'artifacts', 'sweeping')
     mkdirSync(sweeping, { recursive: true })
-    renameSync(objectPath, join(sweeping, `${sha}.0b7c6f1e-0000-4000-8000-000000000000`))
-    // A ledger is there from an earlier start: only a sweep that found one sets bytes aside.
-    new DatabaseSync(join(root, 'sessions.db')).close()
+    renameSync(objectPath, join(sweeping, sha))
     const { host } = await createTestHost({ dataDir: root, storeAttachmentsByReference: false })
     hosts.push(host)
-    await vi.waitFor(() => expect(existsSync(objectPath)).toBe(true))
+    expect(existsSync(objectPath)).toBe(true)
     expect(readdirSync(sweeping)).toEqual([])
   })
 })

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   existsSync,
@@ -10,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -31,12 +32,8 @@ vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
 })
 
 const { DDL } = await import('../src/adapters/ddl.js')
-const {
-  collectAttachmentOrphans,
-  collectAttachmentOrphansInternal,
-  restoreSetAsideAttachments,
-  scheduleAttachmentOrphans,
-} = await import('../src/attachment-orphans.js')
+const { collectAttachmentOrphans, collectAttachmentOrphansInternal, scheduleAttachmentOrphans } =
+  await import('../src/attachment-orphans.js')
 const { attachmentReceiptFor, createAttachmentStore } = await import('../src/attachment-store.js')
 const { createPrivateArtifactStore } = await import('../src/private-artifact-store.js')
 const { createUserAttachmentPort } = await import('../src/user-attachments.js')
@@ -106,24 +103,6 @@ function fixture() {
     join(dataDir, 'artifacts', 'user-attachment-meta', sha256.slice(0, 2), `${sha256}.json`)
   /** Marks bytes as seen at `at`, as a send in another process does. */
   const touchMarker = (sha256: string, at: number) => utimesSync(markerPath(sha256), at / 1000, at / 1000)
-  /** Moves an object aside as a run does; returns where it went. */
-  const setAside = (sha256: string) => {
-    const aside = join(dataDir, 'artifacts', 'sweeping', `${sha256}.0b7c6f1e-0000-4000-8000-000000000000`)
-    mkdirSync(dirname(aside), { recursive: true })
-    renameSync(join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2), sha256), aside)
-    return aside
-  }
-  /** Holds the ledger write lock on its own connection, as a run in another process does. */
-  const holdLedgerLock = () => {
-    const other = new DatabaseSync(join(dataDir, 'sessions.db'))
-    other.exec('BEGIN IMMEDIATE')
-    return {
-      release() {
-        other.exec('ROLLBACK')
-        other.close()
-      },
-    }
-  }
   return {
     dataDir,
     db,
@@ -136,8 +115,6 @@ function fixture() {
     setNow,
     markerPath,
     touchMarker,
-    setAside,
-    holdLedgerLock,
   }
 }
 
@@ -233,8 +210,8 @@ describe('collecting unreferenced user attachments', () => {
     const f = fixture()
     const b = await f.object('sent while being swept', T - 8 * DAY)
     f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
-    // Another process's send touches the marker just after the sweep's last look before setting the
-    // bytes aside.
+    // An upload of the same bytes in the supervisor touches the marker once the sweep has set the bytes
+    // aside, before it judges the marker again.
     const setAside: string[] = []
     expect(
       await collectAttachmentOrphansInternal({
@@ -252,49 +229,71 @@ describe('collecting unreferenced user attachments', () => {
     expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
     expect(await f.store.read(b.sha256)).toEqual(new TextEncoder().encode('sent while being swept'))
   })
+
+  it('never deletes the bytes an upload in the supervisor finishes between the last look and the delete', async () => {
+    const f = fixture()
+    const text = 'uploaded again by the supervisor'
+    // Real time: the supervisor's store below runs on the system clock.
+    const now = Date.now()
+    const b = await f.object(text, now - 8 * DAY)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    const storeUrl = new URL('../src/attachment-store.ts', import.meta.url).href
+    // The supervisor's upload finish, in its own process, for bytes already stored: it marks them as
+    // seen, checks whether they are stored and publishes its staged copy. Its receipt follows below.
+    const finish = `
+      import { createAttachmentStore } from ${JSON.stringify(storeUrl)}
+      const store = createAttachmentStore({ dataDir: ${JSON.stringify(f.dataDir)} })
+      const sha256 = ${JSON.stringify(b.sha256)}
+      const marker = await store.userAttachment(sha256)
+      await store.markUserAttachment({ sha256, bytes: marker.bytes }, { mimeType: marker.mimeType })
+      const existed = (await store.stat(sha256)) !== undefined
+      const staging = await store.stage({ kind: 'user-attachment', mimeType: marker.mimeType })
+      await staging.write(new TextEncoder().encode(${JSON.stringify(text)}))
+      await staging.commit(sha256)
+      process.stdout.write(JSON.stringify({ existed }))`
+    let upload: { existed: boolean } | undefined
+    const result = await collectAttachmentOrphansInternal({
+      dataDir: f.dataDir,
+      store: f.store,
+      graceMs: GRACE,
+      clock: () => now,
+      beforeDelete: () => {
+        const out = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', finish], {
+          encoding: 'utf8',
+          windowsHide: true,
+        })
+        upload = JSON.parse(out)
+      },
+    })
+    expect(result).toEqual({ deleted: 1, bytes: b.bytes })
+    // The upload found the bytes gone and stored its own copy, which the sweep left alone.
+    expect(f.present(b.sha256).bytes).toBe(true)
+    expect(upload).toEqual({ existed: false })
+    await f.store.markUserAttachment(b, { mimeType: 'application/octet-stream', receiptFor: 's1' })
+    const port = createUserAttachmentPort({ store: f.store, limits: {}, storeByReference: true })
+    expect(
+      await port.authorize({
+        sha256: b.sha256,
+        bytes: b.bytes,
+        mimeType: 'application/octet-stream',
+        sessionKey: 's1',
+        referenced: false,
+      }),
+    ).toBe('ok')
+    expect(await f.store.read(b.sha256)).toEqual(new TextEncoder().encode(text))
+  }, 60_000)
+
   it('restores bytes a crashed run had set aside', async () => {
     const f = fixture()
     const b = await f.object('set aside by a crashed run', T)
     const objectPath = join(f.dataDir, 'artifacts', 'sha256', b.sha256.slice(0, 2), b.sha256)
     const aside = join(f.dataDir, 'artifacts', 'sweeping')
     mkdirSync(aside, { recursive: true })
-    renameSync(objectPath, join(aside, `${b.sha256}.0b7c6f1e-0000-4000-8000-000000000000`))
+    renameSync(objectPath, join(aside, b.sha256))
     expect(f.present(b.sha256).bytes).toBe(false)
     await f.collect()
     expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
     expect(readdirSync(aside)).toEqual([])
-  })
-
-  it('never restores bytes another run has set aside and is still deciding about', async () => {
-    const f = fixture()
-    const b = await f.object('swept by two runs at once', T - 8 * DAY)
-    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
-    // Run A, in another process, holds the ledger lock and has the bytes aside when run B starts.
-    const a = f.holdLedgerLock()
-    const aside = f.setAside(b.sha256)
-    const second = f.collect()
-    await new Promise((done) => setTimeout(done, 200))
-    expect(f.present(b.sha256)).toEqual({ bytes: false, marker: true })
-    // A decides: the marker is still old, so the bytes and then the marker go.
-    rmSync(aside)
-    rmSync(f.markerPath(b.sha256))
-    a.release()
-    expect(await second).toEqual({ deleted: 0, bytes: 0 })
-    // Bytes and marker went together: no object is left behind without the marker that collects it.
-    expect(f.present(b.sha256)).toEqual({ bytes: false, marker: false })
-  })
-  it('puts set-aside bytes back only once the lock of the run that set them aside is released', async () => {
-    const f = fixture()
-    const b = await f.object('restored at a start meanwhile', T - 8 * DAY)
-    // A run that crashed while holding the lock leaves its bytes aside; the lock goes with the process.
-    const a = f.holdLedgerLock()
-    f.setAside(b.sha256)
-    const restoring = restoreSetAsideAttachments({ dataDir: f.dataDir, root: f.store.root })
-    await new Promise((done) => setTimeout(done, 200))
-    expect(f.present(b.sha256)).toEqual({ bytes: false, marker: true })
-    a.release()
-    expect(await restoring).toBe(true)
-    expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
   })
 
   it('never makes a ledger write of the same process wait while it sweeps many objects', async () => {

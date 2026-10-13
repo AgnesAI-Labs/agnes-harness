@@ -1719,16 +1719,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const requestVersions = assembleRequestVersions(attachmentStore, dataDir, clock)
     // Bytes a sweep had set aside when its process died go back now rather than at the next sweep,
     // whatever the switch says: references a session holds are read either way.
-    const restoring = new AbortController()
-    const restored = restoreSetAsideAttachments({
-      dataDir,
-      root: attachmentStore.root,
-      signal: restoring.signal,
-    }).catch((error) => deps.log.warn('attachment restore failed', { error: String(error) }))
-    rollback.push('attachment-restore', async () => {
-      restoring.abort()
-      await restored
-    })
+    try {
+      restoreSetAsideAttachments(attachmentStore.root)
+    } catch (error) {
+      deps.log.warn('attachment restore failed', { error: String(error) })
+    }
     if (attachments.storeByReference) {
       const orphans = scheduleAttachmentOrphans({
         dataDir,
