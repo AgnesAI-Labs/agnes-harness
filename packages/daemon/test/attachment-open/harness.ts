@@ -22,11 +22,11 @@ import { daemonSocketPaths } from '../../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../../src/supervisor/supervisor.js'
 import { sqliteTables } from '../sqlite-tables.js'
 
-const workerEntry = fileURLToPath(new URL('./worker-entry.ts', import.meta.url))
+export const workerEntry = fileURLToPath(new URL('./worker-entry.ts', import.meta.url))
 
 export type Rpc = { id?: number; method?: string; result?: unknown; error?: unknown }
 
-function buildProfile(dataDir: string): ResolvedProfile {
+export function buildProfile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
     dataDir,
