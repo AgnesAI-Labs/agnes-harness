@@ -1,4 +1,5 @@
 import type { SystemPromptConfig } from '@agnes/protocol'
+import { contextRequest } from '@agnes/web-admin/settings/context'
 import { systemPromptApi } from '@agnes/web-admin/settings/system-prompt-api'
 import {
   Badge,
@@ -13,12 +14,18 @@ import {
   SettingsState,
   SettingsTextArea,
   SettingsToolbar,
+  Tag,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { HomePageSection } from '../page-frame.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 const browserApi = systemPromptApi()
+
+/** "Automatic" is a promise; when the setting behind it is off, the row says so instead. */
+function Provided({ on, t }: { on: boolean; t: Text }) {
+  return on ? <Badge tone="ok">{t('ctx.autoBadge')}</Badge> : <Tag tone="warn">{t('ctx.off')}</Tag>
+}
 
 /**
  * What the user wants the agent to do, and how it should reply. The stored shape is unchanged:
@@ -58,6 +65,17 @@ export function CustomInstructions({
       })
     return () => pending.abort()
   }, [api])
+  const [context, setContext] = useState<{ rulesEnabled: boolean; timeEnabled: boolean; timeZone: string }>()
+  useEffect(() => {
+    const pending = new AbortController()
+    // Optional: without it the rows describe the defaults, which is what a fresh install has.
+    void contextRequest({}, fetch, pending.signal)
+      .then((value) => {
+        if (!pending.signal.aborted) setContext(value.config)
+      })
+      .catch(() => undefined)
+    return () => pending.abort()
+  }, [])
   const replaced = !!config.fullOverride
   const locked = !canSave || busy || replaced || !loaded
   const edit = (name: 'personaPrefix' | 'personaSuffix' | 'replyStyle', value: string) => {
@@ -162,14 +180,20 @@ export function CustomInstructions({
           <ListRow
             icon={<IconTile name="file-text" />}
             title={t('ctx.rules')}
-            description={t('ctx.rulesHelp')}
-            actions={<Badge tone="ok">{t('ctx.autoBadge')}</Badge>}
+            description={t(context?.rulesEnabled === false ? 'ctx.rulesOff' : 'ctx.rulesHelp')}
+            actions={<Provided on={context?.rulesEnabled !== false} t={t} />}
           />
           <ListRow
             icon={<IconTile name="clock" />}
             title={t('ctx.time')}
-            description={t('ctx.timeHelp', { zone: Intl.DateTimeFormat().resolvedOptions().timeZone })}
-            actions={<Badge tone="ok">{t('ctx.autoBadge')}</Badge>}
+            description={
+              context?.timeEnabled === false
+                ? t('ctx.timeOff')
+                : t('ctx.timeHelp', {
+                    zone: context?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+                  })
+            }
+            actions={<Provided on={context?.timeEnabled !== false} t={t} />}
           />
         </SettingsList>
       </HomePageSection>

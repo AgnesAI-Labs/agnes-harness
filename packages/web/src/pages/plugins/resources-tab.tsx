@@ -1,6 +1,7 @@
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
 import { Banner, Button, Icon } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { SkillFolders } from './skill-folders.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
@@ -79,6 +80,8 @@ export function ResourcesTab({
       </div>
       <p ref={notice} className="admin-notice" role="status" aria-live="polite" hidden />
       <section ref={list} className="plugin-list" aria-live="polite" />
+      {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
+      {tab === 'skills' && <SkillFolders t={t} onSaved={() => refresh.current?.click()} />}
     </div>
   )
 }

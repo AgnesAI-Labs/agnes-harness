@@ -56,7 +56,8 @@ export function PluginPurposeSections({
     <div className="agnes-settings-stack" data-testid="plugin-purpose-detail">
       {(!section || section === 'overview') && (
         <section data-testid="plugin-overview">
-          <h3>{t('overview')}</h3>
+          {/* Inside the overview tab the tab already names this part. */}
+          {!section && <h3>{t('overview')}</h3>}
           {purpose?.description ? <p>{purpose.description}</p> : <PluginProvidesChips value={value} />}
           <PluginPurposeBadges item={item} />
           {purpose?.docsUrl && (
@@ -81,7 +82,7 @@ export function PluginPurposeSections({
           )}
         </section>
       )}
-      {(!section || section === 'overview') && (
+      {(!section || (section === 'overview' && !!value?.provides.length)) && (
         <section data-testid="plugin-provides-detail">
           <h3>{t('provides')}</h3>
           <PluginProvidesChips value={value} />

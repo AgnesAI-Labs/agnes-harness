@@ -196,6 +196,9 @@
   .plugin-detail-heading > .switch {
     margin-inline-start: auto;
   }
+  .plugin-detail .plugin-facts {
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  }
   .plugin-detail-actions {
     display: flex;
     flex-wrap: wrap;

@@ -1,4 +1,4 @@
-import type { AdminLoop } from '@agnes/protocol'
+import type { AdminLoop, SessionDefaultsSnapshot } from '@agnes/protocol'
 import { defaultLoop, resolvePluginMetadata } from '@agnes/protocol'
 import { ChildEnginesPanel } from '@agnes/web-admin/settings/child-engines'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '@agnes/web-admin/settings/locales'
@@ -9,10 +9,13 @@ import { homeNavigation } from '@agnes/web-client'
 import {
   Badge,
   Button,
+  Field,
   type IconName,
   IconTile,
   ListRow,
+  SettingsAdvanced,
   SettingsList,
+  SettingsSelect,
   SettingsState,
   Tag,
   useUiText,
@@ -35,11 +38,14 @@ export const CAPABILITY_ICONS: Readonly<Record<Capability, IconName>> = {
 }
 
 /** The execution modes a new session can use, and which plugin each one comes from. */
-function ExecutionModes({ view, t }: { view: PluginView | undefined; t: Text }) {
+function ExecutionModes({ view, t, canSave }: { view: PluginView | undefined; t: Text; canSave: boolean }) {
   const { locale } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const api = view?.api
   const [loops, setLoops] = useState<readonly AdminLoop[]>()
   const [chosen, setChosen] = useState<{ id: string; version: string }>()
+  const [defaults, setDefaults] = useState<SessionDefaultsSnapshot>()
+  const [saving, setSaving] = useState(false)
+  const [outcome, setOutcome] = useState<'saved' | 'failed'>()
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
   useEffect(() => {
@@ -52,6 +58,7 @@ function ExecutionModes({ view, t }: { view: PluginView | undefined; t: Text }) 
         if (!alive) return
         setLoops(value.loops)
         setChosen(defaultLoop(value.defaults))
+        setDefaults({ revision: value.revision, defaults: value.defaults })
       },
       () => {
         if (alive) setFailed(true)
@@ -61,6 +68,34 @@ function ExecutionModes({ view, t }: { view: PluginView | undefined; t: Text }) 
       alive = false
     }
   }, [api, revision])
+  const identity = (loop: { id: string; version: string }) => `${loop.id}@${loop.version}`
+  /** The same write the run-configuration page makes: the whole defaults record, one field changed. */
+  const saveDefault = async (key: string) => {
+    const loop = loops?.find((entry) => identity(entry) === key)
+    // The empty choice clears the override, so new sessions follow the built-in default again.
+    if (!api || !defaults || (key && !loop) || saving) return
+    setSaving(true)
+    setOutcome(undefined)
+    try {
+      const snapshot = await api.saveDefaults({
+        revision: defaults.revision,
+        defaults: (() => {
+          const { loop: _cleared, ...others } = defaults.defaults.providers ?? {}
+          const providers = loop ? { ...others, loop: { provider: loop.id, version: loop.version } } : others
+          const { providers: _replaced, ...rest } = defaults.defaults
+          return { ...rest, ...(Object.keys(providers).length ? { providers } : {}) }
+        })(),
+      })
+      setDefaults(snapshot)
+      setChosen(defaultLoop(snapshot.defaults))
+      setOutcome('saved')
+    } catch {
+      setOutcome('failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const chosenLoop = loops?.find((loop) => chosen && identity(loop) === identity(chosen))
   const installed = view?.state.installed ?? []
   const sourceName = (loop: AdminLoop) => {
     const source = installed.find((item) => item.id === loop.sourcePackage)
@@ -125,6 +160,39 @@ function ExecutionModes({ view, t }: { view: PluginView | undefined; t: Text }) 
           </SettingsList>
         )}
       </HomePageSection>
+      {loops && defaults && (
+        <SettingsAdvanced
+          title={t('exec.defaultTitle')}
+          summary={chosenLoop ? (chosenLoop.label ?? chosenLoop.id) : t('exec.defaultBuiltin')}
+          data-testid="execution-default"
+        >
+          <Field label={t('exec.defaultLabel')} htmlFor="execution-default-loop" hint={t('exec.defaultHelp')}>
+            <SettingsSelect
+              id="execution-default-loop"
+              data-testid="execution-default-loop"
+              value={chosen ? identity(chosen) : ''}
+              disabled={!canSave || saving}
+              onChange={(event) => void saveDefault(event.target.value)}
+            >
+              <option value="">{t('exec.defaultBuiltin')}</option>
+              {loops.map((loop) => (
+                <option key={identity(loop)} value={identity(loop)}>
+                  {loop.label ?? loop.id}
+                </option>
+              ))}
+            </SettingsSelect>
+          </Field>
+          {outcome && (
+            <SettingsState tone={outcome === 'saved' ? 'success' : 'error'}>
+              {outcome === 'saved'
+                ? t('exec.defaultSaved', {
+                    name: chosenLoop?.label ?? chosenLoop?.id ?? t('exec.defaultBuiltin'),
+                  })
+                : t('exec.defaultFailed')}
+            </SettingsState>
+          )}
+        </SettingsAdvanced>
+      )}
       <p className="plugins-page-note">
         {t('exec.hint')}{' '}
         <Button appearance="link" onClick={() => homeNavigation.open('agents')}>
@@ -193,7 +261,7 @@ export function CapabilityPage({
           </HomePageSection>
         </>
       )}
-      {capability === 'execution' && <ExecutionModes view={view} t={t} />}
+      {capability === 'execution' && <ExecutionModes view={view} t={t} canSave={canSave} />}
       {capability === 'memory' && <MemoryPanel canSave={canSave} />}
       {capability === 'context' && <CustomInstructions canSave={canSave} t={t} />}
     </HomePageFrame>
