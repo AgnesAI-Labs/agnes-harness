@@ -1964,7 +1964,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 batch processing: batch tables and result export; reviewed exact countLines packages/daemon/src 28326; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch engine; reviewed exact countLines packages/daemon/src 29034; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch RPC, worker request frame and engine wiring; reviewed exact countLines packages/daemon/src 29320; no exclusions or spare allocation.
-  'packages/daemon/src': 29320,
+  // 2026-10-13 batch processing: serving before the first batch round, batch frames checked against their worker; reviewed exact countLines packages/daemon/src 29336; no exclusions or spare allocation.
+  'packages/daemon/src': 29336,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
