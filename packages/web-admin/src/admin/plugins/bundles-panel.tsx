@@ -118,9 +118,14 @@ export function BundlesPanel({
       <SessionToolsPanel value={sessionInfo} t={settingsText} />
       {message && <p role="status">{t(message)}</p>}
       {snapshot && (
-        <form
-          onSubmit={(event) => {
+        <div
+          role="group"
+          aria-label={t('bundles.title')}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented) return
+            if (!(event.target instanceof HTMLInputElement)) return
             event.preventDefault()
+            event.stopPropagation()
             void save()
           }}
         >
@@ -187,10 +192,10 @@ export function BundlesPanel({
                 </label>
               </p>
             ))}
-          <Button htmlType="submit" disabled={busy || !canSave}>
+          <Button onClick={() => void save()} disabled={busy || !canSave}>
             {t('bundles.save')}
           </Button>
-        </form>
+        </div>
       )}
       <Button disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
         {t('defaults.reload')}

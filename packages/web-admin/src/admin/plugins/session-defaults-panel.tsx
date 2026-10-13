@@ -134,9 +134,14 @@ export function SessionDefaultsPanel({
       {status && <p role="status">{t(status)}</p>}
       {stale && <p role="alert">{t('defaults.stale')}</p>}
       {catalog && (
-        <form
-          onSubmit={(event) => {
+        <div
+          role="group"
+          aria-label={t('defaults.title')}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented) return
+            if (!(event.target instanceof HTMLInputElement)) return
             event.preventDefault()
+            event.stopPropagation()
             void save()
           }}
         >
@@ -264,10 +269,10 @@ export function SessionDefaultsPanel({
               />
             </Field>
           )}
-          <Button htmlType="submit" disabled={!valid || !canSave || busy}>
+          <Button onClick={() => void save()} disabled={!valid || !canSave || busy}>
             {t('defaults.save')}
           </Button>
-        </form>
+        </div>
       )}
       <Button onClick={() => setReload((value) => value + 1)} disabled={!api || busy}>
         {t('defaults.reload')}

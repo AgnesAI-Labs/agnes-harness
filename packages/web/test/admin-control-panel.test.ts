@@ -329,19 +329,30 @@ it('loads catalog choices and saves their exact identities and revision', async 
     },
     fetcher,
   )
-  const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: true, t }))
+  const outerSubmit = vi.fn((event: { preventDefault(): void }) => event.preventDefault())
+  const host = await mount(
+    createElement(
+      'form',
+      { onSubmit: outerSubmit },
+      createElement(SessionDefaultsPanel, { api, canSave: true, t }),
+    ),
+  )
+  expect(host.querySelector('form form')).toBeNull()
   expect(host.textContent).toContain('Defaults for new sessions')
   expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
   expect(host.querySelector('[data-testid="admin-default-loop-readonly"]')?.textContent).toContain('workflow')
   expect(host.querySelector('[aria-label="Permission preset"]')).not.toBeNull()
   expect(host.textContent).toContain('read-only')
   await act(async () =>
-    host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+    Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === t('defaults.save'))
+      ?.click(),
   )
   expect(
     JSON.parse(String(fetcher.mock.calls.find(([url]) => String(url).endsWith('/defaults'))?.[1]?.body)),
   ).toEqual(snapshot)
   expect(host.textContent).toContain('Defaults saved.')
+  expect(outerSubmit).not.toHaveBeenCalled()
 })
 
 it('keeps unavailable catalog errors visible and read-only saves disabled', async () => {
@@ -368,7 +379,11 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
   await act(async () => {
     host.querySelector('button')?.click()
   })
-  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  expect(
+    Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === t('defaults.save'),
+    )?.disabled,
+  ).toBe(true)
 })
 
 it('navigates runtime capabilities and never offers a disallowed security preset', async () => {
