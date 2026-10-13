@@ -247,7 +247,7 @@ describe('_agnes/v1/session.attachmentRead', () => {
     release()
     const refused = await pending
     expect(refused.result).toBeUndefined()
-    expect(refused.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY' })
+    expect(refused.error?.data).toEqual({ code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
   })
 
   it('serves no stored object that is not a marked user attachment, whatever a row names', async () => {

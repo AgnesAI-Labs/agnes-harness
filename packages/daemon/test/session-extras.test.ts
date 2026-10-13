@@ -52,7 +52,13 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
     // This fixture has no installed extension manifests. Exercise the exported builtin definition.
     const reader = TOOLS_CORE.find((tool) => tool.name === 'read')
     if (!reader) throw new Error('builtin attachment reader is missing')
-    h.host.kernel.tools.add(reader, { source: 'agnes/tools-core', trust: 'builtin' })
+    // As the host registers a bundled extension's tools: a classified tool needs its package attested.
+    h.host.kernel.tools.add(reader, {
+      source: 'agnes/tools-core',
+      trust: 'builtin',
+      packageIdentity: '@agnes/base',
+      packageVersion: '0.0.0',
+    })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
     const draining = (async () => {
       for await (const _ of ep.notifications) {
