@@ -342,6 +342,40 @@ describe('one-click start', () => {
     const error = await runBusinessAgentStart(d.api, plan, () => {}, options).catch((value) => value)
     expect((error as StartError).failure).toMatchObject({ step: 'trust', code: 'changed' })
     expect(d.calls).toEqual([])
+    // Another administrator can replace the installed version while the trust operation settles.
+    for (const changed of [{ integrity: 'sha512-b' }, { capabilityHash: 'cap-2' }, { version: '2.0.0' }]) {
+      const concurrent = daemon(installed())
+      const reviewed = await planBusinessAgentStart(concurrent.api, entry(), options)
+      const api = {
+        ...concurrent.api,
+        trust: async (...args: Parameters<StartApi['trust']>) => {
+          const result = await concurrent.api.trust(...args)
+          concurrent.set(installed({ trusted: true, ...changed }))
+          return result
+        },
+      }
+      await expect(runBusinessAgentStart(api, reviewed, () => {}, options)).rejects.toMatchObject({
+        failure: { step: 'trust', code: 'changed' },
+      })
+      expect(concurrent.calls).toEqual(['trust'])
+    }
+  })
+
+  it('does not continue an effect chain after a pending inventory read is cancelled', async () => {
+    const d = daemon(installed())
+    const plan = await planBusinessAgentStart(d.api, entry(), options)
+    const abort = new AbortController()
+    const api = {
+      ...d.api,
+      list: async () => {
+        abort.abort(new Error('page left'))
+        return d.api.list()
+      },
+    }
+    await expect(
+      runBusinessAgentStart(api, plan, () => {}, { ...options, signal: abort.signal }),
+    ).rejects.toThrow('page left')
+    expect(d.calls).toEqual([])
   })
 
   it('does not install over a blocker, and says when an enabled plugin does not start', async () => {

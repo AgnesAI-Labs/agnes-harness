@@ -48,6 +48,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
   let state: PackageInstalledDescriptor | undefined = options.ready
     ? ({
         id: ID,
+        version: '1.1.0',
         integrity: 'sha512-a',
         trusted: true,
         desired: 'enabled',
@@ -93,6 +94,7 @@ function setup(options: { permissions?: string[]; readOnly?: boolean; ready?: bo
     install: () => {
       state = {
         id: ID,
+        version: '1.1.0',
         integrity: 'sha512-a',
         capabilityHash: 'cap',
         trusted: false,

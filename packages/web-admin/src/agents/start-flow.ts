@@ -72,15 +72,15 @@ const RUNTIME_IDENTITY = 'packages.runtime-identity.v1'
 const pause = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason)
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
+    const aborted = () => {
+      clearTimeout(timer)
+      reject(signal?.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', aborted)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', aborted, { once: true })
   })
 
 const detailOf = (error: unknown) => (error instanceof Error && error.message ? error.message : undefined)
@@ -96,6 +96,7 @@ async function settle(
   const deadline = Date.now() + (options.timeoutMs ?? 120_000)
   let operationId: string
   try {
+    options.signal?.throwIfAborted()
     operationId = (await submit()).operationId
   } catch (error) {
     if (options.signal?.aborted) throw error
@@ -106,6 +107,7 @@ async function settle(
     let operation: PackageOperation
     try {
       operation = await api.operation(operationId)
+      options.signal?.throwIfAborted()
     } catch (error) {
       if (options.signal?.aborted) throw error
       throw new StartError({ step, code: 'request', detail: detailOf(error) })
@@ -125,7 +127,10 @@ async function settle(
 
 async function installedOf(api: StartApi, id: string, step: StartStep, signal?: AbortSignal) {
   try {
-    return (await api.list()).packages.find((item) => item.id === id)
+    signal?.throwIfAborted()
+    const result = await api.list()
+    signal?.throwIfAborted()
+    return result.packages.find((item) => item.id === id)
   } catch (error) {
     if (signal?.aborted) throw error
     throw new StartError({ step, code: 'request', detail: detailOf(error) })
@@ -211,14 +216,20 @@ export async function runBusinessAgentStart(
 
   // Consent covers the version and capability scope the dialog showed, nothing later.
   const reviewed = plan.installed ?? plan.preview
-  if (
-    reviewed &&
-    (reviewed.integrity !== installed.integrity ||
-      (reviewed.capabilityHash !== undefined && reviewed.capabilityHash !== installed.capabilityHash))
-  ) {
-    mark(installed.trusted ? 'enable' : 'trust', 'failed')
-    throw new StartError({ step: installed.trusted ? 'enable' : 'trust', code: 'changed' })
+  const assertReviewed = (step: StartStep, current: PackageInstalledDescriptor | undefined) => {
+    if (
+      !reviewed ||
+      !current ||
+      reviewed.id !== current.id ||
+      reviewed.version !== current.version ||
+      reviewed.integrity !== current.integrity ||
+      reviewed.capabilityHash !== current.capabilityHash
+    ) {
+      mark(step, 'failed')
+      throw new StartError({ step, code: 'changed' })
+    }
   }
+  assertReviewed(installed.trusted ? 'enable' : 'trust', installed)
 
   if (installed.trusted) mark('trust', 'skipped')
   else {
@@ -228,6 +239,7 @@ export async function runBusinessAgentStart(
       if (!capabilityHash) throw new StartError({ step: 'trust', code: 'trust-unknown' })
       await settle(api, 'trust', () => api.trust(id, current.integrity, capabilityHash), options)
       const next = await installedOf(api, id, 'trust', options.signal)
+      assertReviewed('trust', next)
       if (!next?.trusted) throw new StartError({ step: 'trust', code: 'operation' })
       return next
     })
@@ -252,6 +264,7 @@ export async function runBusinessAgentStart(
       const deadline = Date.now() + (options.timeoutMs ?? 120_000)
       for (;;) {
         const next = await installedOf(api, id, 'enable', options.signal)
+        assertReviewed('enable', next)
         if (next?.actual === 'running') return
         if (next?.actual === 'restart-required')
           throw new StartError({ step: 'enable', code: 'restart-required', hint: next.failureHint })
@@ -282,6 +295,7 @@ export async function runBusinessAgentStart(
     // when that summary is missing, and may take a moment to list a bundle after enabling. A
     // daemon that names none still starts the loop, without that policy.
     const current = await installedOf(api, id, 'session', options.signal)
+    assertReviewed('session', current)
     const named = [...new Set((current?.presentation?.presets ?? []).map((preset) => preset.bundle))]
     if (named.length) return { loop: { id: loop.id, version: loop.version }, bundles: named }
     const expected = plan.entry.kinds?.includes('bundle') === true
