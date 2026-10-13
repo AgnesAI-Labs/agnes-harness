@@ -1698,20 +1698,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
-    // Attachments go to the bundled store only beside the bundled artifacts seam: another artifacts
-    // implementation would not see the objects, so they stay inline in the ledger as before.
-    // Attachment references are read from the host's store whatever artifacts seam is selected;
-    // old inline attachments are copied into it only when the bundled artifacts seam owns that tree.
-    const attachmentStore = createAttachmentStore({ dataDir })
-    const attachments =
-      profile.attachments.storeByReference && profile.seams.artifacts === '@agnes/base'
-        ? createUserAttachmentPort({
-            store: attachmentStore,
-            limits: profile.limits,
-            storeByReference: true,
-            cacheInline: profile.seams.artifacts === '@agnes/base',
-          })
-        : undefined
+    // The port is assembled whatever the switch says, so references a session already holds stay
+    // readable. Inline attachments go to the store only when the switch is on and the bundled
+    // artifacts seam owns the tree: another artifacts implementation would not see the objects, so
+    // they stay inline in the ledger as before, and old inline attachments are not copied into it.
+    const bundledArtifacts = profile.seams.artifacts === '@agnes/base'
+    const attachments = createUserAttachmentPort({
+      store: createAttachmentStore({ dataDir }),
+      limits: profile.limits,
+      storeByReference: profile.attachments.storeByReference && bundledArtifacts,
+      cacheInline: bundledArtifacts,
+    })
     kernel = Kernel.create({
       storage: adapters.storage,
       seams,
@@ -1732,7 +1729,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
-      ...(attachments ? { attachments } : {}),
+      attachments,
       ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
       ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
       logger: deps.log,
