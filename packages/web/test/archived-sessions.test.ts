@@ -42,7 +42,13 @@ it('restores a session, drops its row and refreshes the active list', async () =
 it('keeps the row and says why when restoring or reading fails', async () => {
   const sessions = createArchivedSessions()
   const list = vi.fn().mockResolvedValueOnce({ items: [row('a', true)] })
-  sessions.bind({ list, restore: vi.fn().mockRejectedValue(new Error('daemon offline')), changed: vi.fn() })
+  const error = vi.fn()
+  sessions.bind({
+    list,
+    restore: vi.fn().mockRejectedValue(new Error('daemon offline')),
+    changed: vi.fn(),
+    error,
+  })
   await sessions.reload()
   await sessions.restore('a')
   expect(sessions.getSnapshot()).toMatchObject({
@@ -50,7 +56,31 @@ it('keeps the row and says why when restoring or reading fails', async () => {
     restoring: [],
     error: 'daemon offline',
   })
+  expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'daemon offline' }))
   list.mockRejectedValueOnce(new Error('list failed'))
   await sessions.reload()
   expect(sessions.getSnapshot()).toMatchObject({ status: 'error', error: 'list failed' })
+})
+
+it('does not resurrect a restored session from an older in-flight archive listing', async () => {
+  const sessions = createArchivedSessions()
+  let resolve!: (page: { items: Row[] }) => void
+  const list = vi
+    .fn()
+    .mockResolvedValueOnce({ items: [row('a', true), row('b', true)] })
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    .mockResolvedValue({ items: [row('b', true)] })
+  sessions.bind({ list, restore: async () => undefined, changed: async () => undefined })
+  sessions.show('archived')
+  await vi.waitFor(() => expect(sessions.getSnapshot().status).toBe('idle'))
+  const oldRead = sessions.reload()
+  await sessions.restore('a')
+  resolve({ items: [row('a', true), row('b', true)] })
+  await oldRead
+  expect(sessions.getSnapshot()).toMatchObject({ status: 'idle', rows: [{ sessionId: 'b' }] })
 })

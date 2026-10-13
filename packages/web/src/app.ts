@@ -1343,6 +1343,7 @@ archivedSessions.bind({
   list: (params) => client.session.list(params),
   restore: (id) => client.session.archive(id, false),
   changed: () => list(),
+  error: showError,
 })
 // Search finds a session by what was said in it; opening one leaves any home page.
 const sessionSearch = mountSessionSearch({

@@ -15,6 +15,8 @@ export type ArchivedSessionsApi = Readonly<{
   restore(sessionId: string): Promise<unknown>
   /** Re-read the sidebar's own session list after a session returns to it. */
   changed(): Promise<unknown>
+  /** Surface a failed undo even while the archived list is hidden. */
+  error?(failure: unknown): void
 }>
 
 /**
@@ -69,7 +71,10 @@ export function createArchivedSessions() {
       if (filter === view.filter) return
       set({ filter })
       if (filter === 'archived') void reload()
-      else epoch += 1
+      else {
+        epoch += 1
+        set({ status: 'idle' })
+      }
     },
     reload,
     async restore(sessionId: string): Promise<void> {
@@ -80,10 +85,13 @@ export function createArchivedSessions() {
       set({ restoring: [...view.restoring, sessionId] })
       try {
         await source.restore(sessionId)
-        set({ rows: view.rows.filter((row) => row.sessionId !== sessionId) })
+        // A list begun before the mutation may still contain the restored session.
+        epoch += 1
+        set({ rows: view.rows.filter((row) => row.sessionId !== sessionId), status: 'idle' })
         await source.changed()
       } catch (failure) {
         set({ error: message(failure) })
+        source.error?.(failure)
       } finally {
         set({ restoring: view.restoring.filter((id) => id !== sessionId) })
       }
