@@ -38,7 +38,7 @@ const deps = (rt: CodeRuntime, done = vi.fn()) => ({
 })
 
 describe('run_code tool definition', () => {
-  it('has the schema and all eight explicit metadata keys', () => {
+  it('has the schema and explicit command policy metadata', () => {
     const tool = createRunCodeTool(deps(runtime()))
     expect(checkToolDef(tool)).toEqual({ ok: true })
     expect(tool.name).toBe('run_code')
@@ -54,6 +54,7 @@ describe('run_code tool definition', () => {
       isConcurrencySafe: false,
       isOpenWorld: true,
       replay: 'never',
+      commandArg: 'code',
       costHint: undefined,
       deferLoading: false,
       requiresApproval: 'always',
