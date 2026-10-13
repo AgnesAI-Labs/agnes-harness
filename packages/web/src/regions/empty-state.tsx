@@ -7,14 +7,22 @@ import {
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
 import { Button, createRegionRenderer } from '@agnes/web-ui'
-import type { ReactElement } from 'react'
+import { Prompts, Welcome, XProvider } from '@agnes/web-ui/x'
+import { type ReactElement, useRef } from 'react'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
-const APP_BRAND = 'Agnes Harness'
+/** The greeting follows the reader's local clock; it is read once per render of the empty state. */
+export function greetingKey(hour: number): string {
+  if (hour >= 5 && hour < 12) return 'app.emptyState.greeting.morning'
+  if (hour >= 12 && hour < 18) return 'app.emptyState.greeting.afternoon'
+  if (hour >= 18 && hour < 23) return 'app.emptyState.greeting.evening'
+  return 'app.emptyState.greeting.night'
+}
 
 export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => string }): ReactElement {
+  const host = useRef<HTMLDivElement>(null)
   return (
-    <div data-agnes-region-owner={'builtin'} data-agnes-region-unit={'empty-state'}>
+    <div ref={host} data-agnes-region-owner={'builtin'} data-agnes-region-unit={'empty-state'}>
       <div className={'conversation-hero-dsh'} data-agnes-conversation-hero={true}>
         <SlotOutlet
           name={'conversation.hero.brand.mark'}
@@ -37,31 +45,42 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => s
           hideWhenEmpty={true}
         />
       </div>
-      <span className={'agnes-mark empty-brand-mark'} aria-hidden={'true'} />
-      <h2 id={'empty-state-title'} className={'empty-state-heading'}>
-        {APP_BRAND}
-      </h2>
-      <p className={'empty-state-copy'}>{t('app.emptyState.tagline')}</p>
-      <div className={'empty-state-suggestions'} data-testid={'task-suggestions'}>
-        {['project', 'issue', 'test'].map((suggestion) => {
-          const text = t(`composer.suggestion.${suggestion}`)
-          return (
-            <Button
-              key={suggestion}
-              appearance={'ghost'}
-              size={'small'}
-              htmlType={'button'}
-              onClick={(event) =>
-                event.currentTarget.dispatchEvent(
-                  new CustomEvent('agnes:compose-suggestion', { bubbles: true, detail: text }),
-                )
-              }
-            >
-              {text}
-            </Button>
-          )
-        })}
-      </div>
+      <XProvider>
+        <Welcome
+          variant={'borderless'}
+          rootClassName={'empty-state-welcome'}
+          icon={<span className={'agnes-mark empty-brand-mark'} aria-hidden={'true'} />}
+          title={
+            <span id={'empty-state-title'} className={'empty-state-heading'}>
+              {t(greetingKey(new Date().getHours()))}
+            </span>
+          }
+          description={<span className={'empty-state-copy'}>{t('app.emptyState.tagline')}</span>}
+        />
+        <Prompts
+          rootClassName={'empty-state-suggestions'}
+          data-testid={'task-suggestions'}
+          wrap={true}
+          // Each prompt is a real button, so it has a name, focus and Enter; its click reaches the item.
+          items={['project', 'issue', 'test'].map((suggestion) => ({
+            key: suggestion,
+            // The description slot renders a paragraph; the label slot would make each prompt a heading.
+            description: (
+              <Button appearance={'ghost'} size={'small'} htmlType={'button'}>
+                {t(`composer.suggestion.${suggestion}`)}
+              </Button>
+            ),
+          }))}
+          onItemClick={({ data }) =>
+            host.current?.dispatchEvent(
+              new CustomEvent('agnes:compose-suggestion', {
+                bubbles: true,
+                detail: t(`composer.suggestion.${data.key}`),
+              }),
+            )
+          }
+        />
+      </XProvider>
     </div>
   )
 }

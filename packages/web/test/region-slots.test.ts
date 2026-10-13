@@ -25,6 +25,7 @@ import {
   TRACE_SLOT,
   TRANSCRIPT_SLOT,
 } from '../src/region-slots.js'
+import { greetingKey } from '../src/regions/empty-state.js'
 import { zhLocaleService } from './helpers/locale.js'
 
 // A slot change commits in a few milliseconds, but a loaded runner has taken longer than the fixed
@@ -90,8 +91,47 @@ describe('migrated empty-state region', () => {
     await vi.waitFor(() => {
       expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
       expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
-      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('#empty-state-title')?.textContent).toMatch(
+        /^app\.emptyState\.greeting\.\w+$/,
+      )
     }, committed)
+  })
+
+  it('greets by the local hour and sends a picked starting point to the composer', async () => {
+    expect([4, 5, 11, 12, 17, 18, 22, 23].map(greetingKey)).toEqual([
+      'app.emptyState.greeting.night',
+      'app.emptyState.greeting.morning',
+      'app.emptyState.greeting.morning',
+      'app.emptyState.greeting.afternoon',
+      'app.emptyState.greeting.afternoon',
+      'app.emptyState.greeting.evening',
+      'app.emptyState.greeting.evening',
+      'app.emptyState.greeting.night',
+    ])
+    const slots = await registry()
+    const section = document.createElement('section')
+    section.id = 'empty-state'
+    document.body.append(section)
+    mounts.push(mountEmptyStateRegion(slots, section, { locale: zhLocaleService() }))
+    const picked: unknown[] = []
+    const listen = (event: Event) => picked.push((event as CustomEvent).detail)
+    document.addEventListener('agnes:compose-suggestion', listen)
+    try {
+      await vi.waitFor(() => {
+        expect(section.querySelector('#empty-state-title')?.textContent).toMatch(/[早上下午晚]|夜深/)
+        expect(section.querySelectorAll('[data-testid="task-suggestions"] button')).toHaveLength(3)
+      }, committed)
+      const prompts = section.querySelectorAll<HTMLButtonElement>('[data-testid="task-suggestions"] button')
+      expect(Array.from(prompts, (prompt) => prompt.textContent)).toEqual([
+        '介绍这个项目',
+        '检查潜在问题',
+        '补充实用测试',
+      ])
+      prompts[1]?.click()
+      expect(picked).toEqual(['检查潜在问题'])
+    } finally {
+      document.removeEventListener('agnes:compose-suggestion', listen)
+    }
   })
 
   it('allows a lower-priority replaceable unit without changing the outer section', async () => {
@@ -107,7 +147,7 @@ describe('migrated empty-state region', () => {
     await vi.waitFor(() => {
       expect(section.id).toBe('empty-state')
       expect(section.textContent).toContain('替换空态')
-      expect(section.textContent).not.toContain('Agnes Harness')
+      expect(section.textContent).not.toContain('app.emptyState.greeting')
     }, committed)
     remove()
   })
@@ -124,7 +164,9 @@ describe('migrated empty-state region', () => {
     )
     await vi.waitFor(() => {
       expect(section.querySelector('[data-agnes-conversation-hero] #fixture-hero-workspace')).toBeTruthy()
-      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('#empty-state-title')?.textContent).toMatch(
+        /^app\.emptyState\.greeting\.\w+$/,
+      )
     }, committed)
     remove()
   })
