@@ -94,10 +94,27 @@ it('finishes every item exactly once after the process running the batch is kill
     return { done: settled(), interrupted: midTurn() }
   }
 
-  const first = await runAndKill(0, 20)
+  // Each run starts past the previous one's lease, as a restarted daemon would be: abandoned active
+  // jobs are reclaimed. A kill that happened to land between turns is repeated, so that the checks on
+  // interrupted turns below are never vacuous.
+  let offset = 0
+  let kills = 0
+  const interrupted: number[] = []
+  const killMidTurn = async (until: number) => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const run = await runAndKill(offset, until)
+      offset += 120_000
+      kills++
+      interrupted.push(...run.interrupted)
+      if (run.interrupted.length > 0) return run
+    }
+    throw new Error('no kill landed in the middle of a turn')
+  }
+  const first = await killMidTurn(20)
+  expect(first.interrupted.length).toBeGreaterThan(0)
   expect(first.done.length).toBeLessThan(items)
-  // Started again past the lease, as a restarted daemon would be: abandoned active jobs are reclaimed.
-  const second = await runAndKill(120_000, first.done.length + 15)
+  const second = await killMidTurn(first.done.length + 15)
+  expect(second.interrupted.length).toBeGreaterThan(0)
   expect(second.done.length).toBeLessThan(items)
   expect(second.done).toEqual(expect.arrayContaining(first.done))
   const settledLedgers = new Map(second.done.map((ordinal) => [ordinal, ledger(ordinal).length]))
@@ -106,7 +123,7 @@ it('finishes every item exactly once after the process running the batch is kill
     root,
     tables: sqliteTables(database),
     dir: transcripts,
-    clock: () => Date.now() + 240_000,
+    clock: () => Date.now() + offset,
     model: (prompt) => ({ reply: JSON.stringify({ item: /Item (\d+)/u.exec(prompt)?.[1] ?? '?' }) }),
   })
   const status = await h.run(id)
@@ -126,11 +143,11 @@ it('finishes every item exactly once after the process running the batch is kill
   // Items settled before a kill never ran again: their ledgers did not grow.
   for (const [ordinal, length] of settledLedgers) expect(ledger(ordinal)).toHaveLength(length)
   // An item interrupted mid-turn ran again from its own job and paid for the lost turn too.
-  for (const ordinal of [...first.interrupted, ...second.interrupted]) {
+  for (const ordinal of interrupted) {
     expect(count(ordinal, 'turn/end')).toBeGreaterThanOrEqual(1)
     expect(paid(ordinal)).toBeGreaterThan(0.1 + 1e-9)
   }
-  expect(ordinals.every((n) => count(n, 'turn/end') >= 1 && count(n, 'turn/end') <= 3)).toBe(true)
+  expect(ordinals.every((n) => count(n, 'turn/end') >= 1 && count(n, 'turn/end') <= kills + 1)).toBe(true)
   // Each item is billed exactly what its own ledger shows, once, and the batch is their sum.
   for (const row of rows) expect(row.credits).toBeCloseTo(paid(row.ordinal), 6)
   expect(status.spentCredits).toBeCloseTo(
@@ -138,6 +155,6 @@ it('finishes every item exactly once after the process running the batch is kill
     3,
   )
   process.stdout.write(
-    `batch crash: ${first.done.length} done at the first kill (${first.interrupted.length} mid-turn), ${second.done.length} at the second (${second.interrupted.length} mid-turn)\n`,
+    `batch crash: ${first.done.length} done at the first kill (${first.interrupted.length} mid-turn), ${second.done.length} at the second (${second.interrupted.length} mid-turn), ${kills} kills\n`,
   )
 }, 240_000)

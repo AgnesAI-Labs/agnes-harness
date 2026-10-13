@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BatchStatus, EventEnvelope, JobSpec } from '@agnes/protocol'
+import { AGNES_ERRORS, type BatchStatus, type EventEnvelope, type JobSpec } from '@agnes/protocol'
 import { enumerateItems } from './enumerate.js'
 import { exportBatch, RESULT_FILES } from './export.js'
 import { creditsOf, itemPrompt, parseReply, readOutcome, repairPrompt } from './prompt.js'
@@ -25,9 +25,18 @@ import {
   resolveSpec,
 } from './spec.js'
 
+export type BatchJobState = {
+  status: string
+  error?: string
+  /** When the job was written (ms); queue time is counted from here. */
+  createdAt?: number
+  /** How often the job was reclaimed from a lease that ran out. */
+  stalledCounter?: number
+}
 export type BatchJobsPort = Readonly<{
   enqueue(spec: JobSpec): Promise<void>
-  status(jobId: string): Promise<{ status: string; error?: string } | undefined>
+  /** Undefined only when the queue has no such job; any other failure is thrown. */
+  status(jobId: string): Promise<BatchJobState | undefined>
   cancel(jobId: string): Promise<void>
 }>
 export type BatchSessionsPort = Readonly<{
@@ -55,6 +64,8 @@ export type BatchEngineOptions = Readonly<{
   profileName: string
   clock: () => number
   tickMs: number
+  /** How long a call into the item sessions' worker may take (default 60 s). */
+  portTimeoutMs?: number
   audit?: (record: unknown) => void
   log?: (message: string) => void
 }>
@@ -85,7 +96,12 @@ export const itemJobId = (batchId: string, ordinal: number, repairs: number): st
 
 type JobsServiceLike = {
   enqueue(raw: unknown, context: { local: boolean }): Promise<{ jobId: string }>
-  poll(jobId: string): Promise<{ status: string; error?: { message: string } }>
+  poll(jobId: string): Promise<{
+    status: string
+    error?: { message: string }
+    createdAt?: string
+    stalledCounter?: number
+  }>
   cancel(jobId: string): Promise<void>
 }
 
@@ -95,11 +111,19 @@ export function batchJobsPort(service: JobsServiceLike): BatchJobsPort {
       await service.enqueue(spec, { local: true })
     },
     status: async (jobId) => {
+      let job: Awaited<ReturnType<JobsServiceLike['poll']>>
       try {
-        const job = await service.poll(jobId)
-        return { status: job.status, ...(job.error ? { error: job.error.message } : {}) }
-      } catch {
-        return undefined
+        job = await service.poll(jobId)
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === AGNES_ERRORS.SESSION_NOT_FOUND) return undefined
+        throw error
+      }
+      const createdAt = job.createdAt === undefined ? Number.NaN : Date.parse(job.createdAt)
+      return {
+        status: job.status,
+        ...(job.error ? { error: job.error.message } : {}),
+        ...(Number.isFinite(createdAt) ? { createdAt } : {}),
+        ...(job.stalledCounter !== undefined ? { stalledCounter: job.stalledCounter } : {}),
       }
     },
     cancel: (jobId) => service.cancel(jobId).catch(() => undefined),
@@ -116,24 +140,46 @@ const STATUS_REASON_CHARS = 1024
 const STATUS_PATH_CHARS = 4096
 /** Calls into the worker that holds item sessions; a call that hangs must not stall every batch. */
 const PORT_TIMEOUT_MS = 60_000
+/** A job may wait in the queue this many item time limits (at least half an hour) before its item fails. */
+const QUEUE_LIMIT_FACTOR = 6
+const MIN_QUEUE_LIMIT_MS = 30 * 60_000
+/** A confinement check that throws or does not answer this many ticks in a row fails the batch. */
+const CONFINEMENT_ATTEMPTS = 3
 const UNFINISHED_JOB: ReadonlySet<string> = new Set(['waiting', 'delayed', 'active'])
 const CONFINEMENT_MISSING =
   'confinement_unavailable: the hook that limits item sessions to the read tool is not active'
 
 const round = (n: number): number => Math.round(n * 10_000) / 10_000
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+const message = (error: unknown): string =>
+  error instanceof Error
+    ? error.message
+    : typeof (error as { message?: unknown } | null)?.message === 'string'
+      ? (error as { message: string }).message
+      : String(error)
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${clipText(text, max - 1)}…`
 
-function bounded<T>(promise: Promise<T>, what: string): Promise<T> {
+/**
+ * Waits at most `ms` for a call. A call given up on may still finish later: `onLate` then receives
+ * its result, so that whatever it made (a prepared session) can be released.
+ */
+function bounded<T>(promise: Promise<T>, what: string, ms: number, onLate?: (value: T) => void): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
+  let gaveUp = false
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${what} did not answer within ${PORT_TIMEOUT_MS / 1000} s`)),
-      PORT_TIMEOUT_MS,
-    )
+    timer = setTimeout(() => {
+      gaveUp = true
+      reject(new Error(`${what} did not answer within ${ms / 1000} s`))
+    }, ms)
     timer.unref?.()
   })
+  if (onLate)
+    promise.then(
+      (value) => {
+        if (gaveUp) onLate(value)
+      },
+      () => undefined,
+    )
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
@@ -171,6 +217,8 @@ async function readSummary(batch: BatchRow): Promise<string | undefined> {
   }
 }
 
+type Confinement = { kind: 'ok' } | { kind: 'fail' | 'pause'; reason: string }
+
 type Verdict =
   | { kind: 'done'; output: unknown; credits: number }
   | { kind: 'invalid' | 'failed'; error: string; credits: number }
@@ -189,11 +237,26 @@ export class BatchEngine {
   private busy = false
   private stopped = false
   private resumed = false
+  /** When this engine took over; queue time before it (a stopped daemon) is not held against an item. */
+  private since = 0
+  private sweepNeeded = true
+  private confinementFailures = 0
   private lock: Promise<unknown> = Promise.resolve()
   private readonly checks = new Map<string, OutputCheck>()
   private readonly reported = new Map<string, string>()
+  /** Jobs found active when this engine took over (by their reclaim count): held by a stopped process. */
+  private readonly abandoned = new Map<string, number | undefined>()
 
   constructor(private readonly o: BatchEngineOptions) {}
+
+  /**
+   * Runs the first tick: items left in flight get fresh time limits, jobs a stopped process held are
+   * recognised, unfinished clean-ups are completed and the item confinement is checked. The daemon
+   * awaits this before it starts the job scheduler, so no batch job is claimed before that.
+   */
+  async ready(): Promise<void> {
+    await this.tick()
+  }
 
   start(): void {
     if (this.timer || this.stopped) return
@@ -299,10 +362,10 @@ export class BatchEngine {
     if (this.stopped) return
     await this.exclusive(async () => {
       if (this.stopped) return
-      if (!this.resumed) this.resume()
+      if (!this.resumed) await this.resume()
       // Asked at most once per tick, and only when some batch has items to run.
-      let confinement: Promise<string | undefined> | undefined
-      const confined = () => (confinement ??= this.confinementProblem())
+      let confinement: Promise<Confinement> | undefined
+      const confined = () => (confinement ??= this.checkConfinement())
       for (const batch of this.o.repo.running()) {
         try {
           await this.advance(batch.id, confined)
@@ -310,11 +373,16 @@ export class BatchEngine {
           this.report(batch.id, error)
         }
       }
-      for (const batch of this.o.repo.unsettledFinished()) {
-        try {
-          await this.cleanUp(batch.id)
-        } catch (error) {
-          this.report(batch.id, error)
+      // Only at start, after a batch ended, or after a clean-up failed: not a scan of every old batch.
+      if (this.sweepNeeded) {
+        this.sweepNeeded = false
+        for (const batch of this.o.repo.unsettledFinished()) {
+          try {
+            await this.cleanUp(batch.id)
+          } catch (error) {
+            this.sweepNeeded = true
+            this.report(batch.id, error)
+          }
         }
       }
     })
@@ -329,38 +397,65 @@ export class BatchEngine {
 
   /**
    * Items in flight when this engine starts were left by a stopped process, which may have been down
-   * for longer than their time limit: they get a fresh one instead of timing out at once.
+   * for longer than their time limit: they get a fresh one instead of timing out at once. A job still
+   * active now is held by that process until its lease runs out and the scheduler reclaims it; until
+   * then it is not running, so it is treated as queued.
    */
-  private resume(): void {
+  private async resume(): Promise<void> {
     this.resumed = true
     const now = this.o.clock()
+    this.since = now
     for (const batch of this.o.repo.running())
-      for (const item of this.o.repo.inflight(batch.id))
-        if (item.jobId && item.sessionKey)
-          this.o.repo.markRunning(batch.id, item.ordinal, {
-            jobId: item.jobId,
-            sessionKey: item.sessionKey,
-            repairs: item.repairs,
-            startedAt: now,
-          })
+      for (const item of this.o.repo.inflight(batch.id)) {
+        if (!item.jobId || !item.sessionKey) continue
+        this.o.repo.markRunning(batch.id, item.ordinal, {
+          jobId: item.jobId,
+          sessionKey: item.sessionKey,
+          repairs: item.repairs,
+          startedAt: now,
+        })
+        const job = await this.o.jobs.status(item.jobId).catch(() => undefined)
+        if (job?.status === 'active') this.abandoned.set(item.jobId, job.stalledCounter)
+      }
   }
 
-  private async confinementProblem(): Promise<string | undefined> {
+  /**
+   * `false` fails the batch at once. A check that throws or does not answer pauses the starting of
+   * new jobs (nothing is cancelled) and is tried again on the next ticks; only a run of failures
+   * fails the batch.
+   */
+  private async checkConfinement(): Promise<Confinement> {
     try {
-      return (await bounded(this.o.host.itemConfinementReady(), 'the confinement check'))
-        ? undefined
-        : CONFINEMENT_MISSING
+      const ready = await bounded(
+        this.o.host.itemConfinementReady(),
+        'the confinement check',
+        this.portTimeout,
+      )
+      this.confinementFailures = 0
+      return ready ? { kind: 'ok' } : { kind: 'fail', reason: CONFINEMENT_MISSING }
     } catch (error) {
-      return `confinement_unavailable: ${message(error)}`
+      this.confinementFailures++
+      const reason = `confinement_unavailable: ${message(error)}`
+      return { kind: this.confinementFailures >= CONFINEMENT_ATTEMPTS ? 'fail' : 'pause', reason }
     }
   }
 
-  private async advance(id: string, confined: () => Promise<string | undefined>): Promise<void> {
+  private get portTimeout(): number {
+    return this.o.portTimeoutMs ?? PORT_TIMEOUT_MS
+  }
+
+  private async advance(id: string, confined: () => Promise<Confinement>): Promise<void> {
     const now = this.o.clock()
     const before = this.o.repo.get(id)
     if (before?.status !== 'running') return
-    for (const item of this.o.repo.inflight(id)) await this.followSafely(before, item, now)
+    const unsettled = this.o.repo.counts(id)
+    // Checked before any job is written this tick: no confinement, no new job (a repair included).
+    const confinement: Confinement =
+      unsettled.pending + unsettled.running > 0 ? await confined() : { kind: 'ok' }
+    const send = confinement.kind === 'ok'
+    for (const item of this.o.repo.inflight(id)) await this.followSafely(before, item, now, send)
     const batch = this.o.repo.get(id) as BatchRow
+    if (confinement.kind === 'fail') return this.finish(batch, 'failed', confinement.reason)
     let counts = this.o.repo.counts(id)
     if (counts.done === 0 && counts.failed + counts.invalid >= FAIL_FAST_ITEMS)
       return this.finish(
@@ -368,10 +463,7 @@ export class BatchEngine {
         'failed',
         `the first ${FAIL_FAST_ITEMS} items all failed (${this.o.repo.commonError(id) ?? 'unknown error'})`,
       )
-    if (counts.pending + counts.running > 0) {
-      const problem = await confined()
-      if (problem !== undefined) return this.finish(batch, 'failed', problem)
-    }
+    if (confinement.kind === 'pause') return this.report(id, confinement.reason)
     // A spent budget stops items from starting; a batch with none left to start simply completes.
     const budget = batch.spec.budgetCredits
     if (budget !== undefined && batch.spent >= budget && counts.pending > 0) {
@@ -391,10 +483,14 @@ export class BatchEngine {
     return item.startedAt !== undefined && now - item.startedAt > batch.itemTimeoutMs
   }
 
+  private queueLimit(batch: BatchRow): number {
+    return Math.max(batch.itemTimeoutMs * QUEUE_LIMIT_FACTOR, MIN_QUEUE_LIMIT_MS)
+  }
+
   /** An item whose outcome cannot be read keeps being tried until its time limit, then fails. */
-  private async followSafely(batch: BatchRow, item: ItemRow, now: number): Promise<void> {
+  private async followSafely(batch: BatchRow, item: ItemRow, now: number, send: boolean): Promise<void> {
     try {
-      await this.follow(batch, item, now)
+      await this.follow(batch, item, now, send)
     } catch (error) {
       if (!this.late(batch, item, now)) return this.report(`${batch.id}:${item.ordinal}`, error)
       this.settle(batch, item, 'failed', {
@@ -415,6 +511,8 @@ export class BatchEngine {
       await bounded(
         this.o.sessions.prepare({ sessionKey, principalId: itemPrincipal(batch.id), root: batch.root }),
         'the item session',
+        this.portTimeout,
+        () => this.release(sessionKey),
       )
     } catch (error) {
       return this.settle(batch, item, 'failed', { error: `session_unavailable: ${message(error)}` })
@@ -455,11 +553,12 @@ export class BatchEngine {
       this.settle(batch, item, 'failed', { error: failure, ...(credits !== undefined ? { credits } : {}) })
   }
 
-  private async follow(batch: BatchRow, item: ItemRow, now: number): Promise<void> {
+  private async follow(batch: BatchRow, item: ItemRow, now: number, send: boolean): Promise<void> {
     const { jobId, sessionKey } = item
     if (!jobId || !sessionKey) return this.settle(batch, item, 'failed', { error: 'lost_job' })
     const job = await this.o.jobs.status(jobId)
     if (!job) {
+      if (!send) return
       // Recorded as running, but the process stopped before the job was written: write it now, with
       // the same job id (never a second job) and a fresh time limit.
       const prompt =
@@ -476,6 +575,32 @@ export class BatchEngine {
       return this.send(batch, item, jobId, prompt)
     }
     if (UNFINISHED_JOB.has(job.status)) {
+      // A job held by a stopped process stays treated as queued until the scheduler reclaims it.
+      if (
+        this.abandoned.has(jobId) &&
+        (job.status !== 'active' || job.stalledCounter !== this.abandoned.get(jobId))
+      )
+        this.abandoned.delete(jobId)
+      if (job.status !== 'active' || this.abandoned.has(jobId)) {
+        // Only running time counts toward the item limit: while queued it starts again each tick.
+        // The queue wait itself has a separate, generous limit.
+        const queuedSince = Math.max(job.createdAt ?? now, this.since)
+        if (now - queuedSince > this.queueLimit(batch)) {
+          await this.o.jobs.cancel(jobId)
+          return this.settle(batch, item, 'failed', {
+            error: 'queue_timeout',
+            credits: await this.credits(sessionKey),
+          })
+        }
+        if (item.startedAt !== now)
+          this.o.repo.markRunning(batch.id, item.ordinal, {
+            jobId,
+            sessionKey,
+            repairs: item.repairs,
+            startedAt: now,
+          })
+        return
+      }
       if (!this.late(batch, item, now)) return
       await this.o.jobs.cancel(jobId)
       return this.settle(batch, item, 'failed', { error: 'timeout', credits: await this.credits(sessionKey) })
@@ -491,9 +616,18 @@ export class BatchEngine {
     const verdict = this.evaluate(
       batch,
       item,
-      await bounded(this.o.sessions.transcript(sessionKey), 'the item ledger'),
+      await bounded(this.o.sessions.transcript(sessionKey), 'the item ledger', this.portTimeout),
     )
     if (verdict.kind === 'repair') {
+      // A repair is a new job: none while the confinement is unconfirmed (the item waits), and none
+      // with nothing left of the budget (the answer stands as invalid).
+      if (!send) return
+      const budget = batch.spec.budgetCredits
+      if (budget !== undefined && budget - (this.o.repo.get(batch.id)?.spent ?? batch.spent) <= 0)
+        return this.settle(batch, item, 'invalid', {
+          error: `budget_exhausted_before_repair: ${verdict.problem}`,
+          credits: verdict.credits,
+        })
       const repairJob = itemJobId(batch.id, item.ordinal, item.repairs + 1)
       if (
         !this.o.repo.markRunning(batch.id, item.ordinal, {
@@ -544,6 +678,7 @@ export class BatchEngine {
       const transcript = await bounded(
         this.o.sessions.transcript(item.sessionKey as string),
         'the item ledger',
+        this.portTimeout,
       )
       const verdict = this.evaluate(batch, { ...item, repairs: 0 }, transcript)
       if (verdict.kind === 'repair') problem = verdict.problem
@@ -587,7 +722,9 @@ export class BatchEngine {
   private async credits(sessionKey: string | undefined): Promise<number | undefined> {
     if (!sessionKey) return undefined
     try {
-      return creditsOf(await bounded(this.o.sessions.transcript(sessionKey), 'the item ledger'))
+      return creditsOf(
+        await bounded(this.o.sessions.transcript(sessionKey), 'the item ledger', this.portTimeout),
+      )
     } catch {
       return undefined
     }
@@ -610,6 +747,7 @@ export class BatchEngine {
       ...(result.credits !== undefined ? { credits: result.credits } : {}),
     })
     this.reported.delete(`${batch.id}:${item.ordinal}`)
+    if (item.jobId) this.abandoned.delete(item.jobId)
     if (settled && item.sessionKey) this.release(item.sessionKey)
   }
 
@@ -631,6 +769,7 @@ export class BatchEngine {
     reason?: string,
   ): Promise<void> {
     this.o.repo.setStatus(batch.id, status, reason)
+    this.sweepNeeded = true
     await this.cleanUp(batch.id)
   }
 
@@ -639,7 +778,11 @@ export class BatchEngine {
     if (!batch || batch.status === 'running') return
     for (const item of this.o.repo.inflight(id)) {
       if (item.jobId) await this.o.jobs.cancel(item.jobId)
-      this.settle(batch, item, 'cancelled', { error: batch.reason ?? batch.status })
+      // What the item already cost (a first turn before its repair, a turn lost to a crash) stays billed.
+      this.settle(batch, item, 'cancelled', {
+        error: batch.reason ?? batch.status,
+        credits: await this.credits(item.sessionKey),
+      })
     }
     this.o.repo.cancelPending(id, batch.status === 'completed' ? 'not_started' : batch.status)
     this.checks.delete(id)

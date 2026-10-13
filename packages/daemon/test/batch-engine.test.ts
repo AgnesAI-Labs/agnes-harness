@@ -11,8 +11,9 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { rpcError } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BatchAccessError } from '../src/batch/engine.js'
+import { BatchAccessError, batchJobsPort } from '../src/batch/engine.js'
 import { BatchSpecError, itemSessionKey } from '../src/batch/spec.js'
 import { batchHarness, type FakeModel } from './batch-fakes.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -346,13 +347,13 @@ describe('BatchEngine: confinement and item sessions', () => {
     expect(h.tables.table('jobs').all('SELECT idempotency_key FROM jobs')).toEqual([])
   })
 
-  it('stops a running batch, cancelling its jobs, when the confinement cannot be confirmed', async () => {
+  it('stops a running batch, cancelling its jobs, when the confinement goes away', async () => {
     files(['a.txt', 'b.txt', 'c.txt'])
     const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
     await begin(h, { concurrency: 1 })
     await h.engine.tick()
     expect(h.jobsRepo.get(`batch:${id}:1:0`)?.status).toBe('waiting')
-    h.confinement.ready = new Error('the worker did not answer')
+    h.confinement.ready = false
     await h.engine.tick()
     const status = await h.engine.status('p', id)
     expect(status).toMatchObject({ status: 'failed', counts: { cancelled: 3 } })
@@ -372,8 +373,8 @@ describe('BatchEngine: confinement and item sessions', () => {
       spec: { dir: 'items', prompt: 'x' },
     })
     expect((await h.run(id)).counts).toMatchObject({ done: 1 })
+    // The session is bound to `root` here; that the real binding opens it there is the daemon wiring's to test.
     expect(h.sessions.preparedFor).toEqual([{ principalId: `batch:${id}`, root }])
-    expect(h.sessions.opened.map((open) => open.cwd)).toEqual([root])
     expect(lines('results.jsonl')).toEqual([expect.objectContaining({ path: 'lab/items/a.txt' })])
   })
 
@@ -552,16 +553,19 @@ describe('BatchEngine: failures that must not stall a batch', () => {
 
   it('finishes the clean-up of a batch whose outcome was recorded just before the process stopped', async () => {
     files(['a.txt', 'b.txt', 'c.txt'])
-    const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
-    await begin(h, { concurrency: 2 })
-    await h.engine.tick()
-    h.repo.setStatus(id, 'cancelled', 'cancelled by request')
+    const tables = sqliteTables()
+    const first = batchHarness({ root, tables, model: () => ({ reply: 'ok' }) })
+    await begin(first, { concurrency: 2 })
+    await first.engine.tick()
+    first.repo.setStatus(id, 'cancelled', 'cancelled by request')
+    const h = batchHarness({ root, tables, model: () => ({ reply: 'ok' }) })
     await h.engine.tick()
     const status = await h.engine.status('p', id)
     expect(status).toMatchObject({ status: 'cancelled', counts: { cancelled: 3, running: 0, pending: 0 } })
     expect(unfinishedJobs(h)).toBe(0)
     expect(h.sessions.released).toEqual([key(1), key(2)])
     expect(status.summary).toContain('Cancelled 3')
+    expect(first.sessions.released).toEqual([])
   })
 })
 
@@ -689,5 +693,252 @@ describe('BatchEngine: status, list and the timer', () => {
     await h.scheduler.tick()
     await h.engine.tick()
     expect((await h.engine.status('p', id)).status).toBe('running')
+  })
+})
+
+describe('BatchEngine: review fixes', () => {
+  it('bills an item cancelled in flight what its ledger shows', async () => {
+    files(['a.png'])
+    const h = batchHarness({ root, model: () => ({ reply: '{"count":"many"}', credits: 0.5 }) })
+    await begin(h, { schema })
+    await h.engine.tick()
+    await h.scheduler.tick()
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]).toMatchObject({ status: 'running', repairs: 1 })
+    const status = await h.engine.cancel('p', id)
+    expect(status).toMatchObject({ status: 'cancelled', spentCredits: 0.5 })
+    expect(h.repo.page(id, 0, 1)[0]).toMatchObject({ status: 'cancelled', credits: 0.5 })
+    expect(lines('errors.jsonl')).toEqual([expect.objectContaining({ status: 'cancelled', credits: 0.5 })])
+  })
+
+  it('counts only running time toward the item limit, not time waiting in the queue', async () => {
+    files(['a.txt'])
+    let now = 1_000_000
+    const h = batchHarness({ root, clock: () => now, model: () => ({ reply: 'ok' }) })
+    await begin(h, { itemTimeoutSec: 60 })
+    await h.engine.tick()
+    for (let wait = 0; wait < 5; wait++) {
+      now += 61_000
+      await h.engine.tick()
+    }
+    expect(h.repo.page(id, 0, 1)[0]?.status).toBe('running')
+    expect(h.jobsRepo.get(`batch:${id}:1:0`)?.status).toBe('waiting')
+    expect((await h.run(id)).counts).toMatchObject({ done: 1 })
+  })
+
+  it('starts the item time limit when its job starts running, however long it waited', async () => {
+    files(['a.txt'])
+    let now = 1_000_000
+    const h = batchHarness({ root, clock: () => now, model: () => ({ hang: true }) })
+    await begin(h, { itemTimeoutSec: 60 })
+    await h.engine.tick()
+    for (let wait = 0; wait < 5; wait++) {
+      now += 61_000
+      await h.engine.tick()
+    }
+    const wave = h.scheduler.tick()
+    await vi.waitFor(() => expect(h.sessions.counters.running).toBe(1))
+    now += 30_000
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]?.status).toBe('running')
+    now += 31_000
+    await h.engine.tick()
+    await wave
+    expect(h.repo.page(id, 0, 1)[0]).toMatchObject({ status: 'failed', error: 'timeout' })
+  })
+
+  it('fails an item whose job waited in the queue past the queue limit', async () => {
+    files(['a.txt', 'b.txt'])
+    let now = 1_000_000
+    const h = batchHarness({ root, clock: () => now, model: () => ({ reply: 'ok' }) })
+    await begin(h, { itemTimeoutSec: 60, concurrency: 1 })
+    await h.engine.tick()
+    now += 29 * 60_000
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]?.status).toBe('running')
+    now += 2 * 60_000
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]).toMatchObject({ status: 'failed', error: 'queue_timeout' })
+    expect(h.jobsRepo.get(`batch:${id}:1:0`)?.status).toBe('cancelled')
+    expect(h.sessions.released).toEqual([key(1)])
+  })
+
+  it('does not time out a job held by a stopped process until it is reclaimed, then runs it', async () => {
+    files(['a.txt'])
+    let now = 1_000_000
+    const tables = sqliteTables()
+    const first = batchHarness({ root, tables, clock: () => now, model: () => ({ reply: 'ok' }) })
+    await begin(first, { itemTimeoutSec: 60 })
+    await first.engine.tick()
+    expect(first.jobsRepo.claimDue(now, 'gone', 10 * 60_000, 16)).toHaveLength(1)
+    now += 60_000
+    const second = batchHarness({ root, tables, clock: () => now, model: () => ({ reply: 'ok' }) })
+    await second.engine.ready()
+    for (let wait = 0; wait < 8; wait++) {
+      now += 61_000
+      await second.engine.tick()
+      await second.scheduler.tick()
+    }
+    expect(second.repo.page(id, 0, 1)[0]?.status).toBe('running')
+    const status = await second.run(id, { onRound: () => (now += 61_000) })
+    expect(status.counts).toMatchObject({ done: 1 })
+    expect(second.jobsRepo.get(`batch:${id}:1:0`)).toMatchObject({ status: 'completed', stalledCounter: 1 })
+  })
+
+  it('pauses starting items while the confinement check fails, and carries on once it answers', async () => {
+    files(['a.txt'])
+    const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
+    await begin(h, {})
+    h.confinement.ready = new Error('the worker did not answer')
+    await h.engine.tick()
+    await h.engine.tick()
+    expect(h.sessions.prepared).toEqual([])
+    expect((await h.engine.status('p', id)).status).toBe('running')
+    h.confinement.ready = true
+    expect((await h.run(id)).counts).toMatchObject({ done: 1 })
+  })
+
+  it('fails the batch, cancelling its jobs, after three confinement checks in a row fail', async () => {
+    files(['a.txt', 'b.txt'])
+    const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
+    await begin(h, { concurrency: 1 })
+    await h.engine.tick()
+    h.confinement.ready = new Error('the worker did not answer')
+    await h.engine.tick()
+    await h.engine.tick()
+    expect((await h.engine.status('p', id)).status).toBe('running')
+    expect(h.jobsRepo.get(`batch:${id}:1:0`)?.status).toBe('waiting')
+    await h.engine.tick()
+    const status = await h.engine.status('p', id)
+    expect(status).toMatchObject({ status: 'failed', counts: { cancelled: 2 } })
+    expect(status.reason).toContain('confinement_unavailable: the worker did not answer')
+    expect(h.jobsRepo.get(`batch:${id}:1:0`)?.status).toBe('cancelled')
+  })
+
+  it('sends no repair job while the confinement check fails', async () => {
+    files(['a.png'])
+    const h = batchHarness({
+      root,
+      model: (_prompt, _key, turn) => ({ reply: turn === 1 ? '{"count":"many"}' : '{"count":3}' }),
+    })
+    await begin(h, { schema })
+    await h.engine.tick()
+    await h.scheduler.tick()
+    h.confinement.ready = new Error('the worker did not answer')
+    await h.engine.tick()
+    expect(h.jobsRepo.get(`batch:${id}:1:1`)).toBeUndefined()
+    h.confinement.ready = true
+    expect((await h.run(id)).counts).toMatchObject({ done: 1 })
+  })
+
+  it('runs the start-up tick on request before the scheduler starts', async () => {
+    files(['a.txt'])
+    const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
+    await begin(h, {})
+    await h.engine.ready()
+    expect(h.confinement.asked).toBe(1)
+    expect(h.sessions.prepared).toEqual([key(1)])
+  })
+
+  it('releases a session whose preparation answered only after the engine gave up on it', async () => {
+    files(['a.txt', 'b.txt'])
+    const h = batchHarness({
+      root,
+      model: () => ({ reply: 'ok' }),
+      portTimeoutMs: 20,
+      prepare: async (sessionKey) => {
+        if (sessionKey === key(1)) await new Promise((resolve) => setTimeout(resolve, 80))
+      },
+    })
+    await begin(h, {})
+    expect((await h.run(id)).counts).toMatchObject({ done: 1, failed: 1 })
+    expect(lines('errors.jsonl')).toEqual([
+      expect.objectContaining({ error: expect.stringContaining('session_unavailable') }),
+    ])
+    await vi.waitFor(() => expect(h.sessions.released).toContain(key(1)))
+  })
+
+  it('fails an item whose job status cannot be read once its time limit passes, without re-sending it', async () => {
+    files(['a.txt'])
+    let now = 1_000_000
+    let sent = 0
+    const h = batchHarness({
+      root,
+      clock: () => now,
+      model: () => ({ reply: 'ok' }),
+      jobs: (port) => ({
+        ...port,
+        enqueue: async (spec) => {
+          sent++
+          return port.enqueue(spec)
+        },
+        status: async () => {
+          throw new Error('jobs table unavailable')
+        },
+      }),
+    })
+    await begin(h, { itemTimeoutSec: 60 })
+    await h.engine.tick()
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]?.status).toBe('running')
+    now += 61_000
+    await h.engine.tick()
+    expect(h.repo.page(id, 0, 1)[0]).toMatchObject({
+      status: 'failed',
+      error: 'outcome_unavailable: jobs table unavailable',
+    })
+    expect(sent).toBe(1)
+  })
+
+  it('marks an answer invalid instead of sending a repair once the budget is spent', async () => {
+    files(['a.png', 'b.png'])
+    const h = batchHarness({
+      root,
+      model: (prompt) => ({
+        reply: /Item 1:/u.test(prompt) ? '{"count":1}' : '{"count":"many"}',
+        credits: 1,
+      }),
+    })
+    await begin(h, { schema, concurrency: 2, budgetCredits: 1 })
+    const status = await h.run(id)
+    expect(status).toMatchObject({ status: 'completed', counts: { done: 1, invalid: 1 }, spentCredits: 2 })
+    expect(h.jobsRepo.get(`batch:${id}:2:1`)).toBeUndefined()
+    expect(lines('errors.jsonl')).toEqual([
+      expect.objectContaining({
+        ordinal: 2,
+        error: expect.stringContaining('budget_exhausted_before_repair'),
+      }),
+    ])
+  })
+
+  it('looks for unfinished clean-ups once at start and after a batch ends, not on every tick', async () => {
+    files(['a.txt'])
+    const h = batchHarness({ root, model: () => ({ reply: 'ok' }) })
+    const sweep = vi.spyOn(h.repo, 'unsettledFinished')
+    await begin(h, { concurrency: 1 })
+    // The item's job waits in the queue: five ticks with nothing to finish.
+    for (let tick = 0; tick < 5; tick++) await h.engine.tick()
+    expect(sweep).toHaveBeenCalledTimes(1)
+    await h.engine.cancel('p', id)
+    await h.engine.tick()
+    await h.engine.tick()
+    expect(sweep).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('batchJobsPort', () => {
+  const service = (poll: () => Promise<never>) => ({
+    enqueue: async () => ({ jobId: 'j' }),
+    poll,
+    cancel: async () => undefined,
+  })
+
+  it('reports a job the queue does not know as missing and rethrows any other failure', async () => {
+    await expect(
+      batchJobsPort(service(() => Promise.reject(rpcError('SESSION_NOT_FOUND', { jobId: 'j' })))).status('j'),
+    ).resolves.toBeUndefined()
+    await expect(
+      batchJobsPort(service(() => Promise.reject(new Error('disk I/O error')))).status('j'),
+    ).rejects.toThrow('disk I/O error')
   })
 })

@@ -184,6 +184,8 @@ export function batchHarness(input: {
   /** Runs inside the engine's session preparation, to hold it or make it fail. */
   prepare?: (sessionKey: string) => Promise<void>
   tickMs?: number
+  /** How long the engine waits on a call into the item sessions' worker. */
+  portTimeoutMs?: number
 }) {
   const tables = input.tables ?? sqliteTables()
   const clock = input.clock ?? (() => Date.now())
@@ -252,6 +254,7 @@ export function batchHarness(input: {
     profileName: 'default',
     clock,
     tickMs: input.tickMs ?? 1000,
+    ...(input.portTimeoutMs !== undefined ? { portTimeoutMs: input.portTimeoutMs } : {}),
     audit: (record) => audits.push(record),
     log: (message) => logs.push(message),
   })
