@@ -30,13 +30,16 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     'workbench-bottom': ['aside', 1],
     transcript: ['section', 1],
     'empty-state': ['section', 1],
+    // The full page a home sidebar entry opens, in place of the conversation.
+    'home-page': ['section', 1],
     approval: ['section', 1],
     composer: ['form', 1],
     'composer-input': ['textarea', 1],
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
     // Counts the composed shell's glyphs, including the workspace chooser, the report-problem action,
-    // the top bar's overflow menu and the empty session list's illustration.
-    icon: ['svg', 37],
+    // the top bar's overflow menu, the empty session list's illustration, and the session list's
+    // search and filter actions.
+    icon: ['svg', 39],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 6],

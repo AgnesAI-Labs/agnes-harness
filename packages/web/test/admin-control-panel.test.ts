@@ -596,9 +596,9 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
 
 it('offers only the loop from the chip until advanced settings show or a bundle is in effect', async () => {
   const loops = [
-    { id: 'default', version: '1.0.0' },
-    { id: 'workflow', version: '1.0.0' },
-  ] as Parameters<typeof updateLoopPicker>[0]['loops']
+    { id: 'default', version: '1.0.0', capabilities: [], sourcePackage: 'base' },
+    { id: 'workflow', version: '1.0.0', capabilities: [], sourcePackage: 'acme' },
+  ]
   const view = {
     visible: true,
     disabled: false,

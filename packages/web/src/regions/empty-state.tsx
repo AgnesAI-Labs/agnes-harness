@@ -1,4 +1,6 @@
+import { resolvePluginMetadata } from '@agnes/protocol'
 import {
+  homeNavigation,
   type LocaleService,
   type SessionService,
   SlotOutlet,
@@ -6,15 +8,85 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { Button, createRegionRenderer } from '@agnes/web-ui'
+import { Button, createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { Prompts, Welcome, XProvider } from '@agnes/web-ui/x'
-import { type ReactElement, useRef } from 'react'
+import { type ReactElement, useEffect, useRef, useSyncExternalStore } from 'react'
+import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
 const APP_BRAND = 'Agnes Harness'
 
-export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => string }): ReactElement {
+type EmptyStateText = (key: string, vars?: Readonly<Record<string, string | number>>) => string
+
+/** Up to three business agents to start from, each opening its card on the business agents page. */
+function BusinessAgentSuggestions({
+  t,
+  source,
+}: {
+  t: EmptyStateText
+  source: typeof businessAgentSuggestions
+}): ReactElement | null {
+  const { featured, total } = useSyncExternalStore(source.subscribe, source.getSnapshot)
+  const locale = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
+  if (!featured.length) return null
+  return (
+    <div className={'empty-state-agents'} data-testid={'agent-suggestions'}>
+      <div className={'empty-state-agent-grid'}>
+        {featured.map((row, index) => {
+          const purpose = resolvePluginMetadata(row.metadata, locale)
+          const name = purpose?.displayName ?? row.id.split('/').at(-1) ?? row.id
+          const line = purpose?.samplePrompt ?? purpose?.summary
+          return (
+            <Button
+              key={row.id}
+              appearance={'ghost'}
+              htmlType={'button'}
+              className={'empty-state-agent'}
+              data-testid={'agent-suggestion'}
+              data-package={row.id}
+              onClick={() => homeNavigation.open('agents', { focus: row.id })}
+            >
+              <span className={'empty-state-agent-heading'}>
+                <span className={'empty-state-agent-tile'} data-tone={index % 3} aria-hidden={'true'}>
+                  {Array.from(name.trim())[0]?.toLocaleUpperCase()}
+                </span>
+                <span className={'empty-state-agent-name'}>{name}</span>
+              </span>
+              {line && <span className={'empty-state-agent-line'}>{line}</span>}
+            </Button>
+          )
+        })}
+      </div>
+      <p className={'empty-state-agents-note'}>
+        {t('home.suggestions.note')}{' '}
+        <Button
+          appearance={'ghost'}
+          size={'small'}
+          htmlType={'button'}
+          className={'empty-state-agents-all'}
+          data-testid={'agent-suggestions-all'}
+          onClick={() => homeNavigation.open('agents')}
+        >
+          {t('home.suggestions.all', { count: total })}
+        </Button>
+      </p>
+    </div>
+  )
+}
+
+export function EmptyStateBuiltin({
+  t = (key) => key,
+  suggestions = businessAgentSuggestions,
+}: {
+  t?: EmptyStateText
+  /** The business agents to suggest; the page's catalog unless a host supplies its own. */
+  suggestions?: typeof businessAgentSuggestions
+}): ReactElement {
   const host = useRef<HTMLDivElement>(null)
+  const agents = useSyncExternalStore(suggestions.subscribe, suggestions.getSnapshot)
+  useEffect(() => {
+    void suggestions.refresh()
+  }, [suggestions])
   return (
     <div ref={host} data-agnes-region-owner={'builtin'} data-agnes-region-unit={'empty-state'}>
       <div className={'conversation-hero-dsh'} data-agnes-conversation-hero={true}>
@@ -55,29 +127,33 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => s
           }
           description={<span className={'empty-state-copy'}>{t('app.emptyState.tagline')}</span>}
         />
-        <Prompts
-          rootClassName={'empty-state-suggestions'}
-          data-testid={'task-suggestions'}
-          wrap={true}
-          // Each prompt is a real button, so it has a name, focus and Enter; its click reaches the item.
-          items={['project', 'issue', 'test'].map((suggestion) => ({
-            key: suggestion,
-            // The description slot renders a paragraph; the label slot would make each prompt a heading.
-            description: (
-              <Button appearance={'ghost'} size={'small'} htmlType={'button'}>
-                {t(`composer.suggestion.${suggestion}`)}
-              </Button>
-            ),
-          }))}
-          onItemClick={({ data }) =>
-            host.current?.dispatchEvent(
-              new CustomEvent('agnes:compose-suggestion', {
-                bubbles: true,
-                detail: t(`composer.suggestion.${data.key}`),
-              }),
-            )
-          }
-        />
+        <BusinessAgentSuggestions t={t} source={suggestions} />
+        {/* Without a catalog of business agents the plain task suggestions stay. */}
+        {agents.featured.length === 0 && (
+          <Prompts
+            rootClassName={'empty-state-suggestions'}
+            data-testid={'task-suggestions'}
+            wrap={true}
+            // Each prompt is a real button, so it has a name, focus and Enter; its click reaches the item.
+            items={['project', 'issue', 'test'].map((suggestion) => ({
+              key: suggestion,
+              // The description slot renders a paragraph; the label slot would make each prompt a heading.
+              description: (
+                <Button appearance={'ghost'} size={'small'} htmlType={'button'}>
+                  {t(`composer.suggestion.${suggestion}`)}
+                </Button>
+              ),
+            }))}
+            onItemClick={({ data }) =>
+              host.current?.dispatchEvent(
+                new CustomEvent('agnes:compose-suggestion', {
+                  bubbles: true,
+                  detail: t(`composer.suggestion.${data.key}`),
+                }),
+              )
+            }
+          />
+        )}
       </XProvider>
     </div>
   )
@@ -100,7 +176,9 @@ export function mountEmptyStateRegion(
   if (!registry.spec(EMPTY_STATE_SLOT))
     registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
-  const translate = services.locale ? (key: string) => services.locale?.t(key) ?? key : undefined
+  const translate: EmptyStateText | undefined = services.locale
+    ? (key, vars) => services.locale?.t(key, vars) ?? key
+    : undefined
   const removeBuiltin = registry.register(
     {
       name: EMPTY_STATE_SLOT as string,

@@ -83,6 +83,7 @@ Key rules:
 | `workbench-bottom` | Bottom session dock `aside` | Workbench |
 | `transcript` | Conversation list container | Workbench |
 | `empty-state` | Empty state | Workbench |
+| `home-page` | Full page opened from a home sidebar entry `section` | Workbench |
 | `approval` | Approval area | Workbench |
 | `composer` | Input wrapper `form` | Workbench |
 | `composer-input` | Input `textarea` | Workbench |

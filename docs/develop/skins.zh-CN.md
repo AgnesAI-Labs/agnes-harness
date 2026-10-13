@@ -80,6 +80,7 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 | `workbench-bottom` | 底部会话停靠区 `aside` | 工作台 |
 | `transcript` | 对话列表容器 | 工作台 |
 | `empty-state` | 空状态 | 工作台 |
+| `home-page` | 首页侧栏入口打开的整页 `section` | 工作台 |
 | `approval` | 审批区 | 工作台 |
 | `composer` | 输入框外框 `form` | 工作台 |
 | `composer-input` | 输入文本域 `textarea` | 工作台 |

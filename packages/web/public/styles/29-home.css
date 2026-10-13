@@ -537,4 +537,119 @@
   body:has(#empty-state:not([hidden])) main:has(> .connection-bar:not([hidden])) > .topbar-row {
     position: static;
   }
+
+  /* A new session suggests up to three business agents; each card opens it on its page. */
+  .empty-state-agents {
+    width: min(100%, 51.25rem);
+    margin: var(--s24) auto 0;
+    display: grid;
+    gap: var(--s12);
+  }
+  .empty-state-agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+    gap: var(--s12);
+  }
+  #empty-state .empty-state-agent {
+    height: auto;
+    min-width: 0;
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    gap: var(--s8);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    font-weight: var(--font-weight-regular);
+    text-align: start;
+    white-space: normal;
+  }
+  #empty-state .empty-state-agent:hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    background: var(--agnes-bg-surface);
+    box-shadow: var(--shadow-hairline);
+  }
+  .empty-state-agent > span {
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* The hero's wrappers shrink to their content; with cards they take the column's width. */
+  #empty-state :where([data-slot], [data-slot-entry], [data-agnes-region-unit]):has(.empty-state-agents) {
+    width: 100%;
+  }
+  .empty-state-agent-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .empty-state-agent-tile {
+    flex: 0 0 auto;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-color-gray-0);
+    background: var(--agnes-color-indigo-600);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+  }
+  .empty-state-agent-tile[data-tone="1"] {
+    background: var(--agnes-color-green-500);
+  }
+  .empty-state-agent-tile[data-tone="2"] {
+    background: var(--agnes-color-blue-500);
+  }
+  .empty-state-agent-name {
+    overflow: hidden;
+    font-size: 0.84375rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .empty-state-agent-line {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .empty-state-agents-note {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-align: center;
+  }
+  #empty-state .empty-state-agents-all {
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: inherit;
+    font-weight: var(--font-weight-regular);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  #empty-state .empty-state-agents-all:hover:not(:disabled) {
+    color: var(--agnes-text-emphasis);
+    background: transparent;
+  }
+  @media (max-width: 720px) {
+    .empty-state-agent-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .empty-state-agent-line {
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+  }
 }
