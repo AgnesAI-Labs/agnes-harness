@@ -324,7 +324,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
-  'packages/base/extensions/tools-core': 1080,
+  // 2026-10-13 batch processing: read workspace images; reviewed exact countLines packages/base/extensions/tools-core 1297; no exclusions or spare allocation.
+  'packages/base/extensions/tools-core': 1297,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -2938,7 +2939,7 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CRLF-preserving write/edit, the stopped-process notice, background shell, the job tool, and the
   // PowerShell, timeout and wrapper feedback in shell results; measured 1080, exact (a sibling
   // extension for `job` alone would still leave this above 922).
-  ['tools-core', 1080],
+  ['tools-core', 1297],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
