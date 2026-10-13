@@ -238,6 +238,21 @@ describe('local example catalog', () => {
       expect(prompt?.en).not.toMatch(/^Run the .* workflow/)
     }
     expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(12)
+    // Their policy lives in plugin code, which a listing never runs: the summary says so instead of
+    // repeating the package's own description, and reports the declared absence of network use.
+    for (const entry of fde) {
+      const name = entry.id.slice('@agnes-fde/'.length)
+      expect(entry.presentation?.presets).toEqual([
+        {
+          bundle: `${entry.id}#${name}`,
+          id: name,
+          toolPolicy: `fde.${name}`,
+          readOnly: 'unknown',
+          confirmBeforeActions: 'unknown',
+          network: 'none',
+        },
+      ])
+    }
     for (const entry of result.entries) {
       const directory = fileURLToPath(
         new URL(`../../../${entry.source.ref.slice('file:./'.length)}`, import.meta.url),

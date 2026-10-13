@@ -362,7 +362,7 @@ function projectPackage(
       : null,
     contributions: structuredClone([...row.contributions]),
     presentation: {
-      rows: structuredClone(row.presentation?.rows ?? []),
+      ...structuredClone({ rows: [], ...row.presentation }),
       origin: packageOrigin(row.entry.source, row.entry.provenance, row.entry.trust === 'builtin'),
     },
     ...(row.entry.metadata ? { metadata: structuredClone(row.entry.metadata) } : {}),
@@ -416,7 +416,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
     source: projectSource(entry.source),
     contributions: structuredClone(entry.contributions),
     presentation: {
-      rows: structuredClone(entry.presentation?.rows ?? []),
+      ...structuredClone({ rows: [], ...entry.presentation }),
       origin:
         entry.sourceId === 'official-examples' || entry.sourceId === 'local-examples'
           ? 'example'

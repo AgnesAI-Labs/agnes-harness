@@ -3702,6 +3702,24 @@
         "origin": {
           "enum": ["official", "example", "local", "local-source", "third-party"]
         },
+        "presets": {
+          "description": "What each bundle preset's policy guarantees, derived from package data without running plugin code. Unknown means the answer is decided in code.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bundle", "id", "toolPolicy", "readOnly", "confirmBeforeActions", "network"],
+            "properties": {
+              "bundle": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "toolPolicy": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "readOnly": { "enum": ["yes", "no", "unknown"] },
+              "confirmBeforeActions": { "enum": ["yes", "no", "unknown"] },
+              "network": { "enum": ["none", "allowed", "unknown"] }
+            }
+          }
+        },
         "rows": {
           "type": "array",
           "maxItems": 256,

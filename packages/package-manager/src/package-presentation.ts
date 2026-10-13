@@ -4,23 +4,32 @@ import { type PackagePresentation, validateExtensionManifest } from '@agnes/prot
 import { containedEntry } from './entry-path.js'
 import { readStaticJson } from './integrity.js'
 import { type AgnesPluginManifestEntry, parseAgnesPluginEntries } from './plugin-manifest.js'
+import { summarizeBundlePresets } from './preset-policy-summary.js'
 
 /** Static display text/config availability, never registration or activation evidence. */
-export function presentPluginRows(entries: readonly AgnesPluginManifestEntry[]): PackagePresentation {
+export function presentPluginRows(
+  entries: readonly AgnesPluginManifestEntry[],
+  bundles?: { packageId: string; bundles: unknown },
+): PackagePresentation {
+  const presets = bundles ? summarizeBundlePresets(bundles.packageId, bundles.bundles, entries) : []
   return {
     rows: entries.map((entry) => ({
       id: entry.id,
       ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
       settings: entry.configSchema !== undefined,
     })),
+    ...(presets.length ? { presets } : {}),
   }
 }
 
 /** Read only the exact inventory directory, including bundled public extension contracts. */
 export function readPackagePresentation(directory: string, builtin: boolean): PackagePresentation {
   const pkg = readStaticJson(join(directory, 'package.json'))
-  const author = pkg.agnes as { plugins?: unknown; extensions?: unknown } | undefined
-  const result = presentPluginRows(parseAgnesPluginEntries(String(pkg.name), author?.plugins))
+  const author = pkg.agnes as { plugins?: unknown; extensions?: unknown; bundles?: unknown } | undefined
+  const result = presentPluginRows(parseAgnesPluginEntries(String(pkg.name), author?.plugins), {
+    packageId: String(pkg.name),
+    bundles: author?.bundles,
+  })
   if (builtin && Array.isArray(author?.extensions)) {
     for (const path of author.extensions) {
       if (typeof path !== 'string' || result.rows.length >= 256) throw new TypeError('Invalid bundled rows')

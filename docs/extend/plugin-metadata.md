@@ -52,4 +52,12 @@ The page resolves each localized field independently, then falls back to its bas
 
 “Provides” and “Where it appears” use existing readable registrations and inventory. An author summary or capability declaration is not proof of a registered tool. Unloaded or unavailable contributions remain unavailable rather than being inferred from their IDs. See the approved design's Phase B scope for the small presentation projection.
 
+`PackagePresentation.presets` summarizes what each bundle preset's policy guarantees, so a client can state them before installation:
+
+```json
+{ "bundle": "acme/research#research", "id": "research", "toolPolicy": "default", "readOnly": "yes", "confirmBeforeActions": "no", "network": "none" }
+```
+
+The backend derives every field from package data without running plugin code; an author cannot write it. `readOnly` is `yes` when the bundle or preset sets the platform's `toolPolicy.readOnly`, which holds under any provider, and `no` when it does not and the preset uses the default tool policy. `confirmBeforeActions` is `no` under the default tool policy, where confirmation follows the session's permission mode and the preset promises nothing. Both are `unknown` when the preset selects its own tool-policy provider, because that policy is decided in code; `readOnly` is also `unknown` when the bundle extends one from another package. `network` reads the package's declared capabilities: `none` when capabilities are declared and name no host, `allowed` when they name one, `unknown` when nothing is declared. A client should promise only a `yes` or a `none` and otherwise list the declared capabilities.
+
 The optional `PackagePresentation` read field on preview, inventory and catalog DTOs carries bounded row IDs, author metadata, optional public extension source IDs and config-schema presence. Inventory/catalog origin is derived by the backend. These static declarations are not registrations and do not participate in targets, capability hashes or activation. The page combines them with existing runtime/provider and composition tool catalogs, browser slots, surface links and verified resource descriptors. Global settings sections, commands and events without readable package ownership are not attributed. Existing catalog pagination and lifecycle blockers/pins remain unchanged.

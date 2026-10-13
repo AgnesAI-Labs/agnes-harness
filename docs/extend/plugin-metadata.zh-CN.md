@@ -52,4 +52,12 @@
 
 “提供什么”和“在哪里出现”读取现有注册信息与库存。作者介绍或能力声明不能证明工具已注册。未加载或暂不可读的贡献不从 ID 推断。轻量展示投影的范围见已批准设计中的 Phase B 说明。
 
+`PackagePresentation.presets` 概括每个组合包 preset 的策略保证了什么，客户端可以在安装前如实说明：
+
+```json
+{ "bundle": "acme/research#research", "id": "research", "toolPolicy": "default", "readOnly": "yes", "confirmBeforeActions": "no", "network": "none" }
+```
+
+所有字段都由后端从包数据推导，不运行插件代码，作者不能自己填写。组合包或 preset 设置了平台的 `toolPolicy.readOnly` 时 `readOnly` 为 `yes`（任何策略服务商下都成立）；没有设置且 preset 使用默认工具策略时为 `no`。默认工具策略下是否确认取决于会话的权限模式，preset 不作保证，所以 `confirmBeforeActions` 为 `no`。preset 选择了自己的 tool-policy 服务商时，两者都是 `unknown`，因为策略由代码决定；组合包继承了其他包的组合包时 `readOnly` 也是 `unknown`。`network` 读取包声明的能力：声明了能力且没有列出主机为 `none`，列出了主机为 `allowed`，完全没有声明为 `unknown`。客户端只应对 `yes` 和 `none` 作出承诺，其余情况列出声明的能力。
+
 预览、库存和目录 DTO 的可选只读 `PackagePresentation` 字段携带有界行 ID、作者 metadata、可选公开 extension source ID 与 configSchema 是否存在。库存／目录来源由后端推导。这些静态声明不是注册信息，不参与 target、能力哈希或启停。页面结合既有 runtime/provider 与 composition 工具目录、浏览器插槽、页面链接及已验证资源描述展示实际贡献。没有可读包归属的全局设置页、命令和事件不做归属推测；既有目录分页、生命周期 blockers 与 pins 保持原样。
