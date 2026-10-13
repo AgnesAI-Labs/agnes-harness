@@ -41,6 +41,7 @@
     "./settings/session-choice": "./src/settings/session-choice.ts",
     "./settings/session-tools": "./src/settings/session-tools.tsx",
     "./settings/terminal-screen": "./src/settings/terminal-screen.ts",
+    "./settings/triggers": "./src/settings/triggers.tsx",
     "./first-run": "./src/first-run.ts"
   },
   "scripts": {

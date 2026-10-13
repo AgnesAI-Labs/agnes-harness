@@ -16,6 +16,7 @@ import {
   SIDEBAR_DEPENDENCIES_BASE,
   SIDEBAR_SLOT,
 } from './contracts.js'
+import { HomeEntriesNav } from './home-entries.js'
 
 export const DSH_SIDEBAR_CHILDREN = Object.freeze({
   'sidebar.brand.mark': { kind: 'single', scope: 'root' },
@@ -49,6 +50,7 @@ export function SidebarDshFrame({
       actions={actions}
       dependencies={dependencies}
       slots={{
+        entries: <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()} />,
         brandMark: outlet('sidebar.brand.mark'),
         brandName: outlet('sidebar.brand.name'),
         panellist: outlet('sidebar.panellist'),

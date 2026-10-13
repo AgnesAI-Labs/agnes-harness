@@ -51,8 +51,9 @@ export function frontendUiViolations(source: string, file: string): FrontendViol
       /\.setAttribute\(\s*['"]style['"]|\bstyle\s*=\s*\{|\.style\.(?:display|gap|padding|margin|gridTemplateColumns|alignItems|justifyContent)\s*=/g,
     ))
       results.push({ rule: 'layout', offset: match.index, text: match[0] })
-    // Built-in runtime pages can be imported for helpers, but rendered only by the registry.
-    if (!file.endsWith('/settings/registry.tsx')) {
+    // Built-in runtime panels can be imported for helpers, but rendered only by the settings
+    // registry and by the home pages that took some of them over.
+    if (!file.endsWith('/settings/registry.tsx') && !file.startsWith('packages/web/src/pages/')) {
       const names =
         'SearchPanel|ChildEnginesPanel|ContextPanel|ExamplesPanel|HistorySearchPanel|SchedulesPage|SecurityPanel|JobsPanel|SessionDefaultsPanel|BundlesPanel|PresetsPanel|PublicationPanel|GenerationsPanel|LocalPluginsPanel'
       const aliases = [...code.matchAll(new RegExp(`(?:${names})\\s+as\\s+(\\w+)`, 'g'))].map(

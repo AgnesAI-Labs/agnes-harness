@@ -1,0 +1,83 @@
+import { type HomeEntryBadge, homeEntries, homeNavigation } from '@agnes/web-client'
+import { homeAdmin } from './admin-api.js'
+import { AgentsPage } from './agents-page.js'
+import { AutomationPage } from './automation-page.js'
+import { PluginsPage } from './plugins-page.js'
+
+/** The fixed entries. Plugin entries always list after them, whatever order they declare. */
+export const BUILTIN_HOME_ENTRIES: readonly string[] = ['agents', 'plugins', 'automation']
+
+/** Drafts waiting for review: the count beside the plugins entry. */
+function pendingReviewBadge(): HomeEntryBadge & { refresh(): void } {
+  let count = 0
+  let reading = false
+  const listeners = new Set<() => void>()
+  const refresh = () => {
+    if (reading) return
+    reading = true
+    void homeAdmin()
+      .then(({ api }) => api.candidatesList())
+      .then((list) => {
+        const next = list.candidates.filter((item) => item.state === 'review').length
+        if (next === count) return
+        count = next
+        for (const listener of listeners) listener()
+      })
+      // Without admin access there is nothing to review; the entry shows no count.
+      .catch(() => undefined)
+      .finally(() => {
+        reading = false
+      })
+  }
+  return {
+    refresh,
+    getSnapshot: () => count,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
+/** Register the built-in home entries the way a plugin registers its own. */
+export function registerBuiltinHomeEntries(): () => void {
+  const pending = pendingReviewBadge()
+  const disposers = [
+    homeEntries.register({
+      id: 'agents',
+      order: 10,
+      icon: 'bot',
+      titleKey: 'home.entry.agents',
+      subtitleKey: 'home.entry.agents.sub',
+      component: AgentsPage,
+    }),
+    homeEntries.register({
+      id: 'plugins',
+      order: 20,
+      icon: 'plug',
+      titleKey: 'home.entry.plugins',
+      badge: pending,
+      component: PluginsPage,
+    }),
+    homeEntries.register({
+      id: 'automation',
+      order: 30,
+      icon: 'clock',
+      titleKey: 'home.entry.automation',
+      component: AutomationPage,
+    }),
+    // Reviewing happens on a page, so leaving any page is when the count may have changed.
+    homeNavigation.subscribe(pending.refresh),
+  ]
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') pending.refresh()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+  pending.refresh()
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible)
+    for (const dispose of disposers) dispose()
+  }
+}

@@ -50,7 +50,7 @@ import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
-import { settingsSections } from '@agnes/web-client'
+import { homeNavigation, settingsSections } from '@agnes/web-client'
 
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
 
@@ -83,6 +83,8 @@ import {
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { mountNewSessionDialog } from './new-session-dialog.js'
+import { registerBuiltinHomeEntries } from './pages/entries.js'
+import { bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSettingsAdminPaneStore } from './region-slots.js'
@@ -857,9 +859,13 @@ const clientModules = await startClientModules({
   sidebarContainer: hosts.sidebar,
   sidebar: {
     actions: {
-      newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
+      newSession: (workspace) => {
+        homeNavigation.close()
+        run(() => beginNewDraft(workspace === undefined, workspace))
+      },
       addWorkspace: () =>
         run(async () => {
+          homeNavigation.close()
           if (!draftingNew) await beginNewDraft()
           openNewSessionDialog()
         }),
@@ -870,7 +876,9 @@ const clientModules = await startClientModules({
       openSession: (id) =>
         run(async () => {
           if (sessionPending) return
-          await open(id)
+          homeNavigation.close()
+          // The session already showing behind a page needs no second open.
+          if (id !== current?.id || draftingNew) await open(id)
           clientModules.sidebar?.close()
         }),
       sessionAction: (action, id, title, trigger) => {
@@ -963,6 +971,29 @@ const openSettingsTerminal = (event: Event) => {
 const stopSettingsTerminal = onSurfaceEvent('agnes:settings-terminal', openSettingsTerminal)
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
+// Home entries open full pages in the main area; the built-in three register like any plugin's.
+const removeHomeEntries = registerBuiltinHomeEntries()
+const homePages = mountHomePages(hosts.homePage, {
+  locale: clientModules.locale,
+  data: {
+    call: (method, params) => client.call(method, params),
+    sessionId: () => current?.id,
+    openSettings: (section) =>
+      run(async () => {
+        settingsRegion.open('model')
+        await settings.open()
+        settingsRegion.route(section)
+      }),
+    startDraft: (prompt) =>
+      run(async () => {
+        homeNavigation.close()
+        if (!draftingNew) await beginNewDraft(false)
+        if (prompt) composerRuntime.setDraft(prompt)
+        composerRuntime.focus()
+      }),
+  },
+})
+const stopHomeRouting = bindHomeRouting()
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
 if (!topbarRuntime) throw new Error('missing topbar region')
 const approvalRuntime = clientModules.approval as NonNullable<typeof clientModules.approval>
@@ -1260,6 +1291,7 @@ const firstRun = createFirstRunController({
   },
   start: async () => {
     settings.close()
+    homeNavigation.close()
     await beginNewDraft(true)
   },
   saved: savedConfiguration,
@@ -1494,6 +1526,7 @@ function open(
   return sessionController.open(id, options)
 }
 function forkSidebar(id: string, title: string): Promise<void> {
+  homeNavigation.close()
   return sessionController.forkSidebar(id, title)
 }
 let attachmentSessionOpening: Promise<string> | undefined
@@ -2131,6 +2164,9 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  stopHomeRouting()
+  homePages.dispose()
+  removeHomeEntries()
   newSessionDialog.dispose()
   unbindDialogSheets()
   unmountIntelligentUi()

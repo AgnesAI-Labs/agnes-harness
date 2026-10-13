@@ -23,6 +23,7 @@ export type ShellHosts = {
   rightbar: HTMLElement
   settings: HTMLDialogElement
   dockControls: HTMLDivElement
+  homePage: HTMLElement
 }
 /** What the server and an embedder wrote into the page for the workbench to start with. */
 export type ShellConfig = {
@@ -84,6 +85,13 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
         <RegionErrorBoundary region="reconnect">
           <ReconnectNotice />
         </RegionErrorBoundary>
+        <section
+          ref={hold('homePage')}
+          id="home-page"
+          className="home-page-host"
+          data-agnes-region="home-page"
+          hidden
+        ></section>
         <div className="workbench-split">
           <div
             ref={hold('conversation')}
@@ -180,6 +188,7 @@ const HOSTS = [
   'rightbar',
   'settings',
   'dockControls',
+  'homePage',
 ] as const satisfies readonly (keyof ShellHosts)[]
 
 /** Mount the one application shell and return the hosts it rendered and the page's start-up facts. */

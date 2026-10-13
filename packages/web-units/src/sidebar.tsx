@@ -76,6 +76,8 @@ export interface SidebarHandle {
 }
 
 export interface SidebarSlots {
+  /** Host navigation between the new-session action and the workspace list. */
+  entries?: ReactNode
   brandMark?: ReactNode
   brandName?: ReactNode
   panellist?: ReactNode
@@ -243,6 +245,7 @@ const SidebarBuiltin = forwardRef<
           <Kbd aria-hidden="true">{newSessionShortcutLabel(globalThis.navigator?.platform ?? '')}</Kbd>
         </Button>
       </div>
+      {slots?.entries}
       <div className="sidebar-section-heading">
         <p className="section-label">{t('sidebar.sectionHeading')}</p>
         <IconButton

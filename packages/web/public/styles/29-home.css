@@ -1,0 +1,221 @@
+@layer app {
+  /* Home entries: the pages a person opens from the sidebar, above the workspace list. */
+  .home-entries {
+    display: grid;
+    gap: var(--s2);
+    margin: var(--s8) 0 var(--s4);
+  }
+  .home-entry {
+    width: 100%;
+    min-width: 0;
+    min-height: 2rem;
+    justify-content: flex-start;
+    gap: var(--s8);
+    padding: 0 var(--s8);
+    border-color: transparent;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: 1.25rem;
+    transition: none;
+  }
+  .home-entry:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .home-entry[aria-current="page"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .home-entry-label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .home-entry-sub {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  .home-entry-badge {
+    flex: 0 0 auto;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    display: inline-grid;
+    place-items: center;
+    padding: 0 0.3125rem;
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A home page takes the main area: the session's own surfaces step aside while it shows. */
+  main[data-home-page] > :is(.workbench-split, #approval, #composer-mount, .agh-banner),
+  main[data-home-page] > .topbar-row :is(.task-heading, .session-tabs-bar) {
+    display: none;
+  }
+  main[data-home-page] > .topbar-row {
+    border-bottom-color: transparent;
+  }
+  /* With the sidebar open the bar would hold nothing; the page starts at the top instead. */
+  @media (min-width: 901px) {
+    body:not(.sidebar-collapsed) main[data-home-page] > .topbar-row {
+      display: none;
+    }
+  }
+  .home-page-host {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
+  }
+  .home-page-host[hidden] {
+    display: none;
+  }
+  .home-page {
+    width: 100%;
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.25rem var(--s24) var(--s48);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+    animation: home-page-enter 260ms ease-out;
+  }
+  @keyframes home-page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .home-page {
+      animation: none;
+    }
+  }
+  .home-page-breadcrumb {
+    margin-bottom: calc(-1 * var(--s12));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .home-page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s16);
+  }
+  .home-page-heading {
+    min-width: 0;
+  }
+  .home-page-heading h1 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: 1.625rem;
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 2rem;
+  }
+  .home-page-heading p {
+    margin: 0.375rem 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+  }
+  .home-page-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .home-page-tabs {
+    margin-bottom: calc(-1 * var(--s12));
+  }
+  .home-page-body {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+  .home-page-section {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .home-page-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding-inline-start: var(--s4);
+  }
+  .home-page-section-heading h2 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+  }
+  .home-page-card {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .home-page-row {
+    min-height: 2.875rem;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: 0.8125rem var(--s16);
+  }
+  .home-page-row-tile {
+    flex: 0 0 auto;
+    width: 2.125rem;
+    height: 2.125rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 12%, transparent);
+  }
+  .home-page-row-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: var(--s2);
+  }
+  .home-page-row-copy strong {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .home-page-row-copy span {
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .home-page {
+      padding: var(--s16) var(--s16) var(--s32);
+    }
+    .home-page-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+}
