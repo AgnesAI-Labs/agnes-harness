@@ -1,10 +1,11 @@
-import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { LocalContext } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
 import type { Registry } from '../src/registry.js'
 import { type RemoteEntry, WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
+import { handleCommand } from '../src/worker/commands.js'
 import { workspaceBinding } from './workspace-authority.js'
 
 async function open(
@@ -126,8 +127,8 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     } as EventEnvelope
     const command = vi.fn(async (method: string, params: Record<string, unknown>) => {
       if (method !== 'scan') return undefined
-      if (params.fromSeq === 1) return []
-      return []
+      if (params.fromSeq === 1) return { rows: [] }
+      return { rows: [] }
     })
     const link = {
       alive: true,
@@ -169,7 +170,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       type: 'tool/result',
       lane: 'main',
     } as EventEnvelope
-    const command = vi.fn(async (method: string) => (method === 'scan' ? [] : undefined))
+    const command = vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined))
     const link = {
       alive: true,
       hello: Promise.resolve({
@@ -212,7 +213,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         profileHash: 'sha256-profile',
       }),
       onExit: vi.fn(),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     }
     const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
     const registry = new WorkerRegistry(
@@ -267,17 +268,17 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       }),
       command: vi.fn(async (method: string, params: Record<string, unknown>) => {
         if (method !== 'scan') return undefined
-        const page = (await scan)
-          .filter(
-            (event) =>
-              event.seq >= Number(params.fromSeq) &&
-              (params.toSeq === undefined || event.seq <= Number(params.toSeq)),
-          )
-          .slice(0, Number(params.limit))
-        // A small synthetic wire budget exercises the real oversized-page refusal without large fixtures.
-        if (Buffer.byteLength(JSON.stringify(page)) > 1024)
-          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
-        return page
+        const read = async (q: { fromSeq: number; toSeq?: number; limit: number }) =>
+          (await scan)
+            .filter((event) => event.seq >= q.fromSeq && (q.toSeq === undefined || event.seq <= q.toSeq))
+            .slice(0, q.limit)
+        // The real worker command with a small frame budget: a page that does not fit comes back in
+        // parts, without large fixtures.
+        return handleCommand(
+          { scanLean: read } as never,
+          { kind: 'command', requestId: 'scan', method: 'scan', params },
+          { host: {} as never, aborts: new Map(), maxScanFrameBytes: 1024 },
+        )
       }),
     }
     const pool = { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool
@@ -326,7 +327,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         onExit: vi.fn(),
         closeSession: vi.fn(async () => undefined),
         command: vi.fn((method: string) => {
-          if (method === 'scan') return scan
+          if (method === 'scan') return scan.then((rows) => ({ rows }))
           return Promise.resolve(undefined)
         }),
       }
@@ -434,7 +435,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           profileHash: 'sha256-profile',
         }),
         onExit: vi.fn(),
-        command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
       })),
       retire,
     } as unknown as WorkerPool
@@ -522,7 +523,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(closeSession),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     })
     const initial = link('old-generation', async () => {
       staleDeliveries.push(
@@ -789,7 +790,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const parentCommand = vi.fn(async (method: string) => {
       if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
       if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
       if (method === 'fork') return { sessionId: 'child', parent: { key: 'parent', boundarySeq: 9 } }
       throw new Error(`unexpected parent command ${method}`)
     })
@@ -852,7 +853,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const parentCommand = vi.fn(async (method: string) => {
       if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
       if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
       if (method === 'fork') return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
       throw new Error(`unexpected parent command ${method}`)
     })
@@ -998,7 +999,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       // Like a real session channel, exit is observed on the whole worker link.
       onExit: (notify: () => void) => void workerExit.push(notify),
       closeSession: vi.fn(async () => undefined),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     })
     let releaseFirst: ((link: unknown) => void) | undefined
     const first = new Promise<unknown>((resolve) => {

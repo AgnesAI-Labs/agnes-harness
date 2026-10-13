@@ -149,6 +149,8 @@ const approvalStatus = (node: ApprovalNode, t: Translate) =>
 /** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
 const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
 
+const megabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`
+
 /** 历史消息里的图片按服务端同一套预算重新判一遍，超出的一张只显示占位说明。 */
 function imageBlobBytes(bytes: Uint8Array): ArrayBuffer {
   const copy = new ArrayBuffer(bytes.byteLength)
@@ -190,6 +192,13 @@ function UserMessageImage({
     return () => URL.revokeObjectURL(url)
   }, [allowed, data, mimeType])
 
+  // 精简块的字节还在服务端，只是没有随回放下发：说明大小，而不是显示成坏图。
+  if ('dataOmitted' in image)
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.image.omitted', { size: megabytes(image.dataOmitted.bytes) })}
+      </span>
+    )
   if (unavailable)
     return (
       <span className="user-message-image-unavailable" role="status">

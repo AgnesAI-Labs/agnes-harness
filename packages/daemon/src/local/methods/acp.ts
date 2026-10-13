@@ -28,7 +28,7 @@ import { type AttachPrefs, connActor, type Handler, type LocalEndpoint } from '.
 import { createFollowUpRunner } from '../follow-up-runner.js'
 import { type MetaState, stampMeta } from '../meta.js'
 import { PreviewPipe } from '../preview.js'
-import { toSessionUpdate } from '../project.js'
+import { toSessionUpdates } from '../project.js'
 import type { PrompterRouter } from '../prompter.js'
 import { reserveOwnedSession, SessionAdmissionDenied } from '../session-admission.js'
 import type { SessionEntry } from '../sessions.js'
@@ -261,8 +261,8 @@ export class Feed {
     const prefs = this.prefs()
     // An attached client that asked for raw rows only gets no ACP projection; everyone else does.
     if (!prefs || prefs.filter.acpUpdates) {
-      const u = toSessionUpdate(e, o)
-      if (u)
+      const updates = toSessionUpdates(e, o)
+      for (const u of updates)
         this.ep.push(
           notify(
             'session/update',
@@ -274,7 +274,7 @@ export class Feed {
         )
       // turn/end has no projection of its own; the phase rides an empty chunk so an ACP client sees
       // terminalQuiescence as the last session/update of the turn.
-      else if (e.type === 'turn/end')
+      if (updates.length === 0 && e.type === 'turn/end')
         this.ep.push(
           notify(
             'session/update',

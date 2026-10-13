@@ -76,6 +76,7 @@ export type MethodName =
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
   | '_agnes/v1/session.readToolDetail'
+  | '_agnes/v1/session.exportRaw'
   | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.rename'
@@ -213,6 +214,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
   ),
+  '_agnes/v1/session.exportRaw': clientRequest(A.SessionExportRawParams, A.SessionExportRawResult),
   '_agnes/v1/session.followUp': {
     kind: 'request',
     direction: 'c2s',

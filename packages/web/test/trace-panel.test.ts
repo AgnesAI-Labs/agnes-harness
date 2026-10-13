@@ -447,6 +447,20 @@ describe('trace panel', () => {
     expect(root.textContent).not.toContain('resource://private')
   })
 
+  it('names an omitted input image by size instead of a thumbnail', () => {
+    const { root, panel } = mount()
+    const lean: UINode = {
+      kind: 'user',
+      id: 'u-lean',
+      seq: 1,
+      content: [{ type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 3_145_728 } }],
+    }
+    panel.render([lean], [turn(undefined, ['u-lean'])])
+    ;(root.querySelector('.trace-row') as HTMLButtonElement).click()
+    expect(root.querySelector('.trace-image-omitted')?.textContent).toContain('3.0 MB')
+    expect(root.querySelector('.trace-image-thumb')).toBeNull()
+  })
+
   it('includes the recorded tool summary in the ledger', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])

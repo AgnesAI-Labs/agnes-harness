@@ -48,8 +48,8 @@ describe('opening a session that carries a large attachment', () => {
         detail: expect.objectContaining({ outcome: 'ok', lastSeq: expect.any(Number) }),
       }),
     )
-    // This holds once workers send lean rows across the process boundary; on a build that still
-    // sends whole rows, the legacy session's oversized scan pages are split and this fails.
+    // Workers send lean rows across the process boundary, so every replay page of the legacy session
+    // fits one frame and no scan has to be resumed in a second reply.
     expect(r.splitScans).toBe(budget.legacyZip.splitScans)
     if (!enforce) return
     expect(r.loadMs).toBeLessThanOrEqual(budget.legacyZip.loadMs)

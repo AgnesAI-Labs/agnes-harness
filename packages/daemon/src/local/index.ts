@@ -222,7 +222,7 @@ export {
   type SessionLister,
   type SessionMetaRow,
 } from './ports.js'
-export { toSessionUpdate } from './project.js'
+export { toSessionUpdate, toSessionUpdates } from './project.js'
 export type { ApprovalRequest, AskOutcome, Prompter } from './prompter.js'
 export { PrompterRouter } from './prompter.js'
 export {

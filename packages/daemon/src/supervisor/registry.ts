@@ -134,7 +134,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
           total: trace.openMs + trace.authorityReplayMs + timing.acpReplayMs,
         },
         transferBytes: (trace.link.receivedBytes?.() ?? 0) - trace.receivedAtStart,
-        resumes: entry.session.splitScans,
+        resumes: entry.session.scanResumes,
         outcome: 'ok',
       },
     })
@@ -425,7 +425,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
           let fromSeq = 1
           let replayedThrough = 0
           for (;;) {
-            // Explicit bounds allow large attachment pages to be split across worker frames.
+            // Explicit bounds keep each replay page aligned to the ledger cut.
             const page = (await session.scan({
               fromSeq,
               toSeq: fromSeq + 499,

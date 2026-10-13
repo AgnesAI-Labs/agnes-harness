@@ -1835,6 +1835,34 @@
         }
       }
     },
+    "SessionExportRawParams": {
+      "description": "Read one stored ledger row as its exact JSONL line (UTF-8 JSON plus a newline), in pieces of at most 8 MiB. Lean replays name large attachments they leave out; this returns them. The daemon authenticates session ownership first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "seq", "offset"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SessionExportRawResult": {
+      "description": "One piece of a stored row's JSONL line. Decode and concatenate pieces until nextOffset is null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "base64", "nextOffset"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "base64": {
+          "description": "Standard base64 for at most 8388608 bytes of the line.",
+          "type": "string",
+          "maxLength": 11184812
+        },
+        "nextOffset": {
+          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        }
+      }
+    },
     "SlotFillView": {
       "type": "object",
       "additionalProperties": false,

@@ -45,6 +45,7 @@ import {
 } from '@agnes/protocol'
 import { SessionRemoveQueuedParams, SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
 import {
+  exportRawChunk,
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
   type ToolDetailRead,
@@ -67,6 +68,7 @@ import type {
   SessionLister,
 } from '../ports.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
+import { registerExportRaw } from './export-raw.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
@@ -427,6 +429,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.readToolDetail',
+      'session.exportRaw',
       'session.list',
       'session.rename',
       'session.archive',
@@ -1025,6 +1028,7 @@ export function registerAgnes(
     if (!outcome.ok) throw rpcError('INVALID_PARAMS', { reason: outcome.reason })
     return { sessionId: p.sessionId, ...outcome.page }
   })
+  registerExportRaw(ep, cx, requireOwner, exportRawChunk)
   ep.register('_agnes/v1/session.projectUIPatch', async (params, c): Promise<UIProjectionUpdate> => {
     const p = params as SessionProjectUIPatchParams
     requireOwner('session.projectUIPatch', p.sessionId, c)

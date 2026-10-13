@@ -97,7 +97,7 @@ async function openOnWorker(
     onExit: vi.fn(),
     closeSession: vi.fn(async () => undefined),
     command: vi.fn(async (method: string, params: Record<string, unknown>) =>
-      method === 'scan' ? scan(params) : undefined,
+      method === 'scan' ? { rows: await scan(params) } : undefined,
     ),
   }
   const retire = vi.fn()

@@ -1,7 +1,10 @@
 export const PACKAGE_NAME = '@agnes/host' as const
 
-// Ledger paging for the packages that reach core only through host.
+// Ledger paging and the lean read view for the packages that reach core only through host.
 export {
+  isLeanEvent,
+  leanEvent,
+  leanEvents,
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   SCAN_PAGE_MAX,
   type ScanRead,

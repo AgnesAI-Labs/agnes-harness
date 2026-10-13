@@ -17,8 +17,8 @@ export const PREVIEW_SNAPSHOT_TIMEOUT_MS = 2_000
  */
 export class RemoteSession {
   lastSeq = 0
-  /** How many times a scan page was too large for one worker frame and had to be read in halves. */
-  splitScans = 0
+  /** How many times a scan page was too large for one worker frame and was resumed in another reply. */
+  scanResumes = 0
   private runSeq = 0
   private activeRuns = 0
   /** A manual compaction persists a turn before its following `run()` command starts. */
@@ -165,39 +165,32 @@ export class RemoteSession {
 
   async scan(q: unknown): Promise<unknown[]> {
     const query = q as Record<string, unknown>
-    try {
-      return (await this.link.command('scan', query)) as unknown[]
-    } catch (error) {
-      if ((error as { data?: { code?: string } } | null)?.data?.code !== 'SCAN_PAGE_TOO_LARGE') throw error
-      const { fromSeq, toSeq } = query
-      if (
-        typeof fromSeq !== 'number' ||
-        typeof toSeq !== 'number' ||
-        !Number.isSafeInteger(fromSeq) ||
-        !Number.isSafeInteger(toSeq) ||
-        fromSeq >= toSeq
-      )
-        throw error
-      this.splitScans++
-      // Keep the caller's complete page and order; only the private worker reads are split.
-      const mid = fromSeq + Math.floor((toSeq - fromSeq) / 2)
-      const ranges = [
-        { fromSeq, toSeq: mid },
-        { fromSeq: mid + 1, toSeq },
-      ]
-      if (query.order === 'desc') ranges.reverse()
-      const firstQuery = { ...query, ...ranges[0] }
-      const first = await this.scan(firstQuery)
-      const limit = typeof query.limit === 'number' ? query.limit : Infinity
-      if (first.length >= limit) return first.slice(0, limit)
-      const restQuery = {
-        ...query,
-        ...ranges[1],
-        ...(Number.isFinite(limit) ? { limit: limit - first.length } : {}),
+    const rows: unknown[] = []
+    let next: Record<string, unknown> | undefined = query
+    // A page too large for one worker frame comes back in parts, each row exactly once.
+    while (next) {
+      const part = (await this.link.command('scan', next)) as {
+        rows: unknown[]
+        resume?: Record<string, unknown>
       }
-      const rest = await this.scan(restQuery)
-      return [...first, ...rest]
+      // A resume that made no progress would never end.
+      if (part.resume && part.rows.length === 0) throw new Error('worker scan resumed without rows')
+      rows.push(...part.rows)
+      if (part.resume) this.scanResumes++
+      next = part.resume ? { ...query, ...part.resume } : undefined
     }
+    return rows
+  }
+
+  exportRaw(input: {
+    seq: number
+    offset: number
+  }): Promise<{ seq: number; base64: string; nextOffset: number | null }> {
+    return this.link.command('exportRaw', input) as Promise<{
+      seq: number
+      base64: string
+      nextOffset: number | null
+    }>
   }
 
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {

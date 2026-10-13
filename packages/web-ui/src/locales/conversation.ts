@@ -8,6 +8,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
     'timeline.userLabel': 'You',
     'conversation.imageUnavailable': 'Image unavailable',
+    'conversation.image.omitted': 'Image ({size}) not loaded in this view',
     'conversation.imageAlt': 'Attached image {index}',
     'timeline.thinkingSummary': 'Deep thinking',
     'timeline.lostOutput': '_Output interrupted; at least {count} characters were not saved_',
@@ -189,6 +190,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
   'zh-CN': {
     'timeline.userLabel': '你',
     'conversation.imageUnavailable': '图片无法显示',
+    'conversation.image.omitted': '图片（{size}）未在此处加载',
     'conversation.imageAlt': '附图 {index}',
     'timeline.thinkingSummary': '深度思考',
     'timeline.lostOutput': '_输出中断，至少 {count} 字未保存_',

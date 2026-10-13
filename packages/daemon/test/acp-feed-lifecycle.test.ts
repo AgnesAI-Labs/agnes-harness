@@ -36,7 +36,7 @@ function workerLink(hold: Hold) {
       }
       if (method === 'enqueue') return 1
       if (method === 'ping') return { lastSeq: 0, preset: null }
-      if (method === 'scan') return []
+      if (method === 'scan') return { rows: [] }
       return undefined
     }),
     closeSession: async () => undefined,

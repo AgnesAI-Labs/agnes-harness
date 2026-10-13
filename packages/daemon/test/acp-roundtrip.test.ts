@@ -405,6 +405,46 @@ describe('local endpoint: ACP round trip', () => {
     expect(kinds).toEqual(['user_message_chunk', 'tool_call', 'tool_call_update', 'agent_message_chunk'])
   })
 
+  it('replays a user message of three blocks as three user_message_chunk updates', async () => {
+    const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    const feed = new Feed(ep, { key: 'k', generation: 1 } as never, () => undefined)
+    feed.replayLoad([
+      {
+        seq: 4,
+        ts: '1970-01-01T00:00:00.000Z',
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
+        type: 'user/message',
+        data: {
+          content: [
+            { type: 'text', text: 'see' },
+            { type: 'image', mimeType: 'image/png', data: 'QUJD' },
+            { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 400_000 } },
+          ],
+        },
+        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+        lane: 'main',
+      } as never,
+    ])
+    const updates = (
+      (await drain(ep)) as unknown as Array<{
+        params: { update: { sessionUpdate: string; content: unknown } }
+      }>
+    ).map(({ params: { update } }) => ({ sessionUpdate: update.sessionUpdate, content: update.content }))
+    expect(updates).toEqual([
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'see' } },
+      {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'image', mimeType: 'image/png', data: 'QUJD' },
+      },
+      {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '[image omitted: 400000 bytes; read session-image://4/2]' },
+      },
+    ])
+  })
+
   it('Feed.pushed gives up on a seq no row will ever carry', async () => {
     // The bound itself, not a turn that happens to be fast: a seq the feed will never see must still
     // release the waiter, or session/prompt never answers.

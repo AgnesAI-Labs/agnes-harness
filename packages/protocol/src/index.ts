@@ -98,6 +98,8 @@ export type {
   SessionBudgetResult,
   SessionCompactParams,
   SessionEventParams,
+  SessionExportRawParams,
+  SessionExportRawResult,
   SessionForkParams,
   SessionIdParams,
   SessionListParams,

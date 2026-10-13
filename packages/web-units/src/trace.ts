@@ -3,6 +3,7 @@ import {
   createElement,
   type ForwardedRef,
   forwardRef,
+  type ReactElement,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -1322,7 +1323,18 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               ]
             : []),
           ...(selectedUserNode?.kind === 'user'
-            ? selectedUserNode.content.flatMap((block, index) => {
+            ? selectedUserNode.content.flatMap((block, index): ReactElement[] => {
+                // A lean block's bytes stayed on the server: name its size rather than drop it.
+                if (block.type === 'image' && 'dataOmitted' in block)
+                  return [
+                    createElement(
+                      'span',
+                      { key: `user-image:${index}`, className: 'trace-image-omitted', role: 'status' },
+                      traceText('trace.image.omitted', {
+                        size: `${(block.dataOmitted.bytes / 1048576).toFixed(1)} MB`,
+                      }),
+                    ),
+                  ]
                 if (
                   block.type !== 'image' ||
                   !('data' in block) ||

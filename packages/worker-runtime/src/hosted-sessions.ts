@@ -1,4 +1,4 @@
-import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
+import { type Host, type HostSession, leanEvent, type WorkspaceBinding } from '@agnes/host'
 import type { WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
 import {
@@ -197,7 +197,8 @@ export class HostedSessions {
             kind: 'event',
             sessionKey,
             seq: event.seq,
-            event,
+            // Lean, like scan replies: a large inline attachment stays in this process's ledger.
+            event: leanEvent(event as never) as typeof event,
           } satisfies EventFrame)
       },
       onError: (error) => {

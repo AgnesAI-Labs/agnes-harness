@@ -160,6 +160,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.budget',
       '_agnes/v1/session.detach',
       '_agnes/v1/session.event',
+      '_agnes/v1/session.exportRaw',
       '_agnes/v1/session.followUp',
       '_agnes/v1/session.fork',
       '_agnes/v1/session.list',
@@ -195,13 +196,32 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(116)
+    expect(Object.keys(METHODS)).toHaveLength(117)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
 
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
+  })
+
+  it('bounds raw row export positions and pieces', () => {
+    const method = '_agnes/v1/session.exportRaw'
+    expect(validateMethod(method, 'params', { sessionId: 's', seq: 1, offset: 0 }).ok).toBe(true)
+    for (const bad of [
+      { sessionId: 's', seq: 0, offset: 0 },
+      { sessionId: 's', seq: 1, offset: -1 },
+      { sessionId: 's', seq: 1.5, offset: 0 },
+      { sessionId: '', seq: 1, offset: 0 },
+      { sessionId: 's', seq: 1 },
+      { sessionId: 's', seq: 1, offset: 0, extra: true },
+    ])
+      expect(validateMethod(method, 'params', bad).ok).toBe(false)
+    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: null }).ok).toBe(true)
+    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: 3 }).ok).toBe(true)
+    expect(
+      validateMethod(method, 'result', { seq: 1, base64: 'A'.repeat(11184813), nextOffset: null }).ok,
+    ).toBe(false)
   })
 
   it('bounds on-demand tool detail reads and validates base64 chunks', () => {

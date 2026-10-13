@@ -303,7 +303,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // its own wrapper here (antd's Tooltip consumes `rootClassName`, not `className`). Measured: 6678.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6687, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-ui/src 6691; no exclusions or spare allocation.
-  'packages/web-ui/src': 6691,
+  // 2026-10-13 attachments by reference: the omitted image size label; reviewed exact countLines packages/web-ui/src 6700; no exclusions or spare allocation.
+  'packages/web-ui/src': 6700,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -322,7 +323,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // instead of claiming the attachment could not be read. Measured: 6242, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6273, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
-  'packages/web-units/src': 6278,
+  // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6291; no exclusions or spare allocation.
+  'packages/web-units/src': 6291,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
@@ -1401,7 +1403,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact. Extended 2026-10-13 for the JCS string fast path and chunked serializer; measured 2305, exact.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/protocol/src 2306; no exclusions or spare allocation.
-  'packages/protocol/src': 2306,
+  // 2026-10-13 attachments by reference: the raw row export method; reviewed exact countLines packages/protocol/src 2310; no exclusions or spare allocation.
+  'packages/protocol/src': 2310,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1961,7 +1964,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 26919, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 27138, exact.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/daemon/src 27243; no exclusions or spare allocation.
-  'packages/daemon/src': 27243,
+  // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27284; no exclusions or spare allocation.
+  'packages/daemon/src': 27284,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2708,7 +2712,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: the streaming content-addressed attachment store and the request version cache. Reviewed exact countLines packages/host/src 39693; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src 39703; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src 39757; no exclusions or spare allocation.
-  'packages/host/src': 39757,
+  // 2026-10-13 attachments by reference: lean helpers re-exported for workers; reviewed exact countLines packages/host/src 39760; no exclusions or spare allocation.
+  'packages/host/src': 39760,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
