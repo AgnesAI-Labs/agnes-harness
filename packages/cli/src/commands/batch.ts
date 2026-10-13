@@ -294,7 +294,8 @@ export async function runBatchCommand(
     // unexpected goes up to main, which has the safe wording for it.
     if (error instanceof UsageError || !isRpcFailure(error)) throw error
     const code = codeOf(error)
-    const missing = code === -32601
+    // An older daemon lacks the methods; one without job tables (or not on its local socket) refuses them.
+    const missing = code === -32601 || code === -32006
     // The daemon names its refusal (SEMANTIC_REJECTED) and says why in data.reason.
     const reason = (error as { data?: { reason?: unknown } }).data?.reason
     const message = typeof reason === 'string' ? reason : error instanceof Error ? error.message : ''

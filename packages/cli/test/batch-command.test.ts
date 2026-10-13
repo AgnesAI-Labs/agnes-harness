@@ -166,6 +166,13 @@ describe('runBatchCommand', () => {
     expect(t.out.join('')).toContain('# Batch b0123456789ab')
   })
 
+  it('says the daemon is needed when a daemon without batch support refuses the method', async () => {
+    const f = fakeClient([rpc('Capability denied', -32006)])
+    const t = io()
+    expect(await runBatchCommand(parseBatchArgs(['list']), f.client, t.io)).toBe(1)
+    expect(t.err.join('')).toContain('agh daemon start')
+  })
+
   it('says the daemon is needed when the method is missing', async () => {
     const f = fakeClient([Object.assign(new Error('Method not found'), { code: -32601 })])
     const t = io()
