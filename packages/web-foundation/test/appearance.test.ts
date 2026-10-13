@@ -374,6 +374,35 @@ describe('bindSkinGroup', () => {
     expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
     expect(select().disabled).toBe(false)
   })
+  it.each(['resolve', 'reject'] as const)(
+    'ignores a late %s roster reply after the pane unmounts',
+    async (outcome) => {
+      let resolve!: (value: typeof skins) => void
+      let reject!: (error: Error) => void
+      const pending = new Promise<typeof skins>((done, fail) => {
+        resolve = done
+        reject = fail
+      })
+      const group = bindSkinGroup({
+        scope: document,
+        storage: fakeStorage(),
+        list: () => pending,
+        select: () => undefined,
+      })
+      const refresh = group.refresh()
+      const retired = select().closest('fieldset')!
+      unmount?.()
+      document.body.replaceChildren()
+      const before = retired.innerHTML
+      if (outcome === 'resolve') resolve(skins)
+      else reject(new Error('late offline reply'))
+      await expect(refresh).resolves.toBeUndefined()
+      expect(() => group.sync()).not.toThrow()
+      expect(retired.innerHTML).toBe(before)
+      expect(document.body.childElementCount).toBe(0)
+    },
+  )
+
   it('lists whatever is installed when the list is read again', async () => {
     let installed = skins.slice(0, 1)
     const group = bindSkinGroup({

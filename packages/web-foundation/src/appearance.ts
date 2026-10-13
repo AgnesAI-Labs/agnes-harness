@@ -196,6 +196,8 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   // The list is whatever is installed right now: the built-in look first, then every skin with the
   // package it came from. A cached skin that is no longer installed falls back to the built-in look.
   const render = (): void => {
+    // A late roster or selection reply cannot update a pane the host has already unmounted.
+    if (!select.isConnected || !container.isConnected) return
     setSettingsSelectOptions(select, [
       { value: NO_SKIN, label: tr('settings.appearance.followTheme') },
       ...skins.map((skin) => ({

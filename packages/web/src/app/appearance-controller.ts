@@ -15,7 +15,7 @@ import {
   type SkinRosterEntry,
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { broadcast, onBroadcast, onWindowFocus } from './global-events.js'
+import { broadcast, onBroadcast, onPageHide, onWindowFocus } from './global-events.js'
 
 type SkinRoster = {
   revision: string
@@ -64,6 +64,7 @@ export function createAppearanceController(options: {
   const cssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
   /** 每次显式选择 +1：让在途的对账不能把用户刚做的选择覆盖回去。 */
   let selection = 0
+  let disposed = false
 
   /** 告诉首帧逻辑（以及同源的其他文档）缓存里的皮肤变了。同文档不会收到 storage 事件，故手动派发。 */
   const skinChanged = (): void => {
@@ -77,6 +78,7 @@ export function createAppearanceController(options: {
    * 不留闪烁。只有必须联网取文本时才先回落内置观感——那是设计明确接受的那一次闪烁（§5.8）。
    */
   async function reconcile(entries: readonly SkinRosterEntry[]): Promise<void> {
+    if (disposed) return
     const plan = planSkinReconcile(readSkinCache(storage), entries)
     if (plan.kind === 'keep') return
     const version = selection
@@ -95,7 +97,7 @@ export function createAppearanceController(options: {
     try {
       const css = await fetchSkinCss(plan.entry.cssUrl, cssOptions)
       // 取文本期间用户可能已经换了选择：那就让对账作废，不能把旧皮肤写回去。
-      if (version !== selection) return
+      if (disposed || version !== selection) return
       await cacheSkinEntry(storage, { ...plan.entry, css }, cssOptions)
       skinChanged()
     } catch {
@@ -110,6 +112,7 @@ export function createAppearanceController(options: {
       const profile = options.profile()
       if (profile === '') return []
       const listed = await options.listSkins(profile)
+      if (disposed) return roster
       roster = listed.skins.map((skin) => ({
         id: skin.id,
         name: skin.name,
@@ -137,7 +140,13 @@ export function createAppearanceController(options: {
       skinChanged()
     },
   })
-  onBroadcast('agnes:packages-changed', () => void skins.refresh())
-  onWindowFocus(() => void skins.refresh())
+  const stopPackages = onBroadcast('agnes:packages-changed', () => void skins.refresh())
+  const stopFocus = onWindowFocus(() => void skins.refresh())
+  onPageHide(() => {
+    disposed = true
+    stopPackages()
+    stopFocus()
+    selection += 1
+  })
   return { appearance, skins }
 }

@@ -3051,6 +3051,7 @@ it('renders Computer Use in the application and retires its late operation reply
   const pending = new Promise<unknown>((resolvePromise) => {
     finish = resolvePromise
   })
+  const listSkins = vi.fn(async () => ({ revision: 'fixture', skins: [] }))
   const call = vi.fn(async (method: string) => {
     if (method.endsWith('operation.start')) return pending
     if (method.endsWith('operation.status')) return { status: 'not-found' }
@@ -3063,12 +3064,13 @@ it('renders Computer Use in the application and retires its late operation reply
   })
   sdk.createClient.mockReturnValue({
     call,
+    skins: { list: listSkins },
     initialize: vi.fn(async () => undefined),
     on: vi.fn(),
     close: vi.fn(async () => undefined),
     apis: vi.fn(async () => ({ profile: { models: [] } })),
     config: {
-      get: vi.fn(async () => ({ configured: true })),
+      get: vi.fn(async () => ({ configured: true, profile: 'local-dev' })),
       providers: vi.fn(async () => ({ providers: [] })),
     },
     workspace: { list: vi.fn(async () => ({ items: [] })) },
@@ -3092,10 +3094,13 @@ it('renders Computer Use in the application and retires its late operation reply
   const pane = document.querySelector('[data-testid=computer-use-capability]')
   const before = pane?.innerHTML
   const requests = call.mock.calls.length
+  const skinReads = listSkins.mock.calls.length
+  window.dispatchEvent(new CustomEvent('agnes:packages-changed'))
   finish({ status: 'found', operationId: 'retired', kind: 'update', state: 'running', phase: 'installing' })
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
   expect(pane?.innerHTML).toBe(before)
   expect(call.mock.calls).toHaveLength(requests)
+  expect(listSkins.mock.calls).toHaveLength(skinReads)
   expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
 })
 
