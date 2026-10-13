@@ -96,7 +96,7 @@ it('measures existing IPC and rejects its changed-reference unchanged-state resu
       type: cap.inputEventTypes[0],
       data: {},
       actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      origin: 'principal',
+      origin: 'ext:acme/projection',
       trust: 'trusted',
       lane: 'main',
       v: 1,

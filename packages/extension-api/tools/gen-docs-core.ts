@@ -137,7 +137,7 @@ Register a declared name with registerService and a Promise-returning handler. S
 
 ${schemaSummary(read('projection.json'), 'projection.json', 'ProjectionCapability')}
 
-registerProjection accepts name, positive stateVersion, plain JSON stateSchema and synchronous init/apply/view functions. Handlers receive no context and must not perform I/O. Host filters exact declared event types, validates state/view and owns quarantine and cleanup. Host injects ProjectionReader.readOwn(name) into Tool, Hook and Slot callbacks for the current extension and session. It rechecks lease after scanning and before folding. Saved readers are unavailable outside their owner invocation. Core callbacks without extension authority use unavailableProjections. Reload and package removal acceptance remain separate lifecycle tasks.
+registerProjection accepts name, positive stateVersion, plain JSON stateSchema and synchronous init/apply/view functions. Handlers receive no context and must not perform I/O. Host filters exact declared event types, feeds an x/<owner>/... event only when Core or that owner wrote it, validates state/view and owns quarantine and cleanup. Host injects ProjectionReader.readOwn(name) into Tool, Hook and Slot callbacks for the current extension and session. It rechecks lease after scanning and before folding. Saved readers are unavailable outside their owner invocation. Core callbacks without extension authority use unavailableProjections. Reload and package removal acceptance remain separate lifecycle tasks.
 `,
     'hooks.md': renderHooksDoc({ table: HOOK_TABLE, descriptions }),
     'slots.md': renderSlotsDoc({ table: SLOT_TABLE, payloadDescriptions }),

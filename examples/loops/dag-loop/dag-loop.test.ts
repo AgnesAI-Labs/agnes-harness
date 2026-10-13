@@ -128,7 +128,7 @@ it('batches independent nodes, resumes their committed wave, joins outputs and f
     args: { a: { isError: false }, b: { isError: false } },
   })
   expect(p.requests).toEqual([])
-  expect(p.events.at(-1)?.type).toBe('x/dag/result')
+  expect(p.events.at(-1)?.type).toBe('result')
 })
 
 it.each([
@@ -215,7 +215,7 @@ it.each([true, false])(
     expect(first?.invocationId).not.toBe(repair?.invocationId)
     expect(first?.tools).toEqual([])
     expect(repair?.tools).toEqual([])
-    const traces = p.events.filter((event) => event.type === 'x/dag/planner')
+    const traces = p.events.filter((event) => event.type === 'planner')
     expect(traces.map((event) => (event.data as { attempt: number }).attempt)).toEqual([1, 2])
     expect(JSON.stringify(traces)).not.toContain('synthetic-secret')
     expect(JSON.stringify(traces)).toContain('PERSONA_PREFIX')

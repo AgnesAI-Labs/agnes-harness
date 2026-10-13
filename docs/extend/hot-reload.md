@@ -50,7 +50,7 @@ Stable invocation identities fence uncertain dispatch and recover recorded respo
 
 For a tool call with a Core-bound Loop invocation identity, Core stores a version-1 `x/core/tool-response` beside `tool/result` in the same ledger commit. It preserves the author response content (including artifact references), optional `isError`, `structured`, `details` and `terminate`. Recovery reads that representation before the driver's receipt. Legacy rows recover only persisted ledger content, `isError` and `structured`; missing author metadata cannot be reconstructed. Loop invocation receipts must have trusted Core provenance and match the pinned loop id/version. Legacy receipts without that binding refuse reconciliation with `E_RELATION`, rather than redispatching an uncertain operation.
 
-Loop `events.emit` accepts non-reserved `x/*` events and records untrusted plugin provenance. Use typed ports such as `events.assistant(message, checkpoint)` for assistant messages and control operations. Direct ledger/control emission and `x/core/*` are rejected.
+Loop `events.emit(name, data)` takes a relative event name; Core writes it as `x/<owning package without @>/<name>` and records untrusted plugin provenance, so a loop cannot write into another owner's namespace. Use typed ports such as `events.assistant(message, checkpoint)` for assistant messages and control operations. Direct ledger/control emission and `x/core/*` are rejected.
 
 ## Embedding and status
 

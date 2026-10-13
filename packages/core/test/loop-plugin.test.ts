@@ -62,7 +62,7 @@ function echoDriver(ctx: LoopContext, initial: 'ready' | 'done' = 'ready'): Loop
         },
         codec.encode('done'),
       )
-      await ctx.events.emit('x/echo/result', {
+      await ctx.events.emit('result', {
         single: result.content,
         batch: batch.map((item) => item.content),
       })
@@ -523,7 +523,7 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
             ],
             signal,
           )
-          await ctx.events.emit('x/parallel/results', { results: results.map((result) => result.content) })
+          await ctx.events.emit('results', { results: results.map((result) => result.content) })
           await ctx.events.finish('completed')
           return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
         },
@@ -547,7 +547,7 @@ it('overlaps independent safe tools in a custom batch and preserves requested re
     expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
       reason: 'completed',
     })
-    expect((await session.scan({ type: 'x/parallel/results', limit: 1 }))[0]?.data).toEqual({
+    expect((await session.scan({ type: 'x/test/parallel/results', limit: 1 }))[0]?.data).toEqual({
       results: [[{ type: 'text', text: 'left' }], [{ type: 'text', text: 'right' }]],
     })
   } finally {
@@ -578,7 +578,7 @@ it('drains a cancelled step and driver final writes before closing the log, once
           await ctx.input.accept()
           started()
           await ctx.wait.park(signal)
-          await ctx.events.emit('x/close/drained', {})
+          await ctx.events.emit('drained', {})
           await ctx.events.finish('aborted')
           return { outcome: 'turn-ended', phase: 'custom-final', reason: 'aborted' }
         },
@@ -599,7 +599,7 @@ it('drains a cancelled step and driver final writes before closing the log, once
   expect(disposed).toBe(1)
   expect(session.d.log.isClosed).toBe(true)
   const rows = await k.o.storage.scan(session.key, { fromSeq: 1, limit: 200 })
-  expect(rows.some((row) => row.type === 'x/close/drained')).toBe(true)
+  expect(rows.some((row) => row.type === 'x/test/close/drained')).toBe(true)
   expect(rows.at(-1)?.data).toMatchObject({ checkpoint: { state: 'done' } })
   await k.close()
 })
@@ -619,7 +619,7 @@ it.each(['turn-end', 'idle'] as const)(
           async step() {
             const input = await ctx.input.accept()
             if (!input) return { outcome: 'idle', phase: 'arbitrary' }
-            await ctx.events.emit('x/outcome/input', { id: input.id ?? '' })
+            await ctx.events.emit('input', { id: input.id ?? '' })
             await ctx.events.finish('completed')
             return { outcome: 'turn-ended', phase: 'arbitrary', reason: 'completed' }
           },
@@ -1009,27 +1009,29 @@ it.each(['deny', 'quote'] as const)(
   },
 )
 
-it('keeps custom Loop events untrusted and refuses reserved event types', async () => {
+it('keeps custom Loop events untrusted and inside the namespace of the loop’s own package', async () => {
   const f = await openSession({ provider: fakeProvider([]) })
   const ctx = await createLoopContext(f.session)
+  const owner = f.session.loop.id
   try {
-    for (const type of [
+    // A name is relative: nothing a loop passes can spell a platform type or another owner's.
+    for (const name of [
       'x/core/loop-invocation',
-      'x/core/loop-checkpoint',
       'tool/result',
-      'approval/decided',
-      'assistant/message',
       'turn/end',
-      'x/example/',
-      'x/invalid plugin/progress',
-      'x/example/progress ready',
+      `x/${owner}/progress`,
+      'x/other-plugin/progress',
+      '../other-plugin/progress',
+      'progress ready',
+      'Progress',
+      '',
     ])
-      await expect(ctx.events.emit(type, {})).rejects.toMatchObject({ code: 'E_ENVELOPE' })
-    for (const type of ['x/example/progress', 'x/example/planner', 'x/Vendor_1/report.ready']) {
-      await ctx.events.emit(type, { progress: 1 })
-      const rows = await f.log.scan({ type, limit: 10 })
+      await expect(ctx.events.emit(name, {})).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+    for (const name of ['progress', 'report.ready']) {
+      await ctx.events.emit(name, { progress: 1 })
+      const rows = await f.log.scan({ type: `x/${owner}/${name}`, limit: 10 })
       expect(rows).toEqual([
-        expect.objectContaining({ origin: `ext:${f.session.loop.id}`, trust: 'untrusted', ignorable: true }),
+        expect.objectContaining({ origin: `ext:${owner}`, trust: 'untrusted', ignorable: true }),
       ])
       expect(
         validateMethod('_agnes/v1/session.event', 'params', { sessionId: f.session.key, event: rows[0] }).ok,
@@ -1173,7 +1175,7 @@ it.each([true, false])('bounds DAG plan repair and returns Core errors (repaired
     )
     const rows = await session.scan({ fromSeq: 1, limit: 200 })
     expect(rows.filter((row) => row.type === 'tool/result')).toHaveLength(repaired ? 1 : 0)
-    const attempts = rows.filter((row) => row.type === 'x/dag/planner')
+    const attempts = rows.filter((row) => row.type === 'x/test/dag/planner')
     expect(attempts).toHaveLength(2)
     expect(attempts[0]?.data).toMatchObject({ reply: 'prefix instead of a plan', attempt: 1 })
     if (repaired) expect(rows.find((row) => row.type === 'tool/call')!.seq).toBeGreaterThan(attempts[1]!.seq)

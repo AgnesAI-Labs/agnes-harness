@@ -2,7 +2,7 @@
 
 This standalone package uses only `@agnes/extension-api`. Install it with `agh package add ./examples/loops/dag-loop`, trust and enable the package, then configure its `ext:example-dag` plugin row. Select `example.dag@1.0.0` with `agh -p "run the plan" --loop example.dag@1.0.0`, SDK `client.createSession({ cwd, loop: { id: 'example.dag', version: '1.0.0' } })`, or a profile/admin default.
 
-A static plugin config needs no model and emits `x/dag/result`:
+A static plugin config needs no model and emits `x/agnes-example/dag-loop/result`:
 
 ```json
 {
@@ -20,7 +20,7 @@ For model planning, omit `plan`. The first reply must be a JSON plan array; the 
 
 The plan array may be plain or fenced JSON, followed by explanatory prose. Only the initial array is executed; later prose is ignored, and the final summary is generated after execution. Leading prose, incomplete JSON and multiple plan arrays are refused before any tools run. An invalid reply gets exactly one repair request with the parse error and required format. A second invalid reply ends the turn with `E_STEP_FAILED`; no tool executes without a validated plan. The saved repair attempt survives cold resume.
 
-The dedicated DAG protocol section makes its machine-readable format authoritative over persona and AGENTS.md presentation rules. Each planning attempt emits a local `x/dag/planner` ledger record containing the reply, parse error and attempt number. Credential-shaped values are redacted and the recorded reply is bounded to 16,384 characters, with truncation marked. These records follow normal session-ledger retention; they are not sent to telemetry.
+The dedicated DAG protocol section makes its machine-readable format authoritative over persona and AGENTS.md presentation rules. Each planning attempt emits a local `x/agnes-example/dag-loop/planner` ledger record containing the reply, parse error and attempt number. Credential-shaped values are redacted and the recorded reply is bounded to 16,384 characters, with truncation marked. These records follow normal session-ledger retention; they are not sent to telemetry.
 
 The model summary uses `ctx.events.assistant(message, checkpoint)` to atomically publish the conversation message and its completed checkpoint.
 

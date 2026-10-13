@@ -3,6 +3,17 @@ import { ExtensionError, type ProjectionCapability, type ProjectionDef } from '@
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
 import { frozenJson as frozen } from './frozen-json.js'
 import { compileExtensionSchema } from './json-schema.js'
+
+/**
+ * An extension event counts only when the owner of its namespace wrote it: `x/<owner>/…` from
+ * `ext:<owner>`, or from Core itself. A projection that lists another package's event type is not
+ * fed by whoever else can spell that type.
+ */
+function writtenByOwner(event: { type: string; origin: string }): boolean {
+  if (!event.type.startsWith('x/') || event.origin === 'system') return true
+  return event.origin.startsWith('ext:') && event.type.startsWith(`x/${event.origin.slice(4)}/`)
+}
+
 /** One adapter into the existing Core runtime; no second cache or quarantine. */
 export function adaptProjection<S extends JsonValue>(
   extId: string,
@@ -40,7 +51,7 @@ export function adaptProjection<S extends JsonValue>(
     stateVersion: def.stateVersion,
     init: () => check(init(), true),
     apply(state, event) {
-      if (!eventTypes.has(event.type)) return state
+      if (!eventTypes.has(event.type) || !writtenByOwner(event)) return state
       const data = inspectJsonData(event, Number.MAX_SAFE_INTEGER)
       if (!data.ok) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
       const next = apply(state as S, frozen(data.value) as unknown as Parameters<typeof apply>[1])

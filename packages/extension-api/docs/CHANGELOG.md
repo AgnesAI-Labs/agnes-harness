@@ -25,6 +25,13 @@ API additions require a minor version; removals or semantic changes require a ma
 - The step a generic model or tool port opens fires `before_step`. A park or block ends the turn in
   Core and the port throws `E_BUDGET` with `detail.reason` (`parked`, `blocked` or `aborted`),
   the same refusal a step or credit budget produces.
+- `GenericLoopPorts.events.emit(name, data)` takes a relative event name. Core writes it as
+  `x/<owning package without @>/<name>` with origin `ext:<that owner>`; a full `x/...` type is
+  refused, so a loop cannot write into another owner's namespace. Migration: pass the name only and
+  read the event back under the package's namespace.
+- A plugin projection folds an `x/<owner>/...` event only when Core or that owner wrote it. Listing
+  another package's event type in `inputEventTypes` no longer makes any writer of that type an
+  input.
 - An `approval_request` hook can only raise the risk a person is shown
   (`budget` < `destructive` < `always`); a lower value is ignored, along the waterfall and against
   the platform's own value. A `summary` or `context` it returns no longer replaces the platform's

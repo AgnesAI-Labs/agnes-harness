@@ -211,7 +211,7 @@ export function createDagLoop(config = {}) {
               codec.encode({ ...state, stage: 'done' }),
             )
           } else {
-            await ctx.events.emit('x/dag/result', { results: state.results })
+            await ctx.events.emit('result', { results: state.results })
           }
           state.stage = 'done'
           await save()

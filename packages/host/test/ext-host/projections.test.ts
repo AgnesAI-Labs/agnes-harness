@@ -129,6 +129,18 @@ describe('P4/P5 production Projection ports', () => {
     api.registerSlot('status.line', async (ctx) => {
       saved = ctx.projections
       await api.events.append('unrelated', {})
+      // The same type written by someone who does not own the namespace is not folded.
+      await h.session.d.log.append([
+        {
+          type: 'x/fixture/projection/count',
+          data: {},
+          actor: h.session.d.actor,
+          origin: 'ext:fixture/other',
+          trust: 'untrusted',
+          lane: h.session.lane,
+          ignorable: true,
+        },
+      ])
       await api.events.append('count', {})
       const first = await ctx.projections.readOwn<{ count: number }>('count')
       expect(first.status).toBe('available')

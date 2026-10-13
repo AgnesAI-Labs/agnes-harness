@@ -231,7 +231,7 @@ it('loads an installed manifest plugin before Kernel construction, selects profi
     expect(
       await profileSession.run({ until: 'turn-end', signal: new AbortController().signal }),
     ).toMatchObject({ reason: 'completed' })
-    expect(await profileSession.scan({ type: 'x/dag/result', limit: 1 })).toHaveLength(1)
+    expect(await profileSession.scan({ type: 'x/agnes-example/dag-loop/result', limit: 1 })).toHaveLength(1)
     expect(await profileSession.scan({ type: 'effect/intent', limit: 1 })).toEqual([])
     await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
       revision: 0,
@@ -386,7 +386,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
         },
         async dispose() {
           disposed.push(id)
-          await contexts.get(child.parent)?.events.emit('x/child/disposed', { id })
+          await contexts.get(child.parent)?.events.emit('disposed', { id })
           children.delete(id)
         },
       }
@@ -424,7 +424,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
           try {
             await port.start('denied', { model: 'blocked' })
           } catch (error) {
-            await ctx.events.emit('x/child/refused', { message: String(error) })
+            await ctx.events.emit('refused', { message: String(error) })
           }
           const handle = await port.start('start', {
             model: 'fast',
@@ -438,7 +438,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
           const result = await port.result(handle.id)
           const events = []
           for await (const event of port.events(handle.id)) events.push(event)
-          await ctx.events.emit('x/child/result', { id: handle.id, result, events })
+          await ctx.events.emit('result', { id: handle.id, result, events })
           await ctx.events.finish('completed')
           return { outcome: 'turn-ended', reason: 'completed' }
         },
@@ -473,7 +473,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',
       })
-      expect((await session.scan({ type: 'x/child/refused', limit: 1 }))[0]?.data).toMatchObject({
+      expect((await session.scan({ type: 'x/acme/child-loop/refused', limit: 1 }))[0]?.data).toMatchObject({
         message: expect.stringContaining('E_MODEL_UNKNOWN'),
       })
     }
@@ -491,7 +491,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
       generation: f.host.sessionGeneration?.(other.key),
     })
     expect(children.get('child-1')).toMatchObject({ messages: ['start', 'continue'], interrupted: true })
-    expect((await parent.scan({ type: 'x/child/result', limit: 1 }))[0]?.data).toMatchObject({
+    expect((await parent.scan({ type: 'x/acme/child-loop/result', limit: 1 }))[0]?.data).toMatchObject({
       id: 'child-1',
       result: { status: 'interrupted', text: 'start|continue' },
       events: [{ type: 'status', status: 'interrupted' }],
@@ -507,7 +507,7 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
     await Promise.all([closing, parent.close()])
     expect(disposed).toEqual(['child-1'])
     expect(
-      (await f.host.kernel.o.storage.scan(parent.key, { type: 'x/child/disposed', limit: 10 })).map(
+      (await f.host.kernel.o.storage.scan(parent.key, { type: 'x/acme/child-loop/disposed', limit: 10 })).map(
         (row) => row.data,
       ),
     ).toEqual([{ id: 'child-1' }])

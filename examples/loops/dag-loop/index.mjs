@@ -195,7 +195,7 @@ export function createDagLoop(config = {}) {
           } catch (error) {
             parseError = error instanceof Error ? error.message : 'Invalid DAG plan'
           }
-          await ctx.events.emit('x/dag/planner', {
+          await ctx.events.emit('planner', {
             attempt: (state.planAttempt ?? 0) + 1,
             reply: plannerTrace(text),
             truncated: text.length > 16_384,
@@ -278,7 +278,7 @@ export function createDagLoop(config = {}) {
               codec.encode(state),
             )
           } else {
-            await ctx.events.emit('x/dag/result', { results: state.results })
+            await ctx.events.emit('result', { results: state.results })
             state.stage = 'done'
             await save()
           }

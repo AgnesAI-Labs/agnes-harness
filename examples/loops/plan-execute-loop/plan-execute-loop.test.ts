@@ -81,7 +81,7 @@ describe('plan-execute loop through the generic ports', () => {
     })
     expect(log).toEqual(['read', 'spawn', 'write'])
     expect(second.finished).toEqual(['completed', undefined])
-    expect(second.events.map((event) => event.type)).toContain('x/plan/notice')
+    expect(second.events.map((event) => event.type)).toContain('notice')
     expect(second.events.at(-1)).toMatchObject({ type: 'assistant/message' })
   })
 
@@ -218,7 +218,7 @@ describe('plan-execute loop through the generic ports', () => {
     const { target: _target, ...stray } = notice('completed')
     const run = await driveLoop(createPlanExecuteLoop(), { inputs: [stray] })
     expect(run.finished?.[0]).toBe('completed')
-    expect(run.events.map((event) => event.type)).toEqual(['x/plan/notice'])
+    expect(run.events.map((event) => event.type)).toEqual(['notice'])
   })
 
   it('rejects an unsupported checkpoint codec before resumed work', () => {

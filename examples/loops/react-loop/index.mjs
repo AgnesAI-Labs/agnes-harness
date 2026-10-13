@@ -182,7 +182,7 @@ export function createReactLoop(config = {}) {
                 await handle.sendMessage(config.childMessage, signal)
                 result = await answer()
               }
-              await ctx.events.emit('x/react/child', { id: handle.id, result })
+              await ctx.events.emit('child', { id: handle.id, result })
             } finally {
               await handle.dispose()
             }
@@ -193,7 +193,7 @@ export function createReactLoop(config = {}) {
           if (state.stage === 'model') {
             await ctx.input.claim('next-step')
             // The view is advisory. Core ports still enforce admission for every operation.
-            await ctx.events.emit('x/react/budget', {
+            await ctx.events.emit('budget', {
               ...view.budget,
               model: view.model.id,
               tools: view.tools.map((tool) => tool.name),
@@ -219,7 +219,7 @@ export function createReactLoop(config = {}) {
               // Omitted messages preserve Core's media handling, trust envelopes and compacted surface.
               const request = await ctx.prepareRequest({ invocationId: id })
               const estimate = await ctx.estimateRequest(request)
-              await ctx.events.emit('x/react/estimate', { ...estimate })
+              await ctx.events.emit('estimate', { ...estimate })
               for await (const event of ctx.model.stream(request, signal)) response.push(event)
             }
             if (response.some((event) => event.type === 'error'))

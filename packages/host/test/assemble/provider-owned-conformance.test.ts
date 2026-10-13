@@ -238,7 +238,7 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
     const instance: LoopDriver = {
       async step(signal) {
         if (!(await ctx.input.accept())) return { outcome: 'idle' }
-        await ctx.events.emit('x/conformance/counter', { count })
+        await ctx.events.emit('counter', { count })
         count++
         await ctx.checkpoints.write(codec.encode(count))
         ready.resolve()
@@ -312,7 +312,7 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
                 cancel.abort()
                 expect(await running).toMatchObject({ reason: 'aborted' })
                 expect(
-                  (await resumed.scan({ type: 'x/conformance/counter', limit: 10 })).map(
+                  (await resumed.scan({ type: 'x/agnes/code/counter', limit: 10 })).map(
                     (event) => event.data,
                   ),
                 ).toEqual([{ count: 0 }, { count: 1 }])

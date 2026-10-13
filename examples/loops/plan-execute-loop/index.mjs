@@ -119,7 +119,7 @@ export function createPlanExecuteLoop() {
         message: `The outcome of ${id} is unknown; it was not retried`,
       })
     const failStep = async (result) => {
-      await ctx.events.emit('x/plan/result', { results: state.results, failedStep: state.index })
+      await ctx.events.emit('result', { results: state.results, failedStep: state.index })
       return await finish('error', {
         code: 'PLAN_STEP_FAILED',
         message: `Step ${state.index} (${state.steps[state.index].tool}) failed: ${textOf(result.content).slice(0, 500)}`,
@@ -146,11 +146,11 @@ export function createPlanExecuteLoop() {
       ) {
         const notice = childNotice(input)
         if (!notice) {
-          await ctx.events.emit('x/plan/ignored-input', { id: input.id })
+          await ctx.events.emit('ignored-input', { id: input.id })
           continue
         }
         state.notices.push(notice)
-        await ctx.events.emit('x/plan/notice', notice)
+        await ctx.events.emit('notice', notice)
         if (notice.status !== 'completed') {
           await save()
           return await finish('blocked', {
@@ -175,7 +175,7 @@ export function createPlanExecuteLoop() {
             const notice = childNotice(input)
             if (notice) {
               // No plan is waiting for this child; record it and say nothing was done.
-              await ctx.events.emit('x/plan/notice', notice)
+              await ctx.events.emit('notice', notice)
               state = { ...initial(), stage: 'done', turnId: input.turnId, endReason: 'completed' }
               await save()
               return await closeTurn()
@@ -229,7 +229,7 @@ export function createPlanExecuteLoop() {
             })
             state.stage = 'approving'
             await save()
-            await ctx.events.emit('x/plan/proposed', { steps })
+            await ctx.events.emit('proposed', { steps })
             return { outcome: 'parked', phase: state.stage, reason: 'parked' }
           }
           if (state.stage === 'approving') {

@@ -26,6 +26,23 @@ export function prepareExtensionEvent(type: string, data: unknown, meta: ToolSou
   return { type, data: checked.value, source }
 }
 
+const LOOP_OWNER = /^(?!(?:core|plugin)(?:\/|$))[a-z0-9._-]+(?:\/[a-z0-9._-]+)?$/
+const LOOP_EVENT_NAME = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/
+
+/**
+ * A loop writes under the namespace of the package that owns it, `x/<package without @>/<name>`,
+ * the way a plugin writes under its own row. The name has no separator of its own, so one package's
+ * events can never spell another owner's type; `core` and `plugin` stay with the platform.
+ */
+export function prepareLoopEvent(owner: string, name: unknown, data: unknown) {
+  const source = owner.replace(/^@/, '')
+  if (typeof name !== 'string' || !LOOP_EVENT_NAME.test(name) || !LOOP_OWNER.test(source))
+    invalid("Loop emit takes an event name inside the namespace of the loop's own package")
+  const checked = inspectJsonData(data)
+  if (!checked.ok) invalid('Invalid Loop event data')
+  return { type: `x/${source}/${name}`, data: checked.value, source }
+}
+
 /** Called under SessionImpl's phase lock; counted history and append share the same turn boundary. */
 export async function appendExtensionEvent(
   session: SessionImpl,

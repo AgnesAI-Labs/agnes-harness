@@ -243,8 +243,12 @@ export interface GenericLoopPorts {
     pending(): boolean
   }
   readonly events: LoopEventPort & {
-    /** Non-reserved x/* events only; Core records this loop's untrusted plugin provenance. */
-    emit(type: string, data: JsonValue): Promise<void>
+    /**
+     * Append an event of this loop's own. `name` is relative (`result`, `plan.proposed`): Core writes
+     * it as `x/<owning package without @>/<name>` with this loop's untrusted provenance, so a loop
+     * cannot write into another owner's namespace.
+     */
+    emit(name: string, data: JsonValue): Promise<void>
     /** Persist an assistant message and the driver's next checkpoint in one ledger transaction. */
     assistant(message: Omit<AssistantMessage, 'requestSeq'>, checkpoint: LoopCheckpoint): Promise<void>
     /**

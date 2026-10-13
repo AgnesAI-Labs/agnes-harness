@@ -64,7 +64,7 @@ stable 工具上下文包含 `tools.invoke/list`、`artifacts.put/get/submitJob/
 
 调度依据 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`，不依赖展示 `phase` 或单独 reason。`loopShouldStop(result, until)` 由生产和 testkit 共用。`until: 'turn-end'` 在任意轮结束时停止；`until: 'idle'` 可在 completed 后继续消费队列，但遇其他结束原因、idle 或 parked 停止。`events.finish` 关闭可观察轮次。审批 park 在兄弟调用排空后关闭本轮；先用 `input.resumeParked` 重开，再以 `tools.resume` 恢复**原始** invocation。仍等待另一个审批时返回 `E_LANE_BUSY`；不确定执行拒绝重放。
 
-Core 经公开效果路径实施 step/credit 准入、principal 授权、审批绑定与媒体/请求校验。Batch 按输入顺序返回；仅声明 concurrency-safe 的调用可在 runtime 策略下重叠。低层模型响应不会自动成为 assistant 历史行：用 `events.assistant(message, checkpoint)` 原子保存两者。`events.emit(type, data)` 仍是宽泛账本 append 端口，保持 experimental，不能替代请求派生或授权。
+Core 经公开效果路径实施 step/credit 准入、principal 授权、审批绑定与媒体/请求校验。Batch 按输入顺序返回；仅声明 concurrency-safe 的调用可在 runtime 策略下重叠。低层模型响应不会自动成为 assistant 历史行：用 `events.assistant(message, checkpoint)` 原子保存两者。`events.emit(name, data)` 在 Loop 所属包的命名空间内追加事件（`x/<包名去掉 @>/<name>`），保持 experimental，不能替代请求派生或授权。
 
 恢复应使用显式、稳定的 `invocationId`。状态为 `not-sent`、`may-have-sent`、`responded`（也可能是错误结果）。同一身份用于不同操作被拒绝；已有响应可以无 redispatch 返回。外部 dispatch 前写入不确定性 fence。`checkpoints.write(checkpoint, {invocationIds})` 记录关联，不是外部效果的原子提交。工具响应已提交、Loop 回执未写时崩溃，可恢复原响应；模型没有耐久完整回执时崩溃，仍是不确定。没有外部效果 exactly-once 或受管网络 send fence 保证。 **稳定 invocation 身份、三态 effect status 与 checkpoint association 已被接受为 v0.1 足够合同，整体 reconciliation 仍标为 experimental。** 更强的跨 provider 对账或原子外部效果事务不是 v0.1 要求。
 
@@ -192,7 +192,7 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 
 以下公开暴露仍需审阅，本次保留而不删除：
 
-- `LoopRequest` 仍是带品牌的 `Readonly<RequestBody>`，route/hash/contract 字段可读，但不能提交伪造 stamps；`events.emit` 接受任意事件名。这些宽泛低层接口保持 experimental。
+- `LoopRequest` 仍是带品牌的 `Readonly<RequestBody>`，route/hash/contract 字段可读，但不能提交伪造 stamps；`events.emit` 接收 Loop 所属包命名空间内的相对事件名。这些低层接口保持 experimental。
 - `ChildControlStore` 与 CAS/budget/workspace records 是持久化要求，不是普通 child-agent 作者要求。`persistenceRegisterKey` 与 tombstone 规则有意暴露耐久 register layout，须遵循数据格式兼容规则。
 - `SearchProvider`、`SkillInstallPort`、可选 `CodeRuntime`、`SandboxProcess`、`ServiceContext.sandbox` 超出八 kind catalog。本文已明确列出，统一的功能专属 conformance 尚未建立。
 - 第三方文件系统 extension loading 虽已退役，导出的 extension manifests/fixtures 对 builtin/embedder 仍有用。不能将 `Disposer` 当作异步 provider cleanup。

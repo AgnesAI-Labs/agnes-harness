@@ -13,13 +13,7 @@ import type {
   ServiceInstance,
   ServicePorts,
 } from '@agnes/extension-api'
-import {
-  type ContentBlock,
-  EXT_EVENT_PATTERN,
-  type InferenceEvent,
-  inspectJsonData,
-  type RequestBody,
-} from '@agnes/protocol'
+import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
@@ -29,7 +23,7 @@ import type { DeriveOutput } from '../request/derive.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
-import { appendExtensionEvent } from '../step/ext-events.js'
+import { appendExtensionEvent, prepareLoopEvent } from '../step/ext-events.js'
 import { beforeStepGate, builtinBudgetPreflight, checkpointRoutine, stopGate } from '../step/gate.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
@@ -634,14 +628,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           done()
         }
       },
-      async emit(type, data) {
-        if (typeof type !== 'string' || !EXT_EVENT_PATTERN.test(type) || type.startsWith('x/core/'))
-          throw new CoreError('E_ENVELOPE', 'Loop emit accepts only non-reserved extension event types')
-        const checked = inspectJsonData(data)
-        if (!checked.ok) throw new CoreError('E_ENVELOPE', 'Invalid Loop event data')
-        await s.locked(() =>
-          appendExtensionEvent(s, { type, data: checked.value, source: s.loop.id }, { loopTrigger: true }),
-        )
+      async emit(name, data) {
+        const event = prepareLoopEvent(s.d.loopSourcePackage ?? s.loop.id, name, data)
+        await s.locked(() => appendExtensionEvent(s, event, { loopTrigger: true }))
       },
       async finish(reason, error) {
         if (reason !== 'completed') {

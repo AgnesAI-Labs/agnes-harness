@@ -150,7 +150,9 @@ it.each([1, 2])(
       const calls = await session.scan({ type: 'tool/call', limit: 10 })
       expect(calls).toHaveLength(count)
       expect(await session.scan({ type: 'assistant/message', limit: 10 })).toHaveLength(2)
-      expect((await session.scan({ type: 'x/react/budget', limit: 1 }))[0]?.data).toMatchObject({
+      expect(
+        (await session.scan({ type: 'x/agnes-example/react-loop/budget', limit: 1 }))[0]?.data,
+      ).toMatchObject({
         tools: ['read'],
         model: 'm',
         stepsUsed: 0,
@@ -458,9 +460,11 @@ it('starts and joins a real in-process child through the parent-bound public ser
   const session = await f.k.session('parent', { ...options, loop: f.loop })
   await enqueue(session)
   expect(await run(session)).toMatchObject({ reason: 'completed' })
-  expect((await session.scan({ type: 'x/react/child', limit: 1 }))[0]?.data).toMatchObject({
-    result: { status: 'idle', text: 'follow-up answer' },
-  })
+  expect((await session.scan({ type: 'x/agnes-example/react-loop/child', limit: 1 }))[0]?.data).toMatchObject(
+    {
+      result: { status: 'idle', text: 'follow-up answer' },
+    },
+  )
   expect(f.provider.calls).toBe(3)
   expect(f.provider.requests[1]?.sessionKey).toBe(f.provider.requests[0]?.sessionKey)
   expect(f.provider.requests[0]?.sessionKey).not.toBe(session.key)
@@ -656,7 +660,9 @@ it.each(['intent', 'creation', 'receipt'] as const)(
       expect(children).toHaveLength(boundary === 'intent' ? 0 : 1)
       if (savedCreation) {
         expect(children[0]?.childKey).toBe(savedCreation.childKey)
-        expect((await cold.scan({ type: 'x/react/child', limit: 1 }))[0]?.data).toMatchObject({
+        expect(
+          (await cold.scan({ type: 'x/agnes-example/react-loop/child', limit: 1 }))[0]?.data,
+        ).toMatchObject({
           id: savedCreation.childKey,
           result: { text: 'cold follow-up', status: 'idle' },
         })
