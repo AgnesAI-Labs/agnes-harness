@@ -1976,8 +1976,7 @@ const adminPaneController = createAdminPaneController({
   },
   async mountResources(scope) {
     const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
-    const options = { ...scope, embedded: true }
-    return adaptResourceAdmin(mountResourceAdmin(options), options, candidateSources)
+    return adaptResourceAdmin(mountResourceAdmin(scope), scope, candidateSources)
   },
 })
 

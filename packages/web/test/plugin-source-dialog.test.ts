@@ -1,11 +1,20 @@
 /** @vitest-environment happy-dom */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
-import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
+import { ADMIN_FEATURES } from '@agnes/web-admin/admin/plugins/types'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const html = readFileSync(join(import.meta.dirname, 'fixtures/plugin-admin-host.html'), 'utf8')
+let host: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountRenderedIndex>> | undefined
+/** The plugin pane and dialogs as the workbench renders them, with the plugin pane on screen. */
+async function renderPluginHost(): Promise<void> {
+  await host?.dispose()
+  const { mountRenderedIndex } = await import('./web-dom-fixture.js')
+  // The workbench rail lists the sections the plugin admin registers, as it does in the product.
+  const { settingsSections } = await import('@agnes/web-client')
+  host = await mountRenderedIndex({ settings: { sections: settingsSections } })
+  host.settings?.open('plugin')
+}
+// Every case starts from fresh module state, so the host and the controller share one instance.
+beforeEach(() => vi.resetModules())
 
 type Fetcher = ReturnType<typeof vi.fn<typeof fetch>>
 let dispose: (() => void) | undefined
@@ -36,13 +45,11 @@ function backend(inspect: (body: Record<string, unknown>) => Response): Fetcher 
 }
 
 async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   before?.()
   history.replaceState(null, '', '/admin/plugins#source-dialog-token')
   vi.stubGlobal('fetch', fetcher)
-  const { mountPluginAdmin } = await import('../src/admin/plugins/admin.js')
+  const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
   const mounted = mountPluginAdmin()
   dispose = mounted.dispose
   await mounted.ready
@@ -87,9 +94,11 @@ function submit(type: string, ref: string): void {
   button.click()
 }
 
-afterEach(() => {
+afterEach(async () => {
   dispose?.()
   dispose = undefined
+  await host?.dispose()
+  host = undefined
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   sessionStorage.clear()

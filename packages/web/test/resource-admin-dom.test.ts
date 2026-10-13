@@ -1,8 +1,5 @@
 /** @vitest-environment happy-dom */
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import type { McpServerDescriptor } from '@agnes/protocol'
-import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 
 const revision = 'a'.repeat(64)
@@ -43,6 +40,7 @@ let resourceMount: {
   reload(): Promise<void>
   sync(scope: { tab: 'skills' | 'mcp'; workspaceId?: string }, options?: { refresh?: boolean }): Promise<void>
 }
+let workbench: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountAdminWorkbench>> | undefined
 const requests: Array<{ path: string; body: Record<string, unknown> }> = []
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 /**
@@ -82,7 +80,8 @@ const settle = async () => {
 // Transform the shared UI graph outside the per-case DOM setup budget. Cases still
 // reset modules and mount a fresh controller; no behavior assertion gets extra time.
 beforeAll(async () => {
-  await import('../src/admin.js')
+  await import('@agnes/resource-control-web/admin')
+  await import('./web-dom-fixture.js')
 }, 60_000)
 
 beforeEach(async () => {
@@ -99,10 +98,6 @@ beforeEach(async () => {
   failPolling = false
   pendingPage = undefined
   document.documentElement.lang = 'en'
-  document.documentElement.innerHTML = await readFile(
-    resolve(import.meta.dirname, 'fixtures/resource-admin-host.html'),
-    'utf8',
-  )
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -197,9 +192,17 @@ beforeEach(async () => {
       return Response.json({ operationId: 'op' })
     }),
   )
-  const { mountResourceAdmin } = await import('../src/admin.js')
-  resourceMount = mountResourceAdmin()
-  await resourceMount.ready
+  // The controller binds to the panes and dialogs the workbench renders, mounted by the same
+  // coordinator the settings rail drives in the product.
+  const { mountAdminWorkbench } = await import('./web-dom-fixture.js')
+  const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
+  workbench = await mountAdminWorkbench({
+    mountResources: async (scope) => {
+      resourceMount = mountResourceAdmin(scope)
+      return resourceMount
+    },
+  })
+  await workbench.open('resources', 'skills')
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Skill'))
   byId('mcp-tab').click()
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Fixture MCP'))
@@ -288,13 +291,14 @@ it('does not append a stale load-more response after switching tabs', async () =
   expect(byId('resource-list').textContent).not.toContain('旧 MCP 分页')
   expect(byId('resource-list').querySelectorAll('.resource-row')).toHaveLength(0)
 })
-afterEach(() => {
+afterEach(async () => {
   resourceMount?.dispose()
+  await workbench?.runtime.dispose()
+  workbench = undefined
   document.documentElement.lang = 'en'
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  document.head.replaceChildren()
-  document.body.replaceChildren()
+  document.documentElement.replaceChildren()
 })
 
 it.each(['stdio-env', 'http-bearer', 'http-header'])(
@@ -448,7 +452,7 @@ it('uses a published-skill link to open the filtered skills list', async () => {
   resourceMount.dispose()
   window.history.replaceState({}, '', '/?settings=skills&skill=published-skill')
   try {
-    const { mountResourceAdmin } = await import('../src/admin.js')
+    const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
     resourceMount = mountResourceAdmin()
     await resourceMount.ready
     await vi.waitFor(() =>
@@ -489,10 +493,14 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
 
   emptyMcp = true
   byId('mcp-tab').click()
-  await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
+  // The settings rail hands the tab to the pane coordinator, so the list changes a moment later.
+  await vi.waitFor(() =>
+    expect(byId('resource-list').querySelector('.admin-empty-state h3')?.textContent).toBe(
+      'No MCP services found',
+    ),
+  )
 
   const mcpEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(mcpEmpty?.querySelector('h3')?.textContent).toBe('No MCP services found')
   expect(mcpEmpty?.querySelector('.admin-empty-state-hints')).toBeNull()
 })
 
@@ -912,11 +920,25 @@ it('prefills a Playwright preset without writes and requires save and enable con
     serverId: 'playwright',
     resourceId: 'mcp/playwright',
     displayName: 'Playwright MCP',
-    definition: createMcpPreset('playwright'),
+    definition: {
+      serverId: 'playwright',
+      displayName: 'Playwright MCP',
+      transport: { kind: 'stdio', executable: 'npx', args: [] },
+      secretBinding: { kind: 'none' },
+    },
   }
   await submitMcpForm()
   await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
-  expect(submitted('mcp/create')[0]?.body.definition).toEqual(createMcpPreset('playwright'))
+  // The preset fills the whole definition; saving it is all the form does.
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    serverId: 'playwright',
+    displayName: 'Playwright MCP',
+    transport: {
+      kind: 'stdio',
+      executable: 'npx',
+      args: expect.arrayContaining(['--headless', '--isolated']),
+    },
+  })
   expect(submitted('mcp/trust')).toHaveLength(0)
   expect(submitted('mcp/enable')).toHaveLength(0)
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('Playwright MCP'))

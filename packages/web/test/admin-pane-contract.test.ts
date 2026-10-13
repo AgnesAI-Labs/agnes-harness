@@ -6,85 +6,12 @@ import { appNotice } from '../src/app-notices.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 /**
- * The admin controllers bind to host markup by id. The workbench renders that markup from React;
- * the controller tests in web-admin and resource-control-web bind to static host fixtures. Nothing
- * but this test keeps the fixtures in step with the workbench — and a drifted id means a silent
- * `missing element` crash at mount.
+ * The admin controllers bind by id to the panes and dialogs the workbench renders from React. Their
+ * own tests (resource-admin-dom, plugin-source-dialog, plugin-admin-page) mount on this same
+ * rendered workbench, so a drifted id fails there at mount rather than passing against a copy.
  */
 const packagesDir = join(resolve(import.meta.dirname, '../../..'), 'packages')
 const read = (name: string): string => readFileSync(join(packagesDir, 'web', 'public', name), 'utf8')
-const HOST_FIXTURES = {
-  plugin: join(packagesDir, 'web-admin', 'test', 'fixtures', 'plugin-admin-host.html'),
-  resources: join(packagesDir, 'resource-control-web', 'test', 'fixtures', 'resource-admin-host.html'),
-}
-const fixture = (name: keyof typeof HOST_FIXTURES): string => readFileSync(HOST_FIXTURES[name], 'utf8')
-
-/** Ids the fixture carries around the surface (its own shell and <body>), not part of the surface itself. */
-const STANDALONE_ONLY = new Set([
-  'return-workbench',
-  'plugin-content',
-  'plugin-admin-page',
-  'resource-return',
-  'resource-content',
-  'resource-admin-page',
-])
-
-const idsIn = (markup: string): string[] =>
-  [...markup.matchAll(/\bid="([^"]+)"/g)]
-    .map((m) => m[1] as string)
-    .filter((id) => !id.startsWith('settings-dsh-slot-'))
-
-/** happy-dom would try to fetch these; the contract under test is structural, not visual. */
-const stripAssets = (html: string): string =>
-  html.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<link\b[^>]*>/g, '')
-
-/** Ids inside each root, plus the roots named in `selfIds`. The pane section's own id is host-specific. */
-function embeddedIds(html: string, roots: readonly string[], selfIds: readonly string[] = []): string[] {
-  const parsed = new DOMParser().parseFromString(stripAssets(html), 'text/html')
-  const found = new Set(selfIds)
-  for (const id of roots) {
-    const root = parsed.getElementById(id)
-    expect(root, `#${id} is missing from the embedded host`).not.toBeNull()
-    // React-generated ids (`:r1:`) only pair a control with its region; they are not surface ids.
-    for (const node of root?.querySelectorAll('[id]') ?? [])
-      if (!node.id.startsWith('settings-dsh-slot-') && !node.id.startsWith(':')) found.add(node.id)
-  }
-  return [...found].sort()
-}
-
-it('the workbench plugin pane and the plugin host fixture carry the same surface ids', async () => {
-  const standalone = idsIn(fixture('plugin'))
-    .filter((id) => !STANDALONE_ONLY.has(id))
-    .sort()
-  const runtime = await mountRenderedIndex()
-  const embedded = embeddedIds(
-    document.documentElement.outerHTML,
-    ['plugin-settings-pane', 'source-dialog', 'plugin-confirm', 'admin-confirm', 'plugin-detail'],
-    ['source-dialog', 'plugin-confirm', 'admin-confirm', 'plugin-detail'],
-  )
-  await runtime.dispose()
-  resetWebDom()
-  expect(embedded).toEqual(standalone)
-})
-
-it('the workbench resource pane and the resource host fixture carry the same surface ids', async () => {
-  const standalone = idsIn(fixture('resources'))
-    .filter((id) => !STANDALONE_ONLY.has(id))
-    .sort()
-  // #admin-confirm is the shared confirmation dialog (@agnes/web-ui); it is host-level, so it
-  // is compared in both surfaces rather than belonging to one of them.
-  // #resource-detail is a body-level modal in both hosts, and the Skills / MCP tabs sit in the
-  // fixture's toolbar but in the workbench's settings rail — same ids, different parent.
-  const runtime = await mountRenderedIndex()
-  const embedded = embeddedIds(
-    document.documentElement.outerHTML,
-    ['resource-settings-pane', 'mcp-dialog', 'admin-confirm', 'resource-detail'],
-    ['mcp-dialog', 'admin-confirm', 'resource-detail', 'skills-tab', 'mcp-tab'],
-  )
-  await runtime.dispose()
-  resetWebDom()
-  expect(embedded).toEqual(standalone)
-})
 
 it('guides MCP setup through chat and hides the manual creation control', async () => {
   const runtime = await mountRenderedIndex()
@@ -95,7 +22,7 @@ it('guides MCP setup through chat and hides the manual creation control', async 
   resetWebDom()
 })
 
-it('the shared confirmation dialog exists in every host', async () => {
+it('the shared confirmation dialog is rendered by the workbench', async () => {
   const required = [
     'admin-confirm',
     'admin-confirm-title',
@@ -104,8 +31,6 @@ it('the shared confirmation dialog exists in every host', async () => {
     'admin-confirm-cancel',
     'admin-confirm-action',
   ]
-  for (const name of ['plugin', 'resources'] as const)
-    for (const id of required) expect(idsIn(fixture(name)), `${name} fixture is missing #${id}`).toContain(id)
   const runtime = await mountRenderedIndex()
   for (const id of required) expect(document.getElementById(id)).not.toBeNull()
   await runtime.dispose()
@@ -119,16 +44,6 @@ it('the Skill / MCP pane confirms through the shared dialog, not window.confirm'
   )
   expect(source).not.toContain('window.confirm')
   expect(source).toContain('createConfirmController')
-})
-
-it('keeps embedded resource Tab ownership in the workbench host', () => {
-  const source = readFileSync(
-    join(resolve(import.meta.dirname, '../../..'), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
-    'utf8',
-  )
-  expect(source).toContain('embedded?: boolean')
-  expect(source).toContain('if (!options.embedded)')
-  expect(source).toContain('sync(scope')
 })
 
 it('no admin form is nested inside the settings form', async () => {

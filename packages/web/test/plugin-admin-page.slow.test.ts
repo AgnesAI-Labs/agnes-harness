@@ -9,11 +9,11 @@ import type {
   PackagePreview,
   RuntimePinDescriptor,
 } from '@agnes/protocol'
+import { pluginAdminLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/admin'
+import { ADMIN_FEATURES } from '@agnes/web-admin/admin/plugins/types'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import { setDisclosureOpen } from '@agnes/web-ui'
-import { afterEach, expect, it, vi } from 'vitest'
-import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
-import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 type RuntimeFixture = Readonly<{
   snapshot(): ReadonlyMap<string, PluginRuntimeState>
@@ -29,7 +29,7 @@ const activeAdminMounts = new Set<AdminMount>()
 async function mountAdmin(
   options: { actualSlots?: (packageId: string) => readonly string[]; runtime?: RuntimeFixture } = {},
 ): Promise<AdminMount> {
-  const { mountPluginAdmin } = await import('../src/admin/plugins/admin.js')
+  const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
   const mounted = mountPluginAdmin(options)
   await mounted.ready
   const tracked: AdminMount = {
@@ -43,7 +43,18 @@ async function mountAdmin(
   return tracked
 }
 
-const html = readFileSync(join(import.meta.dirname, 'fixtures/plugin-admin-host.html'), 'utf8')
+let host: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountRenderedIndex>> | undefined
+/** The plugin pane and dialogs as the workbench renders them, with the plugin pane on screen. */
+async function renderPluginHost(): Promise<void> {
+  await host?.dispose()
+  const { mountRenderedIndex } = await import('./web-dom-fixture.js')
+  // The workbench rail lists the sections the plugin admin registers, as it does in the product.
+  const { settingsSections } = await import('@agnes/web-client')
+  host = await mountRenderedIndex({ settings: { sections: settingsSections } })
+  host.settings?.open('plugin')
+}
+// Every case starts from fresh module state, so the host and the controller share one instance.
+beforeEach(() => vi.resetModules())
 const timestamp = '2026-09-13T00:00:00.000Z'
 const capabilityHash = 'c'.repeat(64)
 const families = [
@@ -127,8 +138,10 @@ function operation(
   }
 }
 
-afterEach(() => {
+afterEach(async () => {
   for (const mounted of [...activeAdminMounts]) mounted.dispose()
+  await host?.dispose()
+  host = undefined
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   sessionStorage.clear()
@@ -140,9 +153,7 @@ it.each([
   ['object', [{ operationId: 'restore-install', mode: 'install', packageId: 'acme/restored' }]],
   ['legacy string', ['restore-install']],
 ])('restores an in-flight operation from %s session records', async (_format, records) => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#restore-token')
   sessionStorage.setItem('agnes-plugin-operation-ids:auth.restore:local-dev', JSON.stringify(records))
 
@@ -205,9 +216,7 @@ it.each([
 })
 
 it('groups real catalog releases and carries the selected version source through preview and install', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#local-admin-token')
   const entries = catalog()
   let installed: PackageInstalledDescriptor[] = []
@@ -447,9 +456,7 @@ it('groups real catalog releases and carries the selected version source through
 })
 
 it('links a live Surface mount without treating the link as qualified actual', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#local-admin-token')
   const surfacePackage: PackageInstalledDescriptor = {
     id: 'agnes/demo-surface',
@@ -517,9 +524,7 @@ it('links a live Surface mount without treating the link as qualified actual', a
 })
 
 it('does not enable a plugin when its hidden approval step fails', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#approval-failure-token')
   const installed: PackageInstalledDescriptor = {
     id: 'acme/approval-failure',
@@ -591,9 +596,7 @@ it('does not enable a plugin when its hidden approval step fails', async () => {
 it.each(['failed', 'unavailable'] as const)(
   'does not retry enable for a %s plugin without a verified runtime baseline',
   async (actual) => {
-    document.documentElement.innerHTML = html
-      .replace('<link rel="stylesheet" href="/style.css" />', '')
-      .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+    await renderPluginHost()
     history.replaceState(null, '', '/admin/plugins#actual-switch-token')
     const installed: PackageInstalledDescriptor = {
       id: 'acme/unavailable-plugin',
@@ -672,9 +675,7 @@ it.each(['failed', 'unavailable'] as const)(
 )
 
 it('keeps backend actual and browser UI runtime failure visible as separate states', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#runtime-status-token')
   const installed: PackageInstalledDescriptor = {
     id: 'acme/ui-plugin',
@@ -765,9 +766,7 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
 })
 
 it('does not confirm enable while the browser runtime is still running the old revision', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#stale-runtime-token')
   const installedIntegrity = `sha256-${'2'.repeat(64)}`
   const installed: PackageInstalledDescriptor = {
@@ -855,9 +854,7 @@ it('does not confirm enable while the browser runtime is still running the old r
 }, 12_000)
 
 it('allows a checked enable for an inactive client-only package while backend actual is starting', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#client-only-enable-token')
   const installedIntegrity = `sha256-${'a'.repeat(64)}`
   const installed: PackageInstalledDescriptor = {
@@ -1036,9 +1033,7 @@ function orphanPin(): RuntimePinDescriptor {
 }
 
 it('hides the orphan pins section when packages.pins.inspect reports no orphans', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-empty-token')
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
@@ -1049,7 +1044,6 @@ it('hides the orphan pins section when packages.pins.inspect reports no orphans'
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() =>
@@ -1064,9 +1058,7 @@ it.each([
   ['context', 'The admin context is invalid. Reopen the page.', '管理上下文无效，请重新打开页面。'],
   ['list', 'The admin response could not be verified.', '后台返回的数据无法确认。'],
 ] as const)('localizes %s validation errors by stable code', async (failedRoute, english, chinese) => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   document.documentElement.lang = 'en'
   history.replaceState(null, '', `/admin/plugins#invalid-${failedRoute}-token`)
   const fetcher = vi.fn<typeof fetch>(async (input) => {
@@ -1084,7 +1076,6 @@ it.each([
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   const mounted = await mountAdmin()
   try {
@@ -1100,9 +1091,7 @@ it.each([
 // Finding 5 of the whole-branch review: refresh() used to swallow a pins/inspect failure with no
 // visible signal and no clearing of a previously-shown (now unverified) orphan list.
 it('surfaces a status message and clears a stale list when packages.pins.inspect fails', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-inspect-fail-token')
   const pin = orphanPin()
   let inspectCalls = 0
@@ -1148,7 +1137,6 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   const admin = await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1172,9 +1160,7 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
 })
 
 it('localizes an orphan-pin transport failure when rendered', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   document.documentElement.lang = 'zh-CN'
   history.replaceState(null, '', '/admin/plugins#pins-transport-fail-token')
   let inspectCalls = 0
@@ -1193,7 +1179,6 @@ it('localizes an orphan-pin transport failure when rendered', async () => {
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   const mounted = await mountAdmin()
   try {
@@ -1207,9 +1192,7 @@ it('localizes an orphan-pin transport failure when rendered', async () => {
 })
 
 it('shows orphaned pins and removes a released one after confirming', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-release-token')
   const pin = orphanPin()
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -1227,7 +1210,6 @@ it('shows orphaned pins and removes a released one after confirming', async () =
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1244,9 +1226,7 @@ it('shows orphaned pins and removes a released one after confirming', async () =
 })
 
 it('keeps a failed release in the list and shows its error message', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-fail-token')
   const pin = orphanPin()
   const fetcher = vi.fn<typeof fetch>(async (input) => {
@@ -1268,7 +1248,6 @@ it('keeps a failed release in the list and shows its error message', async () =>
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1289,9 +1268,7 @@ it('keeps a failed release in the list and shows its error message', async () =>
 // PackagePinsReleaseParams.pinIds caps at 64 (packages/protocol/schema/package-admin.json); "release
 // all" must not hand every orphan to a single call once there are more orphans than that.
 it('release-all batches more than 64 orphaned pins into multiple pins/release calls', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-batch-token')
   const orphans: RuntimePinDescriptor[] = Array.from({ length: 65 }, (_, index) => ({
     pinId: `pin-${index}`,
@@ -1318,7 +1295,6 @@ it('release-all batches more than 64 orphaned pins into multiple pins/release ca
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1342,9 +1318,7 @@ it('release-all batches more than 64 orphaned pins into multiple pins/release ca
 // Regression: a later batch's network-level failure must not discard the UI update for batches that
 // already succeeded (non-transactional, per-pinId release).
 it('keeps an earlier successfully-released batch reflected in the UI when a later batch call fails', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-batch-partial-fail-token')
   const orphans: RuntimePinDescriptor[] = Array.from({ length: 65 }, (_, index) => ({
     pinId: `pin-${index}`,
@@ -1376,7 +1350,6 @@ it('keeps an earlier successfully-released batch reflected in the UI when a late
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1401,9 +1374,7 @@ it('keeps an earlier successfully-released batch reflected in the UI when a late
 // Preservation: when the very first batch call fails outright, nothing has been released yet, so
 // nothing should be removed from the list, and the failure must surface as an error.
 it('removes nothing and surfaces the error when the first batch call fails outright', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-batch-first-fail-token')
   const orphans: RuntimePinDescriptor[] = Array.from({ length: 65 }, (_, index) => ({
     pinId: `pin-${index}`,
@@ -1427,7 +1398,6 @@ it('removes nothing and surfaces the error when the first batch call fails outri
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1453,9 +1423,7 @@ it('removes nothing and surfaces the error when the first batch call fails outri
 // release-all run, not just the last batch applied -- otherwise fixing the accumulation bug above
 // by applying each chunk's results immediately would silently regress this aggregate count.
 it('aggregates skipped-no-longer-orphaned counts across successful batches into one notice', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#pins-batch-skip-token')
   const orphans: RuntimePinDescriptor[] = Array.from({ length: 65 }, (_, index) => ({
     pinId: `pin-${index}`,
@@ -1484,7 +1452,6 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
   vi.stubGlobal('fetch', fetcher)
-  vi.resetModules()
 
   await mountAdmin()
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
@@ -1505,9 +1472,7 @@ it('aggregates skipped-no-longer-orphaned counts across successful batches into 
 })
 
 it('shows a plain pending tree status and hides aligned internal digests', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#tree-actual-token')
   const digest = `sha256-${'a'.repeat(64)}`
   let actual = false
@@ -1561,9 +1526,7 @@ it('shows a plain pending tree status and hides aligned internal digests', async
 })
 
 it('recovers a dropped tree_changed notice by polling tree/list without a page reload', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#tree-poll-token')
   const digest = `sha256-${'b'.repeat(64)}`
   let treeCalls = 0
@@ -1618,9 +1581,7 @@ it('recovers a dropped tree_changed notice by polling tree/list without a page r
 })
 
 it('closes an open detail dialog so disable and rollback confirms can show', async () => {
-  document.documentElement.innerHTML = html
-    .replace('<link rel="stylesheet" href="/style.css" />', '')
-    .replace('<script type="module" src="/admin-standalone.js"></script>', '')
+  await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#disable-confirm-token')
   const integrity = `sha256-${'c'.repeat(64)}`
   const installed: PackageInstalledDescriptor = {

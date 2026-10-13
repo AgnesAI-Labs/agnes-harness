@@ -14,7 +14,6 @@ import {
   createUiTranslator,
   type LocaleTranslator,
   McpDetailContent,
-  materializeSettingsControls,
   RESOURCE_DETAIL_LOCALE_NAMESPACE,
   RESOURCE_LIST_LOCALE_NAMESPACE,
   type ResourceDetailAction,
@@ -66,7 +65,6 @@ type ResourceLoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 export type ResourceAdminOptions = {
   workspaceId?: string
   tab?: Tab
-  embedded?: boolean
   locale?: UiLocaleSource
 }
 export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
@@ -928,7 +926,6 @@ export type ResourceAdminMount = Readonly<{
  * Importing this module never touches the DOM; the host decides when to mount.
  */
 export function mountResourceAdmin(options: ResourceAdminOptions = {}): ResourceAdminMount {
-  materializeSettingsControls(document)
   list = $('resource-list', 'section')
   detail = $('resource-detail', 'dialog')
   notice = $('resource-notice', 'p')
@@ -977,27 +974,6 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     if (event.target === dialog) dialog.close()
   })
 
-  if (!options.embedded) {
-    $('skills-tab', 'button').addEventListener('click', () => page.setTab('skills'))
-    $('mcp-tab', 'button').addEventListener('click', () => page.setTab('mcp'))
-    for (const [tab, id] of [
-      ['skills', 'skills-tab'],
-      ['mcp', 'mcp-tab'],
-    ] as const) {
-      $(id, 'button').addEventListener('keydown', (event) => {
-        let next: Tab | undefined
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = tab === 'skills' ? 'mcp' : 'skills'
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
-          next = tab === 'skills' ? 'mcp' : 'skills'
-        if (event.key === 'Home') next = 'skills'
-        if (event.key === 'End') next = 'mcp'
-        if (!next) return
-        event.preventDefault()
-        page.setTab(next)
-        $(next === 'skills' ? 'skills-tab' : 'mcp-tab', 'button').focus()
-      })
-    }
-  }
   $('skill-refresh', 'button').addEventListener(
     'click',
     () =>

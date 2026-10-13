@@ -75,16 +75,15 @@ it('settings mount the shared admin surface in-document without iframe-era overr
 })
 
 it('the resource toolbar keeps its actions with the tabs', async () => {
-  const html = await readFile(
-    resolve(publicDirectory, '../../resource-control-web/test/fixtures/resource-admin-host.html'),
-    'utf8',
-  )
-  document.documentElement.innerHTML = html
-    .replace(/<link\b[^>]*>/g, '')
-    .replace(/<script[\s\S]*?<\/script>/g, '')
-  const toolbar = document.querySelector('.resource-toolbar') as HTMLElement
-  expect(toolbar.contains(document.getElementById('mcp-create'))).toBe(true)
-  expect(toolbar.contains(document.getElementById('skill-refresh'))).toBe(true)
+  const runtime = await mountRenderedIndex()
+  try {
+    const toolbar = document.querySelector('.resource-toolbar') as HTMLElement
+    expect(toolbar.contains(document.getElementById('mcp-create'))).toBe(true)
+    expect(toolbar.contains(document.getElementById('skill-refresh'))).toBe(true)
+  } finally {
+    await runtime.dispose()
+    resetWebDom()
+  }
 })
 
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
