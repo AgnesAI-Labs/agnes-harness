@@ -56,11 +56,14 @@
     background: var(--agnes-bg-hover);
     color: var(--agnes-text-primary);
   }
+  /* A link sits on the text edge of its column; the underline answers the pointer and the keyboard. */
   .agh-btn--link:not(:disabled):not([aria-disabled="true"]) {
-    padding-inline: var(--s4);
+    padding-inline: 0;
     color: var(--agnes-text-emphasis);
-    text-decoration: underline;
     text-underline-offset: 0.16em;
+  }
+  .agh-btn--link:is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]) {
+    text-decoration: underline;
   }
   .agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-status-danger-text);
@@ -397,42 +400,55 @@
     gap: var(--s8);
     color: var(--agnes-status-success-text);
   }
+  /* A quiet placeholder: small mark, one line that names the state, one that says what to do. */
   .agh-empty-state {
     display: grid;
     justify-items: center;
-    gap: var(--s16);
+    gap: var(--s4);
     width: 100%;
     max-width: 420px;
     margin-inline: auto;
-    padding-block: var(--s32);
+    padding-block: var(--s48);
     color: var(--agnes-text-primary);
     text-align: center;
   }
   .agh-empty-state-icon {
-    width: var(--s48);
-    height: var(--s48);
-    color: var(--agnes-text-secondary);
+    display: grid;
+    place-items: center;
+    margin-bottom: var(--s8);
+    color: var(--agnes-text-tertiary);
   }
-  .agh-empty-state-icon > svg {
-    width: var(--s48);
-    height: var(--s48);
+  /* One mark size wherever the state appears, whatever size the icon was authored at. */
+  .agh-empty-state .agh-empty-state-icon > svg {
+    width: var(--s24);
+    height: var(--s24);
   }
   .agh-empty-state h3 {
     margin: 0;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-wrap: balance;
   }
   .agh-empty-state p {
+    max-width: 44ch;
     margin: 0;
     color: var(--agnes-text-secondary);
-    font-size: var(--font-size-body);
-    line-height: var(--line-md);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    text-wrap: pretty;
   }
   .agh-empty-state-actions {
     display: flex;
     justify-content: center;
-    gap: var(--s12);
+    gap: var(--s8);
     flex-wrap: wrap;
+    margin-top: var(--s12);
+  }
+  .agh-empty-state-help {
+    margin-top: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
   }
   .agh-banner {
     display: flex;
@@ -476,9 +492,9 @@
   .agh-list-row {
     display: flex;
     align-items: center;
-    gap: var(--s16);
+    gap: var(--s12);
     min-height: 56px;
-    padding-block: var(--s4);
+    padding-block: var(--s10);
     border-bottom: 1px solid var(--agnes-line-primary);
     color: var(--agnes-text-primary);
   }
@@ -486,10 +502,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--control-height);
-    height: var(--control-height);
+    width: var(--s32);
+    height: var(--s32);
     flex: 0 0 auto;
+    border-radius: var(--radius-control);
     color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
   }
   .agh-list-row-copy {
     flex: 1;
@@ -504,13 +522,14 @@
   }
   .agh-list-row h3 {
     margin: 0;
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
   }
   .agh-list-row .agh-list-row-title {
     justify-content: flex-start;
     height: auto;
-    min-height: var(--control-height-sm);
+    min-height: var(--s24);
     padding: 0;
     white-space: normal;
     text-align: start;
@@ -520,7 +539,7 @@
     line-height: var(--line-sm);
   }
   .agh-list-row p {
-    margin: var(--s4) 0 0;
+    margin: 0;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.6;
@@ -561,6 +580,36 @@
     max-height: var(--dialog-max-height);
     display: flex;
     flex-direction: column;
+  }
+  /* One title scale for every dialog, whether the caller passed text or its own heading element. */
+  .agh-dialog .ant-modal-title,
+  .agh-dialog .ant-modal-title :is(h1, h2, h3) {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-wrap: balance;
+  }
+  .agh-dialog .ant-modal-header {
+    margin-bottom: var(--s12);
+    padding-inline-end: var(--s32);
+  }
+  /* The close control is a compact icon button centred on the title line. */
+  .agh-dialog .ant-modal-close {
+    top: 18px;
+    inset-inline-end: var(--s16);
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+  }
+  .agh-dialog .ant-modal-close:hover {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .agh-dialog .ant-modal-close-x {
+    font-size: var(--font-size-body);
   }
   .agh-dialog .ant-modal-body {
     overflow: auto;
