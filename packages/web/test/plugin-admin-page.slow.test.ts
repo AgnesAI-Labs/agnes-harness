@@ -370,7 +370,7 @@ it('groups real catalog releases and carries the selected version source through
   v2?.click()
   document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'),
+    expect(document.getElementById('plugin-detail')?.textContent).toContain('Current version1.1.0'),
   )
   const check = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
     (candidate) => candidate.textContent === 'Inspect installation',
@@ -403,7 +403,7 @@ it('groups real catalog releases and carries the selected version source through
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
   await vi.waitFor(() =>
-    expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'),
+    expect(document.getElementById('plugin-detail')?.textContent).toContain('Current version1.1.0'),
   )
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
@@ -430,28 +430,27 @@ it('groups real catalog releases and carries the selected version source through
     .filter((url) => url.endsWith('/trust') || url.endsWith('/enable'))
   expect(effectCalls.map((url) => url.split('/').at(-1))).toEqual(['trust', 'enable'])
 
-  // 普通 Web 详情不暴露撤销信任；停用仍然保留为用户动作。
+  // 撤销信任在「权限与信任」页签；版本相关动作在「版本」页签。
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
-  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Revoke trust')
-  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
-  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
-  const update = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (button) => button.textContent === 'Update from a new source',
-  )
-  expect(update).toBeDefined()
+  const detailAction = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail .plugin-detail-actions button')].find(
+      (button) => button.textContent === label,
+    )
+  document.querySelector<HTMLElement>('[data-testid=plugin-permissions-tab]')?.click()
+  await vi.waitFor(() => expect(detailAction('Revoke trust')).toBeDefined())
+  document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
+  await vi.waitFor(() => expect(detailAction('Update from a new source')).toBeDefined())
+  const update = detailAction('Update from a new source')
   update?.click()
   await mounted.reload()
   expect((document.getElementById('source-dialog') as HTMLDialogElement).open).toBe(true)
   expect((document.getElementById('plugin-detail') as HTMLDialogElement).open).toBe(false)
   document.getElementById('source-cancel')?.click()
   await mounted.reload()
-  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
-  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
-  const uninstall = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-    (button) => button.textContent === 'Uninstall plugin',
-  )
-  expect(uninstall).toBeDefined()
+  document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
+  await vi.waitFor(() => expect(detailAction('Uninstall plugin')).toBeDefined())
+  const uninstall = detailAction('Uninstall plugin')
   uninstall?.click()
   await mounted.reload()
   expect((document.getElementById('plugin-confirm') as HTMLDialogElement).open).toBe(true)
@@ -1636,12 +1635,14 @@ it('closes an open detail dialog so disable and rollback confirms can show', asy
   await vi.waitFor(() => expect(document.querySelector('#plugin-list button[role="switch"]')).not.toBeNull())
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
-  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
-  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
-  const rollback = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
-    button.textContent?.startsWith('Roll back to'),
-  )
-  expect(rollback?.getAttribute('aria-disabled')).not.toBe('true')
+  // Version actions sit on the versions tab of the detail.
+  document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
+  const versionAction = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail .plugin-detail-actions button')].find(
+      (button) => button.textContent?.startsWith(label),
+    )
+  await vi.waitFor(() => expect(versionAction('Roll back to')).toBeDefined())
+  expect(versionAction('Roll back to')?.disabled).toBe(false)
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(true))
   expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Disable “')

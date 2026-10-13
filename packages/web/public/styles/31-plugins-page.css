@@ -192,6 +192,24 @@
     justify-content: space-between;
     gap: var(--s8);
   }
+  /* The plugin detail: the on/off switch sits in the header, actions on the tab they belong to. */
+  .plugin-detail-heading > .switch {
+    margin-inline-start: auto;
+  }
+  .plugin-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .admin-detail-actions[hidden] {
+    display: none;
+  }
+  .confirm-version-step {
+    margin: 0 0 var(--s4);
+    color: var(--agnes-text-primary);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium, 500);
+  }
   /* A second path in a confirmation sits apart from Cancel and the main action. */
   .dialog-actions > .dialog-action-aside {
     margin-inline-end: auto;

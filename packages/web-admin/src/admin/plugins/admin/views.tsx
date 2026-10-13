@@ -23,6 +23,7 @@ import {
   SettingsSelect,
   SettingsState,
   SourceDialogContent,
+  StateSwitch,
   sourceLabel,
   Tabs,
   UiLocaleProvider,
@@ -36,6 +37,7 @@ import { GenerationDrainSummary, KindFilter, PluginBadges, pluginFailureMessage 
 import { PluginDetailCopy } from '../detail-copy.js'
 import { PluginOperationFeedback } from '../operation-feedback.js'
 import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
+import { PluginDetailBody } from './detail-body.js'
 import { setDialog } from './dom.js'
 import { asRuntimeView, pinPurposeLabel } from './model.js'
 import type { PluginAdminViewContext } from './page.js'
@@ -428,155 +430,39 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
   }
   // 不传焦点目标：render 每 1.2 秒被刷新触发一次，抢焦点会打断弹窗里的操作。
   setDialog(this.detail, true)
-  const runtimeFailure = this.runtimeState(item.id)?.error
-  const failureReason =
-    runtimeFailure?.message ?? ('actual' in item && item.actual !== 'running' ? item.actualReason : undefined)
-  const failureMessage = failureReason
-    ? pluginFailureMessage(failureReason, this.t, runtimeFailure?.code)
-    : undefined
-  const facts: (readonly [string, string])[] = [
-    [this.t('fact.source'), sourceLabel(item.source as PackageSource, this.adminT)],
-    [this.t('fact.integrity'), integrityLabel(item.integrity)],
-    [this.t('fact.contribution'), contributionText(item, this.adminT)],
-  ]
-  if ('license' in item) facts.push([this.t('fact.license'), item.license])
-  if ('desired' in item) {
-    // Manifest slots are an author declaration. This fact is intentionally derived from the
-    // live browser registry so the operator can distinguish a declaration from what this page
-    // actually registered in the current browser session.
-    const actualSlotList = this.actualSlots?.(item.id) ?? []
-    facts.push([
-      this.t('fact.browser-slots'),
-      actualSlotList.length
-        ? actualSlotList.join(this.locale.getSnapshot() === 'en' ? ', ' : '、')
-        : this.t('fact.no-browser-slots'),
-    ])
-    const runtime = this.runtimeState(item.id)
-    const failureReason =
-      runtime?.error?.message ?? (item.actual === 'running' ? undefined : item.actualReason)
-    if (failureReason)
-      facts.push([this.t('fact.failure'), pluginFailureMessage(failureReason, this.t, runtime?.error?.code)])
-    facts.push([
-      this.t('fact.cleanup'),
-      item.cleanupPending ? this.t('fact.cleanup-pending') : this.t('fact.cleanup-none'),
-    ])
-    facts.push([
-      this.t('fact.rollback-target'),
-      item.rollbackTarget
-        ? `${item.rollbackTarget.version} · ${integrityLabel(item.rollbackTarget.integrity)}`
-        : this.t('fact.unavailable'),
-    ])
-  }
+  const purpose = resolvePluginMetadata(item.metadata, this.locale.getSnapshot())
+  const name = purpose?.displayName ?? item.id
+  const actions = this.detailActions(item)
+  const installed = 'desired' in item ? item : undefined
+  const running = installed?.actual === 'running'
   renderRegion(
     this.detail,
     <UiLocaleProvider source={this.locale}>
       <DetailContent
-        heading={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ?? item.id}
-        intro={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.summary ?? ''}
-        version={undefined}
+        heading={name}
+        intro={purpose?.summary ?? ''}
+        version={`${this.purposeText(`origin.${item.presentation?.origin ?? 'third-party'}`)} · ${item.version}`}
         stateText={undefined}
         facts={[]}
-        content={
-          <PluginConfigTab
-            key={item.id}
-            context={this.state.context!}
-            id={item.id}
-            installed={this.tab === 'installed'}
-            onClose={() => this.closeDetail()}
-            permissions={
-              <section data-testid="plugin-permissions-detail">
-                <PluginBadges
-                  item={item}
-                  runtime={this.runtimeState(item.id)}
-                  status={this.state.generations}
-                  t={this.t}
-                />
-                {'desired' in item && (
-                  <>
-                    <ProvenanceReview value={item.provenance} t={this.t} />
-                    <CapabilityReview value={item.declaredCapabilities} t={this.t} />
-                  </>
-                )}
-                {'desired' in item &&
-                (item.actual === 'failed' ||
-                  item.blockers.length ||
-                  this.runtimeState(item.id)?.phase === 'failed') ? (
-                  <FailureHelp
-                    reason={
-                      item.blockers.length
-                        ? 'capability blocked'
-                        : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
-                    }
-                    t={this.t}
-                  />
-                ) : undefined}
-              </section>
-            }
-            versions={
-              <PluginPurposeSections
-                item={item}
-                value={this.presentationOf(item)}
-                section="versions"
-                permissions={null}
-                versions={
-                  <>
-                    <p>{this.t('version', { version: item.version })}</p>
-                    <GenerationDrainSummary
-                      status={this.state.generations}
-                      installed={this.state.installed.filter((row) => row.id === item.id)}
-                      t={this.t}
-                      nameOf={() =>
-                        resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ??
-                        item.id
-                      }
-                    />
-                    <SettingsDetails title={this.purposeText('technical')}>
-                      <code>{item.id}</code>
-                      <PluginDetailCopy
-                        value={JSON.stringify(
-                          {
-                            id: item.id,
-                            version: item.version,
-                            source: item.source,
-                            integrity: item.integrity,
-                          },
-                          null,
-                          2,
-                        )}
-                      />
-                      <dl className="plugin-facts">
-                        {facts.map(([label, value]) => (
-                          <div key={label}>
-                            <dt>{label}</dt>
-                            <dd>{value}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </SettingsDetails>
-                  </>
-                }
-              />
-            }
-            settingsSummary={
-              <PluginPurposeSections
-                item={item}
-                value={this.presentationOf(item)}
-                section="settings"
-                permissions={null}
-                versions={null}
-              />
-            }
-          >
-            {failureMessage && <SettingsState tone="error">{failureMessage}</SettingsState>}
-            <PluginPurposeSections
-              item={item}
-              value={this.presentationOf(item)}
-              section="overview"
-              permissions={null}
-              versions={null}
+        headAction={
+          installed && (
+            <StateSwitch
+              testId="plugin-detail-switch"
+              label={this.t(running ? 'detail.switch.disable' : 'detail.switch.enable', { name })}
+              checked={running}
+              busy={this.packageBusy(item.id)}
+              disabled={
+                !this.canEffect('packages.activate') ||
+                (!installed.trusted && (!this.can('packages.trust') || !installed.capabilityHash)) ||
+                this.packageBusy(item.id)
+              }
+              onToggle={(next) =>
+                void (next ? this.confirmEnable(installed) : this.confirmDisable(installed))
+              }
             />
-          </PluginConfigTab>
+          )
         }
+        content={<PluginDetailBody view={this} item={item} actions={actions} />}
         blockerSections={[
           {
             title: this.t('blocker.current'),
@@ -591,7 +477,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
         ]}
         operations={this.detailOperations(item.id)}
         lastOperationLabel={undefined}
-        actions={this.detailActions(item)}
+        actions={actions.filter((action) => !action.group)}
         onClose={() => this.closeDetail()}
         onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
       />

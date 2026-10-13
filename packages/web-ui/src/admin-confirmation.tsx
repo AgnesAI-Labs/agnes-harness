@@ -253,6 +253,26 @@ function CapabilityDiff({ preview, t }: { preview: PackagePreview; t: LocaleTran
   return <TextList items={changes} empty={t('empty.capability-diff')} />
 }
 
+/** What an update changes against the installed version: the version step, then each difference. */
+export function UpdateDiff({
+  preview,
+  fromVersion,
+}: {
+  preview: PackagePreview
+  fromVersion: string
+}): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  return (
+    <section aria-label={t('section.update-changes')} data-testid="plugin-update-diff">
+      <h3>{t('section.update-changes')}</h3>
+      <p className="confirm-version-step" translate="no">
+        {fromVersion} → {preview.version}
+      </p>
+      <CapabilityDiff preview={preview} t={t} />
+    </section>
+  )
+}
+
 function Dependencies({
   entries,
   t,

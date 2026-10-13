@@ -16,6 +16,9 @@ export type DetailActionSpec = Readonly<{
   ariaLabel?: string
   /** 链接型动作渲染为 `<a target="_blank" rel="noopener">`，保留既有 `.plugin-surface-link` 契约。 */
   href?: string
+  /** The detail tab this action belongs to; ungrouped actions stay in the footer. */
+  group?: 'overview' | 'trust' | 'versions'
+  danger?: boolean
   onClick(): void
 }>
 
@@ -60,9 +63,12 @@ export function DetailContent({
   operations,
   lastOperationLabel,
   actions,
+  headAction,
   onClose,
   onCancelOperation,
 }: {
+  /** The main control of the thing shown, e.g. a plugin's on/off switch. */
+  headAction?: ReactNode
   heading: string
   intro: string
   version: string | undefined
@@ -84,6 +90,7 @@ export function DetailContent({
       <div className="admin-detail-head">
         <div className="plugin-detail-heading">
           <h2>{heading}</h2>
+          {headAction}
           <IconButton
             name="x"
             className="plugin-detail-close"
@@ -97,14 +104,7 @@ export function DetailContent({
         <p>{intro}</p>
       </div>
       <div className="admin-detail-scroll">
-        {content}
-        {facts.length > 0 && (
-          <dl className="plugin-facts">
-            {facts.map(([label, value]) => (
-              <FragmentedFact key={`${label}:${value}`} label={label} value={value} />
-            ))}
-          </dl>
-        )}
+        {/* What blocks the plugin or is still running comes first; it is why the user is here. */}
         {blockerSections.map((section) => (
           <BlockersSection key={section.title} title={section.title} items={section.items} />
         ))}
@@ -140,8 +140,16 @@ export function DetailContent({
             ))}
           </section>
         )}
+        {content}
+        {facts.length > 0 && (
+          <dl className="plugin-facts">
+            {facts.map(([label, value]) => (
+              <FragmentedFact key={`${label}:${value}`} label={label} value={value} />
+            ))}
+          </dl>
+        )}
       </div>
-      <div className="admin-detail-actions">
+      <div className="admin-detail-actions" hidden={actions.length === 0}>
         {actions
           .filter(
             (action) =>

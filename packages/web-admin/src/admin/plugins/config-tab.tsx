@@ -13,8 +13,11 @@ export function PluginConfigTab({
   children,
   permissions,
   versions,
+  docs,
   settingsSummary,
 }: {
+  /** The plugin's own description and documentation link, when it has either. */
+  docs?: ReactNode
   context: AdminContext
   id: string
   installed: boolean
@@ -76,6 +79,9 @@ export function PluginConfigTab({
                 children: versions,
               },
             ]
+          : []),
+        ...(docs
+          ? [{ key: 'docs', label: <span data-testid="plugin-docs-tab">{t('docs')}</span>, children: docs }]
           : []),
       ]}
     />

@@ -6,6 +6,7 @@ import {
   TrustConfirmationFacts,
   UntrustConfirmationFacts,
   UpdateActivationFacts,
+  UpdateDiff,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { CapabilityReview, ProvenanceReview } from '../capability-review.js'
@@ -22,25 +23,36 @@ function Technical({ open = false, children }: { open?: boolean; children: React
   )
 }
 
-/** What a package gets, in plain words, above the technical record of the same preview. */
+/**
+ * An install shows what the package gets, in plain words. An update shows only what changes against
+ * the installed version. The full record of either sits under technical details.
+ */
 export function PreviewFacts({
   preview,
-  installed,
+  current,
+  combined,
   t,
 }: {
   preview: PackagePreview
-  /** Set when the update also activates: the facts then bind both current summaries. */
-  installed: PackageInstalledDescriptor | undefined
+  /** The installed version this preview updates; absent for a first install. */
+  current: PackageInstalledDescriptor | undefined
+  /** The update also activates: the technical facts then bind both current summaries. */
+  combined: boolean
   t: Text
 }) {
   return (
     <>
-      <CapabilityReview value={preview.declaredCapabilities} t={t} />
+      {current ? (
+        <UpdateDiff preview={preview} fromVersion={current.version} />
+      ) : (
+        <CapabilityReview value={preview.declaredCapabilities} t={t} />
+      )}
       <ProvenanceReview value={preview.provenance} t={t} />
       {/* A blocker or warning is why the user is reading this: show it without a click. */}
       <Technical open={preview.blockers.length > 0 || preview.warnings.length > 0}>
-        {installed ? (
-          <UpdateActivationFacts installed={installed} preview={preview} />
+        {current && <CapabilityReview value={preview.declaredCapabilities} t={t} />}
+        {current && combined ? (
+          <UpdateActivationFacts installed={current} preview={preview} />
         ) : (
           <PreviewConfirmationFacts preview={preview} />
         )}

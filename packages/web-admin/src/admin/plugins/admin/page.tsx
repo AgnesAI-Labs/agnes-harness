@@ -860,7 +860,7 @@ export class PluginAdminPage {
       title: () => this.#t(`preview.title.${mode}`, { id: this.nameOf(preview) }),
       description: () => this.#t(`preview.description.${describe}`),
       label: () => this.#t(`preview.action.${combined ? 'update-activate' : action}`),
-      facts: <PreviewFacts preview={preview} installed={combined ? installed : undefined} t={this.#t} />,
+      facts: <PreviewFacts preview={preview} current={installed} combined={combined} t={this.#t} />,
       run: () => this.confirmPreview(enables),
       ...(enables
         ? {
@@ -1190,12 +1190,14 @@ export class PluginAdminPage {
       }
       specs.push({
         label: this.#t('action.update-catalog'),
+        group: 'versions',
         className: 'agh-btn agh-btn--secondary',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => void this.chooseUpdateVersion(installed),
       })
       specs.push({
         label: this.#t('action.update-source'),
+        group: 'versions',
         className: 'agh-btn agh-btn--secondary',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => this.openSourceDialog('update', installed),
@@ -1216,6 +1218,7 @@ export class PluginAdminPage {
           ? this.#t('action.rollback', { version: target.version })
           : this.#t('action.rollback-unknown'),
         className: quiet,
+        group: 'versions',
         disabled: !rollbackReady,
         title: rollbackReady ? this.#t('action.rollback-ready') : this.#t('action.rollback-unavailable'),
         onClick: () => this.confirmRollback(installed),
@@ -1223,12 +1226,15 @@ export class PluginAdminPage {
       if (installed.trusted)
         specs.push({
           label: this.#t('action.untrust'),
+          group: 'trust',
           className: quiet,
           disabled: !this.canEffect('packages.trust') || !installed.capabilityHash || busy,
           onClick: () => confirmSimple(this, 'untrust', installed, this.nameOf(installed)),
         })
       specs.push({
         label: this.#t('action.remove'),
+        group: 'versions',
+        danger: true,
         className: 'agh-btn agh-btn--danger',
         disabled: !this.canEffect('packages.remove') || installed.blockers.length > 0 || busy,
         onClick: () => this.confirmRemove(installed),
