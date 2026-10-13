@@ -51,8 +51,8 @@
     transform: rotate(180deg);
   }
   #model:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
 
   /* One panel: search, models grouped by provider account, then the current model's session settings. */

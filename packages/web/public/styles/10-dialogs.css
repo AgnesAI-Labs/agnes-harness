@@ -7,7 +7,7 @@
     padding: 0;
     overflow: hidden;
     border: 0;
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-modal);
     color: var(--agnes-text-secondary);
     /* Every overlay sits on the popover surface, in both themes. */
     background: var(--agnes-bg-popover);

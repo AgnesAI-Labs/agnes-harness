@@ -123,8 +123,8 @@
     margin: 0;
   }
   .agnes-intelligent-catalog :focus-visible {
-    outline: 2px solid var(--agnes-brand-primary);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   .agnes-intelligent-surface[data-placement="inline"] {
     padding: var(--s12);
@@ -375,8 +375,8 @@
     background: var(--agnes-bg-card);
   }
   .agnes-intelligent-surface > :focus-visible {
-    outline: 2px solid var(--agnes-brand-primary);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   @media (max-width: 480px) {
     .agnes-intelligent-surface {
@@ -575,8 +575,8 @@
     background: var(--agnes-bg-hover);
   }
   .agnes-intelligent-chip :focus-visible {
-    outline: 2px solid var(--agnes-brand-primary);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   .agnes-intelligent-chip-main > .agh-icon {
     flex: none;

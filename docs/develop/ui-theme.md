@@ -38,7 +38,7 @@ Rules that keep the theme coherent:
 - The accent marks the primary action, the current selection and state. It is not decoration, and status colours stay separate from it.
 - Hover, selected and card surfaces are translucent overlays of the text colour (`--agnes-bg-hover`, `--agnes-bg-selected`, `--agnes-bg-card`), so they work on the ground, on panels and on surfaces alike.
 - Status has two strengths: `-text` for words (4.5:1 on the ground and on its own `-bg`) and `-solid` for dots and icons (3:1). In light mode the text shade is darker than the mark.
-- Muted text keeps 4.5:1 on every surface it appears on, including hover and card overlays; control boundaries (`--agnes-input-border`) and the focus ring keep 3:1. The contrast tables in [`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) and [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) enforce this for both modes.
+- Muted text keeps 4.5:1 on every surface it appears on, including hover and card overlays; a focused text field takes the focus-colour border (`--agnes-input-border-focus`, 3:1). Text fields at rest are a soft neutral fill (`--agnes-bg-fill`) with no boundary line, and the keyboard focus ring on other controls is a soft 3px accent ring that follows the element's radius (`--focus-outline`); both are a deliberate visual choice and sit below 3:1 against the surface. The contrast tables in [`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) and [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) enforce this for both modes.
 
 ## Type, shape and motion
 
@@ -48,7 +48,7 @@ Rules that keep the theme coherent:
 | Size | `--font-size-xs` … `--font-size-2xl` | 12, 13, 14 (base), 16, 18, 20, 24 px |
 | Reading | `--font-size-prose`, `--line-height-prose`, `--measure-prose` | 14px, 1.7, 72ch for conversation prose; code and tables use the full width. |
 | Body line height | `--line-height-body` | 1.6, the floor for CJK body text. |
-| Radius | `--radius-control`, `--radius-card`, `--radius-surface`, `--radius-popover`, `--radius-menu-item`, `--radius-composer`, `--radius-pill` | 6px controls; 8px cards; 12px dialogs; 14px menus and popovers with 10px rows; the 24px composer card; pills for small chips only. |
+| Radius | `--radius-chip`, `--radius-control`, `--radius-card`, `--radius-surface`, `--radius-modal`, `--radius-popover`, `--radius-menu-item`, `--radius-composer`, `--radius-pill` | 8px chips inside rows; 10px buttons, inputs, navigation items and hovered rows; 14px grouped cards, panels, menus and popovers (10px rows inside); 20px dialogs; the 24px composer card; pills for small badges and segmented controls only. |
 | Control height | `--control-height`, `--control-height-sm`, `--control-height-form`, `--control-height-touch` | 36px buttons; 28px compact and icon buttons; text fields match the buttons at 36px and rise to the 44px touch target at phone widths. |
 | Elevation | `--elevation-0`, `--elevation-1`, `--elevation-2`, `--shadow-hairline` | Flat; menus and popovers; dialogs and drawers; a 1px lift for quiet raised controls such as the new-session button. |
 | Motion | `--motion-fast`, `--motion-base`, `--motion-ease`, `--motion-breathe` | 120ms, 200ms, ease-out, and the 2.4s cycle of a running dot. |

@@ -93,7 +93,7 @@
     --agnes-brand-focus-ring: var(--agnes-color-indigo-500);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-50);
     /* Soft halo around a focused field or card; the solid ring stays for outlines. */
-    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 22%, transparent);
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 32%, transparent);
     /* Thin scrollbar thumb for long scroll regions; the track stays transparent. */
     --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
 
@@ -118,6 +118,11 @@
     --agnes-bg-code: var(--agnes-color-ink-a04);
     --agnes-bg-selected: var(--agnes-color-ink-a09);
     --agnes-bg-hover: var(--agnes-color-ink-a06);
+    /* Soft neutral fill of text fields, secondary buttons and icon tiles: no border needed. */
+    --agnes-bg-fill: var(--agnes-color-ink-a06);
+    --agnes-bg-fill-hover: var(--agnes-color-ink-a09);
+    /* A grouped card of rows: the surface itself in light, one step lighter in dark. */
+    --agnes-bg-group: var(--agnes-color-gray-0);
     --agnes-bg-scrim: var(--agnes-color-ink-a36);
     --agnes-bg-lightbox: var(--agnes-color-black-a85);
     /* 头部和设置表头不使用磨砂底；-soft / -hover 仍有消费点。 */
@@ -126,7 +131,7 @@
     /* The user's own message: a soft neutral bubble, never the accent. */
     --agnes-bg-user-bubble: var(--agnes-color-gray-100);
 
-    /* Input —— 控件边界保持 3:1；分隔线才使用发丝色。 */
+    /* Input —— 柔和填充、无重边框；聚焦时回到表面色并出现柔和强调环。 */
     --agnes-input-surface: var(--agnes-bg-surface);
     --agnes-input-content-strong: var(--agnes-color-gray-900);
     --agnes-input-placeholder: var(--agnes-text-tertiary);
@@ -167,6 +172,10 @@
     /* Shadow —— 边框优先于阴影：只有浮层（菜单、弹窗、抽屉）使用高程。
      阴影内含颜色，必须随主题切换，故归语义层而不是尺度层。 */
     --shadow-elevation: var(--elevation-1);
+    /* The one keyboard focus ring: soft, 3px, following the element's own radius. */
+    --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    /* The current item of a navigation rail: a raised pill, barely lifted. */
+    --shadow-raised: 0 0 0 1px rgb(27 29 34 / 5%), 0 1px 2px rgb(27 29 34 / 8%);
     /* The composer card's 1px lift; every other bordered card stays flat. */
     --shadow-hairline: 0 1px 2px rgb(27 29 34 / 5%);
     --shadow-dialog: 0 4px 12px rgb(27 29 34 / 8%), 0 24px 56px rgb(27 29 34 / 16%);
@@ -215,7 +224,7 @@
     --agnes-brand-mark: var(--agnes-color-brand-blue-400);
     --agnes-brand-focus-ring: var(--agnes-color-indigo-300);
     --agnes-brand-emphasis-soft: var(--agnes-color-indigo-900);
-    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 34%, transparent);
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 44%, transparent);
     --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
 
     /* Text */
@@ -238,6 +247,9 @@
     --agnes-bg-code: var(--agnes-color-white-a04);
     --agnes-bg-selected: var(--agnes-color-white-a09);
     --agnes-bg-hover: var(--agnes-color-white-a06);
+    --agnes-bg-fill: var(--agnes-color-white-a06);
+    --agnes-bg-fill-hover: var(--agnes-color-white-a09);
+    --agnes-bg-group: var(--agnes-color-white-a04);
     --agnes-bg-scrim: var(--agnes-color-black-a64);
     --agnes-bg-lightbox: var(--agnes-color-black-a85);
     --agnes-surface-glass-soft: var(--agnes-color-white-a06);
@@ -283,6 +295,8 @@
 
     /* Shadow —— 深色用近黑的两层投影；边框由卡片自身声明。 */
     --shadow-elevation: var(--elevation-1);
+    --focus-outline: 3px solid var(--agnes-focus-ring-soft);
+    --shadow-raised: 0 0 0 1px rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 30%);
     --shadow-hairline: 0 1px 2px rgb(0 0 0 / 24%);
     --shadow-dialog: 0 4px 12px rgb(0 0 0 / 28%), 0 24px 56px rgb(0 0 0 / 40%);
     --shadow-elevation-soft: 0 1px 2px rgb(0 0 0 / 24%), 0 8px 24px rgb(0 0 0 / 32%);
@@ -347,23 +361,27 @@
     --line-sm: 1.25rem;
     --line-md: 1.5rem;
     --line-lg: 1.75rem;
-    --radius-xs: 2px;
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-xl: 16px;
+    /* One radius scale for the whole product: 8px chips inside rows, 10px controls and rows,
+     14px grouped cards and popovers, 20px dialogs. */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
     --radius-2xl: 24px;
-    --radius-main-page: var(--radius-surface);
-    --radius-modal: var(--radius-surface);
+    --radius-main-page: var(--radius-modal);
+    --radius-modal: var(--radius-xl);
     --radius-full: 9999px;
-    /* Roles: controls 6px, cards and menus 8px, the composer card and dialogs 12px; pills only
-     for small chips. Nested radii never exceed their parent. */
-    --radius-control: 6px;
-    --radius-card: var(--radius-md);
+    /* Roles: chips 8px; buttons, inputs, navigation items and hovered rows 10px; grouped cards,
+     menus and popovers 14px; dialogs 20px; pills only for small badges and segmented controls.
+     Nested radii never exceed their parent. */
+    --radius-chip: var(--radius-sm);
+    --radius-control: var(--radius-md);
+    --radius-card: var(--radius-lg);
     --radius-surface: var(--radius-lg);
     /* Menus and popovers: a soft floating surface, with rows that round inside it. */
-    --radius-popover: 14px;
-    --radius-menu-item: 10px;
+    --radius-popover: var(--radius-lg);
+    --radius-menu-item: var(--radius-md);
     /* The composer card is the one large, soft surface the user writes in. */
     --radius-composer: var(--radius-2xl);
     --radius-pill: var(--radius-full);

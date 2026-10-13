@@ -102,7 +102,7 @@
     cursor: row-resize;
   }
   .workbench-resize:focus-visible {
-    outline: 2px solid var(--agnes-text-emphasis);
+    outline: var(--focus-outline);
   }
   .workbench-resize::after {
     content: "";

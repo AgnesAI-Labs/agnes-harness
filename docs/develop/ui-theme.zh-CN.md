@@ -38,7 +38,7 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 - 强调色只用于主操作、当前选中和状态指示，不用于装饰；状态色与强调色分开。
 - 悬停、选中和卡片底色是正文色的半透明叠层（`--agnes-bg-hover`、`--agnes-bg-selected`、`--agnes-bg-card`），因此在底色、面板和表面上都成立。
 - 状态色有两档：`-text` 用于文字（在底色和自身 `-bg` 上达到 4.5:1），`-solid` 用于圆点和图标（3:1）。浅色下文字档比标记档更深。
-- 弱化文字在它出现的每一种表面上（包括悬停与卡片叠层）都保持 4.5:1；控件边界（`--agnes-input-border`）和焦点环保持 3:1。[`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) 与 [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) 中的对比度表对两种模式分别校验。
+- 弱化文字在它出现的每一种表面上（包括悬停与卡片叠层）都保持 4.5:1；获得焦点的输入框使用焦点色边框（`--agnes-input-border-focus`，3:1）。静止状态的输入框是柔和的中性填充（`--agnes-bg-fill`），没有边界线；其他控件的键盘焦点环是跟随元素圆角的 3px 柔和强调色环（`--focus-outline`）。这两处是有意的视觉取舍，相对表面的对比度低于 3:1。[`token-contrast.test.ts`](../../packages/web-ui/test/token-contrast.test.ts) 与 [`style-tokens.test.ts`](../../packages/web/test/style-tokens.test.ts) 中的对比度表对两种模式分别校验。
 
 ## 字体、形状与动效
 
@@ -48,7 +48,7 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 | 字号 | `--font-size-xs` … `--font-size-2xl` | 12、13、14（基准）、16、18、20、24 px |
 | 阅读 | `--font-size-prose`、`--line-height-prose`、`--measure-prose` | 对话正文 14px、行高 1.7、行宽 72ch；代码与表格使用整行宽度。 |
 | 正文行高 | `--line-height-body` | 1.6，中文正文的下限。 |
-| 圆角 | `--radius-control`、`--radius-card`、`--radius-surface`、`--radius-popover`、`--radius-menu-item`、`--radius-composer`、`--radius-pill` | 控件 6px；卡片 8px；弹窗 12px；菜单与浮层 14px，其中的行 10px；输入卡 24px；胶囊形只用于小标签。 |
+| 圆角 | `--radius-chip`、`--radius-control`、`--radius-card`、`--radius-surface`、`--radius-modal`、`--radius-popover`、`--radius-menu-item`、`--radius-composer`、`--radius-pill` | 行内小标签 8px；按钮、输入框、导航项与悬停行 10px；分组卡片、面板、菜单与浮层 14px（其中的行 10px）；弹窗 20px；输入卡 24px；胶囊形只用于小徽标和分段控件。 |
 | 控件高度 | `--control-height`、`--control-height-sm`、`--control-height-form`、`--control-height-touch` | 按钮 36px；紧凑按钮与图标按钮 28px；文本输入框与按钮同为 36px，手机宽度下升到 44px 的触控目标。 |
 | 高程 | `--elevation-0`、`--elevation-1`、`--elevation-2`、`--shadow-hairline` | 平面；菜单与浮层；弹窗与抽屉；「新会话」按钮这类安静凸起控件的 1px 抬升。 |
 | 动效 | `--motion-fast`、`--motion-base`、`--motion-ease`、`--motion-breathe` | 120ms、200ms、ease-out，以及运行中圆点 2.4s 的呼吸周期。 |

@@ -177,6 +177,9 @@ textarea {
 --agnes-bg-code
 --agnes-bg-selected
 --agnes-bg-hover
+--agnes-bg-fill
+--agnes-bg-fill-hover
+--agnes-bg-group
 --agnes-bg-scrim
 --agnes-bg-lightbox
 --agnes-surface-glass-soft
@@ -212,6 +215,8 @@ textarea {
 --agnes-status-danger-solid
 --agnes-status-info-solid
 --shadow-elevation
+--focus-outline
+--shadow-raised
 --shadow-hairline
 --shadow-dialog
 --shadow-elevation-soft

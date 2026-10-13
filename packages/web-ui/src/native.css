@@ -51,8 +51,8 @@
   .agh-disclosure-summary:focus-visible,
   a[href]:focus-visible,
   [role="tab"]:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
 
   /* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。

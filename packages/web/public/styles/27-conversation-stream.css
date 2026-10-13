@@ -140,7 +140,7 @@
     gap: 0.375rem;
     padding: 0.125rem 0.375rem;
     margin-inline-start: -0.375rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-xs);
     color: var(--agnes-text-primary);
   }
   .tool-detail .tool-name {
@@ -175,7 +175,7 @@
   .thinking .agh-btn.thinking-toggle {
     padding: 0 0.25rem;
     margin-inline-start: -0.25rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-xs);
     color: inherit;
     font-weight: 400;
   }

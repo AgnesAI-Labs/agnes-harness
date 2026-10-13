@@ -256,7 +256,7 @@ describe('style.css token 门禁', () => {
     )
     expect(declarationsOf(buttonFocus as Rule)).toContainEqual({
       property: 'outline',
-      value: '2px solid var(--agnes-input-border-focus)',
+      value: 'var(--focus-outline)',
     })
     expect(declarationsOf(inputFocus as Rule)).toContainEqual({
       property: 'box-shadow',

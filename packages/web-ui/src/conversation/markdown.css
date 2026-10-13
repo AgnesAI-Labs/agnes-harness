@@ -18,7 +18,7 @@
     --cite-bg: var(--agnes-bg-card);
     --cite-hover-bg: var(--agnes-bg-hover);
     --border-radius-middle: var(--radius-md);
-    --border-radius-small: var(--radius-sm);
+    --border-radius-small: var(--radius-xs);
     --td-th-padding: 0.625rem 0.75rem;
     --margin-block: 0 0 1rem 0;
     --padding-ul-ol: 0 0 0 1.125rem;
@@ -40,8 +40,8 @@
   .conversation-markdown.x-markdown-light a:focus-visible,
   .conversation-markdown.x-markdown-dark a:focus-visible,
   .conversation-markdown .code-copy:focus-visible {
-    outline: 2px solid var(--agnes-brand-primary);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
 
   /* The focusable .table-scroll owns overflow and the border; tables retain native column layout. */
@@ -75,7 +75,7 @@
 
   .conversation-markdown .code-copy {
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-xs);
     background: transparent;
     color: var(--agnes-brand-primary);
     cursor: pointer;

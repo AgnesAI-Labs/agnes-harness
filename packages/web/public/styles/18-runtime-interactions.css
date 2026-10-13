@@ -140,7 +140,7 @@
     color: var(--agnes-text-primary);
   }
   .session-terminal:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
+    outline: var(--focus-outline);
   }
 
   .goal-card {
@@ -318,8 +318,8 @@
   }
   .settings-shell #settings-advanced > .agh-disclosure-summary:focus-visible,
   .runtime-settings > nav .agh-disclosure > .agh-disclosure-summary:focus-visible {
-    outline: 2px solid var(--agnes-brand-focus-ring);
-    outline-offset: -2px;
+    outline: var(--focus-outline);
+    outline-offset: -3px;
     border-radius: var(--radius-control);
   }
   #config-form.settings-shell .settings-nav-group [hidden],

@@ -234,8 +234,8 @@
     box-shadow: none;
   }
   .plugin-row:not(.agh-list-row):focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: -2px;
+    outline: var(--focus-outline);
+    outline-offset: -3px;
   }
   .plugin-row-content {
     min-width: 0;
@@ -311,8 +311,8 @@
     background: var(--agnes-bg-hover);
   }
   .plugin-surface-link:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   /* 状态指示灯：信任 / 期望 / 实际 / 浏览器 UI 四格纵向排开。此前是一排文字 chip，
    长短随取值变化，扫读要逐字读。改用色点后一眼能看出"哪一格不对劲"。
@@ -430,8 +430,8 @@
     transform: translate(1rem, -50%);
   }
   .switch:focus-visible {
-    outline: 2px solid var(--agnes-input-border-focus);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: 0;
   }
   .switch:disabled {
     cursor: not-allowed;
