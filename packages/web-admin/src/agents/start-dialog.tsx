@@ -82,6 +82,24 @@ export function startGets(reviewed: Reviewed, t: Text): GetsRow[] {
   return rows
 }
 
+type Presets = NonNullable<NonNullable<Reviewed['presentation']>['presets']>
+
+/**
+ * What the daemon derived about every session bundle of the package. A line appears only when all
+ * of them say so outright; "unknown" and "no" promise nothing and the capability list speaks instead.
+ */
+export function startGuarantees(presets: Presets | undefined, t: Text): GetsRow[] {
+  if (!presets?.length) return []
+  const rows: GetsRow[] = []
+  if (presets.every((preset) => preset.readOnly === 'yes'))
+    rows.push({ icon: 'eye', title: t('promise.readOnly'), detail: t('promise.readOnlyHelp') })
+  if (presets.every((preset) => preset.confirmBeforeActions === 'yes'))
+    rows.push({ icon: 'shield-check', title: t('promise.confirm'), detail: t('promise.confirmHelp') })
+  if (presets.every((preset) => preset.network === 'none'))
+    rows.push({ icon: 'globe', title: t('promise.offline'), detail: t('promise.offlineHelp') })
+  return rows
+}
+
 const actionKey = (plan: StartPlan) =>
   plan.needed.install
     ? 'action.install'
@@ -273,6 +291,10 @@ export function useBusinessAgentStart(options: {
       ? [...(phase.plan.preview?.blockers ?? []), ...(phase.plan.installed?.blockers ?? [])]
       : []
   const gets = reviewed ? startGets(reviewed, t) : []
+  const promises =
+    phase.kind === 'confirm' && reviewed
+      ? startGuarantees((reviewed.presentation ?? phase.agent.entry.presentation)?.presets, t)
+      : []
   const signed =
     reviewed && 'provenance' in reviewed && reviewed.provenance
       ? reviewed.provenance.signatureVerified
@@ -382,6 +404,16 @@ export function useBusinessAgentStart(options: {
           <p className="agent-start-identity" translate="no">
             {reviewed.id} · {reviewed.version}
           </p>
+          {promises.length > 0 && (
+            <section aria-labelledby="agent-start-promises">
+              <h3 id="agent-start-promises">{t('dialog.promises')}</h3>
+              <SettingsGroup data-testid="agent-start-promises">
+                {promises.map((row) => (
+                  <SettingsItem key={row.title} icon={row.icon} label={row.title} description={row.detail} />
+                ))}
+              </SettingsGroup>
+            </section>
+          )}
           <section aria-labelledby="agent-start-gets">
             <h3 id="agent-start-gets">{t('dialog.gets')}</h3>
             {gets.length ? (

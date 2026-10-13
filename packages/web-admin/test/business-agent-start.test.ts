@@ -13,6 +13,7 @@ import {
   samplePromptOf,
   suggestedBusinessAgents,
 } from '../src/agents/catalog.js'
+import { startGuarantees } from '../src/agents/start-dialog.js'
 import {
   planBlocked,
   planBusinessAgentStart,
@@ -333,5 +334,34 @@ describe('one-click start', () => {
       code: 'not-running',
       detail: 'Port in use.',
     })
+  })
+})
+
+describe('start confirmation guarantees', () => {
+  const key = (name: string) => name
+  const preset = (extra: Record<string, string> = {}) => ({
+    bundle: '@agnes-fde/x#x',
+    id: 'x',
+    toolPolicy: 'fde.x',
+    readOnly: 'unknown' as const,
+    confirmBeforeActions: 'unknown' as const,
+    network: 'none' as const,
+    ...extra,
+  })
+  const titles = (presets: Parameters<typeof startGuarantees>[0]) =>
+    startGuarantees(presets, key).map((row) => row.title)
+
+  it('states only what the daemon derived outright', () => {
+    expect(titles([preset()])).toEqual(['promise.offline'])
+    expect(
+      titles([preset({ readOnly: 'yes', confirmBeforeActions: 'yes', network: 'allowed' })] as never),
+    ).toEqual(['promise.readOnly', 'promise.confirm'])
+    expect(titles([preset({ readOnly: 'no', network: 'unknown' })] as never)).toEqual([])
+  })
+
+  it('promises nothing without presets, or when one bundle of the package differs', () => {
+    expect(titles(undefined)).toEqual([])
+    expect(titles([])).toEqual([])
+    expect(titles([preset({ readOnly: 'yes' }), preset({ network: 'allowed' })] as never)).toEqual([])
   })
 })
