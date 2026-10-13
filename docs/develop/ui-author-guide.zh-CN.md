@@ -17,7 +17,7 @@
 
 必须有 `.agh-btn`；变体选择 `--primary`、`--secondary`、`--ghost`、`--danger` 或 `--link`，尺寸选择 `--sm` 或 `--md`。`--danger-filled` 仅用于破坏性确认。每个视图最多一个主动作。`.primary-button` 等内部别名不是作者 API。图标动作必须有本地化无障碍名和提示，优先用 `IconButton name="…" label="…"`。
 
-设置界面用 `SettingsPage`、`SettingsToolbar`、`SettingsList` / `SettingsRow`、`SettingsDetails` 和 `SettingsSaveBar` 组合。设置宿主已提供页头，子面板不要重复。`SchemaConfigForm` 提供 schema 表单。失败保留草稿。使用 `SettingsState tone="loading|empty|error|success"`；加载状态包含装饰性的 `Skeleton` 和带 busy 状态的播报区域。单独用 Skeleton 时必须另有本地化加载说明。空态用 `EmptyState` 教用户下一步；`Tag` 只标出需要处理的异常。
+设置界面用 `SettingsSection`、`SettingsGroup` / `SettingsItem`（一行设置：名称和说明在左，控件在右）、`SettingsDetails`、`SearchBar`、`LabeledSwitch` 和 `SettingsSaveBar` 组合。设置宿主已提供页面模板和页头，子面板不要重复。页面的一行说明用 `SettingsPageDescription` 声明，页面操作用 `SettingsPageActions` 声明，两者都会进入宿主的页头。用户很少需要的诊断信息放进 `SettingsTechnicalDetails`。`SchemaConfigForm` 提供 schema 表单。失败保留草稿。使用 `SettingsState tone="loading|empty|error|success"`；加载状态包含装饰性的 `Skeleton` 和带 busy 状态的播报区域。单独用 Skeleton 时必须另有本地化加载说明。空态用 `EmptyState` 教用户下一步；`Tag` 只标出需要处理的异常。
 
 ## 工作台注册
 
