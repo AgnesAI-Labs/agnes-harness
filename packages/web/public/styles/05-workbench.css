@@ -9,6 +9,9 @@
   }
   /* One 44px bar: session identity on the left, view and workbench controls on the right. */
   .topbar-row {
+    /* The bar's own width, not the window's, decides what it can show: the sidebar and docks take
+     their share first. */
+    container: topbar-row / inline-size;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -229,6 +232,27 @@
       display: none;
     }
   }
+  /* What a crowded bar gives up, in order: the title shortens first; then the workspace name, the
+   Agent chip and the workbench label go, and the two secondary actions move into one menu. The
+   view switch and the workbench toggle always stay. */
+  .task-heading h1 {
+    min-width: min(6rem, 100%);
+  }
+  .topbar-overflow {
+    display: none;
+  }
+  @container topbar-row (max-width: 55rem) {
+    .topbar-workspace,
+    .task-heading .topbar-agent,
+    .topbar-row .workbench-toggle-label,
+    #report-problem,
+    #session-runtime {
+      display: none;
+    }
+    .topbar-overflow {
+      display: contents;
+    }
+  }
 
   @media (min-width: 1024px) {
     body:not(.sidebar-collapsed) .sidebar-toggle {
@@ -244,6 +268,7 @@
 
   #task-title {
     display: block;
+    color: var(--agnes-text-primary);
     text-align: left;
     font: inherit;
     max-width: 100%;

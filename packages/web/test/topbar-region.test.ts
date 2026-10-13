@@ -1,7 +1,9 @@
 /** @vitest-environment happy-dom */
 
+import { resolve } from 'node:path'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { TOPBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -97,6 +99,56 @@ describe('rendered topbar region', () => {
     press(trace, 'Home')
     expect(runtime.trace?.isOpen()).toBe(false)
     expect(document.activeElement).toBe(chat)
+  })
+
+  it('offers the secondary actions from one menu that presses their own buttons', async () => {
+    runtime = await mountRenderedIndex()
+    const more = document.getElementById('topbar-more') as HTMLButtonElement
+    expect(more.getAttribute('aria-label')).toBe('More actions')
+    expect(more.closest('#session-view-controls')).not.toBeNull()
+    expect(more.closest('[role="tablist"]')).toBeNull()
+    const pressed = vi.fn()
+    document.getElementById('report-problem')?.addEventListener('click', pressed)
+
+    more.click()
+    const entries = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      expect(found.map((entry) => entry.textContent)).toEqual(['Report a problem'])
+      return found
+    }, committed)
+    entries[0]?.click()
+    expect(pressed).toHaveBeenCalledTimes(1)
+
+    // Runtime info joins the menu once a session offers it.
+    runtime.topbar?.setRuntimeAvailable(true)
+    more.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    more.click()
+    await vi.waitFor(
+      () =>
+        expect([...document.querySelectorAll('[role="menuitem"]')].map((entry) => entry.textContent)).toEqual(
+          ['Runtime info', 'Report a problem'],
+        ),
+      committed,
+    )
+  })
+
+  it('collapses by the width of the bar: labels and secondary actions give way to the title', () => {
+    const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
+    expect(css).toMatch(/\.topbar-row \{[^}]*container: topbar-row \/ inline-size/)
+    const narrow = css.slice(css.indexOf('@container topbar-row (max-width: 55rem) {'))
+    expect(narrow.startsWith('@container')).toBe(true)
+    const collapsed = narrow.slice(0, narrow.indexOf('display: contents'))
+    for (const selector of [
+      '.topbar-workspace',
+      '.topbar-agent',
+      '.workbench-toggle-label',
+      '#report-problem',
+      '#session-runtime',
+    ])
+      expect(collapsed, selector).toContain(selector)
+    expect(collapsed).toMatch(/display: none/)
+    expect(collapsed).not.toMatch(/#view-chat|\.session-tabs\b|workbench-right-toggle/)
+    expect(narrow).toMatch(/\.topbar-overflow \{\s*display: contents/)
   })
 
   it('shadows only topbar and restores the built-in component after unload', async () => {

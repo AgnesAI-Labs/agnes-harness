@@ -1,9 +1,27 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, IconButton, Tabs, useDocumentLanguage } from '@agnes/web-ui'
+import { Button, IconButton, Menu, type MenuItem, Tabs, useDocumentLanguage } from '@agnes/web-ui'
+import { useReducer } from 'react'
+
+/**
+ * The secondary top bar actions, for a bar too narrow to show them one by one. Each entry presses
+ * the action's own (then hidden) button, so the action keeps a single owner and a single handler.
+ */
+function overflowActions(): MenuItem[] {
+  const press = (id: string) => () => document.getElementById(id)?.click()
+  return [
+    // Runtime info exists only while a session is open.
+    ...(document.getElementById('session-runtime')
+      ? [{ id: 'runtime', label: tr('index-shell.runtimeInfo'), onSelect: press('session-runtime') }]
+      : []),
+    { id: 'report', label: tr('index-shell.reportProblem'), onSelect: press('report-problem') },
+  ]
+}
 
 /** The trace controller owns selection and visibility on these stable buttons; the view owns their keys. */
 export function SessionViews() {
   useDocumentLanguage()
+  // The entries depend on what the bar currently holds; re-read them when the menu is approached.
+  const [, refreshOverflow] = useReducer((version: number) => version + 1, 0)
   return (
     <>
       <Tabs
@@ -43,6 +61,20 @@ export function SessionViews() {
           </div>
         )}
       />
+      <span className="topbar-overflow" onPointerEnter={refreshOverflow} onFocusCapture={refreshOverflow}>
+        <Menu
+          label={tr('index-shell.moreActions')}
+          trigger={
+            <IconButton
+              id="topbar-more"
+              name="ellipsis"
+              label={tr('index-shell.moreActions')}
+              title={tr('index-shell.moreActions')}
+            />
+          }
+          items={overflowActions()}
+        />
+      </span>
       <IconButton
         id="report-problem"
         name="bug"
