@@ -1,10 +1,13 @@
 /** @vitest-environment happy-dom */
 
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
+import { homeEntries, homeNavigation } from '@agnes/web-client'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { archivedSessions } from '../src/archived-sessions.js'
 import { resetCollapsedGroups } from '../src/navigation.js'
+import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -390,5 +393,108 @@ describe('rendered sidebar region', () => {
     await new Promise<void>((resolve) => queueMicrotask(resolve))
     expect(document.getElementById('new')).not.toBeNull()
     expect(document.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
+  })
+  it('lists the built-in home entries first, opens the selected page and drops a disposed entry', async () => {
+    const page = () => null
+    const disposers = [
+      // Registered out of order and with a low order: a plugin entry still lists after the built-ins.
+      homeEntries.register({
+        id: 'example.board',
+        order: 1,
+        icon: 'no-such-icon',
+        titleKey: 'Board',
+        component: page,
+      }),
+      ...[...BUILTIN_HOME_ENTRIES].reverse().map((id, index) =>
+        homeEntries.register({
+          id,
+          order: 30 - index * 10,
+          icon: 'plug',
+          titleKey: `home.entry.${id}`,
+          component: page,
+        }),
+      ),
+    ]
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [session('one', '/workspace')],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            sessionPending: false,
+            newDisabled: false,
+          },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      const ids = () =>
+        [...(sidebar?.querySelectorAll('[data-testid^="home-entry-"]') ?? [])].map((entry) =>
+          entry.getAttribute('data-testid'),
+        )
+      expect(ids()).toEqual([
+        'home-entry-agents',
+        'home-entry-plugins',
+        'home-entry-automation',
+        'home-entry-example.board',
+      ])
+      // The entries sit between the new-session action and the workspace list.
+      const entries = sidebar?.querySelector('[data-testid="home-entries"]')
+      expect(
+        sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ??
+          0 & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      flushSync(() =>
+        sidebar?.querySelector<HTMLButtonElement>('[data-testid="home-entry-plugins"]')?.click(),
+      )
+      expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins' })
+      expect(sidebar?.querySelector('[data-testid="home-entry-plugins"]')?.getAttribute('aria-current')).toBe(
+        'page',
+      )
+      flushSync(() => disposers[0]?.())
+      expect(ids()).not.toContain('home-entry-example.board')
+    } finally {
+      homeNavigation.close()
+      for (const dispose of disposers) dispose()
+    }
+  })
+
+  it('switches the list to archived sessions and restores one from there', async () => {
+    const archived = { ...session('old', '/workspace'), archived: true }
+    const restore = vi.fn().mockResolvedValue(undefined)
+    archivedSessions.bind({
+      list: async () => ({ items: [archived, session('one', '/workspace')] }),
+      restore,
+      changed: async () => undefined,
+    })
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [session('one', '/workspace'), archived],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            sessionPending: false,
+            newDisabled: false,
+          },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      expect(sidebar?.querySelector('[data-session="old"]')).toBeNull()
+      expect(sidebar?.querySelector('#session-search')).not.toBeNull()
+      flushSync(() => archivedSessions.show('archived'))
+      await vi.waitFor(() =>
+        expect(sidebar?.querySelector('.archived-session[data-session="old"]')).not.toBeNull(),
+      )
+      expect(sidebar?.querySelector('.workspace-group')).toBeNull()
+      expect(sidebar?.querySelector('#session-filter')?.getAttribute('data-filter')).toBe('archived')
+      sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
+      await vi.waitFor(() => expect(sidebar?.querySelector('.archived-session')).toBeNull())
+      expect(restore).toHaveBeenCalledWith('old')
+      flushSync(() => archivedSessions.show('active'))
+      expect(sidebar?.querySelector('.workspace-group')).not.toBeNull()
+    } finally {
+      archivedSessions.show('active')
+    }
   })
 })

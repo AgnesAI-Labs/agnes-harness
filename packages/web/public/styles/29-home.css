@@ -218,4 +218,276 @@
       flex-direction: column;
     }
   }
+
+  /* Session list tools sit in the heading row; the filter shows when it hides the active list. */
+  .sidebar-section-heading .section-label {
+    flex: 1;
+    min-width: 0;
+  }
+  .sidebar-section-heading .session-filter-on {
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 12%, transparent);
+  }
+  .session-filter-unset {
+    width: 1rem;
+    display: inline-block;
+  }
+  .archived-sessions {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
+  .archived-search {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: 1.875rem;
+    margin: 0 var(--s2) var(--s4);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-surface);
+  }
+  .archived-search:focus-within {
+    border-color: var(--agnes-brand-primary);
+  }
+  .archived-search input,
+  .session-search-field input,
+  .session-search-filters input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+  }
+  .archived-search input:focus,
+  .session-search-field input:focus,
+  .session-search-filters input:focus {
+    outline: 0;
+    box-shadow: none;
+  }
+  .archived-search input {
+    font-size: var(--font-size-sm);
+  }
+  .archived-sessions .session-list-empty {
+    border: 0;
+    background: transparent;
+  }
+  .session-search-snippet mark {
+    padding: 0 1px;
+    border-radius: var(--radius-xs);
+    color: inherit;
+    background: color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
+  }
+  .archived-session-list {
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--s2);
+    list-style: none;
+  }
+  .archived-session {
+    min-width: 0;
+    min-height: 2rem;
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: var(--s2) var(--s2) var(--s2) var(--s8);
+    border-radius: var(--radius-control);
+  }
+  .archived-session:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .archived-session-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+  }
+  .archived-session-copy .session-title {
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .archived-session-workspace {
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .archived-sessions-error {
+    margin: 0 var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+
+  /* Session search: a palette. One field, results below it, keys along the bottom. */
+  .session-search-dialog .ant-modal-container,
+  .session-search-dialog .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+  }
+  .session-search-dialog .ant-modal-header {
+    margin: 0;
+    padding: 0;
+  }
+  .session-search {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-search-field {
+    display: flex;
+    align-items: center;
+    gap: var(--s10);
+    min-height: 3rem;
+    padding: 0 var(--s12) 0 var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+  }
+  .session-search-field input {
+    height: 3rem;
+    font-size: var(--font-size-md);
+  }
+  .session-search-field input::-webkit-search-cancel-button,
+  .archived-search input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+  .session-search-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8);
+    padding: var(--s8) var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .session-search-filters input {
+    min-height: 1.75rem;
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-surface);
+    font-size: var(--font-size-sm);
+  }
+  .session-search-filters input:focus {
+    border-color: var(--agnes-brand-primary);
+  }
+  .session-search-label {
+    margin: var(--s10) var(--s16) var(--s2);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .session-search-results {
+    max-height: min(24rem, 52vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--s4) var(--s8);
+    display: grid;
+    gap: var(--s2);
+  }
+  .session-search-results:empty {
+    display: none;
+  }
+  .session-search-option {
+    min-width: 0;
+    display: grid;
+    gap: var(--s2);
+    padding: var(--s8) var(--s10);
+    border-radius: var(--radius-control);
+    cursor: default;
+  }
+  .session-search-option[aria-selected="true"] {
+    background: var(--agnes-bg-selected);
+  }
+  .session-search-option-heading {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--s8);
+  }
+  .session-search-option-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-search-option-heading span {
+    flex: 0 0 auto;
+    max-width: 40%;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-search-snippet {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+  }
+  .session-search-count {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .session-search-status {
+    margin: 0;
+    padding: var(--s12) var(--s16);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .session-search-status:empty {
+    display: none;
+  }
+  .session-search-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-height: 2.25rem;
+    padding: 0 var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .session-search-keys {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .session-search-keys kbd:not(:first-child) {
+    margin-inline-start: var(--s8);
+  }
+  .session-search-keys kbd:nth-child(2) {
+    margin-inline-start: 0;
+  }
+  .session-search-more {
+    color: var(--agnes-brand-primary);
+  }
+  @media (max-width: 720px) {
+    .session-search-keys {
+      display: none;
+    }
+    .session-search-filters {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 }

@@ -4,7 +4,7 @@ import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
-import { settingsRoute } from '@agnes/web-units'
+import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -69,6 +69,7 @@ import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createAdminPaneController } from './admin-pane-coordinator.js'
 import { appNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
+import { archivedSessions } from './archived-sessions.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
@@ -88,8 +89,10 @@ import { bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSettingsAdminPaneStore } from './region-slots.js'
+import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
+import { mountSessionSearch } from './session-search.js'
 
 import { createTitleRefresh } from './session-title.js'
 import type { RunReceipt, WebView } from './view.js'
@@ -1305,8 +1308,47 @@ const sessionActions = createSessionActions({
     clientModules.sidebar?.dismiss()
     showError(error)
   },
+  archived: (id) => {
+    if (archivedSessions.getSnapshot().filter === 'archived') void archivedSessions.reload()
+    notice.setText(t('home.archived.notice'))
+    notice.offer({
+      label: t('home.archived.undo'),
+      run: () => {
+        notice.setText('')
+        void archivedSessions.restore(id)
+      },
+    })
+  },
   translate: t,
 })
+archivedSessions.bind({
+  list: (params) => client.session.list(params),
+  restore: (id) => client.session.archive(id, false),
+  changed: () => list(),
+})
+// Search finds a session by what was said in it; opening one leaves any home page.
+const sessionSearch = mountSessionSearch({
+  translate: t,
+  recent: () =>
+    sortSessionsByRecency(sessionRows.filter((row) => !row.archived))
+      .slice(0, 8)
+      .map((row) => ({
+        sessionId: row.sessionId,
+        title: row.title || sessionLabels.get(row.sessionId) || '',
+        workspace: row.cwd ?? '',
+      })),
+  titleOf: (id) => sessionRows.find((row) => row.sessionId === id)?.title || sessionLabels.get(id),
+  open: (id) =>
+    run(async () => {
+      if (sessionPending) return
+      homeNavigation.close()
+      if (id !== current?.id || draftingNew) await open(id)
+    }),
+})
+onSurfaceEvent(SESSION_SEARCH_EVENT, (event) =>
+  sessionSearch.open(event.target instanceof HTMLElement ? event.target : undefined),
+)
+clientModules.locale.subscribe(() => sessionSearch.refreshLocale())
 // Top bar entries for the selected session: its title renames it, the info button shows its runtime.
 for (const action of ['rename', 'runtime'] as const)
   onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
@@ -2165,6 +2207,7 @@ onPageHide(() => {
   stopConnectionEvents()
   stopSettingsTerminal()
   stopHomeRouting()
+  sessionSearch.dispose()
   homePages.dispose()
   removeHomeEntries()
   newSessionDialog.dispose()

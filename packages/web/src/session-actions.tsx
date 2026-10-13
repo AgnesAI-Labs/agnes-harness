@@ -24,6 +24,8 @@ export function createSessionActions(options: {
   changed(): Promise<unknown>
   fork(id: string, title: string): Promise<void>
   error(error: unknown): void
+  /** A session left the list for the archive; the host says where it went. */
+  archived?(id: string): void
   translate: Translate
 }) {
   const t = options.translate
@@ -349,6 +351,7 @@ export function createSessionActions(options: {
           await options.client.session.archive(id, true)
           archivedSuccessfully = true
           await options.changed()
+          options.archived?.(id)
           document.querySelector<HTMLElement>('#sessions button')?.focus()
         }
       } catch (failure) {

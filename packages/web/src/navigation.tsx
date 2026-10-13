@@ -1,9 +1,10 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, EmptyState, Icon, IconButton, renderRegion } from '@agnes/web-ui'
+import { Button, EmptyState, Icon, IconButton, renderRegion, SettingsInput } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import { type SidebarNavigationOptions, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
+import { archivedSessions } from './archived-sessions.js'
 import { SessionMenu } from './session-menu.js'
 
 const FOLDER_CLOSED =
@@ -102,13 +103,108 @@ export function resetCollapsedGroups(): void {
   saveCollapsedGroups()
 }
 
+/** Archived sessions in one flat list: find one, put it back among the active sessions. */
+function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
+  const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLocaleLowerCase()
+  const name = (path: string | undefined) => {
+    const workspace = options.workspaces.find((entry) => entry.path === path)
+    return workspace ? workspaceLabel(workspace) : (path?.split(/[\\/]/).filter(Boolean).at(-1) ?? '')
+  }
+  const rows = sortSessionsByRecency(
+    view.rows.filter((row) => `${row.title ?? ''} ${row.cwd ?? ''}`.toLocaleLowerCase().includes(needle)),
+  )
+  return (
+    <section
+      className="archived-sessions"
+      data-testid="archived-sessions"
+      aria-busy={view.status === 'loading'}
+    >
+      <div className="archived-search">
+        <Icon name="search" />
+        <SettingsInput
+          type="search"
+          aria-label={t('home.archived.search')}
+          autoComplete="off"
+          data-testid="archived-search"
+          placeholder={t('home.archived.search')}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      {view.error && (
+        <p className="archived-sessions-error" role="alert">
+          {view.error}{' '}
+          {view.status === 'error' && (
+            <Button size="small" onClick={() => void archivedSessions.reload()}>
+              {t('home.archived.retry')}
+            </Button>
+          )}
+        </p>
+      )}
+      <ul className="archived-session-list">
+        {rows.map((row) => {
+          const title =
+            row.title ||
+            options.labels.get(row.sessionId) ||
+            untitledSessionLabel(
+              t('session.archived.unnamed'),
+              row.createdAt,
+              document.documentElement.lang || 'en',
+            )
+          const restoring = view.restoring.includes(row.sessionId)
+          return (
+            <li key={row.sessionId} className="archived-session" data-session={row.sessionId}>
+              <span className="archived-session-copy">
+                <span className="session-title" title={title}>
+                  {title}
+                </span>
+                {row.cwd && <span className="archived-session-workspace">{name(row.cwd)}</span>}
+              </span>
+              <IconButton
+                name="history"
+                className="archived-session-restore"
+                data-testid="archived-restore"
+                label={t('session.archived.restoreAria', { title })}
+                disabled={restoring}
+                aria-busy={restoring}
+                onClick={() => void archivedSessions.restore(row.sessionId)}
+              />
+            </li>
+          )
+        })}
+      </ul>
+      {view.status !== 'loading' && rows.length === 0 && view.status !== 'error' && (
+        <EmptyState
+          className="session-list-empty"
+          icon={<Icon name="history" />}
+          title={t(view.rows.length ? 'session.archived.empty.noMatch' : 'session.archived.empty.fallback')}
+          description={view.rows.length ? undefined : t('home.archived.emptyHelp')}
+          actions={
+            <Button size="small" onClick={() => archivedSessions.show('active')}>
+              {t('home.archived.back')}
+            </Button>
+          }
+        />
+      )}
+    </section>
+  )
+}
+
+/** The sidebar list: active sessions by workspace, or the archived ones when that filter is on. */
+export function SessionNavigation(props: { options: SidebarNavigationOptions; t: Translate }) {
+  const view = useSyncExternalStore(archivedSessions.subscribe, archivedSessions.getSnapshot)
+  return view.filter === 'archived' ? <ArchivedSessions {...props} /> : <WorkspaceSessions {...props} />
+}
+
 /**
  * The session list: one folder per workspace, newest session first inside it. A folder header
  * collapses its sessions and carries the "new session here" action; rows are an Ant Design X
  * Conversations list holding our own button and action menu, so focus, `aria-current` and menu
  * keyboard behaviour are unchanged contracts.
  */
-export function SessionNavigation({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
+function WorkspaceSessions({ options, t }: { options: SidebarNavigationOptions; t: Translate }) {
   const [, redraw] = useState(0)
   const menuEpoch = JSON.stringify([
     options.sessions,

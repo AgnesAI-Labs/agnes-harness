@@ -78,6 +78,10 @@ export interface SidebarHandle {
 export interface SidebarSlots {
   /** Host navigation between the new-session action and the workspace list. */
   entries?: ReactNode
+  /** Replaces the list heading while the host shows something other than workspaces. */
+  sectionLabel?: ReactNode
+  /** Host controls for the session list, before the add-workspace action. */
+  sessionTools?: ReactNode
   brandMark?: ReactNode
   brandName?: ReactNode
   panellist?: ReactNode
@@ -247,7 +251,8 @@ const SidebarBuiltin = forwardRef<
       </div>
       {slots?.entries}
       <div className="sidebar-section-heading">
-        <p className="section-label">{t('sidebar.sectionHeading')}</p>
+        <p className="section-label">{slots?.sectionLabel ?? t('sidebar.sectionHeading')}</p>
+        {slots?.sessionTools}
         <IconButton
           id="workspace-add"
           name="folder-plus"

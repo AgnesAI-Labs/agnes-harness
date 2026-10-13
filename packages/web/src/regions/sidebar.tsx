@@ -17,6 +17,7 @@ import {
   SIDEBAR_SLOT,
 } from './contracts.js'
 import { HomeEntriesNav } from './home-entries.js'
+import { SessionListLabel, SessionListTools } from './session-tools.js'
 
 export const DSH_SIDEBAR_CHILDREN = Object.freeze({
   'sidebar.brand.mark': { kind: 'single', scope: 'root' },
@@ -51,6 +52,8 @@ export function SidebarDshFrame({
       dependencies={dependencies}
       slots={{
         entries: <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()} />,
+        sectionLabel: <SessionListLabel t={dependencies.translate} />,
+        sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: outlet('sidebar.brand.mark'),
         brandName: outlet('sidebar.brand.name'),
         panellist: outlet('sidebar.panellist'),
