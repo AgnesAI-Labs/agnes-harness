@@ -56,7 +56,13 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   await noDraft()
   await page.locator('#mcp-form button[type=submit]').click()
   await expect(page.locator('#admin-confirm[open]')).toBeVisible()
+  const created = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/admin/resources/api/mcp/create',
+  )
   await page.locator('#admin-confirm-action').click()
+  const creation = await created
+  expect(creation.status()).toBe(200)
+  const createReceipt = (await creation.json()) as { operationId: string }
   await expect(page.locator('#mcp-dialog')).not.toBeVisible()
   const client = await runtime.connect()
   await expect
@@ -68,6 +74,17 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
       ),
     )
     .toBe(true)
+  await expect
+    .poll(
+      async () =>
+        (
+          await client.resources.operation.get({
+            profile: 'local-dev',
+            operationId: createReceipt.operationId,
+          })
+        ).state,
+    )
+    .toBe('succeeded')
   await section(page, 'credentials')
   const row = page.getByTestId('credential-row').filter({ hasText: 'Integration key' })
   await expect(row).toBeVisible()
@@ -98,7 +115,13 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   await page.locator('#mcp-credential-trigger').click()
   await page.getByRole('option', { name: 'No credentials', exact: true }).click()
   await page.locator('#mcp-form button[type=submit]').click()
+  const updated = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/admin/resources/api/mcp/update',
+  )
   await page.locator('#admin-confirm-action').click()
+  const update = await updated
+  expect(update.status()).toBe(200)
+  const updateReceipt = (await update.json()) as { operationId: string }
   await expect(page.locator('#mcp-dialog')).not.toBeVisible()
   await expect(page.locator('#resource-detail')).toBeVisible()
   await page.keyboard.press('Escape')
@@ -111,6 +134,19 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
         )?.definition?.secretBinding.kind,
     )
     .toBe('none')
+  // The accepted definition is visible before its operation settles. Until then the
+  // retained previous definition must continue to protect its credential from deletion.
+  await expect
+    .poll(
+      async () =>
+        (
+          await client.resources.operation.get({
+            profile: 'local-dev',
+            operationId: updateReceipt.operationId,
+          })
+        ).state,
+    )
+    .toBe('succeeded')
   await section(page, 'credentials')
   await page.getByTestId('credentials-refresh').click()
   await expect(renamed.getByTestId('credential-references')).toContainText('Not used')
