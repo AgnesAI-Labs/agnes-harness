@@ -58,7 +58,14 @@ export function ResourcesTab({
     }
   }, [])
   useEffect(() => {
-    void mounted.current?.sync(workspaceId ? { tab, workspaceId } : { tab })
+    let current = true
+    // Resource sync renders its regions synchronously; begin after this React commit.
+    queueMicrotask(() => {
+      if (current) void mounted.current?.sync(workspaceId ? { tab, workspaceId } : { tab })
+    })
+    return () => {
+      current = false
+    }
   }, [tab, workspaceId])
   return (
     <div className="plugins-page-resources" data-resource-tab={tab}>
