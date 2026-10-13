@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   admitAttachments,
+  checkUserImageBudget,
   MAX_ATTACHMENT_ROW_BYTES,
   type UserAttachmentPort,
 } from '../src/step/attachment-admission.js'
@@ -295,5 +296,57 @@ describe('admitAttachments', () => {
       code: 'E_ENVELOPE',
       detail: { code: 'ATTACHMENT_COUNT' },
     })
+  })
+})
+
+describe('checkUserImageBudget', () => {
+  const MIB = 1024 * 1024
+  const ref = (bytes: number, edge = 8, name = 'shot.png') => ({
+    type: 'image' as const,
+    mimeType: 'image/png',
+    name,
+    attachment: { sha256: 'a'.repeat(64), bytes },
+    width: edge,
+    height: edge,
+  })
+  const refusal = (content: unknown[]) => {
+    try {
+      checkUserImageBudget(content as never)
+      return undefined
+    } catch (error) {
+      return (error as { detail?: { code?: string; reason?: string } }).detail
+    }
+  }
+
+  it('refuses one image over 16 MiB with its own code', () => {
+    expect(refusal([ref(16 * MIB + 1)])).toEqual({
+      code: 'ATTACHMENT_IMAGE_TOO_LARGE',
+      reason: 'attachment-image-too-large',
+    })
+    expect(refusal([ref(16 * MIB)])).toBeUndefined()
+  })
+
+  it('refuses images over 16 MiB or 8 million pixels together', () => {
+    expect(refusal([ref(9 * MIB), ref(8 * MIB)])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
+    // Four 1456-pixel squares are 8.48 million pixels; three are 6.36 million.
+    expect(refusal([1, 2, 3, 4].map(() => ref(MIB, 1456)))?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
+    expect(refusal([1, 2, 3].map(() => ref(MIB, 1456)))).toBeUndefined()
+    // Inline images count with references.
+    const inline = { type: 'image', mimeType: 'image/png', data: PNG_1X1 }
+    expect(refusal([...[1, 2, 3].map(() => ref(MIB, 1456)), inline])).toBeUndefined()
+    // Exactly 8 million pixels by reference leaves no room for the inline image.
+    const full = { ...ref(MIB), width: 4000, height: 2000 }
+    expect(refusal([full])).toBeUndefined()
+    expect(refusal([full, inline])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
+  })
+
+  it('does not count files: a 90 MB zip goes through', () => {
+    const zip = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'insects.zip',
+      attachment: { sha256: 'b'.repeat(64), bytes: 90_000_000 },
+    }
+    expect(refusal([zip, ref(MIB)])).toBeUndefined()
   })
 })

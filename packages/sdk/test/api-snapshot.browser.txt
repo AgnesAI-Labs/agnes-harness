@@ -23,6 +23,7 @@ Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
 attachmentRefusal
+cancelAttachmentUpload
 classify
 createClient
 encodeFrame

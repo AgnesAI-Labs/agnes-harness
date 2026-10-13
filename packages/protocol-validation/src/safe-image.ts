@@ -17,6 +17,17 @@ export const USER_MESSAGE_IMAGE_LIMITS = Object.freeze({
   maxAggregatePixels: 8_000_000,
 }) satisfies SafeImageLimits
 
+/**
+ * What one user message's images may add to a model request: each image and all of them together at
+ * most 16 MiB, and at most 8 million pixels together. Larger images are refused when the message is
+ * sent, not when a request is built later. Files are not images and are not counted.
+ */
+export const USER_IMAGE_SEND_BUDGET = Object.freeze({
+  maxBytesPerImage: 16 * 1024 * 1024,
+  maxAggregateBytes: 16 * 1024 * 1024,
+  maxAggregatePixels: 8_000_000,
+})
+
 export type SafeImageInput = Readonly<{ data: string; mimeType: string }>
 export type SafeImageBytesInput = Readonly<{ bytes: Uint8Array; mimeType: string }>
 

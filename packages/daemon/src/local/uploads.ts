@@ -34,7 +34,14 @@ type Upload = {
   size: number
   purpose: UploadPurpose
   staging: AttachmentStaging
+  /** The last start or chunk; a status query does not keep an upload alive. */
   touched: number
+  /** When the upload started; it is dropped this long after whatever it does. */
+  started: number
+  /** A thumbnail's bytes as they arrive (at most 256 KiB), so they can be checked before they are stored. */
+  buffered?: Buffer[]
+  /** The digest of the bytes received so far, to tell at finish whether the object was already stored. */
+  hash: ReturnType<typeof createHash>
   lastChunk?: { offset: number; sha256: string }
   /** Gives back the room held for the upload, counting what it stored. */
   settle(stored?: number): void
@@ -45,9 +52,16 @@ type Upload = {
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
 const SHA = /^[0-9a-f]{64}$/u
-/** An upload with no step for this long is dropped, and its staged bytes with it. */
+/** An upload with no start or chunk for this long is dropped, and its staged bytes with it. */
 export const UPLOAD_EXPIRE_MS = 30 * 60_000
+/** However active, an upload is dropped this long after it started. */
+export const UPLOAD_LIFETIME_MS = 6 * 60 * 60_000
+/** How often idle uploads are looked for when no request arrives. */
+export const UPLOAD_SWEEP_MS = 60_000
 export const MAX_UPLOADS_PER_SESSION = 4
+/** Open uploads of one principal over all its sessions, and of the whole process. */
+export const MAX_UPLOADS_PER_PRINCIPAL = 16
+export const MAX_UPLOADS_PER_PROCESS = 64
 
 export type Uploads = ReturnType<typeof createUploads>
 
@@ -62,10 +76,18 @@ export function createUploads(o: {
   /** Holds room for `size` bytes against the quotas until settled; rejects with `code: 'UPLOAD_QUOTA'`. */
   reserve?: (size: number) => Promise<(stored?: number) => void>
   clock?: () => number
+  /** Interval of the idle sweep; 0 turns the timer off (requests still sweep). */
+  sweepEveryMs?: number
 }) {
   const clock = o.clock ?? (() => Date.now())
   const uploads = new Map<string, Upload>()
+  /**
+   * Starts between their checks and their entry in `uploads`: counted against the caps at once, so
+   * starts racing through the awaits below cannot pass a cap together.
+   */
+  const starting = new Map<string, { sessionId: string; principalId: string }>()
   const key = (sessionId: string, id: string) => `${sessionId}\u0000${id}`
+  const open = () => [...uploads.values(), ...starting.values()]
   const drop = async (k: string, u: Upload) => {
     if (uploads.get(k) === u) uploads.delete(k)
     u.cancelled = true
@@ -75,8 +97,15 @@ export function createUploads(o: {
   }
   const sweep = async () => {
     const now = clock()
-    for (const [k, u] of uploads) if (now - u.touched > UPLOAD_EXPIRE_MS) await drop(k, u)
+    for (const [k, u] of uploads)
+      if (now - u.touched > UPLOAD_EXPIRE_MS || now - u.started > UPLOAD_LIFETIME_MS) await drop(k, u)
   }
+  // Abandoned uploads are reclaimed even when no further upload request arrives.
+  const timer =
+    (o.sweepEveryMs ?? UPLOAD_SWEEP_MS) > 0
+      ? setInterval(() => void sweep().catch(() => undefined), o.sweepEveryMs ?? UPLOAD_SWEEP_MS)
+      : undefined
+  timer?.unref?.()
   const find = async (sessionId: string, id: string, principalId: string): Promise<Upload> => {
     await sweep()
     if (!ID.test(id)) throw new UploadRefused('UPLOAD_INVALID')
@@ -87,10 +116,10 @@ export function createUploads(o: {
     return u
   }
   /** Runs one step after the upload's earlier steps, refusing it once the upload was cancelled. */
-  const step = <T>(u: Upload, run: () => Promise<T>): Promise<T> => {
+  const step = <T>(u: Upload, run: () => Promise<T>, touch = false): Promise<T> => {
     const next = u.tail.then(() => {
       if (u.cancelled) throw new UploadRefused('UPLOAD_CANCELLED')
-      u.touched = clock()
+      if (touch) u.touched = clock()
       return run()
     })
     u.tail = next.catch(() => undefined)
@@ -118,41 +147,50 @@ export function createUploads(o: {
           existing.mimeType !== i.mimeType
         )
           throw new UploadRefused('UPLOAD_INVALID')
-        return step(existing, async () => ({ offset: existing.staging.bytes }))
+        return step(existing, async () => ({ offset: existing.staging.bytes }), true)
       }
+      if (starting.has(key(i.sessionId, i.uploadId))) throw new UploadRefused('UPLOAD_BUSY')
       const limit = i.purpose === 'thumbnail' ? USER_ATTACHMENT_THUMBNAIL.maxBytes : o.maxBytes()
       if (!Number.isSafeInteger(i.size) || i.size < 0 || i.size > limit)
         throw new UploadRefused('UPLOAD_SIZE_LIMIT')
-      if ([...uploads.values()].filter((u) => u.sessionId === i.sessionId).length >= MAX_UPLOADS_PER_SESSION)
+      // Each open upload holds a staging file and room in the quota: bounded per session, per principal
+      // and per process. The slot is taken before the first await, so concurrent starts count each other.
+      const all = open()
+      if (
+        all.filter((u) => u.sessionId === i.sessionId).length >= MAX_UPLOADS_PER_SESSION ||
+        all.filter((u) => u.principalId === i.principalId).length >= MAX_UPLOADS_PER_PRINCIPAL ||
+        all.length >= MAX_UPLOADS_PER_PROCESS
+      )
         throw new UploadRefused('UPLOAD_BUSY')
-      // The session's bytes already referenced are not known here; admission checks again with them.
+      const k = key(i.sessionId, i.uploadId)
+      starting.set(k, { sessionId: i.sessionId, principalId: i.principalId })
       let settle: (stored?: number) => void = () => undefined
-      if (o.reserve)
-        try {
-          settle = await o.reserve(i.size)
-        } catch (error) {
-          throw new UploadRefused(
-            (error as { code?: unknown }).code === 'UPLOAD_QUOTA' ? 'UPLOAD_QUOTA' : 'UPLOAD_UNAVAILABLE',
-          )
-        }
       let staging: AttachmentStaging
       try {
-        staging = await o.store.stage({
-          kind: i.purpose === 'thumbnail' ? 'thumbnail' : 'user-attachment',
-          mimeType: i.mimeType,
-          maxBytes: i.size,
-        })
-      } catch (error) {
-        settle()
-        throw error
+        // The session's bytes already referenced are not known here; admission checks again with them.
+        if (o.reserve)
+          try {
+            settle = await o.reserve(i.size)
+          } catch (error) {
+            throw new UploadRefused(
+              (error as { code?: unknown }).code === 'UPLOAD_QUOTA' ? 'UPLOAD_QUOTA' : 'UPLOAD_UNAVAILABLE',
+            )
+          }
+        try {
+          staging = await o.store.stage({
+            kind: i.purpose === 'thumbnail' ? 'thumbnail' : 'user-attachment',
+            mimeType: i.mimeType,
+            maxBytes: i.size,
+          })
+        } catch (error) {
+          settle()
+          throw error
+        }
+      } finally {
+        starting.delete(k)
       }
-      // Checked again: another start for the same id may have opened while this one waited.
-      if (uploads.has(key(i.sessionId, i.uploadId))) {
-        settle()
-        await staging.abort().catch(() => undefined)
-        throw new UploadRefused('UPLOAD_BUSY')
-      }
-      uploads.set(key(i.sessionId, i.uploadId), {
+      const now = clock()
+      uploads.set(k, {
         id: i.uploadId,
         sessionId: i.sessionId,
         principalId: i.principalId,
@@ -162,7 +200,10 @@ export function createUploads(o: {
         purpose: i.purpose,
         staging,
         settle,
-        touched: clock(),
+        touched: now,
+        started: now,
+        hash: createHash('sha256'),
+        ...(i.purpose === 'thumbnail' ? { buffered: [] } : {}),
         tail: Promise.resolve(),
         cancelled: false,
       })
@@ -177,22 +218,28 @@ export function createUploads(o: {
       sha256: string
     }): Promise<{ offset: number }> {
       const u = await find(i.sessionId, i.uploadId, i.principalId)
-      return step(u, async () => {
-        if (!SHA.test(i.sha256)) throw new UploadRefused('UPLOAD_INVALID')
-        // The same chunk again (its answer was lost): nothing to write, report where the upload is.
-        if (u.lastChunk && i.offset === u.lastChunk.offset && i.sha256 === u.lastChunk.sha256)
+      return step(
+        u,
+        async () => {
+          if (!SHA.test(i.sha256)) throw new UploadRefused('UPLOAD_INVALID')
+          // The same chunk again (its answer was lost): nothing to write, report where the upload is.
+          if (u.lastChunk && i.offset === u.lastChunk.offset && i.sha256 === u.lastChunk.sha256)
+            return { offset: u.staging.bytes }
+          if (i.offset !== u.staging.bytes) throw new UploadRefused('UPLOAD_OFFSET')
+          const bytes = Buffer.from(i.data, 'base64')
+          if (bytes.byteLength === 0 || bytes.byteLength > ATTACHMENT_UPLOAD_CHUNK_BYTES)
+            throw new UploadRefused('UPLOAD_INVALID')
+          if (createHash('sha256').update(bytes).digest('hex') !== i.sha256)
+            throw new UploadRefused('UPLOAD_HASH_MISMATCH')
+          if (u.staging.bytes + bytes.byteLength > u.size) throw new UploadRefused('UPLOAD_SIZE_LIMIT')
+          await u.staging.write(bytes)
+          u.buffered?.push(bytes)
+          u.hash.update(bytes)
+          u.lastChunk = { offset: i.offset, sha256: i.sha256 }
           return { offset: u.staging.bytes }
-        if (i.offset !== u.staging.bytes) throw new UploadRefused('UPLOAD_OFFSET')
-        const bytes = Buffer.from(i.data, 'base64')
-        if (bytes.byteLength === 0 || bytes.byteLength > ATTACHMENT_UPLOAD_CHUNK_BYTES)
-          throw new UploadRefused('UPLOAD_INVALID')
-        if (createHash('sha256').update(bytes).digest('hex') !== i.sha256)
-          throw new UploadRefused('UPLOAD_HASH_MISMATCH')
-        if (u.staging.bytes + bytes.byteLength > u.size) throw new UploadRefused('UPLOAD_SIZE_LIMIT')
-        await u.staging.write(bytes)
-        u.lastChunk = { offset: i.offset, sha256: i.sha256 }
-        return { offset: u.staging.bytes }
-      })
+        },
+        true,
+      )
     },
     async status(i: {
       sessionId: string
@@ -211,13 +258,19 @@ export function createUploads(o: {
     },
     /**
      * Commits the staged bytes; the caller turns the stored object into the reply block and then calls
-     * `settle` with the bytes it newly stored (or nothing when it refused the object).
+     * `settle` with the bytes it newly stored (or nothing when it refused the object). A thumbnail's
+     * bytes are given to `inspect` first, and a refusal there stores nothing.
      */
-    async finish(i: { sessionId: string; uploadId: string; principalId: string; sha256?: string }): Promise<{
+    async finish(
+      i: { sessionId: string; uploadId: string; principalId: string; sha256?: string },
+      inspect?: (thumbnail: Uint8Array, mimeType: string) => Promise<void> | void,
+    ): Promise<{
       object: StoredObject
       name: string
       mimeType: string
       purpose: UploadPurpose
+      /** Whether the store held these bytes before this upload committed them. */
+      existed: boolean
       settle(stored?: number): void
     }> {
       const k = key(i.sessionId, i.uploadId)
@@ -228,8 +281,16 @@ export function createUploads(o: {
         if (uploads.get(k) === u) uploads.delete(k)
         u.cancelled = true
         try {
+          if (u.buffered && inspect) await inspect(Buffer.concat(u.buffered), u.mimeType)
+        } catch (error) {
+          u.settle()
+          await u.staging.abort().catch(() => undefined)
+          throw error
+        }
+        try {
+          const existed = (await o.store.stat(u.hash.digest('hex')).catch(() => undefined)) !== undefined
           const object = await u.staging.commit(i.sha256)
-          return { object, name: u.name, mimeType: u.mimeType, purpose: u.purpose, settle: u.settle }
+          return { object, name: u.name, mimeType: u.mimeType, purpose: u.purpose, existed, settle: u.settle }
         } catch (error) {
           u.settle()
           if ((error as { code?: unknown }).code === 'ATTACHMENT_HASH_MISMATCH')
@@ -241,6 +302,11 @@ export function createUploads(o: {
     /** In-flight uploads; for tests and diagnostics. */
     get size(): number {
       return uploads.size
+    },
+    /** Stops the idle sweep and drops every open upload, closing its staging file. */
+    async dispose(): Promise<void> {
+      if (timer) clearInterval(timer)
+      for (const [k, u] of uploads) await drop(k, u)
     },
   }
 }

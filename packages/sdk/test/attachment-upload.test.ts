@@ -146,6 +146,63 @@ describe('uploadAttachment', () => {
   })
 })
 
+describe('a busy daemon', () => {
+  const busy = () =>
+    new JsonRpcError({ code: -32011, message: 'SEMANTIC_REJECTED', data: { code: 'UPLOAD_BUSY' } })
+
+  it('tries a chunk refused as busy again after a short wait instead of failing the upload', async () => {
+    const server = fakeServer()
+    let refusals = 2
+    const call = (async (method: string, params: unknown, c?: { timeoutMs?: number | null }) => {
+      if ((params as { operation: string }).operation === 'chunk' && refusals > 0) {
+        refusals--
+        throw busy()
+      }
+      return server.call(method, params, c)
+    }) as typeof server.call
+    const bytes = payload(MIB + 10)
+    const block = await uploadAttachment(call, 's', { bytes, name: 'a', mimeType: 'a/b' })
+    expect(block).toMatchObject({ attachment: { sha256: sha(bytes) } })
+    expect(server.committed.map((c) => c.offset)).toEqual([0, MIB])
+  })
+
+  it('gives up after a bounded number of tries', async () => {
+    const server = fakeServer()
+    let tries = 0
+    const call = (async (method: string, params: unknown, c?: { timeoutMs?: number | null }) => {
+      if ((params as { operation: string }).operation === 'chunk') {
+        tries++
+        throw busy()
+      }
+      return server.call(method, params, c)
+    }) as typeof server.call
+    const failure = await uploadAttachment(call, 's', {
+      bytes: payload(10),
+      name: 'a',
+      mimeType: 'a/b',
+    }).catch((e: unknown) => e)
+    expect(attachmentRefusal(failure)).toBe('UPLOAD_BUSY')
+    expect((failure as { uploadId?: string }).uploadId).toBeDefined()
+    expect(tries).toBe(7)
+  }, 30_000)
+
+  it('does not retry other refusals', async () => {
+    const server = fakeServer()
+    let tries = 0
+    const call = (async (method: string, params: unknown, c?: { timeoutMs?: number | null }) => {
+      if ((params as { operation: string }).operation === 'chunk') {
+        tries++
+        throw new JsonRpcError({ code: -32011, message: 'SEMANTIC_REJECTED', data: { code: 'UPLOAD_QUOTA' } })
+      }
+      return server.call(method, params, c)
+    }) as typeof server.call
+    await uploadAttachment(call, 's', { bytes: payload(10), name: 'a', mimeType: 'a/b' }).catch(
+      () => undefined,
+    )
+    expect(tries).toBe(1)
+  })
+})
+
 describe('attachmentRefusal', () => {
   it('names an attachment refusal by its code, and nothing else', () => {
     const refused = new JsonRpcError({

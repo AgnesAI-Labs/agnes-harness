@@ -50,6 +50,7 @@ import type {
 import {
   type AttachmentUploadInput,
   type AttachmentUploadOptions,
+  cancelAttachmentUpload,
   type UploadedThumbnail,
   uploadAttachment,
 } from './attachment-upload.js'
@@ -359,6 +360,9 @@ export class Client {
       o?: AttachmentUploadOptions,
     ): Promise<ContentBlock | UploadedThumbnail> =>
       uploadAttachment((method, params, c) => this.call(method, params, c), sessionId, input, o),
+    /** Drops an upload the daemon still holds, such as a failed one the user removed. */
+    cancel: (sessionId: string, uploadId: string): Promise<void> =>
+      cancelAttachmentUpload((method, params, c) => this.call(method, params, c), sessionId, uploadId),
   }
 
   readonly workspace = {

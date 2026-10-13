@@ -43,6 +43,45 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
   return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
 }
+/** Times a step the daemon refused as busy is tried again, and the base of its growing, jittered wait. */
+const BUSY_RETRIES = 6
+const BUSY_WAIT_MS = 100
+
+function wait(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal?.reason)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/**
+ * One upload step, tried again a few times with a growing, jittered wait while the daemon answers
+ * `UPLOAD_BUSY` (it handles a few chunks at a time over all clients). A re-sent step is harmless: the
+ * daemon answers a repeated chunk with its offset.
+ */
+async function patiently<T>(run: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run()
+    } catch (error) {
+      if (attachmentRefusal(error) !== 'UPLOAD_BUSY' || attempt >= BUSY_RETRIES) throw error
+      await wait(BUSY_WAIT_MS * 2 ** attempt * (0.5 + Math.random()), signal)
+    }
+  }
+}
+
+/** Tells the daemon to drop an upload it holds (a failed one the client gives up on). */
+export async function cancelAttachmentUpload(call: Call, sessionId: string, uploadId: string): Promise<void> {
+  await call(METHOD, { operation: 'cancel', sessionId, uploadId })
+}
+
 function base64(bytes: Uint8Array): string {
   let s = ''
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
@@ -65,17 +104,21 @@ export async function uploadAttachment(
   const signal = o.signal ? { signal: o.signal } : {}
   try {
     o.signal?.throwIfAborted()
-    let { offset } = await call<{ offset: number }>(
-      METHOD,
-      {
-        operation: 'start',
-        ...base,
-        name: input.name,
-        mimeType: input.mimeType,
-        size: blob.size,
-        ...(input.purpose ? { purpose: input.purpose } : {}),
-      },
-      signal,
+    let { offset } = await patiently(
+      () =>
+        call<{ offset: number }>(
+          METHOD,
+          {
+            operation: 'start',
+            ...base,
+            name: input.name,
+            mimeType: input.mimeType,
+            size: blob.size,
+            ...(input.purpose ? { purpose: input.purpose } : {}),
+          },
+          signal,
+        ),
+      o.signal,
     )
     if (o.uploadId)
       offset = (await call<{ offset: number }>(METHOD, { operation: 'status', ...base }, signal)).offset
@@ -85,13 +128,14 @@ export async function uploadAttachment(
       const bytes = new Uint8Array(
         await blob.slice(offset, offset + ATTACHMENT_UPLOAD_CHUNK_BYTES).arrayBuffer(),
       )
-      offset = (
-        await call<{ offset: number }>(
-          METHOD,
-          { operation: 'chunk', ...base, offset, data: base64(bytes), sha256: await sha256Hex(bytes) },
-          signal,
-        )
-      ).offset
+      const chunk = {
+        operation: 'chunk',
+        ...base,
+        offset,
+        data: base64(bytes),
+        sha256: await sha256Hex(bytes),
+      }
+      offset = (await patiently(() => call<{ offset: number }>(METHOD, chunk, signal), o.signal)).offset
       o.onProgress?.(offset, blob.size)
     }
     o.signal?.throwIfAborted()

@@ -129,7 +129,8 @@ export async function buildByReferenceSession(
   const second = await openSupervisor(dir)
   try {
     await second.must('session/load', { sessionId, cwd: dir, mcpServers: [] })
-    const zip = randomBytes(Math.floor((o.attachmentMB * MIB) / 4) * 3)
+    // The incident size: this many MiB of raw zip bytes.
+    const zip = randomBytes(o.attachmentMB * MIB)
     const block = (await uploadOver(second)(sessionId, zip, 'insects.zip', 'application/zip')) as ContentBlock
     await second.must('session/prompt', {
       sessionId,

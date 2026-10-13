@@ -15,16 +15,26 @@ export type ComposerUploadCallOptions = {
 
 /** One session's upload channel, as the host opened it for the attachments being added. */
 export type ComposerUploadTarget = Readonly<{
+  /** The session every upload through this target belongs to; only that session may send them. */
+  sessionId: string
   /** The largest single upload the server accepts. */
   maxBytes: number
   /** Uploads run at once. */
   maxConcurrent: number
   /** Uploads one object; a failure carries `uploadId`, and passing it back resumes the upload. */
   upload(input: ComposerUploadInput, o: ComposerUploadCallOptions): Promise<ContentBlock | UploadedThumbnail>
+  /** Tells the server to drop an upload it holds (a failed one the user removed). */
+  cancel?(uploadId: string): Promise<void>
 }>
 
-/** How the composer reaches the upload channel; `open` answers undefined when attachments go inline. */
-export type ComposerUploadChannel = Readonly<{ open(): Promise<ComposerUploadTarget | undefined> }>
+/**
+ * How the composer reaches the upload channel. `open` answers a target for the open session;
+ * `'deferred'` when the server takes uploads but no session exists yet (the files wait, unread, until
+ * the send creates one); undefined when attachments go inline.
+ */
+export type ComposerUploadChannel = Readonly<{
+  open(): Promise<ComposerUploadTarget | 'deferred' | undefined>
+}>
 
 export type ComposerUploadStatus = 'waiting' | 'uploading' | 'ready' | 'failed' | 'cancelled'
 export type ComposerUploadEntry = Readonly<{
@@ -44,7 +54,8 @@ type Job = {
   name: string
   mimeType: string
   image: boolean
-  target: ComposerUploadTarget
+  /** Absent while the upload waits for a session to be created. */
+  target?: ComposerUploadTarget
   status: ComposerUploadStatus
   sent: number
   /** Bytes of the attachment: the file's size, or a restored reference's. */
@@ -89,9 +100,24 @@ export async function makeImageThumbnail(file: Blob): Promise<Blob | undefined> 
 
 /** A restored attachment is already uploaded; it never uploads again. */
 const RESTORED: ComposerUploadTarget = {
+  sessionId: '',
   maxBytes: 0,
   maxConcurrent: 1,
   upload: () => Promise.reject(new Error('already uploaded')),
+}
+
+/**
+ * The block as the composer sends it. A PNG or JPEG added while the model takes no images is sent as
+ * a file: the server answers an image reference for one, which such a model would refuse.
+ */
+function asSent(job: { image: boolean; name: string }, block: ContentBlock): ContentBlock {
+  if (job.image || block.type !== 'image' || !('attachment' in block)) return block
+  return {
+    type: 'file',
+    mimeType: block.mimeType,
+    name: job.name,
+    attachment: block.attachment,
+  } as ContentBlock
 }
 
 const uploadIdOf = (error: unknown): string | undefined => {
@@ -122,16 +148,25 @@ export function createComposerUpload(deps: {
   })
   const pump = () => {
     for (const job of jobs.values()) {
-      if (job.status !== 'waiting') continue
+      if (job.status !== 'waiting' || !job.target) continue
       if (running() >= job.target.maxConcurrent) break
-      void run(job)
+      void run(job, job.target)
     }
   }
-  const thumbnail = async (job: Job, signal: AbortSignal): Promise<UploadedThumbnail | undefined> => {
+  const settled = new Set<() => void>()
+  const notify = () => {
+    deps.onChange()
+    for (const listener of [...settled]) listener()
+  }
+  const thumbnail = async (
+    job: Job,
+    target: ComposerUploadTarget,
+    signal: AbortSignal,
+  ): Promise<UploadedThumbnail | undefined> => {
     const blob = await deps.makeThumbnail?.(job.file)
     if (!blob || signal.aborted) return undefined
     try {
-      return (await job.target.upload(
+      return (await target.upload(
         { bytes: blob, name: 'thumbnail.jpg', mimeType: 'image/jpeg', purpose: 'thumbnail' },
         { signal },
       )) as UploadedThumbnail
@@ -141,27 +176,30 @@ export function createComposerUpload(deps: {
       return undefined
     }
   }
-  const run = async (job: Job) => {
+  const run = async (job: Job, target: ComposerUploadTarget) => {
     const abort = new AbortController()
     job.abort = abort
     job.status = 'uploading'
     job.error = undefined
     deps.onChange()
     try {
-      job.reference ??= (await job.target.upload(
-        { bytes: job.file, name: job.name, mimeType: job.mimeType },
-        {
-          signal: abort.signal,
-          ...(job.uploadId ? { uploadId: job.uploadId } : {}),
-          onProgress: (sent) => {
-            job.sent = sent
-            deps.onChange()
+      job.reference ??= asSent(
+        job,
+        (await target.upload(
+          { bytes: job.file, name: job.name, mimeType: job.mimeType },
+          {
+            signal: abort.signal,
+            ...(job.uploadId ? { uploadId: job.uploadId } : {}),
+            onProgress: (sent) => {
+              job.sent = sent
+              deps.onChange()
+            },
           },
-        },
-      )) as ContentBlock
+        )) as ContentBlock,
+      )
       job.sent = job.file.size
       const thumb =
-        job.image && job.reference.type === 'image' ? await thumbnail(job, abort.signal) : undefined
+        job.image && job.reference.type === 'image' ? await thumbnail(job, target, abort.signal) : undefined
       abort.signal.throwIfAborted()
       job.block = thumb ? ({ ...job.reference, thumbnail: thumb } as ContentBlock) : job.reference
       job.status = 'ready'
@@ -174,20 +212,59 @@ export function createComposerUpload(deps: {
       deps.onFailed?.(view(job))
     } finally {
       if (job.abort === abort) job.abort = undefined
-      deps.onChange()
+      notify()
       pump()
     }
   }
   return {
-    /** Queues one attachment; it starts when a slot is free. */
+    /**
+     * Queues one attachment; it starts when a slot is free. Without a target it waits, unread, for
+     * `uploadDeferred` to name the session it belongs to.
+     */
     add(
       id: string,
       input: { file: Blob; name: string; mimeType: string; image: boolean },
-      target: ComposerUploadTarget,
+      target: ComposerUploadTarget | undefined,
     ) {
-      jobs.set(id, { id, ...input, target, status: 'waiting', sent: 0 })
+      jobs.set(id, { id, ...input, ...(target ? { target } : {}), status: 'waiting', sent: 0 })
       deps.onChange()
       pump()
+    },
+    /** Attachments waiting for a session to be created before they upload. */
+    deferred(): string[] {
+      return [...jobs.values()].filter((job) => !job.target).map((job) => job.id)
+    },
+    /**
+     * Uploads every waiting attachment into the session `target` names, and settles once each one is
+     * ready (or rejects with the first failure; the failed ones stay, with their Retry).
+     */
+    async uploadDeferred(target: ComposerUploadTarget): Promise<void> {
+      const waiting = [...jobs.values()].filter((job) => !job.target)
+      for (const job of waiting) job.target = target
+      pump()
+      await new Promise<void>((resolve, reject) => {
+        const check = () => {
+          const live = waiting.filter((job) => jobs.get(job.id) === job)
+          const failed = live.find((job) => job.status === 'failed')
+          if (failed) {
+            settled.delete(check)
+            reject(failed.error ?? new Error(`${failed.name} could not be uploaded`))
+          } else if (live.every((job) => job.status === 'ready')) {
+            settled.delete(check)
+            resolve()
+          }
+        }
+        settled.add(check)
+        check()
+      })
+    },
+    /** The file an entry holds, for sending it inline where no upload is possible. */
+    file(id: string): Blob | undefined {
+      return jobs.get(id)?.file
+    },
+    /** The session an entry was uploaded into, if any. */
+    sessionOf(id: string): string | undefined {
+      return jobs.get(id)?.target?.sessionId
     },
     /** An attachment uploaded before (a send that failed gives its blocks back): ready as it is. */
     restore(id: string, block: ContentBlock, name: string, bytes: number) {
@@ -213,9 +290,14 @@ export function createComposerUpload(deps: {
     entries(): ComposerUploadEntry[] {
       return [...jobs.values()].map(view)
     },
-    /** True while any attachment is not uploaded yet, a failed one included: it must be retried or removed. */
+    /**
+     * True while any attachment is not uploaded yet, a failed one included: it must be retried or
+     * removed. One waiting for a session to be created is not pending: the send uploads it.
+     */
     pending(): boolean {
-      return [...jobs.values()].some((job) => job.status !== 'ready' && job.status !== 'cancelled')
+      return [...jobs.values()].some(
+        (job) => job.target !== undefined && job.status !== 'ready' && job.status !== 'cancelled',
+      )
     },
     /** Uploads a failed attachment again, from where the server holds it. */
     retry(id: string) {
@@ -229,10 +311,14 @@ export function createComposerUpload(deps: {
     cancel(id: string) {
       const job = jobs.get(id)
       if (!job) return
+      const failed = job.status === 'failed'
       job.status = 'cancelled'
       jobs.delete(id)
       job.abort?.abort()
-      deps.onChange()
+      // A failed upload is still held by the server (its staging file and quota room); give it back.
+      if (failed && job.uploadId && !job.reference)
+        void job.target?.cancel?.(job.uploadId).catch(() => undefined)
+      notify()
       pump()
     },
     cancelAll() {

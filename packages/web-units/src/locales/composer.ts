@@ -49,7 +49,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLargePixels':
       'The image has too many pixels to attach. Crop or scale it down and try again.',
     'composer.upload.unavailableLarge':
-      'Attachments over 8 MiB cannot be sent from here. Use the local Web or the CLI to upload them.',
+      'This server does not take attachment uploads, so an attachment over 8 MiB cannot be sent. Use a smaller file.',
+    'composer.upload.missingNamed': '“{name}” is no longer stored. Remove it and add it again.',
+    'composer.image.overBudget':
+      'An image is too large to send to the model (over 16 MiB, or over 8 million pixels in one message). Shrink the image and add it again.',
     'composer.upload.tooLarge': 'The attachment is larger than the upload limit.',
     'composer.upload.quota': 'There is no room for this attachment: a storage quota was reached.',
     'composer.upload.notAuthorized':
@@ -102,7 +105,9 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooMany': '一条消息最多添加 {count} 张图片。',
     'composer.image.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
     'composer.image.tooLargePixels': '图片像素过多，无法添加。请裁剪或缩小后重试。',
-    'composer.upload.unavailableLarge': '超过 8 MiB 的附件无法从这里发送，请改用本地 Web 或 CLI 上传。',
+    'composer.upload.unavailableLarge': '此服务器不接收附件上传，超过 8 MiB 的附件无法发送，请使用更小的文件。',
+    'composer.upload.missingNamed': '“{name}”已不在存储中，请移除后重新添加。',
+    'composer.image.overBudget': '图片太大，无法发给模型（超过 16 MiB，或一条消息合计超过 800 万像素）。请缩小图片后重新添加。',
     'composer.upload.tooLarge': '附件超过了上传大小上限。',
     'composer.upload.quota': '没有空间存放这个附件：已达到存储配额。',
     'composer.upload.notAuthorized': '有附件不是上传到本会话的，请移除后重新添加。',

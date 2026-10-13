@@ -3,9 +3,11 @@ import {
   attachmentForm,
   decodeAttachmentData,
   decodeSafeImageBytes,
+  decodeSafeImages,
   SafeImageError,
   type SafeImageLimits,
   USER_MESSAGE_ATTACHMENT_LIMITS,
+  USER_IMAGE_SEND_BUDGET,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
 import type { AttachmentReadPort } from '../request/attachment-bytes.js'
@@ -44,6 +46,7 @@ type Ref = { sha256: string; bytes: number }
 type ReferenceBlock = {
   type: 'image' | 'file'
   mimeType: string
+  name?: string
   attachment: Ref
   width?: number
   height?: number
@@ -53,12 +56,64 @@ type InlineBlock = { type: 'image' | 'file'; mimeType: string; name?: string; da
 
 const MIB = 1024 * 1024
 const utf8 = new TextEncoder()
-const refused = (code: string, message: string) =>
+const refused = (code: string, message: string, detail: Record<string, unknown> = {}) =>
   new CoreError('E_ENVELOPE', message, {
+    ...detail,
     code,
-    // The reason survives the worker boundary, which keeps only a code and a reason.
+    // The reason survives the worker boundary, which keeps only a code, a reason and the message.
     reason: code.toLowerCase().replaceAll('_', '-'),
   })
+
+const base64Bytes = (data: string): number =>
+  Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0)
+const imageTooLarge = () =>
+  refused(
+    'ATTACHMENT_IMAGE_TOO_LARGE',
+    'An image is too large to send to the model: each image and all images in one message may be at most 16 MiB, and at most 8 million pixels together. Shrink the image and add it again.',
+  )
+
+/**
+ * Refuses a message whose images a model request could not carry: an image over 16 MiB, images over
+ * 16 MiB together, or over 8 million pixels together. It runs before anything is stored, so such a
+ * message is refused when it is sent instead of failing when a request is built. Files are not counted.
+ */
+export function checkUserImageBudget(content: readonly ContentBlock[]): void {
+  const budget = USER_IMAGE_SEND_BUDGET
+  let bytes = 0
+  let pixels = 0
+  const inline: InlineBlock[] = []
+  for (const block of content) {
+    if (block.type !== 'image') continue
+    const form = attachmentForm(block)
+    let size: number
+    if (form === 'reference') {
+      const ref = block as unknown as ReferenceBlock
+      size = ref.attachment.bytes
+      if (Number.isSafeInteger(ref.width) && Number.isSafeInteger(ref.height))
+        pixels += (ref.width as number) * (ref.height as number)
+    } else if (form === 'inline') {
+      size = base64Bytes((block as unknown as InlineBlock).data)
+      inline.push(block as unknown as InlineBlock)
+    } else continue
+    bytes += size
+  }
+  // One image is bounded as all of them are: the per-image and the per-message limits are the same.
+  if (bytes > budget.maxAggregateBytes || pixels > budget.maxAggregatePixels) throw imageTooLarge()
+  if (inline.length === 0) return
+  if (pixels >= budget.maxAggregatePixels) throw imageTooLarge()
+  try {
+    decodeSafeImages(inline, {
+      maxBytesPerImage: budget.maxBytesPerImage,
+      maxAggregateBytes: budget.maxAggregateBytes,
+      maxPixelsPerImage: USER_MESSAGE_IMAGE_LIMITS.maxPixelsPerImage,
+      maxAggregatePixels: budget.maxAggregatePixels - pixels,
+    })
+  } catch (error) {
+    if (error instanceof SafeImageError && (error.code === 'BYTE_LIMIT' || error.code === 'PIXEL_LIMIT'))
+      throw imageTooLarge()
+    // Any other fault is the image validation's to report.
+  }
+}
 // The store's own refusals keep their code and get a fixed message; anything else (a raw file system
 // error, whose message names paths in the data directory) is reported as unavailable.
 const STORE_REFUSALS: Readonly<Record<string, string>> = {
@@ -112,6 +167,8 @@ async function authorized(
   ref: Ref,
   mimeType: string,
   input: { sessionKey: string; referenced(sha256: string): boolean },
+  /** The attachment's name, so a refusal can say which one it was. */
+  name: string,
 ): Promise<void> {
   let verdict: 'ok' | 'missing' | 'unauthorized'
   try {
@@ -126,7 +183,9 @@ async function authorized(
     throw storeFailure(error, 'ATTACHMENT_UNAVAILABLE')
   }
   if (verdict === 'missing')
-    throw refused('ATTACHMENT_MISSING', 'The attachment is no longer stored. Upload it again.')
+    throw refused('ATTACHMENT_MISSING', `The attachment “${name}” is no longer stored. Upload it again.`, {
+      name,
+    })
   if (verdict !== 'ok')
     throw refused('ATTACHMENT_NOT_AUTHORIZED', 'The attachment was not uploaded to this session.')
 }
@@ -191,13 +250,14 @@ export async function admitAttachments(input: {
       // An image is read whole to check its header, so its size is bounded before anything is read.
       if (ref.type === 'image' && ref.attachment.bytes > USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage)
         throw refused('ATTACHMENT_BYTES', 'The image is larger than an image attachment may be.')
-      await authorized(port, ref.attachment, ref.mimeType, input)
+      const name = ref.name ?? (ref.type === 'image' ? 'image' : 'attachment')
+      await authorized(port, ref.attachment, ref.mimeType, input, name)
       if (ref.thumbnail !== undefined) {
         // A thumbnail is a second object: naming one this session may not read is the same forgery,
         // and it must really be a small image of the size it claims.
         if (!isThumbnail(ref.thumbnail)) throw refused('ATTACHMENT_DATA', 'The image thumbnail is malformed.')
         const thumbnail = ref.thumbnail
-        await authorized(port, thumbnail, 'image/jpeg', input)
+        await authorized(port, thumbnail, 'image/jpeg', input, name)
         const image = await storedImage(
           port,
           thumbnail,

@@ -32,10 +32,15 @@ const REFUSAL_KEYS: Readonly<Partial<Record<AttachmentRefusalCode, string>>> = {
   ATTACHMENT_HASH_MISMATCH: 'composer.upload.missing',
   ATTACHMENT_DATA: 'composer.attachment.dataInvalid',
   ATTACHMENT_BYTES: 'composer.attachment.tooLarge',
+  ATTACHMENT_IMAGE_TOO_LARGE: 'composer.image.overBudget',
 }
 
 export function attachmentErrorNotice(error: unknown): AttachmentErrorNotice | undefined {
-  const refusal = (error as { data?: { code?: unknown } } | null)?.data?.code
+  const data = (error as { data?: { code?: unknown; name?: unknown } } | null)?.data
+  const refusal = data?.code
+  // The daemon names an attachment that is gone, so the person knows which one to add again.
+  if (refusal === 'ATTACHMENT_MISSING' && typeof data?.name === 'string')
+    return { key: 'composer.upload.missingNamed', vars: { name: data.name } }
   if (typeof refusal === 'string' && Object.hasOwn(REFUSAL_KEYS, refusal))
     return { key: REFUSAL_KEYS[refusal as AttachmentRefusalCode] as string }
   if (error instanceof AttachmentValidationError) {

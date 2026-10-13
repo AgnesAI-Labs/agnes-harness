@@ -177,6 +177,19 @@ export interface ComposerHandle {
   getImageBlocks(): readonly ComposerImageBlock[]
   /** True while an attachment is being read or is not uploaded yet (a failed upload included). */
   hasPendingImages(): boolean
+  /** Attachments added before a session existed, waiting for the send to create one and upload them. */
+  hasDeferredUploads(): boolean
+  /** Uploads the waiting attachments into `target`'s session; resolves with every block to send. */
+  uploadDeferred(
+    target: ComposerUploadTarget,
+  ): Promise<readonly (ComposerAttachmentBlock | ComposerReferenceBlock)[]>
+  /** Where the new session takes no uploads after all: reads the waiting attachments in to send inline. */
+  inlineDeferred(): Promise<readonly (ComposerAttachmentBlock | ComposerReferenceBlock)[]>
+  /**
+   * The open session changed: attachments of the old one go (uploads still running are cancelled, so
+   * the server drops them), and only attachments that were waiting for a session stay.
+   */
+  sessionChanged(): void
   render(view: ComposerView): void
   restoreImageBlocks(images: readonly ComposerImageBlock[]): void
   resize(): void
@@ -442,6 +455,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     publishAttachments([])
   }, [publishAttachments])
 
+  const sessionChanged = useCallback((): void => {
+    const waiting = new Set(uploadsRef.current?.deferred() ?? [])
+    generation.current += 1
+    pendingCountRef.current = 0
+    pendingImageCountRef.current = 0
+    setPendingCount(0)
+    for (const attachment of attachmentsRef.current) {
+      if (waiting.has(attachment.id)) continue
+      if (attachment.uploaded) uploadsRef.current?.cancel(attachment.id)
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+    }
+    publishAttachments(attachmentsRef.current.filter((attachment) => waiting.has(attachment.id)))
+  }, [publishAttachments])
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: the upload table is created once and kept in a ref.
   const restoreAttachmentBlocks = useCallback(
     (blocks: readonly (ComposerAttachmentBlock | ComposerReferenceBlock)[]): void => {
@@ -526,16 +553,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
     const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
-    // Where uploads are offered, attachments go by reference when the channel opens; otherwise they stay
+    // Where the server takes uploads, attachments go by reference: into the open session at once, or,
+    // before a session exists, when the send creates it. Only a server without uploads gets them
     // inline, each one small enough to travel in the message frame.
-    let target: ComposerUploadTarget | undefined
+    let opened: ComposerUploadTarget | 'deferred' | undefined
     if (upload)
       try {
-        target = await upload.open()
+        opened = await upload.open()
       } catch {
-        target = undefined
+        opened = undefined
       }
-    const inlineCap = upload && !target ? INLINE_FALLBACK_MAX_BYTES : Number.POSITIVE_INFINITY
+    const target = opened === 'deferred' ? undefined : opened
+    const byReference = opened !== undefined
+    const inlineCap = upload && !byReference ? INLINE_FALLBACK_MAX_BYTES : Number.POSITIVE_INFINITY
     const accepted: File[] = []
     let acceptedImages = 0
     for (const file of files) {
@@ -549,7 +579,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onError(new Error(t('composer.upload.unavailableLarge')))
         continue
       }
-      if (file.size > (visual ? MAX_SOURCE_IMAGE_BYTES : target ? target.maxBytes : MAX_TOTAL_IMAGE_BYTES)) {
+      if (
+        file.size >
+        (visual
+          ? MAX_SOURCE_IMAGE_BYTES
+          : target
+            ? target.maxBytes
+            : byReference
+              ? Number.POSITIVE_INFINITY
+              : MAX_TOTAL_IMAGE_BYTES)
+      ) {
         onError(new Error(tooLargeMessage))
         continue
       }
@@ -596,7 +635,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             visual && dependencies.downscaleImage
               ? await dependencies.downscaleImage(candidate, policy)
               : candidate
-          if (!visual && target) {
+          if (!visual && byReference) {
             // Uploaded as it is, never read into the page whole.
             if (readGeneration !== generation.current) return
             const id = `file-${++nextAttachmentId.current}`
@@ -636,7 +675,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           const current = attachmentsRef.current
           // Uploaded attachments travel by reference and do not count toward the inline total.
           const total = current.reduce((sum, image) => sum + (image.uploaded ? 0 : image.size), 0)
-          if (scaled.size > MAX_IMAGE_BYTES || (!target && total + scaled.size > MAX_TOTAL_IMAGE_BYTES)) {
+          if (
+            scaled.size > MAX_IMAGE_BYTES ||
+            (!byReference && total + scaled.size > MAX_TOTAL_IMAGE_BYTES)
+          ) {
             onError(new Error(tooLargeMessage))
             return
           }
@@ -687,18 +729,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           }
           const attachment: ComposerAttachment = {
             type: 'image',
-            data: target ? '' : data,
+            data: byReference ? '' : data,
             mimeType: scaled.type,
             id: `image-${++nextAttachmentId.current}`,
             previewUrl: URL.createObjectURL(scaled),
             size: scaled.size,
             pixels,
-            ...(target ? { uploaded: true } : {}),
+            ...(byReference ? { uploaded: true } : {}),
           }
           // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
           // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
           publishAttachments([...current, attachment])
-          if (target)
+          if (byReference)
             uploads().add(
               attachment.id,
               { file: scaled, name: file.name, mimeType: scaled.type, image: true },
@@ -795,6 +837,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     [],
   )
 
+  const blocks = (): (ComposerAttachmentBlock | ComposerReferenceBlock)[] =>
+    attachmentsRef.current.flatMap((block): (ComposerAttachmentBlock | ComposerReferenceBlock)[] => {
+      if (block.uploaded) {
+        const ready = uploadsRef.current?.entry(block.id)?.block
+        return ready ? [ready as ComposerReferenceBlock] : []
+      }
+      return [
+        block.type === 'file'
+          ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
+          : { type: block.type, data: block.data, mimeType: block.mimeType },
+      ]
+    })
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `blocks` and the upload table read refs only.
   useImperativeHandle(
     ref,
     () => ({
@@ -813,25 +869,37 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           )
           .map(({ type, data, mimeType }) => ({ type, data, mimeType }))
       },
-      getAttachmentBlocks() {
-        return attachmentsRef.current.flatMap(
-          (block): (ComposerAttachmentBlock | ComposerReferenceBlock)[] => {
-            if (block.uploaded) {
-              const ready = uploadsRef.current?.entry(block.id)?.block
-              return ready ? [ready as ComposerReferenceBlock] : []
-            }
-            return [
-              block.type === 'file'
-                ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
-                : { type: block.type, data: block.data, mimeType: block.mimeType },
-            ]
-          },
-        )
-      },
+      getAttachmentBlocks: blocks,
       restoreAttachmentBlocks,
       hasPendingImages() {
         return pendingCountRef.current > 0 || (uploadsRef.current?.pending() ?? false)
       },
+      hasDeferredUploads() {
+        return (uploadsRef.current?.deferred().length ?? 0) > 0
+      },
+      async uploadDeferred(target) {
+        await uploads().uploadDeferred(target)
+        return blocks()
+      },
+      async inlineDeferred() {
+        const table = uploads()
+        const waiting = new Set(table.deferred())
+        const next: ComposerAttachment[] = []
+        for (const attachment of attachmentsRef.current) {
+          const file = waiting.has(attachment.id) ? table.file(attachment.id) : undefined
+          if (!file) {
+            next.push(attachment)
+            continue
+          }
+          const { data } = await readImage(file as File)
+          table.cancel(attachment.id)
+          const { uploaded: _uploaded, ...inline } = attachment
+          next.push({ ...inline, data })
+        }
+        publishAttachments(next)
+        return blocks()
+      },
+      sessionChanged,
       render(next) {
         flushSync(() => setView(next))
       },
@@ -845,7 +913,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dependencies.resize(prompt.current)
       },
     }),
-    [dependencies.resize, clearImageBlocks, restoreAttachmentBlocks],
+    [dependencies.resize, clearImageBlocks, publishAttachments, restoreAttachmentBlocks, sessionChanged],
   )
 
   useLayoutEffect(() => {

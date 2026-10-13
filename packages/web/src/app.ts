@@ -26,7 +26,12 @@ import {
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createAntdRoot, NotificationHost, type Notifier, type NotifyInput } from '@agnes/web-ui'
-import { attachmentErrorNotice, type ComposerAttachmentBlock } from '@agnes/web-units'
+import {
+  attachmentErrorNotice,
+  type ComposerAttachmentBlock,
+  type ComposerReferenceBlock,
+  type ComposerUploadTarget,
+} from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
@@ -378,25 +383,13 @@ const clientModules = await startClientModules({
     onSendNow: (itemId) => handleQueuedAction(itemId, 'sendNow'),
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
-    // Attachments are uploaded by reference into the open session when the daemon stores them that
-    // way; otherwise (no session yet, an older daemon, or the store off) they go inline.
+    // Attachments are uploaded by reference into the open session when the daemon takes uploads. Before
+    // a session exists they wait for the send to create one; only an older daemon gets them inline.
     upload: {
       open: async () => {
+        if (!client.serverCapabilities.attachmentRefs) return undefined
         const session = current
-        if (!session || !client.serverCapabilities.attachmentRefs) return undefined
-        try {
-          const { limits } = await client.call<{ limits: { maxBytes: number; maxConcurrent: number } }>(
-            '_agnes/v1/attachment.upload',
-            { operation: 'limits', sessionId: session.id },
-          )
-          return {
-            maxBytes: limits.maxBytes,
-            maxConcurrent: limits.maxConcurrent,
-            upload: (input, o) => client.attachments.upload(session.id, input, o),
-          }
-        } catch {
-          return undefined
-        }
+        return session ? uploadTarget(session.id) : 'deferred'
       },
     },
   },
@@ -770,7 +763,8 @@ function renderControls(): void {
   const available = connected
   const busy = projection ? webView(projection, undefined, t).busy : false
   const images = composerRuntime.getAttachmentBlocks()
-  const hasInput = composerRuntime.getDraft().trim().length > 0 || images.length > 0
+  const hasInput =
+    composerRuntime.getDraft().trim().length > 0 || images.length > 0 || composerRuntime.hasDeferredUploads()
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
   const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
@@ -2158,6 +2152,42 @@ function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], f
     }),
   ).byteLength
 }
+/**
+ * Where the new session takes no uploads after all, the waiting attachments travel inline, under the
+ * same checks an inline send gets.
+ */
+async function deferredInline(): Promise<readonly ContentBlock[]> {
+  const blocks = await composerRuntime.inlineDeferred()
+  validateUserAttachments(blocks)
+  decodeSafeImages(
+    blocks.filter(
+      (block): block is Extract<ComposerAttachmentBlock, { type: 'image' }> =>
+        block.type === 'image' && 'data' in block,
+    ),
+    USER_MESSAGE_IMAGE_LIMITS,
+  )
+  if (imageSubmissionFrameBytes('s'.repeat(512), [...blocks], false) > MAX_FRAME_BYTES)
+    throw new Error(t('app.error.messageTooLarge'))
+  return blocks
+}
+/** The open session's upload channel, or undefined where the daemon keeps attachments inline. */
+async function uploadTarget(sessionId: string): Promise<ComposerUploadTarget | undefined> {
+  try {
+    const { limits } = await client.call<{ limits: { maxBytes: number; maxConcurrent: number } }>(
+      '_agnes/v1/attachment.upload',
+      { operation: 'limits', sessionId },
+    )
+    return {
+      sessionId,
+      maxBytes: limits.maxBytes,
+      maxConcurrent: limits.maxConcurrent,
+      upload: (input, o) => client.attachments.upload(sessionId, input, o),
+      cancel: (uploadId) => client.attachments.cancel(sessionId, uploadId),
+    }
+  } catch {
+    return undefined
+  }
+}
 function submitComposer(): void {
   const originalDraft = composerRuntime.getDraft()
   const input = originalDraft.trim()
@@ -2167,9 +2197,11 @@ function submitComposer(): void {
   const inlineImages = images.filter(
     (block): block is Extract<ComposerAttachmentBlock, { type: 'image' }> => 'data' in block,
   )
+  // Attachments added before the session existed are uploaded once the send has created it.
+  const deferred = composerRuntime.hasDeferredUploads()
   let session = current
   if (
-    (!input && attachments.length === 0) ||
+    (!input && attachments.length === 0 && !deferred) ||
     composerRuntime.hasPendingImages() ||
     !configured ||
     !selectedModelAvailable() ||
@@ -2195,7 +2227,8 @@ function submitComposer(): void {
     showError(new Error(imageError))
     return
   }
-  const content: ContentBlock[] = [...(input ? [{ type: 'text' as const, text: input }] : []), ...attachments]
+  const text: ContentBlock[] = input ? [{ type: 'text' as const, text: input }] : []
+  let content: ContentBlock[] = [...text, ...attachments]
   const busy = projection?.opState !== null && projection?.opState !== undefined
   if (
     attachments.some((block) => 'data' in block) &&
@@ -2217,7 +2250,8 @@ function submitComposer(): void {
   sending = true
   awaitingPromptStart = !busy
   composerRuntime.setDraft('')
-  composerRuntime.clearImageBlocks()
+  // Waiting attachments stay in the composer, with their progress, until they are uploaded below.
+  if (!deferred) composerRuntime.clearImageBlocks()
   sessionStorage.removeItem(composerDraftKey)
   composerRuntime.resize()
   renderer.pinToBottom()
@@ -2276,6 +2310,14 @@ function submitComposer(): void {
       throw new Error(t('app.error.connectionChanged'))
     if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
     if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
+    if (deferred) {
+      // Now that the session exists, its attachments go into it. A failed one stays with its Retry.
+      const target = await uploadTarget(session.id)
+      const sent = target ? await composerRuntime.uploadDeferred(target) : await deferredInline()
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+      content = [...text, ...sent]
+      composerRuntime.clearImageBlocks()
+    }
     const result = await (busy
       ? session.followUp(content)
       : session.prompt(content, {
@@ -2305,7 +2347,13 @@ function submitComposer(): void {
             sessionStorage.setItem(composerDraftKey, restoredDraft)
           }
           if (!composerRuntime.getAttachmentBlocks().length && !composerRuntime.hasPendingImages())
-            composerRuntime.restoreAttachmentBlocks(attachments)
+            // What was sent, uploaded references included, comes back for another try.
+            composerRuntime.restoreAttachmentBlocks(
+              content.filter(
+                (block): block is ComposerAttachmentBlock | ComposerReferenceBlock =>
+                  block.type === 'image' || block.type === 'file',
+              ),
+            )
           composerRuntime.resize()
         }
         showError(error)

@@ -892,6 +892,98 @@ describe('web session selection', () => {
     20_000,
   )
 
+  it('uploads a large first-message attachment into the session the send creates', async () => {
+    installPublicFixture()
+    history.replaceState(null, '', '/#test-launcher-token')
+    const fresh = session('fresh', async () => idleTimeline('fresh', { route: 'local', id: 'model-a' }))
+    const reference = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'insects.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 20 * 1024 * 1024 },
+    }
+    const order: string[] = []
+    const upload = vi.fn(async (sessionId: string) => {
+      order.push(`upload:${sessionId}`)
+      return reference
+    })
+    fresh.prompt.mockImplementation(async () => {
+      order.push('prompt')
+      return undefined
+    })
+    const client = {
+      connectionState: 'connected',
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(() => () => undefined),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({
+          configured: true,
+          profile: 'local',
+          provider: { id: 'local', route: 'local', model: 'model-a' },
+        })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      approval: { decide: vi.fn(async () => undefined) },
+      workspace: {
+        list: vi.fn(async () => ({ items: [] })),
+        add: vi.fn(async (path: string) => ({
+          workspace: { path, name: 'agnes', lastUsedAt: null, sessionCount: 0, available: true },
+        })),
+      },
+      session: {
+        list: vi.fn(async () => ({ items: [] })),
+        load: vi.fn(async () => fresh),
+        new: vi.fn(async () => {
+          order.push('new')
+          return fresh
+        }),
+      },
+      serverCapabilities: { attachmentRefs: true },
+      call: vi.fn(async (method: string) =>
+        method === '_agnes/v1/attachment.upload'
+          ? { limits: { maxBytes: 2 * 1024 ** 3, chunkBytes: 1024 * 1024, maxConcurrent: 4 } }
+          : undefined,
+      ),
+      attachments: { upload, cancel: vi.fn(async () => undefined) },
+    }
+    sdk.createClient.mockReturnValue(client)
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    await vi.waitFor(() =>
+      expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+    )
+    const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
+    cwd.value = '/workspace/agnes'
+    document
+      .getElementById('new-session-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() =>
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
+    )
+    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    const file = new File([new Uint8Array(20 * 1024 * 1024)], 'insects.zip', { type: 'application/zip' })
+    Object.defineProperty(event, 'clipboardData', {
+      value: { files: [file], items: [], getData: () => '' },
+    })
+    prompt.dispatchEvent(event)
+    // Kept, not capped at 8 MiB, and not uploaded yet: there is no session to upload into.
+    await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+    expect(notices()).not.toContain('8 MiB')
+    expect(upload).not.toHaveBeenCalled()
+    const send = document.getElementById('send') as HTMLButtonElement
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['new', 'upload:fresh', 'prompt'])
+    expect(fresh.prompt).toHaveBeenCalledWith([reference], { titleLocale: 'zh-CN' })
+  })
+
   it('starts a draft in the workspace chosen from its sidebar action', async () => {
     installPublicFixture()
     const alpha = {
@@ -2191,7 +2283,8 @@ describe('image composer submissions', () => {
     sessionValue: SessionDouble,
     busy = false,
     inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
-    uploads?: { upload: ReturnType<typeof vi.fn> },
+    uploads?: { upload: ReturnType<typeof vi.fn>; cancel?: ReturnType<typeof vi.fn> },
+    others: SessionDouble[] = [],
   ): Promise<void> {
     installPublicFixture()
     const imageUrl = `blob:${sessionValue.id}-image`
@@ -2211,8 +2304,12 @@ describe('image composer submissions', () => {
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
-        list: vi.fn(async () => ({ items: [{ sessionId: sessionValue.id }] })),
-        load: vi.fn(async () => sessionValue),
+        list: vi.fn(async () => ({
+          items: [sessionValue, ...others].map((value) => ({ sessionId: value.id })),
+        })),
+        load: vi.fn(
+          async (id: string) => [sessionValue, ...others].find((value) => value.id === id) ?? sessionValue,
+        ),
       },
       ...(uploads
         ? {
@@ -2222,11 +2319,14 @@ describe('image composer submissions', () => {
                 ? { limits: { maxBytes: 2 * 1024 ** 3, chunkBytes: 1024 * 1024, maxConcurrent: 4 } }
                 : undefined,
             ),
-            attachments: { upload: uploads.upload },
+            attachments: { upload: uploads.upload, cancel: uploads.cancel ?? vi.fn(async () => undefined) },
           }
         : {}),
     })
-    binding.loadWebSession.mockResolvedValue({ session: sessionValue, offPermission: vi.fn() })
+    binding.loadWebSession.mockImplementation(async (_load: unknown, id: string) => ({
+      session: [sessionValue, ...others].find((value) => value.id === id) ?? sessionValue,
+      offPermission: vi.fn(),
+    }))
     binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
       session: selected,
       offPermission: vi.fn(),
@@ -2295,7 +2395,7 @@ describe('image composer submissions', () => {
       false,
       new File([new Uint8Array(9 * 1024 * 1024)], 'data.zip', { type: 'application/zip' }),
     )
-    await vi.waitFor(() => expect(notices()).toContain('超过 8 MiB 的附件无法从这里发送'))
+    await vi.waitFor(() => expect(notices()).toContain('此服务器不接收附件上传，超过 8 MiB 的附件无法发送'))
     expect(document.querySelector('.composer-file-preview')).toBeNull()
   })
 
@@ -2342,6 +2442,50 @@ describe('image composer submissions', () => {
     await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
     // References only: neither the frame estimate nor the inline image check refuses them.
     expect(active.prompt).toHaveBeenCalledWith([zip, png], { titleLocale: 'zh-CN' })
+  })
+
+  it('cancels an upload into the session the user leaves, telling the server', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const next = session('next', async () => idleTimeline('next', { route: 'local', id: 'model-a' }))
+    let signal: AbortSignal | undefined
+    const upload = vi.fn(
+      (_session: string, _input: unknown, o: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal = o.signal
+          o.signal?.addEventListener('abort', () => reject(o.signal?.reason))
+        }),
+    )
+    await start(active, false, ['text', 'image'], { upload }, [next])
+    await attachPng(false, new File([new Uint8Array(1024)], 'data.zip', { type: 'application/zip' }))
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledWith('old', expect.anything(), expect.anything()))
+    await vi.waitFor(() => expect(document.querySelector('[data-session="next"]')).not.toBeNull())
+    document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+    await vi.waitFor(() => expect(next.projectUIOpening).toHaveBeenCalled())
+    // The SDK sends the daemon a cancel when its signal aborts.
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true))
+    expect(document.querySelector('.composer-file-preview')).toBeNull()
+  })
+
+  it('shows the typed sentence when the daemon refuses an attachment of a send', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const refusal = Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+      data: { code: 'ATTACHMENT_MISSING', reason: 'attachment-missing', name: 'insects.zip' },
+    })
+    active.prompt.mockRejectedValueOnce(refusal)
+    const reference = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'insects.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 9 },
+    }
+    await start(active, false, ['text', 'image'], { upload: vi.fn(async () => reference) })
+    await attachPng(false, new File([new Uint8Array(9)], 'insects.zip', { type: 'application/zip' }))
+    const send = document.getElementById('send') as HTMLButtonElement
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(notices()).toContain('“insects.zip”已不在存储中，请移除后重新添加。'))
+    // The reference comes back for another try.
+    await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
   })
 
   it('sends mixed text and images through session.followUp and restores both on failure', async () => {

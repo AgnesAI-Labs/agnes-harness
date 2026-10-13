@@ -654,7 +654,8 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
-  const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
+  // Attachments belong to the session they were added in; only those waiting for a session stay.
+  const removeSessionListener = registry.subscribeSession(() => handle.current?.sessionChanged())
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
@@ -681,6 +682,18 @@ export function mountComposerRegion(
     },
     hasPendingImages() {
       return handle.current?.hasPendingImages() ?? false
+    },
+    hasDeferredUploads() {
+      return handle.current?.hasDeferredUploads() ?? false
+    },
+    uploadDeferred(target) {
+      return handle.current ? handle.current.uploadDeferred(target) : Promise.resolve([])
+    },
+    inlineDeferred() {
+      return handle.current ? handle.current.inlineDeferred() : Promise.resolve([])
+    },
+    sessionChanged() {
+      handle.current?.sessionChanged()
     },
     render(next) {
       view = next

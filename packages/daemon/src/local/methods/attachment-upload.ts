@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { type AttachmentStore, attachmentLimit, type StoredObject } from '@agnes/host'
 import {
   ATTACHMENT_UPLOAD_CHUNK_BYTES,
@@ -35,6 +37,7 @@ export function createAttachmentUploadService(o: {
   /** The user attachment port's reservation: room held against the quotas until the upload settles. */
   reserve(input: { add: number; sessionBytes: number }): Promise<(stored?: number) => void>
   clock?: () => number
+  sweepEveryMs?: number
 }): AttachmentUploadService {
   const maxBytes = () => attachmentLimit(o.limits, 'attachments.max_upload_bytes')
   return {
@@ -45,6 +48,7 @@ export function createAttachmentUploadService(o: {
       // The session's bytes already referenced are not known here; admission checks again with them.
       reserve: (size) => o.reserve({ add: size, sessionBytes: 0 }),
       ...(o.clock ? { clock: o.clock } : {}),
+      ...(o.sweepEveryMs !== undefined ? { sweepEveryMs: o.sweepEveryMs } : {}),
     }),
     maxBytes,
   }
@@ -73,7 +77,7 @@ type Params =
 
 const refusal = (code: string) => rpcError('SEMANTIC_REJECTED', { code, reason: code })
 
-/** Reads a committed image whole and checks its header; the object stays in the store either way. */
+/** Reads a committed image whole and checks its header. */
 async function storedImage(
   store: AttachmentStore,
   object: StoredObject,
@@ -88,6 +92,43 @@ async function storedImage(
   }
 }
 
+const THUMBNAIL_EDGE = USER_ATTACHMENT_THUMBNAIL.maxEdge
+
+/** A thumbnail must be a JPEG of at most 320 pixels a side; checked before anything is stored. */
+function thumbnailImage(bytes: Uint8Array, mimeType: string) {
+  if (mimeType !== 'image/jpeg' || bytes.byteLength === 0) throw new UploadRefused('UPLOAD_NOT_IMAGE')
+  let image: ReturnType<typeof decodeSafeImageBytes>
+  try {
+    image = decodeSafeImageBytes(
+      { bytes, mimeType: 'image/jpeg' },
+      {
+        maxBytesPerImage: USER_ATTACHMENT_THUMBNAIL.maxBytes,
+        maxAggregateBytes: USER_ATTACHMENT_THUMBNAIL.maxBytes,
+        maxPixelsPerImage: THUMBNAIL_EDGE * THUMBNAIL_EDGE,
+        maxAggregatePixels: THUMBNAIL_EDGE * THUMBNAIL_EDGE,
+      },
+    )
+  } catch {
+    throw new UploadRefused('UPLOAD_NOT_IMAGE')
+  }
+  if (image.mime !== 'image/jpeg') throw new UploadRefused('UPLOAD_NOT_IMAGE')
+  if (image.width > THUMBNAIL_EDGE || image.height > THUMBNAIL_EDGE)
+    throw new UploadRefused('UPLOAD_SIZE_LIMIT')
+  return image
+}
+
+/**
+ * An object this upload stored and then refused (not a valid image) is removed again, so it takes no
+ * room outside the quota. One that was stored before, or that something marked meanwhile, is kept.
+ */
+async function discardRefused(store: AttachmentStore, object: StoredObject, existed: boolean): Promise<void> {
+  if (existed) return
+  if (await store.userAttachment(object.sha256).catch(() => 'unknown')) return
+  await rm(join(store.root, 'sha256', object.sha256.slice(0, 2), object.sha256), { force: true }).catch(
+    () => undefined,
+  )
+}
+
 /**
  * The finished upload as the client sends it on: a thumbnail's digest, size and dimensions, an image
  * reference with the dimensions read from its header, or a file reference. Every finished upload is
@@ -96,27 +137,32 @@ async function storedImage(
 async function finished(
   service: AttachmentUploadService,
   sessionId: string,
-  done: { object: StoredObject; name: string; mimeType: string; purpose: UploadPurpose },
+  done: {
+    object: StoredObject
+    name: string
+    mimeType: string
+    purpose: UploadPurpose
+    existed: boolean
+    thumbnail?: { width: number; height: number }
+  },
 ): Promise<ContentBlock | { sha256: string; bytes: number; width: number; height: number }> {
   const { object, name, mimeType, purpose } = done
   if (purpose === 'thumbnail') {
-    const edge = USER_ATTACHMENT_THUMBNAIL.maxEdge
-    if (mimeType !== 'image/jpeg' || object.bytes === 0) throw new UploadRefused('UPLOAD_NOT_IMAGE')
-    const image = await storedImage(service.store, object, 'image/jpeg', {
-      maxBytesPerImage: USER_ATTACHMENT_THUMBNAIL.maxBytes,
-      maxAggregateBytes: USER_ATTACHMENT_THUMBNAIL.maxBytes,
-      maxPixelsPerImage: edge * edge,
-      maxAggregatePixels: edge * edge,
-    })
-    if (image.mime !== 'image/jpeg') throw new UploadRefused('UPLOAD_NOT_IMAGE')
-    if (image.width > edge || image.height > edge) throw new UploadRefused('UPLOAD_SIZE_LIMIT')
+    // Checked before it was stored (see `finish`).
+    const image = done.thumbnail as { width: number; height: number }
     await service.store.markUserAttachment(object, { mimeType: 'image/jpeg', receiptFor: sessionId })
     return { sha256: object.sha256, bytes: object.bytes, width: image.width, height: image.height }
   }
   const attachment = { sha256: object.sha256, bytes: object.bytes }
   // A PNG or JPEG is an image reference when it can be one; a larger one is sent on as a file.
   if (NATIVE_IMAGE.has(mimeType) && object.bytes <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage) {
-    const image = await storedImage(service.store, object, mimeType, USER_MESSAGE_IMAGE_LIMITS)
+    let image: Awaited<ReturnType<typeof storedImage>>
+    try {
+      image = await storedImage(service.store, object, mimeType, USER_MESSAGE_IMAGE_LIMITS)
+    } catch (error) {
+      await discardRefused(service.store, object, done.existed)
+      throw error
+    }
     await service.store.markUserAttachment(object, { mimeType: image.mime, receiptFor: sessionId })
     return {
       type: 'image',
@@ -203,16 +249,22 @@ export function registerAttachmentUpload(
         case 'cancel':
           return await service.uploads.cancel({ ...base, uploadId: p.uploadId })
         case 'finish': {
-          const done = await service.uploads.finish({
-            ...base,
-            uploadId: p.uploadId,
-            ...(p.sha256 ? { sha256: p.sha256 } : {}),
-          })
+          let thumbnail: { width: number; height: number } | undefined
+          const done = await service.uploads.finish(
+            { ...base, uploadId: p.uploadId, ...(p.sha256 ? { sha256: p.sha256 } : {}) },
+            (bytes, mimeType) => {
+              const image = thumbnailImage(bytes, mimeType)
+              thumbnail = { width: image.width, height: image.height }
+            },
+          )
           // Counted only when this upload wrote the object's first marker; bytes stored before are counted.
           const known = await service.store.userAttachment(done.object.sha256).catch(() => undefined)
           let attachment: Awaited<ReturnType<typeof finished>>
           try {
-            attachment = await finished(service, p.sessionId, done)
+            attachment = await finished(service, p.sessionId, {
+              ...done,
+              ...(thumbnail ? { thumbnail } : {}),
+            })
           } catch (error) {
             done.settle()
             throw error

@@ -2165,6 +2165,7 @@ export async function startProductionSupervisor(
     })
   } catch (error) {
     closeReader()
+    await attachmentUpload?.uploads.dispose().catch(() => undefined)
     try {
       await storage.close()
     } catch (cleanupError) {
@@ -2182,6 +2183,8 @@ export async function startProductionSupervisor(
       supervisorError = error
     }
     closeReader()
+    // Open uploads are not resumed across a restart; their staging files are closed now.
+    await attachmentUpload?.uploads.dispose().catch(() => undefined)
     try {
       await storage.close()
     } catch (storageError) {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readdirSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   type AttachmentStore,
@@ -11,6 +11,14 @@ import type { ContentBlock } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { attachmentRefusal } from '../src/local/methods/acp.js'
 import { createAttachmentUploadService } from '../src/local/methods/attachment-upload.js'
+import {
+  createUploads,
+  MAX_UPLOADS_PER_PRINCIPAL,
+  MAX_UPLOADS_PER_PROCESS,
+  MAX_UPLOADS_PER_SESSION,
+  UPLOAD_EXPIRE_MS,
+  UPLOAD_LIFETIME_MS,
+} from '../src/local/uploads.js'
 import { openTestHost } from './host.js'
 
 // Chunked uploads over the client connection, against an embedded endpoint and the real store: the
@@ -83,7 +91,13 @@ afterEach(async () => {
 })
 
 let nextId = 10
-async function fixture(o: { limits?: Record<string, number>; disk?: number } = {}) {
+async function fixture(
+  o: {
+    limits?: Record<string, number>
+    disk?: number
+    wrapStore?: (store: AttachmentStore) => AttachmentStore
+  } = {},
+) {
   const h = await openTestHost({
     storeAttachmentsByReference: true,
     script: [
@@ -105,7 +119,14 @@ async function fixture(o: { limits?: Record<string, number>; disk?: number } = {
     storeByReference: true,
     diskFree: async () => o.disk ?? 1024 ** 4,
   })
-  const service = createAttachmentUploadService({ store, limits, reserve: port.reserve, clock })
+  const service = createAttachmentUploadService({
+    store: o.wrapStore ? o.wrapStore(store) : store,
+    limits,
+    reserve: port.reserve,
+    clock,
+    sweepEveryMs: 0,
+  })
+  cleanup.push(() => service.uploads.dispose())
   const ep = h.endpoint({ pollMs: 5, attachmentUpload: service })
   cleanup.push(() => ep.close())
   await ep.handle(init)
@@ -309,9 +330,10 @@ describe('_agnes/v1/attachment.upload', () => {
       sha256: sha(part),
     })
     expect(f.stagingFiles()).toHaveLength(1)
-    f.advance(29 * 60_000)
+    // Asking where it is does not keep an upload alive; only a chunk does.
+    f.advance(20 * 60_000)
     expect((await f.upload({ operation: 'status', uploadId })).result).toEqual({ offset: 100 })
-    f.advance(30 * 60_000 + 1)
+    f.advance(10 * 60_000 + 1)
     expect(codeOf(await f.upload({ operation: 'status', uploadId }))).toBe('UPLOAD_EXPIRED')
     expect(f.stagingFiles()).toEqual([])
   })
@@ -329,6 +351,9 @@ describe('_agnes/v1/attachment.upload', () => {
     expect(
       codeOf(await f.upload({ operation: 'start', uploadId: randomUUID(), ...thumbnail, size: 262_145 })),
     ).toBe('UPLOAD_SIZE_LIMIT')
+    // A refused thumbnail is checked before it is stored: nothing of it is left.
+    expect(await f.store.stat(sha(jpeg(321, 100)))).toBeUndefined()
+    expect(await f.store.stat(sha(jpeg(10, 10)))).toBeUndefined()
     const small = jpeg(320, 180)
     const done = await f.uploadAll(small, thumbnail)
     expect(done.result?.attachment).toEqual({
@@ -355,8 +380,10 @@ describe('_agnes/v1/attachment.upload', () => {
     expect(codeOf(await f.uploadAll(broken, { name: 'bad.png', mimeType: 'image/png' }))).toBe(
       'UPLOAD_NOT_IMAGE',
     )
-    // Refused, so no session may reference it: it has no marker.
+    // Refused, so no session may reference it: it has no marker, and the object this upload stored is
+    // removed again rather than left outside the quota.
     expect(await f.store.userAttachment(sha(broken))).toBeUndefined()
+    expect(await f.store.stat(sha(broken))).toBeUndefined()
   })
 
   it('serves the session owner only, and refuses a malformed upload id', async () => {
@@ -437,7 +464,7 @@ describe('_agnes/v1/attachment.upload', () => {
     expect(rows.map((row) => row.type)).toEqual(expect.arrayContaining(['inbox', 'user/message']))
     for (const row of rows) expect(Buffer.byteLength(JSON.stringify(row))).toBeLessThanOrEqual(64 * 1024)
     const message = rows.find((row) => row.type === 'user/message')
-    expect((message?.data as { content: ContentBlock[] }).content).toContainEqual(block)
+    expect((message?.data as { content?: ContentBlock[] } | undefined)?.content).toContainEqual(block)
 
     const other = await f.newSession()
     expect(other).not.toBe(f.sessionId)
@@ -474,7 +501,9 @@ describe('_agnes/v1/attachment.upload', () => {
       store: createAttachmentStore({ dataDir: f.h.dataDir }) as AttachmentStore,
       limits: {},
       reserve: async () => () => undefined,
+      sweepEveryMs: 0,
     })
+    cleanup.push(() => restarted.uploads.dispose())
     const ep = f.h.endpoint({ pollMs: 5, attachmentUpload: restarted })
     cleanup.push(() => ep.close())
     await ep.handle(init)
@@ -555,5 +584,258 @@ describe('attachment refusals reach the client with their own code', () => {
     expect(attachmentRefusal({ code: 'E_ENVELOPE', message: 'budget' })).toBeUndefined()
     expect(attachmentRefusal({ code: 'E_ENVELOPE', reason: 'not-a-code' })).toBeUndefined()
     expect(attachmentRefusal({ code: 'E_OTHER', reason: 'upload-quota' })).toBeUndefined()
+  })
+})
+
+describe('the upload table stays bounded', () => {
+  const start = (uploads: ReturnType<typeof createUploads>, sessionId: string, principalId = 'p') =>
+    uploads
+      .start({
+        sessionId,
+        principalId,
+        uploadId: randomUUID(),
+        name: 'a',
+        mimeType: 'a/b',
+        size: 10,
+        purpose: 'attachment',
+      })
+      .then(
+        () => 'ok',
+        (error: unknown) => (error as { code?: string }).code,
+      )
+  const table = async (
+    o: { clock?: () => number; sweepEveryMs?: number; slowStage?: Promise<void> } = {},
+  ) => {
+    const h = await openTestHost()
+    cleanup.push(() => h.close())
+    const store = createAttachmentStore({ dataDir: h.dataDir })
+    const staged = o.slowStage
+    const uploads = createUploads({
+      store: staged
+        ? {
+            ...store,
+            root: store.root,
+            stage: async (meta) => {
+              await staged
+              return store.stage(meta)
+            },
+          }
+        : store,
+      maxBytes: () => 1024,
+      sweepEveryMs: o.sweepEveryMs ?? 0,
+      ...(o.clock ? { clock: o.clock } : {}),
+    })
+    cleanup.push(() => uploads.dispose())
+    return { uploads, store }
+  }
+
+  it('counts starts racing through their awaits against the per-session cap', async () => {
+    let open!: () => void
+    const { uploads } = await table({ slowStage: new Promise<void>((resolve) => (open = resolve)) })
+    const results = Array.from({ length: 6 }, () => start(uploads, 's1'))
+    open()
+    expect((await Promise.all(results)).sort()).toEqual([
+      'UPLOAD_BUSY',
+      'UPLOAD_BUSY',
+      'ok',
+      'ok',
+      'ok',
+      'ok',
+    ])
+    expect(uploads.size).toBe(4)
+  })
+
+  it('caps open uploads per principal and per process', async () => {
+    const { uploads } = await table()
+    for (let s = 0; s < MAX_UPLOADS_PER_PRINCIPAL / MAX_UPLOADS_PER_SESSION; s++)
+      for (let i = 0; i < MAX_UPLOADS_PER_SESSION; i++)
+        expect(await start(uploads, `p1-${s}`, 'p1')).toBe('ok')
+    // A fresh session of the same principal: the principal's cap is reached.
+    expect(await start(uploads, 'p1-more', 'p1')).toBe('UPLOAD_BUSY')
+    for (let p = 2; uploads.size < MAX_UPLOADS_PER_PROCESS; p++)
+      for (let i = 0; i < MAX_UPLOADS_PER_SESSION && uploads.size < MAX_UPLOADS_PER_PROCESS; i++)
+        expect(await start(uploads, `p${p}-${Math.floor(i / 4)}`, `p${p}-${i}`)).toBe('ok')
+    expect(await start(uploads, 'anyone', 'someone-new')).toBe('UPLOAD_BUSY')
+  })
+
+  it('expires an idle upload on its timer, with no further request', async () => {
+    let now = 0
+    const { uploads, store } = await table({ clock: () => now, sweepEveryMs: 10 })
+    expect(await start(uploads, 's1')).toBe('ok')
+    expect(readdirSync(join(store.root, 'staging'))).toHaveLength(1)
+    now += UPLOAD_EXPIRE_MS + 1
+    await expect.poll(() => uploads.size, { timeout: 2_000 }).toBe(0)
+    await expect.poll(() => readdirSync(join(store.root, 'staging')).length, { timeout: 2_000 }).toBe(0)
+  })
+
+  it('drops an upload at the end of its lifetime however busy it is', async () => {
+    let now = 0
+    const { uploads } = await table({ clock: () => now })
+    const uploadId = randomUUID()
+    await uploads.start({
+      sessionId: 's',
+      principalId: 'p',
+      uploadId,
+      name: 'a',
+      mimeType: 'a/b',
+      size: 1000,
+      purpose: 'attachment',
+    })
+    let offset = 0
+    const send = () => {
+      const part = Buffer.alloc(1, offset)
+      return uploads.chunk({
+        sessionId: 's',
+        principalId: 'p',
+        uploadId,
+        offset,
+        data: part.toString('base64'),
+        sha256: sha(part),
+      })
+    }
+    while (now < UPLOAD_LIFETIME_MS - 20 * 60_000) {
+      offset = (await send()).offset
+      now += 20 * 60_000
+    }
+    expect((await send()).offset).toBe(offset + 1)
+    offset += 1
+    now += 20 * 60_000 + 1
+    await expect(send()).rejects.toMatchObject({ code: 'UPLOAD_EXPIRED' })
+  })
+})
+
+describe('more of the upload method', () => {
+  it('holds four chunks at once in the process and answers the fifth as busy', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const f = await fixture({
+      wrapStore: (store) => ({
+        ...store,
+        root: store.root,
+        stage: async (meta) => {
+          const staging = await store.stage(meta)
+          return {
+            get bytes() {
+              return staging.bytes
+            },
+            write: async (chunk, signal) => {
+              await gate
+              return staging.write(chunk, signal)
+            },
+            commit: (expected) => staging.commit(expected),
+            abort: () => staging.abort(),
+          }
+        },
+      }),
+    })
+    const other = await f.newSession()
+    const ids: Array<[string, string]> = []
+    for (const session of [f.sessionId, f.sessionId, f.sessionId, other, other]) {
+      const uploadId = randomUUID()
+      await f.upload({ operation: 'start', uploadId, name: 'a', mimeType: 'a/b', size: 4 }, session)
+      ids.push([session, uploadId])
+    }
+    const part = Buffer.from('abcd')
+    const chunk = ([session, uploadId]: [string, string]) =>
+      f.upload(
+        { operation: 'chunk', uploadId, offset: 0, data: part.toString('base64'), sha256: sha(part) },
+        session,
+      )
+    const held = ids.slice(0, 4).map(chunk)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(codeOf(await chunk(ids[4] as [string, string]))).toBe('UPLOAD_BUSY')
+    release()
+    for (const r of await Promise.all(held)) expect(r.result).toEqual({ offset: 4 })
+    expect((await chunk(ids[4] as [string, string])).result).toEqual({ offset: 4 })
+  })
+
+  it('gives the quota room back when an upload is cancelled or expires', async () => {
+    const f = await fixture({ limits: { 'attachments.global_quota_bytes': 1000 } })
+    const startBig = () =>
+      f.upload({ operation: 'start', uploadId: randomUUID(), name: 'a', mimeType: 'a/b', size: 800 })
+    const held = randomUUID()
+    await f.upload({ operation: 'start', uploadId: held, name: 'a', mimeType: 'a/b', size: 800 })
+    expect(codeOf(await startBig())).toBe('UPLOAD_QUOTA')
+    await f.upload({ operation: 'cancel', uploadId: held })
+    expect((await startBig()).result).toEqual({ offset: 0 })
+    expect(codeOf(await startBig())).toBe('UPLOAD_QUOTA')
+    f.advance(UPLOAD_EXPIRE_MS + 1)
+    expect((await startBig()).result).toEqual({ offset: 0 })
+  })
+
+  it('refuses images a request could not carry at send time, and still takes a 90 MB zip', async () => {
+    const f = await fixture()
+    const huge = {
+      type: 'image',
+      mimeType: 'image/png',
+      name: 'poster.png',
+      attachment: { sha256: 'a'.repeat(64), bytes: 17 * MIB },
+      width: 1000,
+      height: 1000,
+    }
+    const steered = await f.call('_agnes/v1/session.steer', {
+      sessionId: f.sessionId,
+      content: [{ type: 'text', text: 'see' }, huge],
+      commandId: 'huge',
+    })
+    expect(steered.error?.data).toMatchObject({
+      code: 'ATTACHMENT_IMAGE_TOO_LARGE',
+      reason: 'attachment-image-too-large',
+    })
+    const zip = Buffer.alloc(90 * 1000 * 1000, 3)
+    const done = await f.uploadAll(zip, { name: 'insects.zip', mimeType: 'application/zip' })
+    const accepted = await f.call('_agnes/v1/session.steer', {
+      sessionId: f.sessionId,
+      content: [{ type: 'text', text: 'unpack' }, (done.result as { attachment: ContentBlock }).attachment],
+      commandId: 'zip',
+    })
+    expect(accepted.error).toBeUndefined()
+  }, 120_000)
+
+  it('names the attachment that is gone, on followUp as on steer', async () => {
+    const f = await fixture()
+    const bytes = Buffer.from('soon gone')
+    const block = (
+      (await f.uploadAll(bytes, { name: 'notes.txt', mimeType: 'text/plain' })).result as {
+        attachment: ContentBlock
+      }
+    ).attachment
+    rmSync(join(f.store.root, 'sha256', sha(bytes).slice(0, 2), sha(bytes)))
+    for (const method of ['_agnes/v1/session.followUp', '_agnes/v1/session.steer']) {
+      const refused = await f.call(method, {
+        sessionId: f.sessionId,
+        content: [{ type: 'text', text: 'see' }, block],
+        commandId: `gone-${method}`,
+      })
+      expect(refused.error?.data, method).toMatchObject({
+        code: 'ATTACHMENT_MISSING',
+        reason: 'attachment-missing',
+        name: 'notes.txt',
+      })
+    }
+    // A worker forwards only the message; the name is read from it.
+    expect(
+      attachmentRefusal({
+        code: 'E_ENVELOPE',
+        reason: 'attachment-missing',
+        message: 'The attachment “notes.txt” is no longer stored. Upload it again.',
+      }),
+    ).toMatchObject({ data: { code: 'ATTACHMENT_MISSING', name: 'notes.txt' } })
+  })
+
+  it('types a refused followUp', async () => {
+    const f = await fixture()
+    const forged = {
+      type: 'file',
+      mimeType: 'a/b',
+      name: 'f.bin',
+      attachment: { sha256: 'f'.repeat(64), bytes: 4 },
+    }
+    const refused = await f.call('_agnes/v1/session.followUp', {
+      sessionId: f.sessionId,
+      content: [{ type: 'text', text: 'see' }, forged],
+      commandId: 'forged',
+    })
+    expect(refused.error?.data).toMatchObject({ code: 'ATTACHMENT_NOT_AUTHORIZED' })
   })
 })

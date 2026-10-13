@@ -106,7 +106,12 @@ import type {
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
-import { admitAttachments, attachmentDeadlineMs, type UserAttachmentPort } from './attachment-admission.js'
+import {
+  admitAttachments,
+  attachmentDeadlineMs,
+  checkUserImageBudget,
+  type UserAttachmentPort,
+} from './attachment-admission.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { deferredEffectId } from './deferred.js'
@@ -1004,6 +1009,8 @@ export class SessionImpl {
     let content: ContentBlock[]
     try {
       content = structuredClone(msg.content)
+      // Images a model request could not carry are refused first, with their own code.
+      checkUserImageBudget(content)
       validateUserMessageImages(content)
       // Refusals that cost nothing to decide come before any bytes are stored.
       this.checkQueuedInput(target, msg, content)

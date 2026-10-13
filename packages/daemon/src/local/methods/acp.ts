@@ -391,12 +391,30 @@ const ATTACHMENT_REFUSALS: ReadonlySet<string> = new Set(ATTACHMENT_REFUSAL_CODE
  * `reason`, the only part of the detail that crosses the boundary.
  */
 export function attachmentRefusal(error: unknown): RpcError | undefined {
-  const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  const e = error as {
+    code?: unknown
+    reason?: unknown
+    message?: unknown
+    detail?: { reason?: unknown; name?: unknown }
+  } | null
   if (e?.code !== 'E_ENVELOPE') return undefined
   const reason = e.reason ?? e.detail?.reason
   if (typeof reason !== 'string') return undefined
   const code = reason.toUpperCase().replaceAll('-', '_')
-  return ATTACHMENT_REFUSALS.has(code) ? rpcError('SEMANTIC_REJECTED', { code, reason }) : undefined
+  if (!ATTACHMENT_REFUSALS.has(code)) return undefined
+  // Which attachment is gone: core names it in the detail, and in its message, which is all of it a
+  // worker forwards.
+  const named =
+    typeof e.detail?.name === 'string'
+      ? e.detail.name
+      : typeof e.message === 'string'
+        ? /“([^”]{1,256})”/u.exec(e.message)?.[1]
+        : undefined
+  return rpcError('SEMANTIC_REJECTED', {
+    code,
+    reason,
+    ...(code === 'ATTACHMENT_MISSING' && named ? { name: named } : {}),
+  })
 }
 
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
