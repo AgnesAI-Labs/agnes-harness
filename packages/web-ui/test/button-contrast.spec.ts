@@ -83,7 +83,7 @@ for (const theme of ['light', 'dark'])
         body { display: block }
         #fixture > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 12px }
         #fixture button { height: 48px }
-      </style></head><body data-agnes-region="app"><main id="fixture"></main></body></html>`)
+      </style></head><body data-agnes-region="app"><main class="runtime-settings" id="fixture"></main></body></html>`)
     await page.addScriptTag({ content: fixture })
     await page.waitForSelector('#button-28')
     const cdp = await page.context().newCDPSession(page)
@@ -97,8 +97,8 @@ for (const theme of ['light', 'dark'])
     expect(nodeIds).toHaveLength(36)
     const agentSize = () =>
       page.locator('#agent-chip').evaluate((button) => {
-        const { width, height } = button.getBoundingClientRect()
-        return { width, height }
+        // Press feedback now scales the painted button; layout must still stay fixed.
+        return { width: (button as HTMLElement).offsetWidth, height: (button as HTMLElement).offsetHeight }
       })
     const restingAgentSize = await agentSize()
     for (const state of [[], ['hover'], ['hover', 'active'], ['focus', 'focus-visible']]) {

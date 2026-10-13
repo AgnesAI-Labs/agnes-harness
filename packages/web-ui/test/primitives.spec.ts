@@ -360,12 +360,17 @@ for (const theme of ['light', 'dark'])
         },
         bundle: true,
         write: false,
+        outfile: 'sidebar-fixture.js',
         format: 'iife',
       })
       await page.setViewportSize({ width, height: 900 })
       await page.setContent(`<html class="${theme === 'dark' ? 'dark' : ''}"><head><style>${css}</style></head>
         <body data-agnes-region="app" class="sidebar-open"><aside class="sidebar"><nav id="sessions"></nav></aside><main></main></body></html>`)
-      await page.addScriptTag({ content: result.outputFiles[0]!.text })
+      const script = result.outputFiles.find((file) => file.path.endsWith('.js'))
+      const styles = result.outputFiles.find((file) => file.path.endsWith('.css'))
+      if (!script || !styles) throw new Error('Sidebar fixture must bundle its script and vendor styles')
+      await page.addStyleTag({ content: inCssLayer(styles.text, 'vendor') })
+      await page.addScriptTag({ content: script.text })
       const heading = page.locator('.workspace-heading'),
         session = page.locator('.session')
       await expect(session).toHaveAttribute('aria-current', 'page')
