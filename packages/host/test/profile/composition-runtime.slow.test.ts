@@ -409,6 +409,14 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
       bundles: ['@agnes/ai#reader'],
     })
     expect(observer.currentTools().resolve('write')).toBeUndefined()
+    const status = host.pluginGenerationStatus!()
+    expect(status.generations.flatMap((generation) => generation.sessions ?? [])).toEqual(
+      expect.arrayContaining([reader, writer, observer].map((session) => ({ key: session.key, open: true }))),
+    )
+    for (const generation of status.generations)
+      expect(generation.openSessions).toBe(
+        (generation.sessions ?? []).filter((session) => session.open).length,
+      )
     await expect(host.createSession({ key: observer.key, cwd: root, bundles: [] })).rejects.toThrow(
       'immutable',
     )

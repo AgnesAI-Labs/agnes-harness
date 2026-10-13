@@ -5,6 +5,8 @@ import {
   coldHeadId,
   describeColdSession,
   describeSessionRuntime,
+  generationSessions,
+  mergeGenerationStatus,
   type SessionRuntimeInput,
 } from '../../src/runtime/generation/runtime-descriptor.js'
 
@@ -275,5 +277,48 @@ describe('cold head of a session composition', () => {
   it('claims no head when the composition is unknown or has none recorded', () => {
     expect(head({})).toBeUndefined()
     expect(head({ compositionHash: 'sha256-c' })).toBeUndefined()
+  })
+})
+
+it('merges composition open facts while counting sessions beyond the bounded display', () => {
+  const id = '11111111-1111-4111-8111-111111111111'
+  const pins = Array.from({ length: 270 }, (_, index) => ({
+    sessionKey: `session-${index}`,
+    generationId: id,
+  }))
+  const base = {
+    id,
+    state: 'historical' as const,
+    boundSessions: pins.length,
+    openSessions: 0,
+    live: false,
+    packages: [],
+  }
+  const first = {
+    ...base,
+    openSessions: 1,
+    live: true,
+    sessions: generationSessions(pins, id, (key) => key === 'session-0'),
+  }
+  const second = {
+    ...base,
+    openSessions: 2,
+    sessions: generationSessions(pins, id, (key) => key === 'session-1' || key === 'session-269'),
+  }
+  const opened = [0, 1, 269].map((index) => ({ key: `session-${index}`, pluginGenerationId: id }))
+  const merged = mergeGenerationStatus(first, second, opened)
+  expect(merged).toMatchObject({ boundSessions: 270, openSessions: 3, live: true, state: 'draining' })
+  expect(merged.sessions).toHaveLength(256)
+  expect(merged.sessions).toEqual(
+    expect.arrayContaining([
+      { key: 'session-0', open: true },
+      { key: 'session-1', open: true },
+    ]),
+  )
+  const closed = { ...base, sessions: generationSessions(pins, id, () => false) }
+  expect(mergeGenerationStatus(closed, closed, [])).toMatchObject({
+    boundSessions: 270,
+    openSessions: 0,
+    state: 'historical',
   })
 })

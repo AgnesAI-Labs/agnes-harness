@@ -301,3 +301,33 @@ export const generationSessions = (
     .filter((pin) => pin.generationId === generationId)
     .slice(0, 256)
     .map((pin) => ({ key: pin.sessionKey, open: open(pin.sessionKey) }))
+
+type Generation = ReturnType<NonNullable<Host['pluginGenerationStatus']>>['generations'][number]
+
+/** Each composition reports its open subset of the same durable generation pins. */
+export function mergeGenerationStatus(
+  previous: Generation,
+  item: Generation,
+  opened: Iterable<{ key: string; pluginGenerationId?: string }>,
+): Generation {
+  const sessions = new Map<string, { key: string; open: boolean }>()
+  for (const session of [...(previous.sessions ?? []), ...(item.sessions ?? [])])
+    sessions.set(session.key, { ...session, open: session.open || sessions.get(session.key)?.open === true })
+  // The displayed list is capped at 256; count actual live sessions, including those outside it.
+  const openSessions = [...opened].filter((session) => session.pluginGenerationId === item.id).length
+  return {
+    ...item,
+    state:
+      previous.state === 'active' || item.state === 'active'
+        ? 'active'
+        : previous.state === 'failed' || item.state === 'failed'
+          ? 'failed'
+          : openSessions > 0
+            ? 'draining'
+            : 'historical',
+    boundSessions: Math.max(previous.boundSessions, item.boundSessions),
+    openSessions,
+    live: previous.live || item.live,
+    ...(previous.sessions || item.sessions ? { sessions: [...sessions.values()] } : {}),
+  }
+}

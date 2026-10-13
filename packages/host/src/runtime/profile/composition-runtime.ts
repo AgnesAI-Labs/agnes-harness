@@ -25,6 +25,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
+import { mergeGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -636,6 +637,7 @@ export async function createCompositionHost(
               })),
             }
       })
+      const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
       const all = new Map<string, PluginGenerationStatus['generations'][number]>()
       for (const status of statuses)
         for (const item of status.generations) {
@@ -644,20 +646,7 @@ export async function createCompositionHost(
             all.set(item.id, item)
             continue
           }
-          const openSessions = Math.max(previous.openSessions, item.openSessions)
-          all.set(item.id, {
-            ...item,
-            state:
-              previous.state === 'active' || item.state === 'active'
-                ? 'active'
-                : previous.state === 'failed' || item.state === 'failed'
-                  ? 'failed'
-                  : openSessions > 0
-                    ? 'draining'
-                    : 'historical',
-            openSessions,
-            live: previous.live || item.live,
-          })
+          all.set(item.id, mergeGenerationStatus(previous, item, opened.values()))
         }
       const blocked = [
         ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((i) => [i.file, i])).values(),
