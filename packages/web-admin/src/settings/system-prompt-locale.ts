@@ -5,6 +5,7 @@ export const promptCatalog: LocaleCatalog = {
     custom: 'Customize the persona',
     prefix: 'Opening instructions',
     suffix: 'Closing instructions',
+    suffixHelp: 'Added at the end of the prompt. The opening instruction is edited under Plugins → Context.',
     style: 'Reply style',
     advanced: 'Advanced: replace the default prompt',
     warning:
@@ -14,7 +15,7 @@ export const promptCatalog: LocaleCatalog = {
     override: 'Full replacement',
     confirm: 'I understand and want to replace the default prompt.',
     save: 'Save for new sessions',
-    reset: 'Reset to bundle defaults',
+    reset: 'Reset to the bundle defaults',
     preview: 'Current config preview',
     session: 'This session’s actual version',
     lastRequest:
@@ -33,6 +34,7 @@ export const promptCatalog: LocaleCatalog = {
     custom: '自定义角色',
     prefix: '开场指令',
     suffix: '结尾指令',
+    suffixHelp: '附加在提示词末尾；开场指令在「插件 → 上下文」里编辑。',
     style: '回复风格',
     advanced: '高级：替换默认提示词',
     warning: '完整替换会覆盖插件提供的指令，可能降低可靠性。安全边界仍然保留。',
@@ -40,7 +42,7 @@ export const promptCatalog: LocaleCatalog = {
     override: '完整替换内容',
     confirm: '我已理解，并确认替换默认提示词。',
     save: '保存供新会话使用',
-    reset: '恢复 Bundle 默认值',
+    reset: '恢复组合包默认值',
     preview: '当前配置预览',
     session: '此会话实际版本',
     lastRequest: '来自最近保留的逻辑请求。最终发送正文与动态消息上下文请在轨迹中查看。',

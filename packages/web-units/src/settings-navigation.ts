@@ -3,14 +3,9 @@ import type { SettingsNavigationEntry } from './settings.js'
 
 const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
-  engines: ['models', 'engines'],
   'system-prompt': ['models', 'system-prompt'],
-  memory: ['models', 'memory'],
   context: ['models', 'context'],
   providers: ['diagnostics', 'providers'],
-  examples: ['discover', 'examples'],
-  // Skill feedback is the third tab of the Skills page, not a page of its own.
-  feedback: ['skills', 'feedback'],
   // Credentials are the lower half of the permissions page.
   credentials: ['security', 'credentials'],
 }
@@ -29,9 +24,8 @@ export type SettingsMoveTarget =
   | Readonly<{ kind: 'archived-sessions' }>
 
 /**
- * Pages that moved out of settings, by their old `?settings=<id>` value. The dialog no longer lists
- * them; an old link opens the new place instead. An ID that is still registered as a section keeps
- * opening inside the dialog when a page asks for it by name, until its new home replaces it.
+ * Pages that moved out of settings, by their old `?settings=<id>` value. The dialog no longer has
+ * them: an old link, or a request for one by name, opens the new place instead.
  */
 export const SETTINGS_MOVED: Readonly<Record<string, SettingsMoveTarget>> = {
   plugins: { kind: 'page', page: 'plugins' },
@@ -40,8 +34,11 @@ export const SETTINGS_MOVED: Readonly<Record<string, SettingsMoveTarget>> = {
   skills: { kind: 'page', page: 'plugins', tab: 'skills' },
   feedback: { kind: 'page', page: 'plugins', tab: 'review' },
   mcp: { kind: 'page', page: 'plugins', tab: 'mcp' },
+  // Built-in capabilities each have a page under the plugins tab.
   'computer-use': { kind: 'page', page: 'plugins', tab: 'plugins.computer-use' },
   search: { kind: 'page', page: 'plugins', tab: 'plugins.search' },
+  memory: { kind: 'page', page: 'plugins', tab: 'plugins.memory' },
+  engines: { kind: 'page', page: 'plugins', tab: 'plugins.subagents' },
   schedules: { kind: 'page', page: 'automation', tab: 'schedules' },
   triggers: { kind: 'page', page: 'automation', tab: 'triggers' },
   history: { kind: 'session-search' },

@@ -4,7 +4,7 @@ import type {
   PluginGenerationStatus,
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
-import { settingsSections } from '@agnes/web-client'
+import { type SettingsSection, settingsSections } from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -22,19 +22,13 @@ import {
   matchesSettings,
   revealSettingsAnchor,
   settingsGroup,
-  settingsMoved,
-  settingsNavigationGroups,
   settingsRoute,
 } from '@agnes/web-units'
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
+import { PLUGIN_ADMIN_PAGES } from './registry.js'
 import type { SchedulesApi } from './schedules.js'
-import './registry.js'
-export const SETTINGS_PAGES = settingsSections
-  .entries()
-  .filter((entry) => !entry.nativePane)
-  .map((entry) => entry.id)
 export type SettingsPage = string
 const groupIcons: Readonly<Record<string, IconName>> = {
   plugins: 'plug',
@@ -46,20 +40,30 @@ const groupIcons: Readonly<Record<string, IconName>> = {
   diagnostics: 'activity',
   skills: 'sparkles',
 }
-/**
- * Inside the settings dialog this hub only shows the pages that moved out of it (plugins and their
- * siblings, until the plugins page hosts them); the dialog's own pages have their own host.
- */
+/** Every page this hub can show: its own two, then the registered sections without a native pane. */
+const hubEntries = (): SettingsSection[] => [
+  ...PLUGIN_ADMIN_PAGES,
+  ...settingsSections.entries().filter((entry) => !entry.nativePane),
+]
+/** The plugin pages are one group of their own; everything else groups as the settings dialog does. */
+const hubGroup = (group: string): string => (group === 'plugins' ? group : settingsGroup(group))
+function hubNavigationGroups(entries: readonly SettingsSection[]): SettingsSection[][] {
+  const groups = new Map<string, SettingsSection[]>()
+  for (const entry of [...entries].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)))
+    groups.set(hubGroup(entry.group), [...(groups.get(hubGroup(entry.group)) ?? []), entry])
+  return [...groups.values()]
+}
+export const SETTINGS_PAGES = hubEntries().map((entry) => entry.id)
 function hubSection(id: string) {
-  const entry = settingsSections.get(id)
-  if (!entry || entry.nativePane) return undefined
-  return document.getElementById('config-form') && !settingsMoved(entry.id) ? undefined : entry
+  const entry = hubEntries().find((candidate) => candidate.id === id)
+  // Inside the workbench the dialog's own pages have their own host; this hub keeps to plugins.
+  return entry && document.getElementById('config-form') && entry.group !== 'plugins' ? undefined : entry
 }
 function initialPage(): SettingsPage {
   const value = new URLSearchParams(location.search).get('settings')
   const embedded = document.querySelector<HTMLElement>('#config-form')?.dataset.runtimePage
   const route = settingsRoute(embedded ?? value ?? '')
-  if (!document.getElementById('config-form') && value && settingsSections.get(route.id)) {
+  if (!document.getElementById('config-form') && value && hubSection(route.id)) {
     if (route.terminal) location.assign('/?settings=terminal')
     else {
       const url = new URL(location.href)
@@ -105,10 +109,10 @@ export function SettingsHub({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
-  const needsRuntimeCatalog = settingsSections.get(page)?.runtimeCatalog !== false
+  const needsRuntimeCatalog = hubSection(page)?.runtimeCatalog !== false
   // biome-ignore lint/correctness/useExhaustiveDependencies: registryVersion invalidates a disposed selection.
   useEffect(() => {
-    if (!settingsSections.get(page)) setPage('plugins')
+    if (!hubSection(page)) setPage('plugins')
   }, [page, registryVersion])
   useEffect(() => {
     const listener = (event: Event) => {
@@ -156,7 +160,7 @@ export function SettingsHub({
     return value === key ? t(key) : value
   }
   const sectionTitle = (id: string) => {
-    const key = settingsSections.get(id)?.titleKey ?? id
+    const key = hubSection(id)?.titleKey ?? id
     const value = shellText(key)
     return value === key ? t(id) : value
   }
@@ -168,7 +172,7 @@ export function SettingsHub({
       return
     }
     const route = settingsRoute(id)
-    if (!settingsSections.get(route.id)) return
+    if (!hubSection(route.id)) return
     const tabFocused = document.activeElement?.getAttribute('role') === 'tab'
     setPage(route.id)
     setDetail(true)
@@ -180,14 +184,10 @@ export function SettingsHub({
     if (!tabFocused && window.matchMedia('(max-width: 767px)').matches)
       requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.settings-back')?.focus())
   }
-  const groups = settingsNavigationGroups(settingsSections.entries().filter((entry) => !entry.nativePane))
-  const groupEntries = settingsSections
-    .entries()
-    .filter(
-      (entry) =>
-        !entry.nativePane &&
-        settingsGroup(entry.group) === settingsGroup(settingsSections.get(page)?.group ?? ''),
-    )
+  const groups = hubNavigationGroups(hubEntries())
+  const groupEntries = hubEntries().filter(
+    (entry) => !entry.nativePane && hubGroup(entry.group) === hubGroup(hubSection(page)?.group ?? ''),
+  )
   const renderGroup = (group: (typeof groups)[number]) => {
     const first = group[0]
     if (!first) return null
@@ -197,12 +197,12 @@ export function SettingsHub({
         [
           sectionTitle(entry.id),
           shellText(entry.groupTitleKey),
-          shellText(`settings-shell.keywords.${settingsGroup(entry.group)}`),
+          shellText(`settings-shell.keywords.${hubGroup(entry.group)}`),
         ].join(' '),
       ),
     )
     if (!match) return null
-    if (settingsGroup(first.group) === 'extensions')
+    if (hubGroup(first.group) === 'extensions')
       return group
         .filter((entry) => matchesSettings(query, sectionTitle(entry.id) + shellText(entry.groupTitleKey)))
         .map((entry) => (
@@ -293,7 +293,7 @@ export function SettingsHub({
             group.some((entry) =>
               matchesSettings(
                 query,
-                sectionTitle(entry.id) + shellText(`settings-shell.keywords.${settingsGroup(entry.group)}`),
+                sectionTitle(entry.id) + shellText(`settings-shell.keywords.${hubGroup(entry.group)}`),
               ),
             ),
           ) && <SettingsState>{shellText('settings-shell.noSettings')}</SettingsState>}
@@ -324,7 +324,7 @@ export function SettingsHub({
               <div
                 className="agnes-settings-section-tabs"
                 role="tablist"
-                aria-label={shellText(settingsSections.get(page)?.groupTitleKey ?? '')}
+                aria-label={shellText(hubSection(page)?.groupTitleKey ?? '')}
               >
                 {groupEntries.map((entry) => (
                   <Button
@@ -402,7 +402,7 @@ export function SettingsHub({
               </Banner>
             )}
             {(() => {
-              const Component = settingsSections.get(page)?.component
+              const Component = hubSection(page)?.component
               return Component ? (
                 <Component
                   key={page}

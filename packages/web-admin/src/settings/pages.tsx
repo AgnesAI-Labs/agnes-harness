@@ -179,6 +179,8 @@ function SettingsPageHost({
   const data: RuntimeSettingsContext = {
     api,
     canSave,
+    canRelease:
+      !!admin && !admin.context.readOnly && hasPermission(admin.context.permissions, 'packages.remove'),
     canInstall:
       !!admin && !admin.context.readOnly && hasPermission(admin.context.permissions, 'packages.install'),
     pluginText,

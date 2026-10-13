@@ -1,5 +1,6 @@
 import type { SystemPromptConfig, SystemPromptSnapshot } from '@agnes/protocol'
 import {
+  Banner,
   Button,
   Field,
   promptSourceLabel,
@@ -20,9 +21,16 @@ const browserApi = systemPromptApi()
 export function SystemPromptPanel({
   canSave,
   api = browserApi,
+  part,
 }: {
   canSave: boolean
   api?: ReturnType<typeof systemPromptApi>
+  /**
+   * One part of the panel on its own: `override` is the full replacement and the closing
+   * instruction (the opening instruction and reply style are edited with the context capability);
+   * `preview` is what the selected prompt plugins provide now. Without it the panel shows everything.
+   */
+  part?: 'override' | 'preview'
 }) {
   const { t, locale } = useUiText('@agnes/web/system-prompt', promptCatalog)
   const [sessionSnapshot, setSessionSnapshot] = useState<SystemPromptSnapshot>()
@@ -93,6 +101,116 @@ export function SystemPromptPanel({
     })
     setSaved(false)
   }
+  const override = (
+    <>
+      <Banner tone="warning">{t('warning')}</Banner>
+      {overrideConflict && (
+        <SettingsState tone="error" role="alert">
+          {t('conflict')}
+        </SettingsState>
+      )}
+      <Field label={t('override')} htmlFor="system-prompt-fullOverride">
+        <SettingsTextArea
+          id="system-prompt-fullOverride"
+          data-testid="system-prompt-fullOverride"
+          rows={8}
+          maxLength={65536}
+          disabled={!canSave || busy}
+          value={config.fullOverride ?? ''}
+          onChange={(event) => edit('fullOverride', event.currentTarget.value)}
+        />
+      </Field>
+      <SettingsCheckbox
+        label={t('confirm')}
+        data-testid="system-prompt-confirm"
+        checked={confirmed}
+        disabled={!canSave || busy}
+        onChange={(event) => setConfirmed(event.currentTarget.checked)}
+      />
+    </>
+  )
+  const actions = (
+    <SettingsToolbar>
+      <Button
+        data-testid="system-prompt-save"
+        disabled={!canSave || busy || overrideConflict || (!!config.fullOverride && !confirmed)}
+        onClick={() => void save()}
+      >
+        {t('save')}
+      </Button>
+      <Button data-testid="system-prompt-reset" disabled={!canSave || busy} onClick={() => void save(true)}>
+        {t('reset')}
+      </Button>
+    </SettingsToolbar>
+  )
+  const sections = (list: SystemPromptSnapshot['sections'] | undefined, open: boolean) =>
+    list?.map((section) => (
+      <SettingsDetails
+        key={section.id}
+        title={
+          <span data-testid="system-prompt-source" title={`${section.id} · ${section.source}`}>
+            {promptSourceLabel(section.id, section.source, locale)}
+          </span>
+        }
+        {...(open ? { open: true } : {})}
+        compact
+      >
+        <SettingsCode
+          label={promptSourceLabel(section.id, section.source, locale)}
+          className="system-prompt-section"
+        >
+          {section.text}
+        </SettingsCode>
+      </SettingsDetails>
+    ))
+  const status = (
+    <>
+      {failed && (
+        <SettingsState tone="error" role="alert">
+          {t('failed')}
+        </SettingsState>
+      )}
+      {saved && (
+        <SettingsState tone="success" role="status" data-testid="system-prompt-saved">
+          {t('saved')}
+        </SettingsState>
+      )}
+      {busy && !snapshot && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+    </>
+  )
+  if (part === 'override')
+    return (
+      <div data-testid="system-prompt-editor" aria-busy={busy}>
+        {status}
+        {override}
+        <Field label={t('suffix')} htmlFor="system-prompt-personaSuffix" hint={t('suffixHelp')}>
+          <SettingsTextArea
+            id="system-prompt-personaSuffix"
+            data-testid="system-prompt-personaSuffix"
+            rows={3}
+            maxLength={8192}
+            value={config.personaSuffix ?? ''}
+            disabled={!canSave || busy}
+            onChange={(event) => edit('personaSuffix', event.currentTarget.value)}
+          />
+        </Field>
+        {actions}
+      </div>
+    )
+  if (part === 'preview')
+    return (
+      <div data-testid="system-prompt-preview">
+        {status}
+        <p>{t('sources')}</p>
+        {sections(snapshot?.sections, false)}
+        {sessionSnapshot && (
+          <SettingsCard title={t('session')} data-testid="system-prompt-session-preview">
+            <p>{t(sessionSnapshot.preview === 'last-request' ? 'lastRequest' : 'initial')}</p>
+            {sections(sessionSnapshot.sections, false)}
+          </SettingsCard>
+        )}
+      </div>
+    )
   return (
     <>
       <p>{t('help')}</p>

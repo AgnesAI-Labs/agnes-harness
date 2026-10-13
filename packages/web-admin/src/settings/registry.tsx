@@ -14,25 +14,23 @@ import {
   SettingsPageDescription,
   SettingsState,
 } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
-import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
-import { MemoryPanel } from './memory.js'
 import { PermissionDefaults } from './permission-defaults.js'
+import { PinsPanel } from './pins.js'
 import {
   GenerationsPanel,
+  IsolationDetailsPanel,
   LocalPluginsPanel,
-  PresetsPanel,
   ProvidersPanel,
   PublicationPanel,
 } from './runtime-panels.js'
 import type { SchedulesApi } from './schedules.js'
-import { SearchPanel } from './search.js'
 import { SecurityStatusPanel } from './security-status.js'
 import { SystemPromptPanel } from './system-prompt.js'
 import { systemPromptApi } from './system-prompt-api.js'
@@ -40,6 +38,8 @@ import { systemPromptApi } from './system-prompt-api.js'
 export type RuntimeSettingsContext = {
   api: PluginAdminApi | undefined
   canSave: boolean
+  /** Whether leftover plugin files may be released (the plugin removal permission). */
+  canRelease?: boolean
   canInstall: boolean
   pluginText(key: string): string
   installed: readonly PackageInstalledDescriptor[]
@@ -58,10 +58,6 @@ for (const [id, group, pane, navigationId, key, order] of [
   // The dialog lists three pages: General, Models & accounts, Permissions & security.
   ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 0],
   ['model', 'accounts', 'model', 'model-settings', 'modelNav', 10],
-  // Moved to the plugins page (see SETTINGS_MOVED); registered until that page hosts them.
-  ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 120],
-  ['mcp', 'tools', 'resources', 'mcp-tab', 'toolsNav', 130],
-  ['computer-use', 'tools', 'computer-use', 'computer-use-management', 'toolsNav', 132],
 ] as const) {
   if (!settingsSections.get(id))
     settingsSections.register({
@@ -69,16 +65,9 @@ for (const [id, group, pane, navigationId, key, order] of [
       group,
       nativePane: pane,
       navigationId,
-      titleKey:
-        id === 'mcp'
-          ? 'settings-shell.mcpNav'
-          : id === 'computer-use'
-            ? 'settings-shell.computerUseNav'
-            : id === 'skills'
-              ? 'settings-shell.skillsNav'
-              : `settings-shell.${key}`,
+      titleKey: `settings-shell.${key}`,
       groupTitleKey: `settings-shell.${key}`,
-      icon: group === 'skills' ? 'sparkles' : group,
+      icon: group,
       order,
       component: NativePaneBridge,
     })
@@ -128,9 +117,7 @@ function PromptSubsection({ canSave, t }: { canSave: boolean; t: UiExtensionCont
       .get(pending.signal)
       .then((value) => {
         if (pending.signal.aborted) return
-        setCustomized(
-          Object.values(value.config).some((entry) => typeof entry === 'string' && entry.trim() !== ''),
-        )
+        setCustomized(!!value.config.fullOverride?.trim())
       })
       // The summary is optional: the section itself reports a failed read when it is opened.
       .catch(() => {})
@@ -141,31 +128,12 @@ function PromptSubsection({ canSave, t }: { canSave: boolean; t: UiExtensionCont
       defer
       id="system-prompt"
       icon="file-text"
-      title={t('system-prompt')}
-      description={t('agentPromptHelp')}
-      summary={
-        customized === undefined ? undefined : t(customized ? 'agentPromptCustom' : 'agentPromptDefault')
-      }
+      title={t('runOverride')}
+      summary={customized === undefined ? undefined : t(customized ? 'runOverrideUsed' : 'runOverrideUnused')}
     >
-      <SystemPromptPanel canSave={canSave} />
+      <SystemPromptPanel canSave={canSave} part="override" />
     </Subsection>
   )
-}
-
-/** The existing native pin controller keeps ownership of its host and all release actions. */
-function RuntimeOccupancy() {
-  const host = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const node = document.getElementById('orphan-pins')
-    const parent = node?.parentNode
-    if (!node || !parent || !host.current) return
-    const sibling = node.nextSibling
-    host.current.appendChild(node)
-    return () => {
-      parent.insertBefore(node, sibling?.parentNode === parent ? sibling : null)
-    }
-  }, [])
-  return <div ref={host} data-testid="runtime-occupancy" />
 }
 
 /** Runtime developer data is loaded on demand; doctor checks stay independent of this catalog. */
@@ -203,7 +171,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       data-testid="plugin-diagnostics"
       onOpenChange={setOpen}
     >
-      <RuntimeOccupancy />
+      <PinsPanel api={c.api} canRelease={!!c.canRelease} t={t} />
       <Button
         appearance="ghost"
         data-testid="settings-refresh"
@@ -219,6 +187,9 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       {failed && <Banner tone="error">{t('unavailable')}</Banner>}
       {snapshot && (
         <>
+          <Subsection id="isolation" title={t('isolationDetails')}>
+            <IsolationDetailsPanel snapshot={snapshot} t={t} />
+          </Subsection>
           <Subsection id="provider-types" title={t('providerTypes')}>
             <ProvidersPanel snapshot={snapshot} t={t} />
           </Subsection>
@@ -272,30 +243,6 @@ const definitions: readonly [
       </>
     ),
   ],
-  // Moved to the plugins page (see SETTINGS_MOVED). They stay registered, unlisted, until that page
-  // hosts the same panels; a page that still links here by name keeps working meanwhile.
-  ['plugins', 'plugins', 110, (c) => c.children],
-  [
-    'plugins',
-    'discover',
-    111,
-    (c, t) => (
-      <>
-        <div id="settings-subsection-examples" tabIndex={-1}>
-          <ExamplesPanel
-            api={c.api}
-            canInstall={c.canInstall}
-            installed={c.installed}
-            t={t}
-            onReview={c.onReview}
-            onBundles={() => c.navigate('bundles')}
-          />
-        </div>
-        {c.children}
-      </>
-    ),
-  ],
-  ['tools', 'search', 131, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
   [
     'advanced',
     'models',
@@ -308,10 +255,10 @@ const definitions: readonly [
         const name = t(`providerName.${provider.id}`)
         return name === `providerName.${provider.id}` ? provider.id : name
       }
-      const engines = c.snapshot?.providers.filter((entry) => entry.kind === 'child-agent').length
       const preset = c.snapshot?.presets.find((entry) => entry.isDefault)?.id
       const presetName =
         preset && t(`choice.${preset}`) !== `choice.${preset}` ? t(`choice.${preset}`) : preset
+      const loop = active('loop')
       return (
         <>
           <SettingsPageDescription>{t('runConfigIntro')}</SettingsPageDescription>
@@ -319,50 +266,17 @@ const definitions: readonly [
             defer
             id="models"
             icon="bot"
-            title={t('agentExecution')}
-            description={t('agentExecutionHelp')}
-            summary={active('loop')}
+            title={t('runDefaults')}
+            summary={loop ? t('runDefaultsSummary', { loop }) : undefined}
           >
             <p>{t('modelsHelp')}</p>
             <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
-          </Subsection>
-          <PromptSubsection canSave={c.canSave} t={t} />
-          <Subsection
-            defer
-            id="memory"
-            icon="history"
-            title={t('agentMemory')}
-            description={t('agentMemoryHelp')}
-            summary={active('memory')}
-          >
-            <MemoryPanel canSave={c.canSave} />
-          </Subsection>
-          <Subsection
-            defer
-            id="context"
-            icon="sliders-horizontal"
-            title={t('agentContext')}
-            description={t('agentContextHelp')}
-            summary={active('compaction')}
-          >
-            <ContextPanel canSave={c.canSave} />
-          </Subsection>
-          <Subsection
-            defer
-            id="engines"
-            icon="git-branch"
-            title={t('agentEngines')}
-            description={t('agentEnginesHelp')}
-            summary={engines ? t('agentEnginesCount', { count: engines }) : undefined}
-          >
-            <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
           </Subsection>
           <Subsection
             defer
             id="bundles"
             icon="folder"
-            title={t('bundles')}
-            description={t('agentBundlesHelp')}
+            title={t('runBundles')}
             summary={presetName ? t('agentPresetDefault', { name: presetName }) : undefined}
           >
             <BundlesPanel
@@ -371,7 +285,19 @@ const definitions: readonly [
               t={c.pluginText}
               presets={c.snapshot?.presets ?? []}
             />
-            {c.snapshot && <PresetsPanel snapshot={c.snapshot} t={t} />}
+          </Subsection>
+          <Subsection
+            defer
+            id="context"
+            icon="sliders-horizontal"
+            title={t('runContext')}
+            summary={active('compaction')}
+          >
+            <ContextPanel canSave={c.canSave} />
+          </Subsection>
+          <PromptSubsection canSave={c.canSave} t={t} />
+          <Subsection defer id="prompt-preview" icon="eye" title={t('runPreview')}>
+            <SystemPromptPanel canSave={c.canSave} part="preview" />
           </Subsection>
         </>
       )
@@ -403,3 +329,45 @@ for (const [group, id, order, render] of definitions) {
   }
   if (!settingsSections.get(id)) settingsSections.register(entry)
 }
+
+/**
+ * The plugin admin's own two pages. They are not settings sections: the workbench shows plugins on
+ * a page of their own, and only the standalone admin page lists them beside the settings sections.
+ */
+export const PLUGIN_ADMIN_PAGES: readonly SettingsSection[] = (
+  [
+    ['plugins', 'settings-shell.page.installed', 10, (c) => c.children],
+    [
+      'discover',
+      'settings-shell.page.discover',
+      11,
+      (c, t) => (
+        <>
+          <ExamplesPanel
+            api={c.api}
+            canInstall={c.canInstall}
+            installed={c.installed}
+            t={t}
+            onReview={c.onReview}
+            onBundles={() => c.navigate('bundles')}
+          />
+          {c.children}
+        </>
+      ),
+    ],
+  ] as const satisfies readonly (readonly [
+    string,
+    string,
+    number,
+    (c: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
+  ])[]
+).map(([id, titleKey, order, render]) => ({
+  id,
+  group: 'plugins',
+  order,
+  icon: 'plugins',
+  titleKey,
+  groupTitleKey: 'settings-shell.group.plugins',
+  runtimeCatalog: false,
+  component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
+}))

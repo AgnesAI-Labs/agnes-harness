@@ -126,19 +126,6 @@ function SettingsRegistryNavigation({
       </Fragment>
     )
   }
-  // Controllers of pages that left the dialog still look their old entry up by ID: keep each one
-  // that neither the list nor the page tabs render.
-  const tabSizes = new Map<string, number>()
-  for (const entry of entries)
-    tabSizes.set(settingsTabGroup(entry), (tabSizes.get(settingsTabGroup(entry)) ?? 0) + 1)
-  const present = new Set<string>()
-  for (const group of groups)
-    for (const entry of group)
-      if (!(group.length > 1 && entry.nativePane && !listedSettingsGroup(entry.group)))
-        present.add(entry.navigationId ?? `runtime-settings-${entry.id}`)
-  for (const entry of entries)
-    if (entry.nativePane && entry.navigationId && (tabSizes.get(settingsTabGroup(entry)) ?? 0) > 1)
-      present.add(entry.navigationId)
   return (
     <nav className="settings-nav-group" aria-label={t('settings-shell.railAria')}>
       <div id="settings-everyday">
@@ -152,13 +139,6 @@ function SettingsRegistryNavigation({
           {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
         </div>
       )}
-      <div id="settings-navigation-reserve" hidden>
-        {['plugin-management', 'archived-settings', 'computer-use-management', 'skills-tab', 'mcp-tab']
-          .filter((id) => !present.has(id))
-          .map((id) => (
-            <Button key={id} id={id} appearance="ghost" />
-          ))}
-      </div>
     </nav>
   )
 }

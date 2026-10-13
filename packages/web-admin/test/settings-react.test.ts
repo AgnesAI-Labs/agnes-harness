@@ -42,10 +42,12 @@ afterEach(() => {
 })
 
 /** The admin connection a settings page reads; only the calls a test names are answered. */
-const adminOf = (api: Partial<PluginAdminApi>) => async (): Promise<SettingsAdmin> => ({
-  api: { generations: async () => undefined, ...api } as unknown as PluginAdminApi,
-  context: { permissions: [], readOnly: false } as unknown as SettingsAdmin['context'],
-})
+const adminOf =
+  (api: Partial<PluginAdminApi>, permissions: readonly string[] = []) =>
+  async (): Promise<SettingsAdmin> => ({
+    api: { generations: async () => undefined, ...api } as unknown as PluginAdminApi,
+    context: { permissions, readOnly: false } as unknown as SettingsAdmin['context'],
+  })
 
 it('keeps the account dialog close control anchored and the action footer visible in short viewports', () => {
   const css = readWebStyleSource(stylePath)
@@ -81,10 +83,15 @@ it('operates the React settings pane and account dialog without losing native fo
   dialog.id = 'config'
   document.body.append(dialog)
   const shellRoot = createRoot(dialog)
+  const moved: unknown[] = []
   flushSync(() =>
     shellRoot.render(
       createElement(SettingsBuiltin, {
-        options: { sections: settingsSections, computerUseSupported: async () => false },
+        options: {
+          sections: settingsSections,
+          computerUseSupported: async () => false,
+          onMoved: (target) => moved.push(target),
+        },
       }),
     ),
   )
@@ -106,8 +113,6 @@ it('operates the React settings pane and account dialog without losing native fo
   )
   dialog.removeEventListener('agnes:settings-terminal', openTerminal)
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
-  expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
-  expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
   // The dialog lists three pages; everything else moved out and is no longer listed.
   const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
   expect([...everyday].map((item) => item.getAttribute('data-settings-section'))).toEqual([
@@ -119,37 +124,25 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelector('#settings-search')).toBeNull()
   for (const id of ['plugins', 'skills', 'mcp', 'schedules', 'history', 'archived', 'jobs'])
     expect(dialog.querySelector(`[data-testid="settings-nav-${id}"]`)).toBeNull()
-  // A moved page that is still registered opens by name, with its siblings as tabs.
-  for (const id of ['mcp', 'search', 'mcp', 'skills', 'feedback', 'mcp']) {
+  // A request for a page that left settings goes to the host; the dialog stays where it was.
+  for (const id of ['mcp', 'search', 'skills', 'feedback', 'computer-use', 'plugins', 'schedules']) {
     flushSync(() =>
       dialog
         .querySelector('#config-form')
         ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true })),
     )
-    expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
-    expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
-    expect(dialog.querySelectorAll('#computer-use-management')).toHaveLength(1)
-    expect(dialog.querySelectorAll('#archived-settings')).toHaveLength(1)
-    expect(dialog.querySelectorAll('#plugin-management')).toHaveLength(1)
-    expect(
-      dialog
-        .querySelector('#settings-section-tabs [aria-selected="true"]')
-        ?.getAttribute('data-settings-section'),
-    ).toBe(id === 'feedback' ? 'skills' : id)
-    expect(dialog.querySelector('#settings-everyday [aria-current="page"]')).toBeNull()
+    expect(dialog.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
+    expect(dialog.querySelector('#settings-section-tabs [role="tab"]')).toBeNull()
   }
-  await vi.waitFor(() =>
-    expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull(),
-  )
-  flushSync(() =>
-    dialog
-      .querySelector('#config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'computer-use', bubbles: true })),
-  )
-  await vi.waitFor(() =>
-    expect(dialog.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('mcp'),
-  )
-  expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull()
+  expect(moved).toEqual([
+    { kind: 'page', page: 'plugins', tab: 'mcp' },
+    { kind: 'page', page: 'plugins', tab: 'plugins.search' },
+    { kind: 'page', page: 'plugins', tab: 'skills' },
+    { kind: 'page', page: 'plugins', tab: 'review' },
+    { kind: 'page', page: 'plugins', tab: 'plugins.computer-use' },
+    { kind: 'page', page: 'plugins' },
+    { kind: 'page', page: 'automation', tab: 'schedules' },
+  ])
   const onPage = vi.fn()
   dialog.addEventListener('agnes:settings-page', onPage)
   await act(async () => setAdvancedSettingsShown(true))
@@ -380,11 +373,18 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
   const form = document.createElement('div')
   form.id = 'config-form'
   form.dataset.runtimePage = 'diagnostics'
-  const occupancy = document.createElement('section')
-  occupancy.id = 'orphan-pins'
-  occupancy.textContent = 'Synthetic runtime occupancy'
-  form.append(occupancy)
   document.body.append(form, host)
+  const pin = {
+    pinId: 'pin-1',
+    purpose: 'recovery' as const,
+    packageId: '@acme/tool',
+    version: '1.0.0',
+    snapshotId: 'snapshot-1',
+    operationId: 'operation-1',
+  }
+  const pinsRelease = vi.fn(async (ids: string[]) => ({
+    results: ids.map((pinId) => ({ pinId, outcome: 'released' as const })),
+  }))
   const root = createRoot(host)
   const runtime = vi.fn(async () => {
     throw new Error('unavailable catalog')
@@ -418,11 +418,24 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     ),
   )
   try {
-    flushSync(() => root.render(createElement(SettingsPages, { admin: adminOf({ runtime }) })))
+    const admin = adminOf({ runtime, pinsInspect: async () => ({ orphans: [pin] }), pinsRelease }, [
+      'packages.remove',
+    ])
+    flushSync(() => root.render(createElement(SettingsPages, { admin })))
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
-    expect(occupancy.closest('[data-testid="runtime-occupancy"]')).not.toBeNull()
-    expect(occupancy.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
+    // Leftover plugin files are read and released here, without the plugins page being open.
+    const occupancy = host.querySelector<HTMLElement>('[data-testid="runtime-occupancy"]')
+    expect(occupancy?.closest<HTMLElement>('.agh-disclosure')?.dataset.open).toBe('false')
+    await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).not.toBeNull())
+    expect(occupancy?.textContent).toContain('@acme/tool 1.0.0')
+    await act(async () => occupancy?.querySelector<HTMLButtonElement>('[data-testid="pin-release"]')?.click())
+    expect(pinsRelease).not.toHaveBeenCalled()
+    await act(async () =>
+      occupancy?.querySelector<HTMLButtonElement>('[data-testid="pins-confirm-release"]')?.click(),
+    )
+    expect(pinsRelease).toHaveBeenCalledWith(['pin-1'])
+    await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).toBeNull())
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
     expect(
       host.querySelector('[data-testid="settings-refresh"]')?.closest<HTMLElement>('.agh-disclosure')?.dataset
@@ -434,7 +447,6 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
   } finally {
     flushSync(() => root.unmount())
-    expect(occupancy.parentNode).toBe(form)
     vi.unstubAllGlobals()
   }
 })

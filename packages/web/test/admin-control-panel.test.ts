@@ -548,6 +548,52 @@ it('reports publication failures and requires an explicit eligible migration wit
   expect(host.textContent).toContain('previous → current')
 })
 
+it('offers the sessions still on an earlier plugin version for migration, by confirmation', async () => {
+  const migrateSession = vi.fn().mockResolvedValue({
+    previousGenerationId: 'previous',
+    generationId: 'current',
+    changed: true,
+  })
+  const text = (key: string) => settingsCatalog.en[key] ?? key
+  const api = Object.assign(
+    new PluginAdminApi(
+      { profile: 'local-dev', clientId: 'admin', permissions: ['packages.read'], readOnly: false },
+      vi.fn(),
+    ),
+    { migrateSession },
+  )
+  const current = '11111111-1111-4111-8111-111111111111'
+  const earlier = '22222222-2222-4222-8222-222222222222'
+  const generation = { boundSessions: 1, openSessions: 1, live: true, packages: [] }
+  const host = await mount(
+    createElement(GenerationsPanel, {
+      api,
+      canSave: true,
+      t: text,
+      status: {
+        currentGenerationId: current,
+        plugins: [],
+        generations: [
+          { ...generation, id: current, state: 'active', sessions: [{ key: 'on-current', open: true }] },
+          { ...generation, id: earlier, state: 'draining', sessions: [{ key: 'on-earlier', open: false }] },
+        ],
+      },
+    }),
+  )
+  // Only sessions bound to an earlier version are candidates.
+  const rows = host.querySelectorAll('[data-testid="migration-session"]')
+  expect([...rows].map((row) => row.querySelector('code')?.textContent)).toEqual(['on-earlier'])
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="migration-session-pick"]')?.click(),
+  )
+  expect(migrateSession).not.toHaveBeenCalled()
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
+  )
+  expect(migrateSession).toHaveBeenCalledWith('on-earlier')
+  expect(host.textContent).toContain('previous → current')
+})
+
 it('places ordered bundle and preset choices beside the loop only for a new session', async () => {
   const bundles = [
     { id: 'acme#support', sourcePackage: 'acme' },
@@ -728,6 +774,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
         ],
       },
       t: text,
+      view: 'details',
     }),
   )
   expect(host.querySelector('[data-testid="permission-preset-status"]')?.textContent).toContain(

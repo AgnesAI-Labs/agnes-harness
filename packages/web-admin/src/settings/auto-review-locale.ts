@@ -30,7 +30,9 @@ export const reviewCatalog = {
     profileHelp:
       'Choose the actual model under Auxiliary models. It applies to new sessions; an existing session can change it in its model picker.',
     overrides: 'Rules you added from approvals',
-    clear: 'Clear these rules',
+    budgetSummary: 'up to {count} per session',
+    overridesCount: '{count} rule(s)',
+    clear: 'Clear',
   },
   'zh-CN': {
     title: '自动审阅',
@@ -61,6 +63,8 @@ export const reviewCatalog = {
     failed: '无法读取或保存自动审阅，请重试。',
     profileHelp: '具体用哪个模型在“辅助模型”里选择，对新会话生效；已有会话可以在模型选择器里单独更换。',
     overrides: '你在审批时添加的规则',
-    clear: '清除这些规则',
+    budgetSummary: '每个会话最多 {count} 次',
+    overridesCount: '{count} 条',
+    clear: '清除',
   },
 }

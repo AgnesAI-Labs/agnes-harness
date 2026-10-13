@@ -41,6 +41,8 @@ export interface SettingsRegionOptions {
   adminPanes?: AdminPaneStore
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
+  /** A request named a page that moved out of settings; the host opens its new home. */
+  onMoved?: (target: import('@agnes/web-units').SettingsMoveTarget) => void
 }
 
 export interface SettingsRegionMount extends EmptyStateRegionMount, SettingsRegionHandle {

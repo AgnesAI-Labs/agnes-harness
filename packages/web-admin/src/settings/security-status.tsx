@@ -15,7 +15,16 @@ import {
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 
 type Text = (key: string) => string
-export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStatus | undefined; t: Text }) {
+export function SecurityStatusPanel({
+  status,
+  t,
+  view = 'status',
+}: {
+  status: RuntimeSecurityStatus | undefined
+  t: Text
+  /** `status` is the one-line state for the permissions page; `details` is the diagnostic record. */
+  view?: 'status' | 'details'
+}) {
   const { t: ux } = useUiText(SECURITY_NAMESPACE, securityUxCatalog)
   if (!status)
     return (
@@ -51,37 +60,9 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
     occurrences.set(identity, occurrence + 1)
     return { workspace, key: `${identity}:${occurrence}` }
   })
-  return (
-    <SettingsSection
-      data-testid="sandbox-security-status"
-      title={ux('isolation')}
-      description={ux('isolationHelp')}
-    >
-      {status.platform.l1.level === 'full' ? (
-        <SettingsGroup>
-          <SettingsItem
-            icon="shield-check"
-            label={`${ux('protected')} · ${t(`platform.${status.platform.os}`)}`}
-            description={ux('platformOnly')}
-          />
-        </SettingsGroup>
-      ) : (
-        <Banner
-          tone="warning"
-          action={
-            <Button
-              appearance="ghost"
-              size="small"
-              href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md"
-            >
-              {ux('protectionHelp')}
-            </Button>
-          }
-        >
-          {ux('partial')}
-        </Banner>
-      )}
-      <SettingsDetails title={ux('details')} data-testid="security-details">
+  if (view === 'details')
+    return (
+      <div data-testid="security-details">
         <p>{t('probeHelp')}</p>
         <h4>{t('platformProbe')}</h4>
         <p>
@@ -171,7 +152,38 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
             ))}
           </SettingsList>
         )}
-      </SettingsDetails>
+      </div>
+    )
+  return (
+    <SettingsSection
+      data-testid="sandbox-security-status"
+      title={ux('isolation')}
+      description={ux('isolationHelp')}
+    >
+      {status.platform.l1.level === 'full' ? (
+        <SettingsGroup>
+          <SettingsItem
+            icon="shield-check"
+            label={`${ux('protected')} · ${t(`platform.${status.platform.os}`)}`}
+            description={ux('platformOnly')}
+          />
+        </SettingsGroup>
+      ) : (
+        <Banner
+          tone="warning"
+          action={
+            <Button
+              appearance="ghost"
+              size="small"
+              href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md"
+            >
+              {ux('protectionHelp')}
+            </Button>
+          }
+        >
+          {ux('partial')}
+        </Banner>
+      )}
     </SettingsSection>
   )
 }

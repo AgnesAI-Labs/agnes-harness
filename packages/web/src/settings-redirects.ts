@@ -45,3 +45,13 @@ export function openMovedSettingsLink(
   }
   return true
 }
+
+/** Open where a moved settings page lives now: a home page, the session search or the archived list. */
+export function openMovedSettings(
+  target: SettingsMoveTarget,
+  actions: { openPage(page: string, tab?: string): void; searchSessions(): void; showArchived(): void },
+): void {
+  if (target.kind === 'page') actions.openPage(target.page, target.tab)
+  else if (target.kind === 'session-search') actions.searchSessions()
+  else actions.showArchived()
+}

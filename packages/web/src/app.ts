@@ -94,7 +94,12 @@ import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
-import { movedSettingsTarget, openMovedSettingsLink, rewriteMovedSettingsLink } from './settings-redirects.js'
+import {
+  movedSettingsTarget,
+  openMovedSettings,
+  openMovedSettingsLink,
+  rewriteMovedSettingsLink,
+} from './settings-redirects.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 
@@ -953,6 +958,15 @@ const clientModules = await startClientModules({
       return report.status !== 'blocked' || !report.blockers.includes('platform-unsupported')
     },
     computerUse: computerUseStatus.render(),
+    // A page that left settings was asked for by name: close the dialog and open its new home.
+    onMoved: (target) => {
+      settings.close()
+      openMovedSettings(target, {
+        openPage: (page, tab) => homeNavigation.open(page, tab ? { tab } : undefined),
+        searchSessions: () => sessionSearch.open(),
+        showArchived: () => archivedSessions.show('archived'),
+      })
+    },
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
       else if (pane === 'plugin') void adminPaneController.open('plugin')

@@ -130,6 +130,12 @@ export function GenerationsPanel({
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<{ previous: string; current: string }>()
   const supported = !!api
+  const stale =
+    status?.generations
+      .filter((generation) => generation.id !== status.currentGenerationId)
+      .flatMap((generation) =>
+        (generation.sessions ?? []).map((session) => ({ ...session, generation: generation.id })),
+      ) ?? []
   async function migrate() {
     if (!api || !canSave || busy || !sessionId.trim()) return
     setBusy(true)
@@ -187,31 +193,63 @@ export function GenerationsPanel({
         <h3>{t('migrate')}</h3>
         <p>{t('migrationHelp')}</p>
         {!supported && <p>{t('migrationUnavailable')}</p>}
-        <Field label={t('sessionKey')} htmlFor="migration-session-key">
-          <SettingsInput
-            id="migration-session-key"
-            data-testid="migration-session-key"
-            type="text"
-            maxLength={512}
-            value={sessionId}
-            disabled={!supported || !canSave || busy}
-            onChange={(event) => {
-              setSessionId(event.target.value)
-              setConfirming(false)
-              setMessage('')
-              setResult(undefined)
-            }}
-          />
-        </Field>
-        {!confirming ? (
+        {/* Pick from the sessions the backend reports on an earlier version; typing a key stays possible. */}
+        <h4>{t('migrateFromList')}</h4>
+        {stale.length === 0 ? (
+          <p>{t('migrateNone')}</p>
+        ) : (
+          <SettingsList data-testid="migration-sessions">
+            {stale.map((session) => (
+              <SettingsRow
+                key={`${session.generation}:${session.key}`}
+                data-testid="migration-session"
+                title={<code>{session.key}</code>}
+                description={`${session.generation.slice(0, 8)} · ${t(session.open ? 'migrateOpen' : 'migrateClosed')}`}
+                actions={
+                  <Button
+                    size="small"
+                    data-testid="migration-session-pick"
+                    disabled={!supported || !canSave || busy}
+                    onClick={() => {
+                      setSessionId(session.key)
+                      setConfirming(true)
+                      setMessage('')
+                      setResult(undefined)
+                    }}
+                  >
+                    {t('migrateAction')}
+                  </Button>
+                }
+              />
+            ))}
+          </SettingsList>
+        )}
+        <SettingsDetails title={t('migrateManual')} data-testid="migration-manual" compact>
+          <Field label={t('sessionKey')} htmlFor="migration-session-key">
+            <SettingsInput
+              id="migration-session-key"
+              data-testid="migration-session-key"
+              type="text"
+              maxLength={512}
+              value={sessionId}
+              disabled={!supported || !canSave || busy}
+              onChange={(event) => {
+                setSessionId(event.target.value)
+                setConfirming(false)
+                setMessage('')
+                setResult(undefined)
+              }}
+            />
+          </Field>
           <Button
             data-testid="migrate-session"
-            disabled={!supported || !canSave || busy || !sessionId.trim()}
+            disabled={!supported || !canSave || busy || !sessionId.trim() || confirming}
             onClick={() => setConfirming(true)}
           >
             {t('migrate')}
           </Button>
-        ) : (
+        </SettingsDetails>
+        {confirming && (
           <fieldset aria-label={t('migrationConfirm')}>
             <p>
               {t('migrationConfirm')} <code>{sessionId.trim()}</code>
@@ -362,13 +400,14 @@ export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; 
     </section>
   )
 }
-export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
+/**
+ * What the permissions page only summarises: platform checks, per-preset rules and workspaces. The
+ * sandbox implementations are listed with the other plugin types.
+ */
+export function IsolationDetailsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
   return (
     <>
-      <SecurityStatusPanel status={snapshot.security} t={t} />
-      <SettingsDetails title={t('sandbox')}>
-        <ProvidersPanel snapshot={snapshot} kinds={['sandbox']} t={t} />
-      </SettingsDetails>
+      <SecurityStatusPanel status={snapshot.security} t={t} view="details" />
     </>
   )
 }

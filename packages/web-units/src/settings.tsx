@@ -18,6 +18,7 @@ export { renderSettingsMarkup } from './settings-fixture.js'
 import {
   listedSettingsGroup,
   revealSettingsAnchor,
+  type SettingsMoveTarget,
   settingsGroup,
   settingsMoved,
   settingsRoute,
@@ -47,6 +48,8 @@ export interface SettingsRegionOptions {
   computerUseSupported?: () => Promise<boolean>
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
+  /** A request named a page that moved out of settings; the host opens its new home. */
+  onMoved?: (target: SettingsMoveTarget) => void
   /** Locale-bound translate for the React shell and pane controls. */
   translate?: (key: string) => string
   /** What the dialog's own page host shows: the pages of sections without a native pane. */
@@ -234,13 +237,16 @@ function SettingsBuiltinImpl(
       const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
       const navigate = (requested: string, notify = true) => {
         const route = settingsRoute(requested)
-        let id = route.id
+        const id = route.id
         const tabFocused = tabs?.contains(document.activeElement)
         const entries = navigationEntries()
-        const selected =
-          entries.find((entry) => entry.id === id) ??
-          (id === 'computer-use' ? entries.find((entry) => entry.id === 'mcp') : undefined)
-        if (!selected && !route.terminal) return
+        const selected = entries.find((entry) => entry.id === id)
+        if (!selected && !route.terminal) {
+          // The page left settings: hand its new home to the host instead of ignoring the request.
+          const moved = settingsMoved(requested) ?? settingsMoved(id)
+          if (moved && notify) options.onMoved?.(moved)
+          return
+        }
         if (route.terminal || !selected) {
           options.onClose?.()
           // Preventing the default acknowledges that the workbench opened the terminal.
@@ -255,7 +261,6 @@ function SettingsBuiltinImpl(
         }
         const target = settingsEntryPane(selected)
         const pane = target === 'sections' ? activePane.current : target
-        id = selected.id
         root.dataset.settingsSection = id
         const shell = form()
         if (shell) {

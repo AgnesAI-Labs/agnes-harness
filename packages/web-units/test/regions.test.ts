@@ -373,10 +373,12 @@ describe('independent core web-unit implementations', () => {
         order: 100,
       },
     ]
+    const moved: unknown[] = []
     const options = {
       sections: { entries: () => entries, subscribe: () => () => undefined },
       translate: (key: string) => key,
       onClose: () => closed++,
+      onMoved: (target: unknown) => moved.push(target),
     }
     flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
     for (const pane of ['model', 'plugin', 'appearance'] as const) {
@@ -393,11 +395,20 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#settings-advanced')).toBeNull()
     expect(host.querySelector('[data-testid="settings-nav-models"]')).toBeNull()
     expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Preferences')
+    // A page that left settings is not opened here: its new home goes to the host.
+    for (const id of ['memory', 'skills', 'history'])
+      form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true }))
+    expect(moved).toEqual([
+      { kind: 'page', page: 'plugins', tab: 'plugins.memory' },
+      { kind: 'page', page: 'plugins', tab: 'skills' },
+      { kind: 'session-search' },
+    ])
+    expect(form.dataset.settingsSection).toBe('model')
     // An old link to an advanced page still opens it; the switch stays the reader's choice.
-    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'memory', bubbles: true }))
+    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'context', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
     expect(new URL(location.href).searchParams.get('settings')).toBe('models')
-    expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
+    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
     expect(host.querySelector<HTMLElement>('#settings-sections-pane')?.hidden).toBe(false)
     expect(host.querySelector('#settings-advanced')).toBeNull()
     const toggle = host.querySelector<HTMLElement>('[data-testid="settings-advanced-switch"]')
@@ -415,11 +426,11 @@ describe('independent core web-unit implementations', () => {
       false,
     )
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
-    expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
-    history.replaceState(history.state, '', '?settings=memory')
+    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
+    history.replaceState(history.state, '', '?settings=context')
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(new URL(location.href).searchParams.get('settings')).toBe('models')
-    expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
+    expect(new URL(location.href).hash).toBe('#settings-subsection-context')
     host.querySelector<HTMLButtonElement>('#settings-back')?.click()
     expect(form.dataset.settingsView).toBe('list')
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')

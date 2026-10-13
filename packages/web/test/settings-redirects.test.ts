@@ -3,6 +3,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   movedSettingsTarget,
+  openMovedSettings,
   openMovedSettingsLink,
   rewriteMovedSettingsLink,
 } from '../src/settings-redirects.js'
@@ -16,8 +17,10 @@ it.each([
   ['feedback', '?page=plugins&tab=review'],
   ['discover', '?page=plugins&tab=market'],
   ['examples', '?page=agents'],
-  ['computer-use', '?page=plugins'],
-  ['search', '?page=plugins'],
+  ['computer-use', '?page=plugins&tab=plugins.computer-use'],
+  ['search', '?page=plugins&tab=plugins.search'],
+  ['memory', '?page=plugins&tab=plugins.memory'],
+  ['engines', '?page=plugins&tab=plugins.subagents'],
   ['schedules', '?page=automation&tab=schedules'],
   ['triggers', '?page=automation&tab=triggers'],
 ])('opens the new home of an old settings link (%s)', (id, search) => {
@@ -55,6 +58,21 @@ it('opens the sidebar search or the archived list for an old history or archive 
   expect(location.search).toBe('')
   // Pages and sections the dialog owns are not this function's to open.
   for (const id of ['plugins', 'security', 'nope']) expect(openMovedSettingsLink(id, actions)).toBe(false)
+  expect(actions.searchSessions).toHaveBeenCalledOnce()
+  expect(actions.showArchived).toHaveBeenCalledOnce()
+})
+
+it('opens a moved page by its target: a home page with its tab, the search, or the archived list', () => {
+  const actions = { openPage: vi.fn(), searchSessions: vi.fn(), showArchived: vi.fn() }
+  for (const id of ['memory', 'schedules', 'examples', 'history', 'archived']) {
+    const target = movedSettingsTarget(id)
+    if (target) openMovedSettings(target, actions)
+  }
+  expect(actions.openPage.mock.calls).toEqual([
+    ['plugins', 'plugins.memory'],
+    ['automation', 'schedules'],
+    ['agents', undefined],
+  ])
   expect(actions.searchSessions).toHaveBeenCalledOnce()
   expect(actions.showArchived).toHaveBeenCalledOnce()
 })
