@@ -1909,5 +1909,6 @@ function verifyHistory(session: unknown): Promise<unknown> {
     d?: { log?: { fullVerified?: () => Promise<void> } }
   }
   if (s.verifyHistory) return s.verifyHistory()
-  return s.d?.log?.fullVerified?.() ?? Promise.resolve()
+  const log = s.d?.log
+  return log?.fullVerified ? log.fullVerified() : Promise.resolve()
 }

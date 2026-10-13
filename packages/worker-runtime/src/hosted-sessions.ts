@@ -416,15 +416,15 @@ export class HostedSessions {
   }
 
   private recordOpen(sessionKey: string, session: HostSession, startedAt: number): void {
-    // A verified head past the stored head is the only trace rows were removed from the end of the
-    // ledger (the chain cannot show it); the open replaces that checkpoint, so say so here.
-    if (session.d.log.openStats.checkpoint.reason === 'beyond-head')
-      this.log(
-        sessionKey,
-        'warn',
-        `ledger ends at seq ${session.lastSeq}, before its verified checkpoint: rows after it may have been removed`,
-      )
     try {
+      // A verified head past the stored head is the only trace rows were removed from the end of the
+      // ledger (the chain cannot show it); the open replaces that checkpoint, so say so here.
+      if (session.d.log.openStats.checkpoint.reason === 'beyond-head')
+        this.log(
+          sessionKey,
+          'warn',
+          `ledger ends at seq ${session.lastSeq}, before its verified checkpoint: rows after it may have been removed`,
+        )
       this.record(sessionKey, {
         ...session.d.log.openStats,
         wallMs: this.clock() - startedAt,

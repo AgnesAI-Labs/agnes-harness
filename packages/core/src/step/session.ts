@@ -1768,7 +1768,9 @@ export class SessionImpl {
           const error = {
             // A ledger that failed its integrity check is reported as itself: the session cannot go on.
             code:
-              err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED',
+              err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY'
+                ? 'E_LEDGER_INTEGRITY'
+                : 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
           }
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but

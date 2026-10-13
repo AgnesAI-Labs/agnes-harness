@@ -126,9 +126,9 @@ it('logs a history that ends before its verified checkpoint', async () => {
   await t.run(key)
   // A queued prompt is the last row, and removing it leaves a history that still opens.
   await t.prompt(key, 'queued')
-  const file = (t.host.kernel.get(key)?.d.log.storage as unknown as { file: string }).file
+  const storage = t.host.kernel.get(key)?.d.log.storage as unknown as { file: string }
   await t.hosted.close(key)
-  const db = new DatabaseSync(file)
+  const db = new DatabaseSync(storage.file)
   const { last } = db.prepare('SELECT MAX(seq) AS last FROM events WHERE session_key = ?').get(key) as {
     last: number
   }
