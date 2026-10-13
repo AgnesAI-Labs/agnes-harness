@@ -1,5 +1,7 @@
+import { dirname } from 'node:path'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { type ProcessLiveness, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import { mkdirDurablySync } from '@agnes/system-node'
 
 /**
  * This process's start identity, so generation holders are recognised by pid and start together.
@@ -20,5 +22,8 @@ async function createProcessLiveness(): Promise<ProcessLiveness | undefined> {
 
 /** The generation store of one profile, identifying this worker by pid and process start. */
 export async function openGenerationStore(profileDirectory: string): Promise<RuntimeGenerationSnapshotStore> {
+  // Bootstrap the profile parent below its existing home before the store adopts it as its anchor.
+  const parent = dirname(profileDirectory)
+  mkdirDurablySync(parent, dirname(parent))
   return new RuntimeGenerationSnapshotStore(profileDirectory, { liveness: await createProcessLiveness() })
 }
