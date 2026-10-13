@@ -1082,7 +1082,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache, and ledger hashing through node:crypto; measured 26941, exact.
-  'packages/core/src': 26941,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/core/src 26994; no exclusions or spare allocation.
+  'packages/core/src': 26994,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1953,7 +1954,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 26917, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 26919, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 27138, exact.
-  'packages/daemon/src': 27138,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/daemon/src 27243; no exclusions or spare allocation.
+  'packages/daemon/src': 27243,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2697,7 +2699,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
   // 2026-10-13 attachments by reference: the streaming content-addressed attachment store and the request version cache. Reviewed exact countLines packages/host/src 39693; no exclusions or spare allocation.
-  'packages/host/src': 39693,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src 39703; no exclusions or spare allocation.
+  'packages/host/src': 39703,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2867,7 +2870,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 5248, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 5572, exact.
-  'packages/host/src/adapters': 5572,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters 5579; no exclusions or spare allocation.
+  'packages/host/src/adapters': 5579,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2888,7 +2892,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // open. Measured on this tree: 632, exact, no spare (-48).
   // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
   // sync helper. Measured 635, exact, no spare (+3).
-  'packages/host/src/adapters/storage-sqlite': 635,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters/storage-sqlite 642; no exclusions or spare allocation.
+  'packages/host/src/adapters/storage-sqlite': 642,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
