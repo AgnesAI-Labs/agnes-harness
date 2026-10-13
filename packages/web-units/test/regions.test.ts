@@ -1,6 +1,5 @@
 /** @vitest-environment happy-dom */
 
-import type { UINode } from '@agnes/protocol'
 import { ADVANCED_SETTINGS_STORAGE_KEY, advancedSettingsShown, setAdvancedSettingsShown } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
@@ -9,10 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Conversation,
   type ConversationChildContainers,
-  createAdminPaneStore,
   EMPTY_SIDEBAR_STATE,
   SettingsBuiltin,
-  type SettingsPane,
   SettingsPaneBuiltin,
   Sidebar,
 } from '../src/index.js'
@@ -65,64 +62,6 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
   })
 
-  it('renders the admin pane load state on its navigation controls, list and notice', () => {
-    const host = document.createElement('div')
-    document.body.append(host)
-    const root = createRoot(host)
-    roots.push(root)
-    const adminPanes = createAdminPaneStore(flushSync)
-    flushSync(() => root.render(createElement(SettingsBuiltin, { options: { adminPanes } })))
-    for (const pane of ['plugin', 'resources'] as const) {
-      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
-      if (!slot) throw new Error('Missing settings pane slot')
-      const paneRoot = createRoot(slot)
-      roots.push(paneRoot)
-      flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane, adminPanes })))
-    }
-    const control = (id: string) => host.querySelector<HTMLButtonElement>(`#${id}`) as HTMLButtonElement
-    const list = host.querySelector<HTMLElement>('#resource-list') as HTMLElement
-    const toolbar = host.querySelector<HTMLElement>('.resource-toolbar') as HTMLElement
-    const notice = host.querySelector<HTMLElement>('#resource-notice') as HTMLElement
-    expect(control('skills-tab').getAttribute('aria-selected')).toBe('true')
-    expect(list.hidden).toBe(false)
-    expect(notice.hasAttribute('data-kind')).toBe(false)
-
-    adminPanes.begin('resources', 'mcp')
-    expect(control('mcp-tab').getAttribute('aria-selected')).toBe('true')
-    expect(control('mcp-tab').tabIndex).toBe(0)
-    expect(control('mcp-tab').getAttribute('aria-busy')).toBe('true')
-    expect(control('mcp-tab').disabled).toBe(false)
-    expect(control('skills-tab').getAttribute('aria-selected')).toBe('false')
-    expect(control('skills-tab').tabIndex).toBe(-1)
-    expect(control('skills-tab').hasAttribute('aria-busy')).toBe(false)
-    expect(list.hidden).toBe(true)
-    expect(toolbar.hidden).toBe(true)
-
-    adminPanes.fail('resources', 'Could not open')
-    adminPanes.settle('resources', false)
-    expect(notice.textContent).toBe('Could not open')
-    expect(notice.dataset.kind).toBe('error')
-    expect(control('mcp-tab').hasAttribute('aria-busy')).toBe(false)
-    expect(list.hidden).toBe(true)
-
-    // The pane's own controller reports into the same line; the next open still clears it.
-    notice.textContent = 'Saved'
-    adminPanes.begin('resources', 'mcp')
-    adminPanes.clearNotice('resources')
-    adminPanes.settle('resources', true)
-    expect(notice.textContent).toBe('')
-    expect(notice.dataset.kind).toBe('')
-    expect(list.hidden).toBe(false)
-    expect(toolbar.hidden).toBe(false)
-
-    adminPanes.begin('plugin')
-    expect(control('plugin-management').disabled).toBe(true)
-    expect(control('plugin-management').getAttribute('aria-busy')).toBe('true')
-    adminPanes.settle('plugin', true)
-    expect(control('plugin-management').disabled).toBe(false)
-    expect(control('plugin-management').hasAttribute('aria-busy')).toBe(false)
-  })
-
   it('keeps one rail entry per everyday group, routes tabs by keyboard and removes disposed sections', () => {
     const host = document.createElement('div')
     document.body.append(host)
@@ -156,27 +95,6 @@ describe('independent core web-unit implementations', () => {
         icon: 'security',
         order: 11,
       },
-      // Pages that moved out of settings stay registered until their new home replaces them.
-      {
-        id: 'skills',
-        group: 'tools',
-        titleKey: 'skills',
-        groupTitleKey: 'tools',
-        icon: 'tools',
-        order: 20,
-        nativePane: 'resources',
-        navigationId: 'skills-tab',
-      },
-      {
-        id: 'mcp',
-        group: 'tools',
-        titleKey: 'mcp',
-        groupTitleKey: 'tools',
-        icon: 'tools',
-        order: 21,
-        nativePane: 'resources',
-        navigationId: 'mcp-tab',
-      },
     ]
     const changed = new Set<() => void>()
     flushSync(() =>
@@ -199,7 +117,7 @@ describe('independent core web-unit implementations', () => {
         }),
       ),
     )
-    for (const pane of ['model', 'plugin', 'resources'] as const) {
+    for (const pane of ['model'] as const) {
       const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
       if (!slot) throw new Error('Missing settings pane slot')
       const paneRoot = createRoot(slot)
@@ -207,18 +125,19 @@ describe('independent core web-unit implementations', () => {
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
     const nav = () => host.querySelectorAll('.settings-nav-group button[data-settings-group]')
-    // Models, and one entry for the two security pages; the moved pages are not listed.
+    // Models, and one entry for the two security pages.
     expect(nav()).toHaveLength(2)
     expect(host.querySelector('#settings-search')).toBeNull()
-    expect(host.querySelector('[data-testid="settings-nav-skills"]')).toBeNull()
     const sections = () => host.querySelector<HTMLElement>('#settings-sections-pane')
     expect(sections()?.hidden).toBe(true)
     expect(sections()?.querySelector('#section-pages')).toBeTruthy()
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
-    // A section without a native pane shows in the dialog's own host, not in the plugin pane.
+    // A section without a native pane shows in the dialog's own host.
     expect(sections()?.hidden).toBe(false)
     expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(true)
-    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
+    // The panes that moved to full pages are no longer part of the dialog.
+    for (const id of ['plugin', 'resource', 'archived', 'computer-use'])
+      expect(host.querySelector(`#${id}-settings-pane`)).toBeNull()
     host
       .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
@@ -249,23 +168,8 @@ describe('independent core web-unit implementations', () => {
     field.focus()
     for (const listener of changed) listener()
     expect(document.activeElement).toBe(field)
-    // A moved page still opens when something asks for it by name; its siblings are its tabs.
-    host
-      .querySelector('#config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'skills', bubbles: true }))
-    expect(host.querySelector('#resource-settings-pane')?.hasAttribute('hidden')).toBe(false)
-    expect(sections()?.hidden).toBe(true)
-    expect(host.querySelector('[data-testid="settings-nav-first"]')?.hasAttribute('aria-current')).toBe(false)
-    const resourceTab = host.querySelector<HTMLButtonElement>('#mcp-tab')
-    let resourceClicks = 0
-    resourceTab?.addEventListener('click', () => resourceClicks++)
-    resourceTab?.click()
-    expect(resourceTab?.getAttribute('aria-selected')).toBe('true')
     host.querySelector<HTMLButtonElement>('#model-settings')?.click()
-    expect(resourceTab?.hidden).toBe(true)
-    expect(resourceClicks).toBe(1)
-    expect(host.querySelector('#mcp-tab')).toBe(resourceTab)
-    expect(host.querySelector('#resource-list')?.getAttribute('aria-labelledby')).toBe('mcp-tab')
+    expect(sections()?.hidden).toBe(true)
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
     host
       .querySelector('#settings-section-tab-first')
@@ -381,7 +285,7 @@ describe('independent core web-unit implementations', () => {
       onMoved: (target: unknown) => moved.push(target),
     }
     flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
-    for (const pane of ['model', 'plugin', 'appearance'] as const) {
+    for (const pane of ['model', 'appearance'] as const) {
       const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
       if (!slot) throw new Error('Missing settings pane slot')
       const paneRoot = createRoot(slot)
@@ -474,42 +378,6 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('[aria-label="Language"] legend')?.textContent).toBe('Language')
   })
 
-  it('renders controller controls and their current translations', () => {
-    // 合并 origin/main 时 settings.ts 被整段退回成 main 的版本，分支自己加的标记随之丢失，
-    // 而当时没有任何用例覆盖这些元素，回归因此无人发现。这里按元素逐个钉住标记。
-    // 面板是单独渲染进各自 slot 的（外壳会把 settings-pane 段落移除），所以按面板渲染。
-    const expected: Array<[SettingsPane, string, string, string]> = [
-      ['computer-use', '#computer-use-refresh span', 'data-i18n', 'computerUse.action.refresh'],
-      ['computer-use', '#computer-use-install span', 'data-i18n', 'computerUse.action.install'],
-      ['computer-use', '#computer-use-update span', 'data-i18n', 'computerUse.action.update'],
-      ['computer-use', '#computer-use-restart span', 'data-i18n', 'computerUse.action.restart'],
-      ['computer-use', '#computer-use-doctor-run span', 'data-i18n', 'computerUse.doctor.run'],
-      [
-        'computer-use',
-        '#computer-use-operation-refresh span',
-        'data-i18n',
-        'computerUse.action.operationRefresh',
-      ],
-      ['computer-use', '#computer-use-operation-cancel span', 'data-i18n', 'computerUse.action.cancel'],
-      ['computer-use', '#computer-use-permission-grant span', 'data-i18n', 'computerUse.permissions.grant'],
-      ['archived', '#archived-search', 'placeholder', 'settings-shell.searchPlaceholder'],
-    ]
-    for (const [pane, selector, attribute, key] of expected) {
-      const host = document.createElement('div')
-      document.body.append(host)
-      const root = createRoot(host)
-      roots.push(root)
-      flushSync(() =>
-        root.render(createElement(SettingsPaneBuiltin, { pane, translate: (key) => `translated:${key}` })),
-      )
-      const element = host.querySelector(selector)
-      expect(element, `${selector} 缺失`).toBeTruthy()
-      expect(attribute === 'placeholder' ? element?.getAttribute(attribute) : element?.textContent).toBe(
-        `translated:${key}`,
-      )
-    }
-  })
-
   it('keeps the conversation child contract in the web-units package', () => {
     const host = document.createElement('div')
     document.body.append(host)
@@ -579,22 +447,5 @@ describe('independent core web-unit implementations', () => {
     expect(rendered).toBeGreaterThan(0)
     root.unmount()
     expect(disposed).toBe(1)
-  })
-
-  it('renders plugin and resource pane templates with translated controls', () => {
-    const host = document.createElement('div')
-    document.body.append(host)
-    document.documentElement.lang = 'en'
-    const root = createRoot(host)
-    roots.push(root)
-
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'plugin', translate: enT })))
-    expect(host.querySelector('#install-source')?.textContent).toBe('Install from source')
-    expect(host.querySelector('#install-source span')?.textContent).toBe('Install from source')
-
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'resources', translate: enT })))
-    expect(host.querySelector('#skill-refresh')?.textContent).toBe('Refresh Skill catalog')
-    expect(host.querySelector('#resource-list')?.getAttribute('aria-label')).toBe('Resource catalog')
-    expect(host.querySelector('[data-i18n]')).toBeNull()
   })
 })

@@ -26,10 +26,6 @@ describe('built-in web unit contract', () => {
   it('keeps settings panes and conversation child fills independently addressable', () => {
     for (const packageId of [
       '@agnes/web-settings-model',
-      '@agnes/web-settings-plugins',
-      '@agnes/web-settings-resources',
-      '@agnes/web-settings-computer-use',
-      '@agnes/web-settings-archived',
       '@agnes/web-settings-appearance',
       '@agnes/web-conversation-message-actions',
       '@agnes/web-conversation-attachments',

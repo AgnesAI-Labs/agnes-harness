@@ -1,4 +1,3 @@
-import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, createRegionHost, Dialog, renderRegion, SettingsInput, unmountRegion } from '@agnes/web-ui'
@@ -169,151 +168,10 @@ export function createSessionActions(options: {
     )
 
   let disposed = false
-  const archivedView = () => {
-    if (disposed) return undefined
-    const pane = document.getElementById('archived-settings-pane')
-    const search = pane?.querySelector<HTMLInputElement>('#archived-search')
-    const rows = pane?.querySelector<HTMLElement>('#archived-list')
-    const message = pane?.querySelector<HTMLElement>('#archived-message')
-    const empty = pane?.querySelector<HTMLElement>('#archived-empty')
-    if (pane && search && rows && message && empty) return { pane, search, rows, message, empty }
-    return undefined
-  }
-  let archived: PageSessionMeta['items'] = []
-  let epoch = 0
-  const restoring = new Set<string>()
-  const renderArchived = () => {
-    const view = archivedView()
-    if (!view) return
-    const { search, rows, message, empty } = view
-    const query = search.value.trim().toLocaleLowerCase()
-    const visible = archived.filter((row) =>
-      `${row.title ?? row.sessionId} ${row.cwd ?? ''}`.toLocaleLowerCase().includes(query),
-    )
-    renderRegion(
-      rows,
-      visible.map((row) => {
-        const title = row.title ?? t('session.archived.unnamed')
-        const restore = () => {
-          if (archivedView()?.rows !== rows || restoring.has(row.sessionId)) return
-          restoring.add(row.sessionId)
-          message.textContent = ''
-          renderArchived()
-          void (async () => {
-            let restored = false
-            try {
-              await options.client.session.archive(row.sessionId, false)
-              restored = true
-              ++epoch
-              archivedView()?.pane.removeAttribute('aria-busy')
-              archived = archived.filter((item) => item.sessionId !== row.sessionId)
-              renderArchived()
-              await options.changed()
-              await loadArchived(t('session.archived.refreshFailedPrefix'))
-              if (archivedView()?.rows === rows) search.focus()
-            } catch (failure) {
-              const current = archivedView()
-              if (current)
-                current.message.textContent = restored
-                  ? t('session.archived.refreshFailedPrefix') + text(failure)
-                  : text(failure)
-            } finally {
-              restoring.delete(row.sessionId)
-              renderArchived()
-            }
-          })()
-        }
-        return (
-          <li key={row.sessionId}>
-            <div>
-              <strong>{title}</strong>
-              <p>{row.cwd ?? t('session.uncategorized')}</p>
-            </div>
-            <Button
-              aria-label={t('session.archived.restoreAria', { title })}
-              disabled={restoring.has(row.sessionId)}
-              onClick={restore}
-            >
-              {t(restoring.has(row.sessionId) ? 'session.archived.restoring' : 'session.archived.restore')}
-            </Button>
-          </li>
-        )
-      }),
-    )
-    empty.textContent = visible.length
-      ? ''
-      : archived.length
-        ? t('session.archived.empty.noMatch')
-        : t('session.archived.empty.fallback')
-  }
-  const loadArchived = async (failurePrefix = '') => {
-    const view = archivedView()
-    if (!view) return
-    const { pane, message } = view
-    const version = ++epoch
-    const current = () => version === epoch && archivedView()?.rows === view.rows
-    pane.setAttribute('aria-busy', 'true')
-    message.textContent = ''
-    try {
-      const all: PageSessionMeta['items'] = []
-      let cursor: string | undefined
-      do {
-        const page = await options.client.session.list({ limit: 500, ...(cursor ? { cursor } : {}) })
-        if (!current()) return
-        all.push(...page.items.filter((row) => row.archived))
-        if (page.next === cursor && page.next !== undefined)
-          throw new Error(t('session.archived.paginationStalled'))
-        cursor = page.next
-      } while (cursor !== undefined)
-      archived = all
-      renderArchived()
-    } catch (failure) {
-      if (current()) message.textContent = failurePrefix + text(failure)
-    } finally {
-      if (current()) pane.removeAttribute('aria-busy')
-    }
-  }
-  const onSearch = (event: Event) => {
-    if (event.target === archivedView()?.search) renderArchived()
-  }
-  const onRefresh = (event: Event) => {
-    const view = archivedView()
-    if (!view || !(event.target instanceof Element)) return
-    const button = event.target.closest('button')
-    if (!button || button.disabled || button !== view.pane.querySelector('#archived-refresh')) return
-    void (async () => {
-      try {
-        await options.changed()
-        if (archivedView()?.rows === view.rows) await loadArchived()
-      } catch (failure) {
-        if (archivedView()?.rows === view.rows)
-          view.message.textContent = t('session.refreshFailed', { detail: text(failure) })
-      }
-    })()
-  }
-  document.addEventListener('input', onSearch, true)
-  document.addEventListener('click', onRefresh)
-  // A real plugin replacement still remounts root panes. Retire old reads and
-  // repopulate the new built-in pane; DOM writes within the same pane do nothing.
-  let observedRows = archivedView()?.rows
-  const observer = new MutationObserver(() => {
-    const rows = archivedView()?.rows
-    if (rows === observedRows) return
-    if (observedRows) unmountRegion(observedRows)
-    observedRows = rows
-    ++epoch
-    if (rows) void loadArchived()
-  })
-  observer.observe(document.getElementById('config') ?? document.body, { childList: true, subtree: true })
   const dispose = () => {
     disposed = true
-    ++epoch
-    observer.disconnect()
-    document.removeEventListener('input', onSearch, true)
-    document.removeEventListener('click', onRefresh)
     runtimeDialog?.dispose()
     window.removeEventListener('pagehide', dispose)
-    if (observedRows) unmountRegion(observedRows)
     unmountRegion(host)
     host.remove()
   }
@@ -321,7 +179,6 @@ export function createSessionActions(options: {
   const busy = new Set<string>()
   return {
     dispose,
-    loadArchived,
     async act(action: SessionAction, id: string, title: string, trigger: HTMLElement) {
       if (disposed) return
       if (action === 'rename') {

@@ -67,23 +67,18 @@ export function listedSettingsGroup(group: string): boolean {
   return settingsGroup(group) !== group || group === 'advanced'
 }
 
-/**
- * Pages shown as tabs of one screen. A page that moved but is still registered keeps its siblings
- * as tabs, so everything stays reachable from the place that opened it.
- */
+/** Pages shown as tabs of one screen: the sections of one everyday group. Listed pages stand alone. */
 export function settingsTabGroup(entry: Pick<SettingsNavigationEntry, 'id' | 'group'>): string {
-  const moved = settingsMoved(entry.id)
-  if (moved) return moved.kind === 'page' ? `moved:${moved.page}` : `moved:${moved.kind}`
   const group = settingsGroup(entry.group)
   return listedSettingsGroup(entry.group) ? `${group}:${entry.id}` : group
 }
 
-/** The entries the dialog lists: everything registered except pages that moved elsewhere. */
+/** The entries the dialog lists: every registered section, the advanced ones only while they show. */
 export function settingsListedEntries(
   entries: readonly SettingsNavigationEntry[],
   advanced: boolean,
 ): SettingsNavigationEntry[] {
-  return entries.filter((entry) => !settingsMoved(entry.id) && (advanced || !advancedSettings(entry.group)))
+  return entries.filter((entry) => advanced || !advancedSettings(entry.group))
 }
 
 export function settingsNavigationGroups(

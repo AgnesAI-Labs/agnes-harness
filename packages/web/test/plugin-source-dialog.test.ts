@@ -11,7 +11,7 @@ async function renderPluginHost(): Promise<void> {
   // The workbench rail lists the sections the plugin admin registers, as it does in the product.
   const { settingsSections } = await import('@agnes/web-client')
   host = await mountRenderedIndex({ settings: { sections: settingsSections } })
-  host.settings?.open('plugin')
+  ;(await import('./legacy-admin-panes.js')).installAdminPaneHosts('plugin')
 }
 // Every case starts from fresh module state, so the host and the controller share one instance.
 beforeEach(() => vi.resetModules())

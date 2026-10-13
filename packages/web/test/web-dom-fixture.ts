@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
 import { vi } from 'vitest'
-import { createAdminPaneController, type MountedAdminPane } from '../src/admin-pane-coordinator.js'
 import { mountAppShell } from '../src/app-shell.js'
 import {
   type AgnesClient,
@@ -11,7 +10,7 @@ import {
   startClientModules,
 } from '../src/client-modules/boot.js'
 import { mountNewSessionDialog } from '../src/new-session-dialog.js'
-import { createSettingsAdminPaneStore, type SettingsRegionOptions } from '../src/region-slots.js'
+import type { SettingsRegionOptions } from '../src/region-slots.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
@@ -109,44 +108,6 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     { timeout: 5_000 },
   )
   return runtime
-}
-
-/**
- * The workbench with the production admin-pane wiring: the settings rail owns the pane and tab
- * choice, and the coordinator mounts each admin controller into the panes React rendered.
- */
-export async function mountAdminWorkbench(mounts: {
-  mountPlugin?: () => Promise<MountedAdminPane>
-  mountResources?: (scope: { tab: 'skills' | 'mcp'; workspaceId?: string }) => Promise<MountedAdminPane>
-  workspaceId?: () => string | undefined
-}) {
-  const adminPanes = createSettingsAdminPaneStore()
-  const opened: Promise<void>[] = []
-  let open: ReturnType<typeof createAdminPaneController>['open'] | undefined
-  const runtime = await mountRenderedIndex({
-    settings: {
-      adminPanes,
-      onChange: ({ pane, tab }) => {
-        if (pane === 'plugin') opened.push(open?.('plugin') ?? Promise.resolve())
-        else if (pane === 'resources') opened.push(open?.('resources', tab ?? 'skills') ?? Promise.resolve())
-      },
-    },
-  })
-  const settings = runtime.settings
-  if (!settings) throw new Error('the settings region did not mount')
-  const unmounted = async (): Promise<MountedAdminPane> => {
-    throw new Error('this fixture does not mount that admin pane')
-  }
-  const controller = createAdminPaneController({
-    store: adminPanes,
-    settings,
-    workspaceId: mounts.workspaceId ?? (() => undefined),
-    errorText: (error) => (error instanceof Error ? error.message : String(error)),
-    mountPlugin: mounts.mountPlugin ?? unmounted,
-    mountResources: mounts.mountResources ?? unmounted,
-  })
-  open = controller.open
-  return { runtime, adminPanes, open: controller.open, opened }
 }
 
 export function resetWebDom(): void {

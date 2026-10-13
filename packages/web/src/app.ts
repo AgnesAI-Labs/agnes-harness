@@ -1,6 +1,5 @@
 import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
-import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
@@ -25,7 +24,6 @@ import { createTurnController } from './app/turn-controller.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
-  ComputerUseStatusResult,
   ConfigSnapshot,
   ContentBlock,
   ModelSettings,
@@ -53,8 +51,6 @@ import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-a
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
 import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 
-import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
-
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 
 import {
@@ -67,7 +63,6 @@ import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { createAdminPaneController } from './admin-pane-coordinator.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { archivedSessions } from './archived-sessions.js'
@@ -89,7 +84,6 @@ import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
-import { createSettingsAdminPaneStore } from './region-slots.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
@@ -809,12 +803,9 @@ const rosterSource: RosterSource = {
 // 时间线卡片的按包认领（WC9）：fill.extId 命中注册项归属包的名册 extIds 才认领。
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
-const computerUseStatus = createComputerUsePaneController(client)
-onPageHide(() => computerUseStatus.dispose())
 const references = composerReferences(prepareComposerSession, renderControls)
 let referenceSessionPending: Promise<Session> | undefined
 
-const adminPanes = createSettingsAdminPaneStore()
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
@@ -953,12 +944,6 @@ const clientModules = await startClientModules({
   settingsPaneContainer: hosts.settings,
   settings: {
     sections: settingsSections,
-    adminPanes,
-    computerUseSupported: async () => {
-      const report = await client.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
-      return report.status !== 'blocked' || !report.blockers.includes('platform-unsupported')
-    },
-    computerUse: computerUseStatus.render(),
     // A page that left settings was asked for by name: close the dialog and open its new home.
     onMoved: (target) => {
       settings.close()
@@ -968,12 +953,8 @@ const clientModules = await startClientModules({
         showArchived: () => archivedSessions.show('archived'),
       })
     },
-    onChange: ({ pane, tab }) => {
+    onChange: ({ pane }) => {
       if (pane === 'model') void settings.open()
-      else if (pane === 'plugin') void adminPaneController.open('plugin')
-      else if (pane === 'resources') void adminPaneController.open('resources', tab ?? 'skills')
-      else if (pane === 'archived') void sessionActions.loadArchived()
-      else if (pane === 'computer-use') void computerUseStatus.refresh()
       else {
         appearance.sync()
         void skinGroup.refresh()
@@ -2043,7 +2024,6 @@ onWindowFocus(() => {
   if (connected)
     run(async () => {
       await list()
-      if (settingsRegion.active() === 'archived') await sessionActions.loadArchived()
     })
 })
 const { appearance, skins: skinGroup } = createAppearanceController({
@@ -2066,51 +2046,6 @@ function paneWorkspaceId(): string | undefined {
   const id = selectedWorkspace?.workspaceId
   return id && /^[a-f0-9]{64}$/.test(id) ? id : requestedWorkspaceId
 }
-
-const candidateSources = {
-  sessionTitle: async (id: string) =>
-    sessionTitles.get(id) ??
-    (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find((row) => row.sessionId === id)
-      ?.title,
-  sessionTurnTime: async (id: string, turn: number) =>
-    (
-      await client.call<UITimeline>('_agnes/v1/session.projectUI', { sessionId: id, surface: 'web' })
-    ).turns.find((row) => row.turn === turn)?.startedAt,
-}
-
-const adminPaneController = createAdminPaneController({
-  store: adminPanes,
-  settings: settingsRegion,
-  workspaceId: paneWorkspaceId,
-  errorText: (error) =>
-    errorNotice(
-      error instanceof Error ? error.message : t('app.admin.openFailed'),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      t,
-    ),
-  async mountPlugin() {
-    const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
-    return mountPluginAdmin({
-      candidateSessionTurnTime: candidateSources.sessionTurnTime,
-      candidateSessionTitle: candidateSources.sessionTitle,
-      actualSlots: clientModules.actualSlots,
-      runtime: clientModules.reconciler,
-      schedules: {
-        list: (params) => client.call('_agnes/v1/schedules.list', params),
-        upsert: (params) => client.call('_agnes/v1/schedules.upsert', params),
-        archive: (params) => client.call('_agnes/v1/schedules.archive', params),
-        sessionKey: () => current?.id,
-      },
-    })
-  },
-  async mountResources(scope) {
-    const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
-    return adaptResourceAdmin(mountResourceAdmin(scope), scope, candidateSources)
-  },
-})
 
 function handleComposerWorkspace(): void {
   composerController.handleComposerWorkspace()

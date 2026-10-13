@@ -28,7 +28,6 @@ export {
   type RightbarRegionOptions,
 } from './regions/rightbar.js'
 export {
-  createSettingsAdminPaneStore,
   mountSettingsPaneRegion,
   type SettingsRegionMount,
   type SettingsRegionOptions,

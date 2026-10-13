@@ -52,40 +52,6 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
   expect(css).toContain('#settings-dsh-shell-slots > [id^="settings-dsh-slot-"]')
 })
 
-it('settings mount the shared admin surface in-document without iframe-era overrides', async () => {
-  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
-  // The pane id is now a legitimate same-document host. Keep rejecting the old cross-document
-  // layout path, and verify the real mounted surface rather than banning its host selector.
-  expect(css).not.toContain('admin-embedded')
-  expect(css).not.toContain('plugin-settings-loading')
-  expect(css).not.toContain('plugin-settings-frame')
-  const runtime = await mountRenderedIndex()
-  try {
-    const pane = document.getElementById('plugin-settings-pane')
-    expect(pane?.tagName).toBe('SECTION')
-    expect(pane?.ownerDocument).toBe(document)
-    expect(document.getElementById('config-form')?.contains(pane)).toBe(true)
-    expect(pane?.querySelector('.admin-pane-body .plugin-layout .plugin-list')).not.toBeNull()
-    expect(pane?.querySelector('iframe')).toBeNull()
-    expect(pane?.querySelector('[src], .admin-embedded')).toBeNull()
-  } finally {
-    await runtime.dispose()
-    resetWebDom()
-  }
-})
-
-it('the resource toolbar keeps its actions with the tabs', async () => {
-  const runtime = await mountRenderedIndex()
-  try {
-    const toolbar = document.querySelector('.resource-toolbar') as HTMLElement
-    expect(toolbar.contains(document.getElementById('mcp-create'))).toBe(true)
-    expect(toolbar.contains(document.getElementById('skill-refresh'))).toBe(true)
-  } finally {
-    await runtime.dispose()
-    resetWebDom()
-  }
-})
-
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.

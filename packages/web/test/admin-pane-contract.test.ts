@@ -13,15 +13,6 @@ import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 const packagesDir = join(resolve(import.meta.dirname, '../../..'), 'packages')
 const read = (name: string): string => readFileSync(join(packagesDir, 'web', 'public', name), 'utf8')
 
-it('guides MCP setup through chat and hides the manual creation control', async () => {
-  const runtime = await mountRenderedIndex()
-  const pane = document.getElementById('resource-settings-pane') as HTMLElement
-  expect(pane.querySelector('.config-heading')?.textContent).toContain('ask Agnes to connect it')
-  expect(pane.querySelector<HTMLButtonElement>('#mcp-create')?.hidden).toBe(true)
-  await runtime.dispose()
-  resetWebDom()
-})
-
 it('the shared confirmation dialog is rendered by the workbench', async () => {
   const required = [
     'admin-confirm',
@@ -55,10 +46,8 @@ it('no admin form is nested inside the settings form', async () => {
   expect(settingsForm?.querySelectorAll('form').length).toBe(0)
   for (const id of [
     'model-settings-pane',
-    'plugin-settings-pane',
-    'resource-settings-pane',
-    'computer-use-settings-pane',
     'appearance-settings-pane',
+    'settings-sections-pane',
   ])
     expect(settingsForm?.contains(document.getElementById(id)), `#${id} left #config-form`).toBe(true)
   expect(settingsForm?.querySelector('.settings-rail')).not.toBeNull()
@@ -88,9 +77,9 @@ it('the settings region reports its active pane and routes section requests thro
   const runtime = await mountRenderedIndex()
   const settings = runtime.settings
   expect(settings?.active()).toBe('model')
-  settings?.open('archived')
-  expect(settings?.active()).toBe('archived')
-  expect(document.getElementById('archived-settings-pane')?.hidden).toBe(false)
+  settings?.open('appearance')
+  expect(settings?.active()).toBe('appearance')
+  expect(document.getElementById('appearance-settings-pane')?.hidden).toBe(false)
   const routed: unknown[] = []
   settings?.form()?.addEventListener('agnes:settings-route', (event) => {
     routed.push((event as CustomEvent<unknown>).detail)

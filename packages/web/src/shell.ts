@@ -88,33 +88,3 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     },
   }
 }
-
-// 第三项是 rail 上的入口按钮 id。技能与 MCP 拆成两条独立 Tab（共用同一个面板），
-// 所以这里允许一项对应多个入口。
-const SETTINGS = [
-  ['model', 'model-settings-pane', ['model-settings']],
-  ['plugin', 'plugin-settings-pane', ['plugin-management']],
-  ['resources', 'resource-settings-pane', ['skills-tab', 'mcp-tab']],
-  ['archived', 'archived-settings-pane', ['archived-settings']],
-  ['computer-use', 'computer-use-settings-pane', ['computer-use-management']],
-  ['appearance', 'appearance-settings-pane', ['appearance-settings']],
-] as const
-export function showSettingsPane(pane: (typeof SETTINGS)[number][0]): void {
-  for (const [name, paneId, navigationIds] of SETTINGS) {
-    const content = document.getElementById(paneId)
-    if (!(content instanceof HTMLElement)) throw new Error('missing settings panes')
-    const selected = pane === name
-    content.hidden = !selected
-    for (const navigationId of navigationIds) {
-      const navigation = getButton(navigationId)
-      // 「技能 / MCP」这两个入口同时也是资源类型的切换器，高亮跟着 aria-selected 走，
-      // 否则两条 Tab 会同时亮（面板里真正在看哪一类就分不出来了）。
-      const highlighted = navigation.hasAttribute('aria-selected')
-        ? selected && navigation.getAttribute('aria-selected') === 'true'
-        : selected
-      navigation.classList.toggle('active', highlighted)
-      navigation.toggleAttribute('aria-current', highlighted)
-      if (highlighted) navigation.setAttribute('aria-current', 'page')
-    }
-  }
-}

@@ -124,10 +124,6 @@ export const settingsPaneSlot = (pane: SettingsPane) => `ui:settings-pane.${pane
 
 export const SETTINGS_UNIT_OWNER: Readonly<Record<SettingsPane, string>> = {
   model: '@agnes/web-settings-model',
-  plugin: '@agnes/web-settings-plugins',
-  resources: '@agnes/web-settings-resources',
-  archived: '@agnes/web-settings-archived',
-  'computer-use': '@agnes/web-settings-computer-use',
   appearance: '@agnes/web-settings-appearance',
 }
 

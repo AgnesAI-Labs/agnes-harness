@@ -331,10 +331,6 @@ export async function startClientModules(options: {
   if (settingsPane) {
     const settingsUnits = [
       ['model', '@agnes/web-settings-model'],
-      ['plugin', '@agnes/web-settings-plugins'],
-      ['resources', '@agnes/web-settings-resources'],
-      ['archived', '@agnes/web-settings-archived'],
-      ['computer-use', '@agnes/web-settings-computer-use'],
       ['appearance', '@agnes/web-settings-appearance'],
     ] as const
     for (const [pane, packageId] of settingsUnits)

@@ -94,7 +94,6 @@ export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export {
   ComputerUseCapability,
-  SettingsComputerUse,
   type SettingsComputerUseActions,
   type SettingsComputerUseView,
 } from './settings-computer-use.js'

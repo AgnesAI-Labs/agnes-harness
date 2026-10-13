@@ -1,15 +1,6 @@
 import { webRowId } from '@agnes/web-slots'
 
 export {
-  type AdminPaneName,
-  type AdminPaneNotice,
-  type AdminPaneSnapshot,
-  type AdminPaneStore,
-  type AdminResourceTab,
-  adminPaneControl,
-  createAdminPaneStore,
-} from './admin-pane-store.js'
-export {
   Approval,
   type ApprovalAction,
   type ApprovalHandle,
@@ -86,7 +77,6 @@ export type {
   SettingsPaneChange,
   SettingsRegionHandle,
   SettingsRegionOptions,
-  SettingsResourceTab,
 } from './settings.js'
 export {
   PANE_IDS,
@@ -194,7 +184,7 @@ const unit = (
 })
 
 /**
- * The first built-in unit cut. The six settings panes and conversation child
+ * The first built-in unit cut. The two settings panes and conversation child
  * fills are intentionally separate rows: unregistering one row must not remove
  * its siblings or the conversation shell.
  */
@@ -209,15 +199,6 @@ export const BUILTIN_WEB_UNITS: readonly WebUnitDefinition[] = Object.freeze([
   unit('@agnes/web-rightbar', './rightbar.js', ['rightbar'], 'root'),
   unit('@agnes/web-empty-state', './empty-state.js', ['ui:empty-state'], 'root'),
   unit('@agnes/web-settings-model', './settings/model.js', ['ui:settings-pane.model'], 'root'),
-  unit('@agnes/web-settings-plugins', './settings/plugins.js', ['ui:settings-pane.plugins'], 'root'),
-  unit('@agnes/web-settings-resources', './settings/resources.js', ['ui:settings-pane.resources'], 'root'),
-  unit(
-    '@agnes/web-settings-computer-use',
-    './settings/computer-use.js',
-    ['ui:settings-pane.computer-use'],
-    'root',
-  ),
-  unit('@agnes/web-settings-archived', './settings/archived.js', ['ui:settings-pane.archived'], 'root'),
   unit('@agnes/web-settings-appearance', './settings/appearance.js', ['ui:settings-pane.appearance'], 'root'),
   unit(
     '@agnes/web-conversation-message-actions',

@@ -1,5 +1,3 @@
-import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
-import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
 import { SettingsPages } from '@agnes/web-admin/settings/pages'
 import {
   dshSlotSpec,
@@ -9,10 +7,8 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createCatalogTranslator, createRegionRenderer } from '@agnes/web-ui'
+import { createRegionRenderer } from '@agnes/web-ui'
 import {
-  type AdminPaneStore,
-  createAdminPaneStore,
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
   SettingsBuiltin,
@@ -23,7 +19,6 @@ import {
   settingsDshSlotHostId,
   settingsPaneSlotHostId,
 } from '@agnes/web-units'
-import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,
@@ -34,11 +29,6 @@ import {
 
 export interface SettingsRegionOptions {
   sections?: import('@agnes/web-client').UiExtensionRegistry<import('@agnes/web-client').SettingsSection>
-
-  computerUseSupported?: () => Promise<boolean>
-  computerUse?: ReactNode
-  /** Load state of the plugin and Skill / MCP panes, written by the admin pane controller. */
-  adminPanes?: AdminPaneStore
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
   /** A request named a page that moved out of settings; the host opens its new home. */
@@ -51,12 +41,6 @@ export interface SettingsRegionMount extends EmptyStateRegionMount, SettingsRegi
   /** Ask the open settings dialog to show one of its sections. */
   route(section: string): void
 }
-
-/**
- * The store behind the plugin and Skill / MCP panes. Writes commit synchronously, so a controller
- * that opens a pane right after `begin` finds the navigation already showing the requested tab.
- */
-export const createSettingsAdminPaneStore = (): AdminPaneStore => createAdminPaneStore(flushSync)
 
 /** The settings dialog is component-owned; the dialog shell remains the skin/accessibility boundary. */
 export function mountSettingsPaneRegion(
@@ -84,20 +68,6 @@ export function mountSettingsPaneRegion(
     sectionPages,
     ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
   }
-  const paneText = (pane: SettingsPane, key: string): string => {
-    if (!locale) return key
-    const catalog =
-      pane === 'plugin'
-        ? pluginAdminShellLocaleCatalog
-        : pane === 'resources'
-          ? resourceAdminShellLocaleCatalog
-          : undefined
-    const value = catalog
-      ? createCatalogTranslator(catalog, locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en')(key)
-      : key
-    return value === key ? locale.t(key) : value
-  }
-
   const renderSettingsShell = (): void => {
     flushSync(() => root.render(<SettingsBuiltin ref={handle} options={shellOptions} />))
   }
@@ -137,12 +107,7 @@ export function mountSettingsPaneRegion(
         priority: 0,
       },
       () => (
-        <SettingsPaneBuiltin
-          pane={pane}
-          computerUse={options.computerUse}
-          {...(options.adminPanes ? { adminPanes: options.adminPanes } : {})}
-          {...(locale ? { translate: (key: string) => paneText(pane, key) } : {})}
-        />
+        <SettingsPaneBuiltin pane={pane} {...(locale ? { translate: (key: string) => locale.t(key) } : {})} />
       ),
     )
     removeBuiltin.set(pane, remove)

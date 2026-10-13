@@ -1,7 +1,5 @@
 /** @vitest-environment happy-dom */
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
@@ -12,7 +10,6 @@ import type {
 import { pluginAdminLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/admin'
 import { ADMIN_FEATURES } from '@agnes/web-admin/admin/plugins/types'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { setDisclosureOpen } from '@agnes/web-ui'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 type RuntimeFixture = Readonly<{
@@ -51,7 +48,7 @@ async function renderPluginHost(): Promise<void> {
   // The workbench rail lists the sections the plugin admin registers, as it does in the product.
   const { settingsSections } = await import('@agnes/web-client')
   host = await mountRenderedIndex({ settings: { sections: settingsSections } })
-  host.settings?.open('plugin')
+  ;(await import('./legacy-admin-panes.js')).installAdminPaneHosts('plugin')
 }
 // Every case starts from fresh module state, so the host and the controller share one instance.
 beforeEach(() => vi.resetModules())
@@ -326,13 +323,6 @@ it('groups real catalog releases and carries the selected version source through
   )
   expect(document.querySelector('.plugin-tabs')).toBeNull()
   expect(document.querySelector('[data-testid=plugin-diagnostics]')).toBeNull()
-  setDisclosureOpen(document.querySelector<HTMLElement>('[data-testid="settings-advanced"]')!, true)
-  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-diagnostics"]')?.click()
-  await vi.waitFor(() =>
-    expect(document.querySelector('[data-testid=plugin-diagnostics]')?.hasAttribute('open')).toBe(false),
-  )
-  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-plugins"]')?.click()
-  await vi.waitFor(() => expect(document.querySelector('.plugin-empty')).not.toBeNull())
   document.querySelector<HTMLButtonElement>('#install-source')?.click()
   await vi.waitFor(() =>
     expect(document.querySelector('[data-testid=plugin-creator]')?.getAttribute('role')).toBe('menuitem'),
@@ -376,11 +366,6 @@ it('groups real catalog releases and carries the selected version source through
     (candidate) => candidate.textContent === 'Inspect installation',
   )
   check?.click()
-  // The shared shell can move away from the installed header while inspection is pending.
-  // Advanced settings has no source-install button; in-flight review remains owned by its modal.
-  setDisclosureOpen(document.querySelector<HTMLElement>('[data-testid="settings-advanced"]')!, true)
-  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-diagnostics"]')?.click()
-  await vi.waitFor(() => expect(document.getElementById('install-source')).toBeNull())
   await vi.waitFor(() =>
     expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install “'),
   )

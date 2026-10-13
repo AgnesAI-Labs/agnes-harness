@@ -40,7 +40,7 @@ let resourceMount: {
   reload(): Promise<void>
   sync(scope: { tab: 'skills' | 'mcp'; workspaceId?: string }, options?: { refresh?: boolean }): Promise<void>
 }
-let workbench: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountAdminWorkbench>> | undefined
+let workbench: Awaited<ReturnType<typeof import('./legacy-admin-panes.js').mountAdminWorkbench>> | undefined
 const requests: Array<{ path: string; body: Record<string, unknown> }> = []
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 /**
@@ -192,9 +192,8 @@ beforeEach(async () => {
       return Response.json({ operationId: 'op' })
     }),
   )
-  // The controller binds to the panes and dialogs the workbench renders, mounted by the same
-  // coordinator the settings rail drives in the product.
-  const { mountAdminWorkbench } = await import('./web-dom-fixture.js')
+  // The controller binds to pane markup and the workbench's dialogs; the fixture supplies the panes.
+  const { mountAdminWorkbench } = await import('./legacy-admin-panes.js')
   const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
   workbench = await mountAdminWorkbench({
     mountResources: async (scope) => {

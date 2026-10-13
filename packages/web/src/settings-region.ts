@@ -10,7 +10,6 @@ export type {
   SettingsPaneChange,
   SettingsRegionHandle,
   SettingsRegionOptions,
-  SettingsResourceTab,
 } from '@agnes/web-units'
 export {
   PANE_IDS,

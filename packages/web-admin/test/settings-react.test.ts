@@ -89,7 +89,6 @@ it('operates the React settings pane and account dialog without losing native fo
       createElement(SettingsBuiltin, {
         options: {
           sections: settingsSections,
-          computerUseSupported: async () => false,
           onMoved: (target) => moved.push(target),
         },
       }),
@@ -249,14 +248,14 @@ it('operates the React settings pane and account dialog without losing native fo
   }
 })
 
-it('translates static settings pane text and placeholders when the pane is first mounted', () => {
+it('translates static settings pane text when the pane is first mounted', () => {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
   try {
-    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'archived', translate: zhT })))
-    expect(host.querySelector('#archived-settings-pane h2')?.textContent).toBe('已归档会话')
-    expect(host.querySelector<HTMLInputElement>('#archived-search')?.placeholder).toBe('搜索已归档会话')
+    flushSync(() => root.render(createElement(SettingsPaneBuiltin, { pane: 'appearance', translate: zhT })))
+    expect(host.querySelector('#appearance-settings-pane h2')?.textContent).toBe('通用')
+    expect(host.querySelector('#appearance-settings-pane')?.textContent).toContain('显示高级设置')
   } finally {
     root.unmount()
     host.remove()

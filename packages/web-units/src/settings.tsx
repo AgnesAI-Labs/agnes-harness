@@ -9,7 +9,6 @@ import {
   useState,
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import type { AdminPaneStore } from './admin-pane-store.js'
 import { SettingsStaticPane } from './settings-panes.js'
 import { createSettingsNavigationStore, SettingsDshHost, SettingsShell } from './settings-shell.js'
 
@@ -25,9 +24,8 @@ import {
   settingsTabGroup,
 } from './settings-navigation.js'
 
-export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'computer-use' | 'appearance'
-export type SettingsResourceTab = 'skills' | 'mcp'
-export type SettingsPaneChange = { pane: SettingsPane; tab?: SettingsResourceTab }
+export type SettingsPane = 'model' | 'appearance'
+export type SettingsPaneChange = { pane: SettingsPane }
 
 export type SettingsNavigationEntry = {
   id: string
@@ -41,11 +39,6 @@ export type SettingsNavigationEntry = {
 }
 export interface SettingsRegionOptions {
   sections?: { entries(): readonly SettingsNavigationEntry[]; subscribe(listener: () => void): () => void }
-  /** Load state of the plugin and Skill / MCP panes, written by their controller. */
-  adminPanes?: AdminPaneStore
-
-  /** Host capability probe; a failed probe keeps the diagnostic entry available. */
-  computerUseSupported?: () => Promise<boolean>
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
   /** A request named a page that moved out of settings; the host opens its new home. */
@@ -66,25 +59,17 @@ export interface SettingsRegionHandle {
 
 export const PANE_IDS: Record<SettingsPane, string> = {
   model: 'model-settings-pane',
-  plugin: 'plugin-settings-pane',
-  resources: 'resource-settings-pane',
-  archived: 'archived-settings-pane',
-  'computer-use': 'computer-use-settings-pane',
   appearance: 'appearance-settings-pane',
 }
 
 /** The dialog's own page host: sections that have no native pane render here. */
 export const SETTINGS_SECTIONS_HOST_ID = 'settings-sections-pane'
 
-/**
- * Where a section shows. Sections without a native pane render in the dialog's own section host;
- * one that moved out of settings still renders through the plugin pane that used to list it.
- */
+/** Where a section shows: its native pane, or the dialog's own section host. */
 export function settingsEntryPane(
-  entry: Pick<SettingsNavigationEntry, 'id' | 'nativePane'>,
+  entry: Pick<SettingsNavigationEntry, 'nativePane'>,
 ): SettingsPane | 'sections' {
-  if (entry.nativePane) return entry.nativePane as SettingsPane
-  return settingsMoved(entry.id) ? 'plugin' : 'sections'
+  return entry.nativePane === 'model' || entry.nativePane === 'appearance' ? entry.nativePane : 'sections'
 }
 
 export const SETTINGS_DSH_SLOT_NAMES = Object.freeze([
@@ -106,10 +91,6 @@ export const settingsDshSlotHostId = (name: SettingsDshSlotName): string =>
   `settings-dsh-slot-${name.replaceAll('.', '-')}`
 const NAV_IDS: Record<SettingsPane, string[]> = {
   model: ['model-settings'],
-  plugin: ['plugin-management'],
-  resources: ['skills-tab', 'mcp-tab'],
-  archived: ['archived-settings'],
-  'computer-use': ['computer-use-management'],
   appearance: ['appearance-settings'],
 }
 
@@ -151,27 +132,11 @@ function SettingsBuiltinImpl(
           const item = root.querySelector<HTMLElement>(`#${id}`)
           // A registry rail entry stands for its whole group; the navigation marks it current.
           if (!item || item.dataset.settingsGroup) continue
-          const active =
-            name === pane &&
-            (pane !== 'resources' || item.getAttribute('aria-selected') === 'true') &&
-            (pane !== 'plugin' || (root.dataset.runtimePage ?? 'plugins') === 'plugins')
+          const active = name === pane
           item.classList.toggle('active', active)
           if (active) item.setAttribute('aria-current', 'page')
           else item.removeAttribute('aria-current')
         }
-      for (const item of root.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
-        const active =
-          pane === 'plugin' && item.dataset.runtimePage === (root.dataset.runtimePage ?? 'plugins')
-        item.classList.toggle('active', active)
-        if (active) item.setAttribute('aria-current', 'page')
-        else item.removeAttribute('aria-current')
-      }
-      if (pane === 'resources') {
-        const list = root.querySelector<HTMLElement>('#resource-list')
-        const selected = root.querySelector<HTMLButtonElement>('.settings-nav-tabs [aria-selected="true"]')
-        list?.setAttribute('role', 'tabpanel')
-        if (selected) list?.setAttribute('aria-labelledby', selected.id)
-      }
     },
     [form, options.sections],
   )
@@ -190,17 +155,6 @@ function SettingsBuiltinImpl(
     if (!root) return
     open('model')
     const listeners: Array<() => void> = []
-    // The shell owns visibility. A replacement Computer Use row starts hidden, so restore
-    // the current navigation choice when that row returns without another navigation click.
-    let computerUsePane = root.querySelector('#computer-use-settings-pane')
-    const observer = new MutationObserver(() => {
-      const next = root.querySelector('#computer-use-settings-pane')
-      if (next === computerUsePane) return
-      computerUsePane = next
-      open(activePane.current)
-    })
-    observer.observe(root, { childList: true, subtree: true })
-    listeners.push(() => observer.disconnect())
     const bind = (id: string, change: SettingsPaneChange) => {
       const button = root.querySelector<HTMLButtonElement>(`#${id}`)
       if (!button) return
@@ -210,30 +164,9 @@ function SettingsBuiltinImpl(
       }
       button.addEventListener('click', listener)
       listeners.push(() => button.removeEventListener('click', listener))
-      if (change.tab) {
-        const onKeydown = (event: KeyboardEvent) => {
-          let next: SettingsResourceTab | undefined
-          if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))
-            next = change.tab === 'skills' ? 'mcp' : 'skills'
-          if (event.key === 'Home') next = 'skills'
-          if (event.key === 'End') next = 'mcp'
-          if (!next) return
-          const target = root.querySelector<HTMLButtonElement>(`#${next}-tab`)
-          if (!target || target.disabled) return
-          event.preventDefault()
-          target.focus({ preventScroll: true })
-          if (next !== change.tab) target.click()
-        }
-        button.addEventListener('keydown', onKeydown)
-        listeners.push(() => button.removeEventListener('keydown', onKeydown))
-      }
     }
     if (options.sections) {
-      let computerUseSupported = true
-      const navigationEntries = () => {
-        const entries = options.sections?.entries() ?? []
-        return computerUseSupported ? entries : entries.filter((entry) => entry.id !== 'computer-use')
-      }
+      const navigationEntries = () => options.sections?.entries() ?? []
       const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
       const navigate = (requested: string, notify = true) => {
         const route = settingsRoute(requested)
@@ -293,7 +226,6 @@ function SettingsBuiltinImpl(
           '.settings-nav-group button[data-settings-group]',
         )) {
           const active =
-            !settingsMoved(id) &&
             button.dataset.settingsGroup === settingsGroup(selected.group) &&
             (!listedSettingsGroup(selected.group) || button.dataset.settingsSection === id)
           button.classList.toggle('active', active)
@@ -311,13 +243,8 @@ function SettingsBuiltinImpl(
           )
             flushSync(() => navigation.update({ entries, selected: id }))
         }
-        if (pane === 'resources')
-          root
-            .querySelector('#resource-list')
-            ?.setAttribute('aria-labelledby', selected.navigationId ?? `${id}-tab`)
         if (notify) {
-          if (target !== 'sections')
-            options.onChange?.({ pane, ...(pane === 'resources' ? { tab: id as SettingsResourceTab } : {}) })
+          if (target !== 'sections') options.onChange?.({ pane })
           if (!selected.nativePane)
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
           const url = new URL(location.href)
@@ -458,40 +385,8 @@ function SettingsBuiltinImpl(
       }
       listeners.push(options.sections.subscribe(syncEntries))
       navigate('model', false)
-      let alive = true
-      if (options.computerUseSupported)
-        void options
-          .computerUseSupported()
-          .then((supported) => {
-            if (!alive || computerUseSupported === supported) return
-            computerUseSupported = supported
-            syncEntries()
-          })
-          .catch(() => undefined)
-      listeners.push(() => {
-        alive = false
-      })
     } else {
-      bind('plugin-management', { pane: 'plugin' })
       bind('model-settings', { pane: 'model' })
-      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-runtime-page]')) {
-        const listener = () => {
-          root.dataset.runtimePage = button.dataset.runtimePage
-          const shell = root.querySelector<HTMLElement>('#config-form')
-          if (shell) shell.dataset.runtimePage = button.dataset.runtimePage
-          open('plugin')
-          options.onChange?.({ pane: 'plugin' })
-          root.dispatchEvent(
-            new CustomEvent('agnes:settings-page', { detail: button.dataset.runtimePage, bubbles: true }),
-          )
-        }
-        button.addEventListener('click', listener)
-        listeners.push(() => button.removeEventListener('click', listener))
-      }
-      bind('skills-tab', { pane: 'resources', tab: 'skills' })
-      bind('mcp-tab', { pane: 'resources', tab: 'mcp' })
-      bind('archived-settings', { pane: 'archived' })
-      bind('computer-use-management', { pane: 'computer-use' })
       bind('appearance-settings', { pane: 'appearance' })
     }
     const close = root.querySelector<HTMLButtonElement>('#config-close')
@@ -509,7 +404,6 @@ function SettingsBuiltinImpl(
       <div>
         <SettingsShell
           store={options.sections ? navigation : undefined}
-          adminPanes={options.adminPanes}
           translate={options.translate}
           sectionPages={options.sectionPages}
         />
@@ -534,21 +428,11 @@ export const SettingsBuiltin = forwardRef(SettingsBuiltinImpl)
 /** One independently mounted settings contribution. Its lifetime is owned by the corresponding row. */
 export function SettingsPaneBuiltin({
   pane,
-  computerUse,
-  adminPanes,
   translate,
 }: {
   translate?: (key: string) => string
   pane: SettingsPane
-  computerUse?: ReactNode
-  adminPanes?: AdminPaneStore
 }) {
-  if (pane === 'computer-use' && computerUse)
-    return (
-      <div data-agnes-region-owner="builtin" data-agnes-region-unit="settings-computer-use">
-        {computerUse}
-      </div>
-    )
   return (
     <div data-agnes-region-owner="builtin" data-agnes-region-unit={`settings-${pane}`}>
       {pane === 'model' ? (
@@ -558,11 +442,7 @@ export function SettingsPaneBuiltin({
           afterAccounts={<SettingsDshHost name="settings.models.footer" />}
         />
       ) : (
-        <SettingsStaticPane
-          pane={pane}
-          {...(adminPanes ? { adminPanes } : {})}
-          {...(translate ? { translate } : {})}
-        />
+        <SettingsStaticPane pane={pane} {...(translate ? { translate } : {})} />
       )}
     </div>
   )

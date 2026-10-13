@@ -337,7 +337,7 @@ describe('migrated transcript region', () => {
 })
 
 describe('migrated settings panes', () => {
-  it('mounts six independently owned pane rows and removing one leaves siblings intact', async () => {
+  it('mounts two independently owned pane rows and removing one leaves its sibling intact', async () => {
     const slots = await registry()
     const config = document.createElement('dialog')
     config.id = 'config'
@@ -346,21 +346,24 @@ describe('migrated settings panes', () => {
     mounts.push(mount)
 
     expect(config.querySelector('[data-slot="ui:settings-pane.model"]')).toBeTruthy()
-    expect(config.querySelector('[data-slot="ui:settings-pane.plugin"]')).toBeTruthy()
+    expect(config.querySelector('[data-slot="ui:settings-pane.appearance"]')).toBeTruthy()
     expect(slots.entriesByOwner('@agnes/web-settings-model').map((entry) => entry.name)).toEqual([
       'ui:settings-pane.model',
     ])
-    expect(slots.entriesByOwner('@agnes/web-settings-plugins').map((entry) => entry.name)).toEqual([
-      'ui:settings-pane.plugin',
+    expect(slots.entriesByOwner('@agnes/web-settings-appearance').map((entry) => entry.name)).toEqual([
+      'ui:settings-pane.appearance',
     ])
+    // The panes that moved to full pages are not part of the dialog any more.
+    for (const id of ['plugin', 'resource', 'archived', 'computer-use'])
+      expect(config.querySelector(`#${id}-settings-pane`)).toBeNull()
 
-    mount.open('plugin')
-    expect(config.querySelector('#plugin-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    mount.open('appearance')
+    expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
     expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
-    mount.unmountPane('plugin')
-    expect(config.querySelector('#plugin-settings-pane')).toBeNull()
+    mount.unmountPane('appearance')
+    expect(config.querySelector('#appearance-settings-pane')).toBeNull()
     expect(config.querySelector('#model-settings-pane')).toBeTruthy()
-    expect(slots.entries(settingsPaneSlot('plugin') as string)).toEqual([])
+    expect(slots.entries(settingsPaneSlot('appearance') as string)).toEqual([])
     expect(slots.entries(settingsPaneSlot('model') as string)).toHaveLength(1)
   })
 
@@ -382,7 +385,7 @@ describe('migrated settings panes', () => {
     const hosts = [
       ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
     ]
-    const refresh = config.querySelector<HTMLButtonElement>('#archived-refresh')
+    const refresh = config.querySelector<HTMLButtonElement>('#config-add-account')
     const refreshed = vi.fn()
     refresh?.addEventListener('click', refreshed)
     mount.open('appearance')
@@ -400,12 +403,11 @@ describe('migrated settings panes', () => {
     )
     // The pane's own copy follows the language; language names come from the picker, filled at run time.
     expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('Font size')
-    expect(config.querySelector('#computer-use-settings-pane')?.textContent).toContain('Computer Use')
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
     expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Models & accounts')
     expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型与账户')
     for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
-    expect(config.querySelector('#archived-refresh')).toBe(refresh)
+    expect(config.querySelector('#config-add-account')).toBe(refresh)
     refresh?.click()
     expect(refreshed).toHaveBeenCalledOnce()
     expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
@@ -433,15 +435,6 @@ describe('migrated settings panes', () => {
       { name: 'settings.models.footer', id: 'fixture-settings-footer', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-settings-footer-content' }, '扩展模型尾部'),
     )
-    const removePluginItem = slots.register(
-      {
-        name: 'settings.plugin.item',
-        id: 'fixture-settings-plugin-item',
-        owner: 'fixture',
-        key: 'fixture-plugin',
-      },
-      () => createElement('span', { id: 'fixture-settings-plugin-item-content' }, '扩展插件项'),
-    )
     await vi.waitFor(() => {
       expect(
         config.querySelector('#fixture-settings-header-content')?.closest('#settings-dsh-shell-slots'),
@@ -449,20 +442,14 @@ describe('migrated settings panes', () => {
       expect(
         config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
       ).toBeTruthy()
-      expect(
-        config.querySelector('#fixture-settings-plugin-item-content')?.closest('#plugin-list'),
-      ).toBeTruthy()
       expect(config.querySelector('#config-add-account')).toBeTruthy()
-      expect(config.querySelector('#installed-tab')).toBeTruthy()
       expect(config.querySelector('#account-dialog')).toBeTruthy()
     }, committed)
 
-    mount.unmountPane('plugin')
-    expect(config.querySelector('#fixture-settings-plugin-item-content')).toBeNull()
+    mount.unmountPane('appearance')
     expect(config.querySelector('#fixture-settings-footer-content')).toBeTruthy()
     removeHeader()
     removeFooter()
-    removePluginItem()
   })
 })
 

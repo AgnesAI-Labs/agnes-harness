@@ -4,6 +4,7 @@ import {
   Disclosure,
   mountSettingsSelectOptions,
   SettingsInput,
+  SettingsModelPane,
   SettingsSelect,
 } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
@@ -18,9 +19,8 @@ function SettingsFixture() {
     <>
       <form id="config-form" className="settings-shell" data-settings-view="list">
         <SettingsLegacyRail />
-        {(['model', 'plugin', 'resources', 'archived', 'computer-use', 'appearance'] as const).map((pane) => (
-          <SettingsStaticPane key={pane} pane={pane} />
-        ))}
+        <SettingsModelPane beforeAccounts={null} afterAccounts={null} />
+        <SettingsStaticPane pane="appearance" />
       </form>
       <dialog data-agnes-region="dialog" id="account-dialog" aria-labelledby="config-detail-title">
         <Button

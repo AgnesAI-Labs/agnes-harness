@@ -70,7 +70,7 @@ const runtimeDescriptor = (id: string) => ({
 })
 
 function setup(translate = zhT) {
-  document.body.innerHTML = `<section id="archived-settings-pane"><input id="archived-search" /><p id="archived-message"></p><p id="archived-empty"></p><ul id="archived-list"></ul><button id="archived-refresh"></button></section><button id="trigger">菜单</button>`
+  document.body.innerHTML = `<button id="trigger">菜单</button>`
   const session = {
     list: vi.fn<(options: unknown) => Promise<PageSessionMeta>>(async () => ({ items: [] })),
     rename: vi.fn(async () => ({ title: '新名称', archived: false })),
@@ -230,43 +230,6 @@ it('prefills and validates rename, shows save failures, allows retry and returns
   expect((document.getElementById('session-rename-input') as HTMLInputElement).value).toBe('新名称')
 })
 
-it('reads every page, searches archived sessions by workspace and restores durably through SDK', async () => {
-  const { actions, session, changed } = setup()
-  session.list
-    .mockResolvedValueOnce({ items: [row('active')], next: 'second' })
-    .mockResolvedValueOnce({ items: [row('saved', true)] })
-  await actions.loadArchived()
-  expect(session.list).toHaveBeenLastCalledWith({ limit: 500, cursor: 'second' })
-  const search = document.getElementById('archived-search') as HTMLInputElement
-  search.value = '/workspace'
-  search.dispatchEvent(new Event('input'))
-  const list = document.getElementById('archived-list') as HTMLElement
-  expect(list.querySelectorAll('li')).toHaveLength(1)
-  expect(list.textContent).toContain('名称 saved')
-  search.value = 'absent'
-  search.dispatchEvent(new Event('input'))
-  expect(list.querySelectorAll('li')).toHaveLength(0)
-  search.value = ''
-  search.dispatchEvent(new Event('input'))
-  ;(list.querySelector('button') as HTMLButtonElement).click()
-  await flush()
-  expect(session.archive).toHaveBeenCalledWith('saved', false)
-  expect(changed).toHaveBeenCalledOnce()
-  expect(document.getElementById('archived-empty')?.textContent).toBe('暂无已归档会话。')
-})
-
-it('renders titles as text and keeps failed restoration visible and retryable', async () => {
-  const { actions, session } = setup()
-  session.list.mockResolvedValue({ items: [{ ...row('s', true), title: '<img src=x onerror=alert(1)>' }] })
-  await actions.loadArchived()
-  session.archive.mockRejectedValueOnce(new Error('网络断开'))
-  ;(document.querySelector('#archived-list button') as HTMLButtonElement).click()
-  await flush()
-  expect(document.querySelector('#archived-list img')).toBeNull()
-  expect(document.getElementById('archived-message')?.textContent).toBe('网络断开')
-  expect((document.querySelector('#archived-list button') as HTMLButtonElement).disabled).toBe(false)
-})
-
 it('deduplicates pending actions and reports rejection without claiming success', async () => {
   const { actions, session, error, changed, trigger } = setup()
   let reject!: (error: Error) => void
@@ -310,128 +273,11 @@ it('retries only refresh after a successful rename and failed list read', async 
   await vi.waitFor(() => expect(visible(dialog)).toBe(false))
 })
 
-it('removes a restored row even if sidebar refresh fails and refresh never repeats the write', async () => {
-  const { actions, session, changed } = setup()
-  session.list.mockResolvedValueOnce({ items: [row('s', true)] })
-  await actions.loadArchived()
-  changed.mockRejectedValueOnce(new Error('读取超时'))
-  document.querySelector<HTMLButtonElement>('#archived-list button')?.click()
-  await flush()
-  expect(document.querySelectorAll('#archived-list li')).toHaveLength(0)
-  expect(document.getElementById('archived-message')?.textContent).toContain('已取消归档，但列表刷新失败')
-  document.getElementById('archived-refresh')?.click()
-  await flush()
-  expect(session.archive).toHaveBeenCalledOnce()
-  expect(changed).toHaveBeenCalledTimes(2)
-  expect(document.getElementById('archived-message')?.textContent).toBe('')
-})
-
 it('distinguishes a committed archive from a failed refresh', async () => {
   const { actions, changed, error, trigger } = setup()
   changed.mockRejectedValueOnce(new Error('读取超时'))
   await actions.act('archive', 's', '名称', trigger)
   expect(error.mock.calls[0]?.[0].message).toContain('已归档，但列表刷新失败')
-})
-
-function replaceArchivedPane() {
-  const pane = document.getElementById('archived-settings-pane') as HTMLElement
-  pane.replaceWith(pane.cloneNode(true))
-}
-
-it.each(['success', 'failure'] as const)(
-  'ignores a late old-pane list %s after replacement',
-  async (result) => {
-    const { actions, session, changed } = setup()
-    let resolve!: (page: PageSessionMeta) => void
-    let reject!: (error: Error) => void
-    session.list.mockReturnValueOnce(
-      new Promise((done, fail) => {
-        resolve = done
-        reject = fail
-      }),
-    )
-    const oldRead = actions.loadArchived()
-    session.list.mockResolvedValue({ items: [row('new', true)] })
-    replaceArchivedPane()
-    await vi.waitFor(() =>
-      expect(document.getElementById('archived-list')?.textContent).toContain('名称 new'),
-    )
-    if (result === 'success') resolve({ items: [row('stale', true)] })
-    else reject(new Error('旧请求失败'))
-    await oldRead
-    expect(document.getElementById('archived-list')?.textContent).toContain('名称 new')
-    expect(document.getElementById('archived-list')?.textContent).not.toContain('stale')
-    expect(document.getElementById('archived-message')?.textContent).toBe('')
-    // Repeated replacements must not multiply event handlers.
-    replaceArchivedPane()
-    await flush()
-    session.list.mockClear()
-    document.getElementById('archived-refresh')?.click()
-    await flush()
-    expect(changed).toHaveBeenCalledOnce()
-    expect(session.list).toHaveBeenCalledOnce()
-  },
-)
-
-it.each(['success', 'failure'] as const)(
-  'preserves one pending restore across pane replacement and %s',
-  async (result) => {
-    const { actions, session, changed } = setup()
-    session.list.mockResolvedValue({ items: [row('s', true)] })
-    await actions.loadArchived()
-    let resolve!: (value: { archived: boolean }) => void
-    let reject!: (error: Error) => void
-    session.archive.mockReturnValueOnce(
-      new Promise((done, fail) => {
-        resolve = done
-        reject = fail
-      }),
-    )
-    document.querySelector<HTMLButtonElement>('#archived-list button')?.click()
-    replaceArchivedPane()
-    await flush()
-    const restore = document.querySelector<HTMLButtonElement>('#archived-list button') as HTMLButtonElement
-    expect(restore.disabled).toBe(true)
-    restore.click()
-    expect(session.archive).toHaveBeenCalledOnce()
-    if (result === 'success') {
-      session.list.mockResolvedValue({ items: [] })
-      resolve({ archived: false })
-      await flush()
-      expect(document.querySelectorAll('#archived-list li')).toHaveLength(0)
-      expect(changed).toHaveBeenCalledOnce()
-    } else {
-      reject(new Error('恢复失败'))
-      await flush()
-      expect(document.getElementById('archived-message')?.textContent).toBe('恢复失败')
-      expect(document.querySelector<HTMLButtonElement>('#archived-list button')?.disabled).toBe(false)
-      expect(changed).not.toHaveBeenCalled()
-    }
-  },
-)
-
-it('tolerates an absent pane and stops reads and event handlers after disposal', async () => {
-  const { actions, session, changed } = setup()
-  const pane = document.getElementById('archived-settings-pane') as HTMLElement
-  let resolve!: (page: PageSessionMeta) => void
-  session.list.mockReturnValueOnce(
-    new Promise((done) => {
-      resolve = done
-    }),
-  )
-  const read = actions.loadArchived()
-  pane.remove()
-  await actions.loadArchived()
-  resolve({ items: [row('stale', true)] })
-  await read
-  window.dispatchEvent(new Event('pagehide'))
-  document.body.append(pane)
-  await flush()
-  document.getElementById('archived-refresh')?.click()
-  await actions.loadArchived()
-  expect(session.list).toHaveBeenCalledOnce()
-  expect(changed).not.toHaveBeenCalled()
-  expect(document.querySelectorAll('#archived-list li')).toHaveLength(0)
 })
 
 it('shows the Host runtime descriptor in the session menu dialog, with pending and restart notes', async () => {

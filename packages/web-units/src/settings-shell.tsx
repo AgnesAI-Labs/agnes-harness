@@ -1,6 +1,5 @@
 import { Button, Icon, type IconName, icons, useAdvancedSettings } from '@agnes/web-ui'
 import { Fragment, type ReactNode, useSyncExternalStore } from 'react'
-import { type AdminPaneSnapshot, type AdminPaneStore, adminPaneControl } from './admin-pane-store.js'
 import type { SettingsDshSlotName, SettingsNavigationEntry, SettingsPane } from './settings.js'
 import {
   PANE_IDS,
@@ -14,25 +13,12 @@ import {
   listedSettingsGroup,
   settingsGroup,
   settingsListedEntries,
-  settingsMoved,
   settingsNavigationGroups,
   settingsTabGroup,
 } from './settings-navigation.js'
 
 export function SettingsDshHost({ name }: { name: SettingsDshSlotName }) {
   return <div id={settingsDshSlotHostId(name)} data-agnes-dsh-slot={name} />
-}
-
-const noAdminPanes = () => () => {}
-const noAdminPaneSnapshot = () => undefined
-/** Load state of the plugin and Skill / MCP panes; hosts without those panes pass no store. */
-export function useAdminPanes(store: AdminPaneStore | undefined): AdminPaneSnapshot | undefined {
-  return useSyncExternalStore(store?.subscribe ?? noAdminPanes, store?.snapshot ?? noAdminPaneSnapshot)
-}
-/** Attributes a navigation control takes from the pane it opens. */
-function adminControlProps(admin: AdminPaneSnapshot | undefined, id: string) {
-  const control = adminPaneControl(admin, id)
-  return { disabled: control.disabled, 'aria-busy': control.busy || undefined }
 }
 
 type NavigationSnapshot = { entries: readonly SettingsNavigationEntry[]; selected: string }
@@ -72,17 +58,14 @@ function NavigationIcon({ name }: { name: string }) {
 
 function SettingsRegistryNavigation({
   store,
-  adminPanes,
   translate,
 }: {
   store: SettingsNavigationStore
-  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
   const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
-  const admin = useAdminPanes(adminPanes)
   const advanced = useAdvancedSettings()
-  const current = entries.find((entry) => entry.id === selected && !settingsMoved(entry.id))
+  const current = entries.find((entry) => entry.id === selected)
   const t = translate ?? ((key: string) => key)
   const groups = settingsNavigationGroups(settingsListedEntries(entries, advanced))
   const renderGroup = (group: readonly SettingsNavigationEntry[]) => {
@@ -116,7 +99,6 @@ function SettingsRegistryNavigation({
                   ? 'page'
                   : undefined
               }
-              {...adminControlProps(admin, id)}
             >
               <NavigationIcon name={entry.icon} />
               <span>{t(listed ? entry.titleKey : entry.groupTitleKey)}</span>
@@ -145,15 +127,12 @@ function SettingsRegistryNavigation({
 
 function SettingsSectionTabs({
   store,
-  adminPanes,
   translate,
 }: {
   store: SettingsNavigationStore
-  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
 }) {
   const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
-  const admin = useAdminPanes(adminPanes)
   const t = translate ?? ((key: string) => key)
   const selectedEntry = entries.find((entry) => entry.id === selected)
   const groupKey = selectedEntry ? settingsTabGroup(selectedEntry) : ''
@@ -198,7 +177,6 @@ function SettingsSectionTabs({
               }
               aria-selected={visible ? entry.id === selected : undefined}
               tabIndex={entry.id === selected ? 0 : -1}
-              {...adminControlProps(admin, id)}
             >
               <span>{t(entry.titleKey)}</span>
             </Button>
@@ -211,12 +189,10 @@ function SettingsSectionTabs({
 
 export function SettingsShell({
   store,
-  adminPanes,
   translate,
   sectionPages,
 }: {
   store?: SettingsNavigationStore | undefined
-  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
   sectionPages?: ReactNode
 }) {
@@ -238,10 +214,10 @@ export function SettingsShell({
             </Button>
             <SettingsDshHost name="settings.close" />
           </div>
-          <SettingsRegistryNavigation store={store} adminPanes={adminPanes} translate={translate} />
+          <SettingsRegistryNavigation store={store} translate={translate} />
         </aside>
       ) : (
-        <SettingsLegacyRail adminPanes={adminPanes} translate={translate} slots />
+        <SettingsLegacyRail translate={translate} slots />
       )}
       <div id="settings-content-slots">
         {store && (
@@ -249,7 +225,7 @@ export function SettingsShell({
             <Button id="settings-back" appearance="ghost" data-testid="settings-back">
               <span>{t('settings-shell.back')}</span>
             </Button>
-            <SettingsSectionTabs store={store} adminPanes={adminPanes} translate={translate} />
+            <SettingsSectionTabs store={store} translate={translate} />
           </>
         )}
         <div id="settings-dsh-shell-slots">
@@ -276,16 +252,12 @@ export function SettingsShell({
 }
 
 export function SettingsLegacyRail({
-  adminPanes,
   translate,
   slots = false,
 }: {
-  adminPanes?: AdminPaneStore | undefined
   translate?: ((key: string) => string) | undefined
   slots?: boolean
 }) {
-  const admin = useAdminPanes(adminPanes)
-  const resourceTab = admin?.resources.tab ?? 'skills'
   const text = (key: string, fallback: string) => {
     const value = translate?.(key) ?? key
     return value === key ? fallback : value
@@ -334,75 +306,6 @@ export function SettingsLegacyRail({
             <rect x="3.5" y="4" width="17" height="16" rx="3" />
           </svg>
           <span>{text('settings-shell.modelNav', '模型与账户')}</span>
-        </Button>
-        <Button
-          id="plugin-management"
-          className="settings-nav-item"
-          htmlType="button"
-          appearance="ghost"
-          {...adminControlProps(admin, 'plugin-management')}
-        >
-          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3" />
-          </svg>
-          <span>{text('settings-shell.pluginNav', '插件管理')}</span>
-        </Button>
-        <div
-          className="settings-nav-tabs"
-          role="tablist"
-          aria-orientation="vertical"
-          aria-label={text('settings-shell.resourceTabsAria', '资源类型')}
-        >
-          <Button
-            id="skills-tab"
-            className="settings-nav-item"
-            role="tab"
-            aria-selected={resourceTab === 'skills'}
-            aria-controls="resource-list"
-            tabIndex={resourceTab === 'skills' ? 0 : -1}
-            htmlType="button"
-            appearance="ghost"
-            {...adminControlProps(admin, 'skills-tab')}
-          >
-            <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z" />
-            </svg>
-            <span>{text('settings-shell.skillsNav', '技能')}</span>
-          </Button>
-          <Button
-            id="mcp-tab"
-            className="settings-nav-item"
-            role="tab"
-            aria-selected={resourceTab === 'mcp'}
-            aria-controls="resource-list"
-            tabIndex={resourceTab === 'mcp' ? 0 : -1}
-            htmlType="button"
-            appearance="ghost"
-            {...adminControlProps(admin, 'mcp-tab')}
-          >
-            <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9 3h6v4h4v6h-4v8H9v-8H5V7h4Z" />
-            </svg>
-            <span>{text('settings-shell.mcpNav', 'MCP')}</span>
-          </Button>
-        </div>
-        <Button id="archived-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
-          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7.5h16M6 7.5v11h12v-11M9 11h6M4 7.5l1.5-3h13l1.5 3" />
-          </svg>
-          <span>{text('settings-shell.archivedNav', '已归档会话')}</span>
-        </Button>
-        <Button
-          id="computer-use-management"
-          className="settings-nav-item"
-          htmlType="button"
-          appearance="ghost"
-        >
-          <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3.5" y="4" width="17" height="13" rx="2" />
-            <path d="M8 21h8M12 17v4" />
-          </svg>
-          <span>{text('settings-shell.computerUseNav', 'Computer Use')}</span>
         </Button>
         <Button id="appearance-settings" className="settings-nav-item" htmlType="button" appearance="ghost">
           <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
