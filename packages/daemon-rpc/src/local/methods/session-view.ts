@@ -17,7 +17,10 @@ export function registerSessionView(
     const { sessionId, maxNodes } = params as SessionViewParams
     requireOwner('session.view', sessionId, context)
     try {
-      return await host.readSessionView(sessionId, maxNodes === undefined ? {} : { maxNodes })
+      return await host.readSessionView(sessionId, {
+        ...(maxNodes === undefined ? {} : { maxNodes }),
+        signal: context.signal,
+      })
     } catch (error) {
       if ((error as { code?: unknown } | null)?.code === 'E_SESSION_NOT_FOUND')
         throw rpcError('SESSION_NOT_FOUND', { sessionId })

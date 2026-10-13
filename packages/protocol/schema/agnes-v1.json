@@ -3007,7 +3007,17 @@
           "properties": {
             "hasEarlier": { "type": "boolean" },
             "startIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-            "totalNodes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+            "totalNodes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "scan": {
+              "description": "Present when the read stopped at a scan budget; the timeline covers only the rows up to throughSeq.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reason", "throughSeq"],
+              "properties": {
+                "reason": { "enum": ["events", "bytes", "time", "cancelled"] },
+                "throughSeq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+              }
+            }
           }
         },
         "notice": {

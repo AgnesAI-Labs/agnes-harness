@@ -30,7 +30,7 @@ it('serves the recorded conversation straight from the host without opening the 
   const read = vi.fn(async () => view)
   const call = endpoint(read)
   expect((await call('owned', { maxNodes: 50 })).result).toEqual(view)
-  expect(read).toHaveBeenCalledWith('owned', { maxNodes: 50 })
+  expect(read).toHaveBeenCalledWith('owned', { maxNodes: 50, signal: expect.any(AbortSignal) })
 })
 
 it('checks ownership before reading anything', async () => {

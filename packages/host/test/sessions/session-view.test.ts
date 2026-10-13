@@ -95,3 +95,30 @@ it('does not swallow a failure that is not about the record itself', async () =>
   }
   await expect(readSessionView(reader, 'x')).rejects.toThrow('disk offline')
 })
+
+it('stops a scan at its event budget and says how far it got', async () => {
+  const view = await readSessionView(readerOf(rows(1500)), 'huge', { budget: { events: 600 } })
+  expect(view.history.scan).toEqual({ reason: 'events', throughSeq: 1000 })
+  expect(view.lastSeq).toBe(1000)
+  expect(validateAgainst(SessionViewResult, view).ok).toBe(true)
+})
+
+it('stops a scan at its byte budget and when the caller cancels', async () => {
+  const bytes = await readSessionView(readerOf(rows(1500)), 'heavy', { budget: { bytes: 1 } })
+  expect(bytes.history.scan?.reason).toBe('bytes')
+  const cancelled = new AbortController()
+  let reads = 0
+  const reader: SessionRowsReader = async (key, query) => {
+    reads += 1
+    cancelled.abort()
+    return readerOf(rows(1500))(key, query)
+  }
+  const view = await readSessionView(reader, 'gone', { signal: cancelled.signal })
+  expect(reads).toBe(1)
+  expect(view.history.scan?.reason).toBe('cancelled')
+})
+
+it('reports no scan marker when the whole history fits', async () => {
+  const view = await readSessionView(readerOf(rows(9)), 'small')
+  expect(view.history.scan).toBeUndefined()
+})

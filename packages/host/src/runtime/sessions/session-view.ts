@@ -10,6 +10,15 @@ import { classifyGenerationFailure } from '../generation/seam-pins.js'
 const PAGE = 500
 const MAX_BYTES = 8 * 1024 * 1024
 
+/** What one read may spend before it returns the rows scanned so far with a marker. */
+export const SESSION_VIEW_SCAN_BUDGET = Object.freeze({
+  events: 100_000,
+  bytes: 64 * 1024 * 1024,
+  timeMs: 15_000,
+})
+
+type ScanStop = NonNullable<SessionViewResult['history']['scan']>['reason']
+
 export type SessionRowsReader = (
   sessionKey: string,
   query: { fromSeq?: number; toSeq?: number; limit: number },
@@ -20,16 +29,37 @@ export type SessionRowsReader = (
  * session, restores a generation or pin, takes a lock or writes: a session this build cannot
  * continue is still read. Rows are decoded page by page; when a page cannot be decoded, the rows
  * before it are kept and the failure is reported as a notice instead of guessing what follows.
+ * The scan itself is budgeted (events, bytes, time) and cancellable; a read that stops early projects
+ * the rows it has and says through which row in `history.scan`.
  */
 export async function readSessionView(
   read: SessionRowsReader,
   sessionKey: string,
-  options: { maxNodes?: number } = {},
+  options: {
+    maxNodes?: number
+    signal?: AbortSignal
+    budget?: Partial<typeof SESSION_VIEW_SCAN_BUDGET>
+  } = {},
 ): Promise<SessionViewResult> {
   const events: Event[] = []
   let issue: SessionVersionIssue | undefined
   let reason: string | undefined
+  const budget = { ...SESSION_VIEW_SCAN_BUDGET, ...options.budget }
+  const startedAt = Date.now()
+  let bytes = 0
+  let stopped: ScanStop | undefined
+  const exhausted = (): ScanStop | undefined =>
+    options.signal?.aborted
+      ? 'cancelled'
+      : events.length >= budget.events
+        ? 'events'
+        : bytes >= budget.bytes
+          ? 'bytes'
+          : Date.now() - startedAt >= budget.timeMs
+            ? 'time'
+            : undefined
   for (let fromSeq = 1; ; ) {
+    if ((stopped = exhausted())) break
     let page: Event[]
     try {
       page = await read(sessionKey, { fromSeq, limit: PAGE })
@@ -48,6 +78,7 @@ export async function readSessionView(
         break
       }
       events.push(event)
+      bytes += JSON.stringify(event.data).length
       fromSeq += 1
     }
     if (issue) break
@@ -72,7 +103,12 @@ export async function readSessionView(
       turns: turnsForNodes(full.turns, page.nodes, false).map((turn) => ({ ...turn, forkable: false })),
       ...(full.usage ? { usage: full.usage } : {}),
     },
-    history: { hasEarlier: page.hasEarlier, startIndex: page.startIndex, totalNodes: page.totalNodes },
+    history: {
+      hasEarlier: page.hasEarlier,
+      startIndex: page.startIndex,
+      totalNodes: page.totalNodes,
+      ...(stopped ? { scan: { reason: stopped, throughSeq: lastSeq } } : {}),
+    },
     ...(notice ? { notice } : {}),
   }
 }

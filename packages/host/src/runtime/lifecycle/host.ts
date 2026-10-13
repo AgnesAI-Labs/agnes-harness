@@ -110,7 +110,7 @@ export interface Host {
   /** The recorded conversation of one session, projected from its rows; see readSessionRows. */
   readSessionView(
     sessionKey: string,
-    options?: { maxNodes?: number },
+    options?: { maxNodes?: number; signal?: AbortSignal },
   ): Promise<import('@agnes/protocol').SessionViewResult>
   /** Effective runtime of one open session; produced by the generation and composition owners. */
   sessionRuntime?(sessionKey: string): import('@agnes/protocol').SessionRuntimeDescriptor
