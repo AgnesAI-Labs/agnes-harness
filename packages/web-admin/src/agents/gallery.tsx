@@ -144,7 +144,7 @@ function AgentCard({
       {agent.summary && <p className="agent-card-summary">{agent.summary}</p>}
       {agent.samplePrompt && (
         <p className="agent-card-sample" data-testid="business-agent-sample">
-          {t('try', { prompt: agent.samplePrompt })}
+          <span>{t('try', { prompt: agent.samplePrompt })}</span>
         </p>
       )}
       <footer>

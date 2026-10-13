@@ -83,7 +83,7 @@ export function RuntimeInfo({
   const readOnly = capabilities?.permissions.readOnly ?? policy?.readOnly
   const permission = preset
     ? [
-        presetKey ? t(presetKey) : preset,
+        presetKey ? t(presetKey) : t('session.runtime.permission.preset', { name: preset }),
         readOnly && preset !== 'read-only' ? t('session.runtime.permission.view') : undefined,
       ]
         .filter(Boolean)

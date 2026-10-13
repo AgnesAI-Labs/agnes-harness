@@ -153,7 +153,7 @@ export function SessionToolList({
       ) : tools.tools.length === 0 ? (
         <SettingsState>{t('session.runtime.toolsEmpty')}</SettingsState>
       ) : (
-        <SettingsList>
+        <SettingsList className="session-runtime-tool-groups">
           {groupTools(tools.tools).map((group) => (
             <ListRow
               key={group.source}

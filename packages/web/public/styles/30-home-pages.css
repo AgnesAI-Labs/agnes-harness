@@ -11,6 +11,14 @@
     margin: 0;
   }
   /* The full tool list of one source: names wrap as chips of text, never a table. */
+  /* A session can carry dozens of tool sources; the list scrolls so the dialog stays readable. */
+  .session-runtime-tool-groups {
+    max-height: 17.5rem;
+    overflow-y: auto;
+  }
+  .session-runtime-tool-groups > * {
+    flex-shrink: 0;
+  }
   .session-runtime-tools {
     display: flex;
     flex-wrap: wrap;
@@ -86,25 +94,29 @@
     white-space: nowrap;
   }
   .agent-card-summary,
-  .agent-card-sample {
-    margin: 0;
+  .agent-card-sample > span {
     display: -webkit-box;
     overflow: hidden;
     -webkit-box-orient: vertical;
-    font-size: var(--font-size-sm);
     line-height: 1.6;
   }
   .agent-card-summary {
+    margin: 0;
     color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
     -webkit-line-clamp: 3;
     line-clamp: 3;
   }
+  /* The clamp sits on the inner span: a clamped box with padding shows the cut line in it. */
   .agent-card-sample {
+    margin: 0;
     padding: var(--s8) var(--s10);
     border-radius: var(--radius-sm);
     color: var(--agnes-text-secondary);
     background: var(--agnes-bg-fill);
     font-size: var(--font-size-xs);
+  }
+  .agent-card-sample > span {
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
@@ -179,6 +191,13 @@
     color: var(--agnes-text-secondary);
     font-size: 0.78125rem;
     font-weight: var(--font-weight-semibold);
+  }
+  /* Rows here carry no control: on a narrow screen the copy stays beside its icon. */
+  :is(.agent-start-body, .session-runtime) .agnes-settings-item {
+    flex-wrap: nowrap;
+  }
+  :is(.agent-start-body, .session-runtime) .agnes-settings-item-description {
+    overflow-wrap: anywhere;
   }
   .agent-start-identity,
   .agent-start-technical {
