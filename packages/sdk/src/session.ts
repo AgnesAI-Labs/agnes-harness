@@ -103,6 +103,13 @@ function eventSeq(params: Record<string, unknown>): number | null {
   return typeof event?.seq === 'number' ? event.seq : null
 }
 
+/** How far a `session/load` in flight has got, as the daemon reports it. */
+export type SessionLoadingNotice = {
+  phase: 'open' | 'verify' | 'fold' | 'replay'
+  done: number
+  total: number
+}
+
 export type SessionNotificationListener = (
   method: string,
   params: Record<string, unknown>,

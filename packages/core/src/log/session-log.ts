@@ -77,7 +77,12 @@ export type OpenLogOptions = {
   replay?: {
     page(events: Event[]): void
   }
+  /** Told after each verified page how far the open has got; a listener that throws is ignored. */
+  progress?: (p: OpenProgress) => void
 }
+
+/** How far an open has got, by seq: `done` is the last seq handled, `total` the session's head. */
+export type OpenProgress = { phase: 'verify' | 'fold'; done: number; total: number }
 
 /** What opening a session cost, for the runtime log: sizes carry no content, times are milliseconds. */
 export type SessionOpenStats = {
@@ -194,15 +199,18 @@ export class SessionLogImpl {
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
       const replay = o.replay
+      const progress = o.progress
       const timing: LedgerTiming = { readMs: 0, verifyMs: 0, foldMs: 0 }
-      const integrityState = await verifyLedger(
-        o.storage,
-        o.key,
-        opened.lastSeq,
-        pageYield,
-        replay ? (events) => replay.page(events) : undefined,
-        timing,
-      )
+      const onPage =
+        replay || progress
+          ? (events: Event[]) => {
+              replay?.page(events)
+              const last = events.at(-1)
+              if (progress && last)
+                reportProgress(progress, { phase: 'verify', done: last.seq, total: opened.lastSeq })
+            }
+          : undefined
+      const integrityState = await verifyLedger(o.storage, o.key, opened.lastSeq, pageYield, onPage, timing)
       const registersAt = performance.now()
       const rows = await o.storage.registers(o.key)
       const registersMs = performance.now() - registersAt
@@ -811,4 +819,13 @@ function carriesRefs(e: { type: string; data: unknown }): boolean {
       return Array.isArray(content) && containsAttachmentRef(content)
     })
   return false
+}
+
+/** Progress is advisory: a listener that throws must not fail the open it is watching. */
+function reportProgress(progress: (p: OpenProgress) => void, p: OpenProgress): void {
+  try {
+    progress(p)
+  } catch {
+    /* advisory listener */
+  }
 }

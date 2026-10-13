@@ -34,7 +34,7 @@ function buildProfile(dataDir: string): ResolvedProfile {
   return { ...body, hash: `sha256-${sha256hex(canonicalJson(hashInput(body)))}` }
 }
 
-it('hands the worker session.open record to the pool observer', async () => {
+it('hands the worker session.open record and open progress to the pool observers', async () => {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-open-record-')))
   const key = 'agnes:local:default:daemon:dm:open-record'
   try {
@@ -50,6 +50,7 @@ it('hands the worker session.open record to the pool observer', async () => {
       limits: { ...DEFAULT_LIMITS, workerStartupMs: 30_000 },
     }
     const records: Array<{ sessionKey: string; kind: string; detail: Record<string, unknown> }> = []
+    const progress: Array<{ sessionKey: string; phase: string; done: number; total: number }> = []
     const pool = new WorkerPool({
       config,
       profile,
@@ -61,6 +62,7 @@ it('hands the worker session.open record to the pool observer', async () => {
       onEvent: () => undefined,
       onRequest: async () => undefined,
       onRecord: (sessionKey, record) => records.push({ sessionKey, ...record }),
+      onProgress: (sessionKey, p) => progress.push({ sessionKey, ...p }),
       notices: { emit() {} },
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
@@ -79,6 +81,19 @@ it('hands the worker session.open record to the pool observer', async () => {
       })
       expect(records[0]?.detail.session).toMatch(/^[0-9a-f]{16}$/)
       expect(JSON.stringify(records[0]?.detail)).not.toContain('open-record')
+      // A new ledger is empty when opened. Reopened, it has rows to verify and says how far it got.
+      expect(progress).toEqual([])
+      await link.closeSession('reopen')
+      const reopened = await pool.acquire(key, {
+        resume: true,
+        cwd: dir,
+        binding: await workspaceBinding(key, dir),
+      })
+      await reopened.hello
+      await expect.poll(() => records.length).toBe(2)
+      const head = records[1]?.detail.lastSeq as number
+      expect(head).toBeGreaterThan(0)
+      expect(progress.at(-1)).toEqual({ sessionKey: key, phase: 'verify', done: head, total: head })
     } finally {
       await pool.closeAll(2_000)
       await server.close()

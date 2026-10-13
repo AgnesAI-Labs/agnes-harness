@@ -151,6 +151,14 @@ export type RecordFrame = {
   sessionKey: string
   record: { kind: 'session.open' | 'session.verify_full'; detail: Record<string, unknown> }
 }
+/** How far opening a session has got, by seq; throttled by the worker, relayed to the loading client. */
+export type ProgressFrame = {
+  kind: 'progress'
+  sessionKey: string
+  phase: 'verify' | 'fold'
+  done: number
+  total: number
+}
 export type ResourceStatusFrame = { kind: 'resourceStatus'; serverId: string; status: McpStatus }
 export type WorkerReplyFrame = {
   kind: 'reply'
@@ -223,6 +231,7 @@ export type WorkerToSupervisor =
   | SessionInterruptedFrame
   | LogFrame
   | RecordFrame
+  | ProgressFrame
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame

@@ -50,6 +50,7 @@ import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
+import { registerStoredOpening } from './methods/stored-opening.js'
 import { registerWorkspaces } from './methods/workspaces.js'
 import {
   type ClaimStore,
@@ -458,6 +459,8 @@ export function createLocalEndpoint(
     registry,
     ...(opts.dataDir === undefined ? {} : { dataDir: opts.dataDir }),
   })
+  // In process there is no separate read path: the request is answered with a refusal.
+  registerStoredOpening(ep, { requireSessionOwner: requireSessionOwner(cx) })
   if (artifactReadConfigured) registerArtifactRead(ep, opts.artifactRead as ArtifactReadRpcOptions)
   if (opts.packageAdmin) {
     // The loopback Web connection is authenticated as the local owner but is not an administration

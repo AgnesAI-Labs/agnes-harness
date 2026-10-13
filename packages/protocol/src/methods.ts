@@ -75,6 +75,7 @@ export type MethodName =
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
+  | '_agnes/v1/session.storedOpening'
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.exportRaw'
   | '_agnes/v1/session.followUp'
@@ -110,6 +111,7 @@ export type MethodName =
   | '_agnes/v1/auth.claim'
   | '_agnes/v1/session.event'
   | '_agnes/v1/session.preview'
+  | '_agnes/v1/session.loading'
   | '_agnes/v1/daemon.notice'
 
 export const METHODS: Record<MethodName, MethodSpec> = {
@@ -210,6 +212,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
+  '_agnes/v1/session.storedOpening': clientRequest(
+    A.SessionStoredOpeningParams,
+    A.SessionStoredOpeningResult,
+  ),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
@@ -318,6 +324,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
   '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
+  '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },
 }
 

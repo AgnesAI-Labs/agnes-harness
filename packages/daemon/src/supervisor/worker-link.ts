@@ -2,6 +2,7 @@ import type { Duplex } from 'node:stream'
 import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
 import type { PreviewUpdate } from '../registry.js'
 import type {
+  ProgressFrame,
   RecordFrame,
   RequestFrame,
   SessionMethod,
@@ -109,6 +110,7 @@ export class WorkerLink {
       onRequest: (frame: RequestFrame) => Promise<unknown>
       onLog?: (sessionKey: string, level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
       onRecord?: (sessionKey: string, record: RecordFrame['record']) => void
+      onProgress?: (sessionKey: string, progress: Omit<ProgressFrame, 'kind' | 'sessionKey'>) => void
       onActivity?: (sessionKey: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onRuntimeFrame?: (frame: unknown) => void
@@ -155,7 +157,15 @@ export class WorkerLink {
       this.close('invalid worker frame')
       return
     }
-    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log', 'record'])
+    const sessionKinds = new Set([
+      'event',
+      'preview',
+      'request',
+      'session.interrupted',
+      'log',
+      'record',
+      'progress',
+    ])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
       sessionKinds.has(frame.kind) &&
@@ -174,6 +184,7 @@ export class WorkerLink {
       'session.interrupted',
       'log',
       'record',
+      'progress',
     ])
     if (!knownKinds.has(frame.kind)) {
       this.close('unknown worker frame')
@@ -237,6 +248,11 @@ export class WorkerLink {
     }
     if (frame.kind === 'session.interrupted') {
       this.failSession(frame.sessionKey, new Error(frame.reason))
+      return
+    }
+    if (frame.kind === 'progress') {
+      const progress = openProgress(frame)
+      if (progress) this.options.onProgress?.(frame.sessionKey, progress)
       return
     }
     if (frame.kind === 'log') {
@@ -470,4 +486,12 @@ export class WorkerLink {
     }
     this.exitHandlers.push(handler)
   }
+}
+
+/** A progress frame's figures, or nothing when the worker sent something that is not one. */
+function openProgress(frame: ProgressFrame): Omit<ProgressFrame, 'kind' | 'sessionKey'> | undefined {
+  const { phase, done, total } = frame
+  if (phase !== 'verify' && phase !== 'fold') return undefined
+  if (!Number.isSafeInteger(done) || !Number.isSafeInteger(total) || done < 0 || total < 0) return undefined
+  return { phase, done, total }
 }

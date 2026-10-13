@@ -123,6 +123,57 @@ describe('HostedSessions', () => {
     ])
   })
 
+  it('relays open progress at most once a second, always passing the end of a phase', async () => {
+    const sent: unknown[] = []
+    let now = 0
+    type Progress = { phase: 'verify' | 'fold'; done: number; total: number }
+    const createSession = vi.fn(
+      async ({ key, onOpenProgress }: { key: string; onOpenProgress?: (p: Progress) => void }) => {
+        for (let done = 100; done <= 1_000; done += 100) {
+          onOpenProgress?.({ phase: 'verify', done, total: 1_000 })
+          now += 300
+        }
+        return { key, writerRunId: 'w', lastSeq: 1_000, d: { log: {} } } as unknown as HostSession
+      },
+    )
+    const hosted = new HostedSessions({
+      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
+      channel: new SharedSessionChannel(() => undefined),
+      send: (frame) => {
+        if ((frame as { kind: string }).kind === 'progress') sent.push(frame)
+      },
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+      clock: () => now,
+    })
+    await hosted.open(open('a'))
+    expect(sent).toEqual([
+      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 100, total: 1_000 },
+      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 500, total: 1_000 },
+      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 900, total: 1_000 },
+      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 1_000, total: 1_000 },
+    ])
+  })
+
+  it('opens even when sending progress throws', async () => {
+    const createSession = vi.fn(
+      async ({ key, onOpenProgress }: { key: string; onOpenProgress?: (p: unknown) => void }) => {
+        onOpenProgress?.({ phase: 'verify', done: 1, total: 1 })
+        return { key, writerRunId: 'w', lastSeq: 1, d: { log: {} } } as unknown as HostSession
+      },
+    )
+    const hosted = new HostedSessions({
+      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
+      channel: new SharedSessionChannel(() => undefined),
+      send: () => {
+        throw new Error('socket gone')
+      },
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+    })
+    await expect(hosted.open(open('a'))).resolves.toMatchObject({ sessionKey: 'a', lastSeq: 1 })
+  })
+
   it('reports a failed open with its error code and nothing from the error message', async () => {
     const sent: unknown[] = []
     const failure = Object.assign(new Error('contains the file name insects.zip'), {

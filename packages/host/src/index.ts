@@ -443,6 +443,7 @@ export {
 export { readProfileTelemetryConsent } from './session-hooks.js'
 export { loadSessionTitle } from './session-title.js'
 export * from './session-workspace-runtime.js'
+export { createStoredOpeningReader, type StoredOpeningReader } from './stored-opening.js'
 export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,

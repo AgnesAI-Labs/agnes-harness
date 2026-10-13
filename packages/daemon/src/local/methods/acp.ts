@@ -382,6 +382,11 @@ export function newerLedgerRpcError(): RpcError {
   return rpcError('SEMANTIC_REJECTED', { code: 'NEWER_LEDGER_FORMAT', reason: 'newer-ledger-format' })
 }
 
+type LoadingProgress = { phase: 'open' | 'verify' | 'fold' | 'replay'; done: number; total: number }
+/** A loading client hears something at least this often while the session opens. */
+const LOADING_HEARTBEAT_MS = 5_000
+const OPEN_HEARTBEAT: LoadingProgress = { phase: 'open', done: 0, total: 0 }
+
 export function registerAcp(
   ep: LocalEndpoint,
   cx: LocalContext,
@@ -399,6 +404,27 @@ export function registerAcp(
     }
     denyOwnership(method, sessionId)
   }
+  // When this connection was last told how a session's load is going: one notice a second at most,
+  // and a heartbeat only once nothing else has been said for a while.
+  const loadingSentAt = new Map<string, number>()
+  const loadingNotifier =
+    (sessionId: string) =>
+    (progress: LoadingProgress, heartbeat = false): void => {
+      const now = cx.clock()
+      const last = loadingSentAt.get(sessionId)
+      if (last !== undefined) {
+        const quiet = now - last
+        // The notice that ends a phase always goes, so a client sees 100% before the next phase.
+        const ends = progress.phase !== 'open' && progress.done >= progress.total
+        if (heartbeat ? quiet < LOADING_HEARTBEAT_MS - 1_000 : quiet < 1_000 && !ends) return
+      }
+      loadingSentAt.set(sessionId, now)
+      try {
+        ep.push(notify('_agnes/v1/session.loading', { sessionId, ...progress }))
+      } catch {
+        /* a progress notice must not fail the load it describes */
+      }
+    }
   const feedFor = (entry: SessionEntry): Feed => {
     // Nobody is left to push to: hand back a Feed that subscribes to nothing and never makes a
     // prompt wait for rows.
@@ -570,6 +596,11 @@ export function registerAcp(
   ep.register('session/load', async (params) => {
     const p = params as { sessionId: string; cwd: string }
     requireOwner('session/load', p.sessionId)
+    const loading = loadingNotifier(p.sessionId)
+    // The registry relays the worker's own progress; the heartbeat covers a registry that has none
+    // and any stretch the worker goes quiet, so the client can tell slow from stuck.
+    const offProgress = cx.registry.onOpenProgress?.(p.sessionId, (progress) => loading(progress))
+    const heartbeat = setInterval(() => loading(OPEN_HEARTBEAT, true), 1_000)
     let entry = cx.registry.get(p.sessionId)
     const loadStartedAt = performance.now()
     try {
@@ -585,6 +616,9 @@ export function registerAcp(
     } catch (error) {
       cx.registry.recordLoadFailed?.(p.sessionId, { elapsedMs: performance.now() - loadStartedAt, error })
       throwSessionOpenRpcError(error)
+    } finally {
+      clearInterval(heartbeat)
+      offProgress?.()
     }
     if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
     const feed = feedFor(entry)
@@ -592,14 +626,14 @@ export function registerAcp(
     // silently truncate a long transcript at whatever limit was written here.
     const lastSeq = entry.session.lastSeq
     const replayStartedAt = performance.now()
-    for (let from = 1; from <= lastSeq; from += 500)
+    for (let from = 1; from <= lastSeq; from += 500) {
+      const upto = Math.min(lastSeq, from + 499)
       feed.replayLoad(
-        (await entry.session.scan({
-          fromSeq: from,
-          toSeq: Math.min(lastSeq, from + 499),
-          limit: 500,
-        })) as EventEnvelope[],
+        (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
       )
+      loading({ phase: 'replay', done: upto, total: lastSeq })
+    }
+    loadingSentAt.delete(p.sessionId)
     cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
     // Whatever is streaming now is not in the transcript yet; the snapshot says it.
     feed.previewResync()

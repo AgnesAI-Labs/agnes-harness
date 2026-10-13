@@ -28,6 +28,9 @@ export type PreviewUpdate = Omit<SessionPreviewParams, 'sessionId'>
 /** The text an inference still in flight has streamed so far. */
 export type PreviewSnapshotEntry = { lane: string; effectId: string; text: string; thinking: string }
 
+/** How far opening a session has got, by seq, as the worker reported it. */
+export type OpenProgressUpdate = { phase: 'verify' | 'fold'; done: number; total: number }
+
 export interface Registry<Entry> {
   open(o: {
     key?: string
@@ -53,6 +56,11 @@ export interface Registry<Entry> {
   recordLoad?(key: string, timing: { acpReplayMs: number }): void
   /** Called when the open a `session/load` needed failed. */
   recordLoadFailed?(key: string, failure: { elapsedMs: number; error: unknown }): void
+  /**
+   * Listens to how far the open of `key` has got while it runs. Only a registry whose sessions open
+   * in another process reports this; the in-process one leaves it out.
+   */
+  onOpenProgress?(key: string, fn: (p: OpenProgressUpdate) => void): Disposer
   keys(): string[]
   close(key: string): Promise<void>
   closeAll(): Promise<void>

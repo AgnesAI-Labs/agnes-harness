@@ -224,6 +224,11 @@ function rowToEvent(r: Row): Event {
   } as Event
 }
 
+/** A stored row as an event, for a reader that selects the same columns on its own connection. */
+export function rowToEventForRead(r: unknown): Event {
+  return rowToEvent(r as Row)
+}
+
 function rowToIntegrity(r: Row): IntegrityRow {
   let event: Event
   try {

@@ -164,6 +164,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.followUp',
       '_agnes/v1/session.fork',
       '_agnes/v1/session.list',
+      '_agnes/v1/session.loading',
       '_agnes/v1/session.preview',
       '_agnes/v1/session.projectUI',
       '_agnes/v1/session.projectUIHistory',
@@ -175,6 +176,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.setPreset',
       '_agnes/v1/session.setYolo',
       '_agnes/v1/session.steer',
+      '_agnes/v1/session.storedOpening',
       '_agnes/v1/skills.priority.set',
       '_agnes/v1/skills.refresh',
       '_agnes/v1/skills.remove',
@@ -196,9 +198,43 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(117)
+    expect(Object.keys(METHODS)).toHaveLength(119)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
+  })
+
+  it('describes session load progress and the stored opening', () => {
+    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
+    for (const phase of ['open', 'verify', 'fold', 'replay'])
+      expect(
+        validateMethod('_agnes/v1/session.loading', 'params', { sessionId: 's', phase, done: 3, total: 9 })
+          .ok,
+      ).toBe(true)
+    for (const bad of [
+      { sessionId: 's', phase: 'read', done: 0, total: 0 },
+      { sessionId: 's', phase: 'fold', done: -1, total: 0 },
+      { sessionId: 's', phase: 'fold', done: 1.5, total: 2 },
+      { sessionId: 's', phase: 'fold', done: 1 },
+      { sessionId: 's', phase: 'fold', done: 1, total: 2, extra: true },
+    ])
+      expect(validateMethod('_agnes/v1/session.loading', 'params', bad).ok).toBe(false)
+
+    const method = '_agnes/v1/session.storedOpening'
+    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
+    expect(validateMethod(method, 'params', { sessionId: 's' }).ok).toBe(true)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 500 }).ok).toBe(true)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 0 }).ok).toBe(false)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 501 }).ok).toBe(false)
+    const timeline = { sessionId: 's', upto: 9, generation: 1, opState: null, nodes: [], turns: [] }
+    expect(
+      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: true, lastSeq: 9 }).ok,
+    ).toBe(false)
+    expect(
+      validateMethod(method, 'result', { timeline: {}, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
+    ).toBe(false)
   })
 
   it('keeps unknown method names outside the closed method table', () => {

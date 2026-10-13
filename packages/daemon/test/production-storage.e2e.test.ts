@@ -24,6 +24,7 @@ import {
   resolveProfile,
   sha256hex,
 } from '@agnes/host'
+import { createTestHost } from '@agnes/host/testkit'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
@@ -220,6 +221,59 @@ describe('production supervisor storage', () => {
       ).toEqual({ status: 'waiting' })
     } finally {
       await storage.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 150_000)
+
+  it('serves a session read straight from sessions.db, marked unverified, without opening it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-stored-opening-'))
+    const o = options(dir)
+    writeFileSync(o.profileFile, JSON.stringify(o.profile))
+    const stored = 'agnes:local:default:daemon:dm:stored-opening'
+    const { host } = await createTestHost({ dataDir: dir })
+    const session = await host.createSession({ key: stored, cwd: dir })
+    const lastSeq = session.lastSeq
+    await session.close()
+    await host.close()
+    const seeded = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    const ownership = seeded.tables('@agnes/daemon').table('session_principal_ownership')
+    ownership.exec(`CREATE TABLE IF NOT EXISTS session_principal_ownership (
+      session_id TEXT PRIMARY KEY,
+      principal_id TEXT NOT NULL,
+      reservation_kind TEXT NOT NULL,
+      reservation_state TEXT NOT NULL,
+      parent_session_id TEXT,
+      boundary_seq INTEGER
+    )`)
+    for (const id of [stored, `${stored}:empty`])
+      ownership.run(
+        `INSERT INTO session_principal_ownership
+         (session_id, principal_id, reservation_kind, reservation_state, parent_session_id, boundary_seq)
+         VALUES (?, ?, 'new', 'active', NULL, NULL)`,
+        [id, 'local'],
+      )
+    await seeded.close()
+    const supervisor = await startProductionSupervisor(o)
+    const rpc = await client(supervisor.socketPath)
+    try {
+      await rpc.call(1, 'initialize', {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      })
+      expect(lastSeq).toBeGreaterThan(0)
+      await expect(
+        rpc.call(2, '_agnes/v1/session.storedOpening', { sessionId: stored }),
+      ).resolves.toMatchObject({
+        timeline: { sessionId: stored, generation: 1, upto: lastSeq },
+        verified: false,
+        lastSeq,
+      })
+      await expect(
+        rpc.call(3, '_agnes/v1/session.storedOpening', { sessionId: `${stored}:empty` }),
+      ).rejects.toMatchObject({ data: { reason: 'stored-opening-unavailable' } })
+    } finally {
+      rpc.close()
+      await supervisor.close()
       rmSync(dir, { recursive: true, force: true })
     }
   }, 150_000)

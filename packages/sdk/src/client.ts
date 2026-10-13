@@ -31,6 +31,7 @@ import {
   rpcError,
   type SessionListParams,
   type SessionPreferences,
+  type SessionStoredOpeningResult,
   type SkinListResult,
   type SkinReadResult,
   type SurfacesMountsResult,
@@ -46,14 +47,21 @@ import type {
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 import { BrandingCache } from './branding.js'
 import { type Claim, makeClaim } from './claim.js'
-import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsupported } from './errors.js'
+import {
+  JsonRpcError,
+  LoadStalled,
+  ProtocolViolation,
+  RequestTimeout,
+  TransportClosed,
+  Unsupported,
+} from './errors.js'
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
 import { type PermissionHandler, type PermissionRequest, rejectPermission } from './permission.js'
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
-import { Session } from './session.js'
+import { Session, type SessionLoadingNotice } from './session.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
@@ -123,6 +131,33 @@ export type CallOptions = {
   timeoutMs?: number | null
   // Set only by the handshake itself, which would otherwise wait on its own result.
   skipInit?: boolean
+  // Gives up on the request: it is dropped and rejects with the signal's reason.
+  signal?: AbortSignal
+}
+
+export type SessionLoadOptions = {
+  cwd?: string
+  onPermissionRequest?: PermissionHandler
+  /** Receives the disposer for the load-time handler before the RPC is sent. */
+  onPermissionRequestRegistered?: (off: () => void) => void
+  /** Told each time the daemon reports how far the load has got. */
+  onLoading?: (p: SessionLoadingNotice) => void
+  /** Fails the load with `LoadStalled` after this long with no word from the daemon. Default 30 s. */
+  idleTimeoutMs?: number
+  /** Fails the load with `LoadStalled` after this long whatever the progress. Default 10 min. */
+  hardTimeoutMs?: number
+}
+
+const LOAD_IDLE_TIMEOUT_MS = 30_000
+const LOAD_HARD_TIMEOUT_MS = 600_000
+const LOADING_METHOD = '_agnes/v1/session.loading'
+
+/** The figures of a loading notice; a malformed one still counts as a sign of life, with none. */
+function loadingNotice(params: Record<string, unknown>): SessionLoadingNotice | undefined {
+  const { phase, done, total } = params
+  if (phase !== 'open' && phase !== 'verify' && phase !== 'fold' && phase !== 'replay') return undefined
+  if (typeof done !== 'number' || typeof total !== 'number') return undefined
+  return { phase, done, total }
 }
 
 type InitializeResponseBody = {
@@ -164,6 +199,10 @@ export class Client {
   private closedPromise: Promise<void> | null = null
   private clientIdCache: string | null = null
   private readonly sessionTable = new Map<string, Session>()
+  // Who is waiting on a session/load, by session: told of every loading notice, and of every
+  // replayed update (with nothing) since that too shows the daemon is still working. Kept apart from
+  // the session table because a restore must not create a session handle.
+  private readonly loadWatchers = new Map<string, Set<(p: SessionLoadingNotice | undefined) => void>>()
   private readonly reconnector: Reconnector
   private brandingCache: BrandingCache | null = null
   private serverAttachmentRefs = false
@@ -361,15 +400,7 @@ export class Client {
     // daemon must recover an existing session's immutable durable workspace or reject an unknown
     // id. A supplied cwd is only a lookup hint. The daemon must match it to an already registered
     // workspace and must never treat session.load as workspace.add.
-    load: async (
-      id: string,
-      o: {
-        cwd?: string
-        onPermissionRequest?: PermissionHandler
-        /** Receives the disposer for the load-time handler before the RPC is sent. */
-        onPermissionRequestRegistered?: (off: () => void) => void
-      } = {},
-    ): Promise<Session> => {
+    load: async (id: string, o: SessionLoadOptions = {}): Promise<Session> => {
       // Install before the request goes on the wire. A daemon may answer a permission request
       // while session/load is still replaying history; creating the handle only after load used to
       // make that request take the automatic reject path in the client-level server handler.
@@ -386,7 +417,7 @@ export class Client {
         }
       }
       try {
-        await this.call('session/load', { sessionId: id, cwd: o.cwd ?? '', mcpServers: [] })
+        await this.loadWithProgress(id, o.cwd ?? '', o)
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
       } catch (error) {
@@ -411,6 +442,53 @@ export class Client {
       const childId = await submitForkCommand(this, id, at)
       return this.sessionHandle(childId)
     },
+    /**
+     * The session's latest history read straight from storage, without opening it: for showing
+     * something read-only while a full load is slow or after it failed. Never verified.
+     */
+    storedOpening: (id: string, o: { maxNodes?: number } = {}): Promise<SessionStoredOpeningResult> =>
+      this.call('_agnes/v1/session.storedOpening', { sessionId: id, ...o }),
+  }
+
+  /**
+   * `session/load` with no fixed deadline: a large session can take minutes to open, so the load
+   * fails only when the daemon goes quiet for `idleTimeoutMs`, or at the hard limit. Every loading
+   * notice, and every replayed row, counts as the daemon still working.
+   */
+  private async loadWithProgress(
+    id: string,
+    cwd: string,
+    o: Pick<SessionLoadOptions, 'onLoading' | 'idleTimeoutMs' | 'hardTimeoutMs'>,
+  ): Promise<void> {
+    const idleMs = o.idleTimeoutMs ?? LOAD_IDLE_TIMEOUT_MS
+    const hardMs = o.hardTimeoutMs ?? LOAD_HARD_TIMEOUT_MS
+    const abort = new AbortController()
+    let idle: ReturnType<typeof setTimeout> | undefined
+    const arm = () => {
+      if (idle !== undefined) clearTimeout(idle)
+      idle = setTimeout(() => abort.abort(new LoadStalled(id, idleMs)), idleMs)
+    }
+    const hard = setTimeout(() => abort.abort(new LoadStalled(id, hardMs)), hardMs)
+    const watcher = (p: SessionLoadingNotice | undefined) => {
+      arm()
+      if (p) o.onLoading?.(p)
+    }
+    const watchers = this.loadWatchers.get(id) ?? new Set()
+    watchers.add(watcher)
+    this.loadWatchers.set(id, watchers)
+    arm()
+    try {
+      await this.call(
+        'session/load',
+        { sessionId: id, cwd, mcpServers: [] },
+        { timeoutMs: null, signal: abort.signal },
+      )
+    } finally {
+      if (idle !== undefined) clearTimeout(idle)
+      clearTimeout(hard)
+      watchers.delete(watcher)
+      if (watchers.size === 0 && this.loadWatchers.get(id) === watchers) this.loadWatchers.delete(id)
+    }
   }
 
   /** A parked approval is resumed by an opaque ticket and an approver credential. The server,
@@ -445,7 +523,7 @@ export class Client {
    * wire call in the same place as an explicit session.load.
    */
   restoreSession(id: string, cwd: string): Promise<unknown> {
-    return this.call('session/load', { sessionId: id, cwd, mcpServers: [] })
+    return this.loadWithProgress(id, cwd, {})
   }
 
   private sessionHandle(id: string, cwd?: string): Session {
@@ -477,7 +555,14 @@ export class Client {
       return
     }
     const sessionId = typeof p.sessionId === 'string' ? p.sessionId : null
-    if (sessionId) this.sessionTable.get(sessionId)?.onNotification(method, p)
+    if (!sessionId) return
+    if (method === LOADING_METHOD || method === 'session/update') {
+      const notice = method === LOADING_METHOD ? loadingNotice(p) : undefined
+      for (const watcher of [...(this.loadWatchers.get(sessionId) ?? [])]) watcher(notice)
+      // Progress is for whoever is loading; it is not a session event.
+      if (method === LOADING_METHOD) return
+    }
+    this.sessionTable.get(sessionId)?.onNotification(method, p)
   }
 
   /** What the server said it supports at the last `initialize`; all false before one completes. */
@@ -570,6 +655,7 @@ export class Client {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".
       ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
     })
     this.checkResult(method, result)
     return result

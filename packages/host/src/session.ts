@@ -3,6 +3,7 @@ import {
   type ChildWorkspaceRuntimePort,
   CoreError,
   type SessionWorkspaceRuntime as CoreSessionWorkspaceRuntime,
+  type OpenProgress,
   type SandboxSeam,
   type SeamImplementations,
   type Seq,
@@ -51,6 +52,8 @@ export type CreateSessionOptions = {
    * a caller that is never called opened a ledger that was already sound.
    */
   onRecovered?: (recovery: SessionRecovery) => void
+  /** Told how far opening the ledger has got, by seq; a listener that throws is ignored. */
+  onOpenProgress?: (p: OpenProgress) => void
 }
 
 export function sessionKey(profile: ResolvedProfile, actor: Actor, cwd: string): string {
@@ -383,6 +386,7 @@ export async function createSession(
     ...(opts.lane ? { lane: opts.lane } : {}),
     ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
     ...(opts.imported ? { imported: opts.imported } : {}),
+    ...(opts.onOpenProgress ? { onOpenProgress: opts.onOpenProgress } : {}),
     ...(workspace
       ? {
           workspaceRuntime: workspace.runtime,

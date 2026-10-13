@@ -84,7 +84,13 @@ export { base64DecodedBytes, isLeanEvent, LEAN_DATA_MIN_CHARS, leanEvent, leanEv
 export { MemoryStorage } from './log/memory-storage.js'
 export { checkRelations, makeRelationCheck } from './log/relations.js'
 export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'
-export type { AppendOptions, OpenLogOptions, SessionOpenStats, Timers } from './log/session-log.js'
+export type {
+  AppendOptions,
+  OpenLogOptions,
+  OpenProgress,
+  SessionOpenStats,
+  Timers,
+} from './log/session-log.js'
 export { SessionLogImpl } from './log/session-log.js'
 // Named rather than `export *`: a star export puts `cacheKey` and `RegisterMap` on the package's
 // root surface, and `cacheKey` alone is enough for a consumer to assemble a second register map
@@ -150,7 +156,7 @@ export type {
   UIOptions,
   UIProjectionUsageOptions,
 } from './project/ui.js'
-export { projectUI } from './project/ui.js'
+export { projectUI, UIProjectionCell } from './project/ui.js'
 export type { UsageProjectionInput } from './project/usage.js'
 export { contextTokensAtCut, projectUsage } from './project/usage.js'
 export { foldEvents, initialState, reduce } from './reduce/reducer.js'

@@ -22,6 +22,7 @@ import {
   type PermissionOutcome,
   type PermissionRequest,
   type Session,
+  type SessionLoadingNotice,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createAntdRoot, NotificationHost, type Notifier, type NotifyInput } from '@agnes/web-ui'
@@ -29,6 +30,7 @@ import { attachmentErrorNotice } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
+import { createStoredHistory, type StoredHistoryView } from './app/stored-history.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
 import { liveApprovalCard } from './approval-card.js'
@@ -130,6 +132,13 @@ reconnectNotice.id = 'reconnect-notice'
 reconnectNotice.setAttribute('role', 'status')
 reconnectNotice.hidden = true
 notice.after(reconnectNotice)
+// Says that what the transcript shows is the stored history, read-only and unverified, while a slow
+// open runs or after one failed.
+const storedHistoryNotice = document.createElement('p')
+storedHistoryNotice.id = 'stored-history-notice'
+storedHistoryNotice.setAttribute('role', 'status')
+storedHistoryNotice.hidden = true
+reconnectNotice.after(storedHistoryNotice)
 const reconnect = createReconnectController({
   probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   reload: () => location.reload(),
@@ -552,6 +561,55 @@ const sessionActions = createSessionActions({
   translate: t,
 })
 let sessionRecovery: { id: string; message: string } | undefined
+// What the status line says while a slow open is still going; unset, it says the session is preparing.
+let loadingStatus: string | undefined
+const storedHistory = createStoredHistory({
+  storedOpening: (id) => client.session.storedOpening(id),
+  show: showStoredHistory,
+  clear: clearStoredHistory,
+})
+function showStoredHistory(view: StoredHistoryView): void {
+  const timeline = view.timeline as UITimeline
+  renderer.reset()
+  renderer.render(webView(timeline, undefined, t).nodes, timeline.turns, { hasEarlier: false })
+  storedHistoryNotice.textContent = view.reason
+    ? t('app.storedHistory.failed', { reason: view.reason })
+    : t('app.storedHistory.loading')
+  storedHistoryNotice.hidden = false
+}
+function clearStoredHistory(): void {
+  storedHistoryNotice.hidden = true
+  storedHistoryNotice.textContent = ''
+}
+/** After 2 s of loading, the status line says how far the open has got instead of only "preparing". */
+function loadingProgress(epoch: number): { update(p: SessionLoadingNotice): void; stop(): void } {
+  let last: SessionLoadingNotice | undefined
+  let visible = false
+  const paint = () => {
+    if (epoch !== selection) return
+    loadingStatus = loadingText(last)
+    renderControls()
+  }
+  const timer = setTimeout(() => {
+    visible = true
+    paint()
+  }, 2_000)
+  return {
+    update(p) {
+      last = p
+      if (visible) paint()
+    },
+    stop() {
+      clearTimeout(timer)
+      if (epoch === selection) loadingStatus = undefined
+    },
+  }
+}
+function loadingText(p: SessionLoadingNotice | undefined): string {
+  if (!p || p.phase === 'open' || p.total <= 0) return t('app.loading.still')
+  const percent = Math.min(100, Math.floor((p.done / p.total) * 100))
+  return t(`app.loading.${p.phase}`, { percent: String(percent) })
+}
 function errorMessage(error: unknown): string {
   // 附件与图片校验错误自带 code，先按词条本地化；其余错误沿用后台返回的文案。
   // 这一步必须在 errorNotice 之前：它只看得见 error.data 里的 code/reason。
@@ -836,7 +894,7 @@ function renderControls(): void {
   composerRuntime.render(composerView)
   updateSidebar()
   if (sessionPending) {
-    topbarRuntime.setStatus(t('topbar.preparing'), 'loading')
+    topbarRuntime.setStatus(loadingStatus ?? t('topbar.preparing'), 'loading')
   }
   conversationRuntime.setEmptyStateVisible(shouldShowEmptyState(projection))
   renderNewSessionControls()
@@ -1135,8 +1193,12 @@ async function open(
   } = {},
 ): Promise<void> {
   const epoch = ++selection
+  // A status left by the open this one replaces would otherwise show until this one reports.
+  loadingStatus = undefined
   if (!options.preserveSending) submissionGeneration++
   let selectionReady = false
+  // Only a session/load that did not finish falls back to the stored history.
+  let loadPending = false
   sessionPending = true
   draftingNew = false
   renderControls()
@@ -1196,9 +1258,26 @@ async function open(
         context.signal.addEventListener('abort', reject, { once: true })
         render()
       })
-    const binding = options.created
-      ? bindWebSession(options.created, permission)
-      : await loadWebSession((sessionId, options) => client.session.load(sessionId, options), id, permission)
+    let binding: Awaited<ReturnType<typeof loadWebSession>>
+    if (options.created) binding = bindWebSession(options.created, permission)
+    else {
+      // A slow open shows the stored history read-only after a while; the live session replaces it.
+      storedHistory.started(id)
+      loadPending = true
+      const progress = loadingProgress(epoch)
+      try {
+        binding = await loadWebSession(
+          (sessionId, loadOptions) =>
+            client.session.load(sessionId, { ...loadOptions, onLoading: progress.update }),
+          id,
+          permission,
+        )
+      } finally {
+        progress.stop()
+      }
+      loadPending = false
+      if (epoch === selection) storedHistory.succeeded()
+    }
     if (epoch !== selection) {
       binding.offPermission?.()
       return
@@ -1317,9 +1396,13 @@ async function open(
       sessionPending = false
       render()
       if (!options.created && !options.preserveSending) {
+        // What storage holds is still worth reading when the full open cannot finish.
+        if (loadPending && (await storedHistory.failed(id, errorMessage(error)))) return
+        if (epoch !== selection) return
         showSessionRecovery(error, id)
         return
       }
+      if (loadPending) storedHistory.succeeded()
     }
     throw error
   }
@@ -1471,6 +1554,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (sessionPending || sending) return
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
+  // A draft replaces whatever stored history an earlier open left on screen.
+  storedHistory.succeeded()
+  loadingStatus = undefined
   const epoch = ++selection
   const previous = current
   if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })

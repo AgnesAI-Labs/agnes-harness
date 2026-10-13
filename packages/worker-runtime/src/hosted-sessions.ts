@@ -5,6 +5,7 @@ import { releaseRawExport } from './export-raw.js'
 import {
   type EventFrame,
   type PreviewFrame,
+  type ProgressFrame,
   parseWorkspaceBinding,
   type SessionCommandFrame,
   type SessionOpenFrame,
@@ -147,6 +148,7 @@ export class HostedSessions {
           binding,
           ...(frame.params.preset ? { preset: frame.params.preset } : {}),
           ...(parent ? { parent } : {}),
+          onOpenProgress: this.progressSender(frame.sessionKey),
         })
         .catch((error: unknown) => {
           this.recordOpenFailed(frame.sessionKey, error, openedAt)
@@ -375,6 +377,7 @@ export class HostedSessions {
           key,
           binding: stub.binding,
           preset: stub.preset,
+          onOpenProgress: this.progressSender(key),
         })
         .catch((error: unknown) => {
           this.recordOpenFailed(key, error, started)
@@ -436,6 +439,23 @@ export class HostedSessions {
       })
     } catch {
       /* diagnostics must not change the outcome */
+    }
+  }
+
+  /** At most one progress frame a second per open, plus the one that finishes a phase. */
+  private progressSender(
+    sessionKey: string,
+  ): (p: { phase: 'verify' | 'fold'; done: number; total: number }) => void {
+    let last: number | undefined
+    return (p) => {
+      const now = this.clock()
+      if (last !== undefined && now - last < 1_000 && p.done < p.total) return
+      last = now
+      try {
+        this.options.send({ kind: 'progress', sessionKey, ...p } satisfies ProgressFrame)
+      } catch {
+        /* progress must not change the open */
+      }
     }
   }
 

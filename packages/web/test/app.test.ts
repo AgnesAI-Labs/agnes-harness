@@ -2892,3 +2892,98 @@ it('renders Computer Use in the application and retires its late operation reply
   expect(call.mock.calls).toHaveLength(requests)
   expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
 })
+
+describe('opening a large session', () => {
+  const storedTimeline = (): UITimeline => ({
+    ...idleTimeline('old'),
+    upto: 1,
+    nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'stored question' }] }],
+  })
+  function boot(storedOpening: (id: string) => Promise<unknown>, load = vi.fn()) {
+    installPublicFixture()
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      close: vi.fn(async () => undefined),
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })),
+        load,
+        storedOpening: vi.fn(storedOpening),
+      },
+    })
+  }
+
+  it('keeps the stored history read-only with the reason when the load fails, then the live session replaces it', async () => {
+    const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+    boot(storedOpening)
+    const old = session('old', async () => idleTimeline('old'))
+    binding.loadWebSession
+      .mockRejectedValueOnce(
+        Object.assign(new Error('session/load made no progress'), { code: 'LOAD_STALLED' }),
+      )
+      .mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const stored = () => document.getElementById('stored-history-notice') as HTMLElement
+    await vi.waitFor(() => expect(stored().hidden).toBe(false))
+    expect(storedOpening).toHaveBeenCalledWith('old')
+    expect(stored().textContent).toContain('无法完整打开')
+    expect(stored().textContent).toContain('session/load made no progress')
+    await vi.waitFor(() =>
+      expect(document.getElementById('transcript')?.textContent).toContain('stored question'),
+    )
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+
+    const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
+      button.textContent?.includes('Old'),
+    )
+    row?.click()
+    await vi.waitFor(() => expect(stored().hidden).toBe(true))
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+  })
+
+  it('falls back to session recovery when the stored history cannot be read either', async () => {
+    boot(async () => {
+      throw new Error('stored-opening-unavailable')
+    })
+    binding.loadWebSession.mockRejectedValueOnce(new Error('open failed'))
+    await import('../src/app.js')
+    const notice = document.getElementById('notice') as HTMLElement
+    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+    expect((document.getElementById('stored-history-notice') as HTMLElement).hidden).toBe(true)
+  })
+
+  it('says how far the load has got once it has taken 2 s', async () => {
+    let finish!: () => void
+    const old = session('old', async () => idleTimeline('old'))
+    const load = vi.fn(async (_id: string, o: { onLoading?: (p: unknown) => void }) => {
+      o.onLoading?.({ phase: 'verify', done: 40, total: 100 })
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      return old
+    })
+    boot(async () => ({ timeline: storedTimeline(), hasEarlier: false }), load)
+    binding.loadWebSession.mockImplementationOnce(
+      async (run: (id: string, o: object) => Promise<unknown>) => ({
+        session: await run('old', {}),
+        offPermission: vi.fn(),
+      }),
+    )
+    await import('../src/app.js')
+    const status = () => document.getElementById('status')?.textContent
+    await vi.waitFor(() => expect(load).toHaveBeenCalled())
+    expect(status()).not.toContain('40%')
+    await vi.waitFor(() => expect(status()).toBe('仍在加载：正在校验历史 40%'), { timeout: 3_000 })
+    finish()
+    await vi.waitFor(() => expect(status()).not.toContain('仍在加载'))
+  })
+})

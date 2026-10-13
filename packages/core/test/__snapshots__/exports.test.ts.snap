@@ -43,6 +43,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "StateTracker",
   "SurfaceCache",
   "ToolRegistry",
+  "UIProjectionCell",
   "WORKSPACE_HOOK_SANDBOX",
   "WORKSPACE_SECRET_DIRS",
   "applyBeforeRequestPatches",

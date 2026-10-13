@@ -49,4 +49,16 @@ After a daemon failure, preserve the home and error, inspect `daemon status`, re
 
 TUI `/rewind SEQ` and Web forking create a new session from a historical point. They do not undo file writes, recall network requests, or invalidate completed tools. Recovery applies current permissions; past authorization is not revived automatically.
 
+<a id="打开很大的旧会话"></a>
+
+## Opening a very large session
+
+A session with years of history or large attachments can take a while to open, because its whole history is checked before anything in it is trusted. While it opens:
+
+- The daemon reports progress at least every 5 seconds. After 2 seconds the Web status line says how far it has got, for example "Still loading: checking history 40%".
+- A client gives up only after 30 seconds with no word from the daemon (SDK `session.load` throws `LoadStalled`, code `LOAD_STALLED`), or after 10 minutes in all. A slow open that keeps reporting progress is left to finish. SDK callers can change both limits with `idleTimeoutMs` and `hardTimeoutMs`.
+- After 10 seconds the Web shows the session's latest history read straight from storage, read-only, with a notice above it. It switches to the live session by itself when the open finishes. If the open fails, the stored history stays on screen with the reason.
+
+The stored history is not verified: no integrity check ran on it, so treat it as a view for reading, not as proof of what the session contains. Large attachments appear in it as placeholders. Only a daemon that runs its sessions in workers reads it; an in-process daemon refuses the request (`stored-opening-unavailable`).
+
 Implementation: [session SDK](../../packages/sdk/src/session.ts), [Core](../../packages/core/src), [import](../../packages/cli/src/commands/import.ts), [export](../../packages/cli/src/commands/export.ts).

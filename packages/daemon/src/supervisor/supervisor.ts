@@ -12,6 +12,7 @@ import {
   createSecretsEnv,
   createSecretsFile,
   createSqliteStorage,
+  createStoredOpeningReader,
   defaultProcessIdentity,
   type ExtensionActivationBarrier,
   type Host,
@@ -23,6 +24,7 @@ import {
   type ResolvedPreset,
   type ResolvedProfile,
   resolveWorkspaceDirectory,
+  type StoredOpeningReader,
   sessionsDbPath,
 } from '@agnes/host'
 import {
@@ -88,6 +90,7 @@ import { registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
 import { registerSessionPreferences } from '../local/methods/session-preferences.js'
+import { registerStoredOpening } from '../local/methods/stored-opening.js'
 import { registerSurfaces } from '../local/methods/surfaces.js'
 import { registerWorkspaces } from '../local/methods/workspaces.js'
 import { NoticeSink } from '../local/notice.js'
@@ -128,7 +131,7 @@ import {
 } from '../packages/index.js'
 import { discoverLocalExamples } from '../packages/local-examples.js'
 import { pluginProposalSourceAdapter } from '../packages/plugin-source.js'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { OpenProgressUpdate, PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import {
   createResourceControlService,
   createResourceControlStore,
@@ -396,6 +399,9 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
   recordLoad(key: string, timing: { acpReplayMs: number }): void {
     this.inner.recordLoad(key, timing)
   }
+  onOpenProgress(key: string, fn: (p: OpenProgressUpdate) => void): Disposer {
+    return this.inner.onOpenProgress(key, fn)
+  }
   recordLoadFailed(key: string, failure: { elapsedMs: number; error: unknown }): void {
     this.inner.recordLoadFailed(key, failure)
   }
@@ -649,6 +655,11 @@ export type StartSupervisorOptions = {
   jobTables?: Pick<Tables, 'table'>
   /** Dedicated-schema capability for the fail-closed artifact authority index. */
   artifactAuthorityTable?: TableHandle
+  /**
+   * Reads a session's latest history straight from storage, read-only and unverified, for a client
+   * whose full open is slow or failed. Absent, `session.storedOpening` is refused.
+   */
+  storedOpening?: Pick<StoredOpeningReader, 'opening'>
   /** Resolved remote credentials. Secret references are resolved only by the executable composition
    * root and never stored in the profile snapshot written for workers. */
   remoteAuth?: Omit<AuthConfig, 'transport'> & {
@@ -1133,6 +1144,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
       onRecord: (_sessionKey, record) => o.audit?.({ kind: record.kind, detail: record.detail }),
+      onProgress: (sessionKey, progress) => registry.openProgress(sessionKey, progress),
       onLifecycle: (record) => o.audit?.(record),
       onSessionFailure: (sessionKey, error) => {
         // The reopened session reads this as a process that died; the reason only survives here.
@@ -1824,6 +1836,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         registry: cx.registry,
         dataDir: o.config.dataDir,
       })
+      registerStoredOpening(ep, {
+        requireSessionOwner: requireSessionOwner(cx),
+        ...(o.storedOpening ? { storedOpening: o.storedOpening } : {}),
+      })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
       if (effectivePackageAdmin)
         registerPackageAdmin(
@@ -2091,19 +2107,38 @@ export async function startProductionSupervisor(
   o: Omit<StartSupervisorOptions, 'tables' | 'jobTables' | 'artifactAuthorityTable'>,
   deps: {
     createStorage?: typeof createSqliteStorage
+    createStoredOpening?: typeof createStoredOpeningReader
     start?: typeof startSupervisor
   } = {},
 ): Promise<SupervisorHandle> {
   prepareDaemonSocketPaths(o.config)
+  const file = join(o.config.dataDir, 'sessions.db')
   const storage = (deps.createStorage ?? createSqliteStorage)({
-    file: join(o.config.dataDir, 'sessions.db'),
+    file,
     tablesDir: join(o.config.dataDir, 'tables'),
     ...(o.clock ? { clock: o.clock } : {}),
   })
+  // Opened on first use: most daemons never need it, and its read-only connection is its own.
+  let reader: StoredOpeningReader | undefined
+  const storedOpening: Pick<StoredOpeningReader, 'opening'> = {
+    opening: (sessionKey, maxNodes) => {
+      reader ??= (deps.createStoredOpening ?? createStoredOpeningReader)({ file })
+      return reader.opening(sessionKey, maxNodes)
+    },
+  }
+  const closeReader = () => {
+    try {
+      reader?.close()
+    } catch {
+      /* a read-only connection holds nothing to lose */
+    }
+    reader = undefined
+  }
   let supervisor: SupervisorHandle
   try {
     supervisor = await (deps.start ?? startSupervisor)({
       ...o,
+      storedOpening,
       jobTables: adaptHostTables(storage.tables('@agnes/daemon')),
       artifactAuthorityTable: adaptHostTables(storage.tables('@agnes/daemon/artifact-read-authority')).table(
         'artifact_read_authority',
@@ -2111,6 +2146,7 @@ export async function startProductionSupervisor(
       reclaim: storage.crashReclaim,
     })
   } catch (error) {
+    closeReader()
     try {
       await storage.close()
     } catch (cleanupError) {
@@ -2127,6 +2163,7 @@ export async function startProductionSupervisor(
     } catch (error) {
       supervisorError = error
     }
+    closeReader()
     try {
       await storage.close()
     } catch (storageError) {

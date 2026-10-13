@@ -439,6 +439,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   AuthClaimResult: AgnesGen.AuthClaimResult,
   SessionEventParams: AgnesGen.SessionEventParams,
   SessionPreviewParams: AgnesGen.SessionPreviewParams,
+  SessionLoadingParams: AgnesGen.SessionLoadingParams,
+  SessionStoredOpeningParams: AgnesGen.SessionStoredOpeningParams,
+  SessionStoredOpeningResult: AgnesGen.SessionStoredOpeningResult,
   DaemonNotice: AgnesGen.DaemonNotice,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
   // the JsonValue/ContentBlock/Actor/SurfaceOp/EventEnvelope aliases above: spelled in agnes-v1.json
@@ -2851,6 +2854,52 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi', seq: 1 }, // additionalProperties:false
     ],
     note: 'hand-written; a preview carries no seq because it is never a ledger row',
+  },
+  SessionLoadingParams: {
+    valid: { sessionId: 's1', phase: 'fold', done: 3, total: 9 },
+    invalid: [
+      { sessionId: 's1', phase: 'read', done: 3, total: 9 }, // enum
+      { sessionId: 's1', phase: 'fold', done: -1, total: 9 }, // boundary: minimum:0
+      { sessionId: 's1', phase: 'fold', done: 3, total: -1 }, // boundary: minimum:0
+      { sessionId: rep(513), phase: 'open', done: 0, total: 0 }, // boundary: maxLength:512
+      { sessionId: 's1', phase: 'fold', done: 3 }, // missing required total
+      { sessionId: 's1', phase: 'fold', done: 3, total: 9, seq: 1 }, // additionalProperties:false
+    ],
+    note: 'hand-written; progress of a session/load in flight, never a ledger row',
+  },
+  SessionStoredOpeningParams: {
+    valid: { sessionId: 's1', maxNodes: 200 },
+    invalid: [
+      { sessionId: 's1', maxNodes: 0 }, // boundary: minimum:1
+      { sessionId: 's1', maxNodes: 501 }, // boundary: maximum:500
+      { maxNodes: 200 }, // missing required sessionId
+      { sessionId: 's1', maxBytes: 16_384 }, // additionalProperties:false
+    ],
+    note: 'hand-written; the read-only stored history asked for while a full open is slow or failed',
+  },
+  SessionStoredOpeningResult: {
+    valid: {
+      timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+      hasEarlier: true,
+      verified: false,
+      lastSeq: 9,
+    },
+    invalid: [
+      {
+        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+        hasEarlier: true,
+        verified: true,
+        lastSeq: 9,
+      }, // const:false
+      { timeline: { sessionId: 's1' }, hasEarlier: true, verified: false, lastSeq: 9 }, // UITimeline $ref
+      {
+        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+        hasEarlier: true,
+        verified: false,
+        lastSeq: -1,
+      }, // boundary: minimum:0
+    ],
+    note: 'hand-written; stored history is never verified, and says so',
   },
   DaemonNotice: {
     valid: daemonNoticeOk,
@@ -6160,6 +6209,12 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
+  '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
+  '_agnes/v1/session.storedOpening': {
+    fileId: AGNES_ID,
+    params: 'SessionStoredOpeningParams',
+    result: 'SessionStoredOpeningResult',
+  },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
   '_agnes/v1/session.rename': {
@@ -6359,6 +6414,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
+  '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
+  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
   '_agnes/v1/session.rename': {
@@ -6482,6 +6539,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.UIHistoryPage as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailResult as Sample,
   '_agnes/v1/session.exportRaw': AGNES_SAMPLES.SessionExportRawResult as Sample,
+  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,

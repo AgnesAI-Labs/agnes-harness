@@ -14,7 +14,7 @@ import { defaultIds } from './ids.js'
 import { CORE_CHECKS } from './invariants/core-checks.js'
 import { InvariantRegistry } from './invariants/registry.js'
 import { forkPaths } from './log/fork-seed.js'
-import type { Timers } from './log/session-log.js'
+import type { OpenProgress, Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
@@ -168,6 +168,8 @@ export type SessionOptions = {
     rootTaskId: string
     generationDepth: number
   }
+  /** Told how far opening the ledger has got; see `OpenLogOptions.progress`. */
+  onOpenProgress?: (p: OpenProgress) => void
 }
 
 const NO_LOG: Logger = {
@@ -433,6 +435,7 @@ export class Kernel {
         lane,
         ...(forked ? { existing: forked } : {}),
         ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(so.onOpenProgress ? { progress: so.onOpenProgress } : {}),
       })
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its

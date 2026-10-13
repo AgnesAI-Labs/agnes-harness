@@ -109,6 +109,33 @@ describe('WorkerLink command settlement', () => {
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
 
+  it('hands open progress to its observer and ignores a malformed one', async () => {
+    const socket = new FakeSocket()
+    const seen: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onProgress: (sessionKey, progress) => seen.push([sessionKey, progress]),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({ kind: 'progress', sessionKey: 'a', phase: 'verify', done: 500, total: 900 }),
+    )
+    await vi.waitFor(() => expect(seen).toEqual([['a', { phase: 'verify', done: 500, total: 900 }]]))
+    for (const bad of [
+      { phase: 'read', done: 1, total: 2 },
+      { phase: 'fold', done: -1, total: 2 },
+      { phase: 'fold', done: 1.5, total: 2 },
+      { phase: 'fold', done: '1', total: 2 },
+    ])
+      socket.emit('data', encodeFrame({ kind: 'progress', sessionKey: 'a', ...bad }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(seen).toHaveLength(1)
+    expect(link.alive).toBe(true)
+    socket.emit('data', encodeFrame({ kind: 'progress', phase: 'fold', done: 1, total: 2 }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+  })
+
   it('does not settle a later reply before an earlier event projection finishes', async () => {
     let release: (() => void) | undefined
     const projected = new Promise<void>((resolve) => {

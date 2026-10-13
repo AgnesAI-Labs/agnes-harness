@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { OpenProgressUpdate, PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import { sessionHash } from './frames.js'
 import { RemoteSession } from './remote-session.js'
@@ -106,6 +106,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
+  /** Who is waiting on each session's open, told how far it has got. */
+  private readonly progressListeners = new Map<string, Set<(p: OpenProgressUpdate) => void>>()
 
   constructor(
     private readonly pool: WorkerPool,
@@ -138,6 +140,27 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         outcome: 'ok',
       },
     })
+  }
+
+  onOpenProgress(key: string, fn: (p: OpenProgressUpdate) => void): () => void {
+    const set = this.progressListeners.get(key) ?? new Set()
+    set.add(fn)
+    this.progressListeners.set(key, set)
+    return () => {
+      set.delete(fn)
+      if (set.size === 0 && this.progressListeners.get(key) === set) this.progressListeners.delete(key)
+    }
+  }
+
+  /** Called by the pool for every progress frame; a listener that throws does not reach the link. */
+  openProgress(key: string, p: OpenProgressUpdate): void {
+    for (const fn of [...(this.progressListeners.get(key) ?? [])]) {
+      try {
+        fn(p)
+      } catch {
+        /* progress is advisory */
+      }
+    }
   }
 
   /** Writes the `session.load` record for a `session/load` whose open failed: the error code only. */

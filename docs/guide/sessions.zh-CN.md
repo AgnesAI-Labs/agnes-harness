@@ -41,4 +41,14 @@ node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key ag
 
 TUI `/rewind SEQ` 和 Web 分叉从某个历史位置创建新会话，不撤销已经写入的文件、不撤回网络请求、不让已执行工具失效。恢复也按当前权限重新约束执行，而不是复活过去的授权。
 
+## 打开很大的旧会话
+
+历史很长或带大附件的会话打开可能要一段时间：完整历史要先校验，才会被信任。打开期间：
+
+- 后台至少每 5 秒报告一次进度。2 秒后 Web 状态栏会显示进度，例如"仍在加载：正在校验历史 40%"。
+- 客户端只在 30 秒内没有收到后台任何消息时才放弃（SDK `session.load` 抛出 `LoadStalled`，代码 `LOAD_STALLED`），总时长上限 10 分钟。持续报告进度的慢打开会等它完成。SDK 调用方可以用 `idleTimeoutMs` 与 `hardTimeoutMs` 调整这两个上限。
+- 10 秒后 Web 会显示直接从存储读出的最近历史，只读，上方有提示；完整打开结束后自动切换到实时会话。打开失败时，存储中的历史会留在屏幕上，并写明原因。
+
+存储中的历史未经校验：没有做完整性检查，只能用来阅读，不能当作会话内容的证明。大附件在其中显示为占位。只有在 worker 中运行会话的后台才提供它；进程内后台会拒绝这个请求（`stored-opening-unavailable`）。
+
 实现依据：[会话 SDK](../../packages/sdk/src/session.ts)、[Core](../../packages/core/src)、[导入](../../packages/cli/src/commands/import.ts)、[导出](../../packages/cli/src/commands/export.ts)。
