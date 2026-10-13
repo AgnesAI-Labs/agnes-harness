@@ -2,6 +2,7 @@ import type { ConfigSnapshot } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
 import type { Client } from '@agnes/sdk/browser'
+import { homeNavigation } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   createCatalogTranslator,
@@ -226,12 +227,13 @@ export function createFirstRunController(options: {
     }
   }
   const resume = () => {
-    if (visible && paused) {
+    if (visible && paused && !homeNavigation.getSnapshot()) {
       paused = false
       render()
     }
   }
   document.getElementById('config')?.addEventListener('close', resume)
+  const stopHomeNavigation = homeNavigation.subscribe(resume)
   return {
     async initialize(value: ConfigSnapshot, hasSession: boolean) {
       snapshot = value
@@ -265,6 +267,7 @@ export function createFirstRunController(options: {
       disposed = true
       generation++
       pending.abort()
+      stopHomeNavigation()
       document.getElementById('config')?.removeEventListener('close', resume)
       unmountRegion(options.host)
       unmountRegion(options.banner)

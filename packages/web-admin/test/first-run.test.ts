@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import type { ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { homeNavigation } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createFirstRunController, needsFirstRun } from '../src/first-run.js'
 
@@ -15,6 +16,7 @@ const snapshot: ConfigSnapshot = {
 const controllers: ReturnType<typeof createFirstRunController>[] = []
 afterEach(() => {
   for (const controller of controllers.splice(0)) controller.dispose()
+  homeNavigation.close()
   document.body.replaceChildren()
   vi.unstubAllGlobals()
 })
@@ -58,7 +60,7 @@ async function setup(dismissed?: string) {
     attachAccount: () => () => {},
     connectAccount: connect,
     chooseWorkspace: async () => 'project',
-    examples: async () => {},
+    examples: async () => homeNavigation.open('agents'),
     details: async () => {},
     closeSettings: () => {},
     saved: async () => {},
@@ -70,7 +72,13 @@ async function setup(dismissed?: string) {
   return { host, banner, controller, click, start, connect, saved, homeId }
 }
 it('keeps setup inline, advances through the work folder and remembers completion for this home/profile', async () => {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} })),
+  )
   const h = await setup()
+  const guide = () => h.host.querySelector('[data-testid="first-run-guide"]')
+  const wrap = () => guide()?.closest<HTMLElement>('.ant-modal-wrap')
   expect(h.host.querySelector('[data-testid="first-run-guide"]')?.getAttribute('data-step')).toBe('account')
   h.click('first-run-add')
   h.click('first-run-next')
@@ -91,7 +99,14 @@ it('keeps setup inline, advances through the work folder and remembers completio
     expect(h.host.querySelector('[data-testid="first-run-workspace"]')?.textContent).toBe('project'),
   )
   h.click('first-run-next')
-  expect(h.host.querySelector('[data-testid="first-run-guide"]')?.getAttribute('data-step')).toBe('ready')
+  await vi.waitFor(() => expect(wrap()?.style.display).not.toBe('none'))
+  expect(guide()?.getAttribute('data-step')).toBe('ready')
+  h.click('first-run-examples')
+  await vi.waitFor(() => expect(homeNavigation.getSnapshot()?.id).toBe('agents'))
+  await vi.waitFor(() => expect(wrap()?.style.display).toBe('none'))
+  homeNavigation.close()
+  await vi.waitFor(() => expect(wrap()?.style.display).not.toBe('none'))
+  expect(guide()?.getAttribute('data-step')).toBe('ready')
   h.click('first-run-next')
   expect(h.start).toHaveBeenCalled()
   expect(h.saved.get(`agh-first-run:${h.homeId}:local-dev`)).toBe('done')
