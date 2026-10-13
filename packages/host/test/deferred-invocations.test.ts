@@ -1223,9 +1223,17 @@ it.each(['allowed-once', 'rejected'] as const)(
       expect(calls.filter((row) => (row.data as { name: string }).name === 'review_commit')).toHaveLength(1)
       expect(await session.decisions.list()).toHaveLength(1)
       const settled = await session.decisions.get(decision!.handle)
-      if (verdict === 'allowed-once') expect(settled.consumption).not.toBeNull()
-      else expect(settled.consumption).toBeNull()
+      expect(settled.consumption).toMatchObject({
+        operationId: decision!.request.operationId,
+        effectId: verdict === 'allowed-once' ? expect.any(String) : null,
+      })
       if (verdict === 'rejected') {
+        const checkpoints = await session.scan({ type: 'x/core/decision-checkpoint', toSeq: session.lastSeq })
+        expect(checkpoints).toContainEqual(
+          expect.objectContaining({
+            data: { handle: decision!.handle, operationId: decision!.request.operationId },
+          }),
+        )
         const effects = await session.scan({ type: 'effect/intent', toSeq: session.lastSeq })
         expect(
           effects.some(
