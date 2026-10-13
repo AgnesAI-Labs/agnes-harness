@@ -314,7 +314,7 @@ describe('PackageManager project trust', () => {
       validateAgainst(RuntimeAdminSnapshot, {
         providers: [],
         presets: [],
-        localPluginFolders: { home: '/home/plugins', workspace: '/work/plugins' },
+        localPluginFolders: { home: 'plugins', workspace: 'workspace-plugins' },
         workspaceDeployments: offered(manager),
       }).ok,
     ).toBe(true)
