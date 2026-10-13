@@ -307,7 +307,7 @@ describe('user attachment port', () => {
       'attachments.session_quota_bytes': 8 * GIB,
       'attachments.global_quota_bytes': 64 * GIB,
       'attachments.min_free_bytes': 2 * GIB,
-      'attachments.orphan_grace_ms': 7 * 24 * 60 * 60 * 1000,
+      'attachments.orphan_grace_ms': 3 * 24 * 60 * 60 * 1000,
     })
     expect(attachmentLimit({}, 'attachments.max_upload_bytes')).toBe(2 * GIB)
     expect(attachmentLimit({ 'attachments.max_upload_bytes': 5 }, 'attachments.max_upload_bytes')).toBe(5)

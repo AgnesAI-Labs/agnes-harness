@@ -53,7 +53,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `attachments.session_quota_bytes` | 8 GiB | 一个会话可引用的附件字节数 |
 | `attachments.global_quota_bytes` | 64 GiB | 附件存储的总字节数 |
 | `attachments.min_free_bytes` | 2 GiB | 写入后必须剩余的磁盘空间 |
-| `attachments.orphan_grace_ms` | 7 天 | 没有任何会话引用的附件保留多久 |
+| `attachments.orphan_grace_ms` | 3 天 | 没有任何会话引用的附件保留多久 |
 
 完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host/src/profile/types.ts)、[local-dev 模板](../../packages/host/templates/local-dev.yaml)及[enterprise 模板](../../packages/host/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 

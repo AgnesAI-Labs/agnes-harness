@@ -59,7 +59,7 @@ Attachment storage reads five `limits` keys; a missing or invalid value uses the
 | `attachments.session_quota_bytes` | 8 GiB | Attachment bytes one session may reference |
 | `attachments.global_quota_bytes` | 64 GiB | Attachment bytes in the store |
 | `attachments.min_free_bytes` | 2 GiB | Free disk space that must remain after a write |
-| `attachments.orphan_grace_ms` | 7 days | How long an attachment no session references is kept |
+| `attachments.orphan_grace_ms` | 3 days | How long an attachment no session references is kept |
 
 Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host/src/profile/types.ts), [local-dev template](../../packages/host/templates/local-dev.yaml), and [enterprise template](../../packages/host/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 

@@ -31,7 +31,7 @@ node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key ag
 
 上例原生导入使用一个新的 session key；重复演练时换一个未使用的 key。省略 key 可能指回原会话，遇到已打开或非空目标会拒绝。import 是 one-shot 路径，不支持 `--connect`。导入的会话会在首条事件（`session/start` 的 `imported` 字段）记录来源格式，原生导入还会记录原会话 key；从 Web 导出它的诊断包时会带一条 `imported` 警告。
 
-消息附件保存在数据目录下的附件存储里，会话中只记一个引用。默认导出只保留引用里的信息（摘要、大小、名称、类型），旧会话里写进会话的附件数据换成一个标记。`export --raw -o FILE` 按存储原样逐行写出，并把会话的消息与排队输入所引用的每个附件的字节写进 `FILE.attachments/`，一个附件一个文件，以其 SHA-256 命名并按它校验。`import FILE` 会读这个目录：导入的引用只有在字节就在那里、或本机已经存有且相符时才被接受。否则整个导入在写入任何内容之前被拒绝，消息以 `ATTACHMENT_MISSING`（两处都没有这些字节）或 `ATTACHMENT_HASH_MISMATCH`（那里的文件不是行里所指的附件）开头。不再被任何会话引用的附件在 7 天后删除（`attachments.orphan_grace_ms`）。
+消息附件保存在数据目录下的附件存储里，会话中只记一个引用。默认导出只保留引用里的信息（摘要、大小、名称、类型），旧会话里写进会话的附件数据换成一个标记。`export --raw -o FILE` 按存储原样逐行写出，并把会话的消息与排队输入所引用的每个附件的字节写进 `FILE.attachments/`，一个附件一个文件，以其 SHA-256 命名并按它校验。`import FILE` 会读这个目录：导入的引用只有在字节就在那里、或本机已经存有且相符时才被接受。否则整个导入在写入任何内容之前被拒绝，消息以 `ATTACHMENT_MISSING`（两处都没有这些字节）或 `ATTACHMENT_HASH_MISMATCH`（那里的文件不是行里所指的附件）开头。不再被任何会话引用的附件在 3 天后删除（`attachments.orphan_grace_ms`）。
 
 回退到旧版本之前先导出：对需要的每个会话执行 `export --raw -o FILE`。附件引用之前的版本不检查会话格式，可能打开一个含引用的会话并读错，因此不支持回退到这类版本。从本版本起，由更新版本写入的会话会以 `E_FORMAT` 拒绝打开，且不做任何改动。
 
