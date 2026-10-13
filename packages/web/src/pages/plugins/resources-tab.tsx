@@ -13,10 +13,12 @@ export function ResourcesTab({
   tab,
   t,
   workspaceId,
+  canSave,
 }: {
   tab: 'skills' | 'mcp'
   t: Text
   workspaceId: string | undefined
+  canSave: boolean
 }) {
   const list = useRef<HTMLElement>(null)
   const notice = useRef<HTMLParagraphElement>(null)
@@ -81,7 +83,7 @@ export function ResourcesTab({
       <p ref={notice} className="admin-notice" role="status" aria-live="polite" hidden />
       <section ref={list} className="plugin-list" aria-live="polite" />
       {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
-      {tab === 'skills' && <SkillFolders t={t} onSaved={() => refresh.current?.click()} />}
+      {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={() => refresh.current?.click()} />}
     </div>
   )
 }

@@ -115,7 +115,12 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
   )
   const body = (tab: PluginTab) =>
     tab !== route.tab ? null : tab === 'skills' || tab === 'mcp' ? (
-      <ResourcesTab tab={tab} t={t} workspaceId={data.plugins?.workspaceId?.()} />
+      <ResourcesTab
+        tab={tab}
+        t={t}
+        workspaceId={data.plugins?.workspaceId?.()}
+        canSave={view?.canEffect('packages.activate') ?? false}
+      />
     ) : !view ? null : tab === 'plugins' ? (
       <PluginsTab view={view} t={t} hostT={context.t} summaries={summaries} />
     ) : tab === 'review' ? (

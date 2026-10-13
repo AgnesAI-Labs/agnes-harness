@@ -12,8 +12,39 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, isExperimental } from '../src/pages/plugins/plugins-tab.js'
 import { CAPABILITIES, PLUGIN_TABS, pluginsRoute } from '../src/pages/plugins/route.js'
+import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 
 afterEach(() => document.body.replaceChildren())
+
+it('keeps skill folders read-only until the page permits configuration writes', async () => {
+  const config = {
+    rulesEnabled: true,
+    timeEnabled: true,
+    timeZone: 'UTC',
+    customSkillRoots: ['/synthetic/skills'],
+    refreshIntervalMs: 1000,
+    maxBytes: 4096,
+    maxSourceBytes: 1024,
+    instructionFiles: [],
+    localInstructionFiles: [],
+  }
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ config, workspaces: [] }))
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const props = { t: (key: string) => key, onSaved: vi.fn(), canSave: false }
+  try {
+    flushSync(() => root.render(createElement(SkillFolders, props)))
+    const field = () => host.querySelector<HTMLTextAreaElement>('#skill-folders-paths')
+    await vi.waitFor(() => expect(field()?.value).toBe('/synthetic/skills'))
+    expect(field()?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="skill-folders-save"]')?.disabled).toBe(true)
+    flushSync(() => root.render(createElement(SkillFolders, { ...props, canSave: true })))
+    expect(field()?.disabled).toBe(false)
+  } finally {
+    flushSync(() => root.unmount())
+    fetcher.mockRestore()
+  }
+})
 
 describe('plugins page route', () => {
   it('reads the tab, and a built-in capability page under the plugins tab', () => {
