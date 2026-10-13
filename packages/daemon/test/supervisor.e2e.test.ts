@@ -1357,3 +1357,75 @@ it('retains the original request across worker and daemon crashes, then consumes
     rmSync(dir, { recursive: true, force: true })
   }
 }, 160_000)
+
+it('revokes a session grant through the worker and keeps it revoked after a cold reopen', async () => {
+  vi.stubEnv('AGNES_FAKE_WORKER_PERMISSION', '1')
+  vi.stubEnv('AGNES_FAKE_WORKER_REPEAT_PERMISSION', '1')
+  vi.stubEnv('AGNES_FAKE_WORKER_TURNS', '12')
+  const dir = mkdtempSync(join(tmpdir(), 'agh-session-grants-'))
+  const profile = buildProfile(dir)
+  const profileFile = join(dir, 'profile.json')
+  writeFileSync(profileFile, JSON.stringify(profile))
+  const tables = sqliteTables(join(dir, 'daemon.sqlite'))
+  const start = () =>
+    startSupervisor({
+      config: buildConfigFor(dir),
+      profile,
+      profileDir: join(dir, 'profiles', 'local-dev'),
+      profileFile,
+      workspaceRoot: dir,
+      jobTables: tables,
+      processIdentity,
+      ...workerSpawnOpts,
+    })
+  let sup = await start()
+  const connectSdk = () =>
+    createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+  let sdk = connectSdk()
+  try {
+    const session = await sdk.session.new({ cwd: dir })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    let asked = 0
+    session.onPermissionRequest(async () => {
+      asked++
+      return { verdict: 'allowed-session' }
+    })
+    expect((await session.prompt('approve the first operation')).reason).toBe('completed')
+    expect(asked).toBe(1)
+    const { grants } = await sdk.approval.sessionGrants(session.id)
+    expect(grants).toEqual([expect.objectContaining({ lifetime: 'session', toolId: 'permission_probe' })])
+    const grant = grants[0]!
+    expect((await session.prompt('reuse this session grant')).reason).toBe('completed')
+    expect(asked).toBe(1)
+    await expect(sdk.approval.revokeSessionGrant(session.id, 'unknown-grant')).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    const revoked = await sdk.approval.revokeSessionGrant(session.id, grant.grantId)
+    expect(revoked).toMatchObject({ ...grant, revokedAt: expect.any(String) })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    await expect(sdk.approval.revokeSessionGrant(session.id, grant.grantId)).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    await sdk.close()
+    await sup.close()
+    sup = await start()
+    sdk = connectSdk()
+    const reopened = await sdk.session.load(session.id, { cwd: dir })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    reopened.onPermissionRequest(async () => {
+      asked++
+      return { verdict: 'rejected' }
+    })
+    rmSync(join(dir, 'permission-dispatched'))
+    await reopened.prompt('require fresh permission after reopening')
+    expect(asked).toBe(2)
+    expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+  } finally {
+    await sdk.close()
+    await sup.close()
+    await tables.close()
+    rmSync(dir, { recursive: true, force: true })
+    vi.unstubAllEnvs()
+  }
+}, 90_000)

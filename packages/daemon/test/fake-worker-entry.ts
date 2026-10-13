@@ -186,7 +186,13 @@ void runWorker(
               stamp: { ...stampFor(request), parser_version: PARSER_VERSION },
             },
             ...(env.AGNES_FAKE_WORKER_PERMISSION === '1' &&
-            !request.messages.some((message) => message.role === 'tool_result')
+            !request.messages
+              .slice(
+                env.AGNES_FAKE_WORKER_REPEAT_PERMISSION === '1'
+                  ? request.messages.findLastIndex((message) => message.role === 'user')
+                  : 0,
+              )
+              .some((message) => message.role === 'tool_result')
               ? [
                   {
                     type: 'toolcall_end' as const,
