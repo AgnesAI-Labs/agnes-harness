@@ -33,7 +33,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
       },
       {
         path: 'index.mjs',
-        content: `import {readFileSync} from 'node:fs'\nimport {defineAgnesPlugin} from '@agnes/plugin-runtime'\nexport const main=defineAgnesPlugin({inject:['skills'],apply(ctx){ctx.skills.register({name:${JSON.stringify(skill)},description:'A reviewed reusable method.',body:readFileSync(new URL('./skills/${skill}/SKILL.md',import.meta.url),'utf8')})}})\n`,
+        content: `import {readFileSync} from 'node:fs'\nimport {defineAgnesPlugin} from '@agnes/plugin-runtime'\nexport const main=defineAgnesPlugin({apply(ctx){ctx.skills.register({name:${JSON.stringify(skill)},description:'A reviewed reusable method.',body:readFileSync(new URL('./skills/${skill}/SKILL.md',import.meta.url),'utf8')})}})\n`,
       },
       {
         path: `skills/${skill}/SKILL.md`,

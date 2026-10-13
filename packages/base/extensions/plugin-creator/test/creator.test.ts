@@ -50,6 +50,19 @@ it('scaffolds complete inert text through the host rather than reading virtual a
     const pkg = JSON.parse(input.files.find((f) => f.path === 'package.json')!.content)
     expect(pkg.name).toBe('review-demo')
     expect(pkg.agnes.plugins[0].apiRange).toBe('^4.0.0')
+    expect(pkg.agnes.plugins[0].inject).toEqual(
+      {
+        tool: ['tools'],
+        'tool-with-panel': ['tools'],
+        'mcp-skills': ['skills'],
+        'model-adapter': ['providers'],
+        loop: ['tools', 'providers', 'skills'],
+        skill: ['skills'],
+      }[template],
+    )
+    const entry = input.files.find((file) => /^(?:src\/)?index\.(?:ts|mjs)$/.test(file.path))
+    expect(entry?.content).toBeDefined()
+    expect(entry?.content).not.toMatch(/\binject\s*:/)
   }
   expect(exec).not.toHaveBeenCalled()
 })
