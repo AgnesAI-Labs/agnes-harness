@@ -21,13 +21,13 @@ import {
   SettingsSelect,
   SettingsState,
   Tag,
+  useAdvancedSettings,
 } from '@agnes/web-ui'
 import type { ComponentProps } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
 import { HomePageSection } from '../page-frame.js'
 import type { PluginView } from './admin-view.js'
-import { useAdvancedShown } from './advanced.js'
 import { CAPABILITY_ICONS } from './capabilities.js'
 import { CAPABILITIES, openPlugins } from './route.js'
 import type { CapabilitySummaries } from './summaries.js'
@@ -101,7 +101,7 @@ export function pluginListProps(view: PluginView): Omit<ComponentProps<typeof Pl
 
 /** Search and the category filter shared by the installed list and the marketplace. */
 export function PluginToolbar({ view, t, onQuery }: { view: PluginView; t: Text; onQuery(): void }) {
-  const advanced = useAdvancedShown()
+  const advanced = useAdvancedSettings()
   return (
     <SearchBar
       data-testid="plugin-toolbar"
