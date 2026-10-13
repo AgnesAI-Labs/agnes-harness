@@ -51,7 +51,7 @@
     --ant-color-text-base: var(--agnes-text-primary);
     /* Ant's weakest text step still carries labels; keep it at the readable muted role. */
     --ant-color-text-quaternary: var(--agnes-text-tertiary);
-    --ant-color-icon: var(--agnes-text-tertiary);
+    --ant-color-icon: var(--agnes-icon-secondary);
     --ant-color-icon-hover: var(--agnes-text-primary);
 
     /* 背景层级 */

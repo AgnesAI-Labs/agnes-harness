@@ -374,7 +374,7 @@
     width: 28px;
     height: 28px;
     border-radius: var(--radius-chip);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-icon-secondary);
     background: var(--agnes-bg-fill);
   }
   .agnes-settings-page[data-layout] {
@@ -460,7 +460,7 @@
     height: 40px;
     margin-bottom: var(--s12);
     border-radius: var(--radius-lg);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-icon-secondary);
     background: var(--agnes-bg-fill);
   }
   /* One mark size wherever the state appears, whatever size the icon was authored at. */
@@ -564,7 +564,7 @@
     height: var(--s32);
     flex: 0 0 auto;
     border-radius: var(--radius-chip);
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-icon-secondary);
     background: var(--agnes-bg-fill);
   }
   .agh-list-row-copy {

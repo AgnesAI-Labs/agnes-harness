@@ -43,6 +43,7 @@ const pairs: [string, string, number][] = [
     4.5,
   ]),
   ['--agnes-button-primary-content', '--agnes-button-primary-bg', 4.5],
+  ['--agnes-text-emphasis', '--agnes-brand-emphasis-soft', 4.5],
   ['--agnes-button-primary-content', '--agnes-button-primary-bg-hover', 4.5],
   ['--agnes-input-content-strong', '--agnes-input-surface', 4.5],
   ['--agnes-input-placeholder', '--agnes-input-surface', 4.5],

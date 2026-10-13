@@ -613,17 +613,19 @@
     display: grid;
     place-items: center;
     border-radius: var(--radius-sm);
-    color: var(--agnes-button-primary-content);
-    background: var(--agnes-button-primary-bg);
+    color: var(--agnes-text-emphasis);
+    background: var(--agnes-brand-emphasis-soft);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     line-height: 1;
   }
   .empty-state-agent-tile[data-tone="1"] {
-    background: var(--agnes-status-success-solid);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
   }
   .empty-state-agent-tile[data-tone="2"] {
-    background: var(--agnes-status-info-solid);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
   }
   .empty-state-agent-name {
     overflow: hidden;
