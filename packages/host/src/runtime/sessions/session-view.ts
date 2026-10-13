@@ -17,6 +17,7 @@ export const SESSION_VIEW_SCAN_BUDGET = Object.freeze({
   timeMs: 15_000,
 })
 
+type ScanBudget = Record<keyof typeof SESSION_VIEW_SCAN_BUDGET, number>
 type ScanStop = NonNullable<SessionViewResult['history']['scan']>['reason']
 
 export type SessionRowsReader = (
@@ -81,7 +82,7 @@ export async function readSessionView(
   options: {
     maxNodes?: number
     signal?: AbortSignal
-    budget?: Partial<Record<keyof typeof SESSION_VIEW_SCAN_BUDGET, number>>
+    budget?: Partial<ScanBudget>
   } = {},
 ): Promise<SessionViewResult> {
   const budget = { ...SESSION_VIEW_SCAN_BUDGET, ...options.budget }
@@ -146,7 +147,7 @@ type Fetch = (query: Parameters<SessionRowsReader>[1]) => ReturnType<typeof sett
 function exhausted(
   count: number,
   bytes: number,
-  budget: typeof SESSION_VIEW_SCAN_BUDGET,
+  budget: ScanBudget,
 ): ScanStop | undefined {
   return count >= budget.events ? 'events' : bytes >= budget.bytes ? 'bytes' : undefined
 }
@@ -154,7 +155,7 @@ function exhausted(
 /** Reads from seq 1 until the end or a budget; the rows it keeps are the oldest ones. */
 async function scanForward(
   fetch: Fetch,
-  budget: typeof SESSION_VIEW_SCAN_BUDGET,
+  budget: ScanBudget,
   signal: AbortSignal | undefined,
 ): Promise<Rows> {
   const events: Event[] = []
@@ -185,7 +186,7 @@ async function scanForward(
 /** Reads from the newest row toward seq 1 until the start or a budget; the rows it keeps are the newest. */
 async function scanBackward(
   fetch: Fetch,
-  budget: typeof SESSION_VIEW_SCAN_BUDGET,
+  budget: ScanBudget,
   signal: AbortSignal | undefined,
   newest: number,
 ): Promise<Rows> {
@@ -218,10 +219,8 @@ async function scanBackward(
 function failure(error: unknown): Pick<Rows, 'issue' | 'reason'> {
   const issue = classifyGenerationFailure(error)
   if (!issue) throw error
-  return {
-    issue,
-    reason: (error instanceof Error ? error.message : String(error)).match(/E_[A-Z0-9_]+/)?.[0],
-  }
+  const reason = (error instanceof Error ? error.message : String(error)).match(/E_[A-Z0-9_]+/)?.[0]
+  return { issue, ...(reason ? { reason } : {}) }
 }
 
 function noticeFor(issue: SessionVersionIssue, sessionId: string, reason?: string): SessionViewNotice {
