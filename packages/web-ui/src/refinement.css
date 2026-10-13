@@ -155,8 +155,7 @@
     box-shadow: var(--shadow-control);
   }
   :is(.agh-btn--secondary, .secondary-button):hover:not(:disabled):not([aria-disabled="true"]) {
-    background: var(--agnes-bg-control);
-    background-image: linear-gradient(var(--agnes-bg-hover), var(--agnes-bg-hover));
+    background: color-mix(in srgb, var(--agnes-bg-control) 94%, var(--agnes-text-primary));
   }
   :is(.agh-btn--primary, .primary-button, .agh-btn--danger-filled):not(:disabled):not(
     [aria-disabled="true"]

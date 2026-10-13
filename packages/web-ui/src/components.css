@@ -76,7 +76,7 @@
   .agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
     color: var(--agnes-status-danger-text);
     border-color: transparent;
-    background: color-mix(in srgb, var(--agnes-status-danger-text) 16%, var(--agnes-status-danger-bg));
+    background: color-mix(in srgb, var(--agnes-status-danger-text) 6%, var(--agnes-status-danger-bg));
   }
   /* Filled danger is reserved for destructive confirmation footers. */
   .agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
