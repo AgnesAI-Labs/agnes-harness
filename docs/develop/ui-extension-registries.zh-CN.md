@@ -44,9 +44,9 @@ const dispose = homeEntries.register({
 homeNavigation.open('example.board', { tab: 'week' })
 ```
 
-`component` 接收 `{ context }`：`context.t` 解析宿主语言键，`context.selection` 是调用 `homeNavigation.open(id, selection)` 时传入的不透明值。`badge` 为 `{ subscribe, getSnapshot }`，返回一个数量，为零时不显示。`icon` 指定共享图标，未知名称退回插件图标。`homeNavigation.close()` 回到对话区；`subscribe`、`getSnapshot` 给出当前请求的 `{ id, selection }`。宿主把请求写进地址 `?page=<id>`，selection 为 `{ tab: string }` 时再加 `&tab=<name>`，因此链接会在入口注册后打开对应页面。入口只负责导航，不授予能力，也不选择会话工具。侧栏使用 `data-testid="home-entries"` 和 `home-entry-<id>`；用宿主页面框架搭的页面使用 `home-page-<id>`。
+`component` 接收 `{ context }`：`context.t` 解析宿主语言键，`context.selection` 是调用 `homeNavigation.open(id, selection)` 时传入的不透明值。`badge` 为 `{ subscribe, getSnapshot }`，返回一个数量，为零时不显示。`icon` 指定共享图标，未知名称退回插件图标。`homeNavigation.close()` 回到对话区；`subscribe`、`getSnapshot` 给出当前请求的 `{ id, selection }`。宿主把请求写进地址 `?page=<id>`，selection 为 `{ tab: string }` 时再加 `&tab=<name>`，因此链接会在入口注册后打开对应页面。页面和页签切换会写入浏览器历史；前进与后退恢复请求的页面，同时保留地址中的会话和工作区参数。替换注册项会重新开始组件生命周期，即使 ID 和组件函数相同。入口只负责导航，不授予能力，也不选择会话工具。侧栏使用 `data-testid="home-entries"` 和 `home-entry-<id>`；用宿主页面框架搭的页面使用 `home-page-<id>`。
 
-register 返回幂等且绑定该注册项身份的卸载函数，须绑定到客户端模块的 effect 或销毁作用域。旧卸载函数不会删除后来使用同一 ID 的注册项。subscribe、getSnapshot 支持响应式宿主；entries 返回排序后的注册项；get 按 ID 查询。选中页面卸载后回到第一个内置分类。UI 注册项必须与已安装客户端模块的生命周期一致。
+register 返回幂等且绑定该注册项身份的卸载函数，须绑定到客户端模块的 effect 或销毁作用域。旧卸载函数不会删除后来使用同一 ID 的注册项。subscribe、getSnapshot 支持响应式宿主；entries 返回排序后的注册项；get 按 ID 查询。选中的设置分类卸载后回到第一个内置分类；首页入口卸载后显示对话区。UI 注册项必须与已安装客户端模块的生命周期一致。
 
 会话工具组和 session-info 数据结构属于后台。SessionToolsPanel 独立渲染 SessionCapabilitySet 的启用状态和 source/rule 来源说明，并兼容可选的旧 toolGroups；注册表不规范化、扩展或保存此数据。配置页面可通过下方链接的 schema UI API 声明后注册；保存和测试适配器不改变后台权限。
 

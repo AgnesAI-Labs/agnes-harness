@@ -1,0 +1,104 @@
+/** @vitest-environment happy-dom */
+import { homeNavigation } from '@agnes/web-client'
+import { afterEach, expect, it } from 'vitest'
+import { bindHomeRouting } from '../src/pages/host.js'
+
+afterEach(() => {
+  homeNavigation.close()
+  history.replaceState(null, '', '/')
+})
+
+it('restores pages and tabs on history traversal without adding entries and preserves session scope', () => {
+  history.replaceState({ scope: 1 }, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+  const stop = bindHomeRouting()
+  try {
+    expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
+    const count = history.length
+    homeNavigation.open('plugins', { tab: 'mcp' })
+    expect(history.length).toBe(count + 1)
+    expect(location.search).toBe('?page=plugins&tab=mcp&session=s&workspaceId=w')
+    homeNavigation.open('plugins', { tab: 'mcp' })
+    expect(history.length).toBe(count + 1)
+    // Model the browser's URL change before it dispatches popstate.
+    history.replaceState(null, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
+    expect(history.length).toBe(count + 1)
+    history.replaceState(null, '', '/?session=s&workspaceId=w')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(homeNavigation.getSnapshot()).toBeUndefined()
+    expect(history.length).toBe(count + 1)
+    history.replaceState(null, '', '/?page=third-party')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
+  } finally {
+    stop()
+  }
+  history.replaceState(null, '', '/?page=agents')
+  window.dispatchEvent(new PopStateEvent('popstate'))
+  expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
+})
+
+it('replaces the selected registration lifetime on batched plugin reload, and unmounts on removal', async () => {
+  const { Context } = await import('@agnes/cordis')
+  const { homeEntries, LocaleService } = await import('@agnes/web-client')
+  const { createDocumentLocaleSource } = await import('@agnes/web-ui')
+  const { act, createElement, useState } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { HomePageHost } = await import('../src/pages/host.js')
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const ctx = new Context()
+  const locale = new LocaleService(ctx, 'en')
+  const source = createDocumentLocaleSource({})
+  const host = document.createElement('main')
+  document.body.append(host)
+  const root = createRoot(host)
+  function Page() {
+    const [count, setCount] = useState(0)
+    return createElement('button', { onClick: () => setCount(count + 1) }, String(count))
+  }
+  const entry = { id: 'test.reload', order: 1, icon: 'plug', titleKey: 'test', component: Page }
+  let remove = homeEntries.register(entry)
+  let active: string | undefined
+  try {
+    homeNavigation.open(entry.id)
+    await act(async () =>
+      root.render(
+        createElement(HomePageHost, {
+          locale,
+          source: source.source,
+          data: {
+            call: async () => {
+              throw new Error('unused')
+            },
+            sessionId: () => undefined,
+            openSettings: () => undefined,
+            startDraft: () => undefined,
+          },
+          onActive: (id) => {
+            active = id
+          },
+        }),
+      ),
+    )
+    await act(async () => host.querySelector('button')?.click())
+    expect(host.textContent).toBe('1')
+    await act(async () => {
+      remove()
+      remove = homeEntries.register(entry)
+    })
+    expect(host.textContent).toBe('0')
+    expect(active).toBe(entry.id)
+    await act(async () => remove())
+    expect(host.textContent).toBe('')
+    expect(active).toBeUndefined()
+  } finally {
+    await act(async () => {
+      remove()
+      root.unmount()
+    })
+    source.dispose()
+    await ctx.fiber.dispose()
+    host.remove()
+  }
+})

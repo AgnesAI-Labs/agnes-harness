@@ -7,7 +7,7 @@ import {
   UiLocaleProvider,
   type UiLocaleSource,
 } from '@agnes/web-ui'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 /**
  * What the workbench hands a built-in home page as `context.data`. Plugin pages receive it too but
@@ -35,7 +35,7 @@ export function activeHomeEntry() {
   return requested ? homeEntries.get(requested.id) : undefined
 }
 
-function HomePageHost({
+export function HomePageHost({
   locale,
   source,
   data,
@@ -50,6 +50,10 @@ function HomePageHost({
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
   const entry = requested ? homeEntries.get(requested.id) : undefined
+  // A synchronous unload/reload can be batched into one render. A new registration owns a new
+  // component lifetime even when it reuses the same ID and component function.
+  const mounted = useRef({ entry, version: 0 })
+  if (mounted.current.entry !== entry) mounted.current = { entry, version: mounted.current.version + 1 }
   const active = entry?.id
   useEffect(() => onActive(active), [active, onActive])
   if (!entry) return null
@@ -61,7 +65,7 @@ function HomePageHost({
   }
   return (
     <UiLocaleProvider source={source}>
-      <RegionErrorBoundary key={entry.id} region={`home-page-${entry.id}`}>
+      <RegionErrorBoundary key={`${entry.id}:${mounted.current.version}`} region={`home-page-${entry.id}`}>
         <Page context={context} />
       </RegionErrorBoundary>
     </UiLocaleProvider>
@@ -113,20 +117,36 @@ const PAGE_ID = /^[a-z][a-z0-9.-]*$/
  * page. A link that names a page opens it once its entry registers.
  */
 export function bindHomeRouting(): () => void {
-  const start = new URLSearchParams(location.search)
-  const page = start.get('page')
-  if (page && PAGE_ID.test(page)) {
-    const tab = start.get('tab')
-    homeNavigation.open(page, tab ? { tab } : undefined)
+  let restoring = false
+  const readLocation = () => {
+    const params = new URLSearchParams(location.search)
+    const page = params.get('page')
+    restoring = true
+    try {
+      if (page && PAGE_ID.test(page)) {
+        const tab = params.get('tab')
+        homeNavigation.open(page, tab ? { tab } : undefined)
+      } else homeNavigation.close()
+    } finally {
+      restoring = false
+    }
   }
-  return homeNavigation.subscribe(() => {
+  readLocation()
+  const stop = homeNavigation.subscribe(() => {
+    if (restoring) return
     const requested = homeNavigation.getSnapshot()
     const url = new URL(location.href)
+    const before = url.href
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
     if (requested) url.searchParams.set('page', requested.id)
     else url.searchParams.delete('page')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
-    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    if (url.href !== before) history.pushState(history.state, '', `${url.pathname}${url.search}${url.hash}`)
   })
+  window.addEventListener('popstate', readLocation)
+  return () => {
+    stop()
+    window.removeEventListener('popstate', readLocation)
+  }
 }

@@ -2152,7 +2152,7 @@ onHistoryNavigation(() => {
       if (current?.id !== id) await open(id)
       return
     }
-    if (current || !draftingNew) await beginNewDraft()
+    if (current || !draftingNew) await beginNewDraft(!homeNavigation.getSnapshot())
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
@@ -2243,13 +2243,19 @@ run(async () => {
   const page = sessions.value
   // A user choice also owns whether the account setup dialog may open.
   if (selection !== startupSelection) return
-  if (models.status === 'fulfilled' && !configured && snapshot.accounts?.length) {
+  if (
+    models.status === 'fulfilled' &&
+    !configured &&
+    snapshot.accounts?.length &&
+    !homeNavigation.getSnapshot()
+  ) {
     renderControls()
     notice.setText(t('app.firstRun.configure'))
     await settings.open()
   }
   const guided =
     !startupRequest.get('settings') &&
+    !homeNavigation.getSnapshot() &&
     !startupRequest.get('session') &&
     needsFirstRun(snapshot) &&
     page.items.length === 0
@@ -2300,7 +2306,10 @@ run(async () => {
   } else {
     const first = page.items.find((item) => !item.archived)
     if (first) await open(first.sessionId)
-    else await beginNewDraft(configured && !startupSection && !guided)
+    else
+      await beginNewDraft(
+        configured && !startupSection && !startupMoved && !homeNavigation.getSnapshot() && !guided,
+      )
   }
   const factCandidate = startupRequest.get('factCandidate')
   if (
@@ -2317,7 +2326,10 @@ run(async () => {
       }),
     )
   }
-  const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
+  const shown = await firstRun.initialize(
+    snapshot,
+    page.items.length > 0 || Boolean(startupSection || startupMoved || homeNavigation.getSnapshot()),
+  )
   if (guided && !shown) await beginNewDraft(true)
   if (startupMoved)
     openMovedSettingsLink(startupSettings, {
