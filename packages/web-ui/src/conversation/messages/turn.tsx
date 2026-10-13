@@ -1,9 +1,11 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Bubble } from '../../x/index.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import type { AssistantNode, ConversationMessagesProps } from './context.js'
 import { markdownState } from './markdown-state.js'
-import { isEmptyStreamingAssistant, Message } from './message.js'
+import { isEmptyStreamingAssistant, isSystemInput, Message } from './message.js'
+import { Thinking } from './thinking.js'
 
 export const TURN_STATUS_KEYS: Record<UITurn['status'], string> = {
   running: 'turn.status.running',
@@ -105,6 +107,88 @@ export function Turn({
     return rank(a) - rank(b)
   })
   const settled = !processActive && Boolean(turn.finalAssistantId)
+  // A finished turn is marked with a light check next to its duration; the wording still says so.
+  const done =
+    turn.status === 'completed' ? (
+      <svg className="icon turn-done-check" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m5 12.5 4.5 4.5L19 7.5" />
+      </svg>
+    ) : null
+  const process = (
+    <>
+      <p className="turn-status" data-agnes-dynamic="turn-process" hidden={processCount > 0}>
+        {done}
+        {statusText}
+      </p>
+      <details
+        ref={details}
+        className="turn-process"
+        hidden={processCount === 0}
+        onToggle={() => {
+          const open = details.current?.open ?? false
+          preference.current = open
+          setProcessOpen(open)
+        }}
+      >
+        <summary data-testid="turn-process-toggle">
+          <span className="process-row">
+            {done}
+            <span className="process-label" data-agnes-dynamic="turn-process" data-testid="turn-timing">
+              {statusText}
+            </span>
+            <svg className="icon process-chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </span>
+        </summary>
+        {finalThinking && thinkingFinalId === turn.finalAssistantId && (
+          <div className="turn-process-body">
+            <Thinking active={false} label={props.t('timeline.thinkingSummary')}>
+              {props.renderMarkdown
+                ? props.renderMarkdown(finalThinking, 'thinking', {
+                    nodeId: finalNode?.id ?? '',
+                    streaming: finalNode ? markdownState(finalNode, turn.status).streaming : false,
+                    turnStatus: turn.status,
+                  })
+                : finalThinking}
+            </Thinking>
+          </div>
+        )}
+      </details>
+      {turn.status === 'failed' && (
+        <p className="turn-error" role="alert">
+          {turn.error
+            ? props.t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
+            : props.t('turn.error.noDetail', {
+                reason: turn.reason ?? props.t('turn.error.unknownReason'),
+              })}
+        </p>
+      )}
+      <div className="turn-node-flow">
+        {ordered.map((node) => {
+          const final = node.id === turn.finalAssistantId
+          const needsAttention = attention(node)
+          return (
+            <div
+              key={node.id}
+              className={final ? 'turn-final' : needsAttention ? 'turn-attention' : 'turn-process-body'}
+              hidden={isEmptyStreamingAssistant(node) || (!final && !needsAttention && !processOpen)}
+            >
+              <Message
+                node={node}
+                props={props}
+                hideThinking={final && thinkingFinalId === turn.finalAssistantId}
+                turnStatus={turn.status}
+                thinkingHost={
+                  node.id === (turn.finalAssistantId ?? latestStreaming?.id) ? thinkingHost : undefined
+                }
+              />
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
   return (
     <section
       className="conversation-turn"
@@ -114,90 +198,37 @@ export function Turn({
       data-inherited={String(turn.inherited)}
     >
       <div className="turn-user">
-        {users.map((node) => (
-          <Message key={node.id} node={node} props={props} />
-        ))}
+        {users.map((node) =>
+          // A system input is a status line of the turn, not something the reader said.
+          isSystemInput(node) ? (
+            <Message key={node.id} node={node} props={props} />
+          ) : (
+            <Bubble
+              key={node.id}
+              rootClassName="agh-bubble agh-bubble-user"
+              placement="end"
+              variant="filled"
+              content={<Message node={node} props={props} />}
+            />
+          ),
+        )}
       </div>
       <div ref={response} className="turn-response">
-        <span className="process-identity">
-          <span className="process-avatar">
-            <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
-          </span>
-          <span className="process-name">{props.t('brand.harness')}</span>
-        </span>
-        <p className="turn-status" data-agnes-dynamic="turn-process" hidden={processCount > 0}>
-          {statusText}
-        </p>
-        <details
-          ref={details}
-          className="turn-process"
-          hidden={processCount === 0}
-          onToggle={() => {
-            const open = details.current?.open ?? false
-            preference.current = open
-            setProcessOpen(open)
-          }}
-        >
-          <summary data-testid="turn-process-toggle">
-            <span className="process-row">
-              <span className="process-label" data-agnes-dynamic="turn-process" data-testid="turn-timing">
-                {statusText}
+        <Bubble
+          rootClassName="agh-bubble agh-bubble-assistant"
+          placement="start"
+          variant="borderless"
+          header={
+            <span className="process-identity">
+              <span className="process-avatar">
+                <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
               </span>
-              <svg className="icon process-chevron" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
+              <span className="process-name">{props.t('brand.harness')}</span>
             </span>
-          </summary>
-          {finalThinking && thinkingFinalId === turn.finalAssistantId && (
-            <div className="turn-process-body">
-              <details className="thinking">
-                <summary>{props.t('timeline.thinkingSummary')}</summary>
-                <div className="thinking-content markdown">
-                  {props.renderMarkdown
-                    ? props.renderMarkdown(finalThinking, 'thinking', {
-                        nodeId: finalNode?.id ?? '',
-                        streaming: finalNode ? markdownState(finalNode, turn.status).streaming : false,
-                        turnStatus: turn.status,
-                      })
-                    : finalThinking}
-                </div>
-              </details>
-            </div>
-          )}
-        </details>
-        {turn.status === 'failed' && (
-          <p className="turn-error" role="alert">
-            {turn.error
-              ? props.t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
-              : props.t('turn.error.noDetail', {
-                  reason: turn.reason ?? props.t('turn.error.unknownReason'),
-                })}
-          </p>
-        )}
-        <div className="turn-node-flow">
-          {ordered.map((node) => {
-            const final = node.id === turn.finalAssistantId
-            const needsAttention = attention(node)
-            return (
-              <div
-                key={node.id}
-                className={final ? 'turn-final' : needsAttention ? 'turn-attention' : 'turn-process-body'}
-                hidden={isEmptyStreamingAssistant(node) || (!final && !needsAttention && !processOpen)}
-              >
-                <Message
-                  node={node}
-                  props={props}
-                  hideThinking={final && thinkingFinalId === turn.finalAssistantId}
-                  turnStatus={turn.status}
-                  thinkingHost={
-                    node.id === (turn.finalAssistantId ?? latestStreaming?.id) ? thinkingHost : undefined
-                  }
-                />
-              </div>
-            )
-          })}
-        </div>
-        {props.renderTurnActions?.(turn, finalText, settled)}
+          }
+          content={process}
+          footer={props.renderTurnActions?.(turn, finalText, settled)}
+        />
       </div>
     </section>
   )

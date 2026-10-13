@@ -604,7 +604,9 @@ describe('timeline reader semantics', () => {
     expect(tool?.dataset.expanded).toBeUndefined()
     detailButton?.click()
     expect(detailButton?.getAttribute('aria-expanded')).toBe('true')
-    expect(detailButton?.textContent).toBe('收起详情')
+    // 步骤头本身就是唯一的展开入口：按钮以工具名为名，展开/收起作为提示同步。
+    expect(detailButton?.textContent).toBe('read_file')
+    expect(detailButton?.getAttribute('title')).toBe('收起详情')
     expect(tool?.dataset.expanded).toBe('true')
     detailButton?.click()
     expect(detailButton?.getAttribute('aria-expanded')).toBe('false')

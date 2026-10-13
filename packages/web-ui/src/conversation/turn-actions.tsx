@@ -11,7 +11,9 @@ import {
 import { fallbackT, type Translate } from '../locales/index.js'
 import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
+import { Actions } from '../x/index.js'
 import { ConversationCost } from './cost.js'
+import { ConversationXScope } from './x-scope.js'
 
 export interface ConversationTurnFeedback {
   clear(): void
@@ -292,99 +294,130 @@ export function ConversationTurnActions({
     ])
   if (duration) rows.push([t('turnactions.rows.duration'), duration])
 
-  return (
-    <footer ref={footer} className="turn-footer" hidden={!settled}>
-      <Button
-        {...ACTION_BUTTON}
-        className="turn-action"
-        aria-label={t('turnactions.copy')}
-        title={t('turnactions.copy')}
-        hidden={!settled}
-        disabled={!finalText}
-        onClick={copy}
-      >
-        <Icon
-          paths={[
-            'M9 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z',
-            'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2',
-          ]}
-        />
-      </Button>
-      <Button
-        {...ACTION_BUTTON}
-        className="turn-action"
-        aria-label={t('turnactions.fork')}
-        title={t('turnactions.fork')}
-        hidden={!settled || !turn.forkable}
-        disabled={pendingId === turn.id || !turn.forkable || !onFork}
-        onClick={fork}
-      >
-        <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
-      </Button>
-      <Button
-        {...ACTION_BUTTON}
-        className="turn-action"
-        data-testid="turn-view-trace"
-        aria-label={t('turnactions.trace')}
-        title={t('turnactions.trace')}
-        hidden={!settled}
-        onClick={() =>
-          footer.current?.dispatchEvent(
-            new CustomEvent('agnes:trace-turn', { bubbles: true, detail: { turnId: turn.id } }),
-          )
-        }
-      >
-        <Icon paths={['M4 4h16v16H4Z', 'M8 8h8M8 12h8M8 16h5']} />
-      </Button>
-      <details
-        ref={details}
-        className="turn-usage"
-        hidden={!settled}
-        onToggle={() => {
-          if (details.current?.open && summary.current && usage.current)
-            positionUsage(summary.current, usage.current)
-        }}
-      >
-        <summary
-          ref={summary}
-          className="turn-meta"
-          data-testid="turn-metadata"
-          aria-label={t('turnactions.metaAria')}
+  // The copy glyph becomes a check for as long as the confirmation is announced.
+  const copied = feedback?.id === turn.id && feedback.message === t('turnactions.copied')
+  // Actions lays the row out; each entry stays a real button so names, focus and keys are kept.
+  const actions = [
+    {
+      key: 'copy',
+      actionRender: (
+        <Button
+          {...ACTION_BUTTON}
+          key="copy"
+          className="turn-action"
+          data-copied={copied ? 'true' : undefined}
+          aria-label={t('turnactions.copy')}
+          title={t('turnactions.copy')}
+          hidden={!settled}
+          disabled={!finalText}
+          onClick={copy}
         >
-          {settled ? facts.join(' · ') : ''}
-        </summary>
-        <dl ref={usage} className="turn-usage-grid">
-          {settled &&
-            rows.map(([name, value]) => (
-              <Fragment key={name}>
-                <dt>{name}</dt>
-                <dd>{value}</dd>
-              </Fragment>
-            ))}
-          {settled &&
-            turn.usage.calls
-              .filter(
-                (call) =>
-                  call.creditSource !== 'estimated' ||
-                  !call.tokens ||
-                  Object.values(call.tokens).some((value) => value !== 0) ||
-                  (call.billing?.usdMicros ?? 0) !== 0 ||
-                  (call.credits ?? 0) !== 0 ||
-                  call.interrupted,
-              )
-              .map((call) => (
-                <Fragment key={call.id}>
-                  <dt>{t('cost.rows.singleRecord')}</dt>
-                  <dd>
-                    <ConversationCost node={{ ...call, kind: 'cost', source: call.creditSource }} t={t} />
-                  </dd>
+          <Icon
+            paths={
+              copied
+                ? ['m5 12.5 4.5 4.5L19 7.5']
+                : [
+                    'M9 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z',
+                    'M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2',
+                  ]
+            }
+          />
+        </Button>
+      ),
+    },
+    {
+      key: 'fork',
+      actionRender: (
+        <Button
+          {...ACTION_BUTTON}
+          key="fork"
+          className="turn-action"
+          aria-label={t('turnactions.fork')}
+          title={t('turnactions.fork')}
+          hidden={!settled || !turn.forkable}
+          disabled={pendingId === turn.id || !turn.forkable || !onFork}
+          onClick={fork}
+        >
+          <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
+        </Button>
+      ),
+    },
+    {
+      key: 'trace',
+      actionRender: (
+        <Button
+          {...ACTION_BUTTON}
+          key="trace"
+          className="turn-action"
+          data-testid="turn-view-trace"
+          aria-label={t('turnactions.trace')}
+          title={t('turnactions.trace')}
+          hidden={!settled}
+          onClick={() =>
+            footer.current?.dispatchEvent(
+              new CustomEvent('agnes:trace-turn', { bubbles: true, detail: { turnId: turn.id } }),
+            )
+          }
+        >
+          <Icon paths={['M4 4h16v16H4Z', 'M8 8h8M8 12h8M8 16h5']} />
+        </Button>
+      ),
+    },
+  ]
+  return (
+    <ConversationXScope>
+      <footer ref={footer} className="turn-footer" hidden={!settled}>
+        <Actions className="turn-actions" items={actions} />
+        <details
+          ref={details}
+          className="turn-usage"
+          hidden={!settled}
+          onToggle={() => {
+            if (details.current?.open && summary.current && usage.current)
+              positionUsage(summary.current, usage.current)
+          }}
+        >
+          <summary
+            ref={summary}
+            className="turn-meta"
+            data-testid="turn-metadata"
+            aria-label={t('turnactions.metaAria')}
+          >
+            {settled ? facts.join(' · ') : ''}
+          </summary>
+          <dl ref={usage} className="turn-usage-grid">
+            {settled &&
+              rows.map(([name, value]) => (
+                <Fragment key={name}>
+                  <dt>{name}</dt>
+                  <dd>{value}</dd>
                 </Fragment>
               ))}
-        </dl>
-      </details>
-      <span className="turn-feedback" role="status">
-        {feedback?.id === turn.id ? feedback.message : ''}
-      </span>
-    </footer>
+            {settled &&
+              turn.usage.calls
+                .filter(
+                  (call) =>
+                    call.creditSource !== 'estimated' ||
+                    !call.tokens ||
+                    Object.values(call.tokens).some((value) => value !== 0) ||
+                    (call.billing?.usdMicros ?? 0) !== 0 ||
+                    (call.credits ?? 0) !== 0 ||
+                    call.interrupted,
+                )
+                .map((call) => (
+                  <Fragment key={call.id}>
+                    <dt>{t('cost.rows.singleRecord')}</dt>
+                    <dd>
+                      <ConversationCost node={{ ...call, kind: 'cost', source: call.creditSource }} t={t} />
+                    </dd>
+                  </Fragment>
+                ))}
+          </dl>
+        </details>
+        <span className="turn-feedback" role="status">
+          {feedback?.id === turn.id ? feedback.message : ''}
+        </span>
+      </footer>
+    </ConversationXScope>
   )
 }

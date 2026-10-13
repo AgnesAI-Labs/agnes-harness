@@ -191,8 +191,69 @@ describe('W3b projected message DOM', () => {
     )
     expect(user?.querySelector('[data-testid="reference-sent-chip"]')?.textContent).toContain('摘录已截断')
     expect(user?.querySelector('script')).toBeNull()
-    expect(assistant?.querySelector('details.thinking')?.textContent).toContain('Checking the result')
+    expect(assistant?.querySelector('.thinking')?.textContent).toContain('Checking the result')
     expect(assistant?.querySelector('.node-body')?.textContent).toContain('Streaming answer')
+  })
+
+  it('draws the reader on the right in one bubble and leaves every other row without a bubble', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        { kind: 'user', id: 'said', seq: 1, content: [{ type: 'text', text: 'Question' }] },
+        { kind: 'assistant', id: 'answer', seq: 2, text: 'Answer' },
+        {
+          kind: 'user',
+          origin: 'system',
+          id: 'status',
+          seq: 3,
+          content: [{ type: 'text', text: 'done' }],
+          system: { source: 'agnes/child', type: 'child-completed', summary: 'done', data: {} },
+        },
+      ],
+    })
+    await mount(store)
+    const list = host.querySelector('[data-agnes-conversation-messages] .ant-bubble-list')
+    expect(list).not.toBeNull()
+    // The transcript region owns scrolling; the list must not flip into its own bottom-anchored mode.
+    expect(list?.querySelector('.ant-bubble-list-autoscroll')).toBeNull()
+    const bubble = (id: string) => item(id)?.closest('.ant-bubble')
+    expect(bubble('said')?.classList.contains('ant-bubble-end')).toBe(true)
+    expect(bubble('said')?.querySelector('.ant-bubble-content-filled')).not.toBeNull()
+    for (const id of ['answer', 'status']) {
+      expect(bubble(id)?.classList.contains('ant-bubble-start')).toBe(true)
+      expect(bubble(id)?.querySelector('.ant-bubble-content-borderless')).not.toBeNull()
+      expect(bubble(id)?.querySelector('.ant-bubble-content-filled')).toBeNull()
+    }
+    expect(item('status')?.dataset.nodeKind).toBe('system-input')
+  })
+
+  it('opens a tool call from its step head, the only control on the step', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        {
+          kind: 'tool',
+          id: 'step',
+          seq: 1,
+          toolUseId: 'call',
+          name: 'read_file',
+          status: 'completed',
+          summary: '读取文档',
+          resultPreview: 'contents',
+        },
+      ],
+    })
+    await mount(store)
+    const step = item('step')
+    expect(step?.querySelectorAll('button')).toHaveLength(1)
+    const head = step?.querySelector<HTMLButtonElement>('[data-testid="tool-detail-toggle"]')
+    expect(head?.closest('.ant-thought-chain-item')).not.toBeNull()
+    expect(head?.querySelector('.tool-name')?.textContent).toBe('read_file')
+    expect(step?.querySelector('.ant-thought-chain-status-success')).not.toBeNull()
+    expect([head?.getAttribute('aria-expanded'), head?.title]).toEqual(['false', '查看详情'])
+    await act(async () => head?.click())
+    expect([head?.getAttribute('aria-expanded'), head?.title]).toEqual(['true', '收起详情'])
+    expect(step?.querySelector('.tool-detail-body')?.getAttribute('aria-hidden')).toBe('false')
   })
 
   it('keeps a long fenced code line inside the assistant message width', async () => {
@@ -232,17 +293,22 @@ describe('W3b projected message DOM', () => {
     }
     const store = createConversationProjectionStore({ sessionId: 'session', nodes: [thinkingNode] })
     await mount(store)
-    const disclosure = item('thinking')?.querySelector<HTMLDetailsElement>('details.thinking')
-    expect(disclosure?.open).toBe(true)
-    if (disclosure) disclosure.open = false
+    const disclosure = item('thinking')?.querySelector<HTMLElement>('.thinking')
+    const toggle = disclosure?.querySelector<HTMLButtonElement>('[data-testid="thinking-toggle"]')
+    const content = disclosure?.querySelector<HTMLElement>('.thinking-content')
+    const open = () => [disclosure?.dataset.expanded, toggle?.getAttribute('aria-expanded'), content?.hidden]
+    expect(open()).toEqual(['true', 'true', false])
+    await act(async () => toggle?.click())
     await update(store, [{ ...thinkingNode, thinking: '第二步' }])
-    expect(item('thinking')?.querySelector('details.thinking')).toBe(disclosure)
-    expect(disclosure?.open).toBe(false)
+    expect(item('thinking')?.querySelector('.thinking')).toBe(disclosure)
+    expect(item('thinking')?.querySelector('.thinking-content')).toBe(content)
+    expect(content?.textContent).toContain('第二步')
+    expect(open()).toEqual(['false', 'false', true])
     await update(store, [{ ...thinkingNode, thinking: '完成推理', text: '正文' }])
-    expect(disclosure?.open).toBe(false)
-    if (disclosure) disclosure.open = true
+    expect(open()).toEqual(['false', 'false', true])
+    await act(async () => toggle?.click())
     await update(store, [{ ...thinkingNode, thinking: '完成推理', text: '最终正文', streaming: false }])
-    expect(disclosure?.open).toBe(true)
+    expect(open()).toEqual(['true', 'true', false])
   })
 
   it('renders all nine visible kinds in source order and retains the two context nodes in the full projection', async () => {
@@ -331,8 +397,8 @@ describe('W3b projected message DOM', () => {
     const store = createConversationProjectionStore({ sessionId: 'session', nodes })
     await mount(store)
     const originals = new Map(ids().map((id) => [id, item(id as string)]))
-    const thinking = item('assistant')?.querySelector<HTMLDetailsElement>('details.thinking')
-    expect(thinking?.open).toBe(false)
+    const thinking = item('assistant')?.querySelector<HTMLElement>('.thinking')
+    expect(thinking?.dataset.expanded).toBe('false')
     const toolButton = item('tool')?.querySelector<HTMLButtonElement>('button.tool-detail')
     await act(async () => toolButton?.click())
     expect(toolButton?.getAttribute('aria-expanded')).toBe('true')

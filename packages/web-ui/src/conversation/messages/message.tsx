@@ -89,6 +89,11 @@ export function nativeContent(
   }
 }
 
+/** A system-origin input with a typed payload renders as a status line, never as a user bubble. */
+export function isSystemInput(node: UINode): boolean {
+  return node.kind === 'user' && node.origin === 'system' && node.system !== undefined
+}
+
 export function isEmptyStreamingAssistant(node: UINode): boolean {
   return (
     node.kind === 'assistant' &&
@@ -113,7 +118,7 @@ export function Message({
   thinkingHost?: RefObject<HTMLDivElement> | undefined
 }) {
   const content = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
-  const systemInput = node.kind === 'user' && node.origin === 'system' && node.system !== undefined
+  const systemInput = isSystemInput(node)
   return (
     <article
       className={`timeline-node ${systemInput ? 'system-input' : node.kind}`}

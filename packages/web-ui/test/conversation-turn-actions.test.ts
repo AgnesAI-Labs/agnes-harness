@@ -166,8 +166,13 @@ it('copies through clipboard, reports failure, and uses text-only fallback prese
   Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
   await render({ turn: turn(), finalText: '**plain**', settled: true })
   const copy = required<HTMLButtonElement>('[aria-label="复制回答"]')
+  // The row is laid out by Actions, and each action is still a named button in it.
+  expect(copy.closest('.ant-actions')).not.toBeNull()
+  expect(copy.dataset.copied).toBeUndefined()
   await act(async () => copy.click())
   expect(required('.turn-feedback').textContent).toBe('已复制')
+  // The glyph turns into a check while the confirmation is announced.
+  expect(copy.dataset.copied).toBe('true')
   const selection = document.getSelection()
   const range = document.createRange()
   range.selectNodeContents(copy)
@@ -183,6 +188,7 @@ it('copies through clipboard, reports failure, and uses text-only fallback prese
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
   Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false })
   await act(async () => copy.click())
+  expect(copy.dataset.copied).toBeUndefined()
   expect(required('.turn-feedback').textContent).toBe('复制失败')
 })
 

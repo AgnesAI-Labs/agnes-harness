@@ -2,8 +2,10 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
+import { ThoughtChain } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
+import { ConversationXScope } from '../x-scope.js'
 import { fallbackT, type ToolNode } from './context.js'
 
 // A shell result ends with `[exit N]`. When the projection marks that call failed, N says why: a
@@ -43,6 +45,15 @@ export const toolLabelKeys: Record<ToolNode['status'], string> = {
   cancelled: 'tool.status.cancelled',
 }
 
+/** The step's state glyph; a call that has not started yet shows its wording only. */
+const chainStatus: Partial<Record<ToolNode['status'], 'loading' | 'success' | 'error' | 'abort'>> = {
+  running: 'loading',
+  completed: 'success',
+  failed: 'error',
+  cancelled: 'abort',
+}
+
+/** One step of a turn's chain: its head is the only control that opens the call's detail. */
 export function ConversationToolCard({
   node,
   icon,
@@ -80,50 +91,60 @@ export function ConversationToolCard({
     ...(resultAppendix ? ['', resultAppendix] : []),
   ].join('\n')
   const detail = useInteractionSnapshot(detailHost, nextDetail)
+  const toggle = () => {
+    const next = !expanded
+    onExpandedChange?.(next)
+    flushSync(() => setExpanded(next))
+  }
+  const status = chainStatus[node.status]
   return (
-    <div
-      ref={cardHost}
-      data-agnes-tool-card=""
-      data-status={node.status}
-      data-expanded={expanded ? 'true' : undefined}
-    >
-      <div className="tool-head">
-        <div className="tool-meta">
-          {icon}
-          <span className="tool-name">{interaction?.name ?? node.name}</span>
-          <span className="tool-status">{outcome.label}</span>
+    <ConversationXScope>
+      <div
+        ref={cardHost}
+        data-agnes-tool-card=""
+        data-status={node.status}
+        data-expanded={expanded ? 'true' : undefined}
+      >
+        <div className="tool-head">
+          <ThoughtChain.Item
+            className="tool-meta"
+            variant="text"
+            {...(status ? { status } : {})}
+            blink={node.status === 'running'}
+            title={
+              <Button
+                htmlType="button"
+                appearance="ghost"
+                size="small"
+                className="tool-detail"
+                data-testid="tool-detail-toggle"
+                aria-expanded={expanded}
+                title={expanded ? t('tool.detail.collapse') : t('tool.detail.expand')}
+                onClick={toggle}
+              >
+                {icon}
+                <span className="tool-name">{interaction?.name ?? node.name}</span>
+              </Button>
+            }
+            description={<span className="tool-status">{outcome.label}</span>}
+          />
         </div>
-        <Button
-          htmlType="button"
-          appearance="ghost"
-          size="small"
-          className="tool-detail"
-          data-testid="tool-detail-toggle"
-          aria-expanded={expanded}
-          onClick={() => {
-            const next = !expanded
-            onExpandedChange?.(next)
-            flushSync(() => setExpanded(next))
-          }}
-        >
-          {expanded ? t('tool.detail.collapse') : t('tool.detail.expand')}
-        </Button>
-      </div>
-      <div className="tool-summary" hidden={!meaningful}>
-        {meaningful ? summary : ''}
-      </div>
-      <div className="tool-detail-body" aria-hidden={!expanded}>
-        <div className="tool-detail-inner">
-          <div
-            ref={detailHost}
-            className="tool-detail-text"
-            data-testid="tool-detail-text"
-            tabIndex={expanded ? 0 : -1}
-          >
-            {detail}
+        <div className="tool-summary" hidden={!meaningful}>
+          {meaningful ? summary : ''}
+        </div>
+        <div className="tool-detail-body" aria-hidden={!expanded}>
+          <div className="tool-detail-inner">
+            <div
+              ref={detailHost}
+              className="tool-detail-text"
+              data-testid="tool-detail-text"
+              tabIndex={expanded ? 0 : -1}
+            >
+              {detail}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </ConversationXScope>
   )
 }
