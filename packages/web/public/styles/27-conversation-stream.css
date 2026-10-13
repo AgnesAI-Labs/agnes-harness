@@ -450,6 +450,12 @@
     order: 3;
     flex: 1 0 100%;
     max-width: 32rem;
+    /* The bar hangs its icons 6px into the margin; the form lines up with the answer. */
+    margin-inline-start: 0.375rem;
+  }
+  /* The copy action already separates what was asked from the reply. */
+  .turn-user:not(:empty) + .turn-response .process-identity {
+    margin-top: var(--s4);
   }
   .turn-meta-text {
     min-width: 0;
