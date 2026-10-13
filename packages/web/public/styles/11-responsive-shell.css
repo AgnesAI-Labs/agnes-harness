@@ -284,9 +284,6 @@
       min-height: 32px;
       min-width: 32px;
     }
-    main:has(#view-trace[aria-selected="true"]) #composer-mount {
-      display: none;
-    }
     .trace-gantt-track {
       height: 32px;
     }

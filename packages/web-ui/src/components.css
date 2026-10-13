@@ -1089,6 +1089,22 @@
     background: transparent !important;
     box-shadow: none !important;
   }
+  /* The textarea autosize helper measures with a hidden copy it appends to the page and hides with
+   an inline style attribute. The content security policy drops that attribute, so without this
+   rule the copy is a visible box in the page flow: it makes the page taller than the window and
+   lets it scroll. The helper's own hiding rules are restated here, where the policy allows them. */
+  body > textarea[name="hiddenTextarea"][aria-hidden="true"] {
+    position: fixed !important;
+    z-index: -1000 !important;
+    top: 0 !important;
+    right: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
   .agh-table-scroll {
     min-width: 0;
     max-width: 100%;

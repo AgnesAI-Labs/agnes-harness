@@ -17,6 +17,12 @@
   [data-agnes-region="trace"] > [data-slot] > [data-slot-entry] {
     display: contents;
   }
+  /* The trace is read-only inspection: nothing is typed there, so the composer and the row under
+   it step aside and the list takes the full height. The composer stays mounted, so the draft is
+   still there when the conversation view comes back. */
+  main:has(#view-trace[aria-selected="true"]) #composer-mount {
+    display: none;
+  }
   [data-agnes-region="rightbar"] {
     position: fixed;
     z-index: 5;
