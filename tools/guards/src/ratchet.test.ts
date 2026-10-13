@@ -1319,7 +1319,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
-  'packages/host/src/assemble': 4212,
+  // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 4214, exact.
+  'packages/host/src/assemble': 4214,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2700,7 +2701,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
-  'packages/host/src': 39040,
+  // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 39042, exact.
+  'packages/host/src': 39042,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

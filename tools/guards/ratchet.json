@@ -9,7 +9,7 @@
   "packages/web-units/src": 6273,
   "packages/core/src": 26917,
   "packages/ai/src": 4169,
-  "packages/host/src/assemble": 4212,
+  "packages/host/src/assemble": 4214,
   "packages/protocol/src": 2303,
   "packages/cli/src/tui": 4000,
   "packages/cli-tui/src": 4737,
@@ -51,7 +51,7 @@
   "packages/base/src/mcp": 982,
   "packages/base/extensions/computer-use": 1786,
   "packages/base/extensions/privacy": 800,
-  "packages/host/src": 39040,
+  "packages/host/src": 39042,
   "packages/host/src/ext-host/service-invocation": 247,
   "packages/host/src/ext-host/tool-context-capabilities": 98,
   "packages/host/src/ext-host/hooks-isolation-client": 390,
@@ -128,5 +128,6 @@
   "packages/base/extensions/tools-web": 244,
   "packages/host/src/adapters/public-fetch": 380,
   "packages/base/extensions/mcp-server": 800,
-  "packages/base/extensions/mcp-search": 800
+  "packages/base/extensions/mcp-search": 800,
+  "packages/base/extensions/batch": 167
 }
