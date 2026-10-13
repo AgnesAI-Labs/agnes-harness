@@ -224,12 +224,12 @@ describe('user images in model requests', () => {
 
     const c = await opened()
     const old = png(8, 8, 4)
-    await c.say(c.reference(old, 8, 8))
+    const { seq: oldSeq } = await c.say(c.reference(old, 8, 8))
     c.corrupt.add(hex(old))
     const corrupt = await c.say({ type: 'text', text: 'again' })
     expect(corrupt.outcome).toMatchObject({ reason: 'error' })
     expect(corrupt.outcome.error?.message).toBe(
-      'E_ENVELOPE: A stored attachment is corrupt; the request was not sent.',
+      `E_ENVELOPE: The stored image session-image://${oldSeq}/1 is corrupt; the request was not sent.`,
     )
     expect(c.provider.calls).toBe(1)
   })
@@ -386,5 +386,26 @@ describe('user images in model requests', () => {
     // Four images of unknown size would count as 4 x 1456 x 1456 pixels, over the 8,000,000 budget.
     expect((await t.say({ type: 'text', text: 'all four?' })).outcome.reason).toBe('completed')
     expect(imagesOf(t.provider.requests.at(-1))).toEqual(images)
+  })
+
+  it.each([
+    ['only a byte limit', { maxBytes: 10_000_000 }],
+    ['an edge limit above the image', { maxWidth: 2048 }],
+  ])('sends a wide stored image as it is to a route with %s', async (_name, resize) => {
+    const versions: unknown[] = []
+    const t = await opened(
+      { ...imageModel, inputLimits: { images: { resize } } },
+      {
+        requestVersions: async (source) => {
+          versions.push(source)
+          throw Object.assign(new Error('resize'), { code: 'IMAGE_RESIZE_REQUIRED' })
+        },
+      },
+    )
+    const wide = png(1600, 8, 1)
+    const { outcome } = await t.say(t.reference(wide, 1600, 8))
+    expect(outcome.reason).toBe('completed')
+    expect(versions).toEqual([])
+    expect(imagesOf(t.provider.requests[0])).toEqual([wide.toString('base64')])
   })
 })

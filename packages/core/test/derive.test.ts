@@ -1732,6 +1732,17 @@ describe('headerEquals', () => {
     expect(headerEquals(a, c)).toBe(false)
   })
 
+  it('separates two requests that account for a left-out image differently', () => {
+    seq = 0
+    const a = deriveRequest({ ...base(), surface: [] }).header
+    const omitted = { ...a, userImages: { included: [], omitted: 1, missing: [] } }
+    const missing = { ...a, userImages: { included: [], omitted: 0, missing: ['1/1'] } }
+    // Same bytes on the wire, so the same derived hash; only the account differs.
+    expect(omitted.derived_hash).toBe(missing.derived_hash)
+    expect(headerEquals(omitted, missing)).toBe(false)
+    expect(headerEquals(omitted, { ...omitted })).toBe(true)
+  })
+
   it('is nonce-dependent the moment an envelope is on the surface', () => {
     // Recorded, not fixed here: derived_hash covers messages, and a wrapped node's text carries the
     // id. Re-deriving one turn under a fresh nonce therefore compares unequal — which is resume and

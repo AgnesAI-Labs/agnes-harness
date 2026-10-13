@@ -4,6 +4,7 @@ import {
   modelImageInputError,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol'
+import { imageHeaderDimensions } from '@agnes/protocol-validation'
 import { base64DecodedBytes } from '../log/lean.js'
 import type { SurfaceNode } from '../project/surface.js'
 import type { SessionImpl } from '../step/session.js'
@@ -11,6 +12,7 @@ import { CoreError } from '../types.js'
 import { attachmentBytes, attachmentFailure, attachmentFailureCode } from './attachment-bytes.js'
 import type { AttachmentEntry } from './attachment-index.js'
 import { sanitize } from './derive.js'
+import { sessionImageRef } from './inline-images.js'
 import { type RequestImageTransform, requestImageTransform } from './request-version.js'
 
 export type UserImageCandidate = Readonly<{
@@ -118,43 +120,20 @@ export type PreparedUserImages = Readonly<{
   maxRequestBytes?: number
 }>
 
-export const NO_USER_IMAGES: PreparedUserImages = Object.freeze({
-  mode: 'none',
-  canRead: false,
-  blocks: new Map(),
-  header: { included: [], omitted: 0, missing: [] },
-  fresh: new Set<string>(),
-})
+/** No user image bytes: every image is the omitted-image note. A new value each time, so no caller shares one. */
+export function noUserImages(): PreparedUserImages {
+  return {
+    mode: 'none',
+    canRead: false,
+    blocks: new Map(),
+    header: { included: [], omitted: 0, missing: [] },
+    fresh: new Set<string>(),
+  }
+}
 
 type ImageSession = Pick<SessionImpl, 'key' | 'd' | 'lane' | 'attachmentIndex'>
 type Located = UserImageCandidate & { block: Record<string, unknown>; sized: boolean }
 type Image = { data: string; mimeType: string }
-
-/**
- * Width and height from an image's header: PNG's IHDR, or a JPEG's first frame header. Only the
- * header is read, nothing is decoded. Undefined when the bytes do not say.
- */
-function imageHeaderSize(bytes: Uint8Array): { width: number; height: number } | undefined {
-  const at = (i: number) => bytes[i] ?? 0
-  const u16 = (i: number) => (at(i) << 8) | at(i + 1)
-  const size = (width: number, height: number) => (width > 0 && height > 0 ? { width, height } : undefined)
-  if (bytes.length >= 24 && at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47)
-    return size(u16(16) * 65536 + u16(18), u16(20) * 65536 + u16(22))
-  if (at(0) !== 0xff || at(1) !== 0xd8) return undefined
-  let i = 2
-  while (i + 9 < bytes.length) {
-    if (at(i) !== 0xff) return undefined
-    const marker = at(i + 1)
-    if (marker === 0xff || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) {
-      i += marker === 0xff ? 1 : 2
-      continue
-    }
-    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc)
-      return size(u16(i + 7), u16(i + 5))
-    i += 2 + u16(i + 2)
-  }
-  return undefined
-}
 
 /**
  * An image block's share of the token estimate: by its recorded size, else by the size in the header
@@ -175,7 +154,7 @@ const inlineSizes = new WeakMap<object, { width: number; height: number } | null
 function inlineSize(block: Record<string, unknown>): { width: number; height: number } | undefined {
   let known = inlineSizes.get(block)
   if (known === undefined) {
-    known = imageHeaderSize(Buffer.from(String(block.data).slice(0, HEADER_CHARS), 'base64')) ?? null
+    known = imageHeaderDimensions(Buffer.from(String(block.data).slice(0, HEADER_CHARS), 'base64')) ?? null
     inlineSizes.set(block, known)
   }
   return known ?? undefined
@@ -231,21 +210,25 @@ function locate(surface: readonly SurfaceNode[], kind: 'turn' | 'summary'): Loca
   return out
 }
 
+/** The longest edge a request version is made to: the vision paths' 1456. */
+const PRODUCT_EDGE = 1456
+
 /**
  * The request version a stored image needs for this model, if any: only a route that declares
- * `resize` asks for one, and only for an image larger than it allows.
+ * `resize` asks for one, and only for an image over a limit the route declares (an edge it does
+ * not declare is not limited). A version, once needed, is also held to the product's own edge.
  */
 function versionTarget(model: ModelRecord, entry: AttachmentEntry): RequestImageTransform | undefined {
   const resize = model.inputLimits?.images?.resize
   if (!resize) return undefined
-  const maxWidth = Math.min(1456, resize.maxWidth ?? 1456)
-  const maxHeight = Math.min(1456, resize.maxHeight ?? 1456)
-  const tooWide = (entry.width ?? 0) > maxWidth || (entry.height ?? 0) > maxHeight
+  const tooWide =
+    (resize.maxWidth !== undefined && (entry.width ?? 0) > resize.maxWidth) ||
+    (resize.maxHeight !== undefined && (entry.height ?? 0) > resize.maxHeight)
   const tooBig = resize.maxBytes !== undefined && Math.ceil(entry.bytes / 3) * 4 > resize.maxBytes
   if (!tooWide && !tooBig) return undefined
   return requestImageTransform({
-    maxWidth,
-    maxHeight,
+    maxWidth: Math.min(PRODUCT_EDGE, resize.maxWidth ?? PRODUCT_EDGE),
+    maxHeight: Math.min(PRODUCT_EDGE, resize.maxHeight ?? PRODUCT_EDGE),
     maxPixels: USER_MESSAGE_IMAGE_LIMITS.maxPixelsPerImage,
     maxBytes:
       resize.maxBytes === undefined
@@ -253,7 +236,6 @@ function versionTarget(model: ModelRecord, entry: AttachmentEntry): RequestImage
         : Math.floor(resize.maxBytes / 4) * 3,
   })
 }
-
 const resizeRequired = () =>
   Object.assign(new Error('This image needs a smaller request version.'), { code: 'IMAGE_RESIZE_REQUIRED' })
 const toBase64 = (bytes: Uint8Array) =>
@@ -318,7 +300,7 @@ export async function prepareUserImages(
   },
 ): Promise<PreparedUserImages> {
   // A summary is written from the conversation's text; the images stay notes it can name.
-  if (input.kind === 'summary') return NO_USER_IMAGES
+  if (input.kind === 'summary') return noUserImages()
   const located = locate(input.surface, input.kind)
   const fresh = new Set(located.filter((c) => c.fresh).map((c) => c.key))
   const model = input.model
@@ -372,10 +354,11 @@ export async function prepareUserImages(
         code === 'ATTACHMENT_HASH_MISMATCH' ||
         code === 'IMAGE_DECODE_FAILED'
       )
-        throw new CoreError('E_ENVELOPE', 'A stored attachment is corrupt; the request was not sent.', {
-          code: 'ATTACHMENT_CORRUPT',
-          image: c.key,
-        })
+        throw new CoreError(
+          'E_ENVELOPE',
+          `The stored image ${sessionImageRef(c.seq, c.index)} is corrupt; the request was not sent.`,
+          { code: 'ATTACHMENT_CORRUPT', image: c.key },
+        )
       throw new CoreError('E_ENVELOPE', 'A stored image could not be read; the request was not sent.', {
         code: 'ATTACHMENT_UNREADABLE',
         image: c.key,
@@ -390,7 +373,7 @@ export async function prepareUserImages(
     if (c.fresh && !c.sized) {
       const image = await fetch(c)
       read.set(c.key, image)
-      const size = image && imageHeaderSize(Buffer.from(image.data, 'base64'))
+      const size = image && imageHeaderDimensions(Buffer.from(image.data, 'base64'))
       if (size) {
         candidates.push({ ...c, pixels: size.width * size.height })
         continue
@@ -399,6 +382,11 @@ export async function prepareUserImages(
     candidates.push(c)
   }
   const limits = model.inputLimits
+  // Tool images this request also carries take their share of the count, and the count step is half
+  // of what is left: a tool image selected mid-turn moves both, so the dropped prefix can move one
+  // step earlier then (one more cache miss), and back once it is no longer selected. Likewise a large
+  // image of this turn is measured from its bytes now, but counts as the largest allowed once it is
+  // history, which can move the prefix one step earlier once.
   const { included, omitted } = selectUserImages(candidates, {
     count: (limits?.images?.maxPerRequest ?? USER_IMAGE_BUDGET.defaultCount) - input.mediaCount,
     bytes: Math.min(USER_IMAGE_BUDGET.bytes, (limits?.maxRequestBytes ?? Infinity) - input.textBytes),

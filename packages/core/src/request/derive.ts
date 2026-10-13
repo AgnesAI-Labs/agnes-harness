@@ -1126,6 +1126,9 @@ export function headerEquals(a: RequestHeaderData, b: RequestHeaderData): boolea
     a.model === b.model &&
     a.contract_id === b.contract_id &&
     a.parser_version === b.parser_version &&
-    canonicalJson(a.media ?? null) === canonicalJson(b.media ?? null)
+    canonicalJson(a.media ?? null) === canonicalJson(b.media ?? null) &&
+    // Two requests can send the same bytes while accounting for a left-out history image differently
+    // (over the budget, or missing from the store); the header records which, so it is compared too.
+    canonicalJson(a.userImages ?? null) === canonicalJson(b.userImages ?? null)
   )
 }

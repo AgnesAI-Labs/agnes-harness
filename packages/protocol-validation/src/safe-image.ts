@@ -624,6 +624,36 @@ function jpegDimensions(bytes: Uint8Array, maxPixels: number) {
   throw new SafeImageError('FORMAT_INVALID', 'JPEG is missing EOI')
 }
 
+/**
+ * Width and height as an image's header states them (PNG's IHDR, or a JPEG's first frame header),
+ * read with the same field layout the validators above use but without validating or decoding the
+ * rest. Undefined when the bytes do not say. For estimates only: an image that is sent or stored is
+ * validated with `decodeSafeImageBytes`.
+ */
+export function imageHeaderDimensions(bytes: Uint8Array): { width: number; height: number } | undefined {
+  const sized = (width: number, height: number) => (width >= 1 && height >= 1 ? { width, height } : undefined)
+  if (bytes.length >= 24 && PNG_MAGIC.every((value, index) => bytes[index] === value))
+    return sized(u32(bytes, 16), u32(bytes, 20))
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined
+  let offset = 2
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) return undefined
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1
+    const marker = bytes[offset++]
+    if (marker === undefined || marker === 0xd9 || marker === 0xda) return undefined
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue
+    if (offset + 2 > bytes.length) return undefined
+    const length = u16(bytes, offset)
+    if (isStartOfFrame(marker))
+      return length >= 8 && offset + 7 <= bytes.length
+        ? sized(u16(bytes, offset + 5), u16(bytes, offset + 3))
+        : undefined
+    if (length < 2) return undefined
+    offset += length
+  }
+  return undefined
+}
+
 function detectedMime(bytes: Uint8Array): SafeImageMime {
   if (PNG_MAGIC.every((value, index) => bytes[index] === value)) return 'image/png'
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg'

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   estimateImageTokens,
   imageBlockTokens,
+  noUserImages,
   selectUserImages,
   USER_IMAGE_STEPS,
   type UserImageCandidate,
@@ -48,6 +49,17 @@ describe('stepped omission', () => {
         count: 2,
       }).omitted,
     ).toEqual(['1/1'])
+  })
+
+  it('rounds pixel excess up to whole 2,000,000-pixel steps', () => {
+    const images = Array.from({ length: 9 }, (_, i) => img(i + 1, { pixels: 1_000_000 }))
+    // 9,000,000 against 8,000,000: the 1,000,000 excess rounds to one step, so two images go, not one.
+    expect(selectUserImages(images, { ...budget, count: 20 }).omitted).toEqual(['1/1', '2/1'])
+  })
+
+  it('refuses when the per-message limit would drop an image of this turn', () => {
+    const msg = [1, 2, 3].map((i) => ({ ...img(9, { fresh: true }), key: `9/${i}`, index: i }))
+    expect(() => selectUserImages(msg, { ...budget, perMessage: 2 })).toThrow(/E_ENVELOPE/)
   })
 
   it('applies the per-message limit to each message, oldest images first', () => {
@@ -114,5 +126,18 @@ describe('image token estimate', () => {
     expect(imageBlockTokens({ data: 'AAAA' })).toBe(1600)
     expect(imageBlockTokens({ dataOmitted: { bytes: 1 } } as never)).toBe(1600)
     expect(estimateImageTokens({})).toBe(1600)
+  })
+})
+
+it('hands every caller its own empty selection', () => {
+  const first = noUserImages()
+  first.header.included.push('1/1')
+  first.header.missing.push('1/1')
+  expect(noUserImages()).toEqual({
+    mode: 'none',
+    canRead: false,
+    blocks: new Map(),
+    header: { included: [], omitted: 0, missing: [] },
+    fresh: new Set(),
   })
 })

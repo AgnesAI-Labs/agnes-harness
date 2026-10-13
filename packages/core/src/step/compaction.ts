@@ -10,7 +10,7 @@ import { canonicalJson } from '../request/hash.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
-import { imageBlockTokens, NO_USER_IMAGES } from '../request/user-images.js'
+import { imageBlockTokens, noUserImages } from '../request/user-images.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
 import { elideSpan } from './compaction-elide.js'
@@ -351,7 +351,7 @@ function summaryRequest(
   let derived = deriveRequest({
     kind: 'summary',
     // A summary is written from text: every user image is a note, and no bytes are read for it.
-    userImages: NO_USER_IMAGES,
+    userImages: noUserImages(),
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
     harnessEntries: [],
     surface: segment.nodes,

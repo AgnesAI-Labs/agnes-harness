@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import type { ContentBlock, InferenceEvent } from '@agnes/protocol'
+import type { ContentBlock, InferenceEvent, ModelRecord } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createAttachmentStore } from '../src/attachment-store.js'
 import type { Host } from '../src/host.js'
@@ -43,6 +43,8 @@ async function open(storeAttachmentsByReference: boolean, limits?: Record<string
   roots.push(root)
   const answers: InferenceEvent[][] = []
   let provider: ScriptedProvider | undefined
+  /** The route's image limits, as the model records hold them; a case may change them between turns. */
+  const imageLimits: { inputLimits?: ModelRecord['inputLimits'] } = {}
   const artifacts = new Map<string, Uint8Array>()
   const { host } = await createTestHost({
     dataDir: root,
@@ -55,7 +57,12 @@ async function open(storeAttachmentsByReference: boolean, limits?: Record<string
         scripts: [() => answers.shift() ?? done],
         models: (profile.provider.routes ?? [])
           .flatMap((route) => route.models ?? [])
-          .map((model) => ({ ...model, input: ['text', 'image'] })),
+          .map((model) =>
+            Object.defineProperty({ ...model, input: ['text', 'image'] }, 'inputLimits', {
+              enumerable: true,
+              get: () => imageLimits.inputLimits,
+            }),
+          ),
       })),
     approval: async () => 'allowed-once',
     // A reloaded original is put as an artifact; the result names it by its real digest.
@@ -118,7 +125,7 @@ async function open(storeAttachmentsByReference: boolean, limits?: Record<string
   }
   /** Every request the model was sent, as JSON. */
   const sent = () => (provider?.calls ?? []).map((request) => JSON.stringify(request))
-  return { root, store, session, sent }
+  return { root, store, session, sent, imageLimits }
 }
 
 const upload = async (
@@ -266,6 +273,28 @@ describe('user attachment reads in an assembled host', () => {
     const user = last.messages.filter((m) => m.role === 'user').flatMap((m) => m.content)
     expect(user.filter((b) => (b as { type: string }).type === 'image')).toEqual([])
     expect(JSON.stringify(user)).toContain(`session-image://${image.seq}/1; original not included`)
+  })
+
+  it('asks the request version cache for a stored image larger than the route allows', async () => {
+    const { store, session, imageLimits } = await open(true)
+    const a = await session('reads-image-version')
+    const image = await a.message([{ type: 'image', mimeType: 'image/png', data: PNG8.toString('base64') }])
+    await a.turn()
+    // The route now takes images at most 4 pixels wide, so the 8x8 image needs a smaller version. Its
+    // object is gone (its marker is not): the cache reads it to make the version and finds it missing.
+    imageLimits.inputLimits = { images: { resize: { maxWidth: 4 } } }
+    rmSync(join(store.root, 'sha256', hex(PNG8).slice(0, 2), hex(PNG8)))
+    await a.message([{ type: 'text', text: 'once more' }])
+    await a.turn()
+    const [header] = (
+      await a.s.scan({ type: 'request/header', fromSeq: image.seq, toSeq: a.s.lastSeq })
+    ).slice(-1)
+    // Without the cache the image would only be counted as one the route cannot take (omitted: 1).
+    expect((header?.data as { userImages?: unknown } | undefined)?.userImages).toEqual({
+      included: [],
+      omitted: 0,
+      missing: [`${image.seq}/1`],
+    })
   })
 
   it('serves a thumbnail admitted with its image, and admits only a marked one', async () => {

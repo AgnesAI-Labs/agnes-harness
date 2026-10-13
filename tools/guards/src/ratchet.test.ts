@@ -1100,8 +1100,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
-  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28609; no exclusions or spare allocation.
-  'packages/core/src': 28609,
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28595; no exclusions or spare allocation.
+  'packages/core/src': 28595,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
