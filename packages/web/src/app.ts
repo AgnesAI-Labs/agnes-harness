@@ -25,17 +25,14 @@ import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
-  ContentBlock,
   ModelSettings,
   PageSessionMeta,
-  ReferenceSelection,
   UITimeline,
   UITurn,
   WorkspaceEntry,
 } from '@agnes/protocol'
 import {
   createClient,
-  type LedgerEvent,
   memoryJournal,
   type PermissionOutcome,
   type PermissionRequest,
@@ -1513,21 +1510,8 @@ let tracePending:
       meta: ReturnType<typeof transcriptMeta>
     }
   | undefined
-function paintTrace(): void {
-  turnController.paintTrace()
-}
-function renderTrace(
-  view: WebView,
-  turns: readonly UITurn[] | undefined,
-  meta: ReturnType<typeof transcriptMeta>,
-): void {
-  turnController.renderTrace(view, turns, meta)
-}
 function render(): void {
   turnController.render()
-}
-function renderApproval(): void {
-  turnController.renderApproval()
 }
 function transcriptMeta(): {
   hasEarlier: boolean
@@ -1541,10 +1525,6 @@ function transcriptMeta(): {
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {
   turnController.searchApproval(limit)
-}
-/** What watching the event stream used to do per event: titles, the list, the run receipt. */
-function followEvent(session: Session, event: LedgerEvent): Promise<void> {
-  return sessionController.followEvent(session, event)
 }
 async function list(cursor?: string): Promise<PageSessionMeta> {
   const epoch = ++listGeneration
@@ -1755,9 +1735,6 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
     }
   }
   if (cleanupError) throw cleanupError
-}
-async function refreshWorkspaces(): Promise<void> {
-  applyWorkspaces(await client.workspace.list())
 }
 function applyWorkspaces(page: { items: WorkspaceEntry[] }): void {
   workspaceRows = page.items
@@ -2073,17 +2050,6 @@ function handleEditQueued(itemId: string, text: string): Promise<void> {
 
 function handleComposerDraftChange(value: string): void {
   composerController.handleComposerDraftChange(value)
-}
-function imageSubmissionFrameBytes(
-  sessionId: string,
-  content: ContentBlock[],
-  steer: boolean,
-  references: readonly ReferenceSelection[] = [],
-): number {
-  return submissionController.imageSubmissionFrameBytes(sessionId, content, steer, references)
-}
-function isPlanCommand(input: string): boolean {
-  return submissionController.isPlanCommand(input)
 }
 function prepareComposerSession(): Promise<Session> {
   return submissionController.prepareComposerSession()
