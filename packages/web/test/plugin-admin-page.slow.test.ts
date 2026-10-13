@@ -50,6 +50,9 @@ async function renderPluginHost(): Promise<void> {
   host = await mountRenderedIndex({ settings: { sections: settingsSections } })
   ;(await import('./legacy-admin-panes.js')).installAdminPaneHosts('plugin')
 }
+/** The plugin admin's own pages (installed, discover) are switched by name; settings no longer lists them. */
+const showPluginPage = (page: 'plugins' | 'discover') =>
+  document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: page }))
 // Every case starts from fresh module state, so the host and the controller share one instance.
 beforeEach(() => vi.resetModules())
 const timestamp = '2026-09-13T00:00:00.000Z'
@@ -332,7 +335,7 @@ it('groups real catalog releases and carries the selected version source through
     ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   expect(document.querySelector('.plugin-empty')?.classList.contains('admin-empty-state')).toBe(true)
   expect(document.querySelector('.plugin-empty .agh-empty-state-icon')).not.toBeNull()
-  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-discover-tab"]')?.click()
+  showPluginPage('discover')
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(3))
 
   const listText = document.getElementById('plugin-list')?.textContent ?? ''
@@ -380,7 +383,7 @@ it('groups real catalog releases and carries the selected version source through
   expect(document.getElementById('plugin-confirm-secondary')?.textContent).toBe('Install only')
   document.getElementById('plugin-confirm-secondary')?.click()
   await vi.waitFor(() => expect(installed).toHaveLength(1))
-  document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-plugins"]')?.click()
+  showPluginPage('plugins')
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   const installedText = document.getElementById('plugin-list')?.textContent ?? ''
   expect(installedText).toContain('@agnes-examples/hot-tool')
