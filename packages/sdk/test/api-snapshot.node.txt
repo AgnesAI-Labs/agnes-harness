@@ -38,6 +38,7 @@ loginCodex
 loginSubscription
 memoryJournal
 mintPortalIdentity
+notifyListeners
 parseMessage
 portalIdentityAuth
 randomId
