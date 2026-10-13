@@ -4,16 +4,16 @@ import { lstat, open, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AGNES_ERRORS, type BatchStatus, type EventEnvelope, type JobSpec } from '@agnes/protocol'
 import { enumerateItems } from './enumerate.js'
-import { exportBatch, RESULT_FILES } from './export.js'
+import { exportBatch, RESULT_FILES, summaryIsCurrent } from './export.js'
 import { creditsOf, itemPrompt, parseReply, readOutcome, repairPrompt } from './prompt.js'
 import {
   type BatchRepo,
   type BatchRow,
   type BatchState,
   clipText,
+  DETAIL_MARK,
   ITEM_STATES,
   type ItemRow,
-  REPLY_MARK,
 } from './repo.js'
 import {
   BatchSpecError,
@@ -23,6 +23,7 @@ import {
   itemPrincipal,
   itemSessionKey,
   type OutputCheck,
+  plainProblem,
   resolveSpec,
 } from './spec.js'
 
@@ -159,6 +160,15 @@ const message = (error: unknown): string =>
       : String(error)
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${clipText(text, max - 1)}…`
+/**
+ * An item error for an answer that was not accepted: the cause first, then, after DETAIL_MARK, where
+ * in the reply the problems are and the reply itself. Only the cause may reach the batch's reason.
+ */
+const itemError = (code: string, found: { problem: string; cause: string }, reply?: string): string => {
+  const details = [found.problem === found.cause ? undefined : found.problem, reply && `reply: ${reply}`]
+  const shown = details.filter((part) => part !== undefined)
+  return `${code}: ${found.cause}${shown.length > 0 ? `${DETAIL_MARK}${shown.join('; ')}` : ''}`
+}
 
 /**
  * Waits at most `ms` for a call. A call given up on may still finish later: `onLate` then receives
@@ -223,7 +233,7 @@ type Confinement = { kind: 'ok' } | { kind: 'fail' | 'pause'; reason: string }
 type Verdict =
   | { kind: 'done'; output: unknown; credits: number }
   | { kind: 'invalid' | 'failed'; error: string; credits: number }
-  | { kind: 'repair'; problem: string; credits: number }
+  | { kind: 'repair'; problem: string; cause: string; credits: number }
 
 /**
  * Runs batches: each item is one durable prompt job in its own item session. Every tick follows the
@@ -343,9 +353,8 @@ export class BatchEngine {
     // A summary that does not state the final status is from an export made while the batch ran:
     // the one at its end failed, so the files are not reported as written.
     const summary = await readSummary(batch)
-    const status = summary?.split('\n', 3)[2]
-    if (status === `- Status: ${batch.status}` || status?.startsWith(`- Status: ${batch.status} (`))
-      return this.view(batch, { files: this.files(batch), summary: summary as string })
+    if (summary !== undefined && summaryIsCurrent(summary, batch))
+      return this.view(batch, { files: this.files(batch), summary })
     if (!exportNow) return this.view(batch)
     return this.view(batch, await exportBatch({ repo: this.o.repo, batch, now: this.o.clock() }))
   }
@@ -473,9 +482,11 @@ export class BatchEngine {
         `the first ${FAIL_FAST_ITEMS} items all failed (${this.o.repo.commonError(id) ?? 'unknown error'})`,
       )
     if (confinement.kind === 'pause') return this.report(id, confinement.reason)
-    // A spent budget stops items from starting; a batch with none left to start simply completes.
-    // A remainder that a job would carry as 0 is spent too.
-    if (budget !== undefined && (outrun || round(budget - batch.spent) <= 0) && counts.pending > 0) {
+    // A spent budget stops items from starting; a batch with none left to start simply completes,
+    // unless every run it made was stopped on the budget. A remainder that a job would carry as 0 is
+    // spent too.
+    const spent = budget !== undefined && (outrun || round(budget - batch.spent) <= 0)
+    if (spent && (counts.pending > 0 || (outrun && counts.done === 0))) {
       if (counts.running === 0)
         await this.finish(
           batch,
@@ -639,7 +650,7 @@ export class BatchEngine {
       const budget = batch.spec.budgetCredits
       if (budget !== undefined && round(budget - (this.o.repo.get(batch.id)?.spent ?? batch.spent)) <= 0)
         return this.settle(batch, item, 'invalid', {
-          error: `budget_exhausted_before_repair: ${verdict.problem}`,
+          error: itemError('budget_exhausted_before_repair', verdict),
           credits: verdict.credits,
         })
       const repairJob = itemJobId(batch.id, item.ordinal, item.repairs + 1)
@@ -672,17 +683,17 @@ export class BatchEngine {
     if (batch.spec.schema === undefined)
       return { kind: 'done', output: { text: outcome.text }, credits: outcome.credits }
     const parsed = parseReply(outcome.text)
-    const problem = parsed.ok ? this.check(batch)(parsed.value) : parsed.problem
-    if (parsed.ok && problem === undefined)
+    const found = parsed.ok ? this.check(batch)(parsed.value) : plainProblem(parsed.problem)
+    if (parsed.ok && found === undefined)
       return { kind: 'done', output: parsed.value, credits: outcome.credits }
-    const reason = problem ?? 'the reply does not match the schema'
+    const { problem, cause } = found ?? plainProblem('does not match the schema')
     if (item.repairs >= 1)
       return {
         kind: 'invalid',
-        error: `invalid_output: ${reason}${REPLY_MARK}${clip(outcome.text, 500)}`,
+        error: itemError('invalid_output', { problem, cause }, clip(outcome.text, 500)),
         credits: outcome.credits,
       }
-    return { kind: 'repair', problem: reason, credits: outcome.credits }
+    return { kind: 'repair', problem, cause, credits: outcome.credits }
   }
 
   /** The repair prompt of a repair job that was recorded but never written, rebuilt from the ledger. */

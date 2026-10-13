@@ -3,7 +3,15 @@ import { constants } from 'node:fs'
 import { type FileHandle, lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { quote } from './prompt.js'
-import { type BatchRepo, type BatchRow, clipText, ITEM_STATES, type ItemRow, type ItemState } from './repo.js'
+import {
+  type BatchRepo,
+  type BatchRow,
+  causeOf,
+  clipText,
+  ITEM_STATES,
+  type ItemRow,
+  type ItemState,
+} from './repo.js'
 import { inside, singleLine } from './spec.js'
 
 export const RESULT_FILES = ['results.jsonl', 'results.csv', 'errors.jsonl', 'summary.md'] as const
@@ -272,6 +280,19 @@ function collect(
   }
 }
 
+/** The lines summary.md opens with: its title and the batch's status with the reason. */
+function summaryHead(batch: BatchRow): string[] {
+  return [
+    `# Batch ${markdownText(batch.id, 40)}`,
+    '',
+    `- Status: ${batch.status}${batch.reason ? ` (${markdownText(batch.reason, 300)})` : ''}`,
+  ]
+}
+
+/** Whether a summary.md read back states the batch as it is now; one written mid-run says running. */
+export const summaryIsCurrent = (summary: string, batch: BatchRow): boolean =>
+  summary.startsWith(`${summaryHead(batch).join('\n')}\n`)
+
 export function renderSummary(input: {
   batch: BatchRow
   counts: Record<ItemState, number>
@@ -285,9 +306,7 @@ export function renderSummary(input: {
   const { batch, counts } = input
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
   const lines = [
-    `# Batch ${markdownText(batch.id, 40)}`,
-    '',
-    `- Status: ${batch.status}${batch.reason ? ` (${markdownText(batch.reason, 300)})` : ''}`,
+    ...summaryHead(batch),
     `- Folder: ${markdownText(batch.dirRel || '.', 300)} (${total} files)`,
     `- Done ${counts.done} · Invalid ${counts.invalid} · Failed ${counts.failed} · Skipped ${counts.skipped} · Cancelled ${counts.cancelled} · Pending ${counts.pending} · Running ${counts.running}`,
     `- Credits spent: ${fmt(input.spent)}${batch.spec.budgetCredits !== undefined ? ` of ${batch.spec.budgetCredits}` : ''}`,
@@ -320,7 +339,7 @@ export function renderSummary(input: {
     lines.push('', '## First problems', '')
     for (const item of input.problems)
       lines.push(
-        `- ${item.ordinal} ${markdownText(item.path, 300)}: ${item.status}${item.error ? ` (${markdownText(item.error)})` : ''}`,
+        `- ${item.ordinal} ${markdownText(item.path, 300)}: ${item.status}${item.error ? ` (${markdownText(causeOf(item.error))})` : ''}`,
       )
   }
   return `${lines.join('\n')}\n`

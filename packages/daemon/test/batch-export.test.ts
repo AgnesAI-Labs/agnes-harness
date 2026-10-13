@@ -15,8 +15,16 @@ import { join } from 'node:path'
 import type { BatchSpec } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { EnumeratedItem } from '../src/batch/enumerate.js'
-import { csvCell, exportBatch, MAX_CSV_CELL_CHARS, markdownText, schemaColumns } from '../src/batch/export.js'
-import { BatchRepo, type BatchRow } from '../src/batch/repo.js'
+import {
+  csvCell,
+  exportBatch,
+  MAX_CSV_CELL_CHARS,
+  markdownText,
+  renderSummary,
+  schemaColumns,
+  summaryIsCurrent,
+} from '../src/batch/export.js'
+import { BatchRepo, type BatchRow, ITEM_STATES, type ItemState } from '../src/batch/repo.js'
 import { sqliteTables } from './sqlite-tables.js'
 
 type Schema = NonNullable<BatchSpec['schema']>
@@ -602,5 +610,32 @@ describe('exportBatch: untrusted text', () => {
     const exported = await exportBatch({ repo, batch, now: 0, maxFileBytes: 100 })
     expect(Buffer.byteLength(exported.summary)).toBeGreaterThan(100)
     expect(readFileSync(join(root, 'agh-batch', id, 'summary.md'), 'utf8')).toBe(exported.summary)
+  })
+})
+
+describe('summaryIsCurrent', () => {
+  it('accepts a summary only for the status and reason it was written with', () => {
+    const batch = {
+      id,
+      status: 'failed',
+      reason: 'the first 5 items all failed (invalid_output: must be number)',
+      dirRel: 'items',
+      spec: { dir: 'items', prompt: 'x' },
+    } as unknown as BatchRow
+    const counts = Object.fromEntries(ITEM_STATES.map((state) => [state, 0])) as Record<ItemState, number>
+    const summary = renderSummary({
+      batch,
+      counts,
+      spent: 0,
+      columns: [],
+      stats: new Map(),
+      problems: [],
+      truncated: [],
+      now: 0,
+    })
+    expect(summaryIsCurrent(summary, batch)).toBe(true)
+    expect(summaryIsCurrent(summary, { ...batch, status: 'running' })).toBe(false)
+    expect(summaryIsCurrent(summary, { ...batch, reason: 'cancelled by request' })).toBe(false)
+    expect(summaryIsCurrent(`# Notes\n${summary}`, batch)).toBe(false)
   })
 })

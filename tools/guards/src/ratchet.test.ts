@@ -1969,7 +1969,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 batch processing: the started-batch record reaches the daemon audit file; reviewed exact countLines packages/daemon/src 29340; no exclusions or spare allocation.
   // 2026-10-13 batch processing review fixes: the stop reason leaves model replies out, a status no longer reports a mid-run summary as final, a run stopped by the budget exhausts the batch, an unused prepared session is closed; measured 29358, exact.
   // 2026-10-13 batch processing review fixes: job ids of batch items are protected names, local callers only; measured 29360, exact.
-  'packages/daemon/src': 29360,
+  // 2026-10-13 batch processing re-review fixes: answer problems carry a cause without anything the model wrote, a batch whose every run hit the budget ends budget_exhausted, one summary head shared by export and status; measured 29398, exact.
+  'packages/daemon/src': 29398,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

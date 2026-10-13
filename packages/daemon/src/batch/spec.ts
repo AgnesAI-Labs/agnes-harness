@@ -27,8 +27,20 @@ export class BatchSpecError extends Error {
   override readonly name = 'BatchSpecError'
 }
 
-/** Undefined when the value matches; otherwise the first problems, for the repair prompt and errors.jsonl. */
-export type OutputCheck = (value: unknown) => string | undefined
+/**
+ * Undefined when the value matches. Otherwise `problem` names the first problems with their places
+ * in the reply, for the repair prompt and errors.jsonl, and `cause` says only what kind of rule was
+ * broken, with nothing the model wrote, for the batch's stop reason and summary.
+ */
+export type OutputCheck = (value: unknown) => { problem: string; cause: string } | undefined
+/** A problem that names nothing in the reply is its own cause. */
+export const plainProblem = (text: string) => ({ problem: text, cause: text })
+/** Keywords whose messages name properties: the cause leaves the names out. */
+const NAMING_MESSAGES: Readonly<Record<string, string>> = {
+  required: 'must have a required property',
+  dependentRequired: 'must have a property that another one requires',
+  dependencies: 'must have a property that another one requires',
+}
 
 export type ResolvedSpec = Readonly<{
   spec: BatchSpec
@@ -123,16 +135,24 @@ export function compileOutputSchema(schema: unknown): OutputCheck {
       if (validate(value) === true) return undefined
     } catch {
       // A reply nested deep enough to exhaust the stack is not an acceptable answer.
-      return 'the reply is nested too deeply to check'
+      return plainProblem('the reply is nested too deeply to check')
     }
+    const errors = (validate.errors ?? []).slice(0, MAX_PROBLEMS)
+    if (errors.length === 0) return plainProblem('does not match the schema')
     // Instance paths repeat keys the model wrote: keep them on one line and short.
-    const problems = (validate.errors ?? [])
-      .slice(0, MAX_PROBLEMS)
+    const problem = errors
       .map(
         (error) =>
           `${singleLine(error.instancePath || '/').slice(0, MAX_PROBLEM_PATH)} ${singleLine(error.message ?? 'is invalid')}`,
       )
-    return problems.length > 0 ? problems.join('; ') : 'does not match the schema'
+      .join('; ')
+    // Only what the schema demands: no path, key or value of the reply, and no property names.
+    const cause = [
+      ...new Set(
+        errors.map((error) => NAMING_MESSAGES[error.keyword] ?? singleLine(error.message ?? 'is invalid')),
+      ),
+    ].join('; ')
+    return { problem, cause }
   }
 }
 

@@ -27,8 +27,16 @@ const SETTLED_STATES: ReadonlySet<string> = new Set<SettledState>(['done', 'inva
 /** A stored answer larger than this (as JSON) is kept as `invalid` instead. */
 export const MAX_OUTPUT_BYTES = 256 * 1024
 export const MAX_ERROR_CHARS = 1000
-/** In an item error, what follows this is the model's (clipped) reply: kept for errors.jsonl only. */
-export const REPLY_MARK = '; reply: '
+/**
+ * In an item error, what follows this comes from the model's answer (keys it chose, where problems are
+ * in it, the clipped reply): kept for errors.jsonl only, never in a batch's reason or summary.
+ */
+export const DETAIL_MARK = '; details: '
+/** An item error without what follows DETAIL_MARK. */
+export const causeOf = (error: string): string => {
+  const at = error.indexOf(DETAIL_MARK)
+  return at === -1 ? error : error.slice(0, at)
+}
 /** The protocol's limit on `BatchStatus.reason`. */
 export const MAX_REASON_CHARS = 1024
 const MAX_PAGE = 1000
@@ -307,13 +315,13 @@ export class BatchRepo {
     )
   }
 
-  /** The most frequent cause among failed and invalid items, without any reply the model wrote. */
+  /** The most frequent cause among failed and invalid items, without anything the model wrote. */
   commonError(id: string): string | undefined {
     return this.table.get<{ cause: string }>(
       `SELECT CASE WHEN instr(error, ?) > 0 THEN substr(error, 1, instr(error, ?) - 1) ELSE error END AS cause
        FROM batch_items WHERE batch_id = ? AND status IN ('failed', 'invalid') AND error IS NOT NULL
        GROUP BY cause ORDER BY COUNT(*) DESC, cause LIMIT 1`,
-      [REPLY_MARK, REPLY_MARK, id],
+      [DETAIL_MARK, DETAIL_MARK, id],
     )?.cause
   }
 
