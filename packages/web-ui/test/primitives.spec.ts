@@ -5,6 +5,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 import { build } from 'esbuild'
 import { inCssLayer, readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
+import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 async function settled(page: Page) {
@@ -48,6 +49,7 @@ test.beforeAll(async () => {
     import { Drawer } from './src/ui/drawer.js'
     import { Dialog } from './src/ui/dialog.js'
     import { Field } from './src/ui/field.js'
+    import { Tabs } from './src/ui/tabs.js'
     import { Toast } from './src/overlay-toast.js'
     import { createSelectPicker } from './src/select-picker.js'
     function Fixture() {
@@ -98,6 +100,7 @@ test.beforeAll(async () => {
         <Button onClick={() => setDescription(value => !value)}>Toggle row description</Button>
         <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description={description ? 'A short description' : undefined} onOpen={() => setDrawer(true)} actions={<Menu label="Row actions" trigger={<Button>Row actions</Button>} items={[{id:'row-copy', label:'Copy row', onSelect:() => select('Row copied')}]} />}/>
         <div id="picker-scroll-frame" style={{height:120, overflow:'auto', overflowAnchor:'none'}}><div style={{height:16}}/><label htmlFor="synthetic-choice">Synthetic selection<select ref={choice} id="synthetic-choice"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label><div style={{height:160}}/></div>
+        <div style={{width:300}}><Tabs aria-label="Synthetic pages" items={['Plugins', 'Skills', 'MCP', 'Pending review', 'Marketplace'].map(key => ({key, label:key, children:<p>{key} content</p>}))}/></div>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -107,6 +110,7 @@ test.beforeAll(async () => {
     write: false,
     jsx: 'automatic',
     format: 'iife',
+    plugins: [tabsAria],
   })
   if (!result.outputFiles[0]) throw new Error('No component fixture')
   fixture = result.outputFiles[0].text

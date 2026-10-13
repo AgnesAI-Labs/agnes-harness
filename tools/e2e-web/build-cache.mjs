@@ -17,6 +17,7 @@ export async function sourceHash() {
       'tools/third-party-notices.mjs',
       'tools/web-style-source.mjs',
       'tools/web-scrollbar-csp.mjs',
+      'tools/web-tabs-aria.mjs',
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
