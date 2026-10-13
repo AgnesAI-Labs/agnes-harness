@@ -89,7 +89,9 @@ ${
     const manifest = JSON.parse(readFileSync(file, 'utf8'))
     manifest.agnes.bundles = {
       [index === 0 ? 'a' : 'b']:
-        index === 0 ? { profile: { loop: { provider: 'fixture.business', version: '1.0.0' } } } : {},
+        index === 0
+          ? { profile: { providers: { loop: { provider: 'fixture.business', version: '1.0.0' } } } }
+          : {},
     }
     if (index === 0) {
       manifest.agnes.plugins[0].inject.push('providers')
@@ -294,7 +296,8 @@ function presetCompositionFixture() {
       writer: {
         name: 'writer',
         extends: 'standard',
-        composition: { tools: ['write'], compaction: { provider: 'fixture' } },
+        providers: { compaction: { provider: 'fixture' } },
+        composition: { tools: ['write'] },
       },
     },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
