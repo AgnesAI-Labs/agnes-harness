@@ -112,6 +112,78 @@ describe('user attachment port', () => {
     expect((await store.userAttachment(sha(b)))?.receipts).toEqual([attachmentReceiptFor('k')])
   })
 
+  it('only refreshes a marker when authorizing, never writes one from what the client claims', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const b = bytes(64)
+    const object = await store.put(b, { kind: 'user-attachment', mimeType: 'application/zip' })
+    await store.markUserAttachment(object, { mimeType: 'application/zip', receiptFor: 'k' })
+    const marker = join(dataDir, 'artifacts', 'user-attachment-meta', sha(b).slice(0, 2), `${sha(b)}.json`)
+    // The attachment sweep (or the screenshot collection, which keeps the bytes) removes the marker
+    // between the entitlement check and the refresh.
+    const swept = {
+      ...store,
+      userAttachment: async (sha256: string) => {
+        const read = await store.userAttachment(sha256)
+        rmSync(marker, { force: true })
+        return read
+      },
+    }
+    const port = createUserAttachmentPort({
+      store: swept,
+      limits: {},
+      storeByReference: true,
+      diskFree: plenty,
+    })
+    const answer = await port.authorize({
+      sha256: sha(b),
+      bytes: 64,
+      mimeType: 'image/png',
+      sessionKey: 'k',
+      referenced: false,
+    })
+    expect(answer).toBe('missing')
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  it('counts a marker whose size or type is malformed as absent, so the global quota still holds', async () => {
+    const dataDir = fresh()
+    const store = createAttachmentStore({ dataDir })
+    const limits = { 'attachments.global_quota_bytes': 1000 }
+    const first = createUserAttachmentPort({ store, limits, storeByReference: true, diskFree: plenty })
+    await first.store(input(bytes(700)), signal)
+    const shapes: Array<Record<string, unknown>> = [
+      { bytes: undefined },
+      { bytes: '12' },
+      { bytes: -1 },
+      { bytes: 1.5 },
+      { bytes: 2 ** 53 },
+      { mimeType: 'not a type' },
+      { mimeType: 7 },
+    ]
+    for (const [i, shape] of shapes.entries()) {
+      const damaged = await store.put(bytes(10, 50 + i), { kind: 'user-attachment', mimeType: 'a/b' })
+      await store.markUserAttachment(damaged, { mimeType: 'a/b' })
+      const path = join(
+        dataDir,
+        'artifacts',
+        'user-attachment-meta',
+        damaged.sha256.slice(0, 2),
+        `${damaged.sha256}.json`,
+      )
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), ...shape }))
+      await expect(store.userAttachment(damaged.sha256), JSON.stringify(shape)).rejects.toMatchObject({
+        code: 'ATTACHMENT_CORRUPT',
+      })
+    }
+    // A new port (a restart) counts only the well-formed marker, and the quota is still enforced.
+    const second = createUserAttachmentPort({ store, limits, storeByReference: true, diskFree: plenty })
+    expect(await second.usage()).toBe(700)
+    await expect(second.reserve({ add: 400, sessionBytes: 0 })).rejects.toMatchObject({
+      code: 'UPLOAD_QUOTA',
+    })
+  })
+
   it('refuses past the session quota and leaves no object behind', async () => {
     const dataDir = fresh()
     const store = createAttachmentStore({ dataDir })

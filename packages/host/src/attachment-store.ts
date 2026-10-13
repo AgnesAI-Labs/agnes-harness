@@ -68,9 +68,16 @@ export interface AttachmentStore {
   sweepStaging(nowMs: number): Promise<number>
   /** Removes one session's upload receipt from every marker; resolves to how many markers changed. */
   forgetReceipts?(sessionKey: string): Promise<number>
+  /**
+   * Moves an existing marker's last-seen time to now; never writes one. Resolves false when there is
+   * no well-formed marker to refresh.
+   */
+  touchUserAttachment(sha256: string): Promise<boolean>
 }
 
 const SHA256 = /^[0-9a-f]{64}$/u
+/** The MIME types an attachment block may carry. */
+const MIME_TYPE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu
 const STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000
 /** A mark of bytes already marked moves their last-seen time forward at most this often. */
 const SEEN_REFRESH_MS = 60_000
@@ -342,7 +349,17 @@ export function createAttachmentStoreInternal(o: {
     } catch {
       marker = undefined
     }
-    if (marker?.schemaVersion !== 1 || marker.sha256 !== sha256 || !Array.isArray(marker.receipts)) {
+    // Its size feeds the quota count and its type the reads: either one malformed makes it damaged.
+    if (
+      marker?.schemaVersion !== 1 ||
+      marker.sha256 !== sha256 ||
+      !Array.isArray(marker.receipts) ||
+      !Number.isSafeInteger(marker.bytes) ||
+      marker.bytes < 0 ||
+      typeof marker.mimeType !== 'string' ||
+      marker.mimeType.length > 128 ||
+      !MIME_TYPE.test(marker.mimeType)
+    ) {
       if (strict) throw new AttachmentStoreError('ATTACHMENT_CORRUPT', 'unreadable attachment marker')
       return undefined
     }
@@ -511,6 +528,24 @@ export function createAttachmentStoreInternal(o: {
     async userAttachment(sha256) {
       checkId(sha256)
       return readMarker(sha256, true)
+    },
+    async touchUserAttachment(sha256) {
+      checkId(sha256)
+      let found = false
+      await withMarkerLock(sha256, async () => {
+        const current = await readMarker(sha256, false)
+        if (!current) return
+        const now = clock()
+        try {
+          if (now - (current.lastSeenMs ?? current.firstSeenMs) > SEEN_REFRESH_MS)
+            await touch(markerPath(sha256), now)
+          found = true
+        } catch (error) {
+          // Removed since it was read (the attachment sweep): there is nothing to refresh.
+          if (errorCode(error) !== 'ENOENT') throw error
+        }
+      })
+      return found
     },
     /** Removes staging entries and stale marker temp files older than a day; returns how many went. */
     async sweepStaging(nowMs) {
