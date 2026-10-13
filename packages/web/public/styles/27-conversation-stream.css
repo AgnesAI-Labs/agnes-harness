@@ -508,10 +508,29 @@
   #empty-state .empty-state-welcome .ant-welcome-description {
     color: var(--agnes-text-secondary);
   }
+  /* The hero is a horizontal lockup: mark and wordmark on one line, centred as a unit, both in the
+   brand blue. The mark is sized to the wordmark's line so the two read as one logo. */
+  .empty-state-lockup {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s12);
+    max-width: 100%;
+  }
+  .empty-state-lockup .empty-brand-mark {
+    flex: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin: 0;
+  }
   .empty-state-heading {
     display: block;
-    font-size: 1.5rem;
-    line-height: 2rem;
+    min-width: 0;
+    color: var(--agnes-brand-mark);
+    font-size: 1.75rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 2.5rem;
+    white-space: nowrap;
   }
   .empty-state-copy {
     display: block;

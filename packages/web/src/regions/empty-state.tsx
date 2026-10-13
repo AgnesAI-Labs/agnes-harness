@@ -43,11 +43,14 @@ export function EmptyStateBuiltin({ t = (key) => key }: { t?: (key: string) => s
         <Welcome
           variant={'borderless'}
           rootClassName={'empty-state-welcome'}
-          icon={<span className={'agnes-mark empty-brand-mark'} aria-hidden={'true'} />}
           title={
-            // The product's name is never translated.
-            <span id={'empty-state-title'} className={'empty-state-heading'} translate={'no'}>
-              {APP_BRAND}
+            // One lockup: the mark and the wordmark on a line. The wordmark is the page heading, and
+            // the product's name is never translated.
+            <span className={'empty-state-lockup'}>
+              <span className={'agnes-mark empty-brand-mark'} aria-hidden={'true'} />
+              <span id={'empty-state-title'} className={'empty-state-heading'} translate={'no'}>
+                {APP_BRAND}
+              </span>
             </span>
           }
           description={<span className={'empty-state-copy'}>{t('app.emptyState.tagline')}</span>}

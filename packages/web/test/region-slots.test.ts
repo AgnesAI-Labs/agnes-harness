@@ -91,6 +91,13 @@ describe('migrated empty-state region', () => {
       expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
       expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
       expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      // The hero is one lockup: the mark sits beside the wordmark, and the wordmark is the heading.
+      const lockup = section.querySelector('.empty-state-lockup')
+      expect(lockup?.firstElementChild?.matches('.empty-brand-mark[aria-hidden="true"]')).toBe(true)
+      expect(lockup?.lastElementChild?.id).toBe('empty-state-title')
+      expect(lockup?.closest('h1, h2, h3, h4, h5, h6')).toBeTruthy()
+      expect(section.querySelector('#empty-state-title')?.getAttribute('translate')).toBe('no')
+      expect(section.querySelectorAll('.empty-brand-mark')).toHaveLength(1)
     }, committed)
   })
 
