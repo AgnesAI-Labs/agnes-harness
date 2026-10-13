@@ -1965,7 +1965,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 batch processing: batch engine; reviewed exact countLines packages/daemon/src 29034; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch RPC, worker request frame and engine wiring; reviewed exact countLines packages/daemon/src 29320; no exclusions or spare allocation.
   // 2026-10-13 batch processing: serving before the first batch round, batch frames checked against their worker; reviewed exact countLines packages/daemon/src 29336; no exclusions or spare allocation.
-  'packages/daemon/src': 29336,
+  // 2026-10-13 batch processing: the started-batch record reaches the daemon audit file; reviewed exact countLines packages/daemon/src 29340; no exclusions or spare allocation.
+  'packages/daemon/src': 29340,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2710,7 +2711,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
   // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 39042, exact.
   // 2026-10-13 batch processing: the daemon batch bridge reaches agnes/batch only; measured 39049, exact.
-  'packages/host/src': 39049,
+  // 2026-10-13 batch processing: the audit vocabulary gains the started-batch record; measured 39050, exact.
+  'packages/host/src': 39050,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
