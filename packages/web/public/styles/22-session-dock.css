@@ -58,14 +58,21 @@
   }
   .workbench-panel-tabs {
     display: flex;
+    position: relative;
     min-width: 0;
     gap: var(--s4);
-    overflow-x: auto;
+    overflow: hidden;
     padding-inline: var(--s8);
-    scroll-padding-inline: var(--s8);
   }
   .workbench-panel-tabs > .agnes-ui-button {
     flex: 0 0 auto;
+  }
+  /* A tab that does not fit is listed in the strip's "more" menu. It stays in the strip, out of
+   flow and invisible, so its width can still be measured when the dock is resized. */
+  .workbench-panel-tabs > .agnes-ui-button[data-overflow="true"] {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
   }
   .workbench-panel-content {
     flex: 1;

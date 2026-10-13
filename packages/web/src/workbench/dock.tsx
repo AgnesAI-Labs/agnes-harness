@@ -23,6 +23,7 @@ import {
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { useTabOverflow } from './tab-fit.js'
 
 type Layout = { rightOpen: boolean; bottomOpen: boolean; rightWidth: number; bottomHeight: number }
 const sharedIcon = (name: string | undefined): name is IconName => !!name && Object.hasOwn(icons, name)
@@ -45,6 +46,98 @@ function readLayout(): Layout {
   } catch {
     return defaults
   }
+}
+type DockTab = { id: string; title: string; icon: IconName | undefined }
+/**
+ * A dock's tab strip. Tabs that do not fit the strip fold into one "more" menu instead of scrolling
+ * out of sight; the current tab always stays in the strip.
+ */
+function DockTabs({
+  edge,
+  label,
+  more,
+  tabs,
+  activeId,
+  select,
+  open,
+}: {
+  edge: 'right' | 'bottom'
+  label: string
+  more: string
+  tabs: readonly DockTab[]
+  activeId: string | undefined
+  select(id: string): void
+  open(id: string): void
+}) {
+  // More than five panels never share the strip, however wide it is: four stay, and the fifth
+  // place goes to the current tab when it is one of the rest.
+  const crowded = tabs.length > 5
+  const activeIndex = tabs.findIndex((tab) => tab.id === activeId)
+  const strip = crowded
+    ? [...tabs.slice(0, 4), ...tabs.slice(Math.max(4, activeIndex), Math.max(4, activeIndex) + 1)]
+    : tabs
+  const overflow = useTabOverflow(
+    strip.map((tab) => tab.id),
+    activeId,
+    JSON.stringify(strip),
+  )
+  const folded = tabs.filter((tab, index) => (crowded && index >= 4) || overflow.hidden.includes(tab.id))
+  return (
+    <>
+      <Tabs
+        className="workbench-dock-tabs"
+        {...(activeId ? { activeKey: activeId } : {})}
+        items={tabs.map((tab) => ({ key: tab.id, label: tab.title }))}
+        renderTabBar={() => (
+          <div ref={overflow.strip} role="tablist" aria-label={label} className="workbench-panel-tabs">
+            {strip.map((tab) => (
+              <Button
+                type="text"
+                size="small"
+                key={tab.id}
+                role="tab"
+                id={`workbench-tab-${tab.id}`}
+                data-testid={`workbench-tab-${tab.id}`}
+                data-overflow={overflow.hidden.includes(tab.id) ? 'true' : undefined}
+                aria-selected={activeId === tab.id}
+                aria-controls={`workbench-panel-${edge}`}
+                tabIndex={activeId === tab.id ? 0 : -1}
+                onClick={() => select(tab.id)}
+                onKeyDown={(event) => {
+                  const index = tabs.indexOf(tab)
+                  const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+                  if (!step && event.key !== 'Home' && event.key !== 'End') return
+                  event.preventDefault()
+                  const next =
+                    tabs[
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? tabs.length - 1
+                          : (index + step + tabs.length) % tabs.length
+                    ]
+                  if (next) {
+                    flushSync(() => select(next.id))
+                    document.getElementById(`workbench-tab-${next.id}`)?.focus()
+                  }
+                }}
+              >
+                {tab.icon && <Icon name={tab.icon} />}
+                {tab.title}
+              </Button>
+            ))}
+          </div>
+        )}
+      />
+      {folded.length > 0 && (
+        <Menu
+          label={more}
+          trigger={<IconButton name="ellipsis" label={more} title={more} />}
+          items={folded.map((tab) => ({ id: tab.id, label: tab.title, onSelect: () => open(tab.id) }))}
+        />
+      )}
+    </>
+  )
 }
 export function Dock({ context }: { context: UiExtensionContext }) {
   useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
@@ -362,82 +455,19 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                       }}
                     />
                     <div className="workbench-dock-heading">
-                      <Tabs
-                        className="workbench-dock-tabs"
-                        {...(active ? { activeKey: active.id } : {})}
-                        items={entries.map((panel) => ({
-                          key: panel.id,
-                          label: panel.title?.(context) ?? t(panel.titleKey),
+                      <DockTabs
+                        edge={edge}
+                        label={t(`workbench.${edge}`)}
+                        more={t('workbench.more')}
+                        tabs={entries.map((panel) => ({
+                          id: panel.id,
+                          title: panel.title?.(context) ?? t(panel.titleKey),
+                          icon: sharedIcon(panel.icon) ? panel.icon : undefined,
                         }))}
-                        renderTabBar={() => (
-                          <div
-                            role="tablist"
-                            aria-label={t(`workbench.${edge}`)}
-                            className="workbench-panel-tabs"
-                          >
-                            {entries
-                              .slice(0, entries.length > 5 ? 4 : 5)
-                              .concat(
-                                entries.length > 5
-                                  ? active && entries.indexOf(active) >= 4
-                                    ? [active]
-                                    : entries.slice(4, 5)
-                                  : [],
-                              )
-                              .map((panel) => (
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  key={panel.id}
-                                  role="tab"
-                                  id={`workbench-tab-${panel.id}`}
-                                  data-testid={`workbench-tab-${panel.id}`}
-                                  aria-selected={active?.id === panel.id}
-                                  aria-controls={`workbench-panel-${edge}`}
-                                  tabIndex={active?.id === panel.id ? 0 : -1}
-                                  onClick={() => setSelected((value) => ({ ...value, [edge]: panel.id }))}
-                                  onKeyDown={(event) => {
-                                    const index = entries.indexOf(panel)
-                                    const step =
-                                      event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-                                    if (!step && event.key !== 'Home' && event.key !== 'End') return
-                                    event.preventDefault()
-                                    const next =
-                                      entries[
-                                        event.key === 'Home'
-                                          ? 0
-                                          : event.key === 'End'
-                                            ? entries.length - 1
-                                            : (index + step + entries.length) % entries.length
-                                      ]
-                                    if (next) {
-                                      flushSync(() => setSelected((value) => ({ ...value, [edge]: next.id })))
-                                      document.getElementById(`workbench-tab-${next.id}`)?.focus()
-                                    }
-                                  }}
-                                >
-                                  {sharedIcon(panel.icon) && <Icon name={panel.icon} />}
-                                  {panel.title?.(context) ?? t(panel.titleKey)}
-                                </Button>
-                              ))}
-                          </div>
-                        )}
+                        activeId={active?.id}
+                        select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}
+                        open={openPanel}
                       />
-                      {entries.length > 5 && (
-                        <Menu
-                          label={t('workbench.more')}
-                          trigger={
-                            <Button appearance="ghost" size="small">
-                              {t('workbench.more')}
-                            </Button>
-                          }
-                          items={entries.slice(4).map((panel) => ({
-                            id: panel.id,
-                            label: panel.title?.(context) ?? t(panel.titleKey),
-                            onSelect: () => openPanel(panel.id),
-                          }))}
-                        />
-                      )}
                       <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
                       {edge === 'right' && (
                         <IconButton
