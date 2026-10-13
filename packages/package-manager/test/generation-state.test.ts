@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
@@ -9,7 +10,6 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
@@ -87,6 +87,25 @@ describe('session pin shape gate', () => {
     expect(store.corruptEntries().map((entry) => entry.file)).toEqual([pinFile('original-key')])
     await expect(store.collect(new Set())).resolves.toEqual([])
     expect(existsSync(join(store.root, snapshot.id))).toBe(true)
+  })
+
+  it('scans pins and heads afresh so a damaged head is located like a damaged pin', () => {
+    const { store, generation, pinFile } = fixture()
+    store.pin('healthy', generation().id, PINS)
+    expect(store.scanDamage()).toEqual([])
+    mkdirSync(join(store.root, 'heads'), { recursive: true })
+    const head = join(store.root, 'heads', `${digest('composition')}.json`)
+    writeFileSync(head, '{')
+    writeFileSync(pinFile('torn'), '{')
+    expect(
+      store
+        .scanDamage()
+        .map((entry) => entry.file)
+        .sort(),
+    ).toEqual([head, pinFile('torn')].sort())
+    rmSync(head)
+    rmSync(pinFile('torn'))
+    expect(store.scanDamage()).toEqual([])
   })
 
   it.each([

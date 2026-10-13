@@ -155,3 +155,120 @@ describe('durable composition head', () => {
     expect(await store.collect(new Set())).toEqual([shared.id])
   })
 })
+
+/**
+ * Two stores over one profile stand in for two processes. The collector's liveness probe is the stop
+ * point: it answers "gone" for the recorded adopter, but only when the test opens the numbered gate, so
+ * the other store acts exactly between the collector's checks and its delete.
+ */
+describe('adopt, pin and collect across stores', () => {
+  const target = (revision: string) =>
+    buildRuntimeTarget({
+      rows: [],
+      resources: { mcp: [], skills: {} },
+      resourceRevision: revision.repeat(64).slice(0, 64),
+      compositeRevision: 'b'.repeat(64),
+    })
+  const seams = { formatVersion: 1 as const, selections: SELECTIONS }
+  const create = (store: RuntimeGenerationSnapshotStore, revision: string) =>
+    store.create(target(revision), [], 'compat', [], undefined, seams)
+  const expected = (revision: string) => ({
+    artifactDigest: encodeRuntimeTargetArtifact(target(revision)).digest,
+    compatibility: 'compat',
+    packages: [],
+    seams,
+  })
+
+  function scenario() {
+    const home = mkdtempSync(join(tmpdir(), 'agh-generation-race-'))
+    homes.push(home)
+    const stops = new Map<
+      number,
+      { reached: Promise<void>; open: () => void; mark: () => void; gate: Promise<void> }
+    >()
+    const stop = (turn: number) => {
+      let entry = stops.get(turn)
+      if (!entry) {
+        let mark!: () => void, open!: () => void
+        const reached = new Promise<void>((resolve) => (mark = resolve))
+        const gate = new Promise<void>((resolve) => (open = resolve))
+        entry = { reached, gate, mark, open }
+        stops.set(turn, entry)
+      }
+      return entry
+    }
+    let probes = 0
+    const collector = new RuntimeGenerationSnapshotStore(home, {
+      liveness: {
+        startId: 'collector',
+        isRunning: async () => {
+          const entry = stop(++probes)
+          entry.mark()
+          await entry.gate
+          return false
+        },
+      },
+    })
+    const worker = new RuntimeGenerationSnapshotStore(home)
+    const old = create(worker, 'a')
+    // The generation's creator is gone; the only record left is an adopter the collector must probe.
+    writeFileSync(join(worker.root, old.id, 'owner.json'), holder(deadPid()))
+    const adopters = join(worker.root, old.id, 'adopters')
+    for (const name of readdirSync(adopters))
+      writeFileSync(join(adopters, name), JSON.stringify({ pid: deadPid(), startId: 'gone' }))
+    // The composition's head has moved on, so nothing references the old generation at the first scan.
+    const newer = create(worker, 'c')
+    worker.setHead('composition-a', newer.id)
+    return { worker, collector, old, newer, stop }
+  }
+
+  it('keeps a generation another worker adopted after the collector checked it', async () => {
+    const { worker, collector, old, newer, stop } = scenario()
+    const collecting = collector.collect(new Set())
+    await stop(1).reached
+    // The head returns to the old generation, another worker adopts it, then the head moves on again.
+    worker.setHead('composition-a', old.id)
+    expect(
+      new RuntimeGenerationSnapshotStore(join(worker.root, '..')).reusableHead('composition-a', expected('a'))
+        ?.id,
+    ).toBe(old.id)
+    worker.setHead('composition-a', newer.id)
+    // Whether the verdict probes the recorded adopter again depends on which adopter it meets first.
+    stop(1).open()
+    stop(2).open()
+    expect(await collecting).toEqual([])
+    expect(worker.read(old.id).id).toBe(old.id)
+  })
+
+  it('keeps a generation another worker pinned after the collector checked it', async () => {
+    const { worker, collector, old, stop } = scenario()
+    const collecting = collector.collect(new Set())
+    await stop(1).reached
+    worker.pin('session-a', old.id, [])
+    stop(1).open()
+    expect(await collecting).toEqual([])
+    expect(worker.read(worker.session('session-a')!.generationId).id).toBe(old.id)
+  })
+
+  it('refuses every new reference once the generation is claimed, and removes it', async () => {
+    const { worker, collector, old, stop } = scenario()
+    const collecting = collector.collect(new Set())
+    await stop(1).reached
+    stop(1).open()
+    // The claim is made; the verdict (second probe) has not been reached.
+    await stop(2).reached
+    expect(() => worker.pin('session-a', old.id, [])).toThrow('E_GENERATION_SNAPSHOT_MISSING')
+    expect(worker.session('session-a')).toBeUndefined()
+    expect(() => worker.setHead('composition-b', old.id)).toThrow('E_GENERATION_SNAPSHOT_MISSING')
+    expect(worker.headId('composition-b')).toBeUndefined()
+    expect(
+      new RuntimeGenerationSnapshotStore(join(worker.root, '..')).reusableHead(
+        'composition-a',
+        expected('a'),
+      ),
+    ).toBeUndefined()
+    stop(2).open()
+    expect(await collecting).toEqual([old.id])
+    expect(existsSync(join(worker.root, old.id))).toBe(false)
+  })
+})

@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { checkResolvedComposition, type ResolvedComposition } from '@agnes/host-common/profile/composition'
 import { checkSavedProfile } from '@agnes/host-common/profile/saved-profile'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
-import { DurableStateError, publishFileDurablySync, removeFileDurablySync } from '@agnes/package-manager'
+import {
+  DurableStateError,
+  mkdirDurablySync,
+  publishFileDurablySync,
+  removeFileDurablySync,
+} from '@agnes/package-manager'
 
 export type CompositionBinding = Readonly<{
   sessionKey: string
@@ -39,8 +44,10 @@ export type CompositionToolGroup = Readonly<{
 /** Shares W7's session lifetime: retained on close/hibernate, removed only on deletion. */
 export class CompositionSessionStore {
   readonly root: string
+  readonly #anchor: string
   constructor(profileDir: string) {
     this.root = join(profileDir, '.session-compositions')
+    this.#anchor = dirname(profileDir)
   }
   private path(key: string): string {
     return join(this.root, createHash('sha256').update(key).digest('hex') + '.json')
@@ -96,7 +103,7 @@ export class CompositionSessionStore {
    * follows it can never survive power loss without it. The first writer wins.
    */
   pin(binding: CompositionBinding): CompositionBinding {
-    mkdirSync(this.root, { recursive: true, mode: 0o700 })
+    mkdirDurablySync(this.root, this.#anchor)
     publishFileDurablySync(this.path(binding.sessionKey), JSON.stringify(binding))
     return this.read(binding.sessionKey)!
   }
