@@ -56,7 +56,7 @@
 - **场景与方法**：[FDE 与应用场景](guide/why-agh.zh-CN.md) · [MHS 与设备接入](guide/mhs.zh-CN.md)。
 - **精确接口**：[命令参考](reference/cli.zh-CN.md) · [配置参考](reference/configuration.zh-CN.md) · [API 与 Schema](reference/api.zh-CN.md)。
 - **支持与反馈**：[支持范围](reference/limitations.zh-CN.md) · [反馈与开发协作](develop/contributing.zh-CN.md) · [安全报告](../SECURITY.md)。
-- **更多开发主题**：[皮肤开发](develop/skins.zh-CN.md) · [构建恢复](guide/build-recovery.zh-CN.md) · [能力清单](reference/capabilities.zh-CN.md)。
+- **更多开发主题**：[皮肤开发](develop/skins.zh-CN.md) · [主题](develop/ui-theme.zh-CN.md) · [构建恢复](guide/build-recovery.zh-CN.md) · [能力清单](reference/capabilities.zh-CN.md)。
 
 ## 阅读约定
 

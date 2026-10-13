@@ -64,7 +64,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 - **Scenarios and methods:** [FDE and use cases](guide/why-agh.md) · [MHS and device integration](guide/mhs.md).
 - **Exact interfaces:** [CLI reference](reference/cli.md) · [Configuration](reference/configuration.md) · [API and schemas](reference/api.md).
 - **Support and feedback:** [Supported scope](reference/limitations.md) · [Feedback and development](develop/contributing.md) · [Security reports](../SECURITY.md).
-- **More development topics:** [Skins](develop/skins.md) · [Build recovery](guide/build-recovery.md) · [Capability matrix](reference/capabilities.md).
+- **More development topics:** [Skins](develop/skins.md) · [Theme](develop/ui-theme.md) · [Build recovery](guide/build-recovery.md) · [Capability matrix](reference/capabilities.md).
 
 <a id="阅读约定"></a>
 
