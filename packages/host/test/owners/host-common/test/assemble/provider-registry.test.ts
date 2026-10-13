@@ -183,7 +183,7 @@ it('derives the source package from the calling row for every kind, without a cl
   // A registry installed with no registrar of its own is attributed the same way.
   const registry = installProviderRegistry(root, kind)
   const rows = new WeakMap<object, object>()
-  root.providers.verifyRows({ lookup: (fiber) => rows.get(fiber) } as never)
+  root.providers.verifyRows({ lookup: (fiber: object) => rows.get(fiber) } as never)
   const provider = (id: string) => ({ id, version: '1.0.0', ready: true })
   const failures: unknown[] = []
   const mount = async (origin: object | undefined, run: (ctx: Context) => void) => {
