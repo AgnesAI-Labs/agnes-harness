@@ -103,6 +103,9 @@ export type FullVerifyReport = {
   seq?: number
 }
 
+/** Rows per read of the background verification; see `startBackgroundVerify`. */
+const BACKGROUND_VERIFY_ROWS = 32
+
 /** A macrotask turn that lets pending I/O run first where the platform has one for that. */
 const idleTurn = (): Promise<void> =>
   new Promise<void>((resolve) => {
@@ -407,12 +410,31 @@ export class SessionLogImpl {
       }
     }
     const verified = (async () => {
-      // Let the open hand its log back before the first page is read.
-      await idle()
-      const state = await verifyLedger(this.o.storage, this.o.key, head.throughSeq, idle, (events) => {
-        rows += events.length
-      })
-      if (state.headDigest !== head.headDigest || state.legacyThroughSeq !== head.legacyThroughSeq)
+      // Small pages, and a yield between rows: a page of large rows read and hashed in one go would
+      // hold the event loop for the whole verification and stall the rest of the open behind it.
+      let state: IntegrityState = { lastSeq: 0, legacyThroughSeq: 0, headDigest: null }
+      while (state.lastSeq < head.throughSeq) {
+        await idle()
+        const page = await this.o.storage.scanIntegrity(this.o.key, {
+          fromSeq: state.lastSeq + 1,
+          toSeq: head.throughSeq,
+          limit: BACKGROUND_VERIFY_ROWS,
+        })
+        if (page.length === 0)
+          throw new LedgerIntegrityFailure('ledger ended before advertised sequence', {
+            seq: state.lastSeq + 1,
+          })
+        for (const row of page) {
+          state = verifyIntegrityRows([row], state)
+          rows++
+          await pageYield()
+        }
+      }
+      if (
+        state.lastSeq !== head.throughSeq ||
+        state.headDigest !== head.headDigest ||
+        state.legacyThroughSeq !== head.legacyThroughSeq
+      )
         throw new LedgerIntegrityFailure('ledger head differs from its checkpoint', { seq: head.throughSeq })
     })()
     this.fullVerifyPromise = verified.then(

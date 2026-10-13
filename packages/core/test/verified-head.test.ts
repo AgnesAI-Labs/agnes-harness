@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { defaultIds } from '../src/ids.js'
+import { replacePageYieldForTest } from '../src/log/fork-seed.js'
 import { LEDGER_INTEGRITY_ALGORITHM } from '../src/log/integrity.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { type FullVerifyReport, type OpenLogOptions, SessionLogImpl } from '../src/log/session-log.js'
@@ -173,6 +174,33 @@ function held(storage: MemoryStorage): {
   }
   return { storage: wrapped, release, reached }
 }
+
+describe('the background verification', () => {
+  it('reads small pages and gives the event loop a turn between rows', async () => {
+    const storage = await seeded(100)
+    const limits: number[] = []
+    const counted: StorageAdapter = Object.create(storage)
+    counted.scanIntegrity = async (key, q) => {
+      limits.push(q.limit)
+      return storage.scanIntegrity(key, q)
+    }
+    let yields = 0
+    const log = await SessionLogImpl.open(options(counted, 'b'))
+    const restore = replacePageYieldForTest(() => {
+      yields++
+    })
+    try {
+      await log.fullVerified()
+    } finally {
+      restore()
+    }
+    // The open folded in one page; the verification read the same rows in pages of at most 32.
+    expect(limits[0]).toBe(500)
+    expect(limits.slice(1).every((limit) => limit <= 32)).toBe(true)
+    expect(yields).toBeGreaterThanOrEqual(100)
+    await log.close()
+  })
+})
 
 describe('verified head checkpoint under attack', () => {
   it('a row changed in storage before the checkpoint is folded unverified, then refused before any other write', async () => {
