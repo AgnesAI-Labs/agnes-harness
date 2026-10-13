@@ -16,7 +16,15 @@ import type {
   SeamWorkspace,
   Verdict,
 } from '@agnes/core'
-import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
+import {
+  defaultIds,
+  type Event,
+  inboxEvent,
+  prepareIntegrity,
+  SessionLogImpl,
+  scanAll,
+  verifyLedger,
+} from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { localRealpathSync } from '../src/adapters/fs-io-local.js'
@@ -611,6 +619,59 @@ export async function appendRowAsOlderBuild(
     const { seq: _seq, ...event } = row
     await storage.commit(key, { events: [event], integrity: entries, expectedWriterRunId: 'older-build' })
     await storage.release(key, 'older-build')
+  } finally {
+    await storage.close()
+  }
+}
+
+/**
+ * Writes inbox rows to a stored session the way a build that queued attachments inline did: each
+ * snapshot is the whole queue at that moment, one row per snapshot, and every item carries its
+ * content block list as given. The session's next turn then claims the first item and copies it
+ * into the ledger, so the same bytes sit in several rows. The session must be closed.
+ */
+export async function appendInboxRowsAsOlderBuild(
+  dataDir: string,
+  key: string,
+  snapshots: ReadonlyArray<ReadonlyArray<{ content: unknown[] }>>,
+): Promise<void> {
+  const storage = createSqliteStorage({
+    file: join(dataDir, 'sessions.db'),
+    tablesDir: join(dataDir, 'older-build'),
+  })
+  try {
+    const log = await SessionLogImpl.open({
+      storage,
+      key,
+      writerRunId: 'older-build',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers: {
+        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+        clearTimeout: (t) => globalThis.clearTimeout(t as never),
+      },
+    })
+    try {
+      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
+      if (!last) throw new Error(`session ${key} has no rows`)
+      for (const snapshot of snapshots)
+        await log.append([
+          inboxEvent('main', last.actor, {
+            items: snapshot.map((item, index) => ({
+              itemId: `older-build-${index}`,
+              target: 'next-turn' as const,
+              content: item.content as never,
+              actor: last.actor,
+              kind: 'follow_up' as const,
+              commandId: `older-build-${index}`,
+              enqueuedAt: new Date().toISOString(),
+            })),
+          }),
+        ])
+    } finally {
+      await log.close()
+    }
   } finally {
     await storage.close()
   }

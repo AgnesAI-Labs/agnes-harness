@@ -571,6 +571,7 @@ export function registerAcp(
     // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
     // silently truncate a long transcript at whatever limit was written here.
     const lastSeq = entry.session.lastSeq
+    const replayStartedAt = performance.now()
     for (let from = 1; from <= lastSeq; from += 500)
       feed.replayLoad(
         (await entry.session.scan({
@@ -579,6 +580,7 @@ export function registerAcp(
           limit: 500,
         })) as EventEnvelope[],
       )
+    cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
     // Whatever is streaming now is not in the transcript yet; the snapshot says it.
     feed.previewResync()
     return {}

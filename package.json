@@ -14,6 +14,7 @@
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "gen:check": "pnpm -r --if-present run gen:check",
+    "bench:attachment-open": "tsx tools/bench-attachment-open.ts",
     "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
     "bench:ledger-integrity": "tsx tools/bench-ledger-integrity.ts",
     "bench:ledger-scan": "tsx tools/bench-ledger-scan.ts",

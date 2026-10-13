@@ -12,6 +12,9 @@ export type IntegrityState = {
   headDigest: string | null
 }
 
+/** Milliseconds a verification spent reading pages, checking digests and handing pages to the fold. */
+export type LedgerTiming = { readMs: number; verifyMs: number; foldMs: number }
+
 export class LedgerIntegrityFailure extends CoreError {
   constructor(message = 'ledger integrity verification failed', detail?: Record<string, unknown>) {
     super('E_LEDGER_INTEGRITY', message, detail)
@@ -135,18 +138,25 @@ export async function verifyLedger(
   lastSeq: Seq,
   yieldPage?: () => void | Promise<void>,
   onPage?: (events: Event[]) => void,
+  timing?: LedgerTiming,
 ): Promise<IntegrityState> {
   let state = { ...EMPTY_STATE }
   while (state.lastSeq < lastSeq) {
     if (state.lastSeq > 0) await yieldPage?.()
+    const readAt = performance.now()
     const rows = await storage.scanIntegrity(key, {
       fromSeq: state.lastSeq + 1,
       toSeq: lastSeq,
       limit: INTEGRITY_PAGE_SIZE,
     })
+    const verifyAt = performance.now()
+    if (timing) timing.readMs += verifyAt - readAt
     if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
     state = verifyIntegrityRows(rows, state)
+    const foldAt = performance.now()
+    if (timing) timing.verifyMs += foldAt - verifyAt
     onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
   }
   if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
   return state

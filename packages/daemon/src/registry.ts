@@ -49,6 +49,8 @@ export interface Registry<Entry> {
   /** `gap` is called when previews for the session were lost before reaching `fn`; resync then. */
   subscribePreview(key: string, fn: (p: PreviewUpdate) => void, gap?: () => void): Disposer
   previewSnapshot(key: string): Promise<PreviewSnapshotEntry[]>
+  /** Called when a `session/load` has replayed its history, so the open can be logged as one record. */
+  recordLoad?(key: string, timing: { acpReplayMs: number }): void
   keys(): string[]
   close(key: string): Promise<void>
   closeAll(): Promise<void>

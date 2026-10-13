@@ -71,7 +71,7 @@ export type { InvariantCheck, Violation } from './invariants/registry.js'
 export { InvariantRegistry } from './invariants/registry.js'
 export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
 export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
-export type { IntegrityState } from './log/integrity.js'
+export type { IntegrityState, LedgerTiming } from './log/integrity.js'
 export {
   INTEGRITY_PAGE_SIZE,
   LEDGER_INTEGRITY_ALGORITHM,
@@ -83,7 +83,7 @@ export {
 export { MemoryStorage } from './log/memory-storage.js'
 export { checkRelations, makeRelationCheck } from './log/relations.js'
 export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'
-export type { AppendOptions, OpenLogOptions, Timers } from './log/session-log.js'
+export type { AppendOptions, OpenLogOptions, SessionOpenStats, Timers } from './log/session-log.js'
 export { SessionLogImpl } from './log/session-log.js'
 // Named rather than `export *`: a star export puts `cacheKey` and `RegisterMap` on the package's
 // root surface, and `cacheKey` alone is enough for a consumer to assemble a second register map

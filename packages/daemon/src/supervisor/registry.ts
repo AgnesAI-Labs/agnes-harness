@@ -3,7 +3,9 @@ import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import type { Disposer } from '../local/tail.js'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
+import { sessionHash } from './frames.js'
 import { RemoteSession } from './remote-session.js'
+import type { WorkerSessionChannel } from './worker-link.js'
 import type { WorkerPool } from './worker-pool.js'
 
 export type ArtifactAuthorityLifecycle = Readonly<{
@@ -20,6 +22,15 @@ type RemoteOpen = Readonly<{
   forkAt?: number
   resume?: boolean
 }>
+
+/** What a cold open cost so far, held until the `session/load` that asked for it finishes replaying. */
+type OpenTrace = {
+  session: RemoteSession
+  link: WorkerSessionChannel
+  receivedAtStart: number
+  openMs: number
+  authorityReplayMs: number
+}
 
 export type RemoteEntry = {
   key: string
@@ -91,11 +102,39 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
+  private readonly openTraces = new Map<string, OpenTrace>()
 
   constructor(
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
+    private readonly audit?: (record: unknown) => void,
   ) {}
+
+  /**
+   * Writes the `session.load` record for a cold open: how long opening and the authority replay
+   * took, how long the caller's own replay took, and how many bytes crossed from the worker.
+   * Nothing is written for a session that was already open.
+   */
+  recordLoad(key: string, timing: { acpReplayMs: number }): void {
+    const trace = this.openTraces.get(key)
+    if (!trace) return
+    this.openTraces.delete(key)
+    this.audit?.({
+      kind: 'session.load',
+      detail: {
+        session: sessionHash(key),
+        ms: {
+          open: trace.openMs,
+          authorityReplay: trace.authorityReplayMs,
+          acpReplay: timing.acpReplayMs,
+          total: trace.openMs + trace.authorityReplayMs + timing.acpReplayMs,
+        },
+        transferBytes: (trace.link.receivedBytes?.() ?? 0) - trace.receivedAtStart,
+        resumes: trace.session.splitScans,
+        outcome: 'ok',
+      },
+    })
+  }
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
    *  and folded into that session's `lastSeq` / register cache. */
@@ -250,7 +289,26 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (existing) return existing
     const pending = this.opening.get(key)
     if (pending?.epoch === epoch) return pending.promise
+    const startedAt = performance.now()
     const opening = this.openFresh(key, authorized, epoch)
+    opening.catch((error: unknown) => {
+      const code = (error as { code?: unknown } | null)?.code
+      this.audit?.({
+        kind: 'session.load',
+        detail: {
+          session: sessionHash(key),
+          ms: {
+            open: performance.now() - startedAt,
+            authorityReplay: 0,
+            acpReplay: 0,
+            total: performance.now() - startedAt,
+          },
+          transferBytes: 0,
+          outcome: 'failed',
+          ...(typeof code === 'string' ? { code } : {}),
+        },
+      })
+    })
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
     try {
@@ -271,6 +329,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.artifactAuthority?.resetSession(key)
     this.rejectArtifactProjectionWaiters(key)
     this.artifactProjectedThrough.delete(key)
+    const openStartedAt = performance.now()
     const link = await this.pool.acquire(key, {
       resume: o.resume ?? false,
       cwd: o.cwd,
@@ -282,6 +341,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       await link.closeSession('session closed while opening').catch(() => undefined)
       throw new Error(`session ${key} was closed while opening`)
     }
+    const receivedAtStart = link.receivedBytes?.() ?? 0
     const hello = await link.hello
     if (!isCurrent()) {
       await link.closeSession('session closed while opening').catch(() => undefined)
@@ -321,6 +381,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       const tail = (link as unknown as { tail?: (fromSeq: number) => Promise<void> }).tail
       if (tail) await tail.call(link, 1)
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
+      const openMs = performance.now() - openStartedAt
       // This worker read its resources before hello. If a control operation committed while it was
       // opening, never publish that old-snapshot generation to a caller; let WorkerPool wait for its
       // close and acquire a replacement from the new durable snapshot.
@@ -344,6 +405,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         this.artifactReplayBuffers.delete(key)
         return this.openFresh(key, o, sessionEpoch)
       }
+      const authorityStartedAt = performance.now()
       if (this.artifactAuthority) {
         const replayBuffer = this.artifactReplayBuffers.get(key)
         if (!replayBuffer) throw new Error('artifact authority session is unavailable')
@@ -414,6 +476,13 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         }
       }
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
+      this.openTraces.set(key, {
+        session,
+        link,
+        receivedAtStart,
+        openMs,
+        authorityReplayMs: performance.now() - authorityStartedAt,
+      })
       // Previews were dropped while the replay held events back, and a preview from a generation
       // not yet hosting the session is refused by the pool: viewers that outlived the previous
       // generation catch up now.

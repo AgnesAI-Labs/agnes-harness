@@ -328,6 +328,17 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return this.registerView(this.book(key)).values()
   }
 
+  async ledgerStats(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }> {
+    let storedBytes = 0
+    let maxRowBytes = 0
+    for (const row of this.prefixedIntegrity(key, this.book(key))) {
+      const size = JSON.stringify(row.event.data).length
+      storedBytes += size
+      if (size > maxRowBytes) maxRowBytes = size
+    }
+    return { storedBytes, maxRowBytes }
+  }
+
   async createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void> {
     const existing = this.books.get(childKey)
     if (existing) {

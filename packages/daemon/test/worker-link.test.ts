@@ -82,6 +82,27 @@ describe('WorkerLink command settlement', () => {
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
 
+  it('hands a record frame to its observer and counts every byte received from the worker', async () => {
+    const socket = new FakeSocket()
+    const records: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onRecord: (sessionKey, record) => records.push([sessionKey, record]),
+    })
+    expect(link.receivedBytes()).toBe(0)
+    const frame = encodeFrame({
+      kind: 'record',
+      sessionKey: 'a',
+      record: { kind: 'session.open', detail: { lastSeq: 3 } },
+    })
+    socket.emit('data', frame)
+    await vi.waitFor(() => expect(records).toEqual([['a', { kind: 'session.open', detail: { lastSeq: 3 } }]]))
+    expect(link.receivedBytes()).toBe(frame.length)
+    socket.emit('data', encodeFrame({ kind: 'record', record: { kind: 'session.open', detail: {} } }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+  })
+
   it('does not settle a later reply before an earlier event projection finishes', async () => {
     let release: (() => void) | undefined
     const projected = new Promise<void>((resolve) => {

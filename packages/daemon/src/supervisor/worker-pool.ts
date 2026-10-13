@@ -178,6 +178,7 @@ export class WorkerPool {
         level: 'debug' | 'info' | 'warn' | 'error'
         message: string
       }) => void
+      onRecord?: (sessionKey: string, record: { kind: string; detail: Record<string, unknown> }) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onLifecycle?: (record: WorkerLifecycleRecord) => void
       runtimeDelivery?: CompositeRuntimeDelivery
@@ -208,6 +209,7 @@ export class WorkerPool {
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
       onRequest: (f) => this.o.onRequest(f.sessionKey, f),
       onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
+      onRecord: (sessionKey, record) => this.o.onRecord?.(sessionKey, record),
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
         // No notice here: the protocol has no kind for a session-scoped interruption, and the

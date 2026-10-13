@@ -104,6 +104,8 @@ export interface StorageAdapter {
   scan(key: SessionKey, q: ScanQuery): Promise<Event[]>
   scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]>
   registers(key: SessionKey): Promise<RegisterRow[]>
+  /** Stored size of a session's rows, for the open record; adapters that cannot say leave it out. */
+  ledgerStats?(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }>
   /** Remove a session only after Core proves this open created it and storage verifies its writer lease. */
   discardNewSession?(key: SessionKey, expectedWriterRunId: string, claim?: LeaseClaim): Promise<void>
   createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void>

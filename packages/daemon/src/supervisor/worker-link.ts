@@ -2,6 +2,7 @@ import type { Duplex } from 'node:stream'
 import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
 import type { PreviewUpdate } from '../registry.js'
 import type {
+  RecordFrame,
   RequestFrame,
   SessionMethod,
   SessionOpenResult,
@@ -52,6 +53,11 @@ export class WorkerSessionChannel {
     void this.closeSession(_reason).catch(() => undefined)
   }
 
+  /** Bytes the whole worker connection has received so far; a difference measures a span of work. */
+  receivedBytes(): number {
+    return this.worker.receivedBytes()
+  }
+
   tail(fromSeq: number): Promise<void> {
     if (this.closed) return Promise.reject(new Error('worker session channel closed'))
     return this.worker.tailSession(this.sessionKey, fromSeq)
@@ -92,6 +98,7 @@ export class WorkerLink {
   private readonly exitHandlers: Array<() => void> = []
   private readonly frameChains = new Map<string, Promise<void>>()
   private readonly failedSessions = new Set<string>()
+  private received = 0
 
   constructor(
     private readonly socket: Duplex,
@@ -101,6 +108,7 @@ export class WorkerLink {
       onResourceStatus?: (serverId: string, status: McpStatus) => void
       onRequest: (frame: RequestFrame) => Promise<unknown>
       onLog?: (sessionKey: string, level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
+      onRecord?: (sessionKey: string, record: RecordFrame['record']) => void
       onActivity?: (sessionKey: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onRuntimeFrame?: (frame: unknown) => void
@@ -111,6 +119,7 @@ export class WorkerLink {
     })
     const decoder = new JsonlDecoder()
     socket.on('data', (chunk: Buffer) => {
+      this.received += chunk.length
       let frames: WorkerToSupervisor[]
       try {
         frames = decoder.feed(chunk) as WorkerToSupervisor[]
@@ -146,7 +155,7 @@ export class WorkerLink {
       this.close('invalid worker frame')
       return
     }
-    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log'])
+    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log', 'record'])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
       sessionKinds.has(frame.kind) &&
@@ -164,6 +173,7 @@ export class WorkerLink {
       'request',
       'session.interrupted',
       'log',
+      'record',
     ])
     if (!knownKinds.has(frame.kind)) {
       this.close('unknown worker frame')
@@ -234,6 +244,10 @@ export class WorkerLink {
       this.options.onActivity?.(frame.sessionKey)
       return
     }
+    if (frame.kind === 'record') {
+      this.options.onRecord?.(frame.sessionKey, frame.record)
+      return
+    }
     if (frame.kind === 'reply') {
       const replySessionKey = 'sessionKey' in frame ? frame.sessionKey : undefined
       this.settle(frame.requestId, (pending) => {
@@ -274,6 +288,10 @@ export class WorkerLink {
         }),
     )
     this.options.onActivity?.(frame.sessionKey)
+  }
+
+  receivedBytes(): number {
+    return this.received
   }
 
   private markDead(): void {

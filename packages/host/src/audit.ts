@@ -63,6 +63,9 @@ export const AUDIT_KINDS = [
   'worker.start_failed',
   'worker.log',
   'session.interrupted',
+  'session.open',
+  'session.load',
+  'session.verify_full',
 ] as const
 export type AuditKind = (typeof AUDIT_KINDS)[number]
 export type AuditEvent = { kind: string; detail?: Record<string, unknown>; at?: string }

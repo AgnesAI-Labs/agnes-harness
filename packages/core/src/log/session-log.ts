@@ -14,6 +14,7 @@ import {
   INTEGRITY_PAGE_SIZE,
   type IntegrityState,
   LedgerIntegrityFailure,
+  type LedgerTiming,
   prepareIntegrity,
   verifyIntegrityRows,
   verifyLedger,
@@ -67,6 +68,15 @@ export type OpenLogOptions = {
   replay?: {
     page(events: Event[]): void
   }
+}
+
+/** What opening a session cost, for the runtime log: sizes carry no content, times are milliseconds. */
+export type SessionOpenStats = {
+  lastSeq: Seq
+  storedBytes?: number
+  maxRowBytes?: number
+  checkpoint: { used: boolean; throughSeq?: number; reason?: string }
+  ms: { read: number; verify: number; fold: number; registers: number; total: number }
 }
 
 /**
@@ -140,6 +150,8 @@ export class SessionLogImpl {
   private leaseRenewedAt: number
   private integrityState: IntegrityState
   private readonly createdOnOpen: boolean
+  /** Set once by `open`; a child opened from a live parent reports the zero value. */
+  openStats: SessionOpenStats
   readonly parent: { key: SessionKey; boundarySeq: Seq } | undefined
 
   private constructor(
@@ -155,25 +167,36 @@ export class SessionLogImpl {
     this.integrityState = integrityState
     this.createdOnOpen = createdOnOpen
     this.parent = parent
+    this.openStats = {
+      lastSeq,
+      checkpoint: { used: false },
+      ms: { read: 0, verify: 0, fold: 0, registers: 0, total: 0 },
+    }
     this.leaseRenewedAt = o.clock()
     this.syncRenewal()
   }
 
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
+    const startedAt = performance.now()
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
       const replay = o.replay
+      const timing: LedgerTiming = { readMs: 0, verifyMs: 0, foldMs: 0 }
       const integrityState = await verifyLedger(
         o.storage,
         o.key,
         opened.lastSeq,
         pageYield,
         replay ? (events) => replay.page(events) : undefined,
+        timing,
       )
+      const registersAt = performance.now()
       const rows = await o.storage.registers(o.key)
-      return new SessionLogImpl(
+      const registersMs = performance.now() - registersAt
+      const stats = await o.storage.ledgerStats?.(o.key)
+      const log = new SessionLogImpl(
         o,
         opened.lastSeq,
         rows,
@@ -181,6 +204,19 @@ export class SessionLogImpl {
         opened.created === true,
         opened.parent,
       )
+      log.openStats = {
+        lastSeq: opened.lastSeq,
+        ...(stats ? { storedBytes: stats.storedBytes, maxRowBytes: stats.maxRowBytes } : {}),
+        checkpoint: { used: false },
+        ms: {
+          read: timing.readMs,
+          verify: timing.verifyMs,
+          fold: timing.foldMs,
+          registers: registersMs,
+          total: performance.now() - startedAt,
+        },
+      }
+      return log
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
       throw error

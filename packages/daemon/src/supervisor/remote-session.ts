@@ -17,6 +17,8 @@ export const PREVIEW_SNAPSHOT_TIMEOUT_MS = 2_000
  */
 export class RemoteSession {
   lastSeq = 0
+  /** How many times a scan page was too large for one worker frame and had to be read in halves. */
+  splitScans = 0
   private runSeq = 0
   private activeRuns = 0
   /** A manual compaction persists a turn before its following `run()` command starts. */
@@ -176,6 +178,7 @@ export class RemoteSession {
         fromSeq >= toSeq
       )
         throw error
+      this.splitScans++
       // Keep the caller's complete page and order; only the private worker reads are split.
       const mid = fromSeq + Math.floor((toSeq - fromSeq) / 2)
       const ranges = [

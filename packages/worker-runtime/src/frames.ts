@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   EventEnvelope,
   McpStatus,
@@ -138,6 +139,17 @@ export type LogFrame = {
   level: 'debug' | 'info' | 'warn' | 'error'
   message: string
 }
+/** The session name used in runtime-log records: stable, short, and not the key itself. */
+export function sessionHash(sessionKey: string): string {
+  return createHash('sha256').update(sessionKey).digest('hex').slice(0, 16)
+}
+
+/** A diagnostic the supervisor writes to the runtime log: sizes, timings and outcomes, never content. */
+export type RecordFrame = {
+  kind: 'record'
+  sessionKey: string
+  record: { kind: 'session.open' | 'session.verify_full'; detail: Record<string, unknown> }
+}
 export type ResourceStatusFrame = { kind: 'resourceStatus'; serverId: string; status: McpStatus }
 export type WorkerReplyFrame = {
   kind: 'reply'
@@ -209,6 +221,7 @@ export type WorkerToSupervisor =
   | PreviewFrame
   | SessionInterruptedFrame
   | LogFrame
+  | RecordFrame
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame

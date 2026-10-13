@@ -393,6 +393,9 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
   previewSnapshot(key: string): Promise<PreviewSnapshotEntry[]> {
     return this.inner.previewSnapshot(key)
   }
+  recordLoad(key: string, timing: { acpReplayMs: number }): void {
+    this.inner.recordLoad(key, timing)
+  }
   preset(key: string): Promise<string | null> {
     return this.inner.require(key).session.currentPreset()
   }
@@ -1126,6 +1129,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
+      onRecord: (_sessionKey, record) => o.audit?.({ kind: record.kind, detail: record.detail }),
       onLifecycle: (record) => o.audit?.(record),
       onSessionFailure: (sessionKey, error) => {
         // The reopened session reads this as a process that died; the reason only survives here.
@@ -1206,7 +1210,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, o.audit)
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({

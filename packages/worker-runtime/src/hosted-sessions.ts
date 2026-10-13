@@ -8,6 +8,7 @@ import {
   type SessionCommandFrame,
   type SessionOpenFrame,
   type SessionOpenResult,
+  sessionHash,
 } from './frames.js'
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
@@ -137,14 +138,21 @@ export class HostedSessions {
       this.assertAuthority(hosted.session, binding, parent)
       return this.describe(hosted.session)
     }
+    const openedAt = this.clock()
     const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host.createSession({
-        key: frame.sessionKey,
-        binding,
-        ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-        ...(parent ? { parent } : {}),
-      })
+      const session = await this.options.host
+        .createSession({
+          key: frame.sessionKey,
+          binding,
+          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+          ...(parent ? { parent } : {}),
+        })
+        .catch((error: unknown) => {
+          this.recordOpenFailed(frame.sessionKey, error, openedAt)
+          throw error
+        })
       const hosted = this.adopt(frame.sessionKey, session)
+      this.recordOpen(frame.sessionKey, session, openedAt)
       return hosted
     })
     this.opening.set(frame.sessionKey, opening)
@@ -359,13 +367,19 @@ export class HostedSessions {
     const started = this.clock()
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
-      const session = await this.options.host.createSession({
-        key,
-        binding: stub.binding,
-        preset: stub.preset,
-      })
+      const session = await this.options.host
+        .createSession({
+          key,
+          binding: stub.binding,
+          preset: stub.preset,
+        })
+        .catch((error: unknown) => {
+          this.recordOpenFailed(key, error, started)
+          throw error
+        })
       this.stubs.delete(key)
       const hosted = this.adopt(key, session)
+      this.recordOpen(key, session, started)
       if (stub.tailFrom !== undefined) this.follow(key, hosted, stub.tailFrom)
       return hosted
     })
@@ -387,6 +401,39 @@ export class HostedSessions {
     const hosted: HostedSession = { session, aborts: new Map(), inflight: 0, lastActivityAt: this.clock() }
     this.sessions.set(key, hosted)
     return hosted
+  }
+
+  private recordOpen(sessionKey: string, session: HostSession, startedAt: number): void {
+    try {
+      this.record(sessionKey, {
+        ...session.d.log.openStats,
+        wallMs: this.clock() - startedAt,
+        outcome: 'ok',
+      })
+    } catch {
+      /* diagnostics must not change the outcome */
+    }
+  }
+
+  private recordOpenFailed(sessionKey: string, error: unknown, startedAt: number): void {
+    const code = (error as { code?: unknown } | null)?.code
+    this.record(sessionKey, {
+      wallMs: this.clock() - startedAt,
+      outcome: 'failed',
+      ...(typeof code === 'string' ? { code } : {}),
+    })
+  }
+
+  private record(sessionKey: string, detail: Record<string, unknown>): void {
+    try {
+      this.options.send({
+        kind: 'record',
+        sessionKey,
+        record: { kind: 'session.open', detail: { session: sessionHash(sessionKey), ...detail } },
+      })
+    } catch {
+      /* diagnostics must not change the outcome */
+    }
   }
 
   private log(sessionKey: string, level: 'info' | 'warn', message: string): void {

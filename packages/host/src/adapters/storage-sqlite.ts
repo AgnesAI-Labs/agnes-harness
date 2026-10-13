@@ -594,6 +594,14 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         }>
       ).map((r) => ({ register: r.register, key: keyText(r.key), seq: r.seq, data: JSON.parse(r.data) }))
     },
+    async ledgerStats(key) {
+      const row = db
+        .prepare(
+          'SELECT COALESCE(SUM(octet_length(data)), 0) AS total, COALESCE(MAX(octet_length(data)), 0) AS max FROM events WHERE session_key = ?',
+        )
+        .get(key) as { total: number; max: number }
+      return { storedBytes: row.total, maxRowBytes: row.max }
+    },
     async createChild(parentKey, boundarySeq, childKey) {
       tx(() => {
         if (!q.session.get(parentKey) || boundarySeq > lastSeq(parentKey))

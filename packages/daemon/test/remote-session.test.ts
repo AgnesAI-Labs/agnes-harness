@@ -59,8 +59,16 @@ it.each(['asc', 'desc'] as const)(
     })) as typeof rows
     expect(result.map((row) => row.seq)).toEqual(order === 'asc' ? [1, 2, 3] : [3, 2])
     expect(result).toEqual(order === 'asc' ? rows : [...rows].reverse().slice(0, 2))
+    expect(remote.splitScans).toBeGreaterThan(0)
   },
 )
+
+it('counts no split scans while every page fits one worker frame', async () => {
+  const link = { alive: true, command: async () => [{ seq: 1 }] }
+  const remote = new RemoteSession('small', 'writer', 1, link as never, '/test')
+  await remote.scan({ fromSeq: 1, toSeq: 1, limit: 1 })
+  expect(remote.splitScans).toBe(0)
+})
 
 describe('RemoteSession switch result bridge', () => {
   it('unwraps worker command envelopes to the HostSession sequence contract', async () => {

@@ -90,6 +90,75 @@ describe('HostedSessions', () => {
     expect(hosted.keys()).toEqual(['b'])
   })
 
+  it('reports how a session opened, naming it by hash and carrying no content', async () => {
+    const sent: unknown[] = []
+    const openStats = {
+      lastSeq: 7,
+      storedBytes: 1234,
+      maxRowBytes: 99,
+      checkpoint: { used: false },
+      ms: { read: 1, verify: 2, fold: 3, registers: 4, total: 10 },
+    }
+    const createSession = vi.fn(
+      async ({ key }: { key: string }) =>
+        ({ key, writerRunId: 'w', lastSeq: 7, d: { log: { openStats } } }) as unknown as HostSession,
+    )
+    const hosted = new HostedSessions({
+      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
+      channel: new SharedSessionChannel(() => undefined),
+      send: (frame) => sent.push(frame),
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+    })
+    await hosted.open(open('a'))
+    expect(sent).toEqual([
+      {
+        kind: 'record',
+        sessionKey: 'a',
+        record: {
+          kind: 'session.open',
+          detail: { session: 'ca978112ca1bbdca', ...openStats, wallMs: expect.any(Number), outcome: 'ok' },
+        },
+      },
+    ])
+  })
+
+  it('reports a failed open with its error code and nothing from the error message', async () => {
+    const sent: unknown[] = []
+    const failure = Object.assign(new Error('contains the file name insects.zip'), {
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    const hosted = new HostedSessions({
+      host: {
+        acceptWorkspaceBinding,
+        createSession: vi.fn(async () => {
+          throw failure
+        }),
+      } as unknown as Host,
+      channel: new SharedSessionChannel(() => undefined),
+      send: (frame) => sent.push(frame),
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+    })
+    await expect(hosted.open(open('a'))).rejects.toBe(failure)
+    expect(sent).toEqual([
+      {
+        kind: 'record',
+        sessionKey: 'a',
+        record: {
+          kind: 'session.open',
+          detail: {
+            session: 'ca978112ca1bbdca',
+            wallMs: expect.any(Number),
+            outcome: 'failed',
+            code: 'E_LEDGER_INTEGRITY',
+          },
+        },
+      },
+    ])
+    expect(JSON.stringify(sent)).not.toContain('insects')
+  })
+
   it('rejects a binding for another session before creating a session', async () => {
     const createSession = vi.fn()
     const hosted = new HostedSessions({
