@@ -162,6 +162,70 @@ export async function verifyLedger(
   return state
 }
 
+/**
+ * Folds rows a verified-head checkpoint vouches for without hashing them, then verifies the rest of
+ * the chain onward from the checkpoint's head. Contiguity is still checked row by row: a missing row
+ * fails here exactly as it would in a full verify. The prefix itself is only trusted until the
+ * caller's background full verification has hashed it again.
+ */
+export async function foldVerifiedPrefix(
+  storage: StorageAdapter,
+  key: SessionKey,
+  lastSeq: Seq,
+  head: { throughSeq: Seq; headDigest: string; legacyThroughSeq: Seq },
+  yieldPage?: () => void | Promise<void>,
+  onPage?: (events: Event[]) => void,
+  timing?: LedgerTiming,
+  progress?: (p: { phase: 'verify' | 'fold'; done: number; total: number }) => void,
+): Promise<IntegrityState> {
+  let seq = 0
+  while (seq < head.throughSeq) {
+    if (seq > 0) await yieldPage?.()
+    const readAt = performance.now()
+    const rows = await storage.scanIntegrity(key, {
+      fromSeq: seq + 1,
+      toSeq: head.throughSeq,
+      limit: INTEGRITY_PAGE_SIZE,
+    })
+    if (timing) timing.readMs += performance.now() - readAt
+    if (rows.length === 0) fail('ledger ended before advertised sequence', seq + 1)
+    for (const row of rows) {
+      if (row.event.seq !== seq + 1) fail('ledger sequence is not contiguous', row.event.seq)
+      seq = row.event.seq
+    }
+    const foldAt = performance.now()
+    onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
+    progress?.({ phase: 'fold', done: seq, total: lastSeq })
+  }
+  if (seq !== head.throughSeq) fail('ledger exceeds advertised sequence', seq)
+  let state: IntegrityState = {
+    lastSeq: head.throughSeq,
+    legacyThroughSeq: head.legacyThroughSeq,
+    headDigest: head.headDigest,
+  }
+  while (state.lastSeq < lastSeq) {
+    await yieldPage?.()
+    const readAt = performance.now()
+    const rows = await storage.scanIntegrity(key, {
+      fromSeq: state.lastSeq + 1,
+      toSeq: lastSeq,
+      limit: INTEGRITY_PAGE_SIZE,
+    })
+    const verifyAt = performance.now()
+    if (timing) timing.readMs += verifyAt - readAt
+    if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
+    state = verifyIntegrityRows(rows, state)
+    const foldAt = performance.now()
+    if (timing) timing.verifyMs += foldAt - verifyAt
+    onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
+    progress?.({ phase: 'verify', done: state.lastSeq, total: lastSeq })
+  }
+  if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
+  return state
+}
+
 export function prepareIntegrity(
   key: SessionKey,
   events: readonly Event[],

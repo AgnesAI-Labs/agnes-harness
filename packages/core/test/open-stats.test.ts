@@ -42,7 +42,9 @@ describe('session open statistics', () => {
     for (const field of ['read', 'verify', 'fold', 'registers', 'total'] as const)
       expect(stats.ms[field]).toBeGreaterThanOrEqual(0)
     expect(stats.ms.total).toBeGreaterThanOrEqual(stats.ms.verify)
-    expect(stats.checkpoint.used).toBe(false)
+    // The writer's close recorded its verified head, so this open folds the prefix from it.
+    expect(stats.checkpoint).toEqual({ used: true, throughSeq: 1200 })
+    await log.fullVerified()
     await log.close()
   })
 

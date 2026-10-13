@@ -19,8 +19,10 @@ import {
 } from '../types.js'
 import { type ForkBase, forkBaseProviders, forkPaths, pageYield, seededLogs } from './fork-seed.js'
 import {
+  foldVerifiedPrefix,
   INTEGRITY_PAGE_SIZE,
   type IntegrityState,
+  LEDGER_INTEGRITY_ALGORITHM,
   LedgerIntegrityFailure,
   type LedgerTiming,
   prepareIntegrity,
@@ -40,12 +42,18 @@ import {
   type StorageAdapter,
 } from './storage.js'
 import { prepareEvents } from './validate.js'
+import { decideCheckpoint, makeVerifiedHead, type VerifiedHead } from './verified-head.js'
 
 export type AppendOptions = {
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
   opState?: OpWrite
+  /**
+   * `'allow'` lets the batch through while the history this log opened with is still being verified
+   * in the background. Only appending user input may ask for it; every other write waits.
+   */
+  beforeFullVerify?: 'allow'
 }
 
 /** What one committed batch carried besides its rows. */
@@ -79,10 +87,28 @@ export type OpenLogOptions = {
   }
   /** Told after each verified page how far the open has got; a listener that throws is ignored. */
   progress?: (p: OpenProgress) => void
+  /** Called once when the background verification of an open from a checkpoint finishes. */
+  onFullVerify?: (r: FullVerifyReport) => void
 }
 
 /** How far an open has got, by seq: `done` is the last seq handled, `total` the session's head. */
 export type OpenProgress = { phase: 'verify' | 'fold'; done: number; total: number }
+
+/** One background full verification: its duration, the rows it hashed and the stored size. */
+export type FullVerifyReport = {
+  ms: number
+  rows: number
+  bytes: number
+  outcome: 'ok' | 'failed'
+  seq?: number
+}
+
+/** A macrotask turn that lets pending I/O run first where the platform has one for that. */
+const idleTurn = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (typeof globalThis.setImmediate === 'function') globalThis.setImmediate(resolve)
+    else globalThis.setTimeout(resolve, 0)
+  })
 
 /** What opening a session cost, for the runtime log: sizes carry no content, times are milliseconds. */
 export type SessionOpenStats = {
@@ -164,6 +190,14 @@ export class SessionLogImpl {
   private leaseRenewedAt: number
   private integrityState: IntegrityState
   private readonly createdOnOpen: boolean
+  // Whether every row this log opened with has been hashed. An open from a verified-head checkpoint
+  // starts 'pending' and verifies the prefix in the background; until it is 'done' only appends of
+  // user input are let through. 'failed' seals the log; 'stopped' means it closed first.
+  private fullVerifyState: 'pending' | 'done' | 'failed' | 'stopped' = 'done'
+  private fullVerifyPromise: Promise<void> = Promise.resolve()
+  private readonly verifyAbort = new AbortController()
+  /** When this process last finished verifying the full chain it extends. */
+  private verifiedFullAtMs: number
   /** Set once by `open`; a child opened from a live parent reports the zero value. */
   openStats: SessionOpenStats
   readonly parent: { key: SessionKey; boundarySeq: Seq } | undefined
@@ -187,6 +221,7 @@ export class SessionLogImpl {
       ms: { read: 0, verify: 0, fold: 0, registers: 0, total: 0 },
     }
     this.leaseRenewedAt = o.clock()
+    this.verifiedFullAtMs = this.leaseRenewedAt
     this.syncRenewal()
   }
 
@@ -198,19 +233,43 @@ export class SessionLogImpl {
       if (opened.formatVersion > LEDGER_FORMAT_VERSION) throw ledgerFormatError(o.key, opened.formatVersion)
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
+      //
+      // The one exception is a verified-head checkpoint: the rows it vouches for are folded without
+      // being hashed, so history can be shown at once, and the full chain is verified in the
+      // background before anything but user input is written (see `append`).
       const replay = o.replay
       const progress = o.progress
       const timing: LedgerTiming = { readMs: 0, verifyMs: 0, foldMs: 0 }
-      const onPage =
-        replay || progress
-          ? (events: Event[]) => {
-              replay?.page(events)
-              const last = events.at(-1)
-              if (progress && last)
-                reportProgress(progress, { phase: 'verify', done: last.seq, total: opened.lastSeq })
-            }
-          : undefined
-      const integrityState = await verifyLedger(o.storage, o.key, opened.lastSeq, pageYield, onPage, timing)
+      const report = progress ? (p: OpenProgress) => reportProgress(progress, p) : undefined
+      // A checkpoint that cannot even be read is one not used: the open verifies everything instead.
+      const decision = await decideCheckpoint(o.storage, o.key, opened.lastSeq).catch(
+        () => ({ use: false, reason: 'unsupported' }) as const,
+      )
+      let integrityState: IntegrityState
+      if (decision.use) {
+        // The prefix the checkpoint vouches for is reported as folded, the tail after it as verified.
+        const onPage = replay ? (events: Event[]) => replay.page(events) : undefined
+        integrityState = await foldVerifiedPrefix(
+          o.storage,
+          o.key,
+          opened.lastSeq,
+          decision.head,
+          pageYield,
+          onPage,
+          timing,
+          report,
+        )
+      } else {
+        const onPage =
+          replay || report
+            ? (events: Event[]) => {
+                replay?.page(events)
+                const last = events.at(-1)
+                if (report && last) report({ phase: 'verify', done: last.seq, total: opened.lastSeq })
+              }
+            : undefined
+        integrityState = await verifyLedger(o.storage, o.key, opened.lastSeq, pageYield, onPage, timing)
+      }
       const registersAt = performance.now()
       const rows = await o.storage.registers(o.key)
       const registersMs = performance.now() - registersAt
@@ -229,7 +288,9 @@ export class SessionLogImpl {
       log.openStats = {
         lastSeq: opened.lastSeq,
         ...(stats ? { storedBytes: stats.storedBytes, maxRowBytes: stats.maxRowBytes } : {}),
-        checkpoint: { used: false },
+        checkpoint: decision.use
+          ? { used: true, throughSeq: decision.head.throughSeq }
+          : { used: false, reason: decision.reason },
         ms: {
           read: timing.readMs,
           verify: timing.verifyMs,
@@ -238,6 +299,10 @@ export class SessionLogImpl {
           total: totalMs,
         },
       }
+      if (decision.use) log.startBackgroundVerify(decision.head)
+      // Everything was verified just now, under this writer's lease, so the head is a verified head.
+      // It replaces a checkpoint the open could not use: one past the head would otherwise stay.
+      else void log.writeHead(true).catch(() => undefined)
       return log
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
@@ -303,6 +368,118 @@ export class SessionLogImpl {
   }
   get isClosed(): boolean {
     return this.closed
+  }
+
+  /**
+   * Settles once every row this log opened with has been hashed: at once when the open verified them
+   * all itself. Rejects with the integrity failure that sealed the log, or with E_CLOSED when the log
+   * closed before the background verification finished.
+   */
+  fullVerified(): Promise<void> {
+    return this.fullVerifyPromise
+  }
+
+  /** Whether the history this log opened with is still being verified in the background. */
+  get verifyingHistory(): boolean {
+    return this.fullVerifyState === 'pending'
+  }
+
+  /**
+   * Hashes the whole chain up to the checkpoint the open folded from, a page at a time and behind
+   * other work, and checks it ends at the digest the checkpoint named. Failing seals the log with
+   * the integrity error and drops the checkpoint, so the next open verifies from the first row.
+   */
+  private startBackgroundVerify(head: VerifiedHead): void {
+    this.fullVerifyState = 'pending'
+    const started = performance.now()
+    const bytes = this.openStats.storedBytes ?? 0
+    let rows = 0
+    const idle = async (): Promise<void> => {
+      await idleTurn()
+      await pageYield()
+      if (this.verifyAbort.signal.aborted) throw new CoreError('E_CLOSED', 'session closed')
+    }
+    const report = (r: Omit<FullVerifyReport, 'ms' | 'rows' | 'bytes'>): void => {
+      try {
+        this.o.onFullVerify?.({ ms: performance.now() - started, rows, bytes, ...r })
+      } catch {
+        /* a report must not change the outcome */
+      }
+    }
+    const verified = (async () => {
+      // Let the open hand its log back before the first page is read.
+      await idle()
+      const state = await verifyLedger(this.o.storage, this.o.key, head.throughSeq, idle, (events) => {
+        rows += events.length
+      })
+      if (state.headDigest !== head.headDigest || state.legacyThroughSeq !== head.legacyThroughSeq)
+        throw new LedgerIntegrityFailure('ledger head differs from its checkpoint', { seq: head.throughSeq })
+    })()
+    this.fullVerifyPromise = verified.then(
+      async () => {
+        this.fullVerifyState = 'done'
+        this.verifiedFullAtMs = this.o.clock()
+        report({ outcome: 'ok' })
+        await this.writeHead().catch(() => undefined)
+      },
+      async (error: unknown) => {
+        const integrity = error instanceof CoreError && error.code === 'E_LEDGER_INTEGRITY'
+        if (!integrity && this.verifyAbort.signal.aborted) {
+          this.fullVerifyState = 'stopped'
+          throw new CoreError('E_CLOSED', 'session closed before its history was verified')
+        }
+        // Sealed before anything else is awaited, so no write slips in behind a known failure.
+        this.fullVerifyState = 'failed'
+        const failure = integrity
+          ? (error as CoreError)
+          : error instanceof CoreError
+            ? error
+            : new CoreError('E_STORAGE_FAULT', 'background ledger verification could not finish')
+        this.markFaulted(failure)
+        const seq = failure.detail?.seq
+        report({ outcome: 'failed', ...(typeof seq === 'number' ? { seq } : {}) })
+        // Removing a checkpoint can only cost the next open time, never let a bad row through.
+        await this.o.storage.deleteVerifiedHead?.(this.o.key).catch(() => undefined)
+        throw failure
+      },
+    )
+    // Waiters see the rejection; this keeps an unobserved one from being reported as unhandled.
+    this.fullVerifyPromise.catch(() => undefined)
+  }
+
+  /**
+   * Records the in-memory head as the verified head. It is written only once everything up to it has
+   * been verified: the rows this log opened with were hashed, and every later row is one this log
+   * wrote and chained itself. Storage keeps the furthest one unless `replace` says this one stands.
+   */
+  private async writeHead(replace = false): Promise<void> {
+    const write = this.o.storage.writeVerifiedHead
+    if (!write || this.fullVerifyState !== 'done' || this.faultedValue) return
+    const s = this.integrityState
+    if (s.headDigest === null || s.lastSeq < 1) return
+    await write.call(
+      this.o.storage,
+      makeVerifiedHead({
+        sessionKey: this.o.key,
+        throughSeq: s.lastSeq,
+        headDigest: s.headDigest,
+        legacyThroughSeq: s.legacyThroughSeq,
+        algorithm: LEDGER_INTEGRITY_ALGORITHM,
+        verifiedFullAtMs: this.verifiedFullAtMs,
+        writtenAtMs: this.o.clock(),
+      }),
+      replace ? { force: true } : undefined,
+    )
+  }
+
+  /**
+   * Waits for the background verification, then re-checks the log: a batch that waited was never
+   * admitted, so one whose log closed meanwhile is refused rather than written after the lease went.
+   */
+  private async awaitFullVerify(): Promise<void> {
+    // Resolves only once the state is 'done'; every other outcome rejects.
+    await this.fullVerifyPromise
+    this.guard()
   }
 
   /** Import-only compensation: existing sessions are refused and storage rechecks the writer lease. */
@@ -399,7 +576,10 @@ export class SessionLogImpl {
   }
 
   private sealCheck(): void {
-    if (this.faultedValue) throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    if (!this.faultedValue) return
+    // An integrity failure is reported as itself, so a client can say why the session stopped.
+    if (this.faultCause?.code === 'E_LEDGER_INTEGRITY') throw this.faultCause
+    throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
   }
 
   private guard(): void {
@@ -409,6 +589,9 @@ export class SessionLogImpl {
 
   async append(tx: EventInput[], opts: AppendOptions = {}): Promise<{ firstSeq: Seq; seqs: Seq[] }> {
     this.guard()
+    // Before the batch is prepared or queued: an allowed batch behind it takes the next seq. Only
+    // awaited while pending, so a verified log admits a batch in the same turn as before.
+    if (opts.beforeFullVerify !== 'allow' && this.fullVerifyState !== 'done') await this.awaitFullVerify()
     const events = prepareEvents(tx, {
       ids: this.o.ids,
       clock: this.o.clock,
@@ -490,6 +673,8 @@ export class SessionLogImpl {
         this.syncRenewal()
       }
       this.integrityState = nextIntegrity.state
+      if (stamped.some((e) => e.type === 'turn/end'))
+        queueMicrotask(() => void this.writeHead().catch(() => undefined))
       if (this.o.onAppended)
         this.o.onAppended(stamped, { integrity: nextIntegrity.entries, ...(op ? { op } : {}) })
       else seededLogs.get(this)?.tail.push(...stamped)
@@ -601,6 +786,9 @@ export class SessionLogImpl {
     },
   ): Promise<SessionLogImpl> {
     this.guard()
+    // A child starts from this log's chain state, so it may only start from a verified one. Only
+    // awaited while pending: the fork point below is otherwise still taken in the caller's turn.
+    if (this.fullVerifyState !== 'done') await this.awaitFullVerify()
     if (!Number.isSafeInteger(boundarySeq) || boundarySeq < 1 || boundarySeq > this.lastSeqValue)
       throw new CoreError('E_SURFACE_RANGE', 'fork boundary out of range', {
         boundarySeq,
@@ -769,6 +957,8 @@ export class SessionLogImpl {
     this.faultListeners.clear()
     this.timers().clearTimeout(this.timer)
     await this.drain.catch(() => undefined)
+    this.verifyAbort.abort()
+    await this.writeHead().catch(() => undefined)
     if (release) await this.o.storage.release(this.o.key, this.o.writerRunId)
   }
 }

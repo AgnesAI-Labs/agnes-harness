@@ -149,6 +149,7 @@ export class HostedSessions {
           ...(frame.params.preset ? { preset: frame.params.preset } : {}),
           ...(parent ? { parent } : {}),
           onOpenProgress: this.progressSender(frame.sessionKey),
+          onFullVerify: this.fullVerifyRecorder(frame.sessionKey),
         })
         .catch((error: unknown) => {
           this.recordOpenFailed(frame.sessionKey, error, openedAt)
@@ -378,6 +379,7 @@ export class HostedSessions {
           binding: stub.binding,
           preset: stub.preset,
           onOpenProgress: this.progressSender(key),
+          onFullVerify: this.fullVerifyRecorder(key),
         })
         .catch((error: unknown) => {
           this.recordOpenFailed(key, error, started)
@@ -430,12 +432,16 @@ export class HostedSessions {
     })
   }
 
-  private record(sessionKey: string, detail: Record<string, unknown>): void {
+  private record(
+    sessionKey: string,
+    detail: Record<string, unknown>,
+    kind: 'session.open' | 'session.verify_full' = 'session.open',
+  ): void {
     try {
       this.options.send({
         kind: 'record',
         sessionKey,
-        record: { kind: 'session.open', detail: { session: sessionHash(sessionKey), ...detail } },
+        record: { kind, detail: { session: sessionHash(sessionKey), ...detail } },
       })
     } catch {
       /* diagnostics must not change the outcome */
@@ -457,6 +463,15 @@ export class HostedSessions {
         /* progress must not change the open */
       }
     }
+  }
+
+  /**
+   * Records how the background verification of a session opened from a checkpoint ended. A failure
+   * also seals the session, which a tail following it reports to the client as `session.interrupted`.
+   */
+  private fullVerifyRecorder(sessionKey: string) {
+    return (r: { ms: number; rows: number; bytes: number; outcome: 'ok' | 'failed'; seq?: number }): void =>
+      this.record(sessionKey, { ...r }, 'session.verify_full')
   }
 
   private log(sessionKey: string, level: 'info' | 'warn', message: string): void {

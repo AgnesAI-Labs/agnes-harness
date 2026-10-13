@@ -989,17 +989,21 @@ export class SessionImpl {
           'E_ENVELOPE',
           'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
         )
-      const r = await this.d.log.append([
-        nextInbox,
-        ...(msg.budget !== undefined
-          ? [
-              budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                itemId: item.itemId,
-                creditsCap: msg.budget,
-              }),
-            ]
-          : []),
-      ])
+      // Queuing input is the one write let through while the history is still being verified.
+      const r = await this.d.log.append(
+        [
+          nextInbox,
+          ...(msg.budget !== undefined
+            ? [
+                budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
+                  itemId: item.itemId,
+                  creditsCap: msg.budget,
+                }),
+              ]
+            : []),
+        ],
+        { beforeFullVerify: 'allow' },
+      )
       return r.firstSeq
     })
   }
@@ -1010,12 +1014,15 @@ export class SessionImpl {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       if (!inbox.items.some((item) => item.itemId === itemId && item.target === 'next-turn'))
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
-      const written = await this.d.log.append([
-        inboxEvent(this.lane, this.d.actor, {
-          items: inbox.items.filter((item) => item.itemId !== itemId),
-        }),
-        this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
-      ])
+      const written = await this.d.log.append(
+        [
+          inboxEvent(this.lane, this.d.actor, {
+            items: inbox.items.filter((item) => item.itemId !== itemId),
+          }),
+          this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
+        ],
+        { beforeFullVerify: 'allow' },
+      )
       return written.firstSeq
     })
   }
@@ -1457,6 +1464,9 @@ export class SessionImpl {
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
   async step(): Promise<StepOutcome> {
+    // Every model request and tool run starts in a step, so none starts on history that an open
+    // folded from a checkpoint until the background verification has hashed all of it.
+    if (this.d.log.verifyingHistory) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())

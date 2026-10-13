@@ -318,6 +318,9 @@ describe('verification comes before folding', () => {
         ),
       )
     await writer.close()
+    // Without a verified-head checkpoint. One lets the open fold the rows it vouches for before they
+    // are hashed again; that path is covered in verified-head.test.ts.
+    await storage.deleteVerifiedHead('k')
     const tampered = new Proxy(storage, {
       get(target, property, receiver) {
         const value = Reflect.get(target, property, receiver) as unknown

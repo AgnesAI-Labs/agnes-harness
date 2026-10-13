@@ -41,6 +41,7 @@ import {
   type StorageAdapter,
   scanTruncated,
 } from './storage.js'
+import type { VerifiedHead } from './verified-head.js'
 
 type Book = {
   events: Event[]
@@ -77,6 +78,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   private readonly workspaces = new Map<string, PlannedWorkspace>()
   private readonly ordinals = new Map<string, number>()
   private readonly writerGens = new Map<SessionKey, number>()
+  private readonly verifiedHeads = new Map<SessionKey, VerifiedHead>()
   private permitSeq = 0
 
   constructor(opts: { clock?: Clock; childControlFormat?: number } = {}) {
@@ -348,6 +350,28 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return { storedBytes, maxRowBytes }
   }
 
+  async readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined> {
+    const head = this.verifiedHeads.get(key)
+    return head && { ...head }
+  }
+
+  async writeVerifiedHead(head: VerifiedHead, opts?: { force?: boolean }): Promise<void> {
+    const current = this.verifiedHeads.get(head.sessionKey)
+    if (current && current.throughSeq > head.throughSeq && !opts?.force) return
+    this.verifiedHeads.set(head.sessionKey, { ...head })
+  }
+
+  async deleteVerifiedHead(key: SessionKey): Promise<void> {
+    this.verifiedHeads.delete(key)
+  }
+
+  async integrityDigestAt(key: SessionKey, seq: Seq): Promise<string | null | undefined> {
+    const b = this.books.get(key)
+    if (!b) return undefined
+    const row = this.prefixedIntegrity(key, b).find((r) => r.event.seq === seq)
+    return row ? (row.integrity?.digest ?? null) : undefined
+  }
+
   async createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void> {
     const existing = this.books.get(childKey)
     if (existing) {
@@ -371,6 +395,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     const b = this.book(key)
     this.holdLease(b, runId, claim)
     this.books.delete(key)
+    this.verifiedHeads.delete(key)
   }
 
   async close(): Promise<void> {

@@ -73,6 +73,7 @@ export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
 export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
 export type { IntegrityState, LedgerTiming } from './log/integrity.js'
 export {
+  foldVerifiedPrefix,
   INTEGRITY_PAGE_SIZE,
   LEDGER_INTEGRITY_ALGORITHM,
   LedgerIntegrityFailure,
@@ -86,6 +87,7 @@ export { checkRelations, makeRelationCheck } from './log/relations.js'
 export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'
 export type {
   AppendOptions,
+  FullVerifyReport,
   OpenLogOptions,
   OpenProgress,
   SessionOpenStats,
@@ -110,6 +112,13 @@ export type {
   StorageAdapter,
 } from './log/storage.js'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
+export type { CheckpointDecision, VerifiedHead } from './log/verified-head.js'
+export {
+  decideCheckpoint,
+  makeVerifiedHead,
+  VERIFIED_HEAD_ALGORITHM,
+  verifiedHeadDigest,
+} from './log/verified-head.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
   AUXILIARY_VISION_PURPOSE,

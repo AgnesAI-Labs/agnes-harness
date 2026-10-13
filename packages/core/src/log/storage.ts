@@ -1,5 +1,6 @@
 import type { OpState } from '@agnes/protocol'
 import { CoreError, type Event, type Lane, type PreparedEvent, type Seq, type SessionKey } from '../types.js'
+import type { VerifiedHead } from './verified-head.js'
 
 /** The most rows one adapter scan call returns. */
 export const SCAN_PAGE_MAX = 500
@@ -116,6 +117,16 @@ export interface StorageAdapter {
   registers(key: SessionKey): Promise<RegisterRow[]>
   /** Stored size of a session's rows, for the open record; adapters that cannot say leave it out. */
   ledgerStats?(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }>
+  /** The verified-head checkpoint of this session, if the adapter keeps one. */
+  readVerifiedHead?(key: SessionKey): Promise<VerifiedHead | undefined>
+  /** Only moves forward; `force` exists for tests that plant a bad checkpoint. */
+  writeVerifiedHead?(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead?(key: SessionKey): Promise<void>
+  /**
+   * The stored integrity digest of one row (the parent's row for a child's prefix): undefined when
+   * the row is absent, null when it is a legacy row without one.
+   */
+  integrityDigestAt?(key: SessionKey, seq: Seq): Promise<string | null | undefined>
   /** Remove a session only after Core proves this open created it and storage verifies its writer lease. */
   discardNewSession?(key: SessionKey, expectedWriterRunId: string, claim?: LeaseClaim): Promise<void>
   createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void>

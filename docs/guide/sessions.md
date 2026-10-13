@@ -61,4 +61,10 @@ A session with years of history or large attachments can take a while to open, b
 
 The stored history is not verified: no integrity check ran on it, so treat it as a view for reading, not as proof of what the session contains. Large attachments appear in it as placeholders. Only a daemon that runs its sessions in workers reads it; an in-process daemon refuses the request (`stored-opening-unavailable`).
 
+<a id="历史完整性校验"></a>
+
+## History integrity
+
+Every session's history is a hash chain, and it is checked when the session opens. A session that was closed cleanly remembers how far its history was last checked, so reopening it can show the history first and check the full chain in the background. Until that check finishes, the session accepts new messages and queue changes but does not send anything to the model, run tools, or write anything else. If the check finds a changed or missing record, the session stops accepting new content, the client reports that it was interrupted, and later opens check the whole history again and refuse it. Do not edit `sessions.db` by hand; restore a backup taken while the instance was stopped instead.
+
 Implementation: [session SDK](../../packages/sdk/src/session.ts), [Core](../../packages/core/src), [import](../../packages/cli/src/commands/import.ts), [export](../../packages/cli/src/commands/export.ts).

@@ -18,6 +18,7 @@ import {
   type SessionKey,
   type StorageAdapter,
   scanTruncated,
+  type VerifiedHead,
 } from '@agnes/core'
 import { assertSessionTreeTableName } from '../session-tree-schema.js'
 import { sqliteChildControl } from './child-control-sqlite.js'
@@ -25,6 +26,7 @@ import { DDL } from './ddl.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 import { EVENT_COLUMNS_LEAN } from './storage-sqlite-lean.js'
+import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -72,6 +74,11 @@ export interface SqliteStorage extends StorageAdapter, ChildControlStore {
   readonly file: string
   /** Always served here: the lean rewrite runs in SQL, so large attachment bytes stay in storage. */
   scanLean(key: SessionKey, q: ScanQuery): Promise<Event[]>
+  /** Always kept here, in `ledger_verified_head_v1`. */
+  readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined>
+  writeVerifiedHead(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead(key: SessionKey): Promise<void>
+  integrityDigestAt(key: SessionKey, seq: number): Promise<string | null | undefined>
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
    * story: SQL reaching a handle could name a second file with ATTACH and read the ledger or
@@ -373,6 +380,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     deleteRegisters: db.prepare('DELETE FROM registers WHERE session_key = ?'),
     deleteLease: db.prepare('DELETE FROM writer_claims WHERE session_key = ? AND run_id = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE session_key = ?'),
+    deleteVerifiedHead: db.prepare('DELETE FROM ledger_verified_head_v1 WHERE session_key = ?'),
   }
   const tx = <T>(fn: () => T): T => {
     db.exec('BEGIN IMMEDIATE')
@@ -486,6 +494,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   return {
     file: opts.file,
     ...childControl,
+    ...verifiedHeadStore(db, parentOf),
     async clearWriterLease(key) {
       tx(() => {
         db.prepare('DELETE FROM writer_claims WHERE session_key = ?').run(key)
@@ -598,6 +607,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteRegisters.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
+        q.deleteVerifiedHead.run(key)
       })
     },
     async scan(key, qy) {
