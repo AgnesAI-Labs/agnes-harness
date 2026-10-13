@@ -42,6 +42,8 @@ Session and approval traffic uses the browser SDK's direct WebSocket connection 
 6. When approval is requested, check the current choices and scope. After submitting, wait for backend confirmation; a disappearing button alone does not prove execution.
 7. After clicking Stop, wait for the actual terminal state. A stop-request message only means cancellation has been requested.
 
+The sidebar lists sessions by the day they were created (Today, Yesterday, Earlier) and shows a dot beside a session whose turn is running; with several workspaces, each row also names its workspace. Press Shift+Cmd+O (Shift+Ctrl+O on Windows and Linux) to start a new session. The top bar shows the session title, its Agent and a runtime information button, followed by the Conversation/Trace switch and the workbench toggles.
+
 The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
 Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
 
