@@ -13,10 +13,11 @@ import {
   SettingsCheckbox,
   SettingsList,
   SettingsPage,
+  SettingsSection,
   SettingsState,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ComponentProps, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CredentialEditor } from './credential-editor.js'
 import {
   CREDENTIALS_CHANGED,
@@ -45,7 +46,14 @@ function References({ item }: { item: AdminCredentialMetadata }) {
   )
 }
 const defaultApi = new CredentialsApi()
-export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) {
+export function CredentialsPage({
+  api = defaultApi,
+  section = false,
+}: {
+  api?: CredentialsApi
+  /** Render as one titled part of another page instead of a page of its own. */
+  section?: boolean
+}) {
   const { t, locale } = useUiText('@agnes/credentials', credentialsCatalog)
   const [items, setItems] = useState<AdminCredentialMetadata[]>()
   const [context, setContext] = useState<PackageAdminContext>()
@@ -136,11 +144,12 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
     setError(undefined)
     setEditor({ mode, item })
   }
+  // As a page the list fills the pane; as a section it is one titled group on the host page.
+  const Frame = section ? SettingsSection : CredentialsFrame
   return (
-    <SettingsPage
+    <Frame
       title={t('title')}
       description={t('description')}
-      variant="list"
       data-testid="credentials-page"
       actions={
         <>
@@ -152,7 +161,7 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
             onClick={() => setRevision((value) => value + 1)}
           />
           <Button
-            appearance="primary"
+            appearance={section ? 'secondary' : 'primary'}
             data-testid="credential-create"
             disabled={busy || !!blocked}
             {...(blocked ? { disabledReason: t(`error.${blocked}`) } : {})}
@@ -279,6 +288,9 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
           )}
         </Dialog>
       )}
-    </SettingsPage>
+    </Frame>
   )
+}
+function CredentialsFrame(props: Omit<ComponentProps<typeof SettingsPage>, 'variant'>) {
+  return <SettingsPage {...props} variant="list" />
 }

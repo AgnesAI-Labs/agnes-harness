@@ -3,7 +3,7 @@ export const credentialsCatalog = {
   en: {
     'credentials.nav': 'Credentials',
     title: 'Credentials',
-    description: 'Save API keys for tools and connections. Saved values cannot be viewed.',
+    description: 'Keys used by tools and connections. A saved value cannot be viewed.',
     create: 'New credential',
     label: 'Name',
     value: 'Secret value',
@@ -50,7 +50,7 @@ export const credentialsCatalog = {
   'zh-CN': {
     'credentials.nav': '凭据',
     title: '凭据',
-    description: '保存工具与连接使用的 API 密钥。保存后无法查看密钥值。',
+    description: '工具和连接用到的密钥；保存后无法查看。',
     create: '新建凭据',
     label: '名称',
     value: '密钥值',
