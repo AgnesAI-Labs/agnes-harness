@@ -169,9 +169,11 @@ function UserMessageImage({
 }) {
   const [previewUrl, setPreviewUrl] = useState<string>()
   const [unavailable, setUnavailable] = useState(false)
-  const { data, mimeType } = image
+  const { mimeType } = image
+  // 精简块（字节留在存储里）没有可解码的数据，按不可用占位显示。
+  const data = 'data' in image ? image.data : undefined
   useEffect(() => {
-    if (!allowed) {
+    if (!allowed || data === undefined) {
       setUnavailable(true)
       return
     }
@@ -222,15 +224,18 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
     <Image.PreviewGroup>
       <div className="user-message-images">
         {images.map((block, index) => {
+          const data = 'data' in block ? block.data : ''
           const decodedLength =
-            Math.floor((block.data.length * 3) / 4) -
-            (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
+            Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0)
           const allowed =
             decodedLength > 0 &&
             decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage &&
             imageBytes + decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
           if (allowed) imageBytes += decodedLength
-          const imageKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
+          const imageKey =
+            'data' in block
+              ? `${block.mimeType}:${data.length}:${data.slice(0, 16)}:${data.slice(-16)}`
+              : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`
           const occurrence = imageKeys.get(imageKey) ?? 0
           imageKeys.set(imageKey, occurrence + 1)
           return (
@@ -270,7 +275,7 @@ function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> })
   return (
     <ul className="user-message-files">
       {files.map((file) => {
-        const key = `${file.name}:${file.mimeType}:${file.data.length}`
+        const key = `${file.name}:${file.mimeType}:${'data' in file ? file.data.length : file.dataOmitted.bytes}`
         const occurrence = occurrences.get(key) ?? 0
         occurrences.set(key, occurrence + 1)
         return (

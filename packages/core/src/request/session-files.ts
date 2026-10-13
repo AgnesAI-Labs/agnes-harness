@@ -80,7 +80,8 @@ export const readSessionAttachment = async (
   })
   checkAbort()
   const file = filesOf(rows[0]?.data)[index - 1]
-  if (!file) return undefined
+  // A lean block keeps its place in the numbering but has no bytes here to hand out.
+  if (!file || !('data' in file)) return undefined
   return {
     name: file.name,
     mimeType: file.mimeType,

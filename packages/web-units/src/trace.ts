@@ -1228,7 +1228,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           block.text,
         )
       if (block.type === 'image') {
-        const supported = /^image\/(png|jpeg|webp|gif)$/.test(block.mimeType)
+        // A lean image (bytes left in storage) shows as its type, like one the browser cannot draw.
+        const supported = /^image\/(png|jpeg|webp|gif)$/.test(block.mimeType) && 'data' in block
         const src = supported ? `data:${block.mimeType};base64,${block.data}` : undefined
         return createElement(
           'div',
@@ -1322,7 +1323,12 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             : []),
           ...(selectedUserNode?.kind === 'user'
             ? selectedUserNode.content.flatMap((block, index) => {
-                if (block.type !== 'image' || !/^image\/(png|jpeg|webp|gif)$/.test(block.mimeType)) return []
+                if (
+                  block.type !== 'image' ||
+                  !('data' in block) ||
+                  !/^image\/(png|jpeg|webp|gif)$/.test(block.mimeType)
+                )
+                  return []
                 const src = `data:${block.mimeType};base64,${block.data}`
                 return [
                   createElement(

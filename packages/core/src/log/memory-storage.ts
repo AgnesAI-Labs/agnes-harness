@@ -24,6 +24,7 @@ import {
   type TreeUsage,
 } from '../child/types.js'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '../types.js'
+import { leanEvents } from './lean.js'
 import {
   type CommitReceipt,
   type CommitTx,
@@ -314,6 +315,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     if (q.limit !== undefined && q.limit <= SCAN_PAGE_MAX) return rows.slice(0, q.limit)
     if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(q)
     return rows
+  }
+
+  async scanLean(key: SessionKey, q: ScanQuery): Promise<Event[]> {
+    return leanEvents(await this.scan(key, q))
   }
 
   async scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]> {

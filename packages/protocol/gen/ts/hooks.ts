@@ -6,7 +6,7 @@ export type JsonValue = Static<typeof JsonValue>
 
 export const HooksSchema = Type.Module({
   "Actor": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 256 }), "org": Type.String({ maxLength: 256 }), "role": Type.String({ maxLength: 64 }), "deptPath": Type.Array(Type.String({ maxLength: 256 })), "attrs": Type.Record(Type.String(), Type.String({ maxLength: 1024 })) }, { additionalProperties: false }),
-  "ContentBlock": Type.Union([Type.Object({ "type": Type.Literal('text'), "text": Type.String({ maxLength: 1048576 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "data": Type.String(), "mimeType": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('file'), "data": Type.String(), "mimeType": Type.String({ minLength: 1, maxLength: 128 }), "name": Type.String({ minLength: 1, maxLength: 256 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('resource_link'), "uri": Type.String({ maxLength: 4096 }), "name": Type.Optional(Type.String({ maxLength: 256 })), "mimeType": Type.Optional(Type.String({ maxLength: 128 })) }, { additionalProperties: false })]),
+  "ContentBlock": Type.Union([Type.Object({ "type": Type.Literal('text'), "text": Type.String({ maxLength: 1048576 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "data": Type.String(), "mimeType": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('file'), "data": Type.String(), "mimeType": Type.String({ minLength: 1, maxLength: 128 }), "name": Type.String({ minLength: 1, maxLength: 256 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "mimeType": Type.String({ maxLength: 128 }), "name": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), "dataOmitted": Type.Ref('OmittedData') }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('file'), "mimeType": Type.String({ minLength: 1, maxLength: 128 }), "name": Type.String({ minLength: 1, maxLength: 256 }), "dataOmitted": Type.Ref('OmittedData') }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('resource_link'), "uri": Type.String({ maxLength: 4096 }), "name": Type.Optional(Type.String({ maxLength: 256 })), "mimeType": Type.Optional(Type.String({ maxLength: 128 })) }, { additionalProperties: false })]),
   "ToolResult": Type.Object({ "toolUseId": Type.String({ maxLength: 128 }), "content": Type.Array(Type.Ref('ContentBlock')), "structured": Type.Optional(JsonValue), "isError": Type.Boolean(), "code": Type.Optional(Type.String({ maxLength: 64 })), "enforcement": Type.Object({ "level": Type.Union([Type.Literal('full'), Type.Literal('partial'), Type.Literal('none')]), "scope": Type.Array(Type.Union([Type.Literal('file'), Type.Literal('network'), Type.Literal('process')])) }, { additionalProperties: false }), "authz": Type.Object({ "decisionId": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), "partial": Type.Optional(Type.Boolean()), "cancelledBy": Type.Optional(Type.Ref('Actor')), "interrupted": Type.Optional(Type.Boolean()), "transformedBy": Type.Optional(Type.String({ maxLength: 128 })) }, { additionalProperties: false }),
   "PlanItems": Type.Union([Type.Null(), Type.Object({ "items": Type.Array(Type.Object({ "id": Type.String({ maxLength: 64 }), "text": Type.String({ maxLength: 2048 }), "status": Type.Union([Type.Literal('todo'), Type.Literal('doing'), Type.Literal('done'), Type.Literal('blocked')]), "check": Type.Optional(Type.String({ maxLength: 2048 })) }, { additionalProperties: false })), "customInstructions": Type.Optional(Type.String({ maxLength: 8192 })) }, { additionalProperties: false })]),
   "Verdict": Type.Object({ "outcome": Type.Union([Type.Literal('pass'), Type.Literal('fail'), Type.Literal('needs_revision'), Type.Literal('unavailable')]), "reasons": Type.Array(Type.String({ maxLength: 1024 })) }, { additionalProperties: false }),
@@ -51,6 +51,7 @@ export const HooksSchema = Type.Module({
   "FormatDeviationReturn": Type.Null(),
   "ShutdownPayload": Type.Object({ "reason": Type.Union([Type.Literal('close'), Type.Literal('revoke'), Type.Literal('reload')]) }, { additionalProperties: false }),
   "ShutdownReturn": Type.Null(),
+  "OmittedData": Type.Object({ "bytes": Type.Integer({ minimum: 0, maximum: 9007199254740991 }) }, { additionalProperties: false }),
 })
 
 export const Actor = HooksSchema.Import('Actor')
@@ -145,6 +146,8 @@ export const ShutdownPayload = HooksSchema.Import('ShutdownPayload')
 export type ShutdownPayload = Static<typeof ShutdownPayload>
 export const ShutdownReturn = HooksSchema.Import('ShutdownReturn')
 export type ShutdownReturn = Static<typeof ShutdownReturn>
+export const OmittedData = HooksSchema.Import('OmittedData')
+export type OmittedData = Static<typeof OmittedData>
 export const X_AGNES_HOOK_TABLE = {
   "session_start": {
     "mode": "parallel",

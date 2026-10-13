@@ -1942,6 +1942,9 @@ export class SessionImpl {
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)
   }
+  scanLean(q: ScanQuery): Promise<Event[]> {
+    return this.d.log.scanLean(q)
+  }
   latest(register: string, key?: string): unknown {
     return this.d.log.latest(
       register,
@@ -2213,8 +2216,9 @@ export class SessionImpl {
   ): Promise<CoreUITimeline> {
     const events: Event[] = []
     let fromSeq = 1
+    // Lean rows, as the live UI cell folds them: nothing below reads attachment bytes.
     while (fromSeq <= cut) {
-      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
+      const page = await this.d.log.scanLean({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
       if (page.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'UI projection scan ended before its captured cut', {
           fromSeq,

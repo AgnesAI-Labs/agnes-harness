@@ -7,6 +7,7 @@ import {
   type SeededLog,
   seededLogs,
 } from '../log/fork-seed.js'
+import { leanEvents } from '../log/lean.js'
 import { makeRelationCheck } from '../log/relations.js'
 import { scanPages } from '../log/scan-pages.js'
 import { type AppendedExtra, type OpenLogOptions, SessionLogImpl } from '../log/session-log.js'
@@ -166,7 +167,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     tracker.apply(upto)
     const stateAtTrigger = tracker.state
     tracker.apply(after)
-    ui.apply(events)
+    ui.apply(leanEvents(events))
     ui.setOp(currentOp(log, lane))
     // Every registered cache is fed, not just the opened lane's: each one filters the batch down
     // to its own lane, so feeding them all is how a later-registered lane stays live.
@@ -186,7 +187,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
   const foldPage = (events: Event[]): void => {
     tracker.apply(events)
     surface.push(events)
-    ui.apply(events)
+    ui.apply(leanEvents(events))
   }
   let log: SessionLogImpl
   let seed: SeededLog | undefined
@@ -222,7 +223,7 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
       tracker.apply(own)
       surface.push(seed.inherited)
       surface.push(own)
-      ui.apply(own)
+      ui.apply(leanEvents(own))
     } else if (o.existing) await replay()
     ui.sealReplay()
     return await finishOpen()

@@ -19,6 +19,7 @@ import {
   verifyIntegrityRows,
   verifyLedger,
 } from './integrity.js'
+import { leanEvents } from './lean.js'
 import {
   type CommitReceipt,
   type IntegrityCommit,
@@ -520,6 +521,14 @@ export class SessionLogImpl {
   async scan(q: ScanQuery): Promise<Event[]> {
     this.guard()
     return this.o.storage.scan(this.o.key, q)
+  }
+
+  async scanLean(q: ScanQuery): Promise<Event[]> {
+    this.guard()
+    const lean = this.o.storage.scanLean
+    return lean
+      ? lean.call(this.o.storage, this.o.key, q)
+      : leanEvents(await this.o.storage.scan(this.o.key, q))
   }
 
   latest(register: string, key = 'main'): unknown {

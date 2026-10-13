@@ -9,6 +9,7 @@ import {
   type IntegrityRow,
   type IntegrityScanQuery,
   type LeaseClaim,
+  leanEvents,
   type OpenResult,
   type RegisterRow,
   registerKey,
@@ -23,6 +24,7 @@ import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
+import { EVENT_COLUMNS_LEAN } from './storage-sqlite-lean.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -68,6 +70,8 @@ export type CrashReclaimStore = {
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
   readonly file: string
+  /** Always served here: the lean rewrite runs in SQL, so large attachment bytes stay in storage. */
+  scanLean(key: SessionKey, q: ScanQuery): Promise<Event[]>
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
    * story: SQL reaching a handle could name a second file with ATTACH and read the ledger or
@@ -402,7 +406,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     return parentOf(key)?.boundarySeq ?? 0
   }
   /** Up to `take` matching rows, the parent prefix included; the caller decides what `take` means. */
-  function scanRows(key: SessionKey, qy: ScanQuery, take: number): Event[] {
+  function scanRows(key: SessionKey, qy: ScanQuery, take: number, lean = false): Event[] {
     const parent = parentOf(key)
     const where: string[] = ['session_key = ?']
     const params: SqlParam[] = [key]
@@ -425,15 +429,30 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     }
     const order = qy.order === 'desc' ? 'DESC' : 'ASC'
     const own = db
-      .prepare(`SELECT * FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`)
+      .prepare(
+        `SELECT ${lean ? EVENT_COLUMNS_LEAN : '*'} FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`,
+      )
       .all(...params, take) as unknown as Row[]
     let rows = own.map(rowToEvent)
     if (parent) {
       const upper = qy.toSeq === undefined ? parent.boundarySeq : Math.min(qy.toSeq, parent.boundarySeq)
-      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take)
+      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take, lean)
       rows = order === 'ASC' ? [...prefix, ...rows] : [...rows, ...prefix]
       rows = rows.slice(0, take)
     }
+    return rows
+  }
+
+  function scanPage(key: SessionKey, qy: ScanQuery, lean: boolean): Event[] {
+    if (qy.toSeq === undefined && qy.limit === undefined)
+      throw new CoreError('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit', {})
+    if (qy.limit !== undefined && (!Number.isSafeInteger(qy.limit) || qy.limit <= 0))
+      throw new CoreError('E_SCAN_UNBOUNDED', 'scan limit must be a positive integer', {})
+    // A page is read as asked. A request for everything reads one row past the page, and that
+    // row's presence is the whole test for "there was more than fits".
+    if (qy.limit !== undefined && qy.limit <= SCAN_PAGE_MAX) return scanRows(key, qy, qy.limit, lean)
+    const rows = scanRows(key, qy, SCAN_PAGE_MAX + 1, lean)
+    if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(qy)
     return rows
   }
 
@@ -571,16 +590,11 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       })
     },
     async scan(key, qy) {
-      if (qy.toSeq === undefined && qy.limit === undefined)
-        throw new CoreError('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit', {})
-      if (qy.limit !== undefined && (!Number.isSafeInteger(qy.limit) || qy.limit <= 0))
-        throw new CoreError('E_SCAN_UNBOUNDED', 'scan limit must be a positive integer', {})
-      // A page is read as asked. A request for everything reads one row past the page, and that
-      // row's presence is the whole test for "there was more than fits".
-      if (qy.limit !== undefined && qy.limit <= SCAN_PAGE_MAX) return scanRows(key, qy, qy.limit)
-      const rows = scanRows(key, qy, SCAN_PAGE_MAX + 1)
-      if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(qy)
-      return rows
+      return scanPage(key, qy, false)
+    },
+    // The SQL leaves whole only a block it cannot measure as JS would; the JS rule finishes those.
+    async scanLean(key, qy) {
+      return leanEvents(scanPage(key, qy, true))
     },
     async scanIntegrity(key, qy) {
       if (!Number.isSafeInteger(qy.limit) || qy.limit <= 0)

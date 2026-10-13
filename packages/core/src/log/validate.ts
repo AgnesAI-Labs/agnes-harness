@@ -1,5 +1,6 @@
 import { describeValidationErrors, isEventType, validateEvent } from '@agnes/protocol'
 import { type Clock, CoreError, type EventInput, type IdMinter, type PreparedEvent } from '../types.js'
+import { containsOmittedData } from './lean.js'
 
 /** The only three event types the model ever sees, and therefore the only ones a surfaceOp may edit. */
 export const MODEL_VISIBLE = ['user/message', 'assistant/message', 'tool/result'] as const
@@ -29,6 +30,10 @@ export function prepareEvents(
     // The program counter is a register cell committed beside the rows; no row may write it.
     if (e.register === 'op.state')
       throw new CoreError('E_ENVELOPE', 'the op.state register is not written by rows')
+    if (containsOmittedData(input.data))
+      throw new CoreError('E_ENVELOPE', 'omitted attachment data is a read view and cannot be appended', {
+        type: input.type,
+      })
     // The envelope schema requires seq >= 1, but storage does not assign one until the commit
     // transaction. Validate a probe carrying the smallest legal seq; the row handed back has no
     // seq at all, so the probe value cannot be mistaken for the sequence it is written at.

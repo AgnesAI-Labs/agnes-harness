@@ -7,7 +7,7 @@ import {
 } from '@agnes/protocol-validation'
 import { CoreError } from '../types.js'
 
-type UserImage = Extract<ContentBlock, { type: 'image' }>
+type UserImage = Extract<ContentBlock, { type: 'image'; data: string }>
 
 /** Validate untrusted image blocks before an inbox event can persist them. */
 export function validateUserMessageImages(content: readonly ContentBlock[]): void {
@@ -16,7 +16,8 @@ export function validateUserMessageImages(content: readonly ContentBlock[]): voi
   } catch (error) {
     throw new CoreError('E_ENVELOPE', error instanceof Error ? error.message : 'Invalid attachment.')
   }
-  const images = content.filter((block): block is UserImage => block.type === 'image')
+  // A lean image carries no bytes to decode; append refuses it on its own.
+  const images = content.filter((block): block is UserImage => block.type === 'image' && 'data' in block)
   if (images.length === 0) return
 
   try {

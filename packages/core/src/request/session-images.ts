@@ -63,7 +63,7 @@ export async function readSessionImages(
     new Set(references).size !== references.length
   )
     return result('Invalid session image reference.', true)
-  const images: Extract<ContentBlock, { type: 'image' }>[] = []
+  const images: Extract<ContentBlock, { type: 'image'; data: string }>[] = []
   for (const reference of references) {
     const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(reference)
     const seq = Number(match?.[1])
@@ -82,7 +82,7 @@ export async function readSessionImages(
     const image = content.filter(
       (block): block is Extract<ContentBlock, { type: 'image' }> => block.type === 'image',
     )[index - 1]
-    if (!image) return result('The image is not available in this session.', true)
+    if (!image || !('data' in image)) return result('The image is not available in this session.', true)
     images.push(image)
   }
   const target = resolveModel(session, 'primary')

@@ -91,6 +91,28 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["type", "mimeType", "dataOmitted"],
+          "properties": {
+            "type": { "const": "image" },
+            "mimeType": { "type": "string", "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "dataOmitted": { "$ref": "#/$defs/OmittedData" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "mimeType", "name", "dataOmitted"],
+          "properties": {
+            "type": { "const": "file" },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "dataOmitted": { "$ref": "#/$defs/OmittedData" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "uri"],
           "properties": {
             "type": { "const": "resource_link" },
@@ -100,6 +122,12 @@
           }
         }
       ]
+    },
+    "OmittedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes"],
+      "properties": { "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } }
     },
     "SurfaceOp": {
       "oneOf": [

@@ -21,7 +21,11 @@ type Blocks = Array<TextContent | ImageContent>
  */
 function contentOf(blocks: RequestMessage extends { content: infer C } ? C : never): Blocks {
   return blocks.map((b) => {
-    if (b.type === 'image') return { type: 'image', data: b.data, mimeType: b.mimeType }
+    if (b.type === 'image') {
+      if (!('data' in b))
+        throw new Error('image bytes were omitted from this request; resolve them before inference')
+      return { type: 'image', data: b.data, mimeType: b.mimeType }
+    }
     if (b.type === 'resource_link') return { type: 'text', text: `${b.name ?? ''} ${b.uri}`.trim() }
     if (b.type === 'file')
       throw new Error('pi-ai has no native file input; resolve session attachments before inference')

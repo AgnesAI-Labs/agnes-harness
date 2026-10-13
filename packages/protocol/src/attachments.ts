@@ -13,7 +13,8 @@ function textData(text: string): string {
 /** File originals use ACP's existing embedded blob resource, never a private ACP schema fork. */
 export function toAcpPrompt(content: readonly ContentBlock[]): unknown[] {
   return content.map((block) =>
-    block.type === 'file'
+    // A lean file (bytes left in storage) has nothing to embed and passes through as metadata.
+    block.type === 'file' && 'data' in block
       ? {
           type: 'resource',
           resource: {

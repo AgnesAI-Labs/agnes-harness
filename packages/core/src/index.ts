@@ -80,6 +80,7 @@ export {
   verifyIntegrityRows,
   verifyLedger,
 } from './log/integrity.js'
+export { base64DecodedBytes, isLeanEvent, LEAN_DATA_MIN_CHARS, leanEvent, leanEvents } from './log/lean.js'
 export { MemoryStorage } from './log/memory-storage.js'
 export { checkRelations, makeRelationCheck } from './log/relations.js'
 export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'

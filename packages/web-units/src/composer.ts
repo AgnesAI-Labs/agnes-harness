@@ -78,8 +78,9 @@ export type ModelPicker = {
   render(state: ModelPickerState): void
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
-export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
-export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file' }>
+// A draft holds its own bytes; the lean form (bytes left in storage) is never a composer block.
+export type ComposerImageBlock = Extract<ContentBlock, { type: 'image'; data: string }>
+export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file'; data: string }>
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void

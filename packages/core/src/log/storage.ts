@@ -102,6 +102,11 @@ export interface StorageAdapter {
   renew(key: SessionKey, writerRunId: string, claim?: LeaseClaim): Promise<void>
   release(key: SessionKey, writerRunId: string): Promise<void>
   scan(key: SessionKey, q: ScanQuery): Promise<Event[]>
+  /**
+   * `scan` with every large inline attachment replaced by its lean form (see log/lean.ts). Optional:
+   * a caller without it applies `leanEvents` to `scan`, which reads the full rows first.
+   */
+  scanLean?(key: SessionKey, q: ScanQuery): Promise<Event[]>
   scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]>
   registers(key: SessionKey): Promise<RegisterRow[]>
   /** Stored size of a session's rows, for the open record; adapters that cannot say leave it out. */

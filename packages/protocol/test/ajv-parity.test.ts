@@ -226,6 +226,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
+  OmittedData: SessionGen.OmittedData,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
   SessionStart: SessionGen.SessionStart,
@@ -1191,8 +1192,25 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { type: 'image', data: 'x', mimeType: rep(129) }, // boundary: maxLength:128
       { type: 'resource_link', uri: rep(4097) }, // boundary: maxLength:4096
       { type: 'resource_link', uri: 'u', name: rep(257) }, // boundary: maxLength:256
+      { type: 'image', mimeType: 'image/png', dataOmitted: { bytes: -1 } }, // boundary: OmittedData.bytes minimum:0
+      { type: 'image', mimeType: 'image/png', name: '', dataOmitted: { bytes: 1 } }, // boundary: lean image name minLength:1
+      { type: 'image', mimeType: 'image/png', data: 'x', dataOmitted: { bytes: 1 } }, // inline and lean at once
+      { type: 'file', mimeType: 'application/zip', dataOmitted: { bytes: 1 } }, // a lean file keeps its name
+      { type: 'file', mimeType: '', name: 'a.zip', dataOmitted: { bytes: 1 } }, // boundary: lean file mimeType minLength:1
+      { type: 'text', text: 't', dataOmitted: { bytes: 1 } }, // only image and file have a lean form
     ],
     note: 'valid reuses .data.content[0] from the user/message fixture; invalid are hand-written (no separate illegal-ContentBlock fixture)',
+  },
+  OmittedData: {
+    valid: { bytes: 9007199254740991 },
+    invalid: [
+      { bytes: -1 }, // boundary: minimum:0
+      { bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
+      { bytes: 1.5 }, // integer
+      {}, // required
+      { bytes: 1, extra: true }, // additionalProperties:false
+    ],
+    note: 'the lean read view of an inline attachment; no fixture writes it (append refuses it), so every sample is hand-written',
   },
   ToolCallState: {
     valid: toolCallStateOk,
@@ -4109,6 +4127,23 @@ function assertParity(target: ParityTarget, scope: string, name: string, x: unkn
   }
   expect(actual).toEqual({ ajv: expected, typebox: expected })
 }
+
+describe('lean attachment blocks ajv ↔ TypeBox parity', () => {
+  // ContentBlock registers one valid sample, so the two lean forms are pinned here as accepted.
+  it.each([
+    { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 0 } },
+    { type: 'image', mimeType: 'image/jpeg', name: 'shot.jpg', dataOmitted: { bytes: 196611 } },
+    { type: 'file', mimeType: 'application/zip', name: 'a.zip', dataOmitted: { bytes: 9007199254740991 } },
+  ])('ContentBlock accepts the lean form %j', (block) => {
+    assertParity(
+      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
+      SESSION_ID,
+      'ContentBlock',
+      block,
+      true,
+    )
+  })
+})
 
 describe('persisted tool policy envelope ajv ↔ TypeBox parity', () => {
   const keys = ['resolvedPolicy', 'executionDomain', 'definitionFingerprint', 'policyHash'] as const
