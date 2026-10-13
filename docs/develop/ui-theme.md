@@ -45,19 +45,37 @@ Rules that keep the theme coherent:
 | Scale | Tokens | Values |
 | --- | --- | --- |
 | Family | `--font-sans`, `--font-mono` | System stack: SF, Segoe UI, Inter where installed, PingFang SC and its platform peers for CJK. No web font. |
-| Size | `--font-size-xs` … `--font-size-2xl` | 12, 13, 14 (base), 16, 18, 20, 24 px |
+| Size | `--font-size-xs` … `--font-size-2xl`, `--font-size-caption`, `--font-size-title` | 12, 13, 14 (base), 16, 18, 20, 24 px; 12.5px group labels and row descriptions; the 26px bold page title (`--font-weight-bold`, `--tracking-title`, never tightened for CJK). |
 | Reading | `--font-size-prose`, `--line-height-prose`, `--measure-prose` | 14px, 1.7, 72ch for conversation prose; code and tables use the full width. |
 | Body line height | `--line-height-body` | 1.6, the floor for CJK body text. |
-| Radius | `--radius-chip`, `--radius-control`, `--radius-card`, `--radius-surface`, `--radius-modal`, `--radius-popover`, `--radius-menu-item`, `--radius-composer`, `--radius-pill` | 8px chips inside rows; 10px buttons, inputs, navigation items and hovered rows; 14px grouped cards, panels, menus and popovers (10px rows inside); 20px dialogs; the 24px composer card; pills for small badges and segmented controls only. |
-| Control height | `--control-height`, `--control-height-sm`, `--control-height-form`, `--control-height-touch` | 36px buttons; 28px compact and icon buttons; text fields match the buttons at 36px and rise to the 44px touch target at phone widths. |
-| Elevation | `--elevation-0`, `--elevation-1`, `--elevation-2`, `--shadow-hairline` | Flat; menus and popovers; dialogs and drawers; a 1px lift for quiet raised controls such as the new-session button. |
-| Motion | `--motion-fast`, `--motion-base`, `--motion-ease`, `--motion-breathe` | 120ms, 200ms, ease-out, and the 2.4s cycle of a running dot. |
+| Radius | `--radius-chip`, `--radius-control`, `--radius-segmented`, `--radius-tile`, `--radius-card`, `--radius-surface`, `--radius-modal`, `--radius-popover`, `--radius-menu-item`, `--radius-composer`, `--radius-pill` | The scale is 8 / 10 / 14 / 20. 8px chips, buttons, inputs, popup buttons, menu rows and navigation items; 10px segmented tracks and icon tiles; 14px grouped cards, panels, menus and popovers; 20px dialogs; the 24px composer card; pills for badges and switches only. Where the engine supports `corner-shape: squircle`, the shared surfaces draw continuous corners and widen their radius by `--corner-scale` (1.3); elsewhere they keep the plain radius. |
+| Control size | `--control-height`, `--control-height-sm`, `--control-height-xs`, `--control-height-form`, `--control-height-touch`, `--menu-item-height`, `--row-min-height`, `--switch-width`, `--switch-height`, `--switch-knob` | 28px buttons, popup buttons and icon buttons; 24px compact buttons and segments; 32px text fields, rising to the 44px touch target at phone widths; 26px menu rows; 46px minimum setting rows; a 38×22 switch with an 18px knob. |
+| Rhythm | `--space-section`, `--space-page-top`, `--hairline` | 28px between sections, 36px above a page title; dividers and control outlines are one device pixel on dense screens (0.5px at 2x), 1px elsewhere. |
+| Icons | `--icon-stroke`, `--icon-stroke-strong` | 1.5 for every 16px line icon; 1.75 inside a primary button and on the selected navigation item or tab. |
+| Elevation | `--elevation-0`, `--elevation-1`, `--elevation-2`, `--shadow-hairline`, `--shadow-control`, `--shadow-control-primary`, `--shadow-knob`, `--shadow-popover` | Flat; popovers; dialogs and drawers; a 1px lift for quiet raised controls; the hairline ring of a raised control and the lit top edge of a primary button; the switch knob; menus and option lists. |
+| Motion | `--motion-short`, `--motion-medium`, `--motion-long`, `--motion-exit`, `--motion-ease-out`, `--motion-spring`, `--press-scale`, `--press-dim`, `--motion-breathe` | 160ms presses; 260ms disclosures, tab changes and the switch knob; 320ms menus, dialogs and side panels; exits take 60% of the entrance; an ease-out curve and a spring with about 8% overshoot; a press shrinks to 0.97 and darkens slightly; the 2.4s cycle of a running dot. `--motion-fast`, `--motion-base` and `--motion-ease` remain for colour changes. |
 
 Settings and admin pages share one template and one heading scale, whichever heading element a page uses: page title 18px, section 14px, row 13px, all semibold, with 13px body text. A page is a header (title, one line of description, page actions), optional tabs and a body that scrolls inside the dialog; header and body keep to one column (`--settings-column`, 760px) behind one gutter (`--settings-gutter`), so nothing reaches the dialog edge or its close button. A group of pages is named once above its tabs, and the pages under it show only their description and actions. Simple settings are divided rows inside one outlined group; an outlined card is for an object such as an account or a plugin. Dialog titles are 16px semibold. An empty state is a 24px mark, a 14px line that names the state and a 13px line that says what to do next.
 
-Borders carry structure. A bordered card has no shadow; elevation belongs to layers that float above the page. Numbers that are compared (times, counts, costs, usage) use `font-variant-numeric: tabular-nums`. Motion is for occasional surfaces such as dialogs and drawers; menus, tabs and keyboard-triggered actions do not animate, and every animation stops under `prefers-reduced-motion`.
+Borders carry structure. A bordered card has no shadow; elevation belongs to layers that float above the page. Numbers that are compared (times, counts, costs, usage) use `font-variant-numeric: tabular-nums`. Motion is short and moves only `transform` and `opacity`: disclosures, tab changes, menus, dialogs and side panels settle on a slight spring, and exits are shorter and never bounce. A surface opened from the keyboard appears at once (motion is gated on the pointer input modality), a button press is a slight shrink and darken with no ripple or glow, and every animation stops under `prefers-reduced-motion`.
 
 The browser's own surfaces follow the theme: `color-scheme` is set with the mode, the `theme-color` meta tag is written from the resolved ground colour, text selection uses a tint of the accent, the caret uses the accent, and long scroll regions show a thin thumb (`--agnes-scrollbar-thumb`).
+
+## Refinement layer
+
+[`packages/web-ui/src/refinement.css`](../../packages/web-ui/src/refinement.css) is one stylesheet that gives the shared controls native proportions on top of the theme. It changes no colour role: every declaration reads a token above, and the interface stays complete without it.
+
+| Control | Shape |
+| --- | --- |
+| Page header (`PageHeader`, `.agh-page-title`, `.agh-page-description`) | 26px bold title, one 13px line of description, page actions on the right. |
+| Group label (`SettingsSection` heading, `.agh-group-label`) | 12.5px semibold, secondary grey, above the upper left of its group. |
+| Button | 28px high, 8px radius. Secondary is a raised neutral surface with a hairline ring; primary has a lit top edge; icon buttons are rounded squares. |
+| Switch (`StateSwitch`, `LabeledSwitch`, `Switch`) | 38×22 track, 18px knob that settles on the spring. |
+| Segmented control (`Segmented`) | A rounded-rectangle track with a raised block on the picked option; native radios, so arrow keys and form semantics hold. Use it for two to six short choices. |
+| Popup button (`Select`, `SettingsSelect`, the settings picker) | A raised surface that ends in an accent block with up/down chevrons: it picks one of a set. A searchable or multiple `Select` stays a field. |
+| Menu and option list | The only translucent surface: 94% opaque over a backdrop blur. The pointed or keyboard-current row takes the accent fill with its own content colour (light: 5.54:1, dark: 6.58:1). |
+
+Mark the current item of your own navigation with `aria-current`, `role="tab"` plus `aria-selected="true"`, or `data-selected="true"`; its icon then takes the heavier line weight.
 
 ## How Ant Design is themed
 
@@ -72,7 +90,7 @@ Ant Design runs in `zeroRuntime` mode: its prebuilt stylesheet is loaded in the 
 }
 ```
 
-There is no second colour source. `ConfigProvider` only supplies what CSS cannot: the CSP nonce, the locale, the popup container and the overlay z-index layers. Do not pass colours through `ConfigProvider`'s `theme.token`; a skin or a mode switch would not reach them. A test checks that every global colour variable the Ant Design stylesheet reads is bridged.
+There is no second colour source. `ConfigProvider` only supplies what CSS cannot: the CSP nonce, the locale, the popup container, the overlay z-index layers, and it turns the click ripple off. Do not pass colours through `ConfigProvider`'s `theme.token`; a skin or a mode switch would not reach them. A test checks that every global colour variable the Ant Design stylesheet reads is bridged.
 
 ## How Ant Design X is themed
 

@@ -54,7 +54,7 @@ SettingsPage accepts `headingId` and `bodyClassName` for existing native pane ID
 | `Tag` / `MetaText` / `Count` | Shared | Contract CSS | Actionable warn/bad/info tags; descriptive metadata stays text; zero counts are omitted. |
 | `Menu` | Shared | antd Dropdown / Menu | Action menu with arrows, Home/End, typeahead, Enter/Space, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
 | `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
-| `Icon` / `SettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
+| `Icon` / `SettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.5 stroke (`--icon-stroke`; 1.75 in a primary button and on the selected navigation item), currentColor; sizes 16/18/20/48. |
 | `Toast` | Shared | antd message hook | Three-second nonmodal status, Escape dismissal and lifecycle cleanup; `tone="success|info|error"` selects outcome colours; existing outcome class names remain supported. Duration remains milliseconds. |
 | `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
 | `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
@@ -107,3 +107,8 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 | `SettingsDetails` / `SettingsTechnicalDetails` | Shared | `Disclosure` | Settings disclosures on the shared chevron: on the page a grouped card of its own (optional `icon`, `description`, `summary` of the current value); inside a group, a list row or another disclosure a divided row; a quiet text toggle when `compact`. Technical details hold diagnostics a user rarely needs, collapsed under one fixed name. |
 | `SearchBar` | Shared | Native search input | One labelled search field with optional `filters` and `actions`; a search landmark, not a form, so Enter calls `onSubmit` without submitting a host form. |
 | `LabeledSwitch` | Shared | StateSwitch | A switch with its state in words beside the knob (`onLabel` / `offLabel`, default On / Off). |
+
+| `Segmented` | Shared | Native radios | Two to six short exclusive choices; rounded-rectangle track with a raised block on the picked one; one radio group with arrow keys and form semantics; caller-owned value; `block` stretches it. / 2–6 个互斥短选项；圆角矩形轨道 + 浮起选中块；原生单选组，值由调用方持有。 |
+| `PageHeader` | Shared | Contract CSS | Full-page head: 26px bold title (`h1`, `headingId`), one line of description, page actions. / 整页页头：26px 粗体标题、一句说明、页面操作。 |
+
+`Select` without `showSearch` or `mode` is a popup button: a raised surface ending in the accent block with up/down chevrons (`.agh-popup-chevrons`); pass `suffixIcon` to replace it. Control proportions, hairlines, continuous corners and motion live in `refinement.css` and read scale tokens only. / 不带搜索与多选的 `Select` 是弹出按钮；控件比例、发丝线、连续圆角与动效集中在 `refinement.css`，只读取尺度 token。

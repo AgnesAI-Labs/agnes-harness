@@ -280,6 +280,17 @@ textarea {
 | `--agnes-status-warning-solid` | 警告状态的非文字标记。 |
 | `--agnes-status-danger-solid` | 错误或危险状态的非文字标记。 |
 | `--agnes-status-info-solid` | 信息状态的非文字标记。 |
+| `--agnes-line-hairline` | 分隔线与控件描边；取文字色的浅色调，高分屏上为一个物理像素宽。 |
+| `--agnes-bg-popover-material` | 菜单与选项列表的表面：浮层色 94% 不透明，叠在背景模糊之上。不透明度不要低于 94%，否则文字对比度无法保证。 |
+| `--agnes-menu-active-bg`、`--agnes-menu-active-text` | 菜单或选择器中指针所在行、键盘当前行的底色与内容色；这一对必须保持 4.5:1。 |
+| `--agnes-switch-track`、`--agnes-switch-knob` | 关闭状态开关的轨道与旋钮；开启状态使用 `--agnes-brand-primary` 与 `--agnes-button-primary-content`。 |
+| `--agnes-segment-track` | 分段控件的轨道。 |
+| `--agnes-bg-control` | 凸起控件的表面：次按钮、弹出按钮和分段控件的选中块。 |
+| `--shadow-control`、`--shadow-control-primary` | 凸起控件的发丝描边与 1px 抬升；主按钮顶部的高光。 |
+| `--shadow-knob` | 开关旋钮的阴影。 |
+| `--shadow-popover` | 菜单与选项列表的阴影。 |
+
+尺度不在 `tokens` 白名单里，但皮肤样式表可以像写普通 CSS 一样在 `:root` 上设置它们：字阶（`--font-size-title`、`--font-size-caption`）、圆角（`--radius-sm` … `--radius-xl`）、控件尺寸（`--control-height`、`--switch-width`、`--switch-height`）、图标线宽（`--icon-stroke`、`--icon-stroke-strong`）、发丝线宽度（`--hairline`）、连续圆角（`--corner-shape`、`--corner-scale`）和动效（`--motion-short`、`--motion-medium`、`--motion-long`、`--motion-spring`）。共享控件读取这些值，一处声明即可作用到所有按钮、开关、菜单和弹窗。你自己加的动效必须写在 `@media (prefers-reduced-motion: no-preference)` 之内。
 
 内置主题的取值、字号与圆角尺度，以及这些 token 如何传给 Ant Design 与 Ant Design X，见[主题说明](ui-theme.zh-CN.md)。
 

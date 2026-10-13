@@ -194,6 +194,9 @@
     --ant-switch-track-padding: calc((var(--switch-height) - var(--switch-knob)) / 2);
     --ant-switch-handle-bg: var(--agnes-switch-knob);
     --ant-switch-handle-shadow: var(--shadow-knob);
+    height: var(--switch-height);
+    min-height: var(--switch-height);
+    padding: 0;
     background: var(--agnes-switch-track);
     box-shadow: inset 0 0 0 var(--hairline) var(--agnes-input-border);
   }

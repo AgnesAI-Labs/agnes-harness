@@ -45,19 +45,37 @@ Agnes Web 只有一套内置主题，工作台、设置和独立管理页共用�
 | 尺度 | Token | 取值 |
 | --- | --- | --- |
 | 字体族 | `--font-sans`、`--font-mono` | 系统字体栈：SF、Segoe UI、已安装时的 Inter，中文使用 PingFang SC 及各平台对应字体。不下载网络字体。 |
-| 字号 | `--font-size-xs` … `--font-size-2xl` | 12、13、14（基准）、16、18、20、24 px |
+| 字号 | `--font-size-xs` … `--font-size-2xl`、`--font-size-caption`、`--font-size-title` | 12、13、14（基准）、16、18、20、24 px；分组标签与行说明 12.5px；页面标题 26px 粗体（`--font-weight-bold`、`--tracking-title`，中日韩文字不收紧字距）。 |
 | 阅读 | `--font-size-prose`、`--line-height-prose`、`--measure-prose` | 对话正文 14px、行高 1.7、行宽 72ch；代码与表格使用整行宽度。 |
 | 正文行高 | `--line-height-body` | 1.6，中文正文的下限。 |
-| 圆角 | `--radius-chip`、`--radius-control`、`--radius-card`、`--radius-surface`、`--radius-modal`、`--radius-popover`、`--radius-menu-item`、`--radius-composer`、`--radius-pill` | 行内小标签 8px；按钮、输入框、导航项与悬停行 10px；分组卡片、面板、菜单与浮层 14px（其中的行 10px）；弹窗 20px；输入卡 24px；胶囊形只用于小徽标和分段控件。 |
-| 控件高度 | `--control-height`、`--control-height-sm`、`--control-height-form`、`--control-height-touch` | 按钮 36px；紧凑按钮与图标按钮 28px；文本输入框与按钮同为 36px，手机宽度下升到 44px 的触控目标。 |
-| 高程 | `--elevation-0`、`--elevation-1`、`--elevation-2`、`--shadow-hairline` | 平面；菜单与浮层；弹窗与抽屉；「新会话」按钮这类安静凸起控件的 1px 抬升。 |
-| 动效 | `--motion-fast`、`--motion-base`、`--motion-ease`、`--motion-breathe` | 120ms、200ms、ease-out，以及运行中圆点 2.4s 的呼吸周期。 |
+| 圆角 | `--radius-chip`、`--radius-control`、`--radius-segmented`、`--radius-tile`、`--radius-card`、`--radius-surface`、`--radius-modal`、`--radius-popover`、`--radius-menu-item`、`--radius-composer`、`--radius-pill` | 尺度为 8 / 10 / 14 / 20。小标签、按钮、输入框、弹出按钮、菜单行与导航项 8px；分段轨道与图标块 10px；分组卡片、面板、菜单与浮层 14px；弹窗 20px；输入卡 24px；胶囊形只用于徽标和开关。浏览器支持 `corner-shape: squircle` 时，共享表面使用连续圆角，并按 `--corner-scale`（1.3）放大半径；不支持时保持普通圆角。 |
+| 控件尺寸 | `--control-height`、`--control-height-sm`、`--control-height-xs`、`--control-height-form`、`--control-height-touch`、`--menu-item-height`、`--row-min-height`、`--switch-width`、`--switch-height`、`--switch-knob` | 按钮、弹出按钮与图标按钮 28px；紧凑按钮与分段 24px；文本输入框 32px，手机宽度下升到 44px 的触控目标；菜单行 26px；设置行最小高 46px；开关 38×22，旋钮 18px。 |
+| 节奏 | `--space-section`、`--space-page-top`、`--hairline` | 节与节之间 28px，页面标题上方 36px；分隔线和控件描边在高分屏上为一个物理像素（2x 下 0.5px），其余为 1px。 |
+| 图标 | `--icon-stroke`、`--icon-stroke-strong` | 所有 16px 线性图标 1.5；主按钮内、选中的导航项或页签上 1.75。 |
+| 高程 | `--elevation-0`、`--elevation-1`、`--elevation-2`、`--shadow-hairline`、`--shadow-control`、`--shadow-control-primary`、`--shadow-knob`、`--shadow-popover` | 平面；浮层；弹窗与抽屉；安静凸起控件的 1px 抬升；凸起控件的发丝描边与主按钮顶部高光；开关旋钮；菜单与选项列表。 |
+| 动效 | `--motion-short`、`--motion-medium`、`--motion-long`、`--motion-exit`、`--motion-ease-out`、`--motion-spring`、`--press-scale`、`--press-dim`、`--motion-breathe` | 按下 160ms；折叠、切换页签和开关旋钮 260ms；菜单、弹窗和侧栏面板 320ms；退出时长为进入的 60%；一条缓出曲线和一条约 8% 过冲的弹性曲线；按下时缩到 0.97 并略微变暗；运行中圆点 2.4s 的呼吸周期。`--motion-fast`、`--motion-base` 与 `--motion-ease` 仍用于颜色变化。 |
 
 设置页与管理页共用一个模板和一套标题尺度，不论页面用的是哪一级标题元素：页面标题 18px，分区 14px，行 13px，均为半粗体，正文 13px。一个页面由页头（标题、一行说明、页面操作）、可选的页签和在弹窗内滚动的正文组成；页头与正文都落在同一列（`--settings-column`，760px）和同一留白（`--settings-gutter`）之内，因此不会碰到弹窗边缘或关闭按钮。一组页面只在页签上方命名一次，其下各页只显示自己的说明和操作。简单设置是一个描边分组里的分隔行；描边卡片只用于账户、插件这类对象。弹窗标题为 16px 半粗体。空状态由 24px 的图形、一行 14px 的状态名称和一行 13px 的下一步说明组成。
 
-结构由边框表达。带边框的卡片不加阴影，高程只属于浮在页面之上的层。需要比较的数字（时间、数量、费用、用量）使用 `font-variant-numeric: tabular-nums`。动效只用于弹窗、抽屉这类偶发界面；菜单、页签和键盘触发的操作不做动画，`prefers-reduced-motion` 下所有动画停止。
+结构由边框表达。带边框的卡片不加阴影，高程只属于浮在页面之上的层。需要比较的数字（时间、数量、费用、用量）使用 `font-variant-numeric: tabular-nums`。动效短促，只改变 `transform` 和 `opacity`：折叠、切换页签、菜单、弹窗和侧栏面板带一点回弹，退出更短且不回弹。用键盘打开的界面直接出现（动效只在指针输入时启用），按钮按下只是轻微缩小并变暗，没有涟漪或光晕，`prefers-reduced-motion` 下所有动画停止。
 
 浏览器自身的界面也跟随主题：`color-scheme` 随模式设置，`theme-color` 元标签写入实际的底色，文字选区使用强调色的浅色调，光标使用强调色，长滚动区域显示细滚动条（`--agnes-scrollbar-thumb`）。
+
+## 精修层
+
+[`packages/web-ui/src/refinement.css`](../../packages/web-ui/src/refinement.css) 是一份独立样式，在主题之上给共享控件原生比例。它不改变任何颜色角色：每条声明都读取上面的 token，拿掉它界面仍然完整。
+
+| 控件 | 形态 |
+| --- | --- |
+| 页头（`PageHeader`、`.agh-page-title`、`.agh-page-description`） | 26px 粗体标题，一行 13px 说明，页面操作在右侧。 |
+| 分组标签（`SettingsSection` 标题、`.agh-group-label`） | 12.5px 半粗体，次级灰，贴在分组左上方。 |
+| 按钮 | 高 28px，圆角 8px。次按钮是带发丝描边的凸起中性表面；主按钮顶部有高光；图标按钮是圆角方形。 |
+| 开关（`StateSwitch`、`LabeledSwitch`、`Switch`） | 38×22 轨道，18px 旋钮，带回弹。 |
+| 分段控件（`Segmented`） | 圆角矩形轨道，选中项是浮起的块；内部是原生单选，方向键与表单语义不变。用于 2–6 个短选项。 |
+| 弹出按钮（`Select`、`SettingsSelect`、设置选择器） | 凸起表面，右端是带上下箭头的强调色块：表示从一组里选一个。可搜索或多选的 `Select` 仍是输入框。 |
+| 菜单与选项列表 | 唯一的半透明表面：94% 不透明，叠在背景模糊之上。指针所在行或键盘当前行使用强调色底和对应的内容色（浅色 5.54:1，深色 6.58:1）。 |
+
+自己写的导航请用 `aria-current`、`role="tab"` 加 `aria-selected="true"`，或 `data-selected="true"` 标出当前项，它的图标会使用较粗的线宽。
 
 ## Ant Design 如何取色
 
@@ -72,7 +90,7 @@ Ant Design 以 `zeroRuntime` 模式运行：预构建样式表加载在 `vendor`
 }
 ```
 
-颜色没有第二个来源。`ConfigProvider` 只提供 CSS 无法表达的内容：CSP nonce、语言、浮层容器和浮层的 z-index 层级。不要通过 `ConfigProvider` 的 `theme.token` 传颜色，皮肤和深浅切换都到不了那里。测试会检查 Ant Design 样式表读取的每个全局颜色变量都已桥接。
+颜色没有第二个来源。`ConfigProvider` 只提供 CSS 无法表达的内容：CSP nonce、语言、浮层容器和浮层的 z-index 层级，并关闭点击涟漪。不要通过 `ConfigProvider` 的 `theme.token` 传颜色，皮肤和深浅切换都到不了那里。测试会检查 Ant Design 样式表读取的每个全局颜色变量都已桥接。
 
 ## Ant Design X 如何取色
 

@@ -287,6 +287,17 @@ Status surfaces and elevation levels added to the theme contract:
 | `--agnes-status-warning-solid` | Non-text warning marks. |
 | `--agnes-status-danger-solid` | Non-text error or danger marks. |
 | `--agnes-status-info-solid` | Non-text informational marks. |
+| `--agnes-line-hairline` | Dividers and control outlines; a tint of the text colour, drawn one device pixel wide on dense screens. |
+| `--agnes-bg-popover-material` | Surface of menus and option lists: the popover colour at 94% over a backdrop blur. Keep it at least 94% opaque so text contrast holds. |
+| `--agnes-menu-active-bg`, `--agnes-menu-active-text` | Fill and content colour of the pointed or keyboard-current row of a menu or picker; the pair must keep 4.5:1. |
+| `--agnes-switch-track`, `--agnes-switch-knob` | Track and knob of a switch that is off; the on state uses `--agnes-brand-primary` and `--agnes-button-primary-content`. |
+| `--agnes-segment-track` | Track of a segmented control. |
+| `--agnes-bg-control` | Raised control surface: secondary buttons, popup buttons and the picked segment. |
+| `--shadow-control`, `--shadow-control-primary` | Hairline ring and 1px lift of a raised control; lit top edge of a primary button. |
+| `--shadow-knob` | Shadow of a switch knob. |
+| `--shadow-popover` | Shadow of menus and option lists. |
+
+Scales are not part of the `tokens` allowlist, but a skin stylesheet may set them on `:root` like any other CSS: the type scale (`--font-size-title`, `--font-size-caption`), radii (`--radius-sm` … `--radius-xl`), control sizes (`--control-height`, `--switch-width`, `--switch-height`), the icon line weight (`--icon-stroke`, `--icon-stroke-strong`), the hairline width (`--hairline`), continuous corners (`--corner-shape`, `--corner-scale`) and motion (`--motion-short`, `--motion-medium`, `--motion-long`, `--motion-spring`). Shared controls read these values, so one declaration reaches every button, switch, menu and dialog. Motion you add must stay inside `@media (prefers-reduced-motion: no-preference)`.
 
 The built-in theme's values, its type and radius scales, and how these tokens reach Ant Design and Ant Design X are described in the [theme guide](ui-theme.md).
 
