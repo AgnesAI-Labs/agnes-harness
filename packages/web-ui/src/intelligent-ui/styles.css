@@ -665,3 +665,179 @@
     text-wrap: balance;
   }
 }
+
+@layer ui {
+  /* Deliverables are a grouped list of compact file cards, not a form: the surface drops its box,
+   its heading shrinks to a caption, and each file is one row — type tile, name, one muted line,
+   actions on the right. */
+  .agnes-intelligent-surface[data-kind="deliverables"] {
+    gap: var(--s8);
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] > header {
+    padding: 0;
+    border-bottom: 0;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] h3 {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  /* In the conversation the row carries every action, so the surface's own controls step aside. */
+  .agnes-intelligent-surface[data-kind="deliverables"][data-placement="inline"] > header > :not(h3) {
+    display: none;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] .agnes-intelligent-catalog {
+    gap: 0;
+    max-height: none;
+    overflow: hidden;
+    padding: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"]
+    .agnes-intelligent-component
+    + .agnes-intelligent-component {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .deliverable-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    padding: var(--s12);
+  }
+  .deliverable-row > .agh-icon-tile {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+  .deliverable-text {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .deliverable-name {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface .deliverable-meta {
+    display: flex;
+    gap: var(--s4);
+    min-width: 0;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .deliverable-description {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .deliverable-description::after {
+    content: " ·";
+  }
+  .agnes-intelligent-surface .deliverable-meta {
+    overflow: hidden;
+  }
+  /* The type and size give way last: the description shrinks to nothing before they are cut. */
+  .deliverable-meta > :last-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .deliverable-description {
+    flex: 0 1000 auto;
+  }
+  .deliverable-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .agnes-intelligent-surface .deliverable-note {
+    margin: 0;
+    padding: 0 var(--s12) var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  /* The preview sits under its row with a slim bar of its own: what is shown, download, close. */
+  .deliverable-preview {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .deliverable-preview-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: var(--s4) var(--s8) var(--s4) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-fill);
+  }
+  .deliverable-preview-name {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .deliverable-preview > .deliverable-note {
+    padding: var(--s12);
+  }
+  .deliverable-preview > [data-document-preview] {
+    min-width: 0;
+    max-height: 24rem;
+    overflow: auto;
+  }
+  .deliverable-file[data-placement="workbench"] .deliverable-preview > [data-document-preview] {
+    max-height: min(70vh, 48rem);
+  }
+  .deliverable-preview > [data-document-preview="markdown"] {
+    padding: var(--s12);
+  }
+  .deliverable-preview iframe {
+    display: block;
+    width: 100%;
+    height: 24rem;
+    border: 0;
+    background: var(--agnes-bg-surface);
+  }
+  .deliverable-file[data-placement="workbench"] .deliverable-preview iframe {
+    height: min(70vh, 48rem);
+  }
+  /* Source is shown as source: monospace, its own line breaks, scrolling in both directions. */
+  .deliverable-preview pre {
+    margin: 0;
+    padding: var(--s12);
+    overflow: visible;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    tab-size: 2;
+    white-space: pre;
+  }
+  .deliverable-preview img {
+    display: block;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+  @media (max-width: 540px) {
+    .deliverable-description {
+      display: none;
+    }
+  }
+}

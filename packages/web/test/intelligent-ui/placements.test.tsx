@@ -156,8 +156,37 @@ describe('shared Intelligent UI placements', () => {
         kind: 'html',
         artifact: { sha256: 'a'.repeat(64), size: 1024, mime: 'text/html' },
       })
-      expect(articles[0]?.querySelector('[data-document-preview="html"]')?.textContent).toContain('Cities')
-      expect(articles[0]?.querySelector('script, img')).toBeNull()
+      // The conversation card asks; the preview opens in the workbench copy of the same file.
+      expect(articles[0]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
+      const frame = articles[1]?.querySelector<HTMLIFrameElement>('[data-document-preview="html"] iframe')
+      // An HTML deliverable runs in its own sandboxed document; none of it becomes workbench markup.
+      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame?.getAttribute('src')).toBe('/__agnes/deliverable-preview')
+      expect(host.textContent).not.toContain('Cities')
+      expect(host.querySelector('script, img')).toBeNull()
+      const posted = vi.fn()
+      Object.defineProperty(frame, 'contentWindow', { value: { postMessage: posted }, configurable: true })
+      // Only the frame's own ready message is answered, and it is answered with the page text.
+      await act(async () =>
+        window.dispatchEvent(new MessageEvent('message', { data: { type: 'agnes-preview-ready' } })),
+      )
+      expect(posted).not.toHaveBeenCalled()
+      await act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { type: 'agnes-preview-ready' },
+            source: frame?.contentWindow as unknown as MessageEventSource,
+          }),
+        ),
+      )
+      expect(posted).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'agnes-preview-html', html: expect.stringContaining('Cities') }),
+        '*',
+      )
+      await act(async () =>
+        articles[1]?.querySelector<HTMLButtonElement>('[data-testid="deliverable-preview-close"]')?.click(),
+      )
+      expect(articles[1]?.querySelector('[data-testid="deliverable-preview"]')).toBeNull()
       await act(async () =>
         (articles[0]?.querySelector('[data-testid="deliverable-download"]') as HTMLButtonElement)?.click(),
       )

@@ -104,6 +104,11 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       className="agnes-intelligent-surface"
       data-testid={`ui-surface-${surface.id}`}
       data-placement={props.placement}
+      // A surface that only hands over files is a file list, not a form: it drops the card chrome.
+      {...(surface.components.length > 0 &&
+      surface.components.every((component) => component.kind === 'artifact-file')
+        ? { 'data-kind': 'deliverables' }
+        : {})}
       data-revision={surface.revision}
       aria-labelledby={titleId}
     >

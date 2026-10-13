@@ -235,6 +235,10 @@ export function BoundSurface({
           file={file}
           laneId={record.lane}
           resources={binding.resources}
+          placement={placement}
+          {...(placement === 'inline' && record.surface.placement.workbench
+            ? { onShowInWorkbench: () => binding.expand(id, record.surface.revision) }
+            : {})}
         />
       )}
       {...(binding.customModules ? { renderCustom } : {})}
