@@ -7,13 +7,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // Lets one case write a ledger row while the collection holds the ledger lock, right before it
 // verifies the roots: the row a session appends between the unlocked catch-up and the locked proof.
-const hook = vi.hoisted(() => ({ beforeVerify: undefined as ((ledger: DatabaseSync) => void) | undefined }))
+const hook = vi.hoisted(() => ({
+  beforeVerify: undefined as ((ledger: DatabaseSync) => void | Promise<unknown>) | undefined,
+}))
 vi.mock('../src/artifact-ref-index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/artifact-ref-index.js')>()
   return {
     ...actual,
-    verifyRootsUnderLedgerLock: (input: Parameters<typeof actual.verifyRootsUnderLedgerLock>[0]) => {
-      hook.beforeVerify?.(input.ledger)
+    verifyRootsUnderLedgerLock: async (input: Parameters<typeof actual.verifyRootsUnderLedgerLock>[0]) => {
+      await hook.beforeVerify?.(input.ledger)
       return actual.verifyRootsUnderLedgerLock(input)
     },
   }
@@ -154,6 +156,20 @@ describe('collecting unreferenced user attachments', () => {
     expect(existsSync(goneMap)).toBe(false)
   })
 
+  it('keeps an object uploaded again while the run was deciding', async () => {
+    const f = fixture()
+    const b = await f.object('uploaded again meanwhile', T - 8 * DAY)
+    const other = await f.object('really forgotten', T - 8 * DAY)
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    hook.beforeVerify = () => {
+      hook.beforeVerify = undefined
+      // The same bytes uploaded again after the candidates were read: the marker is seen now.
+      return f.object('uploaded again meanwhile', T)
+    }
+    expect(await f.collect()).toEqual({ deleted: 1, bytes: other.bytes })
+    expect(f.present(b.sha256)).toEqual({ bytes: true, marker: true })
+  })
+
   it('keeps an object a session names in a row written just before the locked proof', async () => {
     const f = fixture()
     const b = await f.object('referenced meanwhile', T - 8 * DAY)
@@ -240,6 +256,14 @@ describe('collecting unreferenced user attachments', () => {
     const aborted = new AbortController()
     aborted.abort()
     expect(await f.collect(T, aborted.signal)).toEqual({ deleted: 0, bytes: 0 })
+    // Aborted while the ledger lock is held: the proof is dropped and nothing is deleted.
+    f.row('s1', 'user/message', { content: [{ type: 'text', text: 'no reference' }] })
+    const closing = new AbortController()
+    hook.beforeVerify = () => {
+      hook.beforeVerify = undefined
+      closing.abort()
+    }
+    expect(await f.collect(T, closing.signal)).toEqual({ deleted: 0, bytes: 0 })
     expect(f.present(b.sha256).bytes).toBe(true)
     f.db.close()
     rmSync(join(f.dataDir, 'sessions.db'))

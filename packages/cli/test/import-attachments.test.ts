@@ -148,7 +148,8 @@ describe('agh import of rows that reference attachments', () => {
       expect(rowsOf(target, 'missing')).toBe(0)
 
       cpSync(`${file}.attachments`, `${copy}.attachments`, { recursive: true })
-      writeFileSync(join(`${copy}.attachments`, SHA), 'PK\u0003\u0004 something else entirely')
+      // Same size, other bytes: only the digest tells them apart.
+      writeFileSync(join(`${copy}.attachments`, SHA), Buffer.alloc(ZIP.byteLength, 0x41))
       const wrong = await run(target, ['import', copy, '--key', 'wrong'])
       expect(wrong.code).not.toBe(0)
       expect(wrong.err).toContain('is not the attachment the rows name')
