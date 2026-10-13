@@ -137,7 +137,18 @@ export async function buildProvider(
     }
   const ownedRoot = deps.modelAdapters ? undefined : new Context()
   const modelAdapters = deps.modelAdapters ?? installModelAdapters(ownedRoot as Context)
-  if (ownedRoot) builtinModelAdaptersPlugin.apply(ownedRoot)
+  if (ownedRoot) {
+    // This standalone assembly has no plugin row; Host attributes its bundled suppliers explicitly.
+    const providers = ownedRoot.providers
+    builtinModelAdaptersPlugin.apply({
+      providers: {
+        register: (kind, provider) => providers.registerHost(kind, '@agnes/ai', provider),
+        catalog: () => providers.catalog(),
+        resolve: (kind, selection) => providers.resolve(kind, selection),
+        bindOwn: (kind) => providers.bindOwn(kind),
+      },
+    })
+  }
   const instances: Array<{ adapter: import('@agnes/ai').WireAdapter; dispose(): Promise<void> }> = []
   let disposal: Promise<void> | undefined
   const dispose = () => {
