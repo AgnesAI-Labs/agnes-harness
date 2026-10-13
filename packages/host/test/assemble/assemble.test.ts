@@ -1553,7 +1553,7 @@ describe('assemble', () => {
           entry: normalizePluginExport({
             inject: ['providers'],
             apply: (ctx: ProviderPluginContext) => {
-              ctx.providers.register(checkpointKind, '@agnes/code', alt as never)
+              ctx.providers.register(checkpointKind, alt as never)
             },
           } as never),
         },

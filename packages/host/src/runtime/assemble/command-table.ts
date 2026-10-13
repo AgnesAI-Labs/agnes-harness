@@ -24,7 +24,7 @@ export function readCommandTable(preset: PresetDoc) {
  */
 export function floorToolPolicies(
   providers: {
-    register(kind: typeof toolPolicyKind, source: string, policy: ToolPolicy): () => Promise<void>
+    registerHost(kind: typeof toolPolicyKind, source: string, policy: ToolPolicy): () => Promise<void>
     resolve(kind: typeof toolPolicyKind, id: string): ToolPolicy
   },
   catalog: () => readonly ToolPolicyCatalogEntry[],
@@ -32,7 +32,7 @@ export function floorToolPolicies(
 ): ToolPolicyRegistryPort {
   return withCommandFloorRegistry(
     {
-      register: (source, policy) => providers.register(toolPolicyKind, source, policy),
+      register: (source, policy) => providers.registerHost(toolPolicyKind, source, policy),
       resolve: (id) => providers.resolve(toolPolicyKind, id),
       catalog,
     },

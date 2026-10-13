@@ -54,12 +54,7 @@ export class CompactionEngineRegistry extends Service {
       entry: Object.freeze({
         id: engine.id,
         version: engine.version,
-        sourcePackage: providerSource(
-          owner,
-          this.origins,
-          sourcePackage ?? '@agnes/base',
-          sourcePackage !== undefined,
-        ),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/base'),
       }),
       lifetime: new ProviderLifetime('compaction', engine.id),
     }
@@ -176,7 +171,7 @@ export function withBuiltinCompactionEngines(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register(compactionKind, '@agnes/host-providers', defaultEngine)
+            ctx.providers.registerHost(compactionKind, '@agnes/host-providers', defaultEngine)
           },
         }),
       },

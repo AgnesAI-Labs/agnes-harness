@@ -30,7 +30,7 @@ declare module '@agnes/cordis' {
 
 function installToolRuntimes(ctx: Context, origins?: RowOriginLookup): void {
   const register = (ownerContext: Context, sourcePackage: string, provider: ToolRuntimeProvider) => {
-    const source = providerSource(ownerContext, origins, sourcePackage, true)
+    const source = providerSource(ownerContext, origins, sourcePackage)
     registry.validate(source, provider)
     const owner = new ProviderLifetime('tool-runtime', provider.id)
     const wrapped: ToolRuntimeProvider = {
@@ -88,12 +88,12 @@ function installToolRuntimes(ctx: Context, origins?: RowOriginLookup): void {
     toolRuntimeKind,
     register,
   )
-  ctx.providers.register(toolRuntimeKind, '@agnes/core', defaultToolRuntimeProvider)
+  ctx.providers.registerHost(toolRuntimeKind, '@agnes/core', defaultToolRuntimeProvider)
 }
 
 function installToolPolicies(ctx: Context, origins?: RowOriginLookup): void {
   const register = (ownerContext: Context, sourcePackage: string, policy: ToolPolicy) => {
-    const source = providerSource(ownerContext, origins, sourcePackage, true)
+    const source = providerSource(ownerContext, origins, sourcePackage)
     registry.validate(source, policy)
     const lifetime = new ProviderLifetime('tool-policy', policy.id)
     lifetime.own(() => policy.dispose?.())
@@ -165,7 +165,7 @@ export function withBuiltinToolPolicies(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register(toolPolicyKind, '@agnes/base', defaultToolPolicy)
+            ctx.providers.registerHost(toolPolicyKind, '@agnes/base', defaultToolPolicy)
           },
         }),
       },

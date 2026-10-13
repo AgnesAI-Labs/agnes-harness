@@ -40,7 +40,6 @@ export interface ProviderConformanceProbe {
 export interface ProviderConformanceOptions<T extends ProviderIdentity> {
   /** Use Host.providers from an isolated real Host; never substitute a mock registry. */
   providers: ProviderRegistrationPort
-  sourcePackage: string
   provider: T
   /** Acquire the selected provider through the real Host service/session path. */
   open(provider: T): Promise<ProviderConformanceProbe>
@@ -76,18 +75,15 @@ export async function runProviderConformance<T extends ProviderIdentity>(
   kind: ProviderKind<T>,
   options: ProviderConformanceOptions<T>,
 ): Promise<readonly string[]> {
-  const { providers, provider, sourcePackage } = options
+  const { providers, provider } = options
   const selection = { provider: provider.id, version: provider.version }
   await expectCode(() => providers.resolve(kind, selection), 'E_PROVIDER_UNKNOWN')
-  await expectCode(
-    () => providers.register(kind, sourcePackage, { ...provider, version: 'invalid' }),
-    'E_PROVIDER_INVALID',
-  )
-  const unregister = providers.register(kind, sourcePackage, provider)
+  await expectCode(() => providers.register(kind, { ...provider, version: 'invalid' }), 'E_PROVIDER_INVALID')
+  const unregister = providers.register(kind, provider)
   let probe: ProviderConformanceProbe | undefined
   const cases = ['admission', 'catalog']
   try {
-    await expectCode(() => providers.register(kind, sourcePackage, provider), 'E_PROVIDER_DUPLICATE')
+    await expectCode(() => providers.register(kind, provider), 'E_PROVIDER_DUPLICATE')
     const catalog = providers.catalog()
     const entry = catalog.find((entry) => entry.kind === kind.kind && entry.id === provider.id)
     if (

@@ -12,7 +12,7 @@ import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@ag
 export const enterpriseMemoryPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(memoryKind, '@acme/memory', enterpriseMemory)
+    ctx.providers.register(memoryKind, enterpriseMemory)
   },
 }
 declare const enterpriseMemory: MemoryProvider

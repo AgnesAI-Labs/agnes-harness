@@ -318,7 +318,7 @@ it('leaves the default scheduler unchanged without a producing plugin and ignore
     let factory: LoopFactory | undefined
     defaultLoopPlugin.apply({
       providers: {
-        register: (_kind: unknown, _source: string, value: LoopFactory) => {
+        register: (_kind: unknown, value: LoopFactory) => {
           factory = value
           return async () => undefined
         },
@@ -1013,7 +1013,7 @@ it.each(['allowed-once', 'rejected'] as const)(
     const plugin = defineAgnesPlugin({
       inject: ['tools', 'providers'],
       apply(ctx) {
-        ctx.providers.register(loopKind, 'fixture/deferred-review', loop)
+        ctx.providers.registerHost(loopKind, 'fixture/deferred-review', loop)
         ctx.tools.register({
           ...fixtureTool('review_commit'),
           meta: { ...fixtureTool('review_commit').meta, requiresApproval: 'always' },

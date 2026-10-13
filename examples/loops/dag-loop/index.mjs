@@ -1,7 +1,6 @@
 import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 import { plannerInstructions, plannerTrace } from './planner.mjs'
 
-const SOURCE = '@agnes-example/dag-loop'
 const ID = 'example.dag'
 const VERSION = '1.0.0'
 
@@ -308,6 +307,6 @@ export function createDagLoop(config = {}) {
 export const plugin = {
   inject: ['providers'],
   apply(ctx, config) {
-    ctx.providers.register(loopKind, SOURCE, createDagLoop(config))
+    ctx.providers.register(loopKind, createDagLoop(config))
   },
 }

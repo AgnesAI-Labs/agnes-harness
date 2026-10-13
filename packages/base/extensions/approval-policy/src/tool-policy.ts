@@ -26,9 +26,8 @@ export const toolPolicy = { ...withPlanMode(defaultToolPolicy), settings: select
 export const toolPolicyPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(toolPolicyKind, '@agnes/base', toolPolicy)
-    ctx.providers.register(toolPolicyKind, '@agnes/base', createAutoReviewPolicy(toolPolicy))
-    for (const policy of sandboxToolPolicies)
-      ctx.providers.register(toolPolicyKind, '@agnes/base', withPlanMode(policy))
+    ctx.providers.register(toolPolicyKind, toolPolicy)
+    ctx.providers.register(toolPolicyKind, createAutoReviewPolicy(toolPolicy))
+    for (const policy of sandboxToolPolicies) ctx.providers.register(toolPolicyKind, withPlanMode(policy))
   },
 }

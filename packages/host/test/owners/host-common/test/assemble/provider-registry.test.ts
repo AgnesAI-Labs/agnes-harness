@@ -42,7 +42,7 @@ it('owns registrations by fiber, refuses duplicates and exposes immutable select
   const registry = installProviderRegistry(root, kind)
   let released = false
   const plugin = root.plugin((ctx) => {
-    ctx.providers.register(kind, '@test/provider', { id: 'one', version: '1.0.0', ready: true })
+    ctx.providers.registerHost(kind, '@test/provider', { id: 'one', version: '1.0.0', ready: true })
     ctx.effect(() => () => {
       released = true
     })
@@ -101,6 +101,10 @@ it('combines named registries and retains their public catalog shapes and restar
   const root = new Context()
   installLoops(root)
   expect(root.loops.catalog()).toEqual([])
+  // Every fiber of this bare tree stands for a bundled @agnes/base row.
+  root.providers.verifyRows({
+    lookup: () => ({ trustTier: 'builtin', packageId: 'builtin', ownerPackage: '@agnes/base' }),
+  } as never)
   const loopPlugin = root.plugin(defaultLoopPlugin)
   await loopPlugin
   installToolProviders(root)
@@ -123,7 +127,7 @@ it('combines named registries and retains their public catalog shapes and restar
   )
   const origins = { lookup: () => ({ packageId: '@test/owner', trustTier: 'trusted' }) } as never
   const plugin = root.plugin((ctx) => {
-    expect(() => providerSource(ctx, origins, '@test/wrong', true)).toThrow('does not match')
+    expect(() => providerSource(ctx, origins, '@test/wrong')).toThrow('does not match')
   })
   await plugin
   await loopPlugin.dispose()
@@ -142,7 +146,7 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
   const shadow = root.extend()
   expect(shadow).not.toBe(root)
   expect(shadow.fiber).toBe(root.fiber)
-  expect(providerSource(shadow, origins, '@agnes/base', true)).toBe('@agnes/base')
+  expect(providerSource(shadow, origins, '@agnes/base')).toBe('@agnes/base')
 
   let sawRootFiberShadow = false
   const registry: ProviderRegistry<{ id: string; version: string; ready: boolean }> = installProviderRegistry(
@@ -150,11 +154,11 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
     kind,
     (owner, source, provider) => {
       sawRootFiberShadow = owner !== root && owner.fiber === root.fiber
-      const verified = providerSource(owner, origins, source, true)
+      const verified = providerSource(owner, origins, source)
       return registry.register(verified, provider, owner)
     },
   )
-  root.providers.register(kind, '@agnes/base', { id: 'host', version: '1.0.0', ready: true })
+  root.providers.registerHost(kind, '@agnes/base', { id: 'host', version: '1.0.0', ready: true })
   expect(sawRootFiberShadow).toBe(true)
   expect(registry.catalog()[0]).toMatchObject({ id: 'host', sourcePackage: '@agnes/base' })
 
@@ -162,7 +166,7 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
   const plugin = root.plugin((ctx) => {
     try {
       expect(ctx.fiber).not.toBe(root.fiber)
-      ctx.providers.register(kind, '@evil/plugin', { id: 'plugin', version: '1.0.0', ready: true })
+      ctx.providers.registerHost(kind, '@evil/plugin', { id: 'plugin', version: '1.0.0', ready: true })
     } catch (error) {
       failure = error
     }
@@ -171,6 +175,57 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
   expect(failure).toMatchObject({ code: 'E_EXT_LOAD' })
   expect(String(failure)).toContain('verified plugin row')
   expect(registry.catalog().map((entry) => entry.id)).toEqual(['host'])
+  await root.fiber.dispose()
+})
+
+it('derives the source package from the calling row for every kind, without a claim from the author', async () => {
+  const root = new Context()
+  // A registry installed with no registrar of its own is attributed the same way.
+  const registry = installProviderRegistry(root, kind)
+  const rows = new WeakMap<object, object>()
+  root.providers.verifyRows({ lookup: (fiber) => rows.get(fiber) } as never)
+  const provider = (id: string) => ({ id, version: '1.0.0', ready: true })
+  const failures: unknown[] = []
+  const mount = async (origin: object | undefined, run: (ctx: Context) => void) => {
+    await root.plugin((ctx) => {
+      if (origin) rows.set(ctx.fiber, origin)
+      try {
+        run(ctx)
+      } catch (error) {
+        failures.push(error)
+      }
+    })
+  }
+  await mount({ trustTier: 'third-party', packageId: '@acme/installed' }, (ctx) => {
+    ctx.providers.register(kind, provider('installed'))
+  })
+  await mount({ trustTier: 'builtin', packageId: 'builtin', ownerPackage: '@agnes/base' }, (ctx) => {
+    ctx.providers.register(kind, provider('bundled'))
+  })
+  expect(failures).toEqual([])
+  expect(registry.catalog().map((entry) => [entry.id, entry.sourcePackage])).toEqual([
+    ['bundled', '@agnes/base'],
+    ['installed', '@acme/installed'],
+  ])
+
+  // An installed row cannot name another package through the Host path either.
+  await mount({ trustTier: 'third-party', packageId: '@acme/installed' }, (ctx) => {
+    ctx.providers.registerHost(kind, '@agnes/base', provider('claimed'))
+  })
+  // A bundled row whose builder stated no owner, and a fiber with no row, have no source to derive.
+  await mount({ trustTier: 'builtin', packageId: 'builtin' }, (ctx) => {
+    ctx.providers.register(kind, provider('ownerless'))
+  })
+  await mount(undefined, (ctx) => {
+    ctx.providers.register(kind, provider('rowless'))
+  })
+  expect(() => root.providers.register(kind, provider('host'))).toThrow('verified plugin row')
+  expect(failures.map(String)).toEqual([
+    expect.stringContaining('does not match its plugin row'),
+    expect.stringContaining('verified plugin row'),
+    expect.stringContaining('verified plugin row'),
+  ])
+  expect(registry.catalog().map((entry) => entry.id)).toEqual(['bundled', 'installed'])
   await root.fiber.dispose()
 })
 
@@ -278,7 +333,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
       let instance: unknown
       if (kind === 'loop') {
         const codec = loopCheckpointCodec(1, (value) => value)
-        unregister = root.providers.register(loopKind, '@test/provider', {
+        unregister = root.providers.registerHost(loopKind, '@test/provider', {
           id,
           version: '1.0.0',
           capabilities: [],
@@ -300,7 +355,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
         }
       } else if (kind === 'sandbox') {
         const capabilities = { network: false, fsWrite: [], platform: ['linux' as const], available: true }
-        unregister = root.providers.register(sandboxKind, '@test/provider', {
+        unregister = root.providers.registerHost(sandboxKind, '@test/provider', {
           id,
           version: '1.0.0',
           capabilities,
@@ -314,7 +369,7 @@ it.each(['loop', 'sandbox', 'persistence'] as const)(
         open = () => sandbox.select(id, {}, ac.signal)
         instance = { id, capabilities, exec: async () => ({}), dispose: close }
       } else {
-        unregister = root.providers.register(persistenceKind, '@test/provider', {
+        unregister = root.providers.registerHost(persistenceKind, '@test/provider', {
           id,
           version: '1.0.0',
           state: { effect: 'restart-required' },

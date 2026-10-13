@@ -61,7 +61,7 @@ export function createFeedbackOwner(profile: string) {
       }
     },
   }
-  root.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, provider)
+  root.providers.registerHost(feedbackKind, FEEDBACK_PACKAGE_ID, provider)
   return {
     profile,
     async bind(input: FeedbackBind): Promise<FeedbackInstance> {

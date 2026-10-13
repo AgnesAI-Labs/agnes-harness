@@ -49,7 +49,7 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   const lifecycle: string[] = []
   let release: (() => Promise<void>) | undefined
   const plugin = root.plugin((ctx) => {
-    release = ctx.providers.register(
+    release = ctx.providers.registerHost(
       modelAdapterKind,
       '@agnes/host',
       definition({
@@ -73,14 +73,14 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   })
   expect(modelAdapterCatalog(root)[0]).not.toHaveProperty('api')
   expect(() =>
-    root.providers.register(modelAdapterKind, '@agnes/host', {
+    root.providers.registerHost(modelAdapterKind, '@agnes/host', {
       ...definition(),
       wireApi: undefined,
       api: 'custom-wire',
     } as never),
   ).toThrow('invalid model adapter registration')
   expect(Object.isFrozen(modelAdapterCatalog(root)[0]?.capabilities)).toBe(true)
-  expect(() => root.providers.register(modelAdapterKind, '@agnes/host', definition())).toThrow(
+  expect(() => root.providers.registerHost(modelAdapterKind, '@agnes/host', definition())).toThrow(
     'duplicate model adapter',
   )
   const instance = await root.modelAdapters.create('custom', { routes: [] })
@@ -109,7 +109,7 @@ it('cleans up an instance whose asynchronous factory finishes after unregisterin
   installModelAdapters(root)
   let finish!: (instance: ModelAdapterInstance) => void
   let disposed = false
-  const release = root.providers.register(
+  const release = root.providers.registerHost(
     modelAdapterKind,
     '@agnes/host',
     definition({

@@ -29,7 +29,7 @@ it('refuses a package registration for a host-authority kind and shows it read-o
     validate: () => undefined,
   })
   const registry = installProviderRegistry(root, hostKind)
-  expect(() => root.providers.register(hostKind, '@acme/pkg', thing)).toThrow(/host-owned/)
+  expect(() => root.providers.registerHost(hostKind, '@acme/pkg', thing)).toThrow(/host-owned/)
   registry.register('@agnes/host', thing)
   expect(root.providers.catalog()).toEqual([
     expect.objectContaining({ kind: 'host-only', id: 'only', authority: 'host', required: false }),

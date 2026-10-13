@@ -147,7 +147,6 @@ it('runs the public provider suites through an assembled Host and its ordinary p
     const exercise = async <K extends keyof typeof definitions>(kind: K) => {
       const cases = await runProviderConformance(tokens[kind] as unknown as ProviderKind<Definitions[K]>, {
         providers,
-        sourcePackage: '@agnes/code',
         provider: definitions[kind],
         async open(provider) {
           let invoke: (signal: AbortSignal) => Promise<unknown>

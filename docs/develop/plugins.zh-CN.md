@@ -80,7 +80,7 @@ export const example = {
 
 ## 模型适配器包
 
-受信的普通插件可以注入 `providers` 并调用 `ctx.providers.register(modelAdapterKind, packageName, adapter)`；在 `agnes.plugins` 清单中声明相同的依赖。[公共 ModelAdapter 合同](../../packages/extension-api/src/model-adapter.ts) 包装现有 WireAdapter 形状：id、版本、`wireApi` 线路格式、能力（含图片输入），以及返回 wire 实例的 `create({ routes })`。[测试样例包](../../packages/host/test/fixtures/model-adapter/index.ts) 演示了不依赖 Host 或 Core 的注册方式。
+受信的普通插件可以注入 `providers` 并调用 `ctx.providers.register(modelAdapterKind, adapter)`；在 `agnes.plugins` 清单中声明相同的依赖。[公共 ModelAdapter 合同](../../packages/extension-api/src/model-adapter.ts) 包装现有 WireAdapter 形状：id、版本、`wireApi` 线路格式、能力（含图片输入），以及返回 wire 实例的 `create({ routes })`。[测试样例包](../../packages/host/test/fixtures/model-adapter/index.ts) 演示了不依赖 Host 或 Core 的注册方式。
 
 在 `config['model-adapter'].provider` 中填写注册 id 或已启用的来源包名，并将路由的 `api` 设置为注册 id。`compat` 可携带适配器专用配置。现有的 `@agnes/ai` 选择与 pi API 名继续有效，API-key 和托管订阅 OAuth 路径保持兼容。
 
@@ -94,7 +94,7 @@ export const example = {
 
 ## 子代理提供者
 
-提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineKind` 定义。通过 `ctx.providers.register(childAgentKind, sourcePackage, provider)` 注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
+提供者启动子代理，并返回带事件、`sendMessage`、`interrupt` 和 `result` 的句柄。类型名是 `child-agent`，用 `defineKind` 定义。通过 `ctx.providers.register(childAgentKind, provider)` 注册。内置 id 是 `in-process`。`acp` 运行外部 ACP 进程，默认不加载。标成 false 的能力在 start 时被拒绝。作者说明见[子代理提供者](../extend/child-agents.zh-CN.md)。
 
 预设 schema 没有子代理允许名单。在 subagent 扩展上设置 `allow` 和 `sessions`，或调用 `childAgents.setSessionAllowlist`。省略名单表示不限制。空名单拒绝这一类。设置了模型名单时，调用方必须写出模型名。
 
@@ -131,7 +131,7 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 固定业务流程从 [`defineWorkflowLoop`](../extend/workflow-loops.zh-CN.md) 和 [Loop 模板](../../templates/loop/) 开始，由 helper 负责分阶段 checkpoint、确认与审批续接。下面的底层 factory 合同用于自定义调度。
 
-Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `ctx.providers.register(loopKind, '包名', factory)`；`agnes.plugins` 的入口声明 `inject: ["providers"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
+Agent Loop 负责调度与自身检查点状态。通过 `@agnes/extension-api` 导出 `LoopFactory`（`id`、`version`、`capabilities`、版本化 `codec`、`create(ctx)`、`resume(ctx, checkpoint)`），驱动实现 `step(signal)`、`cancel()`、`dispose()` 与 `checkpoint()`。在插件 apply 中调用 `ctx.providers.register(loopKind, factory)`；`agnes.plugins` 的入口声明 `inject: ["providers"]`。注册归插件 fiber 所有，卸载时移除；`kernel.loops.catalog()` 返回身份、能力与可信来源包。
 
 每一步显式返回 `outcome: 'running' | 'idle' | 'turn-ended' | 'parked'`；`phase` 仅用于展示。`until: 'turn-end'` 在首个轮次结束时停止；`until: 'idle'` 在正常完成后继续处理输入，直到无输入、挂起或其他结束原因。生产 runner 与 `driveLoop` testkit 采用相同规则。返回结束结果前先调用 `ctx.events.finish(reason)`。
 

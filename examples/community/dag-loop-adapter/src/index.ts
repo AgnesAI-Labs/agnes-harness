@@ -136,13 +136,13 @@ export const factory = defineLoop({
 export const loopPlugin = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context) {
-    ctx.providers.register(loopKind, '@community/dag-loop-adapter', factory)
+    ctx.providers.register(loopKind, factory)
   },
 })
 export const adapterPlugin = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context) {
-    ctx.providers.register(modelAdapterKind, '@community/dag-loop-adapter', adapter)
+    ctx.providers.register(modelAdapterKind, adapter)
   },
 })
 export const toolPlugin = defineAgnesPlugin({

@@ -120,12 +120,7 @@ export class SandboxProviderRegistry extends Service {
       entry: Object.freeze({
         id: provider.id,
         version: provider.version,
-        sourcePackage: providerSource(
-          owner,
-          this.origins,
-          sourcePackage ?? '@agnes/host',
-          sourcePackage !== undefined,
-        ),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/host'),
         capabilities: freezeCapabilities(provider.capabilities),
         restartRequired: true,
       }),

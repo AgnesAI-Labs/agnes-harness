@@ -98,7 +98,7 @@ export const defaultLoopFactory: LoopFactory = Object.freeze({
 export const defaultLoopPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(loopKind, '@agnes/loop-default', defaultLoopFactory)
+    ctx.providers.register(loopKind, defaultLoopFactory)
   },
 }
 export { DEFAULT_LOOP }

@@ -302,7 +302,7 @@ import { defaultLoopFactory } from '@agnes/loop-default'
 export const defaultLoopPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(loopKind, '@agnes/base', defaultLoopFactory)
+    ctx.providers.register(loopKind, defaultLoopFactory)
   },
 }
 

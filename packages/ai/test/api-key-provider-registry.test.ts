@@ -88,7 +88,7 @@ describe('API-key provider registry', () => {
       const definitions: ModelAdapter[] = []
       modelAdaptersPlugin.apply({
         providers: {
-          register: (_kind: unknown, _source: unknown, adapter: ModelAdapter) => definitions.push(adapter),
+          register: (_kind: unknown, adapter: ModelAdapter) => definitions.push(adapter),
         },
       } as unknown as import('@agnes/extension-api').ProviderPluginContext)
       const configs = await createApiKeyProviderConfigs()

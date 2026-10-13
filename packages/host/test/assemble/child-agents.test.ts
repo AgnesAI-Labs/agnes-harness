@@ -52,7 +52,7 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
   const registry = installChildAgents(root)
   const demo = provider('demo', limited)
   const plugin = root.plugin((ctx) => {
-    ctx.providers.register(childAgentKind, '@agnes/base', demo.api)
+    ctx.providers.registerHost(childAgentKind, '@agnes/base', demo.api)
   })
   await expect.poll(() => registry.catalog().length).toBe(1)
   expect(Object.isFrozen(registry.catalog()[0])).toBe(true)
@@ -65,9 +65,9 @@ it('registers providers, refuses missing capabilities, and disposes handles on u
       restartRequired: false,
       sourcePackage: '@agnes/base',
     })
-  expect(() => root.providers.register(childAgentKind, '@agnes/base', provider('demo', limited).api)).toThrow(
-    'duplicate child-agent provider',
-  )
+  expect(() =>
+    root.providers.registerHost(childAgentKind, '@agnes/base', provider('demo', limited).api),
+  ).toThrow('duplicate child-agent provider')
   await expect(
     registry.start('demo', 'task', { signal: signal(), sessionKey: 's', cwd: '/tmp', fork: true }),
   ).rejects.toMatchObject({ code: 'E_PROVIDER_INCOMPATIBLE', kind: 'child-agent', provider: 'demo' })
@@ -93,8 +93,8 @@ it('registers through the shared service and selects the configured default with
   const demo = provider('demo', limited)
   const explicit = provider('explicit', limited)
   const plugin = root.plugin((ctx) => {
-    ctx.providers.register(childAgentKind, '@test/child', demo.api)
-    ctx.providers.register(childAgentKind, '@agnes/base', explicit.api)
+    ctx.providers.registerHost(childAgentKind, '@test/child', demo.api)
+    ctx.providers.registerHost(childAgentKind, '@agnes/base', explicit.api)
   })
   await expect.poll(() => registry.catalog().length).toBe(2)
   try {
@@ -129,7 +129,7 @@ it('applies a session model allowlist before the provider starts', async () => {
   const registry = installChildAgents(root)
   const demo = provider('demo', { ...limited, modelSelection: true })
   root.plugin((ctx) => {
-    ctx.providers.register(childAgentKind, '@agnes/base', demo.api)
+    ctx.providers.registerHost(childAgentKind, '@agnes/base', demo.api)
   })
   await expect.poll(() => registry.catalog().length).toBe(1)
   registry.setSessionAllowlist('s', { models: ['fast'] })
@@ -155,7 +155,7 @@ it('binds parent constraints and refuses handles belonging to another parent sco
     received = options
     return start(task, options)
   }
-  const unregister = root.providers.register(childAgentKind, '@agnes/base', demo.api)
+  const unregister = root.providers.registerHost(childAgentKind, '@agnes/base', demo.api)
   const scope = registry.forSession({
     sessionKey: 'parent',
     cwd: '/tmp',
@@ -207,7 +207,7 @@ it('joins starting children on unregister and preserves a late handle disposal f
       },
     }
   }
-  const unregister = root.providers.register(childAgentKind, '@agnes/base', demo.api)
+  const unregister = root.providers.registerHost(childAgentKind, '@agnes/base', demo.api)
   const started = registry.start('demo', 'work', { sessionKey: 's', signal: signal() })
   const refused = expect(started).rejects.toThrow('late dispose failed')
   let joined = false

@@ -306,6 +306,6 @@ export const dockerSandboxProvider = createDockerSandboxProvider()
 export const sandboxProvidersPlugin = {
   inject: ['providers'],
   apply(ctx: { providers: ProviderRegistrationPort }) {
-    ctx.providers.register(sandboxKind, '@agnes-examples/sandbox-docker', createDockerSandboxProvider())
+    ctx.providers.register(sandboxKind, createDockerSandboxProvider())
   },
 }

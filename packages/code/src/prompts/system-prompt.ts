@@ -62,6 +62,6 @@ export const defaultSystemPrompt: SystemPromptProvider = {
 export const systemPromptPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(systemPromptKind, '@agnes/code', defaultSystemPrompt)
+    ctx.providers.register(systemPromptKind, defaultSystemPrompt)
   },
 }

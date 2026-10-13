@@ -2,24 +2,24 @@ import { describe, expect, it } from 'vitest'
 import { BASE_SEAM_PROVIDERS, seamProvidersPlugin } from '../src/seam-providers.js'
 
 describe('base seam providers', () => {
-  it('registers the seven seam kinds under @agnes/base through ctx.providers', () => {
-    const registered: Array<[string, string, string]> = []
+  it('registers the seven seam kinds through ctx.providers', () => {
+    const registered: Array<[string, string]> = []
     seamProvidersPlugin.apply({
       providers: {
-        register: (kind: { kind: string }, source: string, provider: { id: string }) => {
-          registered.push([kind.kind, source, provider.id])
+        register: (kind: { kind: string }, provider: { id: string }) => {
+          registered.push([kind.kind, provider.id])
           return async () => undefined
         },
       },
     } as never)
     expect(registered).toEqual([
-      ['approval', '@agnes/base', 'local-prompt'],
-      ['principals', '@agnes/base', 'local'],
-      ['billing', '@agnes/base', 'budget'],
-      ['checkpoint', '@agnes/base', 'fs'],
-      ['artifacts', '@agnes/base', 'local'],
-      ['verifier', '@agnes/base', 't0'],
-      ['repair', '@agnes/base', 'default'],
+      ['approval', 'local-prompt'],
+      ['principals', 'local'],
+      ['billing', 'budget'],
+      ['checkpoint', 'fs'],
+      ['artifacts', 'local'],
+      ['verifier', 't0'],
+      ['repair', 'default'],
     ])
   })
 

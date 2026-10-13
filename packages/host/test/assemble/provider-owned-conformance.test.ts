@@ -120,7 +120,6 @@ it('verifies child-agent cancellation and handle drain through a real Host paren
     expect(
       await childAgentConformance({
         providers: context.providers,
-        sourcePackage: '@agnes/code',
         provider,
         async open() {
           return {
@@ -201,7 +200,6 @@ it('verifies sandbox cancellation and selected instance drain through a real Hos
     expect(
       await sandboxConformance({
         providers: context.providers,
-        sourcePackage: '@agnes/code',
         provider,
         async open() {
           const instance = await context.sandboxProviders.select(provider.id, { workspaceRoot: dataDir })
@@ -275,7 +273,6 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
     expect(
       await loopConformance({
         providers: context.providers,
-        sourcePackage: '@agnes/code',
         provider,
         async open() {
           session = await host.createSession({ key: 'counter', cwd: dataDir, loop: provider })
@@ -299,7 +296,7 @@ it('verifies loop cancellation, unload drain and checkpoint cold resume through 
             async coldResume() {
               await session.close()
               const fresh = await fixture(dataDir, (ctx) => {
-                ctx.providers.register(loopKind, '@agnes/code', provider)
+                ctx.providers.registerHost(loopKind, '@agnes/code', provider)
               })
               try {
                 const resumed = await fresh.host.createSession({ key: 'counter', cwd: dataDir })
@@ -384,7 +381,6 @@ it.each([sqlitePersistenceProvider, jsonlProvider])(
       expect(
         await persistenceConformance({
           providers: context.providers,
-          sourcePackage: '@agnes/code',
           provider,
           async open(selected) {
             const store = await selected.open({ dataDir: storageDir })

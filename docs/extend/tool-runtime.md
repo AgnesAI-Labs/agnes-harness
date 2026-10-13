@@ -9,7 +9,7 @@ English | [简体中文](tool-runtime.zh-CN.md)
 - `ToolRuntimeProvider.create({ maxParallel }): ToolRuntime` creates a session-owned instance with `execute(call, execution, signal)`, `batch(calls, execution, signal)`, `cancel()` and `dispose()`.
 - `ToolPolicy.decide(input, signal, ports?)` returns `{ effect: 'allow' | 'ask' | 'deny', reason, review?, approval? }`. Input includes the resolved tool policy, actor, workspace, taint and full-access setting.
 
-Ordinary Cordis plugins inject `providers` and call `providers.register(toolRuntimeKind, sourcePackage, provider)` or `providers.register(toolPolicyKind, sourcePackage, policy)`. Registration belongs to the calling plugin fiber. Read `providers.catalog()` and filter by `kind`; entries include id, version, sourcePackage, capabilities and selection/lifecycle metadata. Selection is by id; duplicate ids and missing selections fail explicitly. Unloading a selected provider cancels its lifetime and refuses later calls.
+Ordinary Cordis plugins inject `providers` and call `providers.register(toolRuntimeKind, provider)` or `providers.register(toolPolicyKind, policy)`. Registration belongs to the calling plugin fiber. Read `providers.catalog()` and filter by `kind`; entries include id, version, sourcePackage, capabilities and selection/lifecycle metadata. Selection is by id; duplicate ids and missing selections fail explicitly. Unloading a selected provider cancels its lifetime and refuses later calls.
 
 ```yaml
 tools:

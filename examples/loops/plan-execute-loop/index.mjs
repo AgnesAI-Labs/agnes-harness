@@ -1,6 +1,5 @@
 import { loopCheckpointCodec, loopKind } from '@agnes/extension-api'
 
-const SOURCE = '@agnes-example/plan-execute-loop'
 const ID = 'example.plan-execute'
 const VERSION = '1.0.0'
 const MAX_STEPS = 8
@@ -324,6 +323,6 @@ export function createPlanExecuteLoop() {
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register(loopKind, SOURCE, createPlanExecuteLoop())
+    ctx.providers.register(loopKind, createPlanExecuteLoop())
   },
 }

@@ -200,7 +200,7 @@ export function createExtensionServiceHost(input: {
   ): (() => Promise<void>) => {
     if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
       throw closed(kind.kind, 'register')
-    const dispose = providers.register(kind, identity.packageId, provider)
+    const dispose = providers.registerHost(kind, identity.packageId, provider)
     const offs: Array<() => void> = []
     try {
       bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)

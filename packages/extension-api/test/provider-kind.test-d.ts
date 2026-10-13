@@ -9,30 +9,30 @@ function providerTypes(
   policy: ToolPolicy,
   webhook: WebhookTriggerProvider,
 ) {
-  port.register(webhookTriggerKind, 'test', webhook)
+  port.register(webhookTriggerKind, webhook)
   const trigger: WebhookTriggerProvider = port.resolve(webhookTriggerKind, 'test')
   void trigger
   // @ts-expect-error Webhook providers do not expose Loop authority.
-  port.register(webhookTriggerKind, 'test', loop)
-  port.register(loopKind, 'test', loop)
+  port.register(webhookTriggerKind, loop)
+  port.register(loopKind, loop)
   const result: ToolPolicy = port.resolve(toolPolicyKind, 'test')
   void result
   // @ts-expect-error A kind token cannot choose an unrelated provider type.
-  port.register(loopKind, 'test', policy)
+  port.register(loopKind, policy)
   // @ts-expect-error Resolution has the type associated with the kind.
   const incorrect: LoopFactory = port.resolve(toolPolicyKind, 'test')
   void incorrect
   const token = defineKind<ToolPolicy>({ kind: 'custom-policy', validate() {} })
-  port.register(token, 'test', policy)
+  port.register(token, policy)
   // @ts-expect-error Tokens are invariant in their provider type.
-  port.register(token, 'test', loop)
+  port.register(token, loop)
 }
 function serviceBinding(port: ProviderRegistrationPort, loop: LoopFactory) {
   const kind = defineKind<ServiceInstance & { ready(): boolean }, ServicePorts>({
     kind: 'sample-service',
     bind: { cardinality: 'single', instanceScope: 'request', ports: ['ledger'] },
   })
-  const dispose: () => Promise<void> = port.register(kind, 'test', {
+  const dispose: () => Promise<void> = port.register(kind, {
     id: 'one',
     version: '1.0.0',
     open: () => ({ ready: () => true }),
@@ -40,7 +40,7 @@ function serviceBinding(port: ProviderRegistrationPort, loop: LoopFactory) {
   const bound: Promise<ServiceInstance & { ready(): boolean }> = port.bindOwn(kind)
   void [dispose, bound]
   // @ts-expect-error A service token does not accept an unrelated provider.
-  port.register(kind, 'test', loop)
+  port.register(kind, loop)
 }
 void providerTypes
 void serviceBinding

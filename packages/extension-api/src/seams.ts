@@ -7,7 +7,7 @@ import type { FsEntry, FsStat, ToolMeta } from './tool.js'
 import type { ApprovalConstraints } from './tool-policy.js'
 
 // The contracts of the runtime capabilities the kernel consumes as one typed object each. A seam
-// provider registers like any other provider: `ctx.providers.register(checkpointKind, pkg, provider)`.
+// provider registers like any other provider: `ctx.providers.register(checkpointKind, provider)`.
 
 export type Verdict = ApprovalVerdict
 export type Pending = { ticket: string; expiresAt: string }

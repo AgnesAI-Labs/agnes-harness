@@ -56,10 +56,6 @@ export function slidingWindow(keepTurns = 4): CompactionEngine {
 export const main = defineAgnesPlugin({
   inject: ['providers'],
   apply(ctx: Context & ProviderPluginContext, config: { keepTurns?: number }) {
-    ctx.providers.register(
-      compactionKind,
-      '@agnes-example/compaction-sliding-window',
-      slidingWindow(config.keepTurns ?? 4),
-    )
+    ctx.providers.register(compactionKind, slidingWindow(config.keepTurns ?? 4))
   },
 })

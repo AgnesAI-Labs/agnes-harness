@@ -20,26 +20,37 @@ declare module '@agnes/cordis' {
   }
 }
 
+/**
+ * The package a registration belongs to. An installed plugin row is its own source and cannot name
+ * another package. A bundled row carries the owner its Host builder stated. `named` is what Host
+ * code states for a registration it makes itself, and `host` is the owner of a named Host service.
+ */
 export function providerSource(
   ctx: Context,
   origins: RowOriginLookup | undefined,
-  fallback: string,
-  claimed = false,
+  named?: string,
+  host?: string,
 ): string {
+  const unowned = () => new HostError('E_EXT_LOAD', 'provider requires a verified plugin row')
   for (let fiber = ctx.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
     const origin = origins?.lookup(fiber)
     if (!origin) continue
-    if (origin.trustTier === 'builtin' && origin.packageId === 'builtin') return fallback
-    if (claimed && origin.packageId !== fallback)
+    if (origin.trustTier === 'builtin' && origin.packageId === 'builtin') {
+      const source = named ?? origin.ownerPackage ?? host
+      if (!source) throw unowned()
+      return source
+    }
+    if (named !== undefined && origin.packageId !== named)
       throw new HostError('E_EXT_LOAD', 'provider source package does not match its plugin row')
     return origin.packageId
   }
   // A Cordis call shadow is `ctx.extend(...)`: a different object on the same fiber.
   // Object identity would reject Host registration through that shadow. A plugin
   // fiber is distinct and still needs a verified row.
-  if (origins && ctx.fiber !== ctx.root.fiber)
-    throw new HostError('E_EXT_LOAD', 'provider requires a verified plugin row')
-  return fallback
+  if (origins && ctx.fiber !== ctx.root.fiber) throw unowned()
+  const source = named ?? host
+  if (!source) throw unowned()
+  return source
 }
 
 /** Storage and fiber ownership shared by all named provider services. */
@@ -264,8 +275,13 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     kind: BindableKind<S, P>,
   ) => Promise<S>
   private configuration?: (entry: ProviderCatalogEntry) => readonly string[]
+  private origins?: RowOriginLookup
   constructor(ctx: Context) {
     super(ctx, 'providers')
+  }
+  /** The tree's row index. With it every kind derives the source package from the caller's row. */
+  verifyRows(origins: RowOriginLookup): void {
+    this.origins = origins
   }
   add<T extends ProviderIdentity>(
     registry: ProviderRegistry<T>,
@@ -293,14 +309,29 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
       }
     })
   }
-  register<T extends ProviderIdentity>(
+  register<T extends ProviderIdentity>(kind: ProviderKind<T>, provider: NoInfer<T>): () => Promise<void>
+  register(kind: ProviderKind<ProviderIdentity>, provider: ProviderIdentity): () => Promise<void> {
+    return this.registerFrom(kind, undefined, provider)
+  }
+  /**
+   * Host registration. The Host has no plugin row, so it names the package it registers for. An
+   * installed plugin row that names another package is refused.
+   */
+  registerHost<T extends ProviderIdentity>(
     kind: ProviderKind<T>,
     sourcePackage: string,
     provider: NoInfer<T>,
   ): () => Promise<void>
-  register(
+  registerHost(
     kind: ProviderKind<ProviderIdentity>,
     sourcePackage: string,
+    provider: ProviderIdentity,
+  ): () => Promise<void> {
+    return this.registerFrom(kind, sourcePackage, provider)
+  }
+  private registerFrom(
+    kind: ProviderKind<ProviderIdentity>,
+    named: string | undefined,
     provider: ProviderIdentity,
   ): () => Promise<void> {
     const registry = this.lookup(kind, 'register')
@@ -314,6 +345,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
           operation: 'register',
         },
       )
+    const sourcePackage = providerSource(this.ctx, this.origins, named)
     registry.validate(sourcePackage, provider)
     const register = this.registrars.get(registry.definition.kind)!
     return register(this.ctx, sourcePackage, provider)
@@ -398,8 +430,10 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   }
 }
 
-export function installProviders(root: Context): ProvidersService {
-  return root.providers ?? new ProvidersService(root)
+export function installProviders(root: Context, origins?: RowOriginLookup): ProvidersService {
+  const providers = root.providers ?? new ProvidersService(root)
+  if (origins) providers.verifyRows(origins)
+  return providers
 }
 export function installProviderRegistry<T extends ProviderIdentity>(
   ctx: Context,

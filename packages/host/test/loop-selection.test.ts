@@ -454,8 +454,8 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
       inject: ['providers', 'childAgents'],
       apply(ctx: ProviderPluginContext & ChildAgentPluginContext) {
         registry = ctx.childAgents
-        ctx.providers.register(loopKind, 'acme/child-loop', loop)
-        ctx.providers.register(childAgentKind, 'acme/child-loop', provider)
+        ctx.providers.register(loopKind, loop)
+        ctx.providers.register(childAgentKind, provider)
         for (const key of ['loop-parent', 'other-parent'])
           ctx.childAgents.setSessionAllowlist(key, { providers: ['public-fixture'], models: ['fast'] })
       },

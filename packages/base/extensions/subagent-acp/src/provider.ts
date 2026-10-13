@@ -240,7 +240,7 @@ export function acpChildAgentsPlugin(options: AcpChildAgentOptions) {
   return {
     inject: ['providers'] as const,
     apply(ctx: ProviderPluginContext) {
-      ctx.providers.register(childAgentKind, '@agnes/base', provider)
+      ctx.providers.register(childAgentKind, provider)
     },
   }
 }

@@ -5,6 +5,6 @@ export { policy }
 export const plugin = {
   inject: ['providers'],
   apply(ctx) {
-    ctx.providers.register(toolPolicyKind, '@agnes-example/read-only-policy', policy)
+    ctx.providers.register(toolPolicyKind, policy)
   },
 }

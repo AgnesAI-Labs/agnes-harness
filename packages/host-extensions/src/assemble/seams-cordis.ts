@@ -109,6 +109,8 @@ export interface HostBuiltinRowClaim {
   readonly row: Readonly<EntryRow>
   readonly entry: VerifiedRowEntry
   readonly extras?: VerifiedExtrasEnvelope
+  /** The bundled package this row belongs to; its registrations are attributed to it. */
+  readonly ownerPackage?: string
 }
 
 /**
@@ -213,6 +215,7 @@ export async function assembleOrdinaryPluginTree(
         row,
         entry: claim.entry,
         ...(claim.extras ? { extras: claim.extras } : {}),
+        ...(claim.ownerPackage ? { ownerPackage: claim.ownerPackage } : {}),
       })
     }
     // Each delivery's package importer only recognises its own delivery's rows. The newest is asked
@@ -449,6 +452,7 @@ function snapshotBuiltinClaim(claim: Readonly<HostBuiltinRowClaim>): Readonly<Ho
   return Object.freeze({
     row: snapshotBuilderRow(claim.row),
     entry: claim.entry,
+    ...(claim.ownerPackage ? { ownerPackage: claim.ownerPackage } : {}),
     ...(claim.extras
       ? {
           extras: Object.freeze({

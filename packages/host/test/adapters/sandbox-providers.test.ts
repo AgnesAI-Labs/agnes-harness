@@ -95,12 +95,12 @@ describe('sandbox providers', () => {
   it('catalogs the local provider and refuses a second id until restart', async () => {
     const root = new Context()
     const registry = installSandboxProviders(root)
-    root.providers.register(
+    root.providers.registerHost(
       sandboxKind,
       '@agnes/host',
       createLocalSandboxProvider(createExec(), process.platform),
     )
-    root.providers.register(sandboxKind, '@agnes/host', box('box'))
+    root.providers.registerHost(sandboxKind, '@agnes/host', box('box'))
     expect(registry.catalog().map((entry) => entry.id)).toEqual(['box', LOCAL_SANDBOX_PROVIDER_ID])
     expect(registry.catalog().every((entry) => entry.restartRequired)).toBe(true)
     expect(
@@ -110,7 +110,7 @@ describe('sandbox providers', () => {
       fsWrite: [],
       available: true,
     })
-    expect(() => root.providers.register(sandboxKind, '@agnes/host', box('box'))).toThrow(
+    expect(() => root.providers.registerHost(sandboxKind, '@agnes/host', box('box'))).toThrow(
       /duplicate sandbox provider/,
     )
     const selected = await registry.select(LOCAL_SANDBOX_PROVIDER_ID, { workspaceRoot: cwd })
@@ -194,7 +194,7 @@ describe('sandbox providers', () => {
     const slot: SandboxProviderSlot = {}
     const root = new Context()
     slot.registry = installSandboxProviders(root)
-    root.providers.register(sandboxKind, '@agnes/host', box('box', false))
+    root.providers.registerHost(sandboxKind, '@agnes/host', box('box', false))
     const id = await bindStartupSandboxProvider(slot, { sandbox: { provider: 'box' } }, cwd, undefined)
     expect(id).toBe('box')
     const dispatch = createSandboxDispatchExec(wrapped, slot)
@@ -215,7 +215,7 @@ describe('sandbox providers', () => {
       resolveExit = resolve
     })
     const provider = box('box')
-    root.providers.register(sandboxKind, '@agnes/host', {
+    root.providers.registerHost(sandboxKind, '@agnes/host', {
       ...provider,
       capabilities: { ...provider.capabilities, enforcement },
       create(config) {

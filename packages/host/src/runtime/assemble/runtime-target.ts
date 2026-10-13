@@ -179,7 +179,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
         thirdPartyReservedRowIds: REQUIRED_SEAM_ROW_IDS,
         thirdPartyReservedProvides: REQUIRED_SEAM_ROW_IDS,
         rootServices: (root, origins) => {
-          const providers = installProviders(root)
+          const providers = installProviders(root, origins)
           shared.extensionServices.current?.attachBinder(providers)
           providers.configurationSource((entry) =>
             providerConfigurationScopes(entry, ctx.profile, presets.defaultPreset.view),
@@ -212,7 +212,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           installCompactionEngines(root, origins)
           installChildAgents(root, origins, ctx.providerSelections['child-agent'])
           const sandboxProviders = installSandboxProviders(root, origins)
-          root.providers.register(
+          root.providers.registerHost(
             sandboxKind,
             '@agnes/host',
             createLocalSandboxProvider(proc.adapters.exec, proc.adapters.platform.os),
@@ -220,7 +220,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           // Providers a package exports as `sandboxProvider` are registered under that package; the
           // Host read them before the tree existed because a remote one opens its channel then.
           for (const [packageId, mod] of pkgs.modules)
-            if (mod.sandboxProvider) root.providers.register(sandboxKind, packageId, mod.sandboxProvider)
+            if (mod.sandboxProvider) root.providers.registerHost(sandboxKind, packageId, mod.sandboxProvider)
           installHostPlatform(root, proc.adapters.platform.os)
           proc.sandboxProviderSlot.registry = sandboxProviders
         },

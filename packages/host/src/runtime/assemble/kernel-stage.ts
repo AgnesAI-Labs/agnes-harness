@@ -195,7 +195,8 @@ export async function createKernel(
       catalog: () => pluginTree.root.loops.catalog(),
     },
     toolRuntimes: {
-      register: (source, provider) => pluginTree.root.providers.register(toolRuntimeKind, source, provider),
+      register: (source, provider) =>
+        pluginTree.root.providers.registerHost(toolRuntimeKind, source, provider),
       resolve: (id) => pluginTree.root.providers.resolve(toolRuntimeKind, id),
       catalog: () => toolProviderCatalog('tool-runtime'),
     },

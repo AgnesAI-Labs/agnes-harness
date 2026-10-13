@@ -106,7 +106,8 @@ export function buildOrdinaryRows(
         disabled: !enabled,
       })
       rows.push(row)
-      if (resolved.trust === 'builtin') builtinClaims.push(Object.freeze({ row, entry }))
+      if (resolved.trust === 'builtin')
+        builtinClaims.push(Object.freeze({ row, entry, ownerPackage: packageId }))
       else
         thirdPartyClaims.push(
           Object.freeze({ row, entry, snapshot: plugin.candidate as NonNullable<typeof plugin.candidate> }),

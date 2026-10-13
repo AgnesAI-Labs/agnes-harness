@@ -42,7 +42,7 @@ function rig(packages: ResolvedProfile['packages'] = [], timeoutMs = 50) {
   }
   const register = (source: string, provider: VerifierProvider) =>
     root.plugin((ctx) => {
-      ctx.providers.register(verifierKind, source, provider)
+      ctx.providers.registerHost(verifierKind, source, provider)
     })
   return { root, input, inits, bound, register }
 }

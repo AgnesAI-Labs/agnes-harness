@@ -80,7 +80,7 @@ export class LoopsService extends Service implements LoopRegistryPort {
       }
     }
     return this.registry.register(
-      providerSource(owner, this.origins, sourcePackage, true),
+      providerSource(owner, this.origins, sourcePackage),
       {
         ...factory,
         create: (ctx, signal) =>

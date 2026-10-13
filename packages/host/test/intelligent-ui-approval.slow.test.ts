@@ -328,7 +328,7 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
             execute: async () => ({ content: [{ type: 'text', text: 'Approved change recorded' }] }),
           }),
         )
-        ctx.providers.register(loopKind, '@author/plugin', loop)
+        ctx.providers.registerHost(loopKind, '@author/plugin', loop)
       },
     }),
   })

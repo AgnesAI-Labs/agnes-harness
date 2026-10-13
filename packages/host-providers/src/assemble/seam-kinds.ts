@@ -22,7 +22,6 @@ function installSeamKind(root: Context, kind: SeamKind, origins?: RowOriginLooku
   const registry: ProviderRegistry<SeamProvider<object>> = installProviderRegistry(
     root,
     SEAM_KIND_TOKENS[kind] as unknown as ProviderKind<SeamProvider<object>>,
-    (owner, source, provider) =>
-      registry.register(providerSource(owner, origins, source, true), provider, owner),
+    (owner, source, provider) => registry.register(providerSource(owner, origins, source), provider, owner),
   )
 }

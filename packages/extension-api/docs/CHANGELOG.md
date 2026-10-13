@@ -2,6 +2,18 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 4.0.0
+
+### Removed
+
+- The `sourcePackage` argument of `ctx.providers.register`. The one signature is
+  `register(kind, provider)`: the Host attributes the registration to the package of the calling
+  plugin row, for a bundled package as well as an installed one, and for every kind (reference
+  resolvers, memory, system prompt and persistence were not checked against the row before).
+  `ProviderConformanceOptions.sourcePackage` is gone for the same reason.
+
+  Migration: delete the second argument.
+
 ## 3.1.0
 
 Adds optional `ToolPolicyDecision.allowedBy`. The command-table floor sets it to `command-policy` when a rule allows a call the selected policy asked about, so the policy's own `review` (for example an `escalate` fallback) is kept as an observation beside the final `allow` instead of being rewritten.

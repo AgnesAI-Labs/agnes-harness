@@ -29,11 +29,7 @@ function asService(runtime: ObservabilityProvider): ServiceProvider<Observabilit
 export const observabilityPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext, config?: Partial<ObservabilityConfig>) {
-    ctx.providers.register(
-      observabilityKind,
-      '@agnes/base',
-      asService(acquireObservability(undefined, config)),
-    )
+    ctx.providers.register(observabilityKind, asService(acquireObservability(undefined, config)))
   },
 }
 export { administerObservability, telemetrySnapshot } from './admin.js'

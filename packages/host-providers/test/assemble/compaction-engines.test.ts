@@ -16,11 +16,11 @@ it('selects registered engines, rejects missing/duplicate ids, and unloads with 
   const root = new Context()
   const registry = installCompactionEngines(root)
   const plugin = root.plugin((ctx) => {
-    ctx.providers.register(compactionKind, '@agnes/host-providers', engine())
+    ctx.providers.registerHost(compactionKind, '@agnes/host-providers', engine())
   })
   await expect.poll(() => registry.catalog().length).toBe(1)
   expect(Object.isFrozen(registry.catalog()[0])).toBe(true)
-  expect(() => root.providers.register(compactionKind, '@agnes/host-providers', engine())).toThrow(
+  expect(() => root.providers.registerHost(compactionKind, '@agnes/host-providers', engine())).toThrow(
     'duplicate compaction engine',
   )
   const runner = (await assembleCompaction(registry))!
@@ -76,7 +76,7 @@ it('drains late creates before instance disposal and reports both disposal and c
   const registry = installCompactionEngines(root)
   let finish!: (value: ReturnType<NonNullable<CompactionEngine['create']>>) => void
   const order: string[] = []
-  const unregister = root.providers.register(compactionKind, '@agnes/host-providers', {
+  const unregister = root.providers.registerHost(compactionKind, '@agnes/host-providers', {
     ...engine('late'),
     create: () =>
       new Promise((resolve) => {

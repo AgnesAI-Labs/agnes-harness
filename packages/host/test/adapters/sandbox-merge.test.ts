@@ -66,7 +66,7 @@ describe('sandbox provider resolution', () => {
   it('registers a package-exported provider in the sandbox catalog and keeps selection restart-bound', async () => {
     const root = new Context()
     const registry = installSandboxProviders(root)
-    root.providers.register(sandboxKind, 'acme', remote)
+    root.providers.registerHost(sandboxKind, 'acme', remote)
     expect(root.providers.catalog().find((entry) => entry.id === 'acme-remote')).toMatchObject({
       kind: 'sandbox',
       sourcePackage: 'acme',
@@ -74,7 +74,7 @@ describe('sandbox provider resolution', () => {
       authority: 'open',
     })
     const other: SandboxProvider = { ...remote, id: 'other-remote' }
-    root.providers.register(sandboxKind, 'acme', other)
+    root.providers.registerHost(sandboxKind, 'acme', other)
     await registry.select('acme-remote')
     await expect(registry.select('other-remote')).rejects.toThrow(/requires a restart/)
   })
@@ -123,7 +123,7 @@ describe('platform is host-only', () => {
     const root = new Context()
     installHostPlatform(root, 'linux')
     const attempt = () =>
-      root.providers.register('platform' as never, 'acme', {
+      root.providers.registerHost('platform' as never, 'acme', {
         id: 'host',
         version: '1.0.0',
         os: 'linux',

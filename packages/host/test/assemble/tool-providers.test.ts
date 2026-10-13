@@ -89,10 +89,14 @@ it('assembles the bundled default policy row before opening a real Host session'
 it('registers the Base default and custom policies through plugin fibers and fails closed after unload', async () => {
   const root = new Context()
   installToolProviders(root)
+  // Every fiber of this bare tree stands for a bundled @agnes/base row.
+  root.providers.verifyRows({
+    lookup: () => ({ trustTier: 'builtin', packageId: 'builtin', ownerPackage: '@agnes/base' }),
+  } as never)
   const builtin = root.plugin(toolPolicyPlugin)
   const reviewPorts = { reserve: () => true, model: async () => ({ text: '{}', model: 'script', cost: 0 }) }
   const custom = root.plugin((ctx) => {
-    ctx.providers.register(toolPolicyKind, '@agnes-example/read-only-policy', {
+    ctx.providers.registerHost(toolPolicyKind, '@agnes-example/read-only-policy', {
       ...policy,
       id: 'custom-read-only',
       settings: async (context, signal) => {

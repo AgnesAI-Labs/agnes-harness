@@ -148,7 +148,7 @@ export class ServiceBindings {
     if (!existing) this.installed.set(kind.kind, { kind, descriptor: freezeDescriptor(kind, descriptor) })
     let registry!: ProviderRegistry<ServiceProvider<S, P>>
     registry = installProviderRegistry(ctx, kind, (owner, source, provider) => {
-      const verified = providerSource(owner, origins, source, true)
+      const verified = providerSource(owner, origins, source)
       return registry.register(verified, provider, owner, async () => {
         await provider.dispose?.()
       })

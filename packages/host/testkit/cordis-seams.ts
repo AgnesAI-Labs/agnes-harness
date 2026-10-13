@@ -61,11 +61,14 @@ function seamProvidersRow(module: PackageModule) {
         for (const kind of SEAM_KINDS) {
           const factory = table[kind]
           if (!factory) continue
-          ctx.providers.register(SEAM_KIND_TOKENS[kind] as never, module.id, {
-            id: BASE_SEAM_PROVIDERS[kind].id,
-            version: BASE_SEAM_PROVIDERS[kind].version,
-            create: (init: unknown) => factory(init as SeamInitContext),
-          } as never)
+          ctx.providers.register(
+            SEAM_KIND_TOKENS[kind] as never,
+            {
+              id: BASE_SEAM_PROVIDERS[kind].id,
+              version: BASE_SEAM_PROVIDERS[kind].version,
+              create: (init: unknown) => factory(init as SeamInitContext),
+            } as never,
+          )
         }
       },
     }),

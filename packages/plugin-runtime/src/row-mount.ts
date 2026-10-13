@@ -80,6 +80,7 @@ export interface ThirdPartyRowDescriptor {
   readonly row: Readonly<EntryRow>
   readonly entry: VerifiedRowEntry
   readonly extras?: VerifiedExtrasEnvelope
+  readonly ownerPackage?: string
   readonly preboundLease?: FiberLease
   readonly cleanup?: () => void | Promise<void>
 }
@@ -103,6 +104,7 @@ export interface BuiltinRowMountFactory {
       row: Readonly<EntryRow>
       entry: VerifiedRowEntry
       extras?: VerifiedExtrasEnvelope
+      ownerPackage?: string
     }>,
   ): Promise<VerifiedRowMount>
 }
@@ -127,6 +129,7 @@ interface DescriptorSnapshot {
   readonly entry: VerifiedRowEntry
   readonly normalizedConfig: unknown
   readonly extras?: VerifiedExtrasEnvelope
+  readonly ownerPackage?: string
   readonly preboundLease?: FiberLease
   readonly cleanup?: () => void | Promise<void>
 }
@@ -455,6 +458,7 @@ function createVerifiedRowRuntime(
       row: Readonly<EntryRow>
       entry: VerifiedRowEntry
       extras?: VerifiedExtrasEnvelope
+      ownerPackage?: string
       preboundLease?: FiberLease
       cleanup?: () => void | Promise<void>
     }>,
@@ -502,6 +506,7 @@ function createVerifiedRowRuntime(
       entry,
       normalizedConfig,
       ...(checkedExtras ? { extras: checkedExtras } : {}),
+      ...(input.ownerPackage ? { ownerPackage: input.ownerPackage } : {}),
       ...(input.preboundLease ? { preboundLease: input.preboundLease } : {}),
       ...(input.cleanup ? { cleanup: input.cleanup } : {}),
     })
@@ -622,6 +627,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
     declaredProvides: Object.freeze([...mount.row.provides]),
+    ...(mount.ownerPackage ? { ownerPackage: mount.ownerPackage } : {}),
   })
 }
 

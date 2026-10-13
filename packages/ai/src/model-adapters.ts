@@ -28,6 +28,6 @@ const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
 export const modelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    for (const adapter of registrations) ctx.providers.register(modelAdapterKind, '@agnes/ai', adapter)
+    for (const adapter of registrations) ctx.providers.register(modelAdapterKind, adapter)
   },
 }

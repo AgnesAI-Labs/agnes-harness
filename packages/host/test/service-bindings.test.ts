@@ -137,7 +137,7 @@ async function mount(options: {
   bindings.install(root, kind, options.descriptor)
   for (const entry of options.entries) {
     const registered = provider(entry.id, entry.open)
-    root.providers.register(kind, entry.packageId, registered)
+    root.providers.registerHost(kind, entry.packageId, registered)
     if (entry.owner)
       bindings.noteOwner(kind.kind, registered.id, registered.version, entry.owner, entry.packageId)
   }
@@ -245,7 +245,7 @@ describe('service binding gate', () => {
     const bindings = new ServiceBindings(() => root.providers)
     bindings.install(root, kind, { ports: [], audience: 'host' })
     bindings.install(later, kind, { ports: [], audience: 'callback' })
-    root.providers.register(
+    root.providers.registerHost(
       kind,
       packageId,
       provider('one', () => ({ mark: () => 'ok' })),
@@ -266,7 +266,7 @@ describe('service binding gate', () => {
     bindings.install(root, kind, { ports: [], audience: 'callback' })
     const other = sampleKind({})
     expect(() => bindings.install(root, other, { ports: [] })).toThrow(/does not match the installed kind/)
-    root.providers.register(
+    root.providers.registerHost(
       kind,
       packageId,
       provider('one', () => ({ mark: () => 'ok' })),
@@ -1497,7 +1497,7 @@ describe('feedback service binding', () => {
     const bindings = new ServiceBindings(() => root.providers)
     bindings.install(root, feedbackKind, FEEDBACK_DESCRIPTOR)
     const register = (id: string) => {
-      root.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+      root.providers.registerHost(feedbackKind, FEEDBACK_PACKAGE_ID, {
         id,
         version: '1.0.0',
         open(ports) {
@@ -1541,7 +1541,7 @@ describe('feedback service binding', () => {
     const sole = new Context()
     const soleBindings = new ServiceBindings(() => sole.providers)
     soleBindings.install(sole, feedbackKind, FEEDBACK_DESCRIPTOR)
-    sole.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+    sole.providers.registerHost(feedbackKind, FEEDBACK_PACKAGE_ID, {
       id: FEEDBACK_PROVIDER_ID,
       version: '1.0.0',
       open(ports) {
@@ -1599,7 +1599,7 @@ describe('feedback service binding', () => {
     const bindings = new ServiceBindings(() => root.providers)
     bindings.install(root, feedbackKind, FEEDBACK_DESCRIPTOR)
     let ledger: ServicePorts['ledger']
-    root.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+    root.providers.registerHost(feedbackKind, FEEDBACK_PACKAGE_ID, {
       id: FEEDBACK_PROVIDER_ID,
       version: '1.0.0',
       open(ports) {
@@ -1728,7 +1728,7 @@ describe('ui data source bind by id', () => {
       }) as UiDataSourceProvider
     const expectInvalid = (provider: UiDataSourceProvider, detail: string) => {
       try {
-        root.providers.register(uiDataSourceKind, packageId, provider)
+        root.providers.registerHost(uiDataSourceKind, packageId, provider)
       } catch (error) {
         expect(error).toBeInstanceOf(ProviderError)
         const providerError = error as ProviderError
@@ -1752,7 +1752,7 @@ describe('ui data source bind by id', () => {
       'ui data source capabilities are invalid',
     )
     try {
-      root.providers.register(uiDataSourceKind, packageId, source())
+      root.providers.registerHost(uiDataSourceKind, packageId, source())
       expect(root.providers.catalog().map((entry) => entry.id)).toEqual(['finance/differences'])
     } finally {
       await finish(root)
@@ -1802,7 +1802,7 @@ describe('intelligent UI service binding', () => {
       events: true,
       projections: ['surfaces'],
     })
-    root.providers.register(intelligentUiKind, uiPackage, {
+    root.providers.registerHost(intelligentUiKind, uiPackage, {
       id: 'agnes/intelligent-ui',
       version: '0.1.0',
       open(ports) {
@@ -1885,7 +1885,7 @@ describe('deferred invocation service binding', () => {
     bindings.install(root, deferredQueueKind, { ports: [], audience: 'host' })
     const seen: string[] = []
     const register = (id: string, sourcePackage: string, name: string) => {
-      root.providers.register(deferredProducerKind, sourcePackage, {
+      root.providers.registerHost(deferredProducerKind, sourcePackage, {
         id,
         version: '1.0.0',
         open: () => ({

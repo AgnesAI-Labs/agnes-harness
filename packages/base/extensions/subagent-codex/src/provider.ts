@@ -90,6 +90,6 @@ export const codexChildAgentsPlugin = {
     const parsed = readEngineDocument(config)
     if (!parsed?.enabled) return
     assertEngineLaunch(parsed)
-    ctx.providers.register(childAgentKind, '@agnes/base', codexChildAgentProvider(parsed))
+    ctx.providers.register(childAgentKind, codexChildAgentProvider(parsed))
   },
 }

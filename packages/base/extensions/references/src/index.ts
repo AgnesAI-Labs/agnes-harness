@@ -18,7 +18,7 @@ export const sessionReferenceResolver = defineProvider(referenceResolverKind, {
 export const referenceResolversPlugin = {
   inject: { providers: { required: true } },
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(referenceResolverKind, '@agnes/base', fileReferenceResolver)
-    ctx.providers.register(referenceResolverKind, '@agnes/base', sessionReferenceResolver)
+    ctx.providers.register(referenceResolverKind, fileReferenceResolver)
+    ctx.providers.register(referenceResolverKind, sessionReferenceResolver)
   },
 }

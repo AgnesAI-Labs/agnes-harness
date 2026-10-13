@@ -215,7 +215,7 @@ describe('public author testkit', () => {
           description: 'Synthetic model instructions',
           body: 'Offline business fixture',
         })
-        ctx.providers.register(loopKind, '@author/plugin', loop)
+        ctx.providers.registerHost(loopKind, '@author/plugin', loop)
       },
     }
     try {
@@ -303,7 +303,7 @@ describe('public author testkit', () => {
       plugin: {
         inject: ['providers'],
         apply(ctx: Context) {
-          ctx.providers.register(loopKind, '@author/plugin', loop)
+          ctx.providers.registerHost(loopKind, '@author/plugin', loop)
         },
       },
     })

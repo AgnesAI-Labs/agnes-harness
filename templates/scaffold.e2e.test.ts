@@ -24,7 +24,7 @@ describe('plugin scaffolder', () => {
         } else if (kind === 'model-adapter') {
           expect(manifest.agnes.plugins[0].inject).toEqual(['providers'])
           expect(await readFile(join(target, 'src/index.ts'), 'utf8')).toContain(
-            `ctx.providers.register(modelAdapterKind, '@acme/hello.world',`,
+            'ctx.providers.register(modelAdapterKind, adapter)',
           )
         }
         expect(manifest.scripts).toHaveProperty('build')

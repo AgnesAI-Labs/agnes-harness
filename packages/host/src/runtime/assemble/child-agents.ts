@@ -78,12 +78,7 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
       entry: Object.freeze({
         id: provider.id,
         version: provider.version,
-        sourcePackage: providerSource(
-          owner,
-          this.origins,
-          sourcePackage ?? '@agnes/base',
-          sourcePackage !== undefined,
-        ),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/base'),
         capabilities: Object.freeze({ ...provider.capabilities }),
       }),
       lifetime: new AbortController(),
@@ -343,7 +338,7 @@ export function withBuiltinChildAgents(
         entry: normalizePluginExport({
           inject: ['providers'],
           apply(ctx: Context) {
-            ctx.providers.register(childAgentKind, '@agnes/base', provider)
+            ctx.providers.registerHost(childAgentKind, '@agnes/base', provider)
           },
         }),
       },

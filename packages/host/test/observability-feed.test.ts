@@ -126,7 +126,7 @@ describe('observability feed', () => {
           disposed += 1
         },
       }
-      root.providers.register(observabilityKind, sourcePackage, {
+      root.providers.registerHost(observabilityKind, sourcePackage, {
         id,
         version: '1.0.0',
         open: () => {

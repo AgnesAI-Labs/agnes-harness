@@ -160,13 +160,12 @@ export interface ProvidersCatalogPort {
   catalog(): readonly ProviderCatalogEntry[]
 }
 
-/** Typed author registration shared by provider kinds; operation lifecycles stay with their owners. */
+/**
+ * Typed author registration shared by provider kinds; operation lifecycles stay with their owners.
+ * The Host attributes a registration to the package of the calling plugin row.
+ */
 export interface ProviderRegistrationPort extends ProvidersCatalogPort {
-  register<T extends ProviderIdentity>(
-    kind: ProviderKind<T>,
-    sourcePackage: string,
-    provider: NoInfer<T>,
-  ): () => Promise<void>
+  register<T extends ProviderIdentity>(kind: ProviderKind<T>, provider: NoInfer<T>): () => Promise<void>
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
   /** Binds the admitted callback. A host without a binder fails closed. */
   bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: BindableKind<S, P>): Promise<S>

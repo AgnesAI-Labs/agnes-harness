@@ -28,7 +28,7 @@ const source = defineProvider('reference-resolver', {
 
 export const references = definePlugin({
   inject: { providers: { required: true } },
-  apply(ctx) { ctx.providers.register(referenceResolverKind, 'my-package', source) },
+  apply(ctx) { ctx.providers.register(referenceResolverKind, source) },
 })
 ```
 

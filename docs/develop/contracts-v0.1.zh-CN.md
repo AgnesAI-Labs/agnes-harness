@@ -93,7 +93,7 @@ Dispatch 按操作/attempt 触发，不保证跨重试或崩溃全局一次。�
 
 ## 注册、选择与重启 scope
 
-`ctx.providers.register(kind, sourcePackage, provider)` / `resolve(kind, selection)` 必须使用其 owner 安装的精确 kind token（`defineKind<T>()`）。同名但不同身份 token 被拒绝。经验证的 plugin owner 决定来源身份，冲突声明拒绝。不可变目录含 kind/id/version/source/capabilities/scope/restartRequired/active/selectedFor，不含 factory/凭据。Active 表示配置选中，不表示活动会话数。具名 service facade 继续存在。
+`ctx.providers.register(kind, provider)` / `resolve(kind, selection)` 必须使用其 owner 安装的精确 kind token（`defineKind<T>()`）。同名但不同身份 token 被拒绝。来源身份由 Host 从已核实的插件行推导，作者不传入。不可变目录含 kind/id/version/source/capabilities/scope/restartRequired/active/selectedFor，不含 factory/凭据。Active 表示配置选中，不表示活动会话数。具名 service facade 继续存在。
 
 `ProviderError` codes 为 `E_PROVIDER_DUPLICATE/E_PROVIDER_UNKNOWN/E_PROVIDER_INVALID/E_PROVIDER_INCOMPATIBLE/E_PROVIDER_UNAVAILABLE`，字段为 `kind`、可选 `provider`、`operation`、默认 false 的 `retryable`、可选 `hint` 和原始 `cause`。应按 code 分支，不依赖文本。八种具名 Host facade 与独立 Core Loop/tool registry 对注册、解析、选择、能力不兼容和无效构造结果统一使用这些码；provider 自己抛出的操作错误和 AbortSignal reason 保持原样，不自动包装为准入错误。
 

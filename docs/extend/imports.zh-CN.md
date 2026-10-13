@@ -20,9 +20,9 @@
 | 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
 | 添加浏览器面板或 UI 资产 | `@agnes/web-client` | 类型 `ClientContext`、`ClientModule`；`workbenchPanels` | 作者面，仅浏览器。导出 `apply(ctx, config)`，通过 `ctx.slots` 或 `workbenchPanels` 注册，在客户端描述文件声明 entry/styles/slots。简单 JS 侧栏无需导入 SDK；见[前端模块](../develop/frontend.zh-CN.md)和[工作台面板](workbench-panels.zh-CN.md)。 |
 | 描述客户端资产 manifest | `@agnes/extension-api` | 类型 `ExtensionManifest` | 描述文件 `client` 部分的作者合同。`agnes.clientDescriptors` 将描述文件绑定到后端 row；路径必须位于包内。 |
-| 定义 Agent Loop | `@agnes/plugin-runtime` | `defineWorkflowLoop`、`defineLoop`、`defineAgnesPlugin` | 作者面。注入 `providers`，通过 `ctx.providers.register(loopKind, packageName, loop)` 注册。 |
+| 定义 Agent Loop | `@agnes/plugin-runtime` | `defineWorkflowLoop`、`defineLoop`、`defineAgnesPlugin` | 作者面。注入 `providers`，通过 `ctx.providers.register(loopKind, loop)` 注册。 |
 | 实现 Loop 步骤与 checkpoint | `@agnes/extension-api` | `loopCheckpointCodec`；类型 `LoopFactory`、`LoopContext`、`LoopDriver`、`LoopCheckpoint`、`ProviderPluginContext` | 作者合同；见 [Loop 模板](../../templates/loop/src/index.ts)。使用受控模型/工具端口和传入的取消信号。 |
-| 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin` | 作者面。注入 `providers`，调用 `ctx.providers.register(modelAdapterKind, packageName, adapter)`。 |
+| 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin` | 作者面。注入 `providers`，调用 `ctx.providers.register(modelAdapterKind, adapter)`。 |
 | 实现适配器配置和流式输出 | `@agnes/extension-api` | 类型 `ModelAdapter`、`ModelAdapterConfig`、`ModelAdapterInstance`、`ModelAdapterEvent`、`ProviderPluginContext` | 作者合同；见[适配器模板](../../templates/model-adapter/src/index.ts)。 |
 | 打包 MCP + Skills | `@agnes/plugin-runtime`、`@agnes/protocol` | 分别为 `defineAgnesPlugin`、类型 `Context`；类型 `McpServerDefinitionInput` | 作者面。MCP 定义和 `SKILL.md` 是包数据，不是工具 helper。注入 `skills`，调用 `ctx.skills.register(...)`；源码模板导入 `@agnes/resource-control-runtime` 以获得 context 类型。该包不是 Host 提供的 external；候选 creator 会省略此导入。见[模板](../../templates/mcp-skills/src/index.ts)和 [MCP 管理](../guide/mcp.zh-CN.md)。 |
 | 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → 各 `agnes.plugins[].capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
@@ -34,7 +34,7 @@
 
 ## Kind token
 
-kind 是用 `defineKind` 创建的同一种 token，自己声明支持 `ctx.providers.register`、`ctx.providers.bindOwn` 还是两者都支持（带 `bind` 选项即可绑定）。`ctx.providers.register(kind, packageId, provider)` 与 `ctx.providers.bindOwn(kind)` 接受同一种 token 类型，Host 会拒绝 kind 未声明的操作。
+kind 是用 `defineKind` 创建的同一种 token，自己声明支持 `ctx.providers.register`、`ctx.providers.bindOwn` 还是两者都支持（带 `bind` 选项即可绑定）。`ctx.providers.register(kind, provider)` 与 `ctx.providers.bindOwn(kind)` 接受同一种 token 类型，Host 会拒绝 kind 未声明的操作。
 
 Host 安装的 provider kind 由 `@agnes/extension-api` 导出（`@agnes/plugin-runtime` 同样再导出）：`loopKind`、`modelAdapterKind`、`compactionKind`、`persistenceKind`、`sandboxKind`、`toolRuntimeKind`、`toolPolicyKind`、`childAgentKind`、`referenceResolverKind`、`memoryKind`、`systemPromptKind`、`webhookTriggerKind`；七个 seam kind（`approvalKind`、`principalsKind`、`billingKind`、`checkpointKind`、`artifactsKind`、`verifierKind`、`repairKind`）来自 `@agnes/extension-api/seams`。
 
@@ -49,7 +49,7 @@ Host 提供的公开作者命名空间共有以下六个可绑定 kind。请从�
 | 延迟工具队列 | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 | 延迟调用 producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
-当提供了该端口时，`ctx.providers.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通插件通过 `ctx.providers.register(kind, packageId, provider)` 注册，通过 `ctx.providers.bindOwn(kind)` 绑定；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
+当提供了该端口时，`ctx.providers.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通插件通过 `ctx.providers.register(kind, provider)` 注册，通过 `ctx.providers.bindOwn(kind)` 绑定；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
 
 ## 新作者代码应避开的入口
 

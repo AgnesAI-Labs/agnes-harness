@@ -43,12 +43,12 @@ export const seamProvidersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     const { providers } = ctx
-    providers.register(approvalKind, '@agnes/base', BASE_SEAM_PROVIDERS.approval)
-    providers.register(principalsKind, '@agnes/base', BASE_SEAM_PROVIDERS.principals)
-    providers.register(billingKind, '@agnes/base', BASE_SEAM_PROVIDERS.billing)
-    providers.register(checkpointKind, '@agnes/base', BASE_SEAM_PROVIDERS.checkpoint)
-    providers.register(artifactsKind, '@agnes/base', BASE_SEAM_PROVIDERS.artifacts)
-    providers.register(verifierKind, '@agnes/base', BASE_SEAM_PROVIDERS.verifier)
-    providers.register(repairKind, '@agnes/base', BASE_SEAM_PROVIDERS.repair)
+    providers.register(approvalKind, BASE_SEAM_PROVIDERS.approval)
+    providers.register(principalsKind, BASE_SEAM_PROVIDERS.principals)
+    providers.register(billingKind, BASE_SEAM_PROVIDERS.billing)
+    providers.register(checkpointKind, BASE_SEAM_PROVIDERS.checkpoint)
+    providers.register(artifactsKind, BASE_SEAM_PROVIDERS.artifacts)
+    providers.register(verifierKind, BASE_SEAM_PROVIDERS.verifier)
+    providers.register(repairKind, BASE_SEAM_PROVIDERS.repair)
   },
 }

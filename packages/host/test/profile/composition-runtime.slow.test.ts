@@ -64,7 +64,7 @@ function bundleFixture() {
           body: `ctx.tools.register(tool('fixture_${index}'))
 ${
   index === 0
-    ? `ctx.providers.register(loopKind, 'acme/a', {
+    ? `ctx.providers.registerHost(loopKind, 'acme/a', {
   id: 'fixture.business', version: '1.0.0', capabilities: [],
   codec: { version: 1, encode: (state) => ({ codecVersion: 1, state }), decode: (checkpoint) => checkpoint.state },
   create: () => ({ step: async () => ({ outcome: 'idle' }), cancel() {}, dispose() {}, checkpoint: () => ({ codecVersion: 1, state: null }) }),
@@ -305,7 +305,7 @@ function presetCompositionFixture() {
             entry: normalizePluginExport({
               inject: ['providers'],
               apply(ctx) {
-                ctx.providers.register(compactionKind, '@agnes/host', {
+                ctx.providers.registerHost(compactionKind, '@agnes/host', {
                   id: 'fixture',
                   version: '1.0.0',
                   create: () => ({

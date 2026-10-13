@@ -37,10 +37,8 @@ const altPackage = {
       },
       entry: normalizePluginExport({
         inject: ['providers'],
-        apply: (ctx: {
-          providers: { register(kind: unknown, source: string, provider: unknown): unknown }
-        }) => {
-          ctx.providers.register(approvalKind, '@agnes/code', alternate)
+        apply: (ctx: { providers: { register(kind: unknown, provider: unknown): unknown } }) => {
+          ctx.providers.register(approvalKind, alternate)
         },
       } as never),
     },

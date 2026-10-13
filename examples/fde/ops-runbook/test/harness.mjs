@@ -182,7 +182,7 @@ export async function runWorkflow(
       if (!map.has(id)) throw new Error('Missing public provider: ' + id)
       return map.get(id)
     },
-    register(_source, provider) {
+    register(provider) {
       map.set(provider.id, provider)
       return async () => {
         map.delete(provider.id)
@@ -194,9 +194,9 @@ export async function runWorkflow(
     config,
     services: {
       providers: {
-        register(kind, source, provider) {
+        register(kind, provider) {
           assert.ok([loopKind, toolPolicyKind].includes(kind))
-          return registry(kind === loopKind ? loops : policies).register(source, provider)
+          return registry(kind === loopKind ? loops : policies).register(provider)
         },
         resolve(kind, id) {
           assert.equal(kind, toolPolicyKind)

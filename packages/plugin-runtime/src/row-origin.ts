@@ -7,6 +7,8 @@ export interface RowOrigin {
   readonly rowId: string
   readonly exportName: string
   readonly declaredProvides: readonly string[]
+  /** The bundled package a builtin row belongs to, as stated by the Host's row builder. */
+  readonly ownerPackage?: string
 }
 
 export interface RowOriginLookup {

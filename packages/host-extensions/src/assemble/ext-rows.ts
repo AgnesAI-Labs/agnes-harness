@@ -249,7 +249,7 @@ export function buildExtensionRow(
     provides: [],
     ...(input.disabled === undefined ? {} : { disabled: input.disabled }),
   })
-  return Object.freeze({ row, claim: Object.freeze({ row, entry }) })
+  return Object.freeze({ row, claim: Object.freeze({ row, entry, ownerPackage: input.packageId }) })
 }
 
 /** Privileged inputs a builtin ext: row may receive, keyed on the ROW id. A row is the only way an

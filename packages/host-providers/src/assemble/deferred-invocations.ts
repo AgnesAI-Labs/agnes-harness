@@ -303,7 +303,7 @@ export class DeferredInvocationsService {
   /** No plugin row: keep the host backend id. A verified row pins source to that package id. */
   private admittedSource(fallback: string): string {
     try {
-      return providerSource(this.ownerContext, this.origins, fallback, true)
+      return providerSource(this.ownerContext, this.origins, fallback)
     } catch (error) {
       if (isHostError(error, 'E_EXT_LOAD') && error.message.includes('verified plugin row')) return fallback
       throw error

@@ -77,8 +77,8 @@ export function defineWorkflowLoop(options: WorkflowOptions) {
       config: { workflow?: WorkflowData } = {},
     ) {
       for (const definition of options.tools ?? []) ctx.tools.register(definition)
-      ctx.providers.register(loopKind, options.source, createFactory(config.workflow))
-      ctx.providers.register(toolPolicyKind, options.source, {
+      ctx.providers.register(loopKind, createFactory(config.workflow))
+      ctx.providers.register(toolPolicyKind, {
         ...policy,
         async decide(input, signal, ports) {
           const base = await ctx.providers.resolve(toolPolicyKind, 'default').decide(input, signal, ports)

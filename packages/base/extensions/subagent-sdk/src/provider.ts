@@ -130,6 +130,6 @@ export const sdkChildAgentsPlugin = {
     const parsed = readSdkEngineDocument(config)
     if (!parsed?.enabled) return
     assertEngineLaunch(parsed)
-    ctx.providers.register(childAgentKind, '@agnes/base', sdkChildAgentProvider(parsed))
+    ctx.providers.register(childAgentKind, sdkChildAgentProvider(parsed))
   },
 }

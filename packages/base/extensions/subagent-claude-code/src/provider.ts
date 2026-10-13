@@ -107,6 +107,6 @@ export const claudeCodeChildAgentsPlugin = {
     const parsed = readEngineDocument(config)
     if (!parsed?.enabled) return
     assertEngineLaunch(parsed)
-    ctx.providers.register(childAgentKind, '@agnes/base', claudeCodeChildAgentProvider(parsed))
+    ctx.providers.register(childAgentKind, claudeCodeChildAgentProvider(parsed))
   },
 }

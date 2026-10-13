@@ -15,6 +15,6 @@ export const fileMemoryProvider: MemoryProvider = Object.freeze({
 export const memoryPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(memoryKind, '@agnes/base', fileMemoryProvider)
+    ctx.providers.register(memoryKind, fileMemoryProvider)
   },
 }

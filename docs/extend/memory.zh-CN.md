@@ -4,7 +4,7 @@
 
 每个会话选择并固定一个 **memory** provider。官方 `file@1.0.0` 由 `@agnes/base` 提供，实现在 `@agnes/memory-file`，只使用公开 [MemoryProvider 合同](../../packages/extension-api/src/memory.ts)。未安装记忆 provider 的部署保留原有行为。
 
-插件注入 `providers`，以 `ctx.providers.register(memoryKind, '@acme/memory', enterpriseMemory)` 注册。导入 `memoryKind`、`MemoryProvider`、`ProviderPluginContext` 均从 `@agnes/extension-api`，不要依赖 Core 私有路径。
+插件注入 `providers`，以 `ctx.providers.register(memoryKind, enterpriseMemory)` 注册。导入 `memoryKind`、`MemoryProvider`、`ProviderPluginContext` 均从 `@agnes/extension-api`，不要依赖 Core 私有路径。
 
 ```ts
 import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@agnes/extension-api'
@@ -12,7 +12,7 @@ import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@ag
 export const enterpriseMemoryPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
-    ctx.providers.register(memoryKind, '@acme/memory', enterpriseMemory)
+    ctx.providers.register(memoryKind, enterpriseMemory)
   },
 }
 declare const enterpriseMemory: MemoryProvider

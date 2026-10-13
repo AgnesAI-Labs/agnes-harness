@@ -28,7 +28,7 @@ it('routes official and community sources through one kind, re-reads at resolve 
   const root = new Context()
   const service = installReferenceResolvers(root)
   for (const source of ['file', 'session'] as const)
-    root.providers.register(referenceResolverKind, 'fixture', {
+    root.providers.registerHost(referenceResolverKind, 'fixture', {
       id: source,
       version: '1.0.0',
       search: (query, context) => context[source === 'file' ? 'files' : 'sessions'].search(query),
@@ -71,7 +71,7 @@ it('routes official and community sources through one kind, re-reads at resolve 
       'Permission denied',
     )
     await expect(service.resolve([{ source: 'unknown', id: 'x' }], context)).rejects.toThrow('not registered')
-    root.providers.register(referenceResolverKind, 'community', {
+    root.providers.registerHost(referenceResolverKind, 'community', {
       id: 'kb',
       version: '1.0.0',
       search: context.files.search,

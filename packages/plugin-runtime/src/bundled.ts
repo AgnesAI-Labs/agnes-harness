@@ -48,9 +48,7 @@ function facetsOver(api: ExtensionAPI): PluginContextFacets {
     resources: () => ({ register: (entry) => api.registerResource(entry) }),
     eventLog: () => ({ append: (name, data) => api.events.append(name, data) }),
     providers: () => ({
-      // The Host stamps the source package; the argument only keeps one call shape for every plugin.
-      register: (kind, _sourcePackage, provider) =>
-        api.providers.register(kind as never, provider as never) as never,
+      register: (kind, provider) => api.providers.register(kind as never, provider as never) as never,
       bindOwn: (kind) => api.providers.bindOwn(kind),
       catalog: () => refuse('provider catalog'),
       resolve: () => refuse('provider resolution'),

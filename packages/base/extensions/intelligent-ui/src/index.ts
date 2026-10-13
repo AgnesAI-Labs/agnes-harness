@@ -36,7 +36,7 @@ export default defineAgnesPlugin({
       }
     }
     const off = [
-      plugin.providers.register(intelligentUiKind, '@agnes/base', {
+      plugin.providers.register(intelligentUiKind, {
         id: UI_PROVIDER_ID,
         version: UI_PROVIDER_VERSION,
         open: createIntelligentUiService,

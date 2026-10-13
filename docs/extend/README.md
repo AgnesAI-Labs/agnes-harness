@@ -86,6 +86,6 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 
 [Short UI author guide](../develop/ui-author-guide.md): shared buttons, contextual panels, settings groups, surface summaries and token rules.
 
-Register tools, Skills and providers with `ctx.tools.register(tool)`, `ctx.skills.register(skill)` and `ctx.providers.register(kind, packageName, provider)`. Declare the corresponding injection; the platform owns cleanup without an extra `ctx.effect`. Connections and subscriptions you create still need lifecycle cleanup.
+Register tools, Skills and providers with `ctx.tools.register(tool)`, `ctx.skills.register(skill)` and `ctx.providers.register(kind, provider)`. Declare the corresponding injection; the platform owns cleanup without an extra `ctx.effect`. Connections and subscriptions you create still need lifecycle cleanup.
 
 Omit `ToolMeta.costHint`, `deferLoading` and `requiresApproval` for no cost estimate, initial discovery and approval inferred from `isDestructive`. Import the `readOnlyTool` / `writeTool` metadata presets from plugin-runtime: use `meta: readOnlyTool`, or spread a preset and override fields. `modelVisible: false` hides model discovery/schemas while preserving internal calls; `requiresImageInput: true` limits discovery/execution to models with native image input.

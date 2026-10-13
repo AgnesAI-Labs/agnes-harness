@@ -162,12 +162,7 @@ export class ModelAdapterRegistry extends Service {
         id: adapter.id,
         wireApi: adapter.wireApi,
         version: adapter.version,
-        sourcePackage: providerSource(
-          owner,
-          this.origins,
-          sourcePackage ?? '@agnes/ai',
-          sourcePackage !== undefined,
-        ),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/ai'),
         capabilities: Object.freeze({ ...adapter.capabilities }),
       }),
       lifetime: new ProviderLifetime('model-adapter', adapter.id),
@@ -267,7 +262,7 @@ export const builtinModelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     modelAdaptersPlugin.apply(ctx)
-    ctx.providers.register(modelAdapterKind, '@agnes/ai', scriptedAdapter)
+    ctx.providers.register(modelAdapterKind, scriptedAdapter)
   },
 }
 

@@ -10,6 +10,7 @@ type BuiltinInput = Readonly<{
   row: Readonly<EntryRow>
   entry: VerifiedRowEntry
   extras?: VerifiedExtrasEnvelope
+  ownerPackage?: string
 }>
 
 /** Host-private builtin source. D74 trusts the desired row's existing mount identity. */

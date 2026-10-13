@@ -44,6 +44,6 @@ const adapter: ModelAdapter = {
 export const plugin = {
   inject: ['providers'],
   apply(ctx: { providers: ProviderRegistrationPort }) {
-    ctx.providers.register(modelAdapterKind, '@community/fake-model-adapter', adapter)
+    ctx.providers.register(modelAdapterKind, adapter)
   },
 }

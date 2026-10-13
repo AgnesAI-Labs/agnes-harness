@@ -197,7 +197,7 @@ export const main = {
   ...workflow.main,
   apply(ctx, config) {
     workflow.main.apply(ctx, config)
-    ctx.providers.register(uiDataSourceKind, '@agnes-fde/finance-reconcile', {
+    ctx.providers.register(uiDataSourceKind, {
       id: 'finance/differences',
       version: '1.0.0',
       paramsSchema: sourceParams,
