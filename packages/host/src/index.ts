@@ -449,6 +449,14 @@ export {
   type StoredOpeningReader,
 } from './stored-opening.js'
 export {
+  ATTACHMENT_LIMIT_DEFAULTS,
+  type AttachmentLimitKey,
+  AttachmentQuotaError,
+  attachmentLimit,
+  createUserAttachmentPort,
+  type HostUserAttachmentPort,
+} from './user-attachments.js'
+export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,
   WorkspaceDirectoryError,

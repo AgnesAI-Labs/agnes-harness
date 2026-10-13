@@ -121,6 +121,8 @@ export type KernelOptions = {
   hostToolDispatch?: HostToolDispatchPort
   /** Host-private artifact/media ports; auxiliary admission remains a non-root Core capability. */
   requestMedia?: SessionDeps['requestMedia']
+  /** Host attachment store for user input; omitted, attachments stay inline and references are refused. */
+  attachments?: SessionDeps['attachments']
   /** Host-owned whole-wire image token bound used only when the provider cannot count images. */
   imageInputTokenFallback?: SessionDeps['imageInputTokenFallback']
   logger?: Logger
@@ -501,6 +503,7 @@ export class Kernel {
       ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
       ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
       ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
+      ...(this.o.attachments ? { attachments: this.o.attachments } : {}),
       ...(this.o.imageInputTokenFallback ? { imageInputTokenFallback: this.o.imageInputTokenFallback } : {}),
       logger,
       invariants: this.invariants,

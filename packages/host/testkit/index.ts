@@ -165,6 +165,12 @@ export type TestHostOptions = {
   provider?: Provider | ((p: ResolvedProfile, o: ProviderBuildOptions) => Provider)
   /** Profile `limits` this host resolves with, e.g. the deployment's `cost.credits_per_usd`. */
   limits?: Record<string, number>
+  /**
+   * The profile's `attachments.storeByReference`. Off unless a case turns it on: request building
+   * and session attachment reads do not resolve references yet, so a case that sends attachments
+   * through a model turn needs them inline.
+   */
+  storeAttachmentsByReference?: boolean
   script?: ConstructorParameters<typeof ScriptedProvider>[0]['scripts']
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
@@ -318,6 +324,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
         ...(o.allowed ? { presets: { allowed: o.allowed } } : {}),
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...(o.limits ? { limits: o.limits } : {}),
+        attachments: { storeByReference: o.storeAttachmentsByReference ?? false },
         ...o.profileInputs?.user,
         ...(o.contract !== undefined
           ? {

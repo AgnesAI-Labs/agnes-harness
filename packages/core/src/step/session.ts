@@ -103,6 +103,7 @@ import type {
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
+import { admitAttachments, attachmentDeadlineMs, type UserAttachmentPort } from './attachment-admission.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { deferredEffectId } from './deferred.js'
@@ -378,6 +379,8 @@ export type SessionDeps = {
       transformImage?: AuxiliaryVisionAssemblyInput['transformImage']
     }>
   }>
+  /** Host attachment store: inline attachments become references before they are queued. */
+  attachments?: UserAttachmentPort
   registry: ToolRegistry
   /** Legacy fixed resource table used when Host does not supply a current-generation lookup. */
   resources?: ResourceRegistry
@@ -565,6 +568,8 @@ export class SessionImpl {
     this.grantsRestored = true
   }
   private lock: Promise<void> = Promise.resolve()
+  /** What the session already references; a reference already in its history needs no new receipt. */
+  attachmentIndex?: { referenced(sha256: string): boolean; referencedBytes(): number }
   /**
    * The cancellation scope of the work in flight, which is the scope of one `run()`. `run()`
    * replaces it, because "stop this turn" and "this session is over" are different statements and
@@ -957,6 +962,25 @@ export class SessionImpl {
     } catch (error) {
       return Promise.reject(error)
     }
+    // Outside the lock: storing bytes can take seconds and writes nothing to the ledger.
+    const admitted = admitAttachments({
+      content,
+      sessionKey: this.key,
+      port: this.d.attachments,
+      referenced: (sha256) => this.attachmentIndex?.referenced(sha256) ?? false,
+      sessionBytes: () => this.attachmentIndex?.referencedBytes() ?? 0,
+      signal: AbortSignal.timeout(attachmentDeadlineMs(content)),
+    })
+    return admitted.then((queued) => this.lockedEnqueue(target, msg, content, queued))
+  }
+
+  /** `checked` is the input as sent, for the model's image limits; `content` is what the ledger keeps. */
+  private lockedEnqueue(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    checked: ContentBlock[],
+    content: ContentBlock[],
+  ): Promise<Seq> {
     return this.locked(async () => {
       if (msg.budget !== undefined) {
         if (target !== 'next-turn')
@@ -964,10 +988,10 @@ export class SessionImpl {
         if (!Number.isFinite(msg.budget) || msg.budget < 0)
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
       }
-      if (content.some((block) => block.type === 'image')) {
+      if (checked.some((block) => block.type === 'image')) {
         const target = resolveModel(this, 'primary')
         const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
-        const error = modelImageInputError(model, [{ content }])
+        const error = modelImageInputError(model, [{ content: checked }])
         if (error) throw new CoreError('E_ENVELOPE', error)
       }
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }

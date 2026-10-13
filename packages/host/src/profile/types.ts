@@ -1,6 +1,7 @@
 import type { SeamName } from '@agnes/core'
 import type {
   ApprovalProfile,
+  AttachmentsProfile,
   CommandHooksPolicy,
   ExtensionIsolationPolicy,
   ExtensionIsolationRequest,
@@ -38,7 +39,7 @@ export type Transport = {
 // a declaration that resolved here could not be handed to a wire adapter without a cast, and the
 // catalogue field (`models`) was simply missing. One declaration, in the package both sides depend
 // on, is the whole point of protocol owning it.
-export type { ReconcilePolicy, RouteDecl }
+export type { AttachmentsProfile, ReconcilePolicy, RouteDecl }
 export type ProviderConfig = {
   package: string
   adapters?: string[]
@@ -134,6 +135,8 @@ export type RuntimeProfileManifest = {
   reconcile?: ReconcilePolicy
   approvals?: ApprovalProfile
   computerUse?: ComputerUseProfile
+  /** User layer only: a workspace fragment cannot change how attachments are stored. */
+  attachments?: AttachmentsProfile
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
 }
@@ -231,6 +234,7 @@ export type ResolvedProfile = Readonly<{
   reconcile: ReconcilePolicy
   approvals: ApprovalProfile
   computerUse: ResolvedComputerUseProfile
+  attachments: { storeByReference: boolean }
   commandHooks?: CommandHooksPolicy
   extensionIsolation?: ExtensionIsolationPolicy
   runtimes: ('python' | 'typescript')[]

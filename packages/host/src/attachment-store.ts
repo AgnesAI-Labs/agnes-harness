@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { FileHandle } from 'node:fs/promises'
-import { lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { link, lstat, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export type AttachmentKind = 'user-attachment' | 'request-version' | 'thumbnail'
@@ -133,8 +133,9 @@ async function sweepOld(dir: string, nowMs: number, wanted: (name: string) => bo
 
 /**
  * The public store: exactly the documented options. Staged writes are ordered and bounded; markers are
- * serialized within this process only, so one process (the one that owns uploads) must mark a given
- * object. The internal factory below carries the test seams and is not exported from the package root.
+ * serialized within this process only, so receipts must be added by one process (the one that owns
+ * uploads). A mark without a receipt only ever creates a missing marker, so any process may make it.
+ * The internal factory below carries the test seams and is not exported from the package root.
  */
 export function createAttachmentStore(o: { dataDir: string; clock?: () => number }): AttachmentStore {
   return createAttachmentStoreInternal({ dataDir: o.dataDir, ...(o.clock ? { clock: o.clock } : {}) })
@@ -324,10 +325,19 @@ export function createAttachmentStoreInternal(o: {
     return marker
   }
 
-  async function writeMarker(sha256: string, marker: UserAttachmentMarker): Promise<void> {
+  /**
+   * `createOnly` publishes with a hard link, which fails when a marker is already there instead of
+   * replacing it; resolves false in that case. Without it the marker is replaced.
+   */
+  async function writeMarker(
+    sha256: string,
+    marker: UserAttachmentMarker,
+    createOnly = false,
+  ): Promise<boolean> {
     const directory = join(markers, sha256.slice(0, 2))
     await ensureDir(directory)
     const temporary = `${markerPath(sha256)}.${randomUUID()}.tmp`
+    let created = true
     try {
       const handle = await open(temporary, 'wx', 0o600)
       try {
@@ -336,12 +346,22 @@ export function createAttachmentStoreInternal(o: {
       } finally {
         await handle.close()
       }
-      await rename(temporary, markerPath(sha256))
+      if (!createOnly) await rename(temporary, markerPath(sha256))
+      else {
+        try {
+          await link(temporary, markerPath(sha256))
+        } catch (error) {
+          if (errorCode(error) !== 'EEXIST') throw error
+          created = false
+        }
+        await rm(temporary, { force: true })
+      }
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined)
       throw error
     }
     await syncDir(directory)
+    return created
   }
 
   const store: AttachmentStore = {
@@ -399,14 +419,23 @@ export function createAttachmentStoreInternal(o: {
         const receipts = [...(current?.receipts ?? [])]
         if (receipt && !receipts.includes(receipt)) receipts.push(receipt)
         if (current && receipts.length === current.receipts.length) return
-        await writeMarker(object.sha256, {
-          schemaVersion: 1,
+        const marker = {
+          schemaVersion: 1 as const,
           sha256: object.sha256,
           bytes: object.bytes,
           mimeType: current?.mimeType ?? meta.mimeType,
           firstSeenMs: current?.firstSeenMs ?? clock(),
           receipts,
-        })
+        }
+        // A mark without a receipt only creates a missing marker and never replaces one, so any
+        // process may make it: another process's receipt written since the read above survives.
+        if (receipt) {
+          await writeMarker(object.sha256, marker)
+          return
+        }
+        if (await writeMarker(object.sha256, marker, true)) return
+        // Already there: either intact (nothing to add) or damaged, which a rewrite repairs.
+        if (!(await readMarker(object.sha256, false))) await writeMarker(object.sha256, marker)
       })
       const tail = next.catch(() => undefined)
       markerLocks.set(object.sha256, tail)

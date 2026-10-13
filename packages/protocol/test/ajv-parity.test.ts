@@ -4653,6 +4653,16 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { mode: 'automatic' }, { mode: 'manual', extra: true }],
     note: 'the resolved approval policy is explicit and closed',
   },
+  AttachmentsProfile: {
+    valid: { storeByReference: false },
+    invalid: [{ storeByReference: 'no' }, { storeByReference: true, extra: true }, null],
+    note: 'the attachment storage switch is one optional boolean',
+  },
+  ResolvedAttachmentsProfile: {
+    valid: { storeByReference: true },
+    invalid: [{}, { storeByReference: 1 }, { storeByReference: true, extra: true }],
+    note: 'resolved profiles always say how attachments are stored',
+  },
   ComputerUseAppIdentity: {
     valid: {
       platform: 'win32',
@@ -4897,6 +4907,8 @@ const JOBS_SAMPLES: Record<string, Sample> = {
 const ProfileDefs: Record<string, TSchema> = {
   ApprovalMode: ProfileGen.ApprovalMode,
   ApprovalProfile: ProfileGen.ApprovalProfile,
+  AttachmentsProfile: ProfileGen.AttachmentsProfile,
+  ResolvedAttachmentsProfile: ProfileGen.ResolvedAttachmentsProfile,
   CommandHookGrant: ProfileGen.CommandHookGrant,
   CommandHooksPolicy: ProfileGen.CommandHooksPolicy,
   ComputerUseAppIdentity: ProfileGen.ComputerUseAppIdentity,

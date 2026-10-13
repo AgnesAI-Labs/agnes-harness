@@ -500,4 +500,23 @@ describe('model image limits', () => {
     ])
     expect(error === undefined).toBe(accepted)
   })
+  it('counts a stored image once and checks its declared size without bytes', () => {
+    const ref = (width: number, height: number) => ({
+      type: 'image',
+      mimeType: 'image/png',
+      attachment: { sha256: 'a'.repeat(64), bytes: 10 },
+      width,
+      height,
+    })
+    const model = {
+      input: ['image'],
+      inputLimits: { images: { maxPerMessage: 2, resize: { maxWidth: 10, maxHeight: 10, maxBytes: 1 } } },
+    }
+    expect(modelImageInputError(model, [{ content: [ref(10, 10), ref(1, 1)] }])).toBeUndefined()
+    expect(modelImageInputError(model, [{ content: [ref(11, 1)] }])).toMatch(/dimensions/)
+    expect(modelImageInputError(model, [{ content: [ref(1, 1), ref(1, 1), ref(1, 1)] }])).toMatch(/at most 2/)
+    expect(modelImageInputError(model, [{ content: [{ ...ref(1, 1), width: undefined }] }])).toBe(
+      'Invalid image input.',
+    )
+  })
 })

@@ -9,6 +9,7 @@ import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './co
 import { isolationOnlyLayer, mergeIsolation } from './isolation.js'
 import { assertNoReservedRouteName, BUILTIN_PACKAGES, loadTemplate } from './templates.js'
 import type {
+  AttachmentsProfile,
   PackageRef,
   ProfileInputs,
   ReconcilePolicy,
@@ -98,6 +99,25 @@ function mergeApprovals(
   return { mode: requested }
 }
 
+function attachmentsProfile(value: unknown, layer: Layer): AttachmentsProfile {
+  if (
+    layer !== 'workspace' &&
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).every((key) => key === 'storeByReference')
+  ) {
+    const storeByReference = (value as AttachmentsProfile).storeByReference
+    if (storeByReference === undefined) return {}
+    if (typeof storeByReference === 'boolean') return { storeByReference }
+  }
+  throw new HostError(
+    'E_PROFILE_FRAGMENT_KEY',
+    layer === 'workspace' ? 'a workspace cannot set attachments' : 'invalid attachments',
+    { source: { layer }, detail: { field: 'attachments' } },
+  )
+}
+
 function mergeManifest(
   base: RuntimeProfileManifest,
   over: Partial<RuntimeProfileManifest>,
@@ -159,6 +179,9 @@ function mergeManifest(
         break
       case 'approvals':
         out.approvals = mergeApprovals(base.approvals, v as RuntimeProfileManifest['approvals'], layer)
+        break
+      case 'attachments':
+        out.attachments = { ...(base.attachments ?? {}), ...attachmentsProfile(v, layer) }
         break
       case 'computerUse':
         out.computerUse = mergeComputerUse(
@@ -287,6 +310,8 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
           detail: { field: 'approvals.mode', mode },
         })
     }
+    if (Object.hasOwn(l.manifest, 'attachments'))
+      attachmentsProfile((l.manifest as { attachments?: unknown }).attachments, l.layer)
     if (Object.hasOwn(l.manifest, 'reconcile'))
       resolveReconcilePolicy((l.manifest as { reconcile?: unknown }).reconcile, l.layer)
   }
@@ -489,6 +514,7 @@ function finalize(draft: Draft, inputs: ProfileInputs, env: ResolveEnv): Resolve
     reconcile: resolveReconcilePolicy(m.reconcile ?? { point: 'immediate' }, 'builtin'),
     approvals: { mode: m.approvals?.mode ?? 'manual' },
     computerUse: resolveComputerUse(m.computerUse, undefined, 'user'),
+    attachments: { storeByReference: m.attachments?.storeByReference ?? true },
     ...(m.extensionIsolation ? { extensionIsolation: m.extensionIsolation } : {}),
     ...(m.commandHooks ? { commandHooks: structuredClone(m.commandHooks) } : {}),
     runtimes: [],

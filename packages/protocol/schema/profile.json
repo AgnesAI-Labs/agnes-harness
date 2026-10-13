@@ -20,6 +20,25 @@
         }
       }
     },
+    "AttachmentsProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeByReference": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ResolvedAttachmentsProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storeByReference"],
+      "properties": {
+        "storeByReference": {
+          "type": "boolean"
+        }
+      }
+    },
     "SeamName": {
       "enum": [
         "approval",
@@ -647,6 +666,9 @@
         "computerUse": {
           "$ref": "#/$defs/ComputerUseProfile"
         },
+        "attachments": {
+          "$ref": "#/$defs/AttachmentsProfile"
+        },
         "extensionIsolation": {
           "$ref": "#/$defs/ExtensionIsolationPolicy"
         },
@@ -758,6 +780,7 @@
         "presets",
         "policy",
         "computerUse",
+        "attachments",
         "hash",
         "reconcile"
       ],
@@ -1003,6 +1026,9 @@
         },
         "computerUse": {
           "$ref": "#/$defs/ResolvedComputerUseProfile"
+        },
+        "attachments": {
+          "$ref": "#/$defs/ResolvedAttachmentsProfile"
         },
         "runtimes": {
           "type": "array",

@@ -263,6 +263,7 @@ export type { PresetDoc } from '../gen/ts/preset.js'
 export type {
   ApprovalMode,
   ApprovalProfile,
+  AttachmentsProfile,
   Capability,
   CommandHookGrant,
   CommandHooksPolicy,
@@ -279,6 +280,7 @@ export type {
   ProfileFragment,
   ReconcilePoint,
   ReconcilePolicy,
+  ResolvedAttachmentsProfile,
   ResolvedComputerUseProfile,
   ResolvedProfile,
   RuntimeProfileManifest,
