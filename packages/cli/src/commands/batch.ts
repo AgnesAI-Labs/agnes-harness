@@ -294,14 +294,18 @@ export async function runBatchCommand(
     // unexpected goes up to main, which has the safe wording for it.
     if (error instanceof UsageError || !isRpcFailure(error)) throw error
     const code = codeOf(error)
-    // An older daemon lacks the methods; one without job tables (or not on its local socket) refuses them.
-    const missing = code === -32601 || code === -32006
+    // No such methods: no daemon that has them. Refused: a daemon without job tables, or a connection
+    // that is not the daemon owner's local socket.
+    const hint =
+      code === -32601
+        ? ' (batch processing needs the AGH daemon: agh daemon start)'
+        : code === -32006
+          ? ' (this daemon cannot take batch requests here: use the local socket of a current daemon, or restart it with agh daemon start)'
+          : ''
     // The daemon names its refusal (SEMANTIC_REJECTED) and says why in data.reason.
     const reason = (error as { data?: { reason?: unknown } }).data?.reason
     const message = typeof reason === 'string' ? reason : error instanceof Error ? error.message : ''
-    io.error(
-      `agh batch: ${inert(message).slice(0, 300) || `request refused (${String(code)})`}${missing ? ' (batch processing needs the AGH daemon: agh daemon start)' : ''}\n`,
-    )
+    io.error(`agh batch: ${inert(message).slice(0, 300) || `request refused (${String(code)})`}${hint}\n`)
     return 1
   }
 }

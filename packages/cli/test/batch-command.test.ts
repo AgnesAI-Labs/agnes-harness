@@ -166,11 +166,14 @@ describe('runBatchCommand', () => {
     expect(t.out.join('')).toContain('# Batch b0123456789ab')
   })
 
-  it('says the daemon is needed when a daemon without batch support refuses the method', async () => {
+  it('says this daemon cannot take batches here, without telling a running daemon to start', async () => {
     const f = fakeClient([rpc('Capability denied', -32006)])
     const t = io()
     expect(await runBatchCommand(parseBatchArgs(['list']), f.client, t.io)).toBe(1)
-    expect(t.err.join('')).toContain('agh daemon start')
+    expect(t.err.join('')).toBe(
+      'agh batch: Capability denied (this daemon cannot take batch requests here: use the local socket of a current daemon, or restart it with agh daemon start)\n',
+    )
+    expect(t.err.join('')).not.toContain('needs the AGH daemon')
   })
 
   it('says the daemon is needed when the method is missing', async () => {
