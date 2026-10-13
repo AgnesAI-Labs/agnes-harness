@@ -996,25 +996,7 @@
     color: var(--agnes-text-primary);
     font: var(--font-size-xs) var(--font-sans);
   }
-  /* Small touches shared by every surface: keyboard hint, state dot, completion mark, copy. */
-  .agh-kbd {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    min-width: 1.25rem;
-    justify-content: center;
-    padding: 0 var(--s4);
-    border: 1px solid var(--agnes-line-emphasis);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-sm);
-    color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-page);
-    font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    font-weight: var(--font-weight-regular);
-    line-height: 1.125rem;
-    white-space: nowrap;
-  }
+  /* Small touches shared by every surface: state dot, completion mark, copy confirmation. */
   .agh-status-dot {
     display: inline-block;
     flex: none;
