@@ -15,6 +15,7 @@
     "ui-gate.spec.ts",
     "ui-flows.spec.ts",
     "first-run.spec.ts",
+    "business-agents.spec.ts",
     "first-run-snapshots.ts",
     "workbench.spec.ts",
     "narrow.spec.ts",

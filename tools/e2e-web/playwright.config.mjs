@@ -25,6 +25,7 @@ export default defineConfig({
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
     'first-run.spec.ts',
+    'business-agents.spec.ts',
     'workbench.spec.ts',
     'narrow.spec.ts',
   ],
