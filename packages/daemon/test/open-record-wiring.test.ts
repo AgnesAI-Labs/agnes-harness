@@ -81,7 +81,8 @@ it('hands the worker session.open record and open progress to the pool observers
       })
       expect(records[0]?.detail.session).toMatch(/^[0-9a-f]{16}$/)
       expect(JSON.stringify(records[0]?.detail)).not.toContain('open-record')
-      // A new ledger is empty when opened. Reopened, it has rows to verify and says how far it got.
+      // A new ledger is empty when opened. Reopened, it has rows and says how far it got; the clean
+      // close left a verified-head checkpoint, so they are folded and verified in the background.
       expect(progress).toEqual([])
       await link.closeSession('reopen')
       const reopened = await pool.acquire(key, {
@@ -93,7 +94,7 @@ it('hands the worker session.open record and open progress to the pool observers
       await expect.poll(() => records.length).toBe(2)
       const head = records[1]?.detail.lastSeq as number
       expect(head).toBeGreaterThan(0)
-      expect(progress.at(-1)).toEqual({ sessionKey: key, phase: 'verify', done: head, total: head })
+      expect(progress.at(-1)).toEqual({ sessionKey: key, phase: 'fold', done: head, total: head })
     } finally {
       await pool.closeAll(2_000)
       await server.close()
