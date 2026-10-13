@@ -30,10 +30,11 @@ compaction: { enabled: true, reserve_tokens: 16384, keep_recent_tokens: 20000, a
 # preflight / per_request_cap / on_exceed / max_steps: read by core's readPreset.
 # attribution: NOT CONSUMED.
 budget: { preflight: estimate, per_request_cap: null, on_exceed: quote, max_steps: 100, attribution: own }
-# on_unavailable and timeout_ms: read by core's readPreset, and on_unavailable again by base's
-# approval seam. command_policy: validated by the host when a session opens and evaluated by base's
-# approval seam. Empty means nothing is pre-approved: every destructive call reaches a human, and
-# with nobody connected `deny` refuses it. That is the baseline's whole approval posture.
+# on_unavailable and timeout_ms: read by core's readPreset, and on_unavailable again by the selected
+# approval provider. command_policy: validated by the host when a session opens and enforced by the
+# command-table floor, which wraps whichever tool policy the session selected. Empty means nothing
+# is pre-approved: every destructive call reaches a human, and with nobody connected `deny` refuses
+# it. That is the baseline's whole approval posture.
 approval: { on_unavailable: deny, timeout_ms: 60000, command_policy: [] }
 # required: read by the host, which refuses to open a session when the platform cannot provide L1.
 # on_unavailable: read by core's readPreset. level: NOT CONSUMED.

@@ -159,25 +159,6 @@ function accountId(value: unknown): string {
 function legacyAccount(id: string): string {
   return `legacy-${id}`
 }
-function migrate(state: StoredConfigurationV1): StoredConfiguration {
-  const id = legacyAccount(state.provider.id)
-  return {
-    version: 2,
-    profile: state.profile,
-    revision: state.revision,
-    defaultAccountId: id,
-    accounts: [
-      {
-        ...state.provider,
-        accountId: id,
-        label: state.provider.id,
-        route: state.provider.id,
-        enabled: true,
-        authType: state.provider.id === CODEX_ID ? 'oauth' : 'api-key',
-      },
-    ],
-  }
-}
 function accountRef(entry: ConfigurationProvider, profile: string, id: string, revision: number): string {
   const key = createHash('sha256').update(`${profile}/${id}`).digest('hex').slice(0, 24)
   return `secret://${entry.id}/account-${key}-r${revision}`
@@ -190,7 +171,6 @@ type StaticCatalogue = {
 
 const FILE = 'configuration.json'
 const LOCK_FILE = 'configuration-lock.sqlite'
-const LEGACY_FILE = 'onboarding-selection.json'
 const MAX_CONFIG_BYTES = 1024 * 1024
 const MAX_MODELS = 4096
 const PROFILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -421,8 +401,6 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
 }
 
 function decodeState(value: unknown, profile: string): StoredConfiguration | undefined {
-  const legacy = decodeConfiguration(value, profile)
-  if (legacy) return migrate(legacy)
   if (
     !isRecord(value) ||
     !exactKeys(value, [
@@ -632,7 +610,6 @@ export function createConfigurationService(
     options.profileDir === undefined ? join(home, 'profiles', profile) : resolve(options.profileDir)
   const configPath = join(profileDir, FILE)
   const lockPath = join(profileDir, LOCK_FILE)
-  const legacyPath = join(profileDir, LEGACY_FILE)
   ensureDeploymentProxy()
   const request = options.request ?? deploymentFetch
   const credentialStore = createCredentialStore({ root: home })
@@ -738,49 +715,7 @@ export function createConfigurationService(
         if (!state) throw new ConfigurationError('CONFIG_INVALID_STATE', configPath)
         return state
       }
-      // Read the pre-unified CLI selection as a compatibility bridge.  It is accepted only when
-      // the reviewed provider/ref and managed credential still agree; malformed metadata is ignored.
-      const legacy = await readJsonFile(legacyPath).catch((error) => {
-        if (error instanceof ConfigurationError && error.code === 'CONFIG_INVALID_STATE') return undefined
-        throw error
-      })
-      if (
-        !isRecord(legacy) ||
-        !exactKeys(legacy, ['credentialRef', 'model', 'profile', 'route', 'thinking', 'version'])
-      )
-        return undefined
-      const entry = getApiKeyProvider(typeof legacy.route === 'string' ? legacy.route : '')
-      if (
-        legacy.version !== 1 ||
-        legacy.profile !== profile ||
-        !entry ||
-        legacy.credentialRef !== entry.credentialRef ||
-        typeof legacy.model !== 'string' ||
-        !MODEL.test(legacy.model)
-      )
-        return undefined
-      const credential = await readCredential(entry.credentialRef)
-      if (
-        credential?.kind !== 'api-key' ||
-        credential.provider !== entry.id ||
-        !isUsableCredential(credential.value)
-      )
-        return undefined
-      const catalogue = await staticCatalogue(entry).catch(() => undefined)
-      if (!catalogue?.records.some((record) => record.id === legacy.model)) return undefined
-      const models = catalogue.records.map((record) => ({ id: record.id, name: record.name }))
-      return migrate({
-        version: 1,
-        profile,
-        revision: 1,
-        provider: {
-          id: entry.id,
-          baseUrl: entry.baseUrl,
-          model: legacy.model,
-          credentialRef: entry.credentialRef,
-          models,
-        },
-      })
+      return undefined
     })()
     try {
       return await loading

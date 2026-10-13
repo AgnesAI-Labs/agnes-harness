@@ -532,19 +532,10 @@ it('isolates two same-type accounts across disk reload, routes, credentials and 
   expect(await createCredentialStore({ root }).read(ref)).toMatchObject({ value: 'key-work' })
 })
 
-it('migrates v1 only on successful write, preserves its route and rejects competing revisions', async () => {
+it('refuses a saved configuration in the removed single-provider format and leaves the file alone', async () => {
   const { mkdir, writeFile } = await import('node:fs/promises')
-  const { createHash } = await import('node:crypto')
-  const entry = getApiKeyProvider('openai')
-  if (!entry) throw new Error('catalogue')
-  const model = (await entry.createAdapter()).models(entry.route)[0]
-  if (!model) throw new Error('catalogue')
-  const root = await home(),
-    server = await fixture(model.id)
-  const profile = 'local-dev',
-    hash = createHash('sha256').update(profile).digest('hex').slice(0, 16)
-  const ref = `secret://openai/profile-${hash}-r1`
-  await createCredentialStore({ root }).putApiKey(ref, 'legacy-key')
+  const root = await home()
+  const profile = 'local-dev'
   const dir = join(root, 'profiles', profile),
     file = join(dir, 'configuration.json')
   await mkdir(dir, { recursive: true })
@@ -554,45 +545,36 @@ it('migrates v1 only on successful write, preserves its route and rejects compet
     revision: 1,
     provider: {
       id: 'openai',
-      baseUrl: server.baseUrl,
-      model: model.id,
-      models: [{ id: model.id, name: model.name }],
-      credentialRef: ref,
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-test',
+      models: [{ id: 'gpt-test', name: 'Test' }],
     },
   })
   await writeFile(file, original)
   const service = createConfigurationService({ home: root, profile })
-  expect((await service.get()).accounts?.[0]).toMatchObject({ accountId: 'legacy-openai', route: 'openai' })
+  await expect(service.get()).rejects.toMatchObject({ code: 'CONFIG_INVALID_STATE' })
   expect(await readFile(file, 'utf8')).toBe(original)
-  await expect(
-    service.save({
-      accountId: 'other',
-      providerId: 'openai',
-      baseUrl: server.baseUrl,
-      model: 'unknown',
-      apiKey: 'new-key',
+})
+
+it('does not read a provider choice from the removed onboarding selection file', async () => {
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const root = await home()
+  const profile = 'local-dev'
+  const dir = join(root, 'profiles', profile)
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    join(dir, 'onboarding-selection.json'),
+    JSON.stringify({
+      version: 1,
+      profile,
+      route: 'openai',
+      model: 'gpt-test',
+      thinking: 'off',
+      credentialRef: 'x',
     }),
-  ).rejects.toMatchObject({ code: 'CONFIG_MODEL_UNAVAILABLE' })
-  expect(await readFile(file, 'utf8')).toBe(original)
-  const peer = createConfigurationService({ home: root, profile })
-  const results = await Promise.allSettled([
-    service.save({ accountId: 'legacy-openai', providerId: 'openai', model: model.id, expectedRevision: 1 }),
-    peer.save({
-      accountId: 'other',
-      providerId: 'openai',
-      baseUrl: server.baseUrl,
-      model: model.id,
-      apiKey: 'other-key',
-      expectedRevision: 1,
-    }),
-  ])
-  expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
-  const failed = results.find((r) => r.status === 'rejected')
-  expect(failed?.status === 'rejected' ? failed.reason : undefined).toMatchObject({
-    code: 'CONFIG_REVISION_CONFLICT',
-  })
-  expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(2)
-  expect((await peer.profileInput()).provider?.routes?.some((r) => r.route === 'openai')).toBe(true)
+  )
+  const service = createConfigurationService({ home: root, profile })
+  expect((await service.get()).accounts ?? []).toEqual([])
 })
 
 it('persists session defaults in existing configuration with cross-instance revision checks', async () => {
