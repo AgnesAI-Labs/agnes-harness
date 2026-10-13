@@ -63,7 +63,7 @@ async function fixture(
               export: 'main',
               id: 'loop:children',
               apiRange: '^4.0.0',
-              inject: ['providers'],
+              inject: ['providers', 'childAgents'],
               runtime: 'in-process',
             },
           ],
@@ -453,7 +453,6 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
   }
   const f = await fixture(true, false, {
     main: {
-      inject: ['providers', 'childAgents'],
       apply(ctx: ProviderPluginContext & ChildAgentPluginContext) {
         registry = ctx.childAgents
         ctx.providers.register(loopKind, loop)
