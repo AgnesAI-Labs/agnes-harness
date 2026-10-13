@@ -1321,7 +1321,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
   // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 4214, exact.
-  'packages/host/src/assemble': 4214,
+  // 2026-10-13 batch processing: the daemon batch bridge reaches agnes/batch only; measured 4218, exact.
+  'packages/host/src/assemble': 4218,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1962,7 +1963,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 batch processing: engine pure functions; reviewed exact countLines packages/daemon/src 27572; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch tables and result export; reviewed exact countLines packages/daemon/src 28326; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch engine; reviewed exact countLines packages/daemon/src 29034; no exclusions or spare allocation.
-  'packages/daemon/src': 29034,
+  // 2026-10-13 batch processing: batch RPC, worker request frame and engine wiring; reviewed exact countLines packages/daemon/src 29320; no exclusions or spare allocation.
+  'packages/daemon/src': 29320,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2706,7 +2708,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
   // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 39042, exact.
-  'packages/host/src': 39042,
+  // 2026-10-13 batch processing: the daemon batch bridge reaches agnes/batch only; measured 39049, exact.
+  'packages/host/src': 39049,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
