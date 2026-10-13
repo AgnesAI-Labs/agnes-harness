@@ -1094,7 +1094,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/core/src 27083; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/core/src 27125; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/core/src 27144; no exclusions or spare allocation.
-  'packages/core/src': 27144,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
+  'packages/core/src': 27465,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1411,7 +1412,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: the raw row export method; reviewed exact countLines packages/protocol/src 2310; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/protocol/src 2390; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/protocol/src 2400; no exclusions or spare allocation.
-  'packages/protocol/src': 2400,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/protocol/src 2402; no exclusions or spare allocation.
+  'packages/protocol/src': 2402,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1605,7 +1607,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured: 5176, exact, no spare.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/sdk/src 5194; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/sdk/src 5284; no exclusions or spare allocation.
-  'packages/sdk/src': 5284,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/sdk/src 5287; no exclusions or spare allocation.
+  'packages/sdk/src': 5287,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1976,7 +1979,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27281; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/daemon/src 27312; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/daemon/src 27459; no exclusions or spare allocation.
-  'packages/daemon/src': 27459,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/daemon/src 27523; no exclusions or spare allocation.
+  'packages/daemon/src': 27523,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2319,7 +2323,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5250 with countLines(); the guard still rejects any further growth.
   // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
   // Measured 5252, exact, no spare (+2).
-  'packages/channels/src': 5252,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/channels/src 5255; no exclusions or spare allocation.
+  'packages/channels/src': 5255,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2728,7 +2733,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean helpers re-exported for workers; reviewed exact countLines packages/host/src 39760; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src 39765; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src 39897; no exclusions or spare allocation.
-  'packages/host/src': 39897,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src 39989; no exclusions or spare allocation.
+  'packages/host/src': 39989,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2902,7 +2908,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters 5631; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters 5636; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters 5639; no exclusions or spare allocation.
-  'packages/host/src/adapters': 5639,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src/adapters 5722; no exclusions or spare allocation.
+  'packages/host/src/adapters': 5722,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2927,7 +2934,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters/storage-sqlite 653; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters/storage-sqlite 658; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters/storage-sqlite 661; no exclusions or spare allocation.
-  'packages/host/src/adapters/storage-sqlite': 661,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src/adapters/storage-sqlite 670; no exclusions or spare allocation.
+  'packages/host/src/adapters/storage-sqlite': 670,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
