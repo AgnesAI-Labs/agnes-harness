@@ -81,13 +81,20 @@ it('creates, rotates and renames write-only values; reviews changing references 
     return response
   })
   const host = document.createElement('div')
-  document.body.append(host)
+  const owner = document.createElement('dialog')
+  owner.open = true
+  const form = owner.appendChild(document.createElement('form'))
+  form.append(host)
+  document.body.append(owner)
   let dispose!: () => void
   await act(async () => {
     dispose = mountRegion(host, <CredentialsPage api={new CredentialsApi(fetcher)} />)
   })
   try {
+    node<HTMLButtonElement>('credential-create').focus()
     await click('credential-create')
+    expect(node('credential-editor').parentElement?.closest('form')).toBeNull()
+    expect(node('credential-editor').closest('dialog')).toBe(owner)
     await fill('credential-label', 'Service key')
     await fill('credential-value', canary)
     const draft = node<HTMLInputElement>('credential-value')
@@ -100,9 +107,11 @@ it('creates, rotates and renames write-only values; reviews changing references 
     expect(responses.every((value) => !value.includes(canary))).toBe(true)
     expect(node('credential-row').textContent).toContain('API key')
     const menu = async () => {
-      await act(async () =>
-        node('credential-row').querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!.click(),
-      )
+      await act(async () => {
+        const trigger = node('credential-row').querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!
+        trigger.focus()
+        trigger.click()
+      })
     }
     await menu()
     await click('credential-replace')
@@ -135,6 +144,7 @@ it('creates, rotates and renames write-only values; reviews changing references 
     expect(responses.every((value) => !value.includes(canary))).toBe(true)
   } finally {
     await act(async () => dispose())
+    owner.remove()
   }
 })
 

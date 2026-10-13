@@ -1,5 +1,5 @@
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
-import { Banner, Button, Dialog, Field, SettingsInput, useUiText } from '@agnes/web-ui'
+import { Banner, Button, Dialog, Field, getOverlayContainer, SettingsInput, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import {
   CREDENTIALS_CHANGED,
@@ -24,6 +24,7 @@ export function CredentialEditor({
   onSaved(item: AdminCredentialMetadata): void
 }) {
   const { t } = useUiText('@agnes/credentials', credentialsCatalog)
+  const [container] = useState(() => getOverlayContainer(document.activeElement as HTMLElement))
   const value = useRef<HTMLInputElement>(null)
   const [label, setLabel] = useState(item?.label ?? '')
   const [visible, setVisible] = useState(false)
@@ -67,6 +68,7 @@ export function CredentialEditor({
   }
   return (
     <Dialog
+      getContainer={() => container}
       open
       destroyOnHidden
       title={t(mode === 'create' ? 'create' : mode)}
