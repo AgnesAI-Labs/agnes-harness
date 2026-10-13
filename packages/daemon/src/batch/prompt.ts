@@ -13,12 +13,12 @@ export const MAX_REPLY_BYTES = 1024 * 1024
 const MAX_PROBLEM_LENGTH = 2000
 
 /**
- * JSON for a prompt line. JSON.stringify leaves line separators, C1 controls, invisible and direction
- * characters and tag characters as they are; escaping them (as UTF-16 `\\uXXXX` units, two for a
- * character beyond the BMP) keeps a hostile file name on its own line, visible, and decodable to the
- * exact name.
+ * JSON for one line: a prompt line or a JSONL row. JSON.stringify leaves line separators, C1
+ * controls, invisible and direction characters and tag characters as they are; escaping them (as
+ * UTF-16 `\\uXXXX` units, two for a character beyond the BMP) keeps a hostile file name on its own
+ * line, visible, and decodable to the exact name.
  */
-const quote = (value: unknown): string =>
+export const quote = (value: unknown): string =>
   JSON.stringify(value).replace(UNSAFE_TEXT, (char) =>
     Array.from(
       { length: char.length },
