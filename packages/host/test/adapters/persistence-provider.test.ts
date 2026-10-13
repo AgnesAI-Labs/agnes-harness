@@ -283,7 +283,7 @@ describe('persistence provider', () => {
     ).rejects.toMatchObject({ code: 'E_PROVIDER_INVALID', kind: 'persistence' })
   })
 
-  it('reads persistence.provider from the user profile and omits the sqlite default', async () => {
+  it('reads providers.persistence from the user profile and omits the sqlite default', async () => {
     const omitted = await resolveProfile({ builtin: 'local-dev', lock, user: { name: 'local-dev' } }, env)
     const explicit = await resolveProfile(
       {

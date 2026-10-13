@@ -192,7 +192,7 @@ describe('shared daemon scope', () => {
         version: '1.2.3',
         license: 'MIT',
         exports: './index.mjs',
-        agnes: { plugins: [{ apiRange: '^3.0.0', export: 'main', id: 'ext:example/enabled' }] },
+        agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main', id: 'ext:example/enabled' }] },
       }),
     )
     await writeFile(join(sourceDir, 'index.mjs'), 'export const main = { apply() {} }')

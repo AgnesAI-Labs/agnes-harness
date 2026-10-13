@@ -11,7 +11,7 @@ describe('S2 author service definition', () => {
       checkManifest({
         id: 'acme/service',
         version: '1.0.0',
-        apiRange: '^3.0.0',
+        apiRange: '^4.0.0',
         entry: './index.js',
         capabilities: { services: [capability] },
       }).ok,

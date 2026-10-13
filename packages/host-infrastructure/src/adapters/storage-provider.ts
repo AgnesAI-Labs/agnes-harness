@@ -397,7 +397,7 @@ export async function openConfiguredPersistence(args: {
   args.signal?.throwIfAborted()
   const providerId = args.providerId ?? DEFAULT_PERSISTENCE_PROVIDER_ID
   if (!PROVIDER_ID.test(providerId))
-    throw new ProviderError('E_PROVIDER_INVALID', 'persistence.provider id is invalid', {
+    throw new ProviderError('E_PROVIDER_INVALID', 'providers.persistence.provider id is invalid', {
       kind: 'persistence',
       provider: providerId,
       operation: 'select',

@@ -8,7 +8,7 @@ Cordis 插件，通过 `ctx.tools.register()` 注册工具，通过 `ctx.hooks` 
 `package.json` 用 `agnes.plugins` 声明入口，并声明 `inject: ["tools", "hooks", "self"]`：
 
 ```json
-"agnes": { "plugins": [{ "export": "textStatsTool", "apiRange": "^3.0.0", "id": "ext:agnes-examples/hot-tool-plugin", "inject": ["tools", "hooks", "self"] }] }
+"agnes": { "plugins": [{ "export": "textStatsTool", "apiRange": "^4.0.0", "id": "ext:agnes-examples/hot-tool-plugin", "inject": ["tools", "hooks", "self"] }] }
 ```
 
 `index.mjs` 导出一个对象插件：`inject: ['tools', 'hooks', 'self']`，`apply(ctx)` 里

@@ -46,11 +46,11 @@ describe('checkApiRange', () => {
   it('throws E_API_RANGE with detail', () => {
     expect(() => checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^1.0.0' }, '1.3.0')).not.toThrow()
     try {
-      checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^3.0.0' }, '1.3.0')
+      checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^4.0.0' }, '1.3.0')
       expect.unreachable()
     } catch (e) {
       expect(isExtensionError(e) && e.code).toBe('E_API_RANGE')
-      expect(isExtensionError(e) && e.detail).toEqual({ apiRange: '^3.0.0', apiVersion: '1.3.0' })
+      expect(isExtensionError(e) && e.detail).toEqual({ apiRange: '^4.0.0', apiVersion: '1.3.0' })
       expect(isExtensionError(e) && e.extId).toBe('xinwei/sales-analysis')
     }
   })
@@ -80,8 +80,9 @@ describe('stable API subset boundary cases', () => {
     expect(parseSemver('1.2.3-rc.1+build.01')).toEqual({ major: 1, minor: 2, patch: 3, pre: 'rc.1' })
   })
   it('exercises checkApiRange default version through both acceptance and rejection', () => {
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^3.0' })).not.toThrow()
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^4.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^4.0' })).not.toThrow()
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^5.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^3.0' })).toThrow(/E_API_RANGE/)
     expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^1.0' })).toThrow(/E_API_RANGE/)
   })
 })

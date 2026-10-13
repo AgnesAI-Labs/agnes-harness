@@ -49,7 +49,7 @@ it('discovers both roots, freezes edits, keeps disabled choices and reports brok
       name: 'package-tool',
       version: '1.0.0',
       exports: './plugin.ts',
-      agnes: { plugins: [{ apiRange: '^3.0.0', export: 'main', id: 'ext:package-tool/main' }] },
+      agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main', id: 'ext:package-tool/main' }] },
     }),
   )
   writeFileSync(join(pkg, 'plugin.ts'), 'export const main = { apply() {} }')

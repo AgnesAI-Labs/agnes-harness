@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "contextNoteHook",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:agnes-examples/hook-context-note",
         "inject": [
           "hooks"

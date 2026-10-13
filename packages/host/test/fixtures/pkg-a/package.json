@@ -14,7 +14,7 @@
       {
         "id": "ext:acme/pkg-a",
         "export": "default",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "capabilities": {
           "tools": {
             "prefix": "pkga_",

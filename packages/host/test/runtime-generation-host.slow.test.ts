@@ -54,7 +54,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           plugins: [
             {
               export: 'main',
-              apiRange: '^3.0.0',
+              apiRange: '^4.0.0',
               inject: ['hooks', 'eventLog', 'self'],
               configReload: 'live',
               config: version === '1.0.0' ? { limit: 100 } : { limit: 2 },
@@ -106,7 +106,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       integrity: source.snapshot.integrity,
       trust: 'trusted',
       license: 'MIT',
-      apiRange: '^3.0.0',
+      apiRange: '^4.0.0',
       dependencies: {},
       previous: null,
       state: {

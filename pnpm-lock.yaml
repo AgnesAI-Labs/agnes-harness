@@ -99,7 +99,7 @@ importers:
   examples/loops/react-loop:
     dependencies:
       '@agnes/extension-api':
-        specifier: ^3.0.0
+        specifier: ^4.0.0
         version: link:../../../packages/extension-api
 
   examples/packages/cordis-greeting:

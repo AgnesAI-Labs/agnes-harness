@@ -11,14 +11,14 @@
       {
         "id": "model-adapter:community-fake",
         "export": "plugin",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "inject": [
           "providers"
         ]
       }
     ],
     "hostProvidedExternals": {
-      "@agnes/extension-api": "^3.0.0"
+      "@agnes/extension-api": "^4.0.0"
     }
   }
 }

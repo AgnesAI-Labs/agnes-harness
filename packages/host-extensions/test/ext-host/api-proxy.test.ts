@@ -22,7 +22,7 @@ const log = { debug() {}, info() {}, warn() {}, error() {} }
 const manifest = (): ExtensionManifest => ({
   id: 'fixture/proxy',
   version: '1.0.0',
-  apiRange: '^3.0.0',
+  apiRange: '^4.0.0',
   entry: './index.ts',
   capabilities: {
     tools: { prefix: 'fx_', names: ['fx_one'] },

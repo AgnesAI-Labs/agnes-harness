@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "^3.0.0",
+    "@agnes/extension-api": "^4.0.0",
     "@sinclair/typebox": "0.34.33"
   },
   "devDependencies": {
@@ -32,7 +32,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:@community/tool-panel/main",
         "inject": [
           "tools"

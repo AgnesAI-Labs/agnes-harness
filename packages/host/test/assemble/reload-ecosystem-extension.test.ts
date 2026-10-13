@@ -88,7 +88,7 @@ describe('Host.reloadEcosystemExtension', () => {
     const manifest: ExtensionManifest = {
       id: 'acme/live-skills',
       version: '1.0.0',
-      apiRange: '^3.0.0',
+      apiRange: '^4.0.0',
       entry: './index.js',
       liveResources: ['skills'],
       capabilities: {},

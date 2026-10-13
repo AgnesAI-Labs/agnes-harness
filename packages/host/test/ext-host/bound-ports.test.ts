@@ -28,7 +28,7 @@ const platform = Object.freeze({
 const manifest: ExtensionManifest = {
   id: 'fixture/bound',
   version: '1.0.0',
-  apiRange: '^3.0.0',
+  apiRange: '^4.0.0',
   entry: './index.ts',
   capabilities: {
     slots: ['status.line'],

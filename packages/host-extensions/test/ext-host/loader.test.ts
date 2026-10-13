@@ -68,7 +68,7 @@ it('requires compatible ordinary plugin apiRange before evaluating any source', 
   }
   f.write(
     'package.json',
-    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0' }] } }),
+    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0' }] } }),
   )
   expect(await f.loader.import(entry)).toHaveProperty('main')
   expect(readFileSync(marker, 'utf8')).toBe('yes')
@@ -317,7 +317,7 @@ it.each(['ts', 'js'])(
         agnes: {
           hostProvidedExternals: {
             '@agnes/plugin-runtime': '0.0.0',
-            '@agnes/extension-api': '^3.0.0',
+            '@agnes/extension-api': '^4.0.0',
             '@sinclair/typebox': '~0.34.0',
           },
         },

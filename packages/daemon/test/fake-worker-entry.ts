@@ -62,7 +62,7 @@ function permissionFixture(dataDir: string): Partial<TestHostOptions> {
           {
             export: 'main',
             id: 'ext:@fixture/permission/main',
-            apiRange: '^3.0.0',
+            apiRange: '^4.0.0',
             default: true,
             inject: ['tools'],
             provide: [],

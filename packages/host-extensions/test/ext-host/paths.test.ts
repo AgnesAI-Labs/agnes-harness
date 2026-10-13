@@ -132,7 +132,7 @@ it('loads a real in-root linked module while rejecting an escaping module before
         bundledPackageJson({
           id: `fixture/${id}`,
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './alias.mjs',
           capabilities: {},
         }),

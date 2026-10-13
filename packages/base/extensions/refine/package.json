@@ -9,7 +9,7 @@
       {
         "id": "ext:agnes/refine",
         "export": "default",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "inject": [
           "tools",
           "hooks",

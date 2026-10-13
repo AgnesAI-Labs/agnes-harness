@@ -6,14 +6,14 @@
   "exports": "./index.mjs",
   "types": "./index.d.mts",
   "peerDependencies": {
-    "@agnes/extension-api": "^3.0.0"
+    "@agnes/extension-api": "^4.0.0"
   },
   "agnes": {
     "plugins": [
       {
         "id": "ext:example-react",
         "export": "plugin",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "default": true,
         "inject": [
           "providers"

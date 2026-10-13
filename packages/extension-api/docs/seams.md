@@ -2,17 +2,17 @@
 
 <!-- Handwritten contract reference; not managed by gen-docs. -->
 
-> 提供与选择方式已统一：七个 seam 是 provider 种类，用 `ctx.providers.register` 注册、用 `seams.<kind>: { provider, version? }` 选择，见 [Seam](../../../docs/extend/seams.zh-CN.md)。下文的「换实现」列沿用旧称（ledger 现为 billing，harness 已不是 seam），只讨论扩展代码能否在运行时调到它们。
+> 提供与选择方式已统一：七个 seam 是 provider 种类，用 `ctx.providers.register` 注册、在配置档唯一的选择表里用 `providers.<kind>: { provider, version? }` 选择，见 [Seam](../../../docs/extend/seams.zh-CN.md)。下文的「换实现」列沿用旧称（ledger 现为 billing，harness 已不是 seam），只讨论扩展代码能否在运行时调到它们。
 
 本文回答一个访问控制问题：**只用公开 `@agnes/extension-api` 的扩展，在运行时能亲手调哪些插座。**
-它不回答「插座由谁实现」——那是 `profile.seams.<name>` 选包的事，见 spec §1.3。
+它不回答「插座由谁实现」——那是配置档 `providers.<kind>` 选 provider 的事，见 spec §1.3。
 
 ## 两组插座
 
-11 个插座全部已落地、全部在被内核调用；除 `platform` 外，其余 10 个全部可经 `profile.seams.*` 换实现。
-`sandbox` 与 `platform` 不再经 `profile.seams` 选择：`sandbox` 用顶层 `sandbox: { provider }` 选 `sandbox` 提供者，
+11 个插座全部已落地、全部在被内核调用；除 `platform` 外，其余 10 个全部可经配置档的 `providers.<kind>` 换实现。
+`sandbox` 和其他种类一样写在这张表里（`providers.sandbox: { provider }`），顶层 `sandbox` 只放该提供者的 `options`，
 Host 自己构造外壳；`platform` 是宿主专属（authority `host`），目录里只读展示，任何包都不能注册或选择；
-`seams.sandbox` / `seams.platform` 写入即配置错误（见下表第 1、9 行）。「开放 / 不开放」是另一个
+`providers.platform` 写入即配置错误（见下表第 9 行）。「开放 / 不开放」是另一个
 维度，与「换不换实现」无关：**第三方扩展代码在运行时有没有函数能调到它。**
 
 | | 换实现（包提供 + profile 点名，装配期，§1.3） | 运行时被扩展代码调（§4 放行表） |
@@ -24,13 +24,13 @@ Host 自己构造外壳；`platform` 是宿主专属（authority `host`），目
 为什么是这三个：它们是内核自己的**决定**（何时问用户、何时验输出、失败怎么处置），让扩展代码能触发它们
 等于让扩展替内核做决定；其余 8 个是**能力**，能力可以借给扩展用，决定权不行。
 
-三个角色：**包**提供实现（`PackageModule.seams`，`host/src/assemble/packages.ts:100`）→ **profile** 点名选用
-（`assemble.ts:171/223`；未点名 = 什么都不发生）→ **扩展**运行时按本表消费。改源码是 fork，与这三者无关。
+三个角色：**包**用 `ctx.providers.register` 注册实现 → **profile** 在 `providers.<kind>` 点名选用
+（未点名的实现不会被使用）→ **扩展**运行时按本表消费。改源码是 fork，与这三者无关。
 
 ## 放行表
 
 **先说清一件事：11 个插座全部已落地、全部在被内核调用；除 `platform`（固定 `@agnes/host` 自带后端，
-不经 `profile.seams.*` 换实现）外，其余 10 个全部可经 `profile.seams.*` 换实现——本表不动这件事。
+不能被选择）外，其余 10 个全部可经配置档的 `providers.<kind>` 换实现——本表不动这件事。
 本表只回答一个访问控制问题：「第三方扩展能不能亲手调它」。表里写「不给」的插座（approval / verifier / repair），
 内核照样每天在调，扩展照样享受它们的效果（工具被问授权、输出被验、失败被修），只是扩展自己没有调用它们的函数。**
 
@@ -46,7 +46,7 @@ Host 自己构造外壳；`platform` 是宿主专属（authority `host`），目
 | 6 | **approval** `ask` / `resume` | 无；工具声明 `meta.requiresApproval`，内核去问 | 不给 | 让扩展自己措辞弹窗 = 骗授权的面；内核问，账本才记得住「谁为什么问」。用户 2026-09-15 拍板维持不给 |
 | 7 | **verifier** `verify` | 无 | 不给 | 按 tier 烧模型预算；内核只在 tool / step / turn / task 边界叫它；扩展经钩子看结论。用户 2026-09-15 拍板维持不给 |
 | 8 | **repair** `decide` | 无 | 不给 | 内核对失败工具的处置决策，扩展没有可用语义。用户 2026-09-15 拍板维持不给 |
-| 9 | **platform** `shell / fs / terminal / capability` | 无 | **开放，只读，不设门，四个时刻都给**：tool / service 拿 `PlatformView`（事实 + `capability(id)` 探测）；hook / factory 拿 `PlatformFacts`（纯数据） | 纯事实、可 JSON 化，所以 isolated 扩展也拿得到快照。这是本文唯一真正的「新通道」。换实现方面 `platform` 是 11 个插座里唯一不能经 `profile.seams.*` 换的：`host/src/assemble/seams.ts` 把它排除在九个「包供、profile 点名」的插座之外，固定用 `@agnes/host` 自己的后端；profile 里 `seams.platform` 点名任何其它包都被静默忽略，不报错、不生效 |
+| 9 | **platform** `shell / fs / terminal / capability` | 无 | **开放，只读，不设门，四个时刻都给**：tool / service 拿 `PlatformView`（事实 + `capability(id)` 探测）；hook / factory 拿 `PlatformFacts`（纯数据） | 纯事实、可 JSON 化，所以 isolated 扩展也拿得到快照。这是本文唯一真正的「新通道」。换实现方面 `platform` 是 11 个插座里唯一不能被选择的：它归宿主所有，固定用 `@agnes/host` 自己的后端；配置档里写 `providers.platform` 是配置错误，会被拒绝并给出改法 |
 | 10 | **harness** `propose` | 无；Q2：`tools.invoke('harness_propose')` | 不动 | 已拍板 |
 | 11 | **Provider** `infer / models / count` | 无；门是 `ctx.subagent.fork / spawn`（`caps.subagent`） | 不动；`infer / models / count` 直连都不给 | 直连绕过账本、契约戳、计费；`ModelRecord.headers` 里有密钥，`models()` 也不能裸给 |
 

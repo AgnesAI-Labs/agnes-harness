@@ -74,7 +74,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
       name: 'fixture/review',
       version: '1.0.0',
       main: './index.js',
-      agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0', default: true, inject: ['tools'] }] },
+      agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0', default: true, inject: ['tools'] }] },
     }),
   )
   const integrity = `sha256-${'a'.repeat(64)}`
@@ -111,7 +111,7 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
         integrity,
         trust: 'trusted',
         license: 'MIT',
-        apiRange: '^3.0.0',
+        apiRange: '^4.0.0',
         dependencies: {},
         previous: null,
         state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: true },

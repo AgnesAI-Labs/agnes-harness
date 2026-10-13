@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:examples/dsh-model-picker-b/main",
         "runtime": "in-process",
         "metadata": {

@@ -79,7 +79,7 @@ function box(id: string, available = true): SandboxProvider {
 }
 
 describe('sandbox providers', () => {
-  it('reads sandbox.provider and rejects unknown keys', () => {
+  it('reads the startup sandbox selection with its options and rejects unknown keys', () => {
     expect(readSandboxStartupConfig(undefined)).toBeUndefined()
     expect(readSandboxStartupConfig({ provider: 'docker', options: { image: 'alpine' } })).toEqual({
       provider: 'docker',
@@ -374,7 +374,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'loop:agnes.default',
                 export: 'defaultLoopPlugin',
-                apiRange: '^3.0.0',
+                apiRange: '^4.0.0',
                 default: true,
                 inject: ['loops'],
                 provide: [],
@@ -386,7 +386,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'tool-policy:default',
                 export: 'toolPolicyPlugin',
-                apiRange: '^3.0.0',
+                apiRange: '^4.0.0',
                 default: true,
                 inject: ['providers'],
                 provide: [],

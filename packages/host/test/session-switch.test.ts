@@ -80,7 +80,7 @@ function mods(
           declaration: {
             id: 'loop:agnes.default',
             export: 'defaultLoopPlugin',
-            apiRange: '^3.0.0',
+            apiRange: '^4.0.0',
             default: true,
             inject: ['loops'],
             provide: [],

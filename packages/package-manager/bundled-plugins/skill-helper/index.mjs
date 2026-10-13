@@ -204,7 +204,7 @@ export function createTools({ adapters = sourceAdapters } = {}) {
                 kinds: ['skills'],
                 plugins: [
                   {
-                    apiRange: '^3.0.0',
+                    apiRange: '^4.0.0',
                     id: 'ext:' + name + '/main',
                     export: 'main',
                     inject: ['skills'],

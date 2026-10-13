@@ -168,7 +168,7 @@ export class SandboxProviderRegistry extends Service {
   ): Promise<SandboxProviderInstance> {
     signal?.throwIfAborted()
     if (!PROVIDER_ID.test(id))
-      throw new ProviderError('E_PROVIDER_INVALID', 'sandbox.provider must be a provider id', {
+      throw new ProviderError('E_PROVIDER_INVALID', 'providers.sandbox.provider must be a provider id', {
         kind: 'sandbox',
         provider: id,
         operation: 'select',

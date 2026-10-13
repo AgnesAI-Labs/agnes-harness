@@ -70,7 +70,7 @@ export function stageLocalPlugin(candidate: LocalPluginCandidate, stage: string)
         agnes: {
           kinds: ['tool'],
           plugins: [
-            { apiRange: '^3.0.0', export: 'main', id: `ext:${candidate.name}/main`, inject: ['tools'] },
+            { apiRange: '^4.0.0', export: 'main', id: `ext:${candidate.name}/main`, inject: ['tools'] },
           ],
         },
       }),

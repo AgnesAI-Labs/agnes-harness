@@ -580,7 +580,7 @@ describe('ui data source resolution', () => {
           plugins: [
             {
               export: 'main',
-              apiRange: '^3.0.0',
+              apiRange: '^4.0.0',
               capabilities: { uiData: ['finance.differences.read'] },
             },
           ],

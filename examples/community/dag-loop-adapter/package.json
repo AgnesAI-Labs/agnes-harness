@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "^3.0.0",
+    "@agnes/extension-api": "^4.0.0",
     "@agnes/protocol": "0.0.0",
     "@sinclair/typebox": "0.34.33"
   },
@@ -36,7 +36,7 @@
     "plugins": [
       {
         "export": "toolPlugin",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:@community/dag-loop-adapter/tools",
         "inject": [
           "tools"
@@ -57,7 +57,7 @@
       },
       {
         "export": "adapterPlugin",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:@community/dag-loop-adapter/adapter",
         "inject": [
           "providers"
@@ -78,7 +78,7 @@
       },
       {
         "export": "loopPlugin",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:@community/dag-loop-adapter/loop",
         "inject": [
           "providers"

@@ -22,7 +22,7 @@
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
-    "@agnes/extension-api": "^3.0.0",
+    "@agnes/extension-api": "^4.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
     "@agnes/protocol": "0.0.0"
@@ -37,7 +37,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "id": "ext:@agnes-fde/data-report/main",
         "inject": [
           "tools",

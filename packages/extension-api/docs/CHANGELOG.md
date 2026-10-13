@@ -4,6 +4,9 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## 4.0.0
 
+Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range moves from `^3.0.0` to
+`^4.0.0`; a `^3` range is refused with `E_API_RANGE`.
+
 ### Removed
 
 - The `sourcePackage` argument of `ctx.providers.register`. The one signature is

@@ -16,7 +16,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "metadata": {
           "displayName": "Default Agent Loop",
           "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",

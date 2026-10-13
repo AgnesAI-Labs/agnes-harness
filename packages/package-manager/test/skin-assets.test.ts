@@ -35,7 +35,7 @@ function manifestWith(skins: unknown[], ui: unknown = ['skin']): ExtensionManife
   return {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^3.0.0',
+    apiRange: '^4.0.0',
     entry: './index.mjs',
     capabilities: { ui },
     contributes: { skins },
@@ -169,7 +169,7 @@ describe('skin roster assembly', () => {
         bundledPackageJson({
           id: 'agnes/example',
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.mjs',
           capabilities: { ui: true },
           contributes: { skins: [{ id: skinId, name, css: `./skins/${skinId}/skin.css` }] },
@@ -237,7 +237,7 @@ describe('skin asset request resolution', () => {
         bundledPackageJson({
           id: 'agnes/example',
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.mjs',
           capabilities: { ui: true },
           contributes: { skins: [{ id, name: id, css: `./skins/${id}/skin.css` }] },
@@ -349,7 +349,7 @@ describe('checked-in skin example', () => {
       : {
           id: 'examples/skin-example',
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.mjs',
           capabilities: { ui: true },
           contributes: JSON.parse(readFileSync(join(exampleMain(variant), 'agnes.client.json'), 'utf8')),
@@ -435,7 +435,7 @@ describe('checked-in skin example', () => {
     const checked = checkManifest({
       id: 'examples/skins-builtin',
       version: '1.0.0',
-      apiRange: '^3.0.0',
+      apiRange: '^4.0.0',
       entry: './index.mjs',
       capabilities: { ui: true },
       contributes: JSON.parse(readFileSync(join(presetMain, 'agnes.client.json'), 'utf8')),
@@ -703,7 +703,7 @@ describe('skin stylesheet url rewriting', () => {
     const manifest = {
       id: 'x',
       version: '1.0.0',
-      apiRange: '^3.0.0',
+      apiRange: '^4.0.0',
       entry: './index.mjs',
       runtime: { supports: ['in-process'] },
       capabilities: { ui: true },

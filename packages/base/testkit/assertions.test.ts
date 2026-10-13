@@ -22,7 +22,7 @@ function extension(capabilities: unknown, files: Record<string, string>): string
       bundledPackageJson({
         id: 'agnes/x',
         version: '0.1.0',
-        apiRange: '^3.0.0',
+        apiRange: '^4.0.0',
         entry: './src/index.ts',
         capabilities: capabilities as never,
       }),

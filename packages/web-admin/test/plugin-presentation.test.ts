@@ -27,7 +27,7 @@ const item: PackageInstalledDescriptor = {
       kind: 'extension',
       id: 'acme/research',
       path: './manifest.json',
-      apiRange: '^3.0.0',
+      apiRange: '^4.0.0',
       capabilities: { tools: { prefix: '', names: ['unregistered_claim'] }, events: true },
     },
   ],

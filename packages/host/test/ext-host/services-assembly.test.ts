@@ -35,7 +35,7 @@ async function fixture(authorized = true) {
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ apiRange: '^3.0.0', id: rowId, export: 'main', services: [cap.name] }] },
+      agnes: { plugins: [{ apiRange: '^4.0.0', id: rowId, export: 'main', services: [cap.name] }] },
     }),
   )
   writeFileSync(

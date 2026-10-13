@@ -9,7 +9,7 @@
       {
         "id": "ext:examples/skins-builtin",
         "export": "default",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "runtimeSupports": [
           "in-process"
         ],

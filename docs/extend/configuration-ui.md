@@ -88,7 +88,7 @@ Each `agnes.plugins` manifest entry can declare the public `PluginConfigContract
 {
   "export": "businessAgent",
   "id": "ext:acme/support",
-  "apiRange": "^3.0.0",
+  "apiRange": "^4.0.0",
   "configReload": "next-session",
   "configSchema": {
     "type": "object",

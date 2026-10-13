@@ -173,7 +173,7 @@ describe('assemble', () => {
         name: id,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0' }] },
+        agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0' }] },
         ...manifest,
       }),
     )
@@ -333,7 +333,7 @@ describe('assemble', () => {
             }
           : kind === 'service-dependency'
             ? {
-                agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0', inject: ['serial-service'] }] },
+                agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0', inject: ['serial-service'] }] },
               }
             : {},
       )
@@ -341,7 +341,7 @@ describe('assemble', () => {
         '@acme/serial-b',
         kind === 'service-dependency'
           ? {
-              agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0', provide: ['serial-service'] }] },
+              agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0', provide: ['serial-service'] }] },
             }
           : {},
       )
@@ -407,12 +407,12 @@ describe('assemble', () => {
         : kind === 'identity'
           ? { name: '@acme/wrong' }
           : kind === 'isolated'
-            ? { agnes: { plugins: [{ export: 'main', apiRange: '^3.0.0', runtime: 'isolated' }] } }
+            ? { agnes: { plugins: [{ export: 'main', apiRange: '^4.0.0', runtime: 'isolated' }] } }
             : kind === 'externals'
               ? {
                   agnes: {
                     hostProvidedExternals: { 'private-host-module': '*' },
-                    plugins: [{ export: 'main', apiRange: '^3.0.0' }],
+                    plugins: [{ export: 'main', apiRange: '^4.0.0' }],
                   },
                 }
               : kind === 'entry'
@@ -421,7 +421,7 @@ describe('assemble', () => {
                   ? {
                       agnes: {
                         plugins: [
-                          { export: 'main', apiRange: '^3.0.0', id: `ext:${first.snapshot.packageId}/main` },
+                          { export: 'main', apiRange: '^4.0.0', id: `ext:${first.snapshot.packageId}/main` },
                         ],
                       },
                     }
@@ -533,7 +533,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', apiRange: '^3.0.0', id: 'ext:acme/late-trust' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^4.0.0', id: 'ext:acme/late-trust' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -611,7 +611,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', apiRange: '^3.0.0', id: 'ext:acme/close-race' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^4.0.0', id: 'ext:acme/close-race' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -634,7 +634,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'boot', apiRange: '^3.0.0', id: 'ext:acme/close-race-boot' }] },
+        agnes: { plugins: [{ export: 'boot', apiRange: '^4.0.0', id: 'ext:acme/close-race-boot' }] },
       }),
     )
     writeFileSync(join(bootDir, 'index.js'), 'export const boot = () => {}\n')
@@ -974,7 +974,7 @@ describe('assemble', () => {
           plugins: [
             {
               export: 'greeting',
-              apiRange: '^3.0.0',
+              apiRange: '^4.0.0',
               id: 'ext:acme/greeting',
               config: { message: 'bundle' },
             },
@@ -1166,7 +1166,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', apiRange: '^3.0.0', id: 'ext:acme/default-owner' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^4.0.0', id: 'ext:acme/default-owner' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1262,7 +1262,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', apiRange: '^3.0.0' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^4.0.0' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1544,7 +1544,7 @@ describe('assemble', () => {
         {
           declaration: {
             export: 'altCheckpointPlugin',
-            apiRange: '^3.0.0',
+            apiRange: '^4.0.0',
             id: 'seam-providers:alt',
             inject: ['providers'],
             runtime: 'in-process',
@@ -1907,7 +1907,7 @@ describe('assemble', () => {
         bundledPackageJson({
           id,
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.ts',
           capabilities: { hooks: ['before_step'], slots: ['status.line'] },
         }),
@@ -1946,7 +1946,7 @@ describe('assemble', () => {
         bundledPackageJson({
           id: 'demo/not-broken', // deliberately not `id`: preflight refuses the identity mismatch
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.ts',
           capabilities: {},
         }),

@@ -61,7 +61,7 @@ export function pluginSourceWith(
       exports: './index.js',
       agnes: {
         plugins: exports.map((e) => ({
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           export: e.exportName,
           id: e.rowId,
           inject: ['hooks', 'eventLog', 'self', 'tools'],

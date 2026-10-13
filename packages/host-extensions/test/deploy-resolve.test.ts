@@ -17,7 +17,7 @@ import { pluginRowSource } from '../src/ext-host/row-extension-host.js'
 const id = 'acme/dashboard',
   rowId = 'ext:acme/backend',
   ext = pluginRowSource(rowId)
-const plugins = [{ apiRange: '^3.0.0', id: rowId, export: 'main', services: ['data.read', 'other.read'] }]
+const plugins = [{ apiRange: '^4.0.0', id: rowId, export: 'main', services: ['data.read', 'other.read'] }]
 const grant = { extension: ext, name: 'data.read', range: '^1.0' }
 const instance = {
   package: id,
@@ -30,12 +30,12 @@ const instance = {
 }
 const descriptor = {
   id: 'dashboard',
-  apiRange: '^3.0.0',
+  apiRange: '^4.0.0',
   artifact: { kind: 'node', entry: './dist/server.js' },
   healthPath: '/health',
   requires: { services: [grant] },
 }
-const policy = { harnessVersion: '0.1.0', surfaceApiVersion: '3.0.0', grants: { customer: [grant] } }
+const policy = { harnessVersion: '0.1.0', surfaceApiVersion: '4.0.0', grants: { customer: [grant] } }
 const manifest = {
   id: 'customer',
   version: '1.0.0',
@@ -146,7 +146,7 @@ it.each(['grant', 'policy', 'missing-policy', 'missing-service', 'range', 'api',
       save(join(deploy, 'surfaces/main.json'), { ...instance, grants: [{ ...grant, name: 'other.read' }] })
     if (mode === 'range')
       save(join(deploy, 'surfaces/main.json'), { ...instance, grants: [{ ...grant, range: '1.9.0' }] })
-    if (mode === 'api') p = { ...policy, surfaceApiVersion: '4.0.0' }
+    if (mode === 'api') p = { ...policy, surfaceApiVersion: '5.0.0' }
     if (mode === 'harness') p = { ...policy, harnessVersion: '1.0.0' }
     expect(() => resolveDeployment(inventory, deploy, p)).toThrow()
   },

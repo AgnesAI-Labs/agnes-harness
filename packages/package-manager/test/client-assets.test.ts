@@ -31,7 +31,7 @@ function manifestWith(client: unknown, ui: unknown = ['client']): ExtensionManif
   return {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^3.0.0',
+    apiRange: '^4.0.0',
     entry: './index.mjs',
     capabilities: { ui },
     ...(client === undefined ? {} : { contributes: { client } }),
@@ -166,7 +166,7 @@ describe('client asset resolution', () => {
         bundledPackageJson({
           id: 'agnes/example',
           version: '1.0.0',
-          apiRange: '^3.0.0',
+          apiRange: '^4.0.0',
           entry: './index.mjs',
           capabilities: { ui: true },
           contributes: { client: { entry: 'dist/client/index.js' } },
@@ -184,7 +184,7 @@ describe('client capability/contribution coupling', () => {
   const base = {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^3.0.0',
+    apiRange: '^4.0.0',
     entry: './index.mjs',
   }
   it('accepts a manifest that declares both sides, and one that declares neither', () => {
@@ -367,7 +367,7 @@ describe('client capability hash integration', () => {
         name: '@agnes-examples/client-hash',
         version: '1.0.0',
         agnes: {
-          plugins: [{ apiRange: '^3.0.0', id: rowId, export: 'main', runtime: 'in-process' }],
+          plugins: [{ apiRange: '^4.0.0', id: rowId, export: 'main', runtime: 'in-process' }],
           ...(client ? { clientDescriptors: [{ rowId, path: './dist/agnes.client.json' }] } : {}),
         },
       }),
@@ -402,7 +402,7 @@ describe('client capability hash integration', () => {
   const baseManifest = {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^3.0.0',
+    apiRange: '^4.0.0',
     entry: './index.mjs',
   }
 

@@ -11,7 +11,7 @@
       {
         "export": "agent",
         "id": "ext:e2e/config-agent",
-        "apiRange": "^3.0.0",
+        "apiRange": "^4.0.0",
         "provide": [
           "e2eConfigAgent"
         ],

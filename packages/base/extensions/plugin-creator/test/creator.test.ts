@@ -49,7 +49,7 @@ it('scaffolds complete inert text through the host rather than reading virtual a
     expect(input.files.some((f) => /\.test\.mjs$/.test(f.path))).toBe(true)
     const pkg = JSON.parse(input.files.find((f) => f.path === 'package.json')!.content)
     expect(pkg.name).toBe('review-demo')
-    expect(pkg.agnes.plugins[0].apiRange).toBe('^3.0.0')
+    expect(pkg.agnes.plugins[0].apiRange).toBe('^4.0.0')
   }
   expect(exec).not.toHaveBeenCalled()
 })

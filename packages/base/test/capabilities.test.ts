@@ -56,7 +56,7 @@ describe('bundled extensions declare what they use', () => {
   /**
    * The package.json list is what the host reads off disk; a directory missing from it is never
    * loaded, so nothing it declares can ever take effect. That is fine for a piece that is only a
-   * seam implementation - the host reaches those through the package's named `seams` export - but
+   * seam implementation - the host reaches those through the provider the package registers - but
    * it must then declare no registrations at all, or the manifest is describing something that
    * cannot happen.
    */

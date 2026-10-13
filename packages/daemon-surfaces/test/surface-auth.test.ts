@@ -21,7 +21,7 @@ const deployment = {
       integrity: `sha256-${'a'.repeat(64)}`,
       descriptor: {
         id: 'dashboard',
-        apiRange: '^3.0.0',
+        apiRange: '^4.0.0',
         artifact: { kind: 'node', entry: './dist/server.js' },
         healthPath: '/healthz',
         requires: {
