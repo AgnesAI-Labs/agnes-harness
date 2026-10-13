@@ -39,7 +39,13 @@ describe('core src boundary', () => {
     for (const f of files) {
       const text = readFileSync(f, 'utf8')
       const nodeImports = [...text.matchAll(/from ['"](node:[^'"]+)['"]/g)].map((match) => match[1])
-      expect(nodeImports, f).toEqual(nodeImports.filter((specifier) => specifier === 'node:util'))
+      // `node:crypto` is reached only through the `node` condition of the `#sha256` import; any
+      // other host resolves that import to the portable implementation instead.
+      const allowed = f.endsWith(`${sep}request${sep}sha256-node.ts`)
+        ? ['node:util', 'node:crypto']
+        : ['node:util']
+      expect(nodeImports, f).toEqual(nodeImports.filter((specifier) => allowed.includes(specifier as string)))
+      expect(text, f).not.toMatch(/from ['"]\.[^'"]*sha256-(node|portable)\.js['"]/)
       expect(text, f).not.toMatch(/from ['"]@agnes\/(ai|host|base|code|daemon|sdk|cli|channels|bridges)/)
       for (const m of text.matchAll(
         /(?<!type )import\s*\{([^}]*)\}\s*from ['"]@agnes\/extension-api[^'"]*['"]/g,

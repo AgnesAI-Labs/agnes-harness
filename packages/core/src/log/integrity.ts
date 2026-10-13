@@ -1,5 +1,5 @@
-import { jcs } from '@agnes/protocol'
-import { sha256Hex, utf8 } from '../request/hash.js'
+import { jcsWrite } from '@agnes/protocol'
+import { createSha256 } from '../request/hash.js'
 import { CoreError, type Event, type Seq, type SessionKey } from '../types.js'
 import type { IntegrityCommit, IntegrityMetadata, IntegrityRow, StorageAdapter } from './storage.js'
 
@@ -29,9 +29,27 @@ function sameDigest(a: string, b: string): boolean {
   return different === 0
 }
 
+/** Small tokens are coalesced so the hash sees few large updates; large strings go through as they are. */
+const FLUSH_CHARS = 64 * 1024
+
 function digestCanonical(value: unknown): { digest: string; bytes: number } {
-  const canonical = jcs(value)
-  return { digest: sha256Hex(canonical), bytes: utf8(canonical).byteLength }
+  const hash = createSha256()
+  let pending = ''
+  jcsWrite(value, (chunk) => {
+    if (chunk.length >= FLUSH_CHARS) {
+      if (pending) hash.update(pending)
+      pending = ''
+      hash.update(chunk)
+      return
+    }
+    pending += chunk
+    if (pending.length >= FLUSH_CHARS) {
+      hash.update(pending)
+      pending = ''
+    }
+  })
+  if (pending) hash.update(pending)
+  return { digest: hash.digestHex(), bytes: hash.bytes }
 }
 
 function anchorDigest(

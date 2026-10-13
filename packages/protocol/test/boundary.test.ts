@@ -132,6 +132,7 @@ describe('protocol src boundary', () => {
         'inspectJsonData',
         'isWorkerGeneration',
         'jcs',
+        'jcsWrite',
         'EVENT_TYPES',
         'EXT_EVENT_PATTERN',
         'EXT_EVENT_PATTERN_SOURCE',

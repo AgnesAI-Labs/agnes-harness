@@ -8,6 +8,13 @@
     "./artifacts": "./src/artifacts/index.ts",
     "./testkit": "./testkit/index.ts"
   },
+  "imports": {
+    "#sha256": {
+      "agnes-portable-sha256": "./src/request/sha256-portable.ts",
+      "node": "./src/request/sha256-node.ts",
+      "default": "./src/request/sha256-portable.ts"
+    }
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b"
