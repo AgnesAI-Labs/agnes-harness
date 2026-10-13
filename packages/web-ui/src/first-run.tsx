@@ -5,6 +5,7 @@ import { SettingsInput, SettingsList, SettingsRow, SettingsState } from './setti
 import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { Dialog } from './ui/dialog.js'
+import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
 import { Icon } from './ui/icon.js'
 
@@ -129,8 +130,7 @@ export function FirstRunGuide({
               <Icon name="folder" />
               {t('firstRun.chooseWorkspace')}
             </Button>
-            <details>
-              <summary>{t('firstRun.manualWorkspace')}</summary>
+            <Disclosure summary={t('firstRun.manualWorkspace')}>
               <Field label={t('firstRun.workspacePath')}>
                 <SettingsInput
                   value={path}
@@ -141,7 +141,7 @@ export function FirstRunGuide({
               <Button onClick={() => onWorkspace(path)} disabled={busy || !path.trim()}>
                 {t('firstRun.useWorkspace')}
               </Button>
-            </details>
+            </Disclosure>
           </>
         )}
         {step === 2 && (

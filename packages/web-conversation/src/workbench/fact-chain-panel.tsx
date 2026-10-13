@@ -1,7 +1,7 @@
 import type { FactChainAnchor, FactChainNode, FactChainResult } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import type { UiExtensionContext } from '@agnes/web-client'
-import { Button, SettingsState } from '@agnes/web-ui'
+import { Button, Disclosure, SettingsState } from '@agnes/web-ui'
 import { FeedbackProvenance } from '@agnes/web-units/message-feedback'
 import { useEffect, useState } from 'react'
 import { ArtifactDownload } from './artifact-download.js'
@@ -198,10 +198,9 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
               </ul>
             </section>
           )}
-          <details>
-            <summary>{t('facts.details')}</summary>
+          <Disclosure summary={t('facts.details')}>
             <pre>{JSON.stringify(result, null, 2)}</pre>
-          </details>
+          </Disclosure>
         </>
       )}
     </section>

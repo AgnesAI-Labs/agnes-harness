@@ -1,5 +1,5 @@
 import type { FeedbackGrowth, FeedbackItem } from '@agnes/protocol/gen/app-server'
-import { Button } from '@agnes/web-ui'
+import { Button, Disclosure } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { invalidateSessionFeedback, loadSessionFeedback, subscribeSessionFeedback } from './api.js'
 import { useFeedbackText } from './feedback-locale.js'
@@ -74,15 +74,14 @@ export function FeedbackProvenance({ sessionId, candidateId }: { sessionId: stri
             {item.state === 'published' ? `${item.packageId}@${item.version}` : t('pending')}
           </li>
           <li>
-            <details>
-              <summary>{t('details')}</summary>
+            <Disclosure summary={t('details')}>
               <p>
                 {t('draftHash')}:{' '}
                 {items.find((value) => value.id === item.feedbackId && value.candidateId === item.candidateId)
                   ?.candidateHash ?? '—'}
               </p>
               <pre>{JSON.stringify(item, null, 2)}</pre>
-            </details>
+            </Disclosure>
           </li>
         </ol>
       ))}

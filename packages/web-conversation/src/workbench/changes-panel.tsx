@@ -1,6 +1,13 @@
 import type { SessionWorkspaceChangesResult } from '@agnes/protocol'
 import { factChainLinks, type UiExtensionContext } from '@agnes/web-client'
-import { appServerErrorMessage, Button, Select, SettingsState, SettingsToolbar } from '@agnes/web-ui'
+import {
+  appServerErrorMessage,
+  Button,
+  Disclosure,
+  Select,
+  SettingsState,
+  SettingsToolbar,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { panelContext } from './context.js'
 
@@ -196,8 +203,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
                 ) : (
                   <SettingsState tone="empty">{t(`workbench.changes.${selected.diffStatus}`)}</SettingsState>
                 )}
-                <details className="workbench-change-evidence">
-                  <summary>{t('workbench.changes.evidence')}</summary>
+                <Disclosure className="workbench-change-evidence" summary={t('workbench.changes.evidence')}>
                   <dl>
                     <dt>{t('workbench.changes.before')}</dt>
                     <dd>{selected.beforeRevision}</dd>
@@ -248,7 +254,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
                     </div>
                   ))}
                   {outsideHistory && <p role="status">{t('workbench.changes.unlinked')}</p>}
-                </details>
+                </Disclosure>
               </article>
             ) : snapshot && path ? (
               <SettingsState tone="empty">{t('workbench.changes.noFile')}</SettingsState>
@@ -257,8 +263,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
           <footer className="workbench-changes-footer">
             {snapshot?.truncated && <p role="status">{t('workbench.changes.truncated')}</p>}
             {snapshot?.unrecorded && <p role="status">{t('workbench.changes.unrecorded')}</p>}
-            <details>
-              <summary>{t('workbench.changes.coverage')}</summary>
+            <Disclosure summary={t('workbench.changes.coverage')}>
               <p>{t('workbench.changes.rules')}</p>
               {snapshot && (
                 <dl>
@@ -274,7 +279,7 @@ function SessionChangesPanel({ context }: { context: UiExtensionContext; headerI
                   </dd>
                 </dl>
               )}
-            </details>
+            </Disclosure>
           </footer>
         </>
       )}

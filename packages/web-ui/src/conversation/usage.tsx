@@ -1,6 +1,7 @@
 import type { UsageView } from '@agnes/protocol'
 import { type CSSProperties, Fragment, useLayoutEffect, useRef } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
+import { Disclosure } from '../ui/disclosure.js'
 
 export type ConversationUsageProps = {
   usage: UsageView | undefined
@@ -58,23 +59,26 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
       ]
     : []
   return (
-    <details
+    <Disclosure
       ref={details}
       className="usage-disclosure session-usage"
       hidden={!usage}
       data-pressure={usage ? (Number(pct) > 90 ? 'high' : Number(pct) > 70 ? 'medium' : 'normal') : undefined}
+      summaryProps={{
+        'aria-label': usage ? t('usage.viewAria', { summary }) : t('usage.viewAriaFallback'),
+        title: usage ? summary : t('usage.title'),
+      }}
+      summary={
+        <>
+          <span className="usage-ring" aria-hidden="true" style={{ '--usage-pct': fill } as CSSProperties} />
+          {/* The gauge shows the share only; the tooltip and the popover carry the token counts. */}
+          <span className="usage-percent" aria-hidden="true">
+            {usage ? `${Math.round(Number(pct))}%` : ''}
+          </span>
+          <span className="usage-summary-label">{summary}</span>
+        </>
+      }
     >
-      <summary
-        aria-label={usage ? t('usage.viewAria', { summary }) : t('usage.viewAriaFallback')}
-        title={usage ? summary : t('usage.title')}
-      >
-        <span className="usage-ring" aria-hidden="true" style={{ '--usage-pct': fill } as CSSProperties} />
-        {/* The gauge shows the share only; the tooltip and the popover carry the token counts. */}
-        <span className="usage-percent" aria-hidden="true">
-          {usage ? `${Math.round(Number(pct))}%` : ''}
-        </span>
-        <span className="usage-summary-label">{summary}</span>
-      </summary>
       <div className="usage-popover">
         <div className="usage-popover-head">
           <p className="usage-popover-title">{t('usage.usedTitle')}</p>
@@ -94,6 +98,6 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
         </dl>
         <p className="usage-note">{t('usage.note')}</p>
       </div>
-    </details>
+    </Disclosure>
   )
 }

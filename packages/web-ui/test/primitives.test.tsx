@@ -6,6 +6,7 @@ import {
   CompletionCheck,
   CopyButton,
   Count,
+  Disclosure,
   Kbd,
   Menu,
   mountRegion,
@@ -305,6 +306,40 @@ it('spells shortcuts for the platform and renders them as an untranslated hint c
   const chip = host.querySelector('kbd.agh-kbd')
   expect(chip?.textContent).toBe('⌘N')
   expect(chip?.getAttribute('translate')).toBe('no')
+})
+it('keeps a disclosure native, reports each change and leaves an uncontrolled one to the reader', () => {
+  const changes: boolean[] = []
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(
+        Disclosure,
+        {
+          className: 'facts',
+          summary: 'Details',
+          summaryProps: { 'data-testid': 'facts-toggle', 'aria-label': 'Show details' },
+          onOpenChange: (open: boolean) => changes.push(open),
+        },
+        createElement('p', null, 'body'),
+      ),
+      createElement(Disclosure, { id: 'initial', summary: 'Source', defaultOpen: true }, 'source'),
+    ),
+  )
+  const details = host.querySelector<HTMLDetailsElement>('details.agh-disclosure.facts')
+  const summary = details?.querySelector('summary')
+  expect(summary?.textContent).toBe('Details')
+  expect(summary?.getAttribute('data-testid')).toBe('facts-toggle')
+  expect(summary?.getAttribute('aria-label')).toBe('Show details')
+  expect(details?.open).toBe(false)
+  if (!details) throw new Error('missing disclosure')
+  details.open = true
+  details.dispatchEvent(new Event('toggle'))
+  expect(changes.at(-1)).toBe(true)
+  details.open = false
+  details.dispatchEvent(new Event('toggle'))
+  expect(changes.at(-1)).toBe(false)
+  expect(host.querySelector<HTMLDetailsElement>('#initial')?.open).toBe(true)
 })
 it('names a status dot only when no adjacent text states the status', () => {
   const host = render(

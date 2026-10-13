@@ -1,5 +1,6 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Disclosure } from '../../ui/disclosure.js'
 import { Bubble } from '../../x/index.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import type { AssistantNode, ConversationMessagesProps } from './context.js'
@@ -120,17 +121,16 @@ export function Turn({
         {done}
         {statusText}
       </p>
-      <details
+      <Disclosure
         ref={details}
         className="turn-process"
         hidden={processCount === 0}
-        onToggle={() => {
-          const open = details.current?.open ?? false
+        onOpenChange={(open) => {
           preference.current = open
           setProcessOpen(open)
         }}
-      >
-        <summary data-testid="turn-process-toggle">
+        summaryProps={{ 'data-testid': 'turn-process-toggle' }}
+        summary={
           <span className="process-row">
             {done}
             <span className="process-label" data-agnes-dynamic="turn-process" data-testid="turn-timing">
@@ -140,7 +140,8 @@ export function Turn({
               <path d="m6 9 6 6 6-6" />
             </svg>
           </span>
-        </summary>
+        }
+      >
         {finalThinking && thinkingFinalId === turn.finalAssistantId && (
           <div className="turn-process-body">
             <Thinking active={false} label={props.t('timeline.thinkingSummary')}>
@@ -154,7 +155,7 @@ export function Turn({
             </Thinking>
           </div>
         )}
-      </details>
+      </Disclosure>
       {turn.status === 'failed' && (
         <p className="turn-error" role="alert">
           {turn.error

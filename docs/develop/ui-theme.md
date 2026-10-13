@@ -96,6 +96,7 @@ These display primitives are exported from `@agnes/web-ui`:
 
 | Primitive | Use |
 | --- | --- |
+| `Disclosure` | The one collapsible section. Pass the always-visible row as `summary`; use `open` with `onOpenChange` to control it, or `defaultOpen` to let the reader's choice stand. Write this instead of a raw `<details>` element. |
 | `Kbd`, `shortcutLabel` | A quiet keyboard hint beside an action. `shortcutLabel(['mod', 'N'])` gives `⌘N` on Apple keyboards and `Ctrl+N` elsewhere. |
 | `StatusDot` | A 6px state mark with `tone` and `running`; a running dot breathes, and stays still under reduced motion. Pass `label` when no adjacent text names the state. |
 | `CompletionCheck` | The light check a finished turn or step leaves behind, with an optional duration. |

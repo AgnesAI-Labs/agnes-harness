@@ -3,6 +3,7 @@ import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-she
 import {
   Button,
   createCatalogTranslator,
+  Disclosure,
   ListRow,
   renderRegion,
   SettingsInput,
@@ -161,8 +162,7 @@ function McpDialogScaffold() {
         >
           {t('wizard.credentialHelp')}
         </a>
-        <details className="agnes-settings-details" id="mcp-advanced">
-          <summary>{t('wizard.advanced')}</summary>
+        <Disclosure className="agnes-settings-details" id="mcp-advanced" summary={t('wizard.advanced')}>
           <div className="agnes-settings-stack">
             <label className="form-field" htmlFor="mcp-token-env">
               <span>{t('wizard.env')}</span>
@@ -241,7 +241,7 @@ function McpDialogScaffold() {
               <SettingsTextArea id="mcp-tools" rows={3} spellCheck={false}></SettingsTextArea>
             </label>
           </div>
-        </details>
+        </Disclosure>
       </section>
       <p id="mcp-error" className="plugin-form-error" role="alert"></p>
       <div className="dialog-actions">

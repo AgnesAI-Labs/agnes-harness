@@ -1,7 +1,4 @@
 @layer app {
-  .conversation-content-host {
-    display: contents;
-  }
   #transcript {
     height: 100%;
     /* 切换会话时旧画面降不透明度提示「正在准备」（body.session-switching），

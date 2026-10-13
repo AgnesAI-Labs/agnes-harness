@@ -14,7 +14,6 @@
     "packages/web-conversation/src/computer-use-pane.tsx",
     "packages/web-conversation/src/document-preview.tsx",
     "packages/web-conversation/src/markdown.tsx",
-    "packages/web-conversation/src/usage.tsx",
     "packages/web-foundation/src/appearance.ts",
     "packages/web-ui/src/conversation/document-preview.tsx",
     "packages/web-ui/src/conversation/messages.tsx",

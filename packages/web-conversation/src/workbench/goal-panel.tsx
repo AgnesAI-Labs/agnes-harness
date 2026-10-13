@@ -1,5 +1,5 @@
 import type { UiExtensionContext } from '@agnes/web-client'
-import { SettingsState } from '@agnes/web-ui'
+import { Disclosure, SettingsState } from '@agnes/web-ui'
 import { GoalActions, goalReasonKey } from '../goal-actions.js'
 import { goalSlot } from '../goal-card.js'
 import { panelContext } from './context.js'
@@ -51,15 +51,14 @@ export function GoalPanel({ context }: { context: UiExtensionContext }) {
             </p>
           )}
           <GoalActions goal={goal} disabled={disabled} onCommand={command} t={t} prefix="goal-panel" />
-          <details className="workbench-goal-details">
-            <summary>{t('workbench.goal.details')}</summary>
+          <Disclosure className="workbench-goal-details" summary={t('workbench.goal.details')}>
             <dl>
               <dt>{t('workbench.goal.id')}</dt>
               <dd>{goal.id}</dd>
               <dt>{t('workbench.goal.revision')}</dt>
               <dd>{goal.revision}</dd>
             </dl>
-          </details>
+          </Disclosure>
         </>
       )}
     </section>

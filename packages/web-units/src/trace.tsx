@@ -1,6 +1,7 @@
 // biome-ignore-all lint/a11y/useSemanticElements: preserve public trace div roles and the virtual list geometry during the JSX migration.
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { Button, EmptyState, Icon, IconButton, SettingsInput, SettingsSelect } from '@agnes/web-ui'
+import { TraceControlFacts } from './trace-control-facts.js'
 import { type InspectorPane, type ToolDetailState, TraceInspector } from './trace-inspector.js'
 import {
   BADGE_KEY,
@@ -790,20 +791,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       data-agnes-region-owner="builtin"
       data-agnes-region-unit="trace"
     >
-      {meta?.controlFacts?.length ? (
-        <details data-testid="control-facts">
-          <summary>{traceText('trace.controls.title')}</summary>
-          <ol>
-            {meta.controlFacts.map((fact) => (
-              <li key={fact.seq} data-testid="control-fact">
-                <span>{`${traceText(`trace.controls.${fact.action}` as TraceMessageKey)} · ${traceText(`trace.controls.${fact.outcome}` as TraceMessageKey)} · ${fact.actor.id}`}</span>
-                <time dateTime={fact.ts}>{fact.ts}</time>
-                <pre>{JSON.stringify(fact.details, null, 2)}</pre>
-              </li>
-            ))}
-          </ol>
-        </details>
-      ) : null}
+      {meta?.controlFacts?.length ? <TraceControlFacts facts={meta.controlFacts} /> : null}
       <div className="trace-toolbar" hidden={rows.length === 0 && !meta?.loop}>
         {meta?.loop ? (
           <span className="trace-stat" key="session-loop">

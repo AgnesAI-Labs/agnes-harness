@@ -1,5 +1,5 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
-import { Button, Dialog, SettingsInput } from '@agnes/web-ui'
+import { Button, Dialog, Disclosure, SettingsInput } from '@agnes/web-ui'
 import { type ReactNode, useCallback, useRef } from 'react'
 import type { Translate } from './locales/index.js'
 
@@ -111,16 +111,16 @@ export function WorkspaceDialog({
               )}
             </p>
           </div>
-          <details
+          <Disclosure
             id="workspace-manual"
             className="workspace-manual"
             open={view.manual || view.pickerReady === false}
-            onToggle={(event) => {
-              const manual = event.currentTarget.open
+            onOpenChange={(manual) => {
               if (view.manual !== manual) onManualChange(manual)
             }}
+            summaryProps={{ 'data-testid': 'workspace-manual-toggle' }}
+            summary={t('index-shell.manualPath')}
           >
-            <summary data-testid="workspace-manual-toggle">{t('index-shell.manualPath')}</summary>
             <label className="form-field" htmlFor="new-session-cwd">
               <span>{t('index-shell.cwdLabel')}</span>
               <SettingsInput
@@ -138,7 +138,7 @@ export function WorkspaceDialog({
             <p id="cwd-hint" className="field-hint">
               {t('index-shell.cwdHint')}
             </p>
-          </details>
+          </Disclosure>
           <p id="new-session-error" role="alert">
             {view.error}
           </p>

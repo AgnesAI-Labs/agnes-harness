@@ -1,5 +1,5 @@
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import { Button, SettingsInput, SettingsState } from '@agnes/web-ui'
+import { Button, Disclosure, SettingsInput, SettingsState } from '@agnes/web-ui'
 import { type ChangeEvent, type ReactNode, useState } from 'react'
 import type { ComposerDependencies } from './contracts.js'
 
@@ -26,10 +26,9 @@ export function ChildControlTree({
     )
   }
   return (
-    <details data-testid="child-control-tree">
-      <summary>{t('composer.child.title')}</summary>
+    <Disclosure data-testid="child-control-tree" summary={t('composer.child.title')}>
       <ul>{nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child))}</ul>
-    </details>
+    </Disclosure>
   )
 }
 

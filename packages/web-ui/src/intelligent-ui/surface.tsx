@@ -10,6 +10,7 @@ import { type ReactNode, useId, useState } from 'react'
 import { SettingsState, SettingsToolbar } from '../settings-layout.js'
 import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
+import { Disclosure } from '../ui/disclosure.js'
 import { IconButton } from '../ui/icon-button.js'
 import { Menu } from '../ui/menu.js'
 import { MetaText } from '../ui/tag.js'
@@ -147,15 +148,14 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
         {t('ui.from', { owner: record.owner })}
       </p>
       {sourceVisible && (
-        <details open>
-          <summary>{t('ui.source')}</summary>
+        <Disclosure defaultOpen summary={t('ui.source')}>
           <dl>
             <dt>{t('ui.owner')}</dt>
             <dd>{record.owner}</dd>
             <dt>{t('ui.revision', { revision: surface.revision })}</dt>
             <dd>{surface.id}</dd>
           </dl>
-        </details>
+        </Disclosure>
       )}
       <>
         <SettingsState

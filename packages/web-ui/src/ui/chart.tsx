@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { Disclosure } from './disclosure.js'
 
 export type ChartSeries = { key: string; label: string }
 export type ChartProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
@@ -171,8 +172,7 @@ export function Chart({
           </span>
         ))}
       </figcaption>
-      <details>
-        <summary>{dataLabel}</summary>
+      <Disclosure summary={dataLabel}>
         <div
           className="agnes-intelligent-table-scroll"
           role="region"
@@ -207,7 +207,7 @@ export function Chart({
             </tbody>
           </table>
         </div>
-      </details>
+      </Disclosure>
     </figure>
   )
 }

@@ -4,6 +4,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   Button,
+  Disclosure,
   Select,
   SettingsState,
   SettingsTextArea,
@@ -341,8 +342,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               {t(human ? 'workbench.terminal.close' : 'workbench.terminal.unfollow')}
             </Button>
           </SettingsToolbar>
-          <details className="workbench-terminal-details">
-            <summary>{t('workbench.terminal.details')}</summary>
+          <Disclosure className="workbench-terminal-details" summary={t('workbench.terminal.details')}>
             <dl>
               <dt>{t('workbench.terminal.session')}</dt>
               <dd>{job.ownerSessionId}</dd>
@@ -351,7 +351,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               <dt>{t('workbench.terminal.cwd')}</dt>
               <dd>{job.cwd}</dd>
             </dl>
-          </details>
+          </Disclosure>
           {job.truncated && <p role="status">{t('workbench.terminal.truncated')}</p>}
           <SettingsTextArea
             presentation="plain"

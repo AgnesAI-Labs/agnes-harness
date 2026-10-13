@@ -3,6 +3,7 @@ import { fileViewerActions, type UiExtensionContext } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   Button,
+  Disclosure,
   EmptyState,
   Icon,
   SettingsState,
@@ -174,19 +175,18 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
           <SettingsState tone="empty">{t('workbench.files.choose')}</SettingsState>
         )}
         {file && (
-          <details>
-            <summary>
-              {t('workbench.files.freshness', {
-                time: new Date(file.observedAt).toLocaleTimeString(
-                  document.documentElement.lang || undefined,
-                  { hour: '2-digit', minute: '2-digit' },
-                ),
-              })}
-            </summary>
+          <Disclosure
+            summary={t('workbench.files.freshness', {
+              time: new Date(file.observedAt).toLocaleTimeString(document.documentElement.lang || undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+            })}
+          >
             <time dateTime={file.observedAt}>{file.observedAt}</time>
             <br />
             <code>{file.revision}</code>
-          </details>
+          </Disclosure>
         )}
         {file &&
           fileViewerActions
@@ -210,10 +210,9 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
         )}
       </section>
       <footer className="workbench-files-footer">
-        <details>
-          <summary>{t('workbench.files.scope')}</summary>
+        <Disclosure summary={t('workbench.files.scope')}>
           <p>{t('workbench.files.ignore')}</p>
-        </details>
+        </Disclosure>
         {directories['']?.gitStatus === 'unavailable' && (
           <p role="status">{t('workbench.git.unavailable')}</p>
         )}

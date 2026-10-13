@@ -96,6 +96,7 @@ import { Bubble, XProvider } from '@agnes/web-ui/x'
 
 | 原语 | 用途 |
 | --- | --- |
+| `Disclosure` | 唯一的可折叠区块。始终可见的一行通过 `summary` 传入；需要受控时使用 `open` 和 `onOpenChange`，否则用 `defaultOpen`，之后保留用户自己的展开状态。请使用它，不要直接写 `<details>` 元素。 |
 | `Kbd`、`shortcutLabel` | 操作旁的键盘提示。`shortcutLabel(['mod', 'N'])` 在 Apple 键盘上得到 `⌘N`，其他平台得到 `Ctrl+N`。 |
 | `StatusDot` | 6px 状态圆点，支持 `tone` 与 `running`；运行中的圆点会呼吸，减少动态效果时保持静止。旁边没有文字说明状态时传入 `label`。 |
 | `CompletionCheck` | 回合或步骤完成后留下的浅色对勾，可附带耗时。 |

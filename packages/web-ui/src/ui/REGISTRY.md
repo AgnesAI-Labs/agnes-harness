@@ -96,6 +96,7 @@ The Chart primitive supports area plots; the Intelligent UI surface contract rem
 Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain custom.
 
 | `@agnes/web-ui/x` (`XProvider`, `Bubble`, `Sender`, `Conversations`, `ThoughtChain`, `Think`, `Actions`, `Welcome`, `Prompts`, `Attachments`, `FileCard`, `Sources`, `Suggestion`) | Shared | Ant Design X | Presentational conversation components fed from caller-owned stores; no x-sdk runtime, Mermaid or CodeHighlighter. Every use sits under `XProvider`, which keeps the application nonce, locale and overlay layers and lets X generate its styles in the `vendor` layer under the `agnes-theme` variable key. Served as the `/vendor/x.js` import-map entry. |
+| `Disclosure` | Shared | Native `<details>` | The one collapsible section: `summary`, optional `summaryProps` / `summaryRef`, controlled `open` or `defaultOpen`, `onOpenChange`. Keeps native keyboard and find-in-page behaviour; other attributes and the ref reach the `details` element. Raw `<details>` stays inside this file. |
 | `Kbd` / `shortcutLabel` | Shared | Contract CSS | Keyboard hint chip beside an action; `keys` are spelled for the platform (`⌘N` / `Ctrl+N`), never translated. |
 | `StatusDot` | Shared | Contract CSS | 6px state mark: `tone="accent|success|warning|danger|info|neutral"`, `running` breathes unless reduced motion is requested; decorative unless `label` is given. |
 | `CompletionCheck` | Shared | Icon | Check mark with a visually hidden `label` and optional tabular detail such as a duration. |

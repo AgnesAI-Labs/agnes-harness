@@ -11,6 +11,7 @@ import {
 import { fallbackT, type Translate } from '../locales/index.js'
 import { createSettingsControl } from '../settings-control-templates.js'
 import { Button } from '../ui/button.js'
+import { Disclosure } from '../ui/disclosure.js'
 import { Actions } from '../x/index.js'
 import { ConversationCost } from './cost.js'
 import { ConversationXScope } from './x-scope.js'
@@ -368,23 +369,21 @@ export function ConversationTurnActions({
     <ConversationXScope>
       <footer ref={footer} className="turn-footer" hidden={!settled}>
         <Actions className="turn-actions" items={actions} />
-        <details
+        <Disclosure
           ref={details}
           className="turn-usage"
           hidden={!settled}
-          onToggle={() => {
-            if (details.current?.open && summary.current && usage.current)
-              positionUsage(summary.current, usage.current)
+          onOpenChange={(open) => {
+            if (open && summary.current && usage.current) positionUsage(summary.current, usage.current)
           }}
+          summaryRef={summary}
+          summaryProps={{
+            className: 'turn-meta',
+            'data-testid': 'turn-metadata',
+            'aria-label': t('turnactions.metaAria'),
+          }}
+          summary={settled ? facts.join(' · ') : ''}
         >
-          <summary
-            ref={summary}
-            className="turn-meta"
-            data-testid="turn-metadata"
-            aria-label={t('turnactions.metaAria')}
-          >
-            {settled ? facts.join(' · ') : ''}
-          </summary>
           <dl ref={usage} className="turn-usage-grid">
             {settled &&
               rows.map(([name, value]) => (
@@ -413,7 +412,7 @@ export function ConversationTurnActions({
                   </Fragment>
                 ))}
           </dl>
-        </details>
+        </Disclosure>
         <span className="turn-feedback" role="status">
           {feedback?.id === turn.id ? feedback.message : ''}
         </span>

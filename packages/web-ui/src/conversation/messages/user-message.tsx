@@ -4,6 +4,7 @@ import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-vali
 import { Image } from 'antd'
 import { useEffect, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
+import { Disclosure } from '../../ui/disclosure.js'
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
 
@@ -120,10 +121,9 @@ export function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' 
           {systemInputText(node.system, t) ?? value}
         </div>
         {node.system && (
-          <details className="system-input-trace">
-            <summary>{t('tool.detail.expand')}</summary>
+          <Disclosure className="system-input-trace" summary={t('tool.detail.expand')}>
             <pre>{JSON.stringify(node.system.data, null, 2)}</pre>
-          </details>
+          </Disclosure>
         )}
       </>
     )
