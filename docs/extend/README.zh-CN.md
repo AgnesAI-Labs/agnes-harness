@@ -39,7 +39,7 @@ MCP 包不会自动启动、安装或信任外部服务器。修改定义、启�
 
 工具插件注入 `tools`，循环和适配器插件注入 `providers`。这些 Cordis 回调使用 `@agnes/plugin-runtime` 的 `Context`，其中已包含 provider 服务合同。单独的 `ProviderPluginContext` 只描述该服务，不包含 Cordis context。类型声明不会安装服务。
 
-注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。
+注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。插件工具不写 `replay` 时按 `never` 处理，崩溃后不会重跑；`replay: 'safe'` 只接受只读工具，可以容忍重跑的写操作应声明 `idempotent`。
 
 ## 运行时采用
 

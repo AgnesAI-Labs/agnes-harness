@@ -17,6 +17,21 @@ import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
+const SAFE_REPLAY_NEEDS_READ_ONLY = 'meta.replay: safe requires isReadOnly'
+
+/**
+ * Recovery reruns a `safe` call without asking. For an installed plugin that is only sound when
+ * the call is read-only, statically and for each classified call.
+ */
+function readOnlyReplay(classify: NonNullable<ToolDef['classify']>): NonNullable<ToolDef['classify']> {
+  return (args) => {
+    const policy = classify(args)
+    if (policy?.replay === 'safe' && policy.isReadOnly !== true)
+      throw new TypeError('classify: replay safe requires isReadOnly')
+    return policy
+  }
+}
+
 /** Hook events whose kernel table entry is observe-only; a plugin row may listen to these and nothing else. */
 export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
   (Object.keys(HOOK_TABLE) as HookEvent[]).filter((event) => HOOK_TABLE[event].category === 'observe'),
@@ -134,9 +149,10 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
             name: def.name,
             description: def.description,
             parameters: def.parameters,
-            meta: structuredClone(def.meta),
+            // An installed plugin's tool is not replayed after a crash unless it says it may be.
+            meta: { ...structuredClone(def.meta), replay: def.meta?.replay ?? 'never' },
             ...(def.policyVersion === undefined ? {} : { policyVersion: def.policyVersion }),
-            ...(def.classify === undefined ? {} : { classify: def.classify }),
+            ...(def.classify === undefined ? {} : { classify: readOnlyReplay(def.classify) }),
             execute: def.execute,
           }
         } catch {
@@ -147,6 +163,12 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
           throw new ExtensionError('E_TOOLDEF_META', invalidToolMessage(copy.name, checked.problems), {
             extId: source,
           })
+        if (copy.meta.replay === 'safe' && !copy.meta.isReadOnly)
+          throw new ExtensionError(
+            'E_TOOLDEF_META',
+            invalidToolMessage(copy.name, [SAFE_REPLAY_NEEDS_READ_ONLY]),
+            { extId: source },
+          )
         if (input.reservedTool(copy.name)) refuse('tool name is reserved for a builtin extension')
         if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
         const execute = copy.execute.bind(copy)

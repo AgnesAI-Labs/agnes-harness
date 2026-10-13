@@ -463,6 +463,48 @@ describe('registration and wind-down', () => {
     expect(t.host.leaseFor(source)).toBeDefined()
   })
 
+  it('never replays an installed tool that does not say so, and takes safe replay only from a read-only one', async () => {
+    const t = setup()
+    t.host.activate(t.activation)
+    const base = tool('tool_a')
+    const readOnly = { ...base.meta, isReadOnly: true, isDestructive: false }
+    const writing = { ...base.meta, isReadOnly: false }
+    const refused: unknown[] = []
+    let classified = { ...readOnly, replay: 'safe', requiresApproval: 'never', approvalScopes: [] }
+    await t.mount('row-a', 'ext:acme/a', (ctx) => {
+      const { replay: _replay, ...unstated } = writing
+      ctx.tools.register({ ...base, name: 'tool_unstated', meta: unstated } as never)
+      ctx.tools.register({ ...base, name: 'tool_read', meta: { ...readOnly, replay: 'safe' } } as never)
+      ctx.tools.register({ ...base, name: 'tool_retry', meta: { ...writing, replay: 'idempotent' } } as never)
+      try {
+        ctx.tools.register({ ...base, name: 'tool_write', meta: { ...writing, replay: 'safe' } } as never)
+      } catch (error) {
+        refused.push(error)
+      }
+      ctx.tools.register({
+        ...base,
+        name: 'tool_classified',
+        meta: { ...writing, replay: 'never' },
+        policyVersion: 'v1',
+        classify: () => classified,
+      } as never)
+    })
+    await tick()
+    const meta = (name: string) => t.kernel.definitions.get(name)?.meta
+    expect(meta('tool_unstated')?.replay).toBe('never')
+    expect(meta('tool_read')?.replay).toBe('safe')
+    expect(meta('tool_retry')?.replay).toBe('idempotent')
+    expect(refused).toEqual([expect.objectContaining({ code: 'E_TOOLDEF_META' })])
+    expect(String(refused[0])).toContain('meta.replay: safe requires isReadOnly')
+    expect(t.kernel.definitions.has('tool_write')).toBe(false)
+
+    // The same rule holds for each classified call, not only for the static metadata.
+    const classify = t.kernel.definitions.get('tool_classified')?.classify as (args: object) => unknown
+    expect(classify({})).toBe(classified)
+    classified = { ...classified, isReadOnly: false }
+    expect(() => classify({})).toThrow('classify: replay safe requires isReadOnly')
+  })
+
   it('winds a row down in four steps when it unmounts', async () => {
     const t = setup()
     t.host.activate(t.activation)

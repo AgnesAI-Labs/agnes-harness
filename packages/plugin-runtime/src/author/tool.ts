@@ -5,17 +5,32 @@ import { Value } from '@sinclair/typebox/value'
 export type TypedToolResult<R extends TSchema> = Omit<ToolResult, 'structured'> &
   ({ isError: true; structured?: never } | { isError?: false; structured: Static<R> })
 
+/** Tool metadata as an author writes it: `replay` may be left out and is then `never`. */
+export type AuthorToolMeta = Omit<ToolMeta, 'replay'> & { replay?: ToolMeta['replay'] }
+type Authored<D extends { meta: ToolMeta }> = Omit<D, 'meta'> & { meta: AuthorToolMeta }
+
 export type TypedToolDef<P extends TSchema, R extends TSchema> = Omit<ToolDef<P>, 'execute'> & {
   result: R
   execute(args: Static<P>, ctx: ToolContext): Promise<TypedToolResult<R>>
 }
 
-/** Infer both schemas; validate successful structured results without changing Host policy. */
-export function defineTool<P extends TSchema, R extends TSchema>(def: TypedToolDef<P, R>): TypedToolDef<P, R>
-export function defineTool<P extends TSchema>(def: ToolDef<P>): ToolDef<P>
+/**
+ * Infer both schemas; validate successful structured results without changing Host policy.
+ * A tool that does not state `replay` is never replayed after a crash; `safe` is for read-only tools.
+ */
 export function defineTool<P extends TSchema, R extends TSchema>(
-  def: ToolDef<P> | TypedToolDef<P, R>,
+  def: Authored<TypedToolDef<P, R>>,
+): TypedToolDef<P, R>
+export function defineTool<P extends TSchema>(def: Authored<ToolDef<P>>): ToolDef<P>
+export function defineTool<P extends TSchema, R extends TSchema>(
+  authored: Authored<ToolDef<P>> | Authored<TypedToolDef<P, R>>,
 ): ToolDef<P> | TypedToolDef<P, R> {
+  // A complete declaration is returned as it was written.
+  const def = (
+    authored.meta.replay === undefined
+      ? { ...authored, meta: { ...authored.meta, replay: 'never' } }
+      : authored
+  ) as ToolDef<P> | TypedToolDef<P, R>
   if (!('result' in def)) return def
   return {
     ...def,

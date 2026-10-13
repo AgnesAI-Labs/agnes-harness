@@ -24,6 +24,15 @@ API additions require a minor version; removals or semantic changes require a ma
 
   Migration: delete `source`.
 
+### Changed
+
+- Replay of an installed plugin's tool. A tool that does not state `meta.replay` is `never`
+  replayed (`defineTool` fills it in, and so does the Host for a plain object). `replay: 'safe'`
+  is refused with `E_TOOLDEF_META` unless the tool is `isReadOnly`, and a `classify` result that
+  returns `safe` for a call that is not read-only is rejected. Bundled tools are unchanged.
+
+  Migration: a write that tolerates a rerun declares `replay: 'idempotent'`.
+
 ### Added
 
 - `@agnes/plugin-runtime` re-exports the root of this package, so a plugin imports helpers and

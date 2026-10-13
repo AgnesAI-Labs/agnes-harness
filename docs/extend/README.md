@@ -39,7 +39,7 @@ Import `defineTool` only from `@agnes/plugin-runtime`. It accepts input-only too
 
 A tool plugin injects `tools`; Loop and adapter plugins inject `providers`. Use `Context` from `@agnes/plugin-runtime` for these Cordis callbacks; it includes the provider service contract. `ProviderPluginContext` alone describes that service without the Cordis context. Type declarations do not install services.
 
-Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior.
+Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior. A plugin tool that does not state `replay` is `never` rerun after a crash; `replay: 'safe'` is accepted only from a read-only tool, and `idempotent` is the choice for a write that tolerates a rerun.
 
 ## Runtime adoption
 

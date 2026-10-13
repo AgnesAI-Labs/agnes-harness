@@ -56,6 +56,21 @@ describe('plugin author API', () => {
     for (const helper of helpers) expect(() => helper({ id: 'bad', version: '1' } as never)).toThrow('semver')
   })
 
+  it('defines a tool that is never replayed unless it says otherwise', async () => {
+    const { defineTool, writeTool } = await import('../src/index.js')
+    const { replay: _replay, ...unstated } = writeTool
+    const authored = {
+      name: 'note',
+      description: 'Write a note',
+      parameters: {} as never,
+      execute: async () => ({ content: [] }),
+    }
+    expect(defineTool({ ...authored, meta: unstated }).meta.replay).toBe('never')
+    expect(defineTool({ ...authored, meta: { ...unstated, replay: 'idempotent' } }).meta.replay).toBe(
+      'idempotent',
+    )
+  })
+
   it('is the one author import: the contract root plus these helpers, and nothing Host-side', async () => {
     const root = await import('../src/index.js')
     const contracts = await import('@agnes/extension-api')
