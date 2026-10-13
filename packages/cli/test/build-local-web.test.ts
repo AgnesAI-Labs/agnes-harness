@@ -91,7 +91,10 @@ it('builds local web assets with the shared platform vendor modules', async () =
 
     const conversationCss = readUiCss(join(import.meta.dirname, '../../web-ui/src/conversation/messages.css'))
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain(conversationCss.trim())
-    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.aui\\:flex')
+    const intelligentUiCss = readUiCss(
+      join(import.meta.dirname, '../../web-ui/src/intelligent-ui/styles.css'),
+    )
+    expect(await readFile(join(output, 'style.css'), 'utf8')).toContain(intelligentUiCss.trim())
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('var(--agnes-bg-card)')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown')
     expect(await readFile(join(output, 'style.css'), 'utf8')).toContain('.x-markdown-dark')
