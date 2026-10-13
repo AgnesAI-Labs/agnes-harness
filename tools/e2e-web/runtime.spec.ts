@@ -27,6 +27,8 @@ for (const [issue, version, action] of [
     await session.attach()
     await prompt(session, 'Historical browser regression conversation')
     const descriptor = await client.session.runtime(session.id)
+    expect(descriptor.loaded).toBe(true)
+    if (!descriptor.loop) throw new Error('A loaded session must describe its selected Loop')
     await page.goto(`${runtime.url}/?session=${session.id}`)
     await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
     const trigger = page.locator(`[data-session-action-id="${session.id}"]`)
