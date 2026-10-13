@@ -36,7 +36,8 @@ export function cycleTaskFocus(event: KeyboardEvent): void {
     if (
       overlay?.contains(active) &&
       !overlay.contains(next) &&
-      ['absolute', 'fixed'].includes(getComputedStyle(overlay).position)
+      (getComputedStyle(overlay).position === 'fixed' ||
+        (getComputedStyle(overlay).position === 'absolute' && window.innerWidth < 1280))
     )
       overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
   }

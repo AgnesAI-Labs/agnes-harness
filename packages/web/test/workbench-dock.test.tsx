@@ -201,6 +201,19 @@ it('cycles visible trace and plugin docks in both directions and leaves modal fo
     cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', cancelable: true }))
     expect(right.hidden).toBe(true)
     expect(document.activeElement).toBe(document.getElementById('plugin-action'))
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+    try {
+      right.hidden = false
+      right.querySelector('button')!.focus()
+      cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', cancelable: true }))
+      expect(right.hidden).toBe(false)
+      expect(document.activeElement).toBe(document.getElementById('plugin-action'))
+      cycleTaskFocus(new KeyboardEvent('keydown', { key: 'F6', shiftKey: true, cancelable: true }))
+      expect(document.activeElement).toBe(right.querySelector('button'))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+    }
     const modal = document.createElement('div')
     modal.setAttribute('role', 'dialog')
     modal.setAttribute('aria-modal', 'true')
