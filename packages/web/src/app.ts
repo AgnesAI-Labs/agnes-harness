@@ -5,11 +5,29 @@ import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { bindDialogSheets, createCatalogTranslator } from '@agnes/web-ui'
 import { settingsRoute } from '@agnes/web-units'
+import { createAppearanceController } from './app/appearance-controller.js'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
+import {
+  onBroadcast,
+  onHistoryNavigation,
+  onPageHide,
+  onPageVisible,
+  onSurfaceEvent,
+  onWindowFocus,
+  pageVisible,
+} from './app/global-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
 import { createSessionController } from './app/session-controller.js'
+import {
+  archivedSettingsShown,
+  focusApproval,
+  modelRefreshInterval,
+  resolveShellHosts,
+  routeSettings,
+  sidebarDrawerOpen,
+} from './app/shell-hosts.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { createTurnController } from './app/turn-controller.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
@@ -53,23 +71,8 @@ import {
   workspaceErrorNotice,
 } from '@agnes/web-conversation/presentation'
 import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
-import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
-import {
-  applyDocumentLocale,
-  readLocalePreference,
-  writeLocalePreference,
-} from '@agnes/web-foundation/locale-preference'
-import {
-  cacheSkinEntry,
-  clearSkinCache,
-  fetchSkinCss,
-  planSkinReconcile,
-  readSkinCache,
-  SKIN_STORAGE_KEY,
-  type SkinRosterEntry,
-} from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createAdminPaneController } from './admin-pane-coordinator.js'
 import { appNotice, setReconnectNotice } from './app-notices.js'
@@ -91,6 +94,7 @@ import { mountNewSessionDialog } from './new-session-dialog.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createRefreshCoordinator } from './refresh-coordinator.js'
 import { createSettingsAdminPaneStore } from './region-slots.js'
+import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
@@ -698,19 +702,14 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginNewDraft(),
 })
 
-function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
-  const found = document.getElementById(id)
-  if (!found || found.tagName.toLowerCase() !== tag) throw new Error(`missing ${tag}#${id}`)
-  return found as HTMLElementTagNameMap[K]
-}
-const button = (id: string) => element(id, 'button')
+const hosts = resolveShellHosts()
 const composerDraftKey: string = 'agnes-web-composer-draft'
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = appNotice
-const conversation = element('conversation-shell', 'div')
-const goalHost = element('session-goal-host', 'div')
-const wsUrl = element('agnes-config', 'meta').dataset.ws
+const conversation = hosts.conversation
+const goalHost = hosts.goal
+const wsUrl = hosts.wsUrl
 const client = createClient({
   transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
   auth: { kind: 'local' },
@@ -734,7 +733,7 @@ const stopJobsSessions = bindJobsSessions({
     }))
   },
 })
-window.addEventListener('pagehide', stopJobsSessions, { once: true })
+onPageHide(stopJobsSessions)
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
@@ -807,7 +806,7 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const computerUseStatus = createComputerUsePaneController(client)
-addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
+onPageHide(() => computerUseStatus.dispose())
 const references = composerReferences(prepareComposerSession, renderControls)
 let referenceSessionPending: Promise<Session> | undefined
 
@@ -863,8 +862,8 @@ const clientModules = await startClientModules({
           : '',
       }),
     ),
-  panelContainer: document.getElementById('workbench-plugin-panels') ?? undefined,
-  sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
+  panelContainer: hosts.panels,
+  sidebarContainer: hosts.sidebar,
   sidebar: {
     actions: {
       newSession: (workspace) => run(() => beginNewDraft(workspace === undefined, workspace)),
@@ -894,9 +893,9 @@ const clientModules = await startClientModules({
   },
   transcript: { onFork: forkTurn },
   conversationContainer: conversation,
-  topbarContainer: document.querySelector<HTMLElement>('header .topbar') ?? undefined,
-  approvalContainer: document.getElementById('approval') ?? undefined,
-  composerContainer: document.getElementById('composer-mount') ?? undefined,
+  topbarContainer: hosts.topbar,
+  approvalContainer: hosts.approval,
+  composerContainer: hosts.composer,
   composer: {
     references,
     initialDraft: savedComposerDraft ?? '',
@@ -918,10 +917,10 @@ const clientModules = await startClientModules({
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
   },
-  traceContainer: document.getElementById('trace-panel') ?? undefined,
+  traceContainer: hosts.trace,
   trace: {
-    toggle: button('view-trace'),
-    chatToggle: button('view-chat'),
+    toggle: hosts.viewTrace,
+    chatToggle: hosts.viewChat,
     conversation,
     clearModelRequest: async (params) => {
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
@@ -940,8 +939,8 @@ const clientModules = await startClientModules({
       return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
     },
   },
-  rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
-  settingsPaneContainer: document.getElementById('config') ?? undefined,
+  rightbarContainer: hosts.rightbar,
+  settingsPaneContainer: hosts.settings,
   settings: {
     sections: settingsSections,
     adminPanes,
@@ -970,7 +969,7 @@ const openSettingsTerminal = (event: Event) => {
   settings.close()
   if (workbenchNavigation.open('terminal')) event.preventDefault()
 }
-document.addEventListener('agnes:settings-terminal', openSettingsTerminal)
+const stopSettingsTerminal = onSurfaceEvent('agnes:settings-terminal', openSettingsTerminal)
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
@@ -1005,15 +1004,13 @@ const unmountIntelligentUi = mountIntelligentUi({
   revealInline: () => tracePanel.setOpen(false),
   approval: () => {
     searchApproval()
-    const approval = document.getElementById('approval')
-    approval?.scrollIntoView({ block: 'nearest' })
-    approval?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    focusApproval(hosts)
   },
 })
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
-const newSessionDialog = mountNewSessionDialog(element('new-session-root', 'div'), {
+const newSessionDialog = mountNewSessionDialog(hosts.newSession, {
   translate: t,
   submit: () => run(chooseWorkspace),
   pick: () => run(pickWorkspace),
@@ -1043,7 +1040,7 @@ const stopPluginHotReload = startPluginHotReload({
   reconciler: clientModules.reconciler,
   onError: (error) => console.warn('[client-modules] SSE 热替换失败', error),
 })
-addEventListener('pagehide', () => stopPluginHotReload(), { once: true })
+onPageHide(() => stopPluginHotReload())
 let connected = false
 let configured = false
 let current: Session | undefined
@@ -1067,7 +1064,7 @@ const childControlRefreshTimer = setInterval(() => {
   )
     void refreshSessionControls(session).catch(showError)
 }, 1500)
-window.addEventListener('pagehide', () => clearInterval(childControlRefreshTimer), { once: true })
+onPageHide(() => clearInterval(childControlRefreshTimer))
 let projection: UITimeline | undefined
 let selection = 0
 let listGeneration = 0
@@ -1229,19 +1226,17 @@ function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boole
   return sessionController.stopWithTimeout(stop)
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
-document.addEventListener('agnes:permission-settings', () =>
+onSurfaceEvent('agnes:permission-settings', () =>
   run(async () => {
     settingsRegion.open('model')
     await settings.open()
-    document
-      .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'security', bubbles: true }))
+    routeSettings('security')
   }),
 )
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
-  host: element('first-run-root', 'div'),
-  banner: element('doctor-notice-root', 'div'),
+  host: hosts.firstRun,
+  banner: hosts.doctorNotice,
   client,
   storage: safeThemeStorage(),
   attachAccount: (host) => settings.attachInline(host),
@@ -1260,16 +1255,12 @@ const firstRun = createFirstRunController({
   examples: async () => {
     settingsRegion.open('model')
     await settings.open()
-    document
-      .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'examples', bubbles: true }))
+    routeSettings('examples')
   },
   details: async () => {
     settingsRegion.open('model')
     await settings.open()
-    document
-      .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'diagnostics', bubbles: true }))
+    routeSettings('diagnostics')
   },
   start: async () => {
     settings.close()
@@ -1283,20 +1274,20 @@ const sessionActions = createSessionActions({
   changed: () => list(),
   fork: forkSidebar,
   error: (error) => {
-    if (document.body.classList.contains('sidebar-open')) clientModules.sidebar?.dismiss()
+    if (sidebarDrawerOpen()) clientModules.sidebar?.dismiss()
     showError(error)
   },
   translate: t,
 })
 // Top bar entries for the selected session: its title renames it, the info button shows its runtime.
 for (const action of ['rename', 'runtime'] as const)
-  document.addEventListener(`agnes:${action}-current-session`, (event) => {
+  onSurfaceEvent(`agnes:${action}-current-session`, (event) => {
     if (!current || draftingNew || sessionPending) return
     const trigger = event.target
     if (trigger instanceof HTMLElement)
       void sessionActions.act(action, current.id, trigger.textContent ?? '', trigger)
   })
-document.addEventListener('agnes:compose-suggestion', (event) => {
+onSurfaceEvent('agnes:compose-suggestion', (event) => {
   if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
   if (typeof event.detail !== 'string') return
   composerRuntime.setDraft(event.detail)
@@ -1414,7 +1405,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   settings.setConnected(connected)
   renderControls()
 }
-const dockControlsHost = document.getElementById('workbench-controls')
+const dockControlsHost = hosts.dockControls ?? null
 function renderControls(): void {
   composerController.renderControls()
 }
@@ -1920,120 +1911,24 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   }
   notice.setText(firstRun.active ? '' : t('app.model.savedNotice'))
 }
-addEventListener('focus', () => {
+onWindowFocus(() => {
   if (connected)
     run(async () => {
       await list()
-      if (!element('archived-settings-pane', 'section').hidden) await sessionActions.loadArchived()
+      if (archivedSettingsShown()) await sessionActions.loadArchived()
     })
 })
-const appearanceStorage = safeThemeStorage(window)
-const appearance = bindAppearance({
-  scope: document,
-  root: document.documentElement,
-  storage: appearanceStorage,
-  locale: {
-    rendered: true,
-    current: () => readLocalePreference(appearanceStorage),
-    select: (value) => {
-      writeLocalePreference(appearanceStorage, value)
-      applyDocumentLocale(document.documentElement, value)
-      clientModules.locale.setLocale(value)
-      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
-    },
-    text: (key) => clientModules.locale.t(key),
-  },
-})
-/**
- * 皮肤选择。清单来自 `config.get()` 报出的 profile——daemon 只接受它自己那一个 profile，
- * 所以这里必须把 profile 传回去，客户端不能凭参数选目录。
- * （profileName 的声明在上方状态区：客户端模块名册源在 config.get() 之前就引用它。）
- */
-/** 最近一次拉到的清单，供选中时取样式表与 token；清单变了会整体替换。 */
-let skinRoster: SkinRosterEntry[] = []
-/** 回落到 `cssUrl` 时的同源取数器；只接受 `/skins/` 下的路径（见 `fetchSkinCss`）。 */
-const skinCssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
-/** 每次显式选择 +1：让在途的对账不能把用户刚做的选择覆盖回去。 */
-let skinSelection = 0
-
-/** 告诉首帧逻辑（以及同源的其他文档）缓存里的皮肤变了。同文档不会收到 storage 事件，故手动派发。 */
-function skinChanged(): void {
-  window.dispatchEvent(new StorageEvent('storage', { key: SKIN_STORAGE_KEY }))
-}
-
-/**
- * 拿到新清单后把缓存拉回一致。
- *
- * 来源被卸载/停用的皮肤必须**停止上色**（设计 §8）；清单只是摘要变化、文本没变时直接换缓存，
- * 不留闪烁。只有必须联网取文本时才先回落内置观感——那是设计明确接受的那一次闪烁（§5.8）。
- */
-async function reconcileSkin(entries: readonly SkinRosterEntry[]): Promise<void> {
-  const plan = planSkinReconcile(readSkinCache(appearanceStorage), entries)
-  if (plan.kind === 'keep') return
-  const version = skinSelection
-  if (plan.kind === 'clear') {
-    clearSkinCache(appearanceStorage)
-    skinChanged()
-    return
-  }
-  if (plan.entry.css !== undefined) {
-    await cacheSkinEntry(appearanceStorage, plan.entry, skinCssOptions)
-    skinChanged()
-    return
-  }
-  clearSkinCache(appearanceStorage)
-  skinChanged()
-  try {
-    const css = await fetchSkinCss(plan.entry.cssUrl, skinCssOptions)
-    // 取文本期间用户可能已经换了选择：那就让对账作废，不能把旧皮肤写回去。
-    if (version !== skinSelection) return
-    await cacheSkinEntry(appearanceStorage, { ...plan.entry, css }, skinCssOptions)
-    skinChanged()
-  } catch {
-    // 取不到就保持内置观感，而不是写一份半截缓存。
-  }
-}
-
-const skinGroup = bindSkinGroup({
-  scope: document,
-  storage: appearanceStorage,
-  list: async () => {
-    if (profileName === '') return []
-    const roster = await client.skins.list(profileName)
-    skinRoster = roster.skins.map((skin) => ({
-      id: skin.id,
-      name: skin.name,
-      packageName: skin.packageName,
-      revision: roster.revision,
-      cssUrl: skin.cssUrl,
-      ...(skin.css === undefined ? {} : { css: skin.css }),
-      tokens: skin.tokens ?? {},
-    }))
-    // 只有真的拿到清单才能对账：这里的 `[]` 会被读成「皮肤全被卸载」而抹掉用户的选择。
-    await reconcileSkin(skinRoster)
-    return skinRoster
-  },
-  select: async (id) => {
-    // 先记一次选择：取样式表要 await，在途的对账不能在这个窗口里把旧皮肤写回来。
-    skinSelection += 1
-    if (id === null) clearSkinCache(appearanceStorage)
-    else {
-      const chosen = skinRoster.find((skin) => skin.id === id)
-      // 清单里找不到就是清单刚变过：抛出，让分组回滚到原选择而不是留下假的选中态。
-      if (chosen === undefined) throw new Error(`skin ${id} is not in the current roster`)
-      // 宿主没内联时先取到文本再写缓存，否则会缓存成一份空样式表——点了等于没点（设计 §8）。
-      await cacheSkinEntry(appearanceStorage, chosen, skinCssOptions)
-    }
-    skinChanged()
-  },
+const { appearance, skins: skinGroup } = createAppearanceController({
+  locale: clientModules.locale,
+  // The roster source reads the profile before config.get() has reported it.
+  profile: () => profileName,
+  listSkins: (profile) => client.skins.list(profile),
 })
 clientModules.locale.subscribe(() => {
   renderControls()
   updateSidebar()
   skinGroup.sync()
 })
-window.addEventListener('agnes:packages-changed', () => void skinGroup.refresh())
-window.addEventListener('focus', () => void skinGroup.refresh())
 
 /** The workbench's current workspace, only when it is a canonical 64-hex directory id. */
 function paneWorkspaceId(): string | undefined {
@@ -2140,8 +2035,7 @@ const diagnostics = createDiagnosticsDialog({
     projectionHasEarlier: live?.hasEarlier() ?? false,
   }),
 })
-const reportProblem = button('report-problem')
-reportProblem.addEventListener('click', () => diagnostics.open(reportProblem))
+sessionViewCommands.reportProblem = (trigger) => diagnostics.open(trigger)
 const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
   reconnect,
   setConnection,
@@ -2180,15 +2074,13 @@ client.on('notice', (payload) => {
       : undefined
   if (profileName && detail?.profile === profileName) scheduleClientRosterRead()
 })
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    reconnect.resume()
-    void list().catch(showError)
-    void modelRefresh.request().catch(showError)
-    scheduleClientRosterRead()
-  }
+onPageVisible(() => {
+  reconnect.resume()
+  void list().catch(showError)
+  void modelRefresh.request().catch(showError)
+  scheduleClientRosterRead()
 })
-addEventListener('popstate', () => {
+onHistoryNavigation(() => {
   const id = new URL(location.href).searchParams.get('session')
   run(async () => {
     if (id) {
@@ -2207,21 +2099,21 @@ async function refreshModelConfiguration(): Promise<void> {
   await refreshSessionCatalog()
   await refreshModels()
 }
-// Embedders may set data-model-refresh-interval-ms on <html>; invalid values use the default.
-const refreshInterval = Number(document.documentElement.dataset.modelRefreshIntervalMs)
+const refreshInterval = modelRefreshInterval()
 const modelRefresh = createRefreshCoordinator({
   refresh: refreshModelConfiguration,
-  canPoll: () => connected && document.visibilityState === 'visible',
-  ...(Number.isSafeInteger(refreshInterval) && refreshInterval >= 1_000 && refreshInterval <= 2_147_483_647
-    ? { intervalMs: refreshInterval }
-    : {}),
+  canPoll: () => connected && pageVisible(),
+  ...(refreshInterval === undefined ? {} : { intervalMs: refreshInterval }),
 })
 const sessionConfigurationChanged = () => void modelRefresh.request().catch(showError)
-window.addEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
-window.addEventListener('pagehide', () => {
+const stopSessionConfiguration = onBroadcast(
+  'agnes:session-configuration-changed',
+  sessionConfigurationChanged,
+)
+onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
-  document.removeEventListener('agnes:settings-terminal', openSettingsTerminal)
+  stopSettingsTerminal()
   newSessionDialog.dispose()
   unbindDialogSheets()
   unmountIntelligentUi()
@@ -2230,7 +2122,7 @@ window.addEventListener('pagehide', () => {
   if (dockHost) unmountWorkbench(dockHost)
   unmountAppShell()
   modelRefresh.stop()
-  window.removeEventListener('agnes:session-configuration-changed', sessionConfigurationChanged)
+  stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()
   void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
@@ -2357,8 +2249,6 @@ run(async () => {
       anchoredRoute.id === startupSettings && anchoredRoute.anchor === startupSettingsAnchor
         ? anchoredSettings
         : startupSettings
-    document
-      .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: target, bubbles: true }))
+    routeSettings(target)
   }
 })

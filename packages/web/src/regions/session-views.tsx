@@ -17,6 +17,9 @@ function overflowActions(): MenuItem[] {
   ]
 }
 
+/** What the bar's actions do is supplied by the controller layer; the view owns the buttons. */
+export const sessionViewCommands: { reportProblem?: (trigger: HTMLElement) => void } = {}
+
 /** The trace controller owns selection and visibility on these stable buttons; the view owns their keys. */
 export function SessionViews() {
   useDocumentLanguage()
@@ -78,6 +81,7 @@ export function SessionViews() {
       <IconButton
         id="report-problem"
         name="bug"
+        onClick={(event) => sessionViewCommands.reportProblem?.(event.currentTarget)}
         label={tr('index-shell.reportProblem')}
         title={tr('index-shell.reportProblem')}
       />

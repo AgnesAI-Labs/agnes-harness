@@ -47,6 +47,17 @@ it('keeps index.html bootstrap-only, rejecting business elements and static tran
     expect(isBootstrapHtml(change)).toBe(false)
 })
 
+it('keeps the controller composition free of element access and listeners', () => {
+  // app.ts composes controllers. Shell mount points come from app/shell-hosts.ts and window or
+  // document listeners from app/global-events.ts; rendered state belongs to React through a store.
+  const touch =
+    /\bdocument\.|\bquerySelector|\bclassList\b|\.hidden\s*=|\bsetAttribute\b|\baddEventListener\b/
+  const code = readFileSync(join(repoRoot(), 'packages/web/src/app.ts'), 'utf8')
+  expect(code.split('\n').filter((line) => touch.test(line))).toEqual([])
+  expect(touch.test("document.getElementById('approval')")).toBe(true)
+  expect(touch.test("window.addEventListener('focus', refresh)")).toBe(true)
+})
+
 it('keeps the admin addresses as aliases of the workbench with no shell of their own', () => {
   for (const page of ['admin.html', 'resources.html']) {
     const html = readFileSync(join(repoRoot(), 'packages/web/public', page), 'utf8')
