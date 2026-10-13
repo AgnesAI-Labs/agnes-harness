@@ -45,6 +45,13 @@ describe('batch methods', () => {
       ).toBe(false)
   })
 
+  it('accepts any positive budget down to a millionth of a credit', () => {
+    const start = (budgetCredits: number) =>
+      validateMethod('_agnes/v1/batch.start', 'params', { cwd: '/w', spec: { ...spec, budgetCredits } }).ok
+    for (const ok of [0.001, 0.000001]) expect(start(ok), String(ok)).toBe(true)
+    for (const bad of [0, 0.0000001, -1]) expect(start(bad), String(bad)).toBe(false)
+  })
+
   it('accepts a status result and refuses a malformed id', () => {
     expect(validateMethod('_agnes/v1/batch.status', 'result', status).ok).toBe(true)
     expect(validateMethod('_agnes/v1/batch.status', 'result', { ...status, extra: true }).ok).toBe(false)

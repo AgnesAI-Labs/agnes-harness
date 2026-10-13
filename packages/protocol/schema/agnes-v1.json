@@ -905,7 +905,11 @@
         },
         "concurrency": { "type": "integer", "minimum": 1, "maximum": 8 },
         "maxEdge": { "type": "integer", "minimum": 256, "maximum": 1456 },
-        "budgetCredits": { "type": "number", "minimum": 0.01 },
+        "budgetCredits": {
+          "type": "number",
+          "minimum": 0.000001,
+          "description": "Hard spending cap in credits; must be positive. The floor stands in for exclusiveMinimum 0, which the protocol generator does not support."
+        },
         "outDir": { "type": "string", "minLength": 1, "maxLength": 4096 },
         "itemTimeoutSec": { "type": "integer", "minimum": 60, "maximum": 3600 }
       }
@@ -956,7 +960,7 @@
         "updatedAt": { "type": "string", "maxLength": 64 },
         "counts": { "$ref": "#/$defs/BatchCounts" },
         "spentCredits": { "type": "number", "minimum": 0 },
-        "budgetCredits": { "type": "number", "minimum": 0.01 },
+        "budgetCredits": { "type": "number", "minimum": 0 },
         "reason": { "type": "string", "maxLength": 1024 },
         "files": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 4096 } },
         "summary": { "type": "string", "maxLength": 4096 }
