@@ -1121,6 +1121,11 @@ export class PluginAdminPage {
 
   /** React 键控行会复用 DOM：键盘焦点跟随 data-plugin-id 保留，无需手工恢复。 */
 
+  /** A page surface draws its rows in its own tree, outside the host this controller renders into. */
+  get #rows(): ParentNode {
+    return this.#surface ? document : this.#listHost
+  }
+
   /** Where focus returns after an install flow that no row or button started. */
   #installTrigger(): HTMLElement {
     return document.getElementById('install-source') ?? this.#listHost
@@ -1436,7 +1441,7 @@ export class PluginAdminPage {
     this.#ownsDialogs(true)
     // React 键控行复用 DOM：触发行查询自渲染结果，详情关闭后焦点可以精确归还。
     this.#detailTrigger =
-      this.#listHost.querySelector<HTMLElement>(`.plugin-row[data-plugin-id="${CSS.escape(item.id)}"]`) ??
+      this.#rows.querySelector<HTMLElement>(`.plugin-row[data-plugin-id="${CSS.escape(item.id)}"]`) ??
       undefined
     this.#detailDismissed = false
     if (this.#tab === 'installed') {
@@ -1477,7 +1482,7 @@ export class PluginAdminPage {
     this.#detailTrigger = undefined
     this.render()
     if (!targetId) return
-    for (const row of this.#listHost.querySelectorAll<HTMLElement>('.plugin-row')) {
+    for (const row of this.#rows.querySelectorAll<HTMLElement>('.plugin-row')) {
       if (row.dataset.pluginId === targetId) {
         row
           .querySelector<HTMLButtonElement>('.agh-list-row-title, .plugin-details-button')

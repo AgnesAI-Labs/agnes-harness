@@ -994,6 +994,11 @@ const homePages = mountHomePages(hosts.homePage, {
         if (prompt) composerRuntime.setDraft(prompt)
         composerRuntime.focus()
       }),
+    plugins: {
+      actualSlots: clientModules.actualSlots,
+      runtime: clientModules.reconciler,
+      workspaceId: () => paneWorkspaceId(),
+    },
   },
 })
 const stopHomeRouting = bindHomeRouting()

@@ -1,3 +1,4 @@
+import type { PluginAdminSources } from '@agnes/web-admin/admin/plugins/admin'
 import { homeEntries, homeNavigation, type LocaleService, type UiExtensionContext } from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
@@ -21,6 +22,11 @@ export type HomePageData = Readonly<{
   openSettings(section: string): void
   /** Start a new session draft with this text in the composer. */
   startDraft(prompt?: string): void
+  /** What this browser has loaded of each plugin, for the plugins page's run state. */
+  plugins?: Pick<PluginAdminSources, 'actualSlots' | 'runtime'> & {
+    /** The workspace whose skills and MCP servers the page lists. */
+    workspaceId?(): string | undefined
+  }
 }>
 
 /** The entry whose page is showing: requested and still registered. */

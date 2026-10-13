@@ -1,0 +1,191 @@
+@layer app {
+  /* The plugins page: tabs under the header, grouped rows, the catalog as a gallery. */
+  .plugins-page-tabs > .ant-tabs-nav {
+    margin-bottom: var(--s20, 1.25rem);
+  }
+  .plugins-page-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+  .home-page-section-heading small,
+  .plugins-page-summary {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.78125rem;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .plugins-page-summary {
+    max-width: 16rem;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    text-overflow: ellipsis;
+  }
+  .plugins-page-capability {
+    cursor: pointer;
+  }
+  .plugins-page-capability .agh-list-row-actions {
+    color: var(--agnes-text-tertiary);
+  }
+  .plugins-page-alias {
+    margin-inline-start: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: 0;
+  }
+  .home-page-heading h1 .agh-tag {
+    vertical-align: middle;
+    letter-spacing: 0;
+  }
+  .home-page-breadcrumb .agnes-ui-button {
+    height: auto;
+    padding: 0;
+  }
+  .plugins-page-note {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.78125rem;
+  }
+  .plugins-page-note .agnes-ui-button {
+    height: auto;
+    padding: 0;
+    font-size: inherit;
+  }
+  /* A primary action with its alternatives: one button, split by a hairline. */
+  .plugins-page-split {
+    display: inline-flex;
+  }
+  .plugins-page-split > .agnes-ui-button:first-child {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .plugins-page-split > :last-child .agnes-ui-button,
+  .plugins-page-split > .agnes-ui-button:last-child {
+    min-width: 0;
+    padding-inline: var(--s6, 0.375rem);
+    border-inline-start: 0.5px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+  .plugins-page-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+  }
+  .plugins-page-toolbar[hidden] {
+    display: none;
+  }
+  .plugins-page-toolbar > p {
+    min-width: 12rem;
+    flex: 1;
+    margin: 0;
+  }
+  .plugins-page-choice {
+    display: inline-flex;
+    gap: var(--s2);
+    padding: var(--s2);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--agnes-text-primary) 6%, transparent);
+  }
+  .plugins-page-resources {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .plugins-page-resources > .admin-notice:empty,
+  .plugins-page-resources > .admin-notice[hidden] {
+    display: none;
+  }
+  .plugins-page-callout {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid color-mix(in srgb, var(--agnes-brand-primary) 25%, var(--agnes-line-primary));
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
+  }
+  .plugins-page-callout > div {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: var(--s2);
+  }
+  .plugins-page-callout strong {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .plugins-page-callout span {
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+  }
+  .plugins-page-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
+    gap: var(--s12);
+  }
+  .plugins-page-card {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: var(--s10, 0.625rem);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .plugins-page-card > header {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .plugins-page-card > header > div {
+    min-width: 0;
+    display: grid;
+  }
+  .plugins-page-card h3 {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+  }
+  .plugins-page-card .plugins-page-card-title {
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    overflow: hidden;
+    font: inherit;
+    text-overflow: ellipsis;
+  }
+  .plugins-page-card > p {
+    margin: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+  .plugins-page-card > footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+  }
+  @media (max-width: 720px) {
+    .plugins-page-summary {
+      display: none;
+    }
+    .plugins-page-callout {
+      flex-wrap: wrap;
+    }
+  }
+}

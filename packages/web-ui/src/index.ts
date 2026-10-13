@@ -86,6 +86,7 @@ export { type SessionOption, SessionPicker } from './session-picker.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export {
+  ComputerUseCapability,
   SettingsComputerUse,
   type SettingsComputerUseActions,
   type SettingsComputerUseView,

@@ -43,6 +43,8 @@ export type ComputerUseSnapshot = Readonly<{
     Readonly<{
       record: Readonly<Pick<FoundOperation, 'operationId' | 'kind' | 'state' | 'phase'>> | undefined
     }>
+  /** Which parts need the user: a calm page shows one line, and opens only what is true here. */
+  attention: Readonly<{ status: boolean; permissions: boolean; doctor: boolean; operation: boolean }>
   controls: Readonly<{
     refreshDisabled: boolean
     grantDisabled: boolean
@@ -62,6 +64,22 @@ export type ComputerUseState = ComputerUseStatusController &
   }>
 
 type BlockedStatus = Extract<ComputerUseStatusResult, { status: 'blocked' }>
+// States the user can act on. Switched off or unsupported is a settled fact, stated without alarm.
+const NEEDS_USER: Readonly<Record<'status' | 'permissions' | 'doctor', readonly string[]>> = {
+  status: [
+    'computerUse.status.firstPrepare',
+    'computerUse.status.preparing',
+    'computerUse.status.prepareFailed',
+    'computerUse.status.blocked',
+    'computerUse.status.unreadable',
+  ],
+  permissions: ['computerUse.permissions.unknown', 'computerUse.permissions.unreadable'],
+  doctor: [
+    'computerUse.doctor.failed',
+    'computerUse.doctor.unreachable',
+    'computerUse.doctor.failedTemporary',
+  ],
+}
 const BLOCKER_KEYS: Readonly<Record<BlockedStatus['blockers'][number], ComputerUsePhrase['key']>> = {
   'release-provenance-incomplete': 'computerUse.blocker.releaseProvenance',
   'compatibility-evidence-incomplete': 'computerUse.blocker.compatibility',
@@ -171,6 +189,12 @@ export function createComputerUseState(
         label: computerUsePhrase(view.operationLabel),
         summary: computerUsePhrase(view.operationSummary),
         record: operationRecord,
+      }),
+      attention: Object.freeze({
+        status: NEEDS_USER.status.includes(view.statusLabel.key),
+        permissions: !view.grantHidden || NEEDS_USER.permissions.includes(view.permissionLabel.key),
+        doctor: NEEDS_USER.doctor.includes(view.doctorLabel.key),
+        operation: operationPending || activeOperationId !== undefined,
       }),
       controls: Object.freeze({
         refreshDisabled: statusPending || grantPending || operationPending,

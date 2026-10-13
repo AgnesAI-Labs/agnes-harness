@@ -1,5 +1,5 @@
 import { computerUseLocale, computerUseText } from '@agnes/web-foundation/locales/computer-use'
-import { SettingsComputerUse } from '@agnes/web-ui'
+import { ComputerUseCapability, SettingsComputerUse } from '@agnes/web-ui'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
 import {
   type ComputerUseOperationPolling,
@@ -77,18 +77,23 @@ export function createComputerUsePaneController(
     })
     return cleanup
   }
-  function ComputerUsePane() {
+  function ComputerUsePane({ capability = false }: { capability?: boolean }) {
     const view = useSyncExternalStore(subscribe, getSnapshot)
     const locale = useSyncExternalStore((listener) => {
       window.addEventListener('agnes:locale-changed', listener)
       return () => window.removeEventListener('agnes:locale-changed', listener)
     }, computerUseLocale)
     useLayoutEffect(mount, [])
-    return createElement(SettingsComputerUse, {
+    return createElement(capability ? ComputerUseCapability : SettingsComputerUse, {
       view,
       actions: controller,
       text: (key) => computerUseText(key, undefined, locale),
     })
   }
-  return { ...controller, render: () => createElement(ComputerUsePane) }
+  return {
+    ...controller,
+    render: () => createElement(ComputerUsePane),
+    /** The same state as the plugins page's capability: one calm line, open only where needed. */
+    renderCapability: () => createElement(ComputerUsePane, { capability: true }),
+  }
 }

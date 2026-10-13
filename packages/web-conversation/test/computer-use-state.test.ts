@@ -106,6 +106,34 @@ describe('Computer Use DOM-free state', () => {
     expect(call).toHaveBeenCalledTimes(2)
   })
 
+  it('asks for attention only where the user can act', async () => {
+    const calm = { status: false, permissions: false, doctor: false, operation: false }
+    const required = { ...granted, status: 'required', probe: { ...granted.probe, screenRecording: false } }
+    const model = create(
+      vi
+        .fn()
+        // Ready and granted: nothing to do.
+        .mockResolvedValueOnce(ready)
+        .mockResolvedValueOnce(granted)
+        // Ready, one system permission missing.
+        .mockResolvedValueOnce(ready)
+        .mockResolvedValueOnce(required)
+        // Switched off is a settled fact, not a task.
+        .mockResolvedValueOnce(blocked('feature-disabled'))
+        // The driver still has to be prepared.
+        .mockResolvedValueOnce(blocked('driver-not-prepared')),
+    )
+    expect(model.getSnapshot().attention).toEqual(calm)
+    await model.refresh()
+    expect(model.getSnapshot().attention).toEqual(calm)
+    await model.refresh()
+    expect(model.getSnapshot().attention).toEqual({ ...calm, permissions: true })
+    await model.refresh()
+    expect(model.getSnapshot().attention).toEqual(calm)
+    await model.refresh()
+    expect(model.getSnapshot().attention).toEqual({ ...calm, status: true })
+  })
+
   it('keeps only the latest status and its controls when responses arrive out of order', async () => {
     const old = deferred()
     const recent = deferred()
