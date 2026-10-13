@@ -1,5 +1,10 @@
 /** @vitest-environment happy-dom */
-import { ComputerUseCapability, type SettingsComputerUseView } from '@agnes/web-ui'
+import {
+  ComputerUseCapability,
+  type SettingsComputerUseView,
+  SkillDetailContent,
+  setAdvancedSettingsShown,
+} from '@agnes/web-ui'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -103,5 +108,52 @@ describe('computer use capability', () => {
     expect(expanded(host)).toBe('true')
     host.querySelector<HTMLElement>('[data-testid="computer-use-permission-grant"]')?.click()
     expect(actions.grantPermissions).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('skill detail', () => {
+  const skill = {
+    kind: 'skill',
+    resourceId: 'skill:weekly',
+    name: 'weekly-report',
+    description: 'Writes the weekly report.',
+    priority: 100,
+    revision: 'skill-row:v1:abc',
+    stale: false,
+    sourceIdentity: { scope: 'workspace', rootKey: 'workspace-agnes', sourceId: 's1' },
+    resolution: { winner: true, shadowed: [] },
+  } as unknown as Parameters<typeof SkillDetailContent>[0]['skill']
+  function render() {
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    flushSync(() =>
+      root.render(
+        createElement(SkillDetailContent, {
+          skill,
+          disabled: false,
+          actions: [],
+          onAction: () => {},
+          onPrioritySave: () => {},
+          onClose: () => {},
+        }),
+      ),
+    )
+    return host
+  }
+  afterEach(() => setAdvancedSettingsShown(false))
+
+  it('shows what the skill is and where it comes from, without priority or identifiers', () => {
+    const host = render()
+    expect(host.textContent).toContain('Workspace skills folder')
+    expect(host.querySelector('[data-testid="skill-advanced"]')).toBeNull()
+    expect(host.textContent).not.toContain('skill-row:v1:abc')
+  })
+
+  it('adds name priority and technical details once advanced settings are shown', () => {
+    setAdvancedSettingsShown(true)
+    const host = render()
+    expect(host.querySelector('[data-testid="skill-advanced"]')).not.toBeNull()
+    expect(host.textContent).toContain('Priority 100')
+    expect(host.textContent).toContain('skill-row:v1:abc')
   })
 })

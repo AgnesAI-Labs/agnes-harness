@@ -3,6 +3,7 @@ import {
   appServerErrorMessage,
   Button,
   Field,
+  SettingsAdvanced,
   SettingsCard,
   SettingsCode,
   SettingsSelect,
@@ -73,6 +74,13 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
   }
   const inspection = snapshot?.inspection
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
+  const usage = inspection
+    ? t('size', {
+        used: numbers.format((inspection.files.find((file) => file.path === 'MEMORY.md')?.bytes ?? 0) / 1024),
+        limit: numbers.format(inspection.settings.indexMaxBytes / 1024),
+        lines: numbers.format(inspection.settings.indexMaxLines),
+      })
+    : ''
   return (
     <SettingsCard data-testid="memory-panel" aria-busy={busy}>
       <p>{t('help')}</p>
@@ -129,24 +137,19 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
             </SettingsSelect>
           </Field>
           <p>{t('offHelp')}</p>
-          <p data-testid="memory-size">
-            {t('size', {
-              used: numbers.format(
-                (inspection.files.find((file) => file.path === 'MEMORY.md')?.bytes ?? 0) / 1024,
-              ),
-              limit: numbers.format(inspection.settings.indexMaxBytes / 1024),
-              lines: numbers.format(inspection.settings.indexMaxLines),
-            })}
-          </p>
-          <p>{t('budget', { tokens: numbers.format(inspection.settings.tokenBudget) })}</p>
-          <SettingsCode label={t('location')} data-testid="memory-root">
-            {inspection.root}
-          </SettingsCode>
-          {inspection.lastWriter && (
-            <p data-testid="memory-writer">
-              {t('writer')}: {inspection.lastWriter.sessionKey} · {inspection.lastWriter.turn}
-            </p>
-          )}
+          {/* How much is stored and where: for whoever tunes it, not for everyday use. */}
+          <SettingsAdvanced title={t('usage')} summary={usage} data-testid="memory-usage">
+            <p data-testid="memory-size">{usage}</p>
+            <p>{t('budget', { tokens: numbers.format(inspection.settings.tokenBudget) })}</p>
+            <SettingsCode label={t('location')} data-testid="memory-root">
+              {inspection.root}
+            </SettingsCode>
+            {inspection.lastWriter && (
+              <p data-testid="memory-writer">
+                {t('writer')}: {inspection.lastWriter.sessionKey} · {inspection.lastWriter.turn}
+              </p>
+            )}
+          </SettingsAdvanced>
           <Button
             data-testid="memory-open"
             disabled={busy}

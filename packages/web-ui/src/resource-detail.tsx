@@ -2,7 +2,7 @@ import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
-import { SettingsDetails, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
+import { SettingsAdvanced, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
 import { Field } from './ui/field.js'
@@ -114,15 +114,37 @@ export function SkillDetailContent({
         onClose={onClose}
       />
       <div className="admin-detail-scroll">
-        <SettingsDetails title={t('technical')}>
+        <FactList
+          className="resource-facts"
+          items={[
+            [t('fact.source'), t(`skill.scope.${skill.sourceIdentity.scope}`)],
+            [t('fact.catalog-state'), t(skill.stale ? 'fact.catalog-stale' : 'fact.catalog-current')],
+          ]}
+        />
+        {skill.lastSafeError && (
+          <SettingsState tone="error" className="resource-safe-error">
+            {t('safe-error', {
+              code: skill.lastSafeError.code,
+              message: resourceFailureLabel(skill.lastSafeError.code, t),
+            })}
+          </SettingsState>
+        )}
+        {/* Which copy wins when two skills share a name, and the identifiers behind it. */}
+        <SettingsAdvanced
+          title={t('skill.advanced')}
+          data-testid="skill-advanced"
+          summary={t('skill.advancedSummary', {
+            priority: skill.priority,
+            state: t(skill.resolution.winner ? 'fact.current-winner' : 'fact.not-winner'),
+            shadowed: skill.resolution.shadowed.length,
+          })}
+        >
           <FactList
             className="resource-facts"
             items={[
               [t('fact.source'), `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
-              [t('fact.priority'), String(skill.priority)],
               [t('fact.resolution'), t(skill.resolution.winner ? 'fact.current-winner' : 'fact.not-winner')],
               [t('fact.version'), skill.revision],
-              [t('fact.catalog-state'), t(skill.stale ? 'fact.catalog-stale' : 'fact.catalog-current')],
             ]}
           />
           {skill.resolution.shadowed.length > 0 && (
@@ -142,17 +164,7 @@ export function SkillDetailContent({
               </ul>
             </Disclosure>
           )}
-        </SettingsDetails>
-        {skill.lastSafeError && (
-          <SettingsState tone="error" className="resource-safe-error">
-            {t('safe-error', {
-              code: skill.lastSafeError.code,
-              message: resourceFailureLabel(skill.lastSafeError.code, t),
-            })}
-          </SettingsState>
-        )}
-        {skill.sourceIdentity.scope !== 'runtime' && !removing && (
-          <SettingsDetails title={t('priority.options')}>
+          {skill.sourceIdentity.scope !== 'runtime' && !removing && (
             <Field
               label={t('priority.label')}
               error={priorityChanged && !priorityValid ? t('priority.invalid') : undefined}
@@ -168,8 +180,8 @@ export function SkillDetailContent({
                 onChange={(event) => setPriority(event.currentTarget.value)}
               />
             </Field>
-          </SettingsDetails>
-        )}
+          )}
+        </SettingsAdvanced>
         {skill.sourceIdentity.scope === 'runtime' && <p>{t('skill.plugin-managed')}</p>}
         {progress && (
           <div className="resource-operation">
