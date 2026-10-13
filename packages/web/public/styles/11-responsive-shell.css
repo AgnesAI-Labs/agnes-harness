@@ -172,8 +172,7 @@
       min-height: 3rem;
       font-size: max(var(--font-size-md), 16px);
     }
-    #config-form,
-    #new-session-form {
+    #config-form {
       padding: var(--s16);
     }
     .dialog-heading-actions {

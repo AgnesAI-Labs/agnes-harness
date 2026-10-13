@@ -1,7 +1,8 @@
 @layer app {
+  /* The dialog owns the inset: the form starts on the title's left edge. */
   #new-session-form {
     max-height: var(--dialog-max-height);
-    padding: var(--s20);
+    padding: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -11,31 +12,25 @@
     border: 0;
     margin: var(--s16) 0;
   }
+  /* Browsing is one more way to pick, listed under the recent folders; confirming stays the
+   dialog's only primary action. */
   .workspace-picker-action {
-    display: grid;
-    gap: var(--s8);
-    padding: var(--s12);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    background: var(--agnes-bg-surface);
-  }
-  #workspace-pick {
-    width: 100%;
-    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
   }
   #workspace-picker-state {
     margin: 0;
-    text-align: center;
   }
   .workspace-manual {
     margin-top: var(--s12);
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
   }
   .workspace-manual > summary {
     width: fit-content;
     cursor: pointer;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
+    font-size: var(--font-size-sm);
   }
   .workspace-manual > .form-field {
     margin-top: 0.625rem;
@@ -50,8 +45,8 @@
     justify-content: flex-start;
     padding: var(--s8) var(--s12);
     border-color: var(--agnes-line-primary);
-    text-align: left;
-    background: var(--agnes-bg-surface);
+    text-align: start;
+    background: transparent;
   }
   .workspace-option-copy {
     min-width: 0;

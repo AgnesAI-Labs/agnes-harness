@@ -9,7 +9,8 @@
     border: 0;
     border-radius: var(--radius-surface);
     color: var(--agnes-text-secondary);
-    background: var(--agnes-bg-page);
+    /* Every overlay sits on the popover surface, in both themes. */
+    background: var(--agnes-bg-popover);
     box-shadow: var(--elevation-2);
     /* showModal 打开时从下方 8px 淡入；遮罩同步淡入。关闭仍瞬时。 */
     transition:
@@ -69,8 +70,10 @@
     line-height: 1.5rem;
   }
   .dialog-intro {
-    color: var(--agnes-text-tertiary);
+    margin: 0;
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
+    line-height: 1.6;
   }
   /* 共享确认弹窗的说明是多行文本（操作摘要 + 后台复核提示），必须保留换行。 */
   #admin-confirm-description {
@@ -139,6 +142,6 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--s8);
-    padding-top: var(--s8);
+    padding-top: var(--s16);
   }
 }

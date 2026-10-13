@@ -90,7 +90,7 @@ export function WorkspaceDialog({
             <Button
               id="workspace-pick"
               ref={picker}
-              appearance="primary"
+              appearance="secondary"
               disabled={blocked || !view.pickerReady}
               hidden={view.pickerReady === false}
               aria-busy={view.pending || view.creating || view.pickerBusy || view.pickerReady === undefined}
