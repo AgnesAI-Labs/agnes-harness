@@ -285,6 +285,7 @@ export function createTurnController(
       summary,
       ...(rewritten === undefined ? {} : { rewritten }),
       impact,
+      ...(durable ? { risk: durable.risk } : {}),
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...((card?.preview ?? durable?.subjectText) === undefined
         ? {}

@@ -33,6 +33,7 @@ describe('rendered approval region', () => {
       summary: '读取工作区文件',
       rewritten: '此摘要由 plugin/reviewer 改写。原始请求：read README.md',
       impact: '请核对工具及参数后决定是否继续。',
+      risk: 'destructive',
       preview: '{"path":"README.md"}',
       actions: [
         { id: 'allow', label: '仅允许这次', onSelect: () => selected.push('allow') },
@@ -49,6 +50,10 @@ describe('rendered approval region', () => {
         approval?.querySelector('[data-slot="ui:approval"] [data-agnes-region-unit="approval"]'),
       ).toBeTruthy()
       expect(approval?.querySelector('h2')?.textContent).toBe('需要你的确认')
+      // 风险等级靠 data-risk 上色，文字本身仍然说明风险：不只靠颜色表达。
+      const card = approval?.querySelector<HTMLElement>('[data-testid="plan-approval-card"]')
+      expect(card?.dataset.risk).toBe('destructive')
+      expect(card?.querySelector('.approval-impact')?.textContent).toBe('请核对工具及参数后决定是否继续。')
       expect(approval?.querySelector('[data-testid="approval-rewritten"]')?.textContent).toBe(
         '此摘要由 plugin/reviewer 改写。原始请求：read README.md',
       )

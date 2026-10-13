@@ -22,6 +22,8 @@ export interface ApprovalView {
   rewritten?: string
   title: string
   impact: string
+  /** Risk level behind the impact wording; colours it. The wording itself always states the risk. */
+  risk?: 'destructive' | 'always' | 'budget' | 'unknown'
   /** Says that part of the call is not shown; rendered before the preview so it is read first. */
   warning?: string
   preview?: string
@@ -90,6 +92,7 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           key={view.key}
           data-approval-key={view.key}
           data-testid={view.kind === 'plan' ? 'plan-approval-card' : 'approval-card'}
+          data-risk={view.risk}
           role="region"
           aria-label={view.title}
         >
