@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,15 @@ afterEach(async () => {
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
+// An 8x8 PNG and a 1x1 PNG thumbnail.
+const PNG8 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQAAAADsdIMmAAAACHRFWHRtYXJrZXIAME95DiIAAAALSURBVHicY2BABQAAEAABOb2PZQAAAABJRU5ErkJggg==',
+  'base64',
+)
+const PNG1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+)
 const TEXT = Buffer.from('kept by reference\n')
 const hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
@@ -130,5 +139,94 @@ describe('user attachment reads in an assembled host', () => {
     const inline = { type: 'file' as const, mimeType: 'text/plain', name: 'n.txt', data: 'QUJD' }
     expect((await a.message([inline])).content).toEqual([inline])
     expect(await store.stat(hex(Buffer.from('ABC')))).toBeUndefined()
+  })
+
+  it('reads an attachment stored when it was queued, refuses it once unmarked, and keeps it from other sessions', async () => {
+    const { root, store, session } = await open(true)
+    const a = await session('reads-a')
+    const file = await a.message([
+      { type: 'file', mimeType: 'text/plain', name: 'notes.txt', data: TEXT.toString('base64') },
+    ])
+    const ref = {
+      type: 'file',
+      mimeType: 'text/plain',
+      name: 'notes.txt',
+      attachment: { sha256: hex(TEXT), bytes: TEXT.byteLength },
+    } as ContentBlock
+    expect(file.content).toEqual([ref])
+    // Stored at enqueue: marked as a user attachment, with no upload receipt.
+    expect(await store.userAttachment(hex(TEXT))).toMatchObject({ receipts: [] })
+    const [text, saved] = await a.turn(
+      read({ path: `session-file://${file.seq}/1` }),
+      read({ path: `session-file://${file.seq}/1`, saveTo: 'copy.txt' }),
+    )
+    expect(text).toContain('kept by reference')
+    expect(saved).toContain('"isError":false')
+    expect(readFileSync(join(root, 'copy.txt')).equals(TEXT)).toBe(true)
+    expect(Buffer.from((await a.window(file.seq, 'file')).bytes).equals(TEXT)).toBe(true)
+    // Images are read here through the download window only: a turn cannot be built from a history
+    // holding an image reference yet.
+    const image = await a.message([{ type: 'image', mimeType: 'image/png', data: PNG8.toString('base64') }])
+    expect(image.content).toEqual([
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        attachment: { sha256: hex(PNG8), bytes: PNG8.byteLength },
+        width: 8,
+        height: 8,
+      },
+    ])
+    expect(Buffer.from((await a.window(image.seq, 'image')).bytes).equals(PNG8)).toBe(true)
+
+    // Another session cannot name the object without a claim on it, and cannot reach this session's rows.
+    const b = await session('reads-b')
+    await expect(b.s.enqueue('next-turn', { actor: b.s.d.actor, content: [ref] })).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
+    })
+    await expect(b.window(file.seq, 'file')).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_NOT_FOUND' },
+    })
+    // An upload to that session gives it the claim; then it reads the same object.
+    await upload(store, TEXT, 'text/plain', 'reads-b')
+    const own = await b.message([ref])
+    expect(Buffer.from((await b.window(own.seq, 'file')).bytes).equals(TEXT)).toBe(true)
+
+    // Without its marker the object is refused exactly as an absent one is.
+    rmSync(join(root, 'artifacts', 'user-attachment-meta', hex(TEXT).slice(0, 2), `${hex(TEXT)}.json`))
+    const [unmarked] = await b.turn(read({ path: `session-file://${own.seq}/1` }))
+    expect(unmarked).toContain('"isError":true')
+    expect(unmarked).toContain('missing')
+    expect(unmarked).not.toContain('kept by reference')
+    await expect(a.window(file.seq, 'file')).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_MISSING' },
+    })
+    rmSync(join(root, 'artifacts', 'sha256', hex(PNG8).slice(0, 2), hex(PNG8)))
+    await expect(a.window(image.seq, 'image')).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_MISSING' },
+    })
+  })
+
+  it('serves a thumbnail admitted with its image, and admits only a marked one', async () => {
+    const { store, session } = await open(false)
+    const a = await session('reads-thumb')
+    const image = await upload(store, PNG8, 'image/png', 'reads-thumb')
+    const unmarked = await store.put(PNG1, { kind: 'thumbnail', mimeType: 'image/png' })
+    const block = (thumbnail: { sha256: string; bytes: number }) =>
+      ({
+        type: 'image',
+        mimeType: 'image/png',
+        attachment: image,
+        width: 8,
+        height: 8,
+        thumbnail: { ...thumbnail, width: 1, height: 1 },
+      }) as ContentBlock
+    await expect(
+      a.s.enqueue('next-turn', { actor: a.s.d.actor, content: [block(unmarked)] }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' } })
+    const thumbnail = await upload(store, PNG1, 'image/png', 'reads-thumb')
+    const { seq } = await a.message([block(thumbnail)])
+    const page = await a.window(seq, 'image', true)
+    expect(Buffer.from(page.bytes).equals(PNG1)).toBe(true)
+    expect(page).toMatchObject({ mimeType: 'image/png', totalBytes: PNG1.byteLength, sha256: hex(PNG1) })
   })
 })
