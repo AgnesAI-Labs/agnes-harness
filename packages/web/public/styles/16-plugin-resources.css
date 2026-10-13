@@ -463,22 +463,22 @@
     display: grid;
     place-content: center;
     justify-items: center;
-    min-height: 18rem;
+    min-height: 14rem;
     padding: var(--s32);
     text-align: center;
   }
   .admin-empty-state-mark {
     display: block;
-    width: 3rem;
-    height: 3rem;
-    margin-bottom: 0.875rem;
-    color: var(--agnes-brand-primary);
-    opacity: 0.86;
+    width: var(--s24);
+    height: var(--s24);
+    margin-bottom: var(--s12);
+    color: var(--agnes-text-tertiary);
   }
   .admin-empty-state h2 {
     margin: 0;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
   }
   .admin-empty-state p {
     max-width: 21rem;
@@ -888,9 +888,10 @@
     font-weight: 500;
     line-height: 1.5rem;
   }
+  /* Centred on the dialog's first 44px row: the tab strip, or the page title when there is none. */
   #config-close {
     position: absolute;
-    top: 20px;
+    top: 6px;
     right: 14px;
     z-index: 1;
     width: var(--s32);

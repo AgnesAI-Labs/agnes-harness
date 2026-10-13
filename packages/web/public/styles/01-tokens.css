@@ -371,7 +371,8 @@
     --admin-content-width: 70rem;
     --control-height: 2.25rem;
     --control-height-sm: 28px;
-    --control-height-form: var(--control-height-touch);
+    /* Text fields match the buttons beside them; touch widths raise both to the touch target. */
+    --control-height-form: var(--control-height);
     --control-height-touch: 44px;
     --dialog-max-height: min(46rem, calc(100dvh - 3rem));
     /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
@@ -387,6 +388,11 @@
     --motion-ease: cubic-bezier(0.2, 0, 0, 1);
     --transition-fast: var(--motion-fast) var(--motion-ease);
     --transition: var(--motion-base) var(--motion-ease);
+  }
+  @media (max-width: 767px) {
+    :root {
+      --control-height-form: var(--control-height-touch);
+    }
   }
 
   /* Private application layers: outside the semantic skin vocabulary (second :root). */

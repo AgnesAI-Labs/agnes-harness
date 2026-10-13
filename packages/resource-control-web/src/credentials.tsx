@@ -148,15 +148,25 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
       variant="list"
       data-testid="credentials-page"
       actions={
-        <Button
-          appearance="primary"
-          data-testid="credential-create"
-          disabled={busy || !!blocked}
-          {...(blocked ? { disabledReason: t(`error.${blocked}`) } : {})}
-          onClick={() => setEditor({ mode: 'create' })}
-        >
-          {t('create')}
-        </Button>
+        <>
+          <Button
+            appearance="ghost"
+            data-testid="credentials-refresh"
+            disabled={busy}
+            onClick={() => setRevision((value) => value + 1)}
+          >
+            {t('retry')}
+          </Button>
+          <Button
+            appearance="primary"
+            data-testid="credential-create"
+            disabled={busy || !!blocked}
+            {...(blocked ? { disabledReason: t(`error.${blocked}`) } : {})}
+            onClick={() => setEditor({ mode: 'create' })}
+          >
+            {t('create')}
+          </Button>
+        </>
       }
     >
       {blocked && context && <Banner tone="warning">{t(`error.${blocked}`)}</Banner>}
@@ -166,14 +176,6 @@ export function CredentialsPage({ api = defaultApi }: { api?: CredentialsApi }) 
         </Banner>
       )}
       {notice && <SettingsState tone="success">{notice}</SettingsState>}
-      <Button
-        appearance="ghost"
-        data-testid="credentials-refresh"
-        disabled={busy}
-        onClick={() => setRevision((value) => value + 1)}
-      >
-        {t('retry')}
-      </Button>
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {items?.length === 0 && (
         <EmptyState icon={<Icon name="key-round" />} title={t('empty')} description={t('emptyHelp')} />

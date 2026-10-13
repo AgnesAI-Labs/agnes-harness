@@ -1,6 +1,10 @@
 @layer app {
+  /* Only a heading on the dialog's first row shares it with the close button. */
   #config-form .agnes-settings-page-heading {
     padding-inline-end: 3.25rem;
+  }
+  #config-form #settings-section-tabs:not([hidden]) ~ #settings-pane-slots .agnes-settings-page-heading {
+    padding-inline-end: 0;
   }
   #config-close .icon {
     width: 0.875rem;
@@ -59,7 +63,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--s8);
-    padding: var(--s20) var(--s24) var(--s12);
+    padding: var(--s10) var(--s24) var(--s12);
     border-bottom: 1px solid var(--agnes-line-primary);
     background: transparent;
   }
@@ -69,14 +73,14 @@
   #config-form .config-heading h2 {
     margin: 0;
     font-size: var(--font-size-md);
-    font-weight: 500;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.5rem;
   }
   #config-form .config-heading > div > p {
     max-width: 38rem;
-    margin: 0;
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-body);
+    margin: var(--s2) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
     line-height: 1.6;
   }
   /* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
@@ -159,8 +163,12 @@
   .config-accounts-heading h3,
   .config-detail-heading h3 {
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body);
     letter-spacing: 0;
+  }
+  /* Inside a card the card's own padding frames the heading. */
+  .agnes-settings-card > .config-accounts-heading {
+    padding: 0;
   }
   #config-form .config-accounts-heading > div > p,
   #config-form #config-account-context {
@@ -269,7 +277,8 @@
   }
   .config-list-note {
     margin-top: auto;
-    padding: var(--s12) var(--s20);
+    padding: var(--s12) 0;
+    color: var(--agnes-text-secondary);
     border-top: 1px solid var(--agnes-line-primary);
     font-size: var(--font-size-xs);
   }
@@ -317,8 +326,8 @@
     gap: var(--s12);
     width: 100%;
     min-width: 0;
-    min-height: max(44px, var(--control-height-form));
-    padding: 0.625rem var(--s12);
+    min-height: var(--control-height-form);
+    padding: var(--s4) var(--s12);
     border: 1px solid var(--agnes-input-border);
     border-radius: var(--radius-md);
     color: var(--agnes-input-content-strong);
@@ -806,20 +815,23 @@
     border-bottom: 1px solid var(--agnes-line-primary);
   }
   .appearance-options {
+    display: grid;
+    gap: var(--s2);
     margin: 0;
-    padding: var(--s16) var(--s16);
+    padding: 0 var(--s12) var(--s12);
     border: 0;
   }
   .appearance-card {
     padding-top: var(--s12);
   }
+  /* A choice is a row in its group, not a card inside a card: the picked row is filled. */
   .appearance-option {
     display: flex;
     align-items: flex-start;
     gap: 0.625rem;
-    padding: 0.625rem var(--s12);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-lg);
+    padding: var(--s8) var(--s12);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
     cursor: pointer;
   }
   .appearance-option-copy {
@@ -830,27 +842,27 @@
   .appearance-option-name {
     color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
-    font-weight: 600;
+    font-weight: var(--font-weight-medium);
   }
   .appearance-option-hint {
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
-  }
-  .appearance-option + .appearance-option {
-    margin-top: var(--s8);
+    line-height: 1.6;
   }
   .appearance-option:hover {
     background: var(--agnes-bg-hover);
   }
   .appearance-option:has(input:checked) {
-    border-color: var(--agnes-input-border-focus);
     background: var(--agnes-brand-emphasis-soft);
+  }
+  .appearance-option:has(input:focus-visible) {
+    border-color: var(--agnes-input-border-focus);
   }
   #config-form /* fieldset 的 legend 默认画在边框区，会顶到卡片上沿。
    display:block 让它回到正常流里，fieldset 的 padding-top 才起作用。 */
   .appearance-options legend {
     display: block;
-    padding: 0 0 var(--s12);
+    padding: 0 var(--s12) var(--s4);
     color: var(--agnes-text-primary);
     font-size: var(--font-size-sm);
     font-weight: 600;

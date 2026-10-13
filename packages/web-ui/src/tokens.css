@@ -328,6 +328,30 @@
   /* Settings share the account pane's surfaces, controls and text hierarchy. */
   .agnes-settings-page {
     min-width: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  /* One heading scale for every settings page, whatever element its author reached for:
+   page title 16px, section 14px, row 13px; all semibold, none at the browser default. */
+  :where(.agnes-settings-page, .settings-content) :where(h3) {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  :where(.agnes-settings-page, .settings-content) :where(h4) {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
+  }
+  /* An icon written into a sentence stays on that sentence's line. */
+  :where(.agnes-settings-page) :where(p, li, summary) > :where(svg.agh-icon, svg.icon) {
+    display: inline-block;
+    vertical-align: -0.15em;
+  }
+  /* A page that only frames another page yields its title to the inner one. */
+  .agnes-settings-page:has(> .agnes-settings-stack > .agnes-settings-page:first-child)
+  > .agnes-settings-page-heading:not(:has(.agnes-settings-actions)) {
+    display: none;
   }
   .agnes-settings-stack {
     display: grid;
@@ -344,7 +368,13 @@
   }
   .agnes-settings-page .config-heading h2 {
     margin: 0;
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  .agnes-settings-page .config-heading p {
+    margin: var(--s2) 0 0;
+    font-size: var(--font-size-sm);
   }
   .agnes-settings-page .config-heading p,
   .agnes-settings-card p {
@@ -363,6 +393,18 @@
     gap: var(--s8);
     flex-wrap: wrap;
     align-items: center;
+  }
+  /* As a <fieldset> the group keeps its name for assistive tech and drops the browser's frame. */
+  fieldset.agnes-settings-actions {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  /* A pressed quiet button is the current choice of its group. */
+  .agnes-settings-actions > .agh-btn--ghost[aria-pressed="true"]:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
   }
   .agnes-settings-card {
     padding: var(--s16);
@@ -553,10 +595,10 @@
     color: var(--agnes-text-secondary);
     font-weight: 500;
   }
+  /* A disclosure inside a card is a divided row of that card, not a second box within it. */
   .agnes-settings-card details {
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-md);
-    padding: var(--s12);
+    padding-top: var(--s8);
+    border-top: 1px solid var(--agnes-line-primary);
     min-width: 0;
   }
   .agnes-settings-card summary {
@@ -604,9 +646,9 @@
   }
   .agnes-settings-section-tabs {
     display: flex;
-    gap: var(--s16);
+    gap: var(--s20);
     flex: 0 0 auto;
-    padding: var(--s12) var(--s24) 0;
+    padding: 0 var(--s24);
     border-bottom: 1px solid var(--agnes-line-primary);
     overflow-x: auto;
   }
@@ -628,6 +670,11 @@
   /* The :not() pair lifts the selected marker above the ghost button's transparent border. */
   .agnes-settings-section-tabs button[aria-selected="true"]:not(:disabled):not([aria-disabled="true"]) {
     border-bottom-color: var(--agnes-text-emphasis);
+    color: var(--agnes-text-primary);
+  }
+  /* A text tab answers the pointer with its label, never with a filled box. */
+  .agnes-settings-section-tabs button:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: transparent;
     color: var(--agnes-text-primary);
   }
   .agnes-settings-section-tabs button:focus-visible {
@@ -746,7 +793,7 @@
   }
   .agnes-settings-row h4 {
     margin: 0;
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-sm);
     font-weight: 600;
   }
   .agnes-settings-row p {
@@ -759,7 +806,7 @@
   .agnes-settings-details > summary {
     overflow-wrap: anywhere;
     cursor: pointer;
-    padding-block: var(--s12);
+    padding-block: var(--s8);
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
   }
@@ -896,8 +943,9 @@
     padding: 0;
     margin-block: var(--s12) var(--s24);
   }
+  /* A step is as wide as its name; the rails between steps take up the slack. */
   .agnes-setup-progress li {
-    flex: 1 1 0;
+    flex: 0 1 auto;
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -907,11 +955,11 @@
     line-height: var(--line-sm);
   }
   .agnes-setup-progress li + li {
-    flex: 1 1 0;
+    flex: 1 1 auto;
   }
   .agnes-setup-progress li + li::before {
     content: "";
-    flex: 0 0 var(--s12);
+    flex: 1 1 var(--s12);
     min-width: var(--s12);
     height: 1px;
     background: var(--agnes-line-emphasis);
@@ -946,7 +994,6 @@
   }
   /* Step names remain readable; narrow screens already keep only the current label. */
   .agnes-setup-progress li[aria-current] {
-    flex: 1 1 0;
     color: var(--agnes-text-primary);
     font-weight: var(--font-weight-semibold);
   }
@@ -962,8 +1009,14 @@
   }
   .agnes-first-run-heading {
     margin: 0 0 var(--s4);
-    font-size: var(--font-size-lg);
-    line-height: var(--line-lg);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  /* The counter repeats what the rail shows; it stays for assistive tech and reads as a caption. */
+  .agnes-first-run [data-testid="first-run-guide"] > .field-hint:first-child {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
   }
   .agnes-first-run .agnes-first-run-lead {
     margin: 0 0 var(--s16);
@@ -1092,7 +1145,7 @@
   .resource-empty.agnes-settings-state h3 {
     margin: 0;
     color: var(--agnes-text-primary);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body);
   }
   .resource-row .agnes-ui-button.plugin-details-button {
     display: inline-flex;
@@ -1154,7 +1207,8 @@
   .agnes-ui-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
   .form-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
     min-height: var(--control-height-form);
-    padding: var(--s10) var(--s12);
+    /* The text line is centred in the control height, less the 1px border on each side. */
+    padding: calc((var(--control-height-form) - var(--line-sm)) / 2 - 1px) var(--s12);
     font-size: var(--font-size-sm);
     font-weight: 400;
     line-height: var(--line-sm);
@@ -1204,12 +1258,12 @@
     overflow-wrap: anywhere;
   }
   .agnes-settings-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-body);
     line-height: var(--line-md);
   }
   .agnes-settings-card h4 {
     margin-block: 0;
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-sm);
     line-height: var(--line-sm);
   }
   .agnes-settings-row > span {
@@ -1242,7 +1296,7 @@
   .settings-content.agnes-settings-page > .agnes-settings-page-heading {
     flex: 0 0 auto;
     margin: 0;
-    padding: var(--s20) var(--s24) var(--s12);
+    padding: var(--s10) var(--s24) var(--s12);
     padding-inline-end: calc(var(--s24) + var(--s32));
     border-bottom: 1px solid var(--agnes-line-primary);
   }

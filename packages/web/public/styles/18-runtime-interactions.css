@@ -37,6 +37,25 @@
   .runtime-settings details {
     margin-block: var(--s16);
   }
+  /* A page made of collapsible sections reads as one divided list: rows touch, hairlines separate. */
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details {
+    margin-block: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details + .agnes-settings-details {
+    margin-top: calc(-1 * var(--s16));
+  }
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details > summary {
+    padding-block: var(--s12);
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details[open] > summary {
+    font-weight: var(--font-weight-semibold);
+  }
+  .runtime-settings .agnes-settings-stack > .agnes-settings-details > div {
+    padding-block: 0 var(--s20);
+  }
   .runtime-settings table {
     width: 100%;
     text-align: start;
@@ -237,6 +256,10 @@
     gap: var(--s4);
     overflow: visible;
   }
+  /* <details> does not lay its children out as a grid: restore the rail's 4px rhythm by hand. */
+  .settings-shell #settings-advanced > .settings-nav-item {
+    margin-top: var(--s4);
+  }
   .settings-shell .settings-nav-label {
     display: block;
     margin: var(--s8) var(--s8) var(--s2);
@@ -266,22 +289,26 @@
     box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
     font-weight: var(--font-weight-medium);
   }
-  @media (max-width: 900px) {
-    .settings-shell .settings-nav-item,
-    .runtime-settings > nav .settings-nav-item {
-      min-height: var(--control-height-touch);
-      padding: var(--s8) var(--s12);
-      font-size: var(--font-size-body);
-    }
-  }
   .settings-shell #settings-advanced > summary,
   .runtime-settings > nav details > summary {
-    min-height: var(--control-height-touch);
-    padding: var(--s12);
+    min-height: var(--control-height);
+    padding: var(--s8);
+    border-radius: var(--radius-control);
     cursor: pointer;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  @media (max-width: 900px) {
+    .settings-shell .settings-nav-item,
+    .runtime-settings > nav .settings-nav-item,
+    .settings-shell #settings-advanced > summary,
+    .runtime-settings > nav details > summary {
+      min-height: var(--control-height-touch);
+      padding: var(--s8) var(--s12);
+      font-size: var(--font-size-body);
+    }
   }
   .settings-shell #settings-advanced > summary:focus-visible,
   .runtime-settings > nav details > summary:focus-visible {
@@ -296,7 +323,7 @@
   .settings-shell #settings-search {
     min-width: 0;
     width: 100%;
-    min-height: var(--control-height-touch);
+    min-height: var(--control-height-form);
   }
   .settings-shell #settings-back,
   .runtime-settings .settings-back {
@@ -317,7 +344,8 @@
   }
   .settings-shell .agnes-settings-section-tabs button,
   .runtime-settings .agnes-settings-section-tabs button {
-    min-height: var(--control-height-touch);
+    /* With its hairline the strip is 44px, the height of the top bar and the rail heading. */
+    min-height: 43px;
     box-shadow: none;
     font-size: var(--font-size-sm);
   }
