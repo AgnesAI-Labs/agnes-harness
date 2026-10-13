@@ -272,6 +272,8 @@ describe('agh import of rows that reference attachments', () => {
       rmSync(`${file}.attachments`, { recursive: true, force: true })
       const marker = join(source, 'artifacts', 'user-attachment-meta', SHA.slice(0, 2), `${SHA}.json`)
       const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      const seen = JSON.parse(readFileSync(marker, 'utf8')) as { firstSeenMs: number }
+      writeFileSync(marker, `${JSON.stringify({ ...seen, firstSeenMs: longAgo.getTime() })}\n`)
       utimesSync(marker, longAgo, longAgo)
       watch.sha = SHA
       try {
