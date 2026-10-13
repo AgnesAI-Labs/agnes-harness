@@ -147,7 +147,9 @@ export async function withLock<T>(
         removeLockArtifact(pending)
       }
       break
-    } catch {
+    } catch (error) {
+      // Only an existing lock is contention; an unsupported link, a permission or an I/O failure is not busy.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       if (
         existsSync(lockFile) &&
         Date.now() - statSync(lockFile).mtimeMs > STALE_LOCK_MS &&
