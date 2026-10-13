@@ -280,7 +280,8 @@ function presetCompositionFixture() {
       })
     },
     profileInputs: {
-      bundleCatalog: parsePackageBundles('@fixture/session', {
+      // This static fixture belongs to a builtin package, so live plugin publication retains it.
+      bundleCatalog: parsePackageBundles('@agnes/ai', {
         reader: { profile: { tools: ['read'] } },
       }),
       user: {
@@ -405,7 +406,7 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
       key: 'observer-session',
       preset: 'observer',
       cwd: root,
-      bundles: ['@fixture/session#reader'],
+      bundles: ['@agnes/ai#reader'],
     })
     expect(observer.currentTools().resolve('write')).toBeUndefined()
     await expect(host.createSession({ key: observer.key, cwd: root, bundles: [] })).rejects.toThrow(
@@ -419,10 +420,10 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
     // Use the same durable directory as createTestHost's production Host options.
     const bindings = new CompositionSessionStore(profileDir)
     expect(bindings.read(reader.key)?.tree.preset).toBe('reader')
-    expect(bindings.read(observer.key)?.tree.sessionBundles).toEqual(['@fixture/session#reader'])
+    expect(bindings.read(observer.key)?.tree.sessionBundles).toEqual(['@agnes/ai#reader'])
     expect(bindings.read(observer.key)?.tree.sources.tools).toEqual({
       layer: 'session',
-      name: '@fixture/session#reader',
+      name: '@agnes/ai#reader',
     })
     expect(await readLiveCompositionSessions(profileDir)).toHaveLength(2)
     await reader.close()
@@ -444,7 +445,7 @@ it('publishes model changes per composition and reports a partial provider refus
       key: 'observer-session',
       preset: 'observer',
       cwd: root,
-      bundles: ['@fixture/session#reader'],
+      bundles: ['@agnes/ai#reader'],
     })
     // Worker profiles arrive as JSON; object field order cannot prevent a model-only publication.
     const next = JSON.parse(JSON.stringify(host.profile), (_key, value) =>
@@ -501,7 +502,7 @@ it('restores and migrates pinned preset and bundle compositions after a cold reo
       key: 'observer-session',
       preset: 'observer',
       cwd: root,
-      bundles: ['@fixture/session#reader'],
+      bundles: ['@agnes/ai#reader'],
     })
     await observer.close()
     const profileDir = join(root, 'profiles', 'local-dev')

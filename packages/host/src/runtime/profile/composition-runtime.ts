@@ -36,7 +36,7 @@ import {
 import { sessionKey } from '../sessions/session.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
-import { admitSessionBundlePresets } from './session-bundle-presets.js'
+import { admitSessionBundlePresets, sessionBundleCatalog } from './session-bundle-presets.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
@@ -486,7 +486,10 @@ export async function createCompositionHost(
                     (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
                 })),
               ],
-              bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
+              bundleCatalog: sessionBundleCatalog(
+                profile,
+                latestTarget ? readRuntimeBundles(sources) : undefined,
+              ),
             }
             const adminLoop = parent ? undefined : await readAdminLoopDefault(configuration)
             const admitted = admitSessionBundlePresets(admissionProfile, initial.host, parent ? {} : input)

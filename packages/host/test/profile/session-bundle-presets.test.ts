@@ -1,13 +1,23 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultToolPolicy, toolPolicyKind } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
+import { hashDirectory } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
+import {
+  pluginHost,
+  pluginRow,
+  pluginSource,
+  scratch,
+  targetOf,
+  VENDOR,
+} from '../assemble/plugin-extension-fixture.js'
 
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'session-bundle-presets-test-worker' }),
@@ -159,5 +169,57 @@ it('asks for a preset name when the bundle offers several, and refuses unknown s
   } finally {
     await host?.close()
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('refuses a boot-time bundle after its package is disabled without changing retained sessions', async () => {
+  const original = pluginSource("ctx.tools.register(tool('fixture_review'))")
+  const bundles = { review: { presets: { review: { name: 'review', extends: 'standard' } } } }
+  const file = join(original.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.bundles = bundles
+  writeFileSync(file, JSON.stringify(manifest))
+  const source = {
+    ...original,
+    snapshot: {
+      ...original.snapshot,
+      treeIntegrity: hashDirectory(original.snapshot.directory, { exclude: [] }),
+    },
+  }
+  const { host, dataDir } = await pluginHost(source, {
+    script: [],
+    disableSessionTitle: true,
+    extensionLoader: createLoader({ cacheDir: scratch(), hostRoot: process.cwd(), agnesVersion: '0.0.0' }),
+    profileInputs: {
+      bundleCatalog: {
+        ...parsePackageBundles(VENDOR, bundles),
+        ...parsePackageBundles('@agnes/ai', { builtin: {} }),
+      },
+    },
+    runtimePluginSources: async () => [source],
+  })
+  try {
+    expect((await host.applyRuntimeTarget(targetOf([pluginRow()]))).ok).toBe(true)
+    const selected = await host.createSession({
+      key: 'retained',
+      cwd: dataDir,
+      bundles: [`${VENDOR}#review`],
+    })
+    expect(selected.preset.name).toBe('review')
+    expect((await host.applyRuntimeTarget(targetOf([pluginRow(undefined, undefined, true)]))).ok).toBe(true)
+    const result = await host
+      .createSession({ key: 'new-disabled', cwd: dataDir, bundles: [`${VENDOR}#review`] })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      )
+    expect(result).toMatchObject({ code: 'E_PRESET_UNSUPPORTED', detail: { reason: 'bundle-unavailable' } })
+    expect(selected.preset.name).toBe('review')
+    const builtin = await host.createSession({ key: 'builtin', cwd: dataDir, bundles: ['@agnes/ai#builtin'] })
+    expect(builtin.preset.name).toBe('standard')
+    await builtin.close()
+    await selected.close()
+  } finally {
+    await host.close()
   }
 })
