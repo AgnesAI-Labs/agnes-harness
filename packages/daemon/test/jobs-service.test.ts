@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { itemJobId } from '../src/batch/engine.js'
 import { JobsRepo } from '../src/jobs/repo.js'
 import { JobsService } from '../src/jobs/service.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -62,6 +63,24 @@ describe('JobsService', () => {
     await expect(
       service.enqueue({ ...base, idempotencyKey: 'explicit', protected: true }, { local: true }),
     ).resolves.toEqual({ jobId: 'explicit' })
+  })
+
+  it('keeps the job ids of batch items to local callers, so no client can take one first', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 0)
+    const service = new JobsService({ repo, profileHash: 'h', clock: () => 0 })
+    const spec = {
+      idempotencyKey: itemJobId('b0123456789ab', 1, 0),
+      sessionKey: 'agnes:local:agent:cli:dm:user',
+      payload: { prompt: 'report' },
+      schedule: { kind: 'once' },
+    } as const
+    await expect(service.enqueue(spec, { local: false })).rejects.toMatchObject({ code: -32006 })
+    expect(repo.get(spec.idempotencyKey)).toBeUndefined()
+    await expect(service.enqueue(spec, { local: true })).resolves.toEqual({ jobId: spec.idempotencyKey })
+    // Other names stay open to every caller that owns the session.
+    await expect(
+      service.enqueue({ ...spec, idempotencyKey: 'batches-report' }, { local: false }),
+    ).resolves.toEqual({ jobId: 'batches-report' })
   })
 
   it('rejects invalid specs and impossible cron schedules with RPC errors', async () => {
