@@ -302,7 +302,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06 the composer's paperclip hint moves off the native title onto a Tooltip, which needs
   // its own wrapper here (antd's Tooltip consumes `rootClassName`, not `className`). Measured: 6678.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6687, exact.
-  'packages/web-ui/src': 6687,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-ui/src 6691; no exclusions or spare allocation.
+  'packages/web-ui/src': 6691,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -320,7 +321,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06 review fix: a refused file block reports through the shared attachment-error map
   // instead of claiming the attachment could not be read. Measured: 6242, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6273, exact.
-  'packages/web-units/src': 6273,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
+  'packages/web-units/src': 6278,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
@@ -538,7 +540,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 807, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 810, exact.
-  'packages/web/src/timeline': 810,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src/timeline 811; no exclusions or spare allocation.
+  'packages/web/src/timeline': 811,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1083,7 +1086,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache, and ledger hashing through node:crypto; measured 26941, exact.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/core/src 26994; no exclusions or spare allocation.
-  'packages/core/src': 26994,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/core/src 27083; no exclusions or spare allocation.
+  'packages/core/src': 27083,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1099,7 +1103,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 4169, exact.
-  'packages/ai/src': 4169,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/ai/src 4173; no exclusions or spare allocation.
+  'packages/ai/src': 4173,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1395,7 +1400,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact. Extended 2026-10-13 for the JCS string fast path and chunked serializer; measured 2305, exact.
-  'packages/protocol/src': 2305,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/protocol/src 2306; no exclusions or spare allocation.
+  'packages/protocol/src': 2306,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -2213,7 +2219,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // neither side's number holds. Re-measured with countLines() on the merged tree: 16967, exact.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 16990, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 17030, exact.
-  'packages/web/src': 17030,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src 17031; no exclusions or spare allocation.
+  'packages/web/src': 17031,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2700,7 +2707,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
   // 2026-10-13 attachments by reference: the streaming content-addressed attachment store and the request version cache. Reviewed exact countLines packages/host/src 39693; no exclusions or spare allocation.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src 39703; no exclusions or spare allocation.
-  'packages/host/src': 39703,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src 39757; no exclusions or spare allocation.
+  'packages/host/src': 39757,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2871,7 +2879,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 5248, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 5572, exact.
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters 5579; no exclusions or spare allocation.
-  'packages/host/src/adapters': 5579,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters 5631; no exclusions or spare allocation.
+  'packages/host/src/adapters': 5631,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2893,7 +2902,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
   // sync helper. Measured 635, exact, no spare (+3).
   // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters/storage-sqlite 642; no exclusions or spare allocation.
-  'packages/host/src/adapters/storage-sqlite': 642,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters/storage-sqlite 653; no exclusions or spare allocation.
+  'packages/host/src/adapters/storage-sqlite': 653,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
