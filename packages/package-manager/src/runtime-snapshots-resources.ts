@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { JsonValue } from '@agnes/protocol'
+import { mkdirDurablySync, syncTreeSync } from '@agnes/system-node'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { hashDirectory } from './sources.js'
 
@@ -25,9 +26,13 @@ export function generationResourcesDigest(input: RuntimeGenerationResourceInput)
   )
 }
 
-/** Private resource bodies and SecretRefs, never resolved credentials. */
+/**
+ * Private resource bodies and SecretRefs, never resolved credentials. The directory's parent must exist.
+ * Returns once the directory, every tree under it and `resources.json` are durable, so a digest that
+ * names them never outlives their content.
+ */
 export function writeGenerationResources(directory: string, input: RuntimeGenerationResourceInput): string {
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  mkdirDurablySync(directory, dirname(directory))
   const trees = input.directories.map((source, index) => {
     const destination = join(directory, String(index))
     const before = hashDirectory(source, { exclude: [] })
@@ -38,6 +43,7 @@ export function writeGenerationResources(directory: string, input: RuntimeGenera
   })
   const text = resourcesText(input.data, trees)
   writeFileSync(join(directory, 'resources.json'), text, { mode: 0o600, flag: 'wx', flush: true })
+  syncTreeSync(directory)
   return digest(text)
 }
 

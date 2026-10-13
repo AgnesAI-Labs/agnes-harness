@@ -9,11 +9,12 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DurableStateError,
   type PinnedSeam,
@@ -217,17 +218,70 @@ describe('pin read-modify-write', () => {
     expect(readdirSync(join(store.root, 'sessions')).filter((name) => name.endsWith('.lock'))).toEqual([])
   })
 
-  it('reclaims the lock of a crashed writer and refuses while a fresh one is held', () => {
+  const lockOwner = (pid: number, token = 'foreign') => JSON.stringify({ pid, token })
+  const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid as number
+
+  it('takes over the lock of a writer whose process is gone', () => {
     const { store, generation, pinFile } = fixture()
-    const snapshot = generation()
-    store.pin('s', snapshot.id, PINS)
+    store.pin('s', generation().id, PINS)
     const lock = `${pinFile('s')}.lock`
-    mkdirSync(lock)
-    const old = new Date(Date.now() - 5 * 60_000)
-    utimesSync(lock, old, old)
+    writeFileSync(lock, lockOwner(deadPid()))
     store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     expect(existsSync(lock)).toBe(false)
     expect(store.session('s')?.loop?.id).toBe('loop')
+  })
+
+  it('never takes over a live holder by age and leaves its lock untouched', () => {
+    const fresh = fixture()
+    const { store, generation, pinFile } = fresh
+    const stalled = new RuntimeGenerationSnapshotStore(fresh.home, { lockWaitMs: 50 })
+    store.pin('s', generation().id, PINS)
+    const lock = `${pinFile('s')}.lock`
+    // A paused or slow holder: its process exists, so no amount of age makes the lock reclaimable.
+    writeFileSync(lock, lockOwner(process.pid, 'paused-holder'))
+    const old = new Date(Date.now() - 60 * 60_000)
+    utimesSync(lock, old, old)
+    let caught: unknown
+    try {
+      stalled.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as DurableStateError).code).toBe('E_GENERATION_PIN_BUSY')
+    expect(readFileSync(lock, 'utf8')).toBe(lockOwner(process.pid, 'paused-holder'))
+    expect(store.session('s')?.loop).toBeUndefined()
+  })
+
+  it('does not report a filesystem error as a busy lock', () => {
+    const { store, generation } = fixture()
+    store.pin('s', generation().id, PINS)
+    // The lock path is unreachable (not a directory), which is neither contention nor a stale lock.
+    rmSync(join(store.root, 'sessions'), { recursive: true, force: true })
+    writeFileSync(join(store.root, 'sessions'), 'not a directory')
+    let caught: unknown
+    try {
+      store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as { code?: string }).code).not.toBe('E_GENERATION_PIN_BUSY')
+    expect(caught).toBeInstanceOf(Error)
+  })
+
+  it('releases only the lock it holds', () => {
+    const { store, generation, pinFile } = fixture()
+    store.pin('s', generation().id, PINS)
+    const lock = `${pinFile('s')}.lock`
+    const original = store.session.bind(store)
+    // While the body runs, the lock is replaced by another holder's.
+    const spy = vi.spyOn(store, 'session').mockImplementationOnce((key) => {
+      rmSync(lock, { force: true })
+      writeFileSync(lock, lockOwner(process.pid, 'someone-else'))
+      return original(key)
+    })
+    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    spy.mockRestore()
+    expect(readFileSync(lock, 'utf8')).toBe(lockOwner(process.pid, 'someone-else'))
   })
 
   it('does not resurrect a released pin', () => {

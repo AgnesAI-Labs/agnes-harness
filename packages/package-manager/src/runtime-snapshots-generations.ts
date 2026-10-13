@@ -1,24 +1,31 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import { publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
+import {
+  mkdirDurablySync,
+  publishFileDurablySync,
+  removeFileDurablySync,
+  syncDirectorySync,
+  syncTreeSync,
+} from '@agnes/system-node'
 import { copyPackageTreeSync } from './copy-tree.js'
-import { syncDirectory } from './integrity.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
   corrupt,
@@ -45,8 +52,9 @@ export { DurableStateError } from './runtime-snapshots-decode.js'
 const OWNER_FILE = 'owner.json'
 const ADOPTERS_DIR = 'adopters'
 const UNOWNED_GRACE_MS = 10 * 60_000
-const PIN_LOCK_STALE_MS = 30_000
 const PIN_LOCK_WAIT_MS = 10_000
+/** A generation directory being removed is first renamed to `<id>.deleting-<ms>-<token>`. */
+const CLAIM_PATTERN = /^([a-f0-9-]{36})\.deleting-(\d+)-/
 
 /** A process recorded as holding a generation: its pid, and its start identity when one was known. */
 type Holder = Readonly<{ pid: number; startId?: string }>
@@ -96,6 +104,27 @@ function pause(ms: number): void {
     }
   }
 }
+type LockOwner = Readonly<{ pid: number; startId?: string; token: string }>
+
+function readLockOwner(lock: string): LockOwner | undefined {
+  try {
+    const bytes = readFileSync(lock, 'utf8'),
+      holder = parseHolder(bytes),
+      token = (JSON.parse(bytes) as { token?: unknown }).token
+    return holder && typeof token === 'string' ? { ...holder, token } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function removeLockFile(lock: string): void {
+  try {
+    unlinkSync(lock)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
+
 /** The seam selections a generation's container is compiled from, with the format they were written in. */
 export type GenerationSeams = Readonly<{
   formatVersion: 1
@@ -149,10 +178,17 @@ export class RuntimeGenerationSnapshotStore {
   readonly #created = new Set<string>()
   readonly #token = randomUUID()
   readonly #liveness: ProcessLiveness | undefined
+  readonly #anchor: string
+  readonly #lockWaitMs: number
   #problems: StateProblem[] = []
-  constructor(profileDirectory: string, options: { liveness?: ProcessLiveness | undefined } = {}) {
+  constructor(
+    profileDirectory: string,
+    options: { liveness?: ProcessLiveness | undefined; lockWaitMs?: number } = {},
+  ) {
     this.root = join(profileDirectory, '.runtime-generations')
+    this.#anchor = dirname(profileDirectory)
     this.#liveness = options.liveness
+    this.#lockWaitMs = options.lockWaitMs ?? PIN_LOCK_WAIT_MS
   }
 
   private directory(id: string): string {
@@ -163,10 +199,7 @@ export class RuntimeGenerationSnapshotStore {
   /** Creates a subdirectory of the root and makes its entry durable, so records published inside it outlive power loss. */
   #ensure(name: string): string {
     const directory = join(this.root, name)
-    if (mkdirSync(directory, { recursive: true, mode: 0o700 }) !== undefined) {
-      syncDirectory(this.root)
-      syncDirectory(join(this.root, '..'))
-    }
+    mkdirDurablySync(directory, this.#anchor)
     return directory
   }
 
@@ -187,7 +220,7 @@ export class RuntimeGenerationSnapshotStore {
   ): PluginGenerationSnapshot {
     const id = randomUUID(),
       directory = this.directory(id)
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    mkdirDurablySync(directory, this.#anchor)
     try {
       // Written first so collection can tell a live creator from a dead one before generation.json exists.
       writeFileSync(join(directory, OWNER_FILE), JSON.stringify(this.#holder()), { mode: 0o600, flush: true })
@@ -197,6 +230,7 @@ export class RuntimeGenerationSnapshotStore {
         copyPackageTreeSync(source.snapshot.directory, destination)
         if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
           throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
+        syncTreeSync(destination)
         return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
       })
       const resourcesDigest = resources
@@ -216,8 +250,6 @@ export class RuntimeGenerationSnapshotStore {
         }),
         { replace: true },
       )
-      // The directory entry itself must be durable before any pin or head may name this generation.
-      syncDirectory(this.root)
       this.#created.add(id)
       this.#adopt(id)
       return this.read(id)
@@ -304,9 +336,21 @@ export class RuntimeGenerationSnapshotStore {
       generationId,
       seams,
     }
-    return publishFileDurablySync(this.pinPath(sessionKey), JSON.stringify(pin))
-      ? Object.freeze(pin)
-      : (this.session(sessionKey) as SessionGenerationPin)
+    if (!publishFileDurablySync(this.pinPath(sessionKey), JSON.stringify(pin)))
+      return this.session(sessionKey) as SessionGenerationPin
+    this.#confirmPresent(generationId, () => removeFileDurablySync(this.pinPath(sessionKey)))
+    return Object.freeze(pin)
+  }
+
+  /**
+   * Collection claims a generation by renaming its directory before it looks at references again, so a
+   * reference published after the claim finds the generation gone here and is withdrawn by `undo`;
+   * one published before it is seen by the collector, which then restores the directory.
+   */
+  #confirmPresent(generationId: string, undo: () => void): void {
+    if (existsSync(join(this.directory(generationId), 'generation.json'))) return
+    undo()
+    throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${generationId} cannot be bound`)
   }
 
   /**
@@ -377,39 +421,75 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   /**
-   * Serializes read-modify-write of one pin (and its release) across workers. The critical section is a single small
-   * read and publish, so a lock older than `PIN_LOCK_STALE_MS` belongs to a crashed worker and is removed.
+   * Serializes read-modify-write of one pin (and its release) across workers. The lock is a file
+   * published already holding its owner (pid, start identity, token), so it never exists unowned. It is
+   * taken over only when its owner's pid is gone: age proves nothing about a worker that is paused or
+   * waiting on a slow disk, so a live or unknown owner keeps the lock and contenders end in
+   * `E_GENERATION_PIN_BUSY`. Release removes the lock only while it still carries this holder's token.
    */
   #lockedPin<T>(sessionKey: string, body: () => T): T {
     const lock = `${this.pinPath(sessionKey)}.lock`,
-      started = Date.now()
+      deadline = Date.now() + this.#lockWaitMs,
+      owner = { ...this.#holder(), token: randomUUID() }
     this.#ensure('sessions')
     for (;;) {
-      try {
-        mkdirSync(lock, { mode: 0o700 })
-        break
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-        let stale = false
-        try {
-          stale = Date.now() - statSync(lock).mtimeMs > PIN_LOCK_STALE_MS
-        } catch {
-          continue
-        }
-        if (stale) rmSync(lock, { recursive: true, force: true })
-        else if (Date.now() - started > PIN_LOCK_WAIT_MS)
-          throw new DurableStateError(
-            'E_GENERATION_PIN_BUSY',
-            `session pin is locked by another worker; remove ${lock} if no AGH process is running`,
-            lock,
-          )
-        else pause(5)
-      }
+      if (this.#acquireLock(lock, owner)) break
+      const held = readLockOwner(lock)
+      if (held && !pidExists(held.pid)) this.#takeOverLock(lock, held.token)
+      else if (Date.now() > deadline)
+        throw new DurableStateError(
+          'E_GENERATION_PIN_BUSY',
+          held
+            ? `session pin is locked by process ${held.pid}; wait for it, or remove ${lock} once that process is gone`
+            : `session pin lock ${lock} has no readable owner; remove it if no AGH process is running`,
+          lock,
+        )
+      else pause(5)
     }
     try {
       return body()
     } finally {
-      rmSync(lock, { recursive: true, force: true })
+      const held = readLockOwner(lock)
+      if (held?.token === owner.token) removeLockFile(lock)
+    }
+  }
+
+  /** True when this holder created the lock; false only when it already exists. Any other failure is thrown. */
+  #acquireLock(lock: string, owner: object): boolean {
+    const pending = `${lock}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(pending, JSON.stringify(owner), { flag: 'wx', mode: 0o600, flush: true })
+      linkSync(pending, lock)
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      throw error
+    } finally {
+      rmSync(pending, { force: true })
+    }
+  }
+
+  /**
+   * Moves a lock whose owner was seen dead out of the way. If the lock found there is not the one that
+   * was seen (it was released and re-acquired in between), the live owner's lock is put back.
+   */
+  #takeOverLock(lock: string, seenToken: string): void {
+    const away = `${lock}.${randomUUID()}.stale`
+    try {
+      renameSync(lock, away)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    try {
+      if (readLockOwner(away)?.token === seenToken) return
+      try {
+        linkSync(away, lock)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      }
+    } finally {
+      rmSync(away, { force: true })
     }
   }
 
@@ -441,13 +521,15 @@ export class RuntimeGenerationSnapshotStore {
         throw new Error('E_GENERATION_BINDING_CONFLICT: session pin changed before migration')
       if (this.read(pin.generationId).compatibility !== this.read(generationId).compatibility)
         throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
-      return this.#replacePin({
+      const migrated = this.#replacePin({
         formatVersion: SESSION_PIN_FORMAT_VERSION,
         sessionKey,
         generationId,
         seams: seams ?? (pin.seams as readonly PinnedSeam[]),
         ...(pin.loop ? { loop: pin.loop } : {}),
       })
+      this.#confirmPresent(generationId, () => this.#replacePin(pin))
+      return migrated
     })
   }
 
@@ -477,6 +559,7 @@ export class RuntimeGenerationSnapshotStore {
       'session-resources',
       createHash('sha256').update(key).digest('hex'),
     )
+    mkdirDurablySync(join(directory, '..'), this.directory(pin.generationId))
     const temporary = `${directory}.${randomUUID()}.tmp`
     try {
       const resourcesDigest = writeGenerationResources(temporary, resources)
@@ -489,7 +572,7 @@ export class RuntimeGenerationSnapshotStore {
         if (current.resourcesDigest) return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
         rmSync(directory, { recursive: true, force: true })
         renameSync(temporary, directory)
-        syncDirectory(join(directory, '..'))
+        syncDirectorySync(join(directory, '..'))
         this.#replacePin({ ...current, resourcesDigest })
         return this.sessionResources(key) as RuntimeGenerationResourceSnapshot
       })
@@ -509,13 +592,23 @@ export class RuntimeGenerationSnapshotStore {
    * on it without a durable pin, so no other worker's collection may remove it while that process lives.
    */
   #adopt(id: string): void {
-    const directory = join(this.directory(id), ADOPTERS_DIR)
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
-    publishFileDurablySync(join(directory, this.#token), JSON.stringify(this.#holder()), { replace: true })
+    // Never created recursively: a generation claimed by a collector must stay gone. An adopter file is
+    // published inside the generation's own directory, so a claim either sees it or fails this call.
+    const generation = this.directory(id)
+    try {
+      mkdirDurablySync(join(generation, ADOPTERS_DIR), generation)
+      publishFileDurablySync(join(generation, ADOPTERS_DIR, this.#token), JSON.stringify(this.#holder()), {
+        replace: true,
+      })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+        throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${id} was collected`)
+      throw error
+    }
   }
 
   #release(id: string): void {
-    rmSync(join(this.directory(id), ADOPTERS_DIR, this.#token), { force: true })
+    removeFileDurablySync(join(this.directory(id), ADOPTERS_DIR, this.#token))
   }
 
   async #running(holder: Holder): Promise<boolean> {
@@ -530,8 +623,8 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   /** Whether a different store (worker) still holds the generation; an unreadable record counts while young. */
-  async #heldByOther(id: string): Promise<boolean> {
-    const directory = join(this.directory(id), ADOPTERS_DIR)
+  async #heldByOther(generation: string): Promise<boolean> {
+    const directory = join(generation, ADOPTERS_DIR)
     let names: string[]
     try {
       names = readdirSync(directory)
@@ -559,15 +652,14 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   /** Unreadable owner metadata counts as live until the directory is old enough that no creator can still be writing it. */
-  private async ownerMayBeLive(id: string): Promise<boolean> {
-    const directory = this.directory(id),
-      young = () => {
-        try {
-          return Date.now() - statSync(directory).mtimeMs < UNOWNED_GRACE_MS
-        } catch {
-          return false
-        }
+  private async ownerMayBeLive(directory: string): Promise<boolean> {
+    const young = () => {
+      try {
+        return Date.now() - statSync(directory).mtimeMs < UNOWNED_GRACE_MS
+      } catch {
+        return false
       }
+    }
     let holder: Holder | undefined
     try {
       holder = parseHolder(readFileSync(join(directory, OWNER_FILE), 'utf8'))
@@ -587,9 +679,19 @@ export class RuntimeGenerationSnapshotStore {
     if (!existsSync(join(this.directory(generationId), 'generation.json')))
       throw new Error(`E_GENERATION_SNAPSHOT_MISSING: generation ${generationId} cannot become the head`)
     this.#ensure('heads')
-    publishFileDurablySync(this.headPath(compositionKey), JSON.stringify({ compositionKey, generationId }), {
-      replace: true,
-    })
+    const previous = this.headId(compositionKey),
+      publish = (id: string) =>
+        publishFileDurablySync(
+          this.headPath(compositionKey),
+          JSON.stringify({ compositionKey, generationId: id }),
+          {
+            replace: true,
+          },
+        )
+    publish(generationId)
+    this.#confirmPresent(generationId, () =>
+      previous ? publish(previous) : removeFileDurablySync(this.headPath(compositionKey)),
+    )
   }
 
   headId(compositionKey: string): string | undefined {
@@ -636,16 +738,11 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   /**
-   * Removes generations nothing can still reach. Anything this store cannot read and so cannot prove
-   * unreferenced (a damaged pin or head, listed by `corruptEntries()`) stops the whole pass.
+   * The generations named by a pin or a head. Anything this store cannot read and so cannot prove
+   * unreferenced (a damaged pin or head, listed by `corruptEntries()`) yields undefined.
    */
-  async collect(
-    keep: ReadonlySet<string>,
-    retired: ReadonlySet<string> = new Set(),
-  ): Promise<readonly string[]> {
-    if (!existsSync(this.root)) return []
-    const referenced = new Set(this.sessions().map((pin) => pin.generationId)),
-      removed: string[] = []
+  #references(): Set<string> | undefined {
+    const referenced = new Set(this.sessions().map((pin) => pin.generationId))
     // A recorded head outlives the worker that created it; the next worker to start reuses it.
     const heads = join(this.root, 'heads')
     for (const name of existsSync(heads)
@@ -661,18 +758,62 @@ export class RuntimeGenerationSnapshotStore {
         })
       }
     }
-    if (this.#problems.length > 0) return []
-    for (const id of readdirSync(this.root)) {
+    return this.#problems.length > 0 ? undefined : referenced
+  }
+
+  /**
+   * Removes generations nothing can still reach. A generation is deleted only after its directory was
+   * renamed to a claim name: from then on adopters, pins and heads that name it fail or are withdrawn
+   * (see `#confirmPresent`), and the references are read again before anything is removed. A claim that
+   * finds a reference puts the directory back, so adopt, pin and collect agree across processes.
+   */
+  async collect(
+    keep: ReadonlySet<string>,
+    retired: ReadonlySet<string> = new Set(),
+  ): Promise<readonly string[]> {
+    if (!existsSync(this.root)) return []
+    const referenced = this.#references(),
+      removed: string[] = []
+    if (!referenced) return []
+    for (const name of readdirSync(this.root)) {
+      const abandoned = CLAIM_PATTERN.exec(name)
+      if (abandoned) {
+        // A claimer that died between its rename and its verdict; settle it like a fresh claim.
+        if (Date.now() - Number(abandoned[2]) > UNOWNED_GRACE_MS)
+          await this.#settleClaim(abandoned[1] as string, join(this.root, name), removed)
+        continue
+      }
+      const id = name
       // Another workspace worker may still be accepting sessions on its own snapshot.
       if (!GENERATION_ID_PATTERN.test(id) || keep.has(id)) continue
       this.#release(id)
-      if (referenced.has(id) || (await this.#heldByOther(id))) continue
-      if (!this.#created.has(id) && !retired.has(id) && (await this.ownerMayBeLive(id))) continue
-      rmSync(this.directory(id), { recursive: true, force: true })
-      removed.push(id)
-      this.#created.delete(id)
+      const directory = this.directory(id)
+      if (referenced.has(id) || (await this.#heldByOther(directory))) continue
+      if (!this.#created.has(id) && !retired.has(id) && (await this.ownerMayBeLive(directory))) continue
+      const claim = `${directory}.deleting-${Date.now()}-${this.#token}`
+      try {
+        renameSync(directory, claim)
+      } catch {
+        continue
+      }
+      await this.#settleClaim(id, claim, removed)
     }
-    if (removed.length) syncDirectory(this.root)
+    if (removed.length) syncDirectorySync(this.root)
     return removed
+  }
+
+  async #settleClaim(id: string, claim: string, removed: string[]): Promise<void> {
+    const referenced = this.#references()
+    if (!referenced || referenced.has(id) || (await this.#heldByOther(claim))) {
+      try {
+        renameSync(claim, this.directory(id))
+      } catch {
+        // Left claimed: the next pass settles it again.
+      }
+      return
+    }
+    rmSync(claim, { recursive: true, force: true })
+    removed.push(id)
+    this.#created.delete(id)
   }
 }

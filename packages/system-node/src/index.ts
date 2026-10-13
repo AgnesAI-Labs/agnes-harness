@@ -8,6 +8,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -17,7 +18,7 @@ import { createRequire } from 'node:module'
 
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 
-import { dirname, isAbsolute, parse, resolve, toNamespacedPath } from 'node:path'
+import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { PipeReservation } from './windows-pipe-listener.js'
 import type { OwnedPipe } from './windows-pipe-stream.js'
@@ -640,6 +641,49 @@ export function publishFileDurablySync(
   }
   syncDirectorySync(dirname(resolve(path)))
   return true
+}
+
+const durableEntries = new Set<string>()
+
+/**
+ * Creates the directories between `through` (exclusive) and `path` and makes each directory entry
+ * durable, so a record later published inside `path` cannot outlive the path leading to it. `through`
+ * must already exist and is never created: a caller that holds a directory open as its anchor learns
+ * by ENOENT that the anchor was removed, instead of resurrecting it. Every level's parent is flushed
+ * the first time this process sees it, also when the level already existed, because a previous
+ * process may have stopped between its mkdir and its flush.
+ */
+export function mkdirDurablySync(path: string, through: string, mode = 0o700): void {
+  const target = resolve(path),
+    base = resolve(through),
+    levels: string[] = []
+  for (let level = target; level !== base; level = dirname(level)) {
+    if (level === dirname(level)) throw new Error(`${path} is not inside ${through}`)
+    levels.unshift(level)
+  }
+  for (const level of levels) {
+    let created = true
+    try {
+      mkdirSync(filePath(level), { mode })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      created = false
+    }
+    if (created || !durableEntries.has(level)) {
+      syncDirectorySync(dirname(level))
+      durableEntries.add(level)
+    }
+  }
+}
+
+/** Flushes every file and directory under `root` (and `root` itself), children before parents. */
+export function syncTreeSync(root: string): void {
+  for (const entry of readdirSync(filePath(root), { withFileTypes: true })) {
+    const child = join(root, entry.name)
+    if (entry.isDirectory()) syncTreeSync(child)
+    else if (entry.isFile()) syncFileSync(child)
+  }
+  syncDirectorySync(root)
 }
 
 /** Removes one file and flushes the parent directory so the removal survives power loss. A missing file or directory is success. */
