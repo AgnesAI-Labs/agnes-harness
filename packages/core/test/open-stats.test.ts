@@ -45,4 +45,22 @@ describe('session open statistics', () => {
     expect(stats.checkpoint.used).toBe(false)
     await log.close()
   })
+
+  it('still opens when the size query fails, and only leaves the sizes out', async () => {
+    class SizeQueryFails extends MemoryStorage {
+      override async ledgerStats(): Promise<never> {
+        throw new Error('database is locked')
+      }
+    }
+    const storage = new SizeQueryFails()
+    const writer = await open(storage, 'w1')
+    await writer.append([note(1)])
+    await writer.close()
+    const log = await open(storage, 'w2')
+    expect(log.lastSeq).toBe(1)
+    expect(log.openStats.lastSeq).toBe(1)
+    expect(log.openStats.storedBytes).toBeUndefined()
+    expect(log.openStats.maxRowBytes).toBeUndefined()
+    await log.close()
+  })
 })

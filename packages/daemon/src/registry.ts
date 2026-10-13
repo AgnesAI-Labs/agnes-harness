@@ -51,6 +51,8 @@ export interface Registry<Entry> {
   previewSnapshot(key: string): Promise<PreviewSnapshotEntry[]>
   /** Called when a `session/load` has replayed its history, so the open can be logged as one record. */
   recordLoad?(key: string, timing: { acpReplayMs: number }): void
+  /** Called when the open a `session/load` needed failed. */
+  recordLoadFailed?(key: string, failure: { elapsedMs: number; error: unknown }): void
   keys(): string[]
   close(key: string): Promise<void>
   closeAll(): Promise<void>

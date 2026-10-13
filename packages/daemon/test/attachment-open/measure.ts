@@ -96,6 +96,10 @@ export async function measureColdLoad(dir: string): Promise<ColdLoadResult> {
   const records = readRecords(dir).slice(before)
   const load = records.find((row) => row.kind === 'session.load')
   if (!load?.detail) throw new Error('the load wrote no session.load record')
+  // The worker's own record: without it the worker-to-supervisor path is not wired.
+  const opened = records.find((row) => row.kind === 'session.open')
+  if (opened?.detail?.outcome !== 'ok' || !(Number(opened.detail.lastSeq) > 0))
+    throw new Error('the load wrote no successful session.open record')
   const verify = records.find((row) => row.kind === 'session.verify_full')
   return {
     loadMs,

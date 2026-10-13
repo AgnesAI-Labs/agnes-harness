@@ -35,16 +35,22 @@ afterAll(() => {
 })
 
 describe('opening a session that carries a large attachment', () => {
-  it('opens the legacy 95 MB zip session within budget', async () => {
+  it('opens the legacy session with a 95 MiB-base64 zip attachment within budget', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-open-zip-'))
     dirs.push(dir)
     await buildLegacySession(dir, { attachmentMB: 95, kind: 'zip', queuedBehind: 2, prefixTurns: 20 })
     const r = await measureColdLoad(dir)
     results.legacyZip = r
     // Always true, with or without enforcement: these do not depend on the machine.
+    expect(r.records).toContainEqual(
+      expect.objectContaining({
+        kind: 'session.open',
+        detail: expect.objectContaining({ outcome: 'ok', lastSeq: expect.any(Number) }),
+      }),
+    )
     // This holds once workers send lean rows across the process boundary; on a build that still
     // sends whole rows, the legacy session's oversized scan pages are split and this fails.
-    expect(r.splitScans).toBe(0)
+    expect(r.splitScans).toBe(budget.legacyZip.splitScans)
     if (!enforce) return
     expect(r.loadMs).toBeLessThanOrEqual(budget.legacyZip.loadMs)
     expect(r.workerPeakMb ?? 0).toBeLessThanOrEqual(budget.legacyZip.workerPeakMb)
@@ -52,10 +58,12 @@ describe('opening a session that carries a large attachment', () => {
     expect(r.verifyFullMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(budget.legacyZip.verifyFullMs)
   }, 600_000)
 
-  it('records the 90 MB image control', async () => {
+  it('records the 90 MiB-base64 image control', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-open-img-'))
     dirs.push(dir)
     await buildLegacySession(dir, { attachmentMB: 90, kind: 'images', queuedBehind: 0, prefixTurns: 20 })
-    results.legacyImages = await measureColdLoad(dir)
+    const r = await measureColdLoad(dir)
+    results.legacyImages = r
+    expect(r.records.map((row) => (row as { kind: string }).kind)).toContain('session.open')
   }, 600_000)
 })

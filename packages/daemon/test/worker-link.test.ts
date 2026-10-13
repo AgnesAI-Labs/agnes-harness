@@ -99,6 +99,12 @@ describe('WorkerLink command settlement', () => {
     socket.emit('data', frame)
     await vi.waitFor(() => expect(records).toEqual([['a', { kind: 'session.open', detail: { lastSeq: 3 } }]]))
     expect(link.receivedBytes()).toBe(frame.length)
+    socket.emit(
+      'data',
+      encodeFrame({ kind: 'record', sessionKey: 'a', record: { kind: 'daemon.crashed', detail: {} } }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(records).toHaveLength(1)
     socket.emit('data', encodeFrame({ kind: 'record', record: { kind: 'session.open', detail: {} } }))
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })

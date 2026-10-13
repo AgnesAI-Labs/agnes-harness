@@ -328,6 +328,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return this.registerView(this.book(key)).values()
   }
 
+  /** Sizes are counted in characters of the JSON text, not bytes: this adapter stores no encoded form. */
   async ledgerStats(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }> {
     let storedBytes = 0
     let maxRowBytes = 0

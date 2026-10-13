@@ -21,63 +21,101 @@ async function open(
 // `tsc` accepts these assignments at all, not any particular runtime behavior. Each `it` still calls
 // one shared method so the assertion is not entirely inert.
 describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/registry.ts WorkerRegistry)', () => {
-  it('writes one session.load record per cold open, with phase times and the bytes received', async () => {
-    let received = 100
-    const link = {
-      alive: true,
-      hello: Promise.resolve({
-        kind: 'hello' as const,
-        token: 'token-load-record',
-        sessionKey: 'load-record-session',
-        writerRunId: 'run-load-record',
-        generation: 1,
-        profileHash: 'sha256-profile',
-      }),
-      onExit: vi.fn(),
-      receivedBytes: () => received,
-      command: vi.fn(async () => []),
-    }
-    const audit = vi.fn()
-    const registry = new WorkerRegistry(
-      { acquire: vi.fn(async () => link) } as unknown as WorkerPool,
-      { resetSession: vi.fn(), observe: vi.fn(async () => undefined) },
-      audit,
-    )
-    await open(registry, { key: 'load-record-session', cwd: '/workspace', resume: true })
-    received = 100 + 4096
-    registry.recordLoad('load-record-session', { acpReplayMs: 5 })
-    registry.recordLoad('load-record-session', { acpReplayMs: 5 })
-    expect(audit).toHaveBeenCalledTimes(1)
-    const record = audit.mock.calls[0]?.[0] as { kind: string; detail: Record<string, unknown> }
-    expect(record.kind).toBe('session.load')
-    expect(record.detail).toMatchObject({
-      transferBytes: 4096,
-      resumes: 0,
-      outcome: 'ok',
-      ms: { acpReplay: 5, open: expect.any(Number), authorityReplay: expect.any(Number) },
-    })
-    expect(record.detail.session).toMatch(/^[0-9a-f]{16}$/)
-    expect(JSON.stringify(record)).not.toContain('load-record-session')
-  })
-
-  it('writes a failed session.load record, with the error code only, when the open fails', async () => {
-    const audit = vi.fn()
-    const registry = new WorkerRegistry(
-      {
-        acquire: vi.fn(async () => {
-          throw Object.assign(new Error('path /private/name'), { code: 'E_LEDGER_INTEGRITY' })
+  describe('session.load records', () => {
+    function coldRegistry(audit: (record: unknown) => void) {
+      let received = 0
+      const link = {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello' as const,
+          token: 'token-load-trace',
+          sessionKey: 'load-trace-session',
+          writerRunId: 'run-load-trace',
+          generation: 1,
+          profileHash: 'sha256-profile',
         }),
-      } as unknown as WorkerPool,
-      undefined,
-      audit,
-    )
-    await expect(open(registry, { key: 'failing-session', cwd: '/workspace' })).rejects.toThrow()
-    expect(audit).toHaveBeenCalledTimes(1)
-    expect(audit.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'session.load',
-      detail: { outcome: 'failed', code: 'E_LEDGER_INTEGRITY', transferBytes: 0 },
+        onExit: vi.fn(),
+        receivedBytes: () => received,
+        command: vi.fn(async () => undefined),
+        closeSession: vi.fn(async () => undefined),
+        close: vi.fn(),
+      }
+      const registry = new WorkerRegistry(
+        {
+          acquire: vi.fn(async () => link),
+          retire: vi.fn(),
+        } as unknown as WorkerPool,
+        undefined,
+        audit,
+      )
+      return { registry, receive: (bytes: number) => (received += bytes) }
+    }
+    const key = 'load-trace-session'
+
+    it('is written for a load that opened the session and counts only that open', async () => {
+      const audit = vi.fn()
+      const { registry, receive } = coldRegistry(audit)
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      receive(4096)
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).toHaveBeenCalledTimes(1)
+      const record = audit.mock.calls[0]?.[0] as { kind: string; detail: Record<string, unknown> }
+      expect(record.kind).toBe('session.load')
+      expect(record.detail).toMatchObject({
+        transferBytes: 4096,
+        resumes: 0,
+        outcome: 'ok',
+        ms: { acpReplay: 5, open: expect.any(Number), authorityReplay: expect.any(Number) },
+      })
+      expect(record.detail.session).toMatch(/^[0-9a-f]{16}$/)
+      expect(JSON.stringify(record)).not.toContain(key)
     })
-    expect(JSON.stringify(audit.mock.calls)).not.toContain('private')
+
+    it('is not written for a load that finds the session already open', async () => {
+      const audit = vi.fn()
+      const { registry, receive } = coldRegistry(audit)
+      // A new session is opened by session/new, which never asks for a record.
+      await open(registry, { key, cwd: '/workspace' })
+      receive(1_000_000)
+      // The later session/load finds it live.
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).not.toHaveBeenCalled()
+    })
+
+    it('is not written after the session was closed, and nothing is kept for it', async () => {
+      const audit = vi.fn()
+      const { registry } = coldRegistry(audit)
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      await registry.close(key)
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).not.toHaveBeenCalled()
+      expect(registry.get(key)).toBeUndefined()
+    })
+
+    it('keeps working when the audit sink throws', async () => {
+      const { registry } = coldRegistry(() => {
+        throw new Error('disk full')
+      })
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      expect(() => registry.recordLoad(key, { acpReplayMs: 1 })).not.toThrow()
+      expect(() => registry.recordLoadFailed(key, { elapsedMs: 1, error: new Error('x') })).not.toThrow()
+    })
+
+    it('records a failed load with the error code only', () => {
+      const audit = vi.fn()
+      const registry = new WorkerRegistry({} as unknown as WorkerPool, undefined, audit)
+      registry.recordLoadFailed('failing-session', {
+        elapsedMs: 12,
+        error: Object.assign(new Error('path /private/name'), { code: 'E_LEDGER_INTEGRITY' }),
+      })
+      expect(audit.mock.calls[0]?.[0]).toMatchObject({
+        kind: 'session.load',
+        detail: { outcome: 'failed', code: 'E_LEDGER_INTEGRITY', transferBytes: 0, ms: { total: 12 } },
+      })
+      expect(JSON.stringify(audit.mock.calls)).not.toContain('private')
+    })
   })
 
   it('lets the live tool-result projection satisfy an overtaking same-turn media read', async () => {

@@ -553,6 +553,7 @@ export function registerAcp(
     const p = params as { sessionId: string; cwd: string }
     requireOwner('session/load', p.sessionId)
     let entry = cx.registry.get(p.sessionId)
+    const loadStartedAt = performance.now()
     try {
       const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
       // Calling open for a live entry is intentional: both registries must reject a different
@@ -564,6 +565,7 @@ export function registerAcp(
         resume: true,
       } as Parameters<typeof cx.registry.open>[0])
     } catch (error) {
+      cx.registry.recordLoadFailed?.(p.sessionId, { elapsedMs: performance.now() - loadStartedAt, error })
       throwSessionOpenRpcError(error)
     }
     if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })

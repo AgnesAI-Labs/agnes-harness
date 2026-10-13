@@ -23,9 +23,12 @@ type RemoteOpen = Readonly<{
   resume?: boolean
 }>
 
-/** What a cold open cost so far, held until the `session/load` that asked for it finishes replaying. */
+/**
+ * What a cold open cost so far. It lives on the entry it measured and is consumed by the
+ * `session/load` that opened that entry; any later `open` that finds the entry already live drops
+ * it, so a trace is never read for a different request, and it goes away with the entry.
+ */
 type OpenTrace = {
-  session: RemoteSession
   link: WorkerSessionChannel
   receivedAtStart: number
   openMs: number
@@ -42,6 +45,7 @@ export type RemoteEntry = {
   ac: AbortController
   recover: boolean
   reopen: RemoteOpen
+  loadTrace?: OpenTrace
 }
 
 type PreviewSubscriber = { preview: (p: PreviewUpdate) => void; gap: (() => void) | undefined }
@@ -102,7 +106,6 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
-  private readonly openTraces = new Map<string, OpenTrace>()
 
   constructor(
     private readonly pool: WorkerPool,
@@ -111,15 +114,16 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   ) {}
 
   /**
-   * Writes the `session.load` record for a cold open: how long opening and the authority replay
-   * took, how long the caller's own replay took, and how many bytes crossed from the worker.
-   * Nothing is written for a session that was already open.
+   * Writes the `session.load` record for a `session/load` that had to open the session: how long
+   * opening and the authority replay took, how long the caller's own replay took, and how many bytes
+   * crossed from the worker. A load that finds the session already open writes nothing.
    */
   recordLoad(key: string, timing: { acpReplayMs: number }): void {
-    const trace = this.openTraces.get(key)
-    if (!trace) return
-    this.openTraces.delete(key)
-    this.audit?.({
+    const entry = this.entries.get(key)
+    const trace = entry?.loadTrace
+    if (!entry || !trace) return
+    delete entry.loadTrace
+    this.writeAudit({
       kind: 'session.load',
       detail: {
         session: sessionHash(key),
@@ -130,10 +134,34 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
           total: trace.openMs + trace.authorityReplayMs + timing.acpReplayMs,
         },
         transferBytes: (trace.link.receivedBytes?.() ?? 0) - trace.receivedAtStart,
-        resumes: trace.session.splitScans,
+        resumes: entry.session.splitScans,
         outcome: 'ok',
       },
     })
+  }
+
+  /** Writes the `session.load` record for a `session/load` whose open failed: the error code only. */
+  recordLoadFailed(key: string, failure: { elapsedMs: number; error: unknown }): void {
+    const code = (failure.error as { code?: unknown } | null)?.code
+    this.writeAudit({
+      kind: 'session.load',
+      detail: {
+        session: sessionHash(key),
+        ms: { open: failure.elapsedMs, authorityReplay: 0, acpReplay: 0, total: failure.elapsedMs },
+        transferBytes: 0,
+        outcome: 'failed',
+        ...(typeof code === 'string' ? { code } : {}),
+      },
+    })
+  }
+
+  /** Diagnostics must not change the outcome of what they describe. */
+  private writeAudit(record: unknown): void {
+    try {
+      this.audit?.(record)
+    } catch {
+      /* ignored */
+    }
   }
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
@@ -286,29 +314,13 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
     const epoch = this.sessionEpochs.get(key) ?? 0
     const existing = this.entries.get(key)
-    if (existing) return existing
+    if (existing) {
+      delete existing.loadTrace
+      return existing
+    }
     const pending = this.opening.get(key)
     if (pending?.epoch === epoch) return pending.promise
-    const startedAt = performance.now()
     const opening = this.openFresh(key, authorized, epoch)
-    opening.catch((error: unknown) => {
-      const code = (error as { code?: unknown } | null)?.code
-      this.audit?.({
-        kind: 'session.load',
-        detail: {
-          session: sessionHash(key),
-          ms: {
-            open: performance.now() - startedAt,
-            authorityReplay: 0,
-            acpReplay: 0,
-            total: performance.now() - startedAt,
-          },
-          transferBytes: 0,
-          outcome: 'failed',
-          ...(typeof code === 'string' ? { code } : {}),
-        },
-      })
-    })
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
     try {
@@ -476,13 +488,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         }
       }
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
-      this.openTraces.set(key, {
-        session,
+      entry.loadTrace = {
         link,
         receivedAtStart,
         openMs,
         authorityReplayMs: performance.now() - authorityStartedAt,
-      })
+      }
       // Previews were dropped while the replay held events back, and a preview from a generation
       // not yet hosting the session is refused by the pool: viewers that outlived the previous
       // generation catch up now.

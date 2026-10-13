@@ -11,7 +11,10 @@ import { toAcpPrompt } from '@agnes/protocol'
 import { openSupervisor } from './harness.js'
 
 export type LegacySessionOptions = {
-  /** Size of the inline payload as the ledger stores it: this many MiB of base64 text, for a zip and for images alike. */
+  /**
+   * Size of the inline payload as the ledger stores it: this many MiB of base64 text, for a zip and
+   * for images alike (95 MiB of base64 is about 71 MiB of raw bytes).
+   */
   attachmentMB: number
   kind: 'zip' | 'images'
   /** Items queued behind the attachment before a turn claims it. */

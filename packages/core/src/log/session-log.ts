@@ -195,7 +195,10 @@ export class SessionLogImpl {
       const registersAt = performance.now()
       const rows = await o.storage.registers(o.key)
       const registersMs = performance.now() - registersAt
-      const stats = await o.storage.ledgerStats?.(o.key)
+      // Not part of `ms.total`: the open is over once the registers are in. A failing size query
+      // must not fail an open that succeeded, so it only costs the record its sizes.
+      const totalMs = performance.now() - startedAt
+      const stats = await o.storage.ledgerStats?.(o.key).catch(() => undefined)
       const log = new SessionLogImpl(
         o,
         opened.lastSeq,
@@ -213,7 +216,7 @@ export class SessionLogImpl {
           verify: timing.verifyMs,
           fold: timing.foldMs,
           registers: registersMs,
-          total: performance.now() - startedAt,
+          total: totalMs,
         },
       }
       return log

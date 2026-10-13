@@ -245,7 +245,10 @@ export class WorkerLink {
       return
     }
     if (frame.kind === 'record') {
-      this.options.onRecord?.(frame.sessionKey, frame.record)
+      // A worker may only report the records it owns; the runtime log is the daemon's to write.
+      const kind = frame.record?.kind
+      if (kind === 'session.open' || kind === 'session.verify_full')
+        this.options.onRecord?.(frame.sessionKey, frame.record)
       return
     }
     if (frame.kind === 'reply') {

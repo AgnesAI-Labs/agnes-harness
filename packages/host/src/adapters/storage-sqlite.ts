@@ -333,6 +333,9 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
     ),
     lastSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE session_key = ?'),
+    ledgerStats: db.prepare(
+      'SELECT COALESCE(SUM(octet_length(data)), 0) AS total, COALESCE(MAX(octet_length(data)), 0) AS max FROM events WHERE session_key = ?',
+    ),
     insertEvent: db.prepare(
       'INSERT INTO events (session_key, seq, ts, id, type, lane, v, actor, origin, trust, register, ignorable, surface_op, source_event_seqs, data, integrity_mode, integrity_prev, integrity_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ),
@@ -595,11 +598,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       ).map((r) => ({ register: r.register, key: keyText(r.key), seq: r.seq, data: JSON.parse(r.data) }))
     },
     async ledgerStats(key) {
-      const row = db
-        .prepare(
-          'SELECT COALESCE(SUM(octet_length(data)), 0) AS total, COALESCE(MAX(octet_length(data)), 0) AS max FROM events WHERE session_key = ?',
-        )
-        .get(key) as { total: number; max: number }
+      const row = q.ledgerStats.get(key) as { total: number; max: number }
       return { storedBytes: row.total, maxRowBytes: row.max }
     },
     async createChild(parentKey, boundarySeq, childKey) {

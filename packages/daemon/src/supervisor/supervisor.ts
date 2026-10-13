@@ -396,6 +396,9 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
   recordLoad(key: string, timing: { acpReplayMs: number }): void {
     this.inner.recordLoad(key, timing)
   }
+  recordLoadFailed(key: string, failure: { elapsedMs: number; error: unknown }): void {
+    this.inner.recordLoadFailed(key, failure)
+  }
   preset(key: string): Promise<string | null> {
     return this.inner.require(key).session.currentPreset()
   }
