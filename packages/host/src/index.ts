@@ -91,6 +91,7 @@ export * from './assemble/packages.js'
 export * from './assemble/routes.js'
 export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
+export * from './attachment-store.js'
 export * from './audit.js'
 export {
   type ChildCandidate,
