@@ -214,12 +214,6 @@
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
-  .config-detail-card {
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
   .config-detail-heading {
     min-height: 4.75rem;
     display: flex;

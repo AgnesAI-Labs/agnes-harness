@@ -125,12 +125,6 @@
     font-size: var(--font-size-sm);
     overflow-wrap: anywhere;
   }
-  .resource-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s8);
-    margin: var(--s16) 0 0.625rem;
-  }
   .resource-safe-error {
     margin: var(--s12) 0;
     padding: 0.625rem var(--s12);
@@ -286,12 +280,6 @@
     margin-top: var(--s8);
     color: var(--agnes-status-danger-text);
     white-space: normal;
-  }
-  .plugin-surface-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-    margin-top: 0.375rem;
   }
   .plugin-surface-link {
     min-height: 2rem;
@@ -464,13 +452,6 @@
     padding: var(--s32);
     text-align: center;
   }
-  .admin-empty-state-mark {
-    display: block;
-    width: var(--s24);
-    height: var(--s24);
-    margin-bottom: var(--s12);
-    color: var(--agnes-text-tertiary);
-  }
   .admin-empty-state h2 {
     margin: 0;
     color: var(--agnes-text-primary);
@@ -482,22 +463,6 @@
     margin: var(--s8) 0 0;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-sm);
-  }
-  .admin-empty-state-hints {
-    display: grid;
-    gap: 0.375rem;
-    width: min(100%, 30rem);
-    margin: 0.875rem 0 0;
-    padding: var(--s12) var(--s16);
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    color: var(--agnes-text-tertiary);
-    background: var(--agnes-bg-surface);
-    font-size: var(--font-size-xs);
-    line-height: 1.6;
-    list-style: none;
-    overflow-wrap: anywhere;
-    text-align: left;
   }
   .plugin-more {
     width: calc(100% - 2rem);
@@ -606,12 +571,6 @@
     color: var(--agnes-status-danger-text);
     font-size: var(--font-size-xs);
   }
-  .plugin-detail-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s8);
-    margin-top: var(--s20);
-  }
   .danger-button {
     min-height: 2.25rem;
     padding: var(--s8) 0.75rem;
@@ -654,6 +613,51 @@
     padding: var(--s24);
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+  /* The ways to add a server are option cards: the whole card is the choice, its button is the
+   name, and the focus ring belongs to the card. */
+  #mcp-methods {
+    gap: var(--s8);
+  }
+  #mcp-methods > .agh-list-row {
+    position: relative;
+    min-height: 0;
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+    transition:
+      border-color var(--transition-fast),
+      background-color var(--transition-fast);
+  }
+  #mcp-methods > .agh-list-row:hover {
+    border-color: var(--agnes-line-emphasis);
+    background: var(--agnes-bg-card);
+  }
+  #mcp-methods > .agh-list-row:has(.agh-btn:focus-visible) {
+    border-color: var(--agnes-brand-focus-ring);
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+  }
+  #mcp-methods .agh-list-row h3 .agh-btn {
+    position: static;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  #mcp-methods .agh-list-row h3 .agh-btn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
   }
   .confirm-facts {
     display: grid;
@@ -806,12 +810,8 @@
     }
     .plugin-row:not(.agh-list-row) > :last-child.secondary-button,
     .plugin-row:not(.agh-list-row) > :last-child .secondary-button,
-    .plugin-detail-actions button,
     .danger-button {
       min-height: 2.75rem;
-    }
-    .plugin-detail-actions > * {
-      flex: 1 1 10rem;
     }
     .plugin-dialog-form {
       padding: var(--s16);

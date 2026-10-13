@@ -1726,6 +1726,50 @@
   .agh-disclosure[data-variant="card"] > .agh-disclosure-body > .agnes-settings-list {
     margin-inline: calc(-1 * var(--s12));
   }
+  /* A list further inside an open section is already framed by it: rows and hairlines only. */
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > * {
+    padding-inline: 0;
+    border-radius: 0;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > * + *::before {
+    inset-inline: 0;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > :hover {
+    background: transparent;
+  }
+  /* Technical facts read as a two-column grid: the name, then its value. */
+  :is(.agnes-settings-details, .agnes-settings-technical) dl {
+    display: grid;
+    grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr);
+    gap: var(--s4) var(--s16);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  :is(.agnes-settings-details, .agnes-settings-technical) dt {
+    color: var(--agnes-text-tertiary);
+  }
+  :is(.agnes-settings-details, .agnes-settings-technical) dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 640px) {
+    :is(.agnes-settings-details, .agnes-settings-technical) dl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+    :is(.agnes-settings-details, .agnes-settings-technical) dd {
+      margin-bottom: var(--s8);
+    }
+  }
   /* A disclosure inside a list row is a quiet line of that row. */
   :is(.agh-list-row, .agnes-settings-row) .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
     width: auto;

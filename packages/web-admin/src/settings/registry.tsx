@@ -30,6 +30,7 @@ import {
 import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
 import { SystemPromptPanel } from './system-prompt.js'
+import { systemPromptApi } from './system-prompt-api.js'
 import { TriggersPanel } from './triggers.js'
 
 export type RuntimeSettingsContext = {
@@ -46,6 +47,7 @@ export type RuntimeSettingsContext = {
   schedules?: SchedulesApi | undefined
   snapshot: RuntimeAdminSnapshot | undefined
 }
+const promptSummaryApi = systemPromptApi()
 // Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
@@ -109,6 +111,39 @@ function Subsection({
     >
       {visited && children}
     </SettingsDetails>
+  )
+}
+
+/** The system prompt section states whether the default is in effect: one small read on open. */
+function PromptSubsection({ canSave, t }: { canSave: boolean; t: UiExtensionContext['t'] }) {
+  const [customized, setCustomized] = useState<boolean>()
+  useEffect(() => {
+    const pending = new AbortController()
+    void promptSummaryApi
+      .get(pending.signal)
+      .then((value) => {
+        if (pending.signal.aborted) return
+        setCustomized(
+          Object.values(value.config).some((entry) => typeof entry === 'string' && entry.trim() !== ''),
+        )
+      })
+      // The summary is optional: the section itself reports a failed read when it is opened.
+      .catch(() => {})
+    return () => pending.abort()
+  }, [])
+  return (
+    <Subsection
+      defer
+      id="system-prompt"
+      icon="file-text"
+      title={t('system-prompt')}
+      description={t('agentPromptHelp')}
+      summary={
+        customized === undefined ? undefined : t(customized ? 'agentPromptCustom' : 'agentPromptDefault')
+      }
+    >
+      <SystemPromptPanel canSave={canSave} />
+    </Subsection>
   )
 }
 
@@ -280,15 +315,7 @@ const definitions: readonly [
             <p>{t('modelsHelp')}</p>
             <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
           </Subsection>
-          <Subsection
-            defer
-            id="system-prompt"
-            icon="file-text"
-            title={t('system-prompt')}
-            description={t('agentPromptHelp')}
-          >
-            <SystemPromptPanel canSave={c.canSave} />
-          </Subsection>
+          <PromptSubsection canSave={c.canSave} t={t} />
           <Subsection
             defer
             id="memory"

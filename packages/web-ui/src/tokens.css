@@ -579,12 +579,6 @@
     border-radius: var(--radius-md);
     background: var(--agnes-bg-code);
   }
-  .agnes-settings-card .session-terminal {
-    min-height: 16rem;
-    height: 20rem;
-    max-height: 40vh;
-    font-family: var(--font-mono, monospace);
-  }
   .agnes-settings-card .agnes-ui-button {
     justify-self: start;
     max-width: 100%;
@@ -598,13 +592,20 @@
   }
   :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) :is(th, td) {
     text-align: start;
-    padding: var(--s8) var(--s12) var(--s8) 0;
+    padding: var(--s10) var(--s12);
     border-bottom: 1px solid var(--agnes-line-primary);
     overflow-wrap: anywhere;
     vertical-align: top;
   }
+  /* The header is a quiet caption row on the card's soft fill, aligned with its cells. */
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) thead th {
+    background: var(--agnes-bg-card);
+  }
+  :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) tbody > tr:hover > td {
+    background: var(--agnes-bg-card);
+  }
   :is(.agnes-settings-card, .agnes-settings-page) table:not(.ant-table table) th {
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     white-space: nowrap;

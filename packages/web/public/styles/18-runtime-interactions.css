@@ -17,11 +17,8 @@
   .runtime-settings h2 {
     margin-block: var(--s16);
   }
+  /* A titled block inside an open section: the section is its frame. */
   .runtime-card {
-    border: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-bg-surface);
-    border-radius: var(--radius-card);
-    padding: var(--s16);
     margin-block: var(--s12);
     overflow-wrap: anywhere;
   }
@@ -30,33 +27,15 @@
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
     gap: var(--s12);
   }
-  .runtime-settings dd {
-    margin: var(--s4) 0 var(--s12);
-    overflow-wrap: anywhere;
-  }
-  .runtime-settings table {
-    width: 100%;
-    text-align: start;
-    border-collapse: collapse;
-  }
-  .runtime-settings td,
-  .runtime-settings th {
-    padding: var(--s8);
-    border-bottom: 1px solid var(--agnes-line-primary);
-    overflow-wrap: anywhere;
-  }
-  .runtime-resources {
-    width: 100%;
-    min-height: 36rem;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: var(--radius-card);
-    margin-block: var(--s16);
-  }
 
+  /* A table sits in its own grouped card and scrolls sideways inside it. */
   .runtime-table-scroll {
     overflow-x: auto;
     min-width: 0;
     max-width: 100%;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
   }
   .runtime-table-scroll table {
     min-width: 48rem;
@@ -103,21 +82,6 @@
   .history-search-results > li > span:nth-child(2) {
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
-  }
-
-  .session-terminal {
-    min-height: 20rem;
-    max-height: 32rem;
-    overflow: auto;
-    white-space: pre;
-    font-family: var(--font-mono);
-    background: var(--agnes-bg-code);
-    color: var(--agnes-text-primary);
-  }
-  .session-terminal:focus-visible {
-    outline: var(--focus-outline);
-    outline-offset: 1px;
-    box-shadow: var(--focus-line);
   }
 
   .goal-card {
