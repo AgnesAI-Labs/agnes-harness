@@ -80,6 +80,21 @@ describe('agh batch dispatch', () => {
     expect(run.err()).toContain('agh daemon start')
   })
 
+  it('prints the usage for --help without booting anything', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-batch-dispatch-'))
+    cleanup.push(home)
+    const stdout = new PassThrough()
+    let out = ''
+    stdout.on('data', (chunk: Buffer) => {
+      out += chunk.toString()
+    })
+    const run = io(home)
+    const code = await main(['batch', 'status', '--help'], { ...run.io, stdout }, { lock: TEST_LOCK })
+    expect(code).toBe(0)
+    expect(out).toContain('agh batch start')
+    expect(out).toContain('0 only when the batch completed')
+  })
+
   it('answers a malformed batch command with usage before any boot', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agnes-batch-dispatch-'))
     cleanup.push(home)

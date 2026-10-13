@@ -184,3 +184,322 @@ describe('runBatchCommand', () => {
     ).rejects.toThrow(UsageError)
   })
 })
+
+const ID = 'b0123456789ab'
+const rpc = (message: string, code = -32602) => Object.assign(new Error(message), { kind: 'json-rpc', code })
+const closed = () => Object.assign(new Error('transport closed: eof'), { kind: 'transport-closed' })
+const DANGER = '\x1b[31mred\x1b]52;c;ZXZpbA==\x07tail'
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the point of the check
+const CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/u
+const noEscape = (text: string) => expect(text).not.toMatch(CONTROL)
+
+describe('terminal safety', () => {
+  it('prints no control character from any daemon-sourced field', async () => {
+    const hostile = status({
+      status: 'failed',
+      reason: DANGER,
+      dir: DANGER,
+      outDir: `${DANGER}\nsecond line`,
+      files: [DANGER, 'b\nc'],
+      summary: `# ${DANGER}\nkept line`,
+    })
+    for (const argv of [['status', ID], ['results', ID], ['cancel', ID], ['list']]) {
+      const t = io()
+      await runBatchCommand(
+        parseBatchArgs(argv),
+        fakeClient([argv[0] === 'list' ? { items: [hostile] } : hostile]).client,
+        t.io,
+      )
+      noEscape(t.out.join(''))
+    }
+    const t = io()
+    await runBatchCommand(parseBatchArgs(['status', ID]), fakeClient([hostile]).client, t.io)
+    const text = t.out.join('')
+    expect(text).toContain('kept line')
+    expect(text).toContain('Folder')
+    expect(text.split('\n')).toContain('Results folder: [31mred]52;c;ZXZpbA==tail second line')
+    const listed = io()
+    await runBatchCommand(
+      parseBatchArgs(['list']),
+      fakeClient([{ items: [hostile, hostile] }]).client,
+      listed.io,
+    )
+    expect(listed.out.join('').trim().split('\n')).toHaveLength(2)
+    expect(text).toContain('Files: ')
+  })
+  it('keeps the daemon error text inert too', async () => {
+    const t = io()
+    expect(
+      await runBatchCommand(parseBatchArgs(['list']), fakeClient([rpc(`bad ${DANGER}\nmore`)]).client, t.io),
+    ).toBe(1)
+    noEscape(t.err.join('').replace(/\n$/u, ''))
+    expect(t.err.join('')).toContain('agh batch: bad')
+  })
+  it('leaves a --json answer to JSON escaping', async () => {
+    const t = io()
+    await runBatchCommand(
+      parseBatchArgs(['status', ID, '--json']),
+      fakeClient([status({ dir: DANGER })]).client,
+      t.io,
+    )
+    noEscape(t.out.join('').replace(/\n$/u, ''))
+    expect(JSON.parse(t.out.join('')).dir).toBe(DANGER)
+  })
+})
+
+describe('exit status', () => {
+  it.each([
+    ['completed', 0],
+    ['running', 1],
+    ['failed', 1],
+    ['budget_exhausted', 1],
+    ['cancelled', 1],
+  ] as const)('status of a %s batch exits %i', async (value, code) => {
+    expect(
+      await runBatchCommand(
+        parseBatchArgs(['status', ID]),
+        fakeClient([status({ status: value })]).client,
+        io().io,
+      ),
+    ).toBe(code)
+  })
+  it.each([
+    ['completed', 0],
+    ['failed', 1],
+    ['budget_exhausted', 1],
+    ['cancelled', 1],
+  ] as const)('a watch that ends on %s exits %i', async (value, code) => {
+    const f = fakeClient([status(), status({ status: value })])
+    expect(await runBatchCommand(parseBatchArgs(['status', ID, '--watch']), f.client, io().io)).toBe(code)
+  })
+  it('exits 0 after start, results, cancel and list', async () => {
+    writeFileSync(join(cwd, 'p.md'), 'x')
+    for (const [argv, answer] of [
+      [['start', 'lab', '--prompt', 'x'], status()],
+      [['results', ID], status({ status: 'failed' })],
+      [['cancel', ID], status({ status: 'cancelled' })],
+      [['list'], { items: [] }],
+    ] as const)
+      expect(await runBatchCommand(parseBatchArgs([...argv]), fakeClient([answer]).client, io().io)).toBe(0)
+  })
+  it('states the rule in the help text', () => {
+    expect(parseBatchArgs(['--help'])).toMatchObject({ verb: 'help' })
+    expect(parseBatchArgs(['status', ID, '-h'])).toMatchObject({ verb: 'help' })
+  })
+})
+
+describe('watching', () => {
+  it('sleeps a positive interval between polls and prints only changes', async () => {
+    const waits: number[] = []
+    const running = status()
+    const moved = status({ counts: { ...running.counts, pending: 299, done: 49 } })
+    const f = fakeClient([running, running, moved, status({ status: 'completed' })])
+    const t = io()
+    const withSleep = { ...t.io, sleep: async (ms: number) => void waits.push(ms) }
+    await runBatchCommand(parseBatchArgs(['status', ID, '--watch']), f.client, withSleep)
+    expect(f.calls).toHaveLength(4)
+    expect(waits).toHaveLength(3)
+    expect(waits.every((ms) => ms > 0)).toBe(true)
+    const lines = t.out.join('').split('\n')
+    expect(lines.filter((l) => l.includes('  running  ')).length).toBe(2)
+    expect(t.out.join('')).toContain('Batch b0123456789ab: completed')
+  })
+  it('waits out up to three transport errors and then gives up', async () => {
+    const waits: number[] = []
+    const t = io()
+    const io2 = { ...t.io, sleep: async (ms: number) => void waits.push(ms) }
+    const f = fakeClient([closed(), closed(), closed(), status({ status: 'completed' })])
+    expect(await runBatchCommand(parseBatchArgs(['status', ID, '--watch']), f.client, io2)).toBe(0)
+    expect(waits).toHaveLength(3)
+    expect(t.err.join('')).toContain('retrying (3/3)')
+    const g = fakeClient([closed(), closed(), closed(), closed()])
+    await expect(
+      runBatchCommand(parseBatchArgs(['status', ID, '--watch']), g.client, io2),
+    ).rejects.toMatchObject({ kind: 'transport-closed' })
+  })
+  it('does not retry without --watch, and a refusal ends the watch at once', async () => {
+    await expect(
+      runBatchCommand(parseBatchArgs(['status', ID]), fakeClient([closed()]).client, io().io),
+    ).rejects.toMatchObject({ kind: 'transport-closed' })
+    const f = fakeClient([rpc('gone'), status()])
+    expect(await runBatchCommand(parseBatchArgs(['status', ID, '--watch']), f.client, io().io)).toBe(1)
+    expect(f.calls).toHaveLength(1)
+  })
+})
+
+describe('what is sent', () => {
+  it('maps every option to its own spec field', async () => {
+    const f = fakeClient([status()])
+    const argv = [
+      'start',
+      'lab',
+      '--prompt',
+      'p',
+      '--concurrency',
+      '3',
+      '--max-edge',
+      '512',
+      '--item-timeout',
+      '90',
+      '--ext',
+      '.JPG,.png ,',
+      '--budget',
+      '0.25',
+      '--out',
+      'o',
+    ]
+    await runBatchCommand(parseBatchArgs(argv), f.client, io().io)
+    expect(f.calls[0]?.[1]).toEqual({
+      cwd,
+      spec: {
+        dir: 'lab',
+        prompt: 'p',
+        concurrency: 3,
+        maxEdge: 512,
+        itemTimeoutSec: 90,
+        ext: ['jpg', 'png'],
+        budgetCredits: 0.25,
+        outDir: 'o',
+      },
+    })
+  })
+  it('sends only the fields that were given', async () => {
+    const f = fakeClient([status()])
+    await runBatchCommand(parseBatchArgs(['start', 'lab', '--prompt', 'p']), f.client, io().io)
+    expect(f.calls[0]?.[1]).toEqual({ cwd, spec: { dir: 'lab', prompt: 'p' } })
+  })
+  it('sends cancel and status with the batch id', async () => {
+    const f = fakeClient([status({ status: 'cancelled' }), status({ status: 'completed' })])
+    await runBatchCommand(parseBatchArgs(['cancel', ID]), f.client, io().io)
+    await runBatchCommand(parseBatchArgs(['status', ID]), f.client, io().io)
+    expect(f.calls).toEqual([
+      ['_agnes/v1/batch.cancel', { batchId: ID }],
+      ['_agnes/v1/batch.status', { batchId: ID }],
+    ])
+  })
+})
+
+describe('output', () => {
+  it('prints the json answer as one line', async () => {
+    const t = io()
+    await runBatchCommand(
+      parseBatchArgs(['status', ID, '--json']),
+      fakeClient([status({ status: 'completed' })]).client,
+      t.io,
+    )
+    expect(JSON.parse(t.out.join(''))).toMatchObject({ batchId: ID, status: 'completed' })
+    expect(t.out.join('').trim().split('\n')).toHaveLength(1)
+  })
+  it('lists batches, or says there are none', async () => {
+    const t = io()
+    await runBatchCommand(
+      parseBatchArgs(['list']),
+      fakeClient([{ items: [status(), status({ batchId: 'b0000000000aa' })] }]).client,
+      t.io,
+    )
+    expect(t.out.join('').trim().split('\n')).toHaveLength(2)
+    expect(t.out.join('')).toContain('48/352 done')
+    const none = io()
+    await runBatchCommand(parseBatchArgs(['list']), fakeClient([{ items: [] }]).client, none.io)
+    expect(none.out.join('')).toBe('No batches.\n')
+    const json = io()
+    await runBatchCommand(parseBatchArgs(['list', '--json']), fakeClient([{ items: [] }]).client, json.io)
+    expect(JSON.parse(json.out.join(''))).toEqual({ items: [] })
+  })
+  it('exits 1 on a refusal that is not a missing method, without the daemon hint', async () => {
+    const t = io()
+    expect(
+      await runBatchCommand(parseBatchArgs(['cancel', ID]), fakeClient([rpc('no such batch')]).client, t.io),
+    ).toBe(1)
+    expect(t.err.join('')).toBe('agh batch: no such batch\n')
+  })
+  it('hands anything that is not a daemon answer to the caller', async () => {
+    await expect(
+      runBatchCommand(parseBatchArgs(['list']), fakeClient([closed()]).client, io().io),
+    ).rejects.toMatchObject({ kind: 'transport-closed' })
+    await expect(
+      runBatchCommand(parseBatchArgs(['list']), fakeClient([new Error('boom')]).client, io().io),
+    ).rejects.toThrow('boom')
+  })
+})
+
+describe('usage errors', () => {
+  const start = (...more: string[]) => parseBatchArgs(['start', 'lab', '--prompt', 'p', ...more])
+  const refused = async (command: ReturnType<typeof parseBatchArgs>) => {
+    const f = fakeClient([status()])
+    await expect(runBatchCommand(command, f.client, io().io)).rejects.toThrow(UsageError)
+    expect(f.calls).toEqual([])
+    expect(f.added).toEqual([])
+  }
+  it.each([
+    ['--concurrency', 'abc'],
+    ['--concurrency', '0'],
+    ['--concurrency', '9'],
+    ['--concurrency', '1e3'],
+    ['--max-edge', '255'],
+    ['--max-edge', '1457'],
+    ['--item-timeout', '59'],
+    ['--item-timeout', '3601'],
+    ['--budget', 'abc'],
+    ['--budget', '1e3'],
+    ['--budget', '0'],
+    ['--budget', '0.0000001'],
+    ['--ext', ' , '],
+    ['--ext', 'jp g'],
+  ])('refuses %s %s before calling the daemon', async (flag, value) => {
+    await refused(start(flag, value))
+  })
+  it('refuses a negative number in either spelling', async () => {
+    for (const flag of ['--concurrency', '--budget']) {
+      expect(() => start(flag, '-1')).toThrow(UsageError)
+      await refused(start(`${flag}=-1`))
+    }
+  })
+  it('accepts the edges of every range', async () => {
+    for (const more of [
+      ['--concurrency', '1'],
+      ['--concurrency', '8'],
+      ['--max-edge', '256'],
+      ['--max-edge', '1456'],
+      ['--item-timeout', '60'],
+      ['--item-timeout', '3600'],
+      ['--budget', '0.000001'],
+    ])
+      expect(await runBatchCommand(start(...more), fakeClient([status()]).client, io().io)).toBe(0)
+  })
+  it('refuses an id that is not a batch id', () => {
+    for (const id of ['abc', 'B0123456789ab', 'b0123456789a', 'b0123456789abc', '\x1b[31mb0123456789ab'])
+      for (const verb of ['status', 'results', 'cancel'])
+        expect(() => parseBatchArgs([verb, id])).toThrow(UsageError)
+  })
+  it('refuses options that do not belong to the verb, and repeated options', () => {
+    for (const argv of [
+      ['results', ID, '--watch'],
+      ['cancel', ID, '--watch'],
+      ['list', '--watch'],
+      ['start', 'lab', '--prompt', 'p', '--watch'],
+      ['status', ID, '--prompt', 'x'],
+      ['list', '--concurrency', '2'],
+      ['start', 'lab', '--prompt', 'a', '--prompt', 'b'],
+      ['start', 'lab', '--prompt', 'a', '--cwd', 'x', '--cwd', 'y'],
+      ['list', '--profile', 'a', '--profile', 'b'],
+    ])
+      expect(() => parseBatchArgs(argv)).toThrow(UsageError)
+  })
+  it('refuses an empty or oversized prompt', async () => {
+    await refused(parseBatchArgs(['start', 'lab', '--prompt', '']))
+    await refused(parseBatchArgs(['start', 'lab', '--prompt', 'x'.repeat(16385)]))
+  })
+  it('refuses unreadable, oversized or wrongly shaped input files', async () => {
+    await refused(parseBatchArgs(['start', 'lab', '--prompt-file', 'missing.md']))
+    await refused(parseBatchArgs(['start', 'lab', '--prompt', 'p', '--schema', 'missing.json']))
+    writeFileSync(join(cwd, 'big.md'), 'x'.repeat(64 * 1024 + 1))
+    await refused(parseBatchArgs(['start', 'lab', '--prompt-file', 'big.md']))
+    writeFileSync(join(cwd, 'wide.json'), `{}${' '.repeat(64 * 1024)}`)
+    await refused(parseBatchArgs(['start', 'lab', '--prompt', 'p', '--schema', 'wide.json']))
+    for (const [index, body] of ['null', '[]', '3', '"s"'].entries()) {
+      writeFileSync(join(cwd, `s${index}.json`), body)
+      await refused(parseBatchArgs(['start', 'lab', '--prompt', 'p', '--schema', `s${index}.json`]))
+    }
+  })
+})

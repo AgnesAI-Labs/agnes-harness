@@ -528,8 +528,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return result.exitCode
     }
     if (p.command === 'batch') {
-      const { parseBatchArgs, runBatchCommand } = await import('./commands/batch.js')
+      const { BATCH_USAGE, parseBatchArgs, runBatchCommand } = await import('./commands/batch.js')
       const command = parseBatchArgs(p.rest)
+      if (command.verb === 'help') {
+        io.stdout.write(`${BATCH_USAGE}\n`)
+        return ExitCode.OK
+      }
       const cwd = command.cwd !== undefined ? resolve(io.cwd, command.cwd) : io.cwd
       const booted = await bootDefault(
         { ...p, cwd, ...(command.profile !== undefined ? { profile: command.profile } : {}) },
