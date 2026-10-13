@@ -3,7 +3,14 @@ import { Banner, Button, createExternalStore, useDocumentLanguage, useStoreSelec
 import type { ReconnectPhase } from './reconnect.js'
 
 type RecoveryNotice = { message: string; error: string; disabled: boolean; retry(): void; create(): void }
-type NoticeSnapshot = { text: string; kind: string; recovery?: RecoveryNotice; repair?: () => void }
+type NoticeAction = { label: string; run(): void }
+type NoticeSnapshot = {
+  text: string
+  kind: string
+  recovery?: RecoveryNotice
+  repair?: () => void
+  action?: NoticeAction
+}
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
 type ReadOnlyNoticeView = {
   message: Readonly<{ en: string; 'zh-CN': string }>
@@ -27,6 +34,10 @@ export const appNotice = {
   },
   repair(repair: () => void) {
     store.set({ ...store.getSnapshot(), repair })
+  },
+  /** The valid next step for the notice just shown; the next notice text clears it. */
+  offer(action: NoticeAction) {
+    store.set({ ...store.getSnapshot(), action })
   },
   disableRecovery(disabled: boolean) {
     const snapshot = store.getSnapshot()
@@ -80,6 +91,14 @@ export function AppNotice() {
           {' '}
           <Button data-testid="credential-repair" onClick={view.repair}>
             {t('session.error.openAccount')}
+          </Button>
+        </>
+      )}
+      {view.action && (
+        <>
+          {' '}
+          <Button data-testid="notice-action" onClick={view.action.run}>
+            {view.action.label}
           </Button>
         </>
       )}

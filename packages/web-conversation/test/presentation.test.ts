@@ -203,8 +203,18 @@ describe('web presentation controls', () => {
     )
     expect(legacy).toBe('该会话由旧版本创建，当前版本无法打开，请新建会话。')
     expect(legacy).not.toContain('诊断')
+    // A bare wire error never reaches the page as a code: known codes have a sentence, others the general one.
     expect(errorNotice('SEMANTIC_REJECTED (-32011)', id, undefined, undefined, 'other', zhT)).toBe(
-      'SEMANTIC_REJECTED (-32011)',
+      '请求未被接受，请检查输入后重试。',
+    )
+    expect(
+      errorNotice('PRESET_SWITCH_REJECTED (-32008)', undefined, undefined, undefined, undefined, zhT),
+    ).toBe('这个会话不能切换到所选的权限或模型。')
+    expect(errorNotice('SOMETHING_NEW (-32099)', undefined, undefined, undefined, undefined, zhT)).toBe(
+      '请求未能完成，请重试。',
+    )
+    expect(errorNotice('Folder (-1) is missing', undefined, undefined, undefined, undefined, zhT)).toBe(
+      'Folder (-1) is missing',
     )
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, true, undefined, undefined, zhT)).toContain(
       '诊断记录未能保存',

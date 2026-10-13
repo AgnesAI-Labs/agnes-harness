@@ -114,6 +114,24 @@ export function launcherCredential(
   return fragment && !hasNavigationTarget(fragment) ? fragment : undefined
 }
 
+/** Wire error names that have their own sentence in the catalogue. */
+const RPC_ERROR_COPY = new Set([
+  'OVERLOADED',
+  'SESSION_BUSY',
+  'SESSION_NOT_FOUND',
+  'GENERATION_STALE',
+  'CURSOR_OUT_OF_RANGE',
+  'CAPABILITY_DENIED',
+  'AUTH_INVALID',
+  'PRESET_SWITCH_REJECTED',
+  'APPROVAL_REJECTED',
+  'CLAIM_DENIED',
+  'SEMANTIC_REJECTED',
+  'REQUEST_TIMEOUT',
+  'OUTCOME_UNKNOWN',
+  'METHOD_NOT_FOUND',
+])
+
 export function errorNotice(
   message: string,
   diagnosticId?: unknown,
@@ -129,7 +147,13 @@ export function errorNotice(
     return t('session.error.outputLimit')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')
     return t('session.error.rateLimit')
-  if (message !== 'INTERNAL_ERROR (-32603)') return message
+  if (message !== 'INTERNAL_ERROR (-32603)') {
+    // A bare wire error is a code name and a number: nothing a person can act on. Each known code
+    // has a sentence; an unknown one gets the general sentence, never the code.
+    const wire = /^([A-Z][A-Z_]+) \(-\d+\)$/.exec(message)?.[1]
+    if (!wire) return message
+    return t(RPC_ERROR_COPY.has(wire) ? `session.error.rpc.${wire}` : 'session.error.rpc.other')
+  }
   const id =
     typeof diagnosticId === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(diagnosticId)
       ? t('session.error.diagnosticId', { id: diagnosticId })

@@ -1774,7 +1774,26 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     notice.setKind('')
     return true
   } catch (error) {
-    if (current === session && selection === epoch && !sessionPending) showError(error)
+    if (current !== session || selection !== epoch || sessionPending) return false
+    const refused =
+      error instanceof Error &&
+      'data' in error &&
+      (error.data as { code?: unknown } | undefined)?.code === 'PRESET_SWITCH_REJECTED'
+    if (!refused) showError(error)
+    else {
+      // A live session keeps the sandbox it started with. Say so, and offer the path that works.
+      const label = permissionLabel(mode)
+      notice.setText(t('app.permission.fixed', { mode: label }))
+      notice.setKind('')
+      notice.offer({
+        label: t('app.permission.useInNew', { mode: label }),
+        run: () =>
+          run(async () => {
+            await beginNewDraft(false)
+            await selectPermission(mode)
+          }),
+      })
+    }
     return false
   } finally {
     if (current === session && selection === epoch && !sessionPending) {
