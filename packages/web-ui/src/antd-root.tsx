@@ -32,6 +32,8 @@ function LocalizedProvider({
       {...(nonce ? { csp: { nonce } } : {})}
       locale={language === 'zh-CN' ? zhCN : enUS}
       button={{ autoInsertSpace: false }}
+      // A press is a slight shrink and darken; no ripple spreads from the control.
+      wave={{ disabled: true }}
       getPopupContainer={(trigger) => getOverlayContainer(trigger, owner)}
       drawer={{ styles: { root: { zIndex: 'var(--agh-z-drawer)' } } }}
       modal={{

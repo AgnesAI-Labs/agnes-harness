@@ -150,8 +150,10 @@ export { Kbd, type KbdProps, type ShortcutKey, shortcutLabel } from './ui/kbd.js
 export { LabeledSwitch, type LabeledSwitchProps } from './ui/labeled-switch.js'
 export { ListRow, type ListRowProps } from './ui/list-row.js'
 export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
+export { PageHeader, type PageHeaderProps } from './ui/page-header.js'
 export { Popover } from './ui/popover.js'
 export { SearchBar, type SearchBarProps } from './ui/search-bar.js'
+export { Segmented, type SegmentedOption, type SegmentedProps } from './ui/segmented.js'
 export { Select, type SelectProps } from './ui/select.js'
 export { Skeleton } from './ui/skeleton.js'
 export {
