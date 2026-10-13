@@ -256,7 +256,14 @@ export function createComposerController(
           context.stopping ||
           context.sessionPending ||
           initialSubmissionPending,
-        placeholder: busy ? context.t('composer.placeholder.busy') : context.t('composer.placeholder.idle'),
+        // The slash hint is a promise that typing "/" offers something: only with a command registered.
+        placeholder: busy
+          ? context.t('composer.placeholder.busy')
+          : context.t(
+              context.clientModules.commands.list().length
+                ? 'composer.placeholder.idle'
+                : 'composer.placeholder.idleNoCommands',
+            ),
       },
       loading: context.sessionPending,
       model: {

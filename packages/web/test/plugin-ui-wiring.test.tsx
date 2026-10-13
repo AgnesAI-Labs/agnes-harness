@@ -53,6 +53,12 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
     await act(async () =>
       updateLoopPicker({ ...view, bundles: [{ id: 'workflow#delivery', sourcePackage: 'workflow' }] }),
     )
+    // One loop and nothing chosen: the chip has nothing to select until advanced settings show.
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.hidden).toBe(true)
+    localStorage.setItem('agnes.settings.advanced', '1')
+    await act(async () =>
+      updateLoopPicker({ ...view, bundles: [{ id: 'workflow#delivery', sourcePackage: 'workflow' }] }),
+    )
     expect(host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.hidden).toBe(false)
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
     expect(document.querySelector('[data-testid="new-session-loop-readonly"]')?.textContent).toContain(
@@ -66,6 +72,7 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
       ),
     ).rejects.toThrow('invalid session catalog')
   } finally {
+    localStorage.removeItem('agnes.settings.advanced')
     await act(async () => {
       root.unmount()
       updateLoopPicker({ ...view, visible: false })

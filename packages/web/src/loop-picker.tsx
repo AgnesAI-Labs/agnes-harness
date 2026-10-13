@@ -117,7 +117,22 @@ const subscribe = (listener: () => void) => {
   }
 }
 
-/** One composer chip; the popover keeps composition controls out of the writing surface. */
+/**
+ * Whether 「显示高级设置」 is on. The settings dialog owns the switch and stores it in this browser;
+ * the chip reads it each time it renders, which includes every time its popover opens.
+ */
+function advancedSettingsShown(): boolean {
+  try {
+    return globalThis.localStorage?.getItem('agnes.settings.advanced') === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * One composer chip that selects how the agent works. Bundles, the permission preset and where the
+ * default comes from are advanced: they show with advanced settings on, or while one is in effect.
+ */
 export function LoopPicker() {
   const { t: fallback } = useUiText('@agnes/web/composer', composerLocaleCatalog)
   const tr = (key: string) => {
@@ -127,12 +142,17 @@ export function LoopPicker() {
   const state = useSyncExternalStore(subscribe, () => view)
   const selected = state.selected ? loopIdentity(state.selected) : ''
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
+  // A bundle or preset already chosen for this draft stays visible: it changes what the session does.
+  const composition = advancedSettingsShown() || !!state.selectedBundles?.length || state.preset !== undefined
   const advancedAvailable =
     state.loops.length >= 2 ||
     stale ||
     !!state.error ||
-    !!state.bundles?.length ||
-    !!state.presets?.some((entry) => !['read-only', 'workspace-write', 'full-access'].includes(entry.id))
+    (composition &&
+      (!!state.bundles?.length ||
+        !!state.presets?.some(
+          (entry) => !['read-only', 'workspace-write', 'full-access'].includes(entry.id),
+        )))
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -176,7 +196,7 @@ export function LoopPicker() {
       data-testid="agent-options"
       aria-label={tr('composer.agent.title')}
     >
-      <Field label={state.label} hint={origin}>
+      <Field label={state.label} {...(composition ? { hint: origin } : {})}>
         {state.loops.length === 1 && !stale ? (
           <div data-testid="new-session-loop-readonly" title={`${defaultText} · ${origin}`}>
             <ChoiceLabel entry={active ?? { id: '', version: '' }} t={tr} />
@@ -203,43 +223,45 @@ export function LoopPicker() {
           />
         )}
       </Field>
-      <Field
-        label={state.bundlesLabel ?? tr('composer.agent.bundles')}
-        hint={tr('composer.agent.bundlesHint')}
-      >
-        {state.bundles?.length === 1 ? (
-          <label className="agnes-settings-checkbox" htmlFor="agent-single-bundle">
-            <SettingsInput
-              id="agent-single-bundle"
-              type="checkbox"
+      {composition && (
+        <Field
+          label={state.bundlesLabel ?? tr('composer.agent.bundles')}
+          hint={tr('composer.agent.bundlesHint')}
+        >
+          {state.bundles?.length === 1 ? (
+            <label className="agnes-settings-checkbox" htmlFor="agent-single-bundle">
+              <SettingsInput
+                id="agent-single-bundle"
+                type="checkbox"
+                disabled={state.disabled}
+                checked={state.selectedBundles?.includes(state.bundles[0]!.id) ?? false}
+                onChange={(event) => state.onBundles?.(event.target.checked ? [state.bundles![0]!.id] : [])}
+              />
+              <ChoiceLabel entry={state.bundles[0]!} t={tr} />
+            </label>
+          ) : state.bundles?.length ? (
+            <Select<string[]>
+              mode="multiple"
+              aria-label={state.bundlesLabel}
+              data-testid="new-session-bundles"
+              virtual={false}
               disabled={state.disabled}
-              checked={state.selectedBundles?.includes(state.bundles[0]!.id) ?? false}
-              onChange={(event) => state.onBundles?.(event.target.checked ? [state.bundles![0]!.id] : [])}
+              value={[...(state.selectedBundles ?? [])]}
+              placeholder={tr('composer.agent.noBundles')}
+              className="agent-picker-select"
+              options={state.bundles.map((entry) => ({
+                value: entry.id,
+                label: <ChoiceLabel entry={entry} t={tr} />,
+                title: entry.sourcePackage,
+              }))}
+              onChange={(bundles) => state.onBundles?.(bundles)}
             />
-            <ChoiceLabel entry={state.bundles[0]!} t={tr} />
-          </label>
-        ) : state.bundles?.length ? (
-          <Select<string[]>
-            mode="multiple"
-            aria-label={state.bundlesLabel}
-            data-testid="new-session-bundles"
-            virtual={false}
-            disabled={state.disabled}
-            value={[...(state.selectedBundles ?? [])]}
-            placeholder={tr('composer.agent.noBundles')}
-            className="agent-picker-select"
-            options={state.bundles.map((entry) => ({
-              value: entry.id,
-              label: <ChoiceLabel entry={entry} t={tr} />,
-              title: entry.sourcePackage,
-            }))}
-            onChange={(bundles) => state.onBundles?.(bundles)}
-          />
-        ) : (
-          <p className="field-hint">{tr('composer.agent.noBundles')}</p>
-        )}
-      </Field>
-      {state.presets && (
+          ) : (
+            <p className="field-hint">{tr('composer.agent.noBundles')}</p>
+          )}
+        </Field>
+      )}
+      {composition && state.presets && (
         <Field label={tr('composer.agent.preset')}>
           {state.presets.length === 1 ? (
             <div data-testid="new-session-preset-readonly" title={tr('composer.agent.presetSource')}>

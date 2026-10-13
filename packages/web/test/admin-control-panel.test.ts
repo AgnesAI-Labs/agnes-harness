@@ -594,6 +594,52 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
   expect(host.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
 })
 
+it('offers only the loop from the chip until advanced settings show or a bundle is in effect', async () => {
+  const loops = [
+    { id: 'default', version: '1.0.0' },
+    { id: 'workflow', version: '1.0.0' },
+  ] as Parameters<typeof updateLoopPicker>[0]['loops']
+  const view = {
+    visible: true,
+    disabled: false,
+    loops,
+    label: 'Loop',
+    inherited: 'Inherit',
+    unavailable: 'Unavailable',
+    presets: [
+      { id: 'read-only', isDefault: true },
+      { id: 'review', isDefault: false },
+    ],
+    bundles: [
+      { id: 'acme#support', sourcePackage: 'acme' },
+      { id: 'acme#report', sourcePackage: 'acme' },
+    ],
+    onSelect() {},
+    onPreset() {},
+    onBundles() {},
+  }
+  await act(async () => updateLoopPicker(view))
+  const host = await mount(createElement(LoopPicker))
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
+    expect(document.querySelector('[data-testid="new-session-loop"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
+    expect(document.querySelector('[data-testid="new-session-preset"]')).toBeNull()
+    // A bundle chosen for this draft changes what the session does, so it shows without the switch.
+    await act(async () => updateLoopPicker({ ...view, selectedBundles: ['acme#report'] }))
+    expect(document.querySelector('[data-testid="new-session-bundles"]')).not.toBeNull()
+    await act(async () => updateLoopPicker(view))
+    expect(document.querySelector('[data-testid="new-session-bundles"]')).toBeNull()
+    localStorage.setItem('agnes.settings.advanced', '1')
+    await act(async () => updateLoopPicker({ ...view }))
+    expect(document.querySelector('[data-testid="new-session-bundles"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="new-session-preset"]')).not.toBeNull()
+  } finally {
+    localStorage.removeItem('agnes.settings.advanced')
+    await act(async () => updateLoopPicker({ ...view, visible: false }))
+  }
+})
+
 it('inherits the admin preset before the profile default and renders its permission policy', () => {
   const runtime: RuntimeAdminSnapshot = {
     providers: [],
