@@ -48,6 +48,21 @@ describe('resolveSpec', () => {
     )
   })
 
+  it('refuses a results folder that is or sits inside a hidden folder', () => {
+    for (const outDir of ['.agnes/skills/x', '.git', 'out/.cache', 'a/b/.hidden/c', './.x'])
+      expect(() => resolveSpec({ root, cwd: root, batchId: id, spec: { ...base, outDir } })).toThrow(
+        /hidden folder/,
+      )
+    expect(() =>
+      resolveSpec({ root, cwd: resolve(root, '.config'), batchId: id, spec: { ...base, outDir: 'out' } }),
+    ).toThrow(/hidden folder/)
+    for (const outDir of ['out', 'a.b/c', 'results/v1.2', './out'])
+      expect(resolveSpec({ root, cwd: root, batchId: id, spec: { ...base, outDir } }).outRel).not.toMatch(
+        /(^|\/)\./,
+      )
+    expect(resolveSpec({ root, cwd: root, batchId: id, spec: base }).outRel).toBe(`agh-batch/${id}`)
+  })
+
   it('refuses a malformed spec and an output schema that does not compile', () => {
     expect(() => resolveSpec({ root, cwd: root, batchId: id, spec: { dir: 'images' } })).toThrow(
       /invalid batch spec/,

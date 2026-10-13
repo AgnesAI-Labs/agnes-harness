@@ -163,6 +163,13 @@ export function resolveSpec(input: {
     throw new BatchSpecError('outDir must be a folder inside the workspace')
   // Enumeration leaves the results folder out, so one that holds dir would hide every input.
   if (inside(outAbs, dirAbs)) throw new BatchSpecError('outDir must not be dir or a folder that contains it')
+  // Hidden folders (.git, .agnes, ...) hold tool and agent configuration; model-written results stay out.
+  if (
+    toPosix(relative(root, outAbs))
+      .split('/')
+      .some((segment) => segment.startsWith('.'))
+  )
+    throw new BatchSpecError('outDir must not be or be inside a hidden folder (a name starting with ".")')
   if (spec.schema !== undefined) compileOutputSchema(spec.schema)
   return Object.freeze({
     spec,

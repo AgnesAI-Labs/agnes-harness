@@ -33,14 +33,18 @@ type FieldStat = {
 // A leading = + - @ (or a full-width one), possibly after spaces, or a leading tab or carriage return,
 // makes a spreadsheet treat the cell as a formula. A plain number is safe as it is.
 const FORMULA = /^(?:[\t\r]|\s*[=+\-@＝＋－＠])/u
+// A spreadsheet that splits on `;` or tab (the list separator of many locales) starts a new cell
+// after each one, so a formula character there is neutralised too.
+const FORMULA_AFTER_SEPARATOR = /([;\t]\s*)(?=[=+\-@＝＋－＠])/gu
 const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/u
 // biome-ignore lint/suspicious/noControlCharactersInRegex: replacing control characters is the point.
 const CSV_CONTROLS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu
 
 /**
  * One CSV cell. Paths and answers are untrusted: text a spreadsheet would run as a formula gets a
- * leading apostrophe, control characters other than tab and line breaks are replaced, and very long
- * text is cut. Quoted only when the text needs it.
+ * leading apostrophe (also after a `;` or tab, for spreadsheets that split on those), control
+ * characters other than tab and line breaks are replaced, and very long text is cut. Quoted only when
+ * the text holds a quote, comma, semicolon, tab or line break.
  */
 export function csvCell(value: unknown): string {
   if (value === undefined || value === null) return ''
@@ -49,13 +53,15 @@ export function csvCell(value: unknown): string {
   if (text.length > MAX_CSV_CELL_CHARS) text = `${clipText(text, MAX_CSV_CELL_CHARS)} [truncated]`
   text = text.replace(CSV_CONTROLS, '\ufffd')
   if (FORMULA.test(text) && !NUMBER.test(text)) text = `'${text}`
-  return /[",\r\n]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+  text = text.replace(FORMULA_AFTER_SEPARATOR, "$1'")
+  return /[",;\t\r\n]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
 /**
  * Untrusted text placed inside one line of summary.md: kept on that line, cut to `max` characters,
- * with the characters that open links, images, HTML, code, emphasis, headings or table cells escaped,
- * and URLs and e-mail addresses defanged so no renderer turns them into links.
+ * with the characters that open links, images, HTML, code, emphasis, headings or table cells escaped
+ * (`_` only where it is not between two letters or digits, so `a_b` stays readable), and URLs, `www.`
+ * (wherever it appears) and e-mail addresses defanged so no renderer turns them into links.
  */
 export function markdownText(text: string, max = 200): string {
   let flat = singleLine(text)
@@ -63,7 +69,8 @@ export function markdownText(text: string, max = 200): string {
   return flat
     .replace(/[\\`*[\]<>|&#!~$]/gu, (char) => `\\${char}`)
     .replace(/:\/\//gu, '\\[:\\]//')
-    .replace(/\bwww\./giu, (match) => `${match.slice(0, 3)}\\[.\\]`)
+    .replace(/(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/gu, '\\_')
+    .replace(/www\./giu, (match) => `${match.slice(0, 3)}\\[.\\]`)
     .replaceAll('@', '\\[@\\]')
 }
 
@@ -93,6 +100,8 @@ async function resultsFolder(batch: BatchRow): Promise<string> {
     )
   )
     fail('the results folder must be a folder inside the workspace')
+  // Hidden folders hold tool and agent configuration; a model-written summary does not belong there.
+  if (segments.some((s) => s.startsWith('.'))) fail('the results folder must not be in a hidden folder')
   const dirSegments = batch.dirRel === '' ? [] : batch.dirRel.split('/')
   if (inside(join(batch.root, ...segments), join(batch.root, ...dirSegments)))
     fail('the results folder holds the input folder')
@@ -131,33 +140,71 @@ async function sweep(out: string): Promise<void> {
   }
 }
 
+type Identity = Readonly<{ dev: number; ino: number }>
+
+/** The file at `path` is still the one opened with this identity: a plain file, same device and inode. */
+async function same(path: string, identity: Identity): Promise<boolean> {
+  const info = await lstat(path).catch(() => undefined)
+  return !!info && info.isFile() && info.dev === identity.dev && info.ino === identity.ino
+}
+
+/**
+ * Removes a temporary file only while its path still leads to the file this export created; anything
+ * else found there is left alone and named (true when nothing is left behind).
+ */
+async function discard(path: string, identity: Identity | undefined): Promise<boolean> {
+  if (identity === undefined || !(await same(path, identity)))
+    return (await lstat(path).catch(() => undefined)) === undefined
+  await unlink(path).catch(() => undefined)
+  return true
+}
+
+/**
+ * The folder must still be the checked real path, and every temporary file the one it created. Node has
+ * no openat/renameat, so this is re-checked after each create and again just before the renames; a
+ * swap between that last check and a rename needs write access to the workspace and is not covered.
+ */
+async function unchanged(out: string, drafts: readonly Draft[]): Promise<void> {
+  if ((await realpath(out).catch(() => undefined)) !== out)
+    fail('the results folder changed while it was written')
+  for (const draft of drafts)
+    if (!(await same(draft.temporary, draft.identity)))
+      fail('a temporary result file was replaced while it was written')
+}
+
 /** A result file being written: a new temporary file in the checked folder, renamed over the old one. */
 class Draft {
   rows = 0
   omitted = 0
+  full = false
+  committed = false
+  closed = false
   private bytes = 0
-  private full = false
   private pending: string[] = []
   private pendingBytes = 0
-  committed = false
 
   private constructor(
     readonly name: ResultFile,
     readonly temporary: string,
     readonly file: FileHandle,
-    readonly identity: { dev: number; ino: number },
+    readonly identity: Identity,
     private readonly maxBytes: number,
   ) {}
 
+  /** Creates the temporary file without following a link, then checks at once where it landed. */
   static async create(out: string, name: ResultFile, maxBytes: number): Promise<Draft> {
     const temporary = join(out, `.${name}.${randomBytes(6).toString('hex')}.tmp`)
     const file = await open(temporary, CREATE_NEW, 0o666)
+    let identity: Identity | undefined
     try {
       const { dev, ino } = await file.stat()
-      return new Draft(name, temporary, file, { dev, ino }, maxBytes)
+      identity = { dev, ino }
+      const draft = new Draft(name, temporary, file, identity, maxBytes)
+      await unchanged(out, [draft])
+      return draft
     } catch (error) {
       await file.close().catch(() => undefined)
-      await unlink(temporary).catch(() => undefined)
+      if (!(await discard(temporary, identity))) throw leftBehind(error, [temporary])
       throw error
     }
   }
@@ -184,7 +231,19 @@ class Draft {
     this.pendingBytes = 0
     await this.file.write(text)
   }
+
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    await this.file.close()
+  }
 }
+
+const leftBehind = (error: unknown, paths: readonly string[]): Error =>
+  new Error(
+    `${error instanceof Error ? error.message : String(error)}; temporary files left in place: ${paths.join(', ')}`,
+    { cause: error },
+  )
 
 function collect(
   stats: Map<string, FieldStat>,
@@ -298,6 +357,18 @@ export async function exportBatch(input: {
     const header = ['ordinal', 'path', ...(columns.length > 0 ? columns : ['answer']), 'credits']
     await csv.add(`\ufeff${header.map(csvCell).join(',')}\r\n`, false)
     for (let after = 0; ; ) {
+      if (jsonl.full && csv.full && errors.full) {
+        // Every data file is full: the rest only needs counting, which the table does in one query.
+        for (const rest of repo.tally(batch.id, after)) {
+          counts[rest.status] += rest.items
+          spent += rest.credits
+          if (rest.status === 'done') {
+            jsonl.omitted += rest.items
+            csv.omitted += rest.items
+          } else if (rest.status !== 'pending' && rest.status !== 'running') errors.omitted += rest.items
+        }
+        break
+      }
       const page = repo.page(batch.id, after, PAGE)
       if (page.length === 0) break
       after = (page.at(-1) as ItemRow).ordinal
@@ -342,25 +413,35 @@ export async function exportBatch(input: {
     for (const draft of drafts) {
       await draft.flush()
       await draft.file.sync()
+      await draft.close()
     }
-    // The folder and every temporary file must still be the ones checked and created above.
-    if ((await realpath(out)) !== out) fail('the results folder changed while it was written')
-    for (const draft of drafts) {
-      const info = await lstat(draft.temporary)
-      if (!info.isFile() || info.dev !== draft.identity.dev || info.ino !== draft.identity.ino)
-        fail('a temporary result file was replaced while it was written')
-    }
-    for (const draft of drafts) {
-      await rename(draft.temporary, join(out, draft.name))
-      draft.committed = true
+    await unchanged(out, drafts)
+    // Every rename is tried; summary.md moves only when all three data files did, so it never
+    // describes files that still hold an earlier export.
+    const stale: string[] = []
+    for (const draft of [jsonl, csv, errors, summaryFile]) {
+      if (draft === summaryFile && stale.length > 0) {
+        stale.push(draft.name)
+        continue
+      }
+      try {
+        await rename(draft.temporary, join(out, draft.name))
+        draft.committed = true
+      } catch {
+        stale.push(draft.name)
+      }
     }
     await syncFolder(out)
+    if (stale.length > 0)
+      fail(`some result files could not be replaced and still hold an earlier export: ${stale.join(', ')}`)
     return { files: RESULT_FILES.map((name) => `${batch.outRel}/${name}`), summary }
-  } finally {
+  } catch (error) {
+    const left: string[] = []
     for (const draft of drafts) {
-      await draft.file.close().catch(() => undefined)
-      if (!draft.committed) await unlink(draft.temporary).catch(() => undefined)
+      await draft.close().catch(() => undefined)
+      if (!draft.committed && !(await discard(draft.temporary, draft.identity))) left.push(draft.temporary)
     }
+    throw left.length > 0 ? leftBehind(error, left) : error
   }
 }
 

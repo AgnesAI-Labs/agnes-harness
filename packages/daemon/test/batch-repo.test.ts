@@ -110,6 +110,30 @@ describe('BatchRepo state machine', () => {
     expect(repo.inflight(id)).toEqual([])
   })
 
+  it('takes another job for a running item only with a higher repair count', () => {
+    const { repo } = fresh()
+    expect(repo.markRunning(id, 1, { jobId: 'j1', sessionKey: 's1', repairs: 0, startedAt: 5 })).toBe(true)
+    expect(repo.markRunning(id, 1, { jobId: 'j-other', sessionKey: 's1', repairs: 0, startedAt: 6 })).toBe(
+      false,
+    )
+    expect(repo.markRunning(id, 1, { jobId: 'j1', sessionKey: 's1', repairs: 0, startedAt: 5 })).toBe(true)
+    expect(repo.markRunning(id, 1, { jobId: 'j1r', sessionKey: 's1', repairs: 1, startedAt: 7 })).toBe(true)
+    expect(repo.markRunning(id, 1, { jobId: 'j1', sessionKey: 's1', repairs: 1, startedAt: 8 })).toBe(false)
+    expect(repo.page(id, 0, 1)[0]).toMatchObject({ jobId: 'j1r', repairs: 1, startedAt: 7 })
+  })
+
+  it('tallies the items after a cursor by state without reading them', () => {
+    const { repo } = fresh()
+    repo.settle(id, 1, { status: 'done', output: {}, credits: 1 })
+    repo.settle(id, 2, { status: 'failed', error: 'x', credits: 0.5 })
+    repo.settle(id, 4, { status: 'done', output: {}, credits: 2 })
+    const byState = (after: number) =>
+      Object.fromEntries(repo.tally(id, after).map((row) => [row.status, [row.items, row.credits]]))
+    expect(byState(0)).toEqual({ done: [2, 3], failed: [1, 0.5], skipped: [1, 0] })
+    expect(byState(2)).toEqual({ done: [1, 2], skipped: [1, 0] })
+    expect(byState(4)).toEqual({})
+  })
+
   it('refuses a status outside the item states', () => {
     const { repo } = fresh()
     expect(() => repo.settle(id, 1, { status: 'skipped' as never })).toThrow(/item state/)

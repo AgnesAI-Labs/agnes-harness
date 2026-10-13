@@ -284,6 +284,25 @@ describe('exportBatch: the results folder', () => {
     expect(existsSync(join(root, 'gone'))).toBe(false)
   })
 
+  it('refuses a results folder inside a hidden folder', async () => {
+    for (const outRel of ['.agnes/skills/x', 'out/.cache']) {
+      const { repo, batch } = seeded(undefined, outRel)
+      await expect(exportBatch({ repo, batch, now: 0 })).rejects.toThrow(/hidden folder/)
+    }
+    expect(readdirSync(root)).toEqual([])
+  })
+
+  it('replaces summary.md only when every data file was replaced, and names the stale files', async () => {
+    const out = join(root, 'agh-batch', id)
+    mkdirSync(join(out, 'results.csv', 'keep'), { recursive: true })
+    const { repo, batch } = seeded()
+    await expect(exportBatch({ repo, batch, now: 0 })).rejects.toThrow(
+      /could not be replaced and still hold an earlier export: results\.csv, summary\.md/,
+    )
+    expect(readdirSync(out).sort()).toEqual(['errors.jsonl', 'results.csv', 'results.jsonl'])
+    expect(lstatSync(join(out, 'results.jsonl')).isFile()).toBe(true)
+  })
+
   it('leaves no temporary files behind when two exports overlap', async () => {
     const { repo, batch } = seeded()
     await Promise.all([exportBatch({ repo, batch, now: 0 }), exportBatch({ repo, batch, now: 0 })])
@@ -342,13 +361,29 @@ describe('exportBatch: untrusted text', () => {
     expect(csvCell('=1+1')).toBe("'=1+1")
     expect(csvCell('-x')).toBe("'-x")
     expect(csvCell(' =1')).toBe("' =1")
-    expect(csvCell('\t=1')).toBe("'\t=1")
+    expect(csvCell('\t=1')).toBe(`"'\t'=1"`)
     expect(csvCell('=a,b')).toBe(`"'=a,b"`)
     expect(csvCell('-3')).toBe('-3')
     expect(csvCell('+1.5e3')).toBe('+1.5e3')
     expect(csvCell(-3)).toBe('-3')
     expect(csvCell(true)).toBe('true')
     expect(csvCell('a\u0000b')).toBe('a\ufffdb')
+  })
+
+  it('neutralises formulas after a semicolon or tab, for spreadsheets that split on those', () => {
+    expect(csvCell('x;=1+1;')).toBe(`"x;'=1+1;"`)
+    expect(csvCell('x;-2+3')).toBe(`"x;'-2+3"`)
+    expect(csvCell('a\t=1')).toBe(`"a\t'=1"`)
+    expect(csvCell('a; =1')).toBe(`"a; '=1"`)
+    expect(csvCell('a;\t @x')).toBe(`"a;\t '@x"`)
+    expect(csvCell('a;＝1;＋1;－1;＠1')).toBe(`"a;'＝1;'＋1;'－1;'＠1"`)
+    expect(csvCell("ok;=cmd|' /C calc'!A0;")).toBe(`"ok;'=cmd|' /C calc'!A0;"`)
+    // Separators alone only make the cell quoted; plain numbers stay numbers.
+    expect(csvCell('a;b')).toBe('"a;b"')
+    expect(csvCell('a\tb')).toBe('"a\tb"')
+    expect(csvCell('1;2')).toBe('"1;2"')
+    expect(csvCell('-3')).toBe('-3')
+    expect(csvCell(-3)).toBe('-3')
   })
 
   it('caps very long CSV cells and keeps the full value in results.jsonl', async () => {
@@ -431,6 +466,22 @@ describe('exportBatch: untrusted text', () => {
     expect(markdownText('x'.repeat(500), 10)).toBe(`${'x'.repeat(9)}…`)
   })
 
+  it('defangs www. wherever it appears, also right after a letter, digit or underscore', () => {
+    expect(markdownText('_www.evil.com_')).toBe('\\_www\\[.\\]evil.com\\_')
+    expect(markdownText('xwww.evil.com')).toBe('xwww\\[.\\]evil.com')
+    expect(markdownText('1www.evil.com/a')).toBe('1www\\[.\\]evil.com/a')
+    expect(markdownText('see WWW.Evil.com')).toBe('see WWW\\[.\\]Evil.com')
+    for (const text of ['_www.evil.com_', 'xwww.evil.com', '1www.evil.com/a'])
+      expect(markdownText(text)).not.toMatch(/www\./iu)
+  })
+
+  it('escapes underscores that could open emphasis and keeps snake_case readable', () => {
+    expect(markdownText('invalid_output: a_b_c')).toBe('invalid_output: a_b_c')
+    expect(markdownText('__init__.py')).toBe('\\_\\_init\\_\\_.py')
+    expect(markdownText('_x_ and x_ _y')).toBe('\\_x\\_ and x\\_ \\_y')
+    expect(markdownText('名前_値')).toBe('名前_値')
+  })
+
   it('bounds the summary however many fields and problems there are', async () => {
     const properties = Object.fromEntries(
       Array.from({ length: 200 }, (_, index) => [`f${index}`, { type: 'string' }]),
@@ -466,6 +517,84 @@ describe('exportBatch: untrusted text', () => {
       /results\.jsonl stops after \d+ rows \(size limit\); \d+ more are left out/,
     )
     expect(exported.summary).toMatch(/results\.csv stops after/)
+  })
+
+  it('only counts the rest once every data file is full, and still reports every row', async () => {
+    const rows = [
+      ...Array.from({ length: 3 }, (_, index) => ({ path: `docs/e${index}.txt`, error: 'boom' })),
+      ...Array.from({ length: 997 }, (_, index) => ({ path: `docs/${index}.txt`, output: { text: 'z' } })),
+    ]
+    const { repo, batch } = custom(rows)
+    let pages = 0
+    const counted = new Proxy(repo, {
+      get(target, key, receiver) {
+        if (key === 'page')
+          return (...args: Parameters<BatchRepo['page']>) => {
+            pages++
+            return target.page(...args)
+          }
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    const exported = await exportBatch({ repo: counted, batch, now: 0, maxFileBytes: 1 })
+    expect(pages).toBe(1)
+    expect(exported.summary).toContain('- Done 997 · Invalid 0 · Failed 3 ·')
+    expect(exported.summary).toContain(
+      '- results.jsonl stops after 0 rows (size limit); 997 more are left out',
+    )
+    expect(exported.summary).toContain('- results.csv stops after 0 rows (size limit); 997 more are left out')
+    expect(exported.summary).toContain('- errors.jsonl stops after 0 rows (size limit); 3 more are left out')
+  })
+
+  it('takes summary counts and spend from the rows it wrote, not from the table afterwards', async () => {
+    const rows = Array.from({ length: 3 }, (_, index) => ({
+      path: `docs/${index}.txt`,
+      output: { text: 'a' },
+    }))
+    const repo = new BatchRepo(sqliteTables().table('batches'), () => 0)
+    repo.create(
+      {
+        id,
+        principalId: 'p',
+        root,
+        spec: { dir: 'docs', prompt: 'x' },
+        dirRel: 'docs',
+        outRel: `agh-batch/${id}`,
+        concurrency: 2,
+        itemTimeoutMs: 600_000,
+        createdAt: 0,
+      },
+      rows.map((row) => ({ path: row.path, kind: 'text' as const, bytes: 1 })),
+    )
+    repo.settle(id, 1, { status: 'done', output: { text: 'a' }, credits: 1 })
+    // A snapshot older than the rows: item 2 settles after it was taken but before the export reads it.
+    const batch = repo.get(id) as BatchRow
+    repo.settle(id, 2, { status: 'done', output: { text: 'b' }, credits: 2 })
+    let first = true
+    const racing = new Proxy(repo, {
+      get(target, key, receiver) {
+        if (key === 'page')
+          return (...args: Parameters<BatchRepo['page']>) => {
+            const page = target.page(...args)
+            if (first) {
+              first = false
+              // Settles after the rows were read: the files show item 3 still pending.
+              target.settle(id, 3, { status: 'done', output: { text: 'c' }, credits: 4 })
+            }
+            return page
+          }
+        return Reflect.get(target, key, receiver)
+      },
+    })
+    const exported = await exportBatch({ repo: racing, batch, now: 0 })
+    const written = readFileSync(join(root, 'agh-batch', id, 'results.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+    expect(written).toHaveLength(2)
+    expect(exported.summary).toContain(
+      '- Done 2 · Invalid 0 · Failed 0 · Skipped 0 · Cancelled 0 · Pending 1 · Running 0',
+    )
+    expect(exported.summary).toContain('- Credits spent: 3\n')
   })
 
   it('always writes the whole summary, whatever the size limit', async () => {

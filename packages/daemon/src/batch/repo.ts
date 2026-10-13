@@ -285,6 +285,15 @@ export class BatchRepo {
       .map(toItem)
   }
 
+  /** Item count and credits per state for the items after `afterOrdinal`, without reading their rows. */
+  tally(id: string, afterOrdinal: number): Array<{ status: ItemState; items: number; credits: number }> {
+    return this.table.all<{ status: ItemState; items: number; credits: number }>(
+      `SELECT status, COUNT(*) AS items, COALESCE(SUM(credits), 0) AS credits FROM batch_items
+       WHERE batch_id = ? AND ordinal > ? GROUP BY status`,
+      [id, afterOrdinal],
+    )
+  }
+
   commonError(id: string): string | undefined {
     return this.table.get<{ error: string }>(
       `SELECT error FROM batch_items WHERE batch_id = ? AND status IN ('failed', 'invalid') AND error IS NOT NULL
@@ -295,7 +304,8 @@ export class BatchRepo {
 
   /**
    * Starts a pending item, or records a repair run of a running one. False when the item is settled
-   * or skipped, or when the call would lower its repair count (a stale retry).
+   * or skipped, when the call would lower its repair count (a stale retry), or when it names another
+   * job for the repair count already recorded.
    */
   markRunning(
     id: string,
@@ -303,12 +313,17 @@ export class BatchRepo {
     run: { jobId: string; sessionKey: string; repairs: number; startedAt: number },
   ): boolean {
     return this.table.transaction(() => {
-      const current = this.table.get<{ status: ItemState; repairs: number }>(
-        'SELECT status, repairs FROM batch_items WHERE batch_id = ? AND ordinal = ?',
+      const current = this.table.get<{ status: ItemState; repairs: number; job_id: string | null }>(
+        'SELECT status, repairs, job_id FROM batch_items WHERE batch_id = ? AND ordinal = ?',
         [id, ordinal],
       )
       if (!current) return false
-      if (current.status !== 'pending' && !(current.status === 'running' && run.repairs >= current.repairs))
+      // A running item takes a later repair run, or the same run again; never another job for the same run.
+      const again = run.repairs === current.repairs && run.jobId === current.job_id
+      if (
+        current.status !== 'pending' &&
+        !(current.status === 'running' && (run.repairs > current.repairs || again))
+      )
         return false
       this.table.exec(
         `UPDATE batch_items SET status = 'running', job_id = ?, session_key = ?, repairs = ?, started_at = ?,
