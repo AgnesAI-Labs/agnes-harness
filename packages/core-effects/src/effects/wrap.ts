@@ -42,6 +42,32 @@ const defaultTimers: Timers = {
   clearTimeout: (h) => globalThis.clearTimeout(h as number),
 }
 
+const MAX_TIMER_MS = 2 ** 31 - 1
+
+/**
+ * Arms `fn` after `ms`, however long: the runtime fires a delay above 2^31-1 ms after one
+ * millisecond, so a longer wait is armed a segment at a time. Returns the cancel.
+ */
+export function armTimeout(fn: () => void, ms: number, timers: Timers = defaultTimers): () => void {
+  let handle: unknown
+  let cancelled = false
+  const arm = (left: number): void => {
+    handle = timers.setTimeout(
+      () => {
+        if (cancelled) return
+        if (left > MAX_TIMER_MS) arm(left - MAX_TIMER_MS)
+        else fn()
+      },
+      Math.min(left, MAX_TIMER_MS),
+    )
+  }
+  arm(ms)
+  return () => {
+    cancelled = true
+    timers.clearTimeout(handle)
+  }
+}
+
 /**
  * Bounds a seam call in time and in the caller's abort. The rejection names what was being waited
  * on. Callers may supply a typed timeout error when they expose recovery directly; seam callers
@@ -57,12 +83,11 @@ export function withTimeout<T>(
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false
-    let armed = false
-    let handle: unknown
+    let disarm: (() => void) | undefined
     const finish = (complete: () => void) => {
       if (settled) return
       settled = true
-      if (armed) timers.clearTimeout(handle)
+      disarm?.()
       signal?.removeEventListener('abort', onAbort)
       complete()
     }
@@ -77,10 +102,13 @@ export function withTimeout<T>(
       return
     }
     signal?.addEventListener('abort', onAbort, { once: true })
-    handle = timers.setTimeout(() => finish(() => reject(timeoutError ?? new Error(`timeout: ${label}`))), ms)
-    armed = true
+    disarm = armTimeout(
+      () => finish(() => reject(timeoutError ?? new Error(`timeout: ${label}`))),
+      ms,
+      timers,
+    )
     // An injected timer may fire synchronously before returning its handle.
-    if (settled) timers.clearTimeout(handle)
+    if (settled) disarm()
   })
 }
 
@@ -94,18 +122,18 @@ export async function settlesWithin(
   ms: number,
   timers: Timers = defaultTimers,
 ): Promise<boolean> {
-  let handle: unknown
+  let disarm: (() => void) | undefined
   const rested = p.then(
     () => true,
     () => true,
   )
   const timedOut = new Promise<boolean>((resolve) => {
-    handle = timers.setTimeout(() => resolve(false), ms)
+    disarm = armTimeout(() => resolve(false), ms, timers)
   })
   try {
     return await Promise.race([rested, timedOut])
   } finally {
-    timers.clearTimeout(handle)
+    disarm?.()
   }
 }
 

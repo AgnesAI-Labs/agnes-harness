@@ -610,6 +610,9 @@ describe('SeamRuntime', () => {
     ac.abort()
     await expect(p).rejects.toThrow('aborted: y')
     await expect(withTimeout(Promise.resolve(7), 1000, 'z')).resolves.toBe(7)
+    // A limit past what one runtime timer can express is still that limit, not a millisecond.
+    const slow = new Promise((resolve) => setTimeout(() => resolve('late'), 30))
+    await expect(withTimeout(slow, 2 ** 31 + 5, 'long')).resolves.toBe('late')
   })
 })
 
