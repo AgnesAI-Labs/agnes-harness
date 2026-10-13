@@ -43,7 +43,10 @@ import { SkillsPage } from './skills-page.js'
 
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
 
+import { type ResourceAdminSurface, renderSettingsChrome } from './settings-chrome.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
+
+export type { ResourceAdminSurface } from './settings-chrome.js'
 
 let list!: HTMLElement
 let detail!: HTMLDialogElement
@@ -56,6 +59,11 @@ let mcpForm!: ReturnType<typeof createMcpForm>
 let mcpPickers: SelectPicker[] = []
 let mcpWizard: ReturnType<typeof mountMcpWizard> | undefined
 let mcpPresets: ReturnType<typeof mountMcpPresets> | undefined
+let surface: ResourceAdminSurface | undefined
+let refreshButton!: HTMLButtonElement
+let createButton!: HTMLButtonElement
+// The dialogs and form are single: the latest mount owns them and an earlier page stops drawing.
+let activePage: ResourceAdminPage | undefined
 let stopMcpRefresh: (() => void) | undefined
 const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 
@@ -66,6 +74,7 @@ export type ResourceAdminOptions = {
   workspaceId?: string
   tab?: Tab
   locale?: UiLocaleSource
+  surface?: ResourceAdminSurface
 }
 export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 
@@ -400,40 +409,23 @@ class ResourceAdminPage {
     return false
   }
 
+  tab(): Tab {
+    return this.#tab
+  }
+
   render(): void {
-    const heading = document.querySelector<HTMLElement>('#resource-settings-pane h2')
-    if (heading) {
-      heading.closest<HTMLElement>('.config-heading')?.toggleAttribute('hidden', this.#tab === 'skills')
-      heading.textContent = this.#t(`tab.${this.#tab}`)
-    }
-    const addHint = document.querySelector<HTMLElement>(
-      '#resource-settings-pane [data-testid="resource-add-hint"]',
-    )
-    if (addHint) addHint.hidden = true
+    if (activePage !== this) return
+    if (!surface) renderSettingsChrome(this.#tab, this.#t)
     notice.textContent = this.#notice.key
       ? this.#t(this.#notice.key, this.#notice.vars)
       : (this.#notice.raw ?? '')
     notice.dataset.kind = this.#notice.kind
-    const skillTab = $('skills-tab', 'button')
-    const mcpTab = $('mcp-tab', 'button')
-    for (const [control, selected] of [
-      [skillTab, this.#tab === 'skills'],
-      [mcpTab, this.#tab === 'mcp'],
-    ] as const) {
-      if (control.getAttribute('role') === 'tab') {
-        control.setAttribute('aria-selected', String(selected))
-        control.tabIndex = selected ? 0 : -1
-      } else {
-        control.removeAttribute('aria-selected')
-        control.setAttribute('aria-current', selected ? 'page' : 'false')
-        control.tabIndex = 0
-      }
-    }
-    $('skill-refresh', 'button').hidden = true
+    notice.hidden = !!surface && !notice.textContent
+    refreshButton.hidden = true
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
-    $('skill-refresh', 'button').disabled = !this.writable() || busy
-    $('mcp-create', 'button').hidden = this.#tab !== 'mcp'
-    $('mcp-create', 'button').disabled = !this.writable() || busy || this.#activeOperation !== undefined
+    refreshButton.disabled = !this.writable() || busy
+    createButton.hidden = this.#tab !== 'mcp'
+    createButton.disabled = !this.writable() || busy || this.#activeOperation !== undefined
     if (mcpPresets) {
       mcpPresets.setAvailability({
         hidden: this.#tab !== 'mcp',
@@ -447,12 +439,13 @@ class ResourceAdminPage {
       <UiLocaleProvider source={this.#locale}>
         {this.#tab === 'skills' ? (
           <SkillsPage
+            embedded={!!surface}
             query={this.#skillQuery}
             onQuery={(query) => {
               this.#skillQuery = query
               this.render()
             }}
-            onRefresh={() => $('skill-refresh', 'button').click()}
+            onRefresh={() => refreshButton.click()}
             busy={busy || this.#activeOperation !== undefined}
             writable={this.writable()}
             locations={<ResourceRoots roots={this.#skillRoots} />}
@@ -815,6 +808,9 @@ class ResourceAdminPage {
   dispose(): void {
     this.#localeStop()
     this.#localeCleanup?.()
+    // A later mount already took the shared form, dialogs and hosts over.
+    if (activePage !== this) return
+    activePage = undefined
     stopMcpRefresh?.()
     stopMcpRefresh = undefined
     for (const picker of mcpPickers) picker.destroy()
@@ -926,9 +922,13 @@ export type ResourceAdminMount = Readonly<{
  * Importing this module never touches the DOM; the host decides when to mount.
  */
 export function mountResourceAdmin(options: ResourceAdminOptions = {}): ResourceAdminMount {
-  list = $('resource-list', 'section')
+  activePage?.dispose()
+  surface = options.surface
+  list = surface?.list ?? $('resource-list', 'section')
   detail = $('resource-detail', 'dialog')
-  notice = $('resource-notice', 'p')
+  notice = surface?.notice ?? $('resource-notice', 'p')
+  refreshButton = surface?.refresh ?? $('skill-refresh', 'button')
+  createButton = surface?.create ?? $('mcp-create', 'button')
   dialog = $('mcp-dialog', 'dialog')
   form = $('mcp-form', 'form')
   mcpTransport = $('mcp-transport', 'select')
@@ -939,6 +939,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     text: () => activeResourceText,
   })
   const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
+  activePage = page
   mcpWizard?.dispose()
   mcpWizard = mountMcpWizard(
     () => activeResourceText,
@@ -949,7 +950,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   mcpPresets?.dispose()
   mcpPresets = mountMcpPresets({
     form,
-    toolbar: $('mcp-create', 'button').parentElement as HTMLElement,
+    toolbar: createButton.parentElement as HTMLElement,
     open: () => openMcpDialog(),
     fill: (definition) => {
       writeDefinition(definition)
@@ -962,35 +963,51 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   mcpPresets.localize()
 
   // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
-  detail.addEventListener('cancel', (event) => {
-    event.preventDefault()
-    page.closeDetail()
-  })
-  detail.addEventListener('click', (event) => {
-    if (event.target === detail) page.closeDetail()
-  })
+  // The dialogs and the form are shared between mounts: every listener leaves with its mount.
+  const stop = new AbortController()
+  const bound = { signal: stop.signal }
+  detail.addEventListener(
+    'cancel',
+    (event) => {
+      event.preventDefault()
+      page.closeDetail()
+    },
+    bound,
+  )
+  detail.addEventListener(
+    'click',
+    (event) => {
+      if (event.target === detail) page.closeDetail()
+    },
+    bound,
+  )
   // 添加 / 编辑 MCP 的弹窗同样点遮罩关闭。
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dialog.close()
-  })
+  dialog.addEventListener(
+    'click',
+    (event) => {
+      if (event.target === dialog) dialog.close()
+    },
+    bound,
+  )
 
-  $('skill-refresh', 'button').addEventListener(
+  refreshButton.addEventListener(
     'click',
     () =>
       void (async () => {
         if (await page.confirm(activeResourceText('action.refresh-skills')))
           await page.track(await page.api().refresh())
       })().catch((error) => page.showError(error)),
+    bound,
   )
-  $('mcp-create', 'button').addEventListener('click', () => openMcpDialog(undefined, activeResourceText))
-  $('mcp-cancel', 'button').addEventListener('click', () => dialog.close())
-  mcpTransport.addEventListener('change', () => syncTransport(activeResourceText))
-  mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText))
+  createButton.addEventListener('click', () => openMcpDialog(undefined, activeResourceText), bound)
+  $('mcp-cancel', 'button').addEventListener('click', () => dialog.close(), bound)
+  mcpTransport.addEventListener('change', () => syncTransport(activeResourceText), bound)
+  mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText), bound)
   // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
   // 必须包一层箭头函数——addEventListener 会把 Event 对象当第一个参数传进去。
-  form.addEventListener('input', () => syncMcpFieldFeedback())
-  form.addEventListener('change', () => syncMcpFieldFeedback())
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('input', () => syncMcpFieldFeedback(), bound)
+  form.addEventListener('change', () => syncMcpFieldFeedback(), bound)
+  const submit = (event: SubmitEvent) => {
     event.preventDefault()
     if (mcpSubmitting) return
     mcpSubmitting = true
@@ -1048,22 +1065,28 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       .finally(() => {
         mcpSubmitting = false
       })
-  })
+  }
+  form.addEventListener('submit', submit, bound)
   syncTransport(activeResourceText)
   stopMcpRefresh?.()
   stopMcpRefresh = watchMcpPanel({
     root: list,
     visible: () =>
       !list.closest('[hidden]') &&
-      (document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true' ||
-        document.getElementById('mcp-tab')?.getAttribute('aria-current') === 'page'),
+      (surface
+        ? page.tab() === 'mcp'
+        : document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true' ||
+          document.getElementById('mcp-tab')?.getAttribute('aria-current') === 'page'),
     refresh: () => page.refreshMcpIfChanged(),
   })
   const ready = page.start()
   return {
     ready,
     reload: () => page.reload(),
-    dispose: () => page.dispose(),
+    dispose: () => {
+      stop.abort()
+      page.dispose()
+    },
     setWorkspace: (id) => page.setWorkspace(id),
     setTab: (tab) => page.setTab(tab),
     sync: (scope, options) => page.sync(scope, options),

@@ -1,3 +1,5 @@
+import { settingsSections } from '@agnes/web-client'
+
 export function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {
   const found = document.getElementById(id)
   if (!found || found.tagName.toLowerCase() !== tag) throw new Error(`missing ${tag}#${id}`)
@@ -38,4 +40,40 @@ export function setDialog(dialog: HTMLDialogElement, open: boolean, focus?: HTML
     }
   }
   if (open) focus?.focus()
+}
+
+const ERROR_KEYS: Readonly<Record<string, string>> = {
+  ADMIN_UNAVAILABLE: 'error.connection',
+  RECOVERY_READ_ONLY: 'error.read-only',
+  ADMIN_FORBIDDEN: 'error.forbidden',
+  FORBIDDEN: 'error.forbidden',
+  PACKAGE_BUSY: 'error.busy',
+  ADMIN_CONTEXT_INVALID: 'error.context-invalid',
+  ADMIN_RESPONSE_INVALID: 'error.response-invalid',
+  RUNTIME_NOT_CONFIRMED: 'notice.runtime-pending',
+  RUNTIME_IDENTITY_UNKNOWN: 'error.runtime-unconfirmed',
+  E_PACKAGE_TRUST: 'error.capability-unconfirmed',
+  E_PACKAGE_STATE: 'error.state-changed',
+}
+/** The locale key that explains an admin failure code. */
+export const adminErrorKey = (code: string): string => ERROR_KEYS[code] ?? 'error.operation-failed'
+
+/** The embedded settings shell marks the runtime page its navigation is on. */
+export function markSettingsPage(page: string, listHost: HTMLElement): void {
+  const shell = document.getElementById('config-form')
+  if (!shell) return
+  shell.dataset.runtimePage = page
+  shell.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: page, bubbles: true }))
+  for (const item of shell.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
+    const active =
+      item.dataset.runtimePage === page ||
+      settingsSections.get(item.dataset.runtimePage ?? '')?.group === settingsSections.get(page)?.group
+    item.classList.toggle('active', active)
+    if (active) item.setAttribute('aria-current', 'page')
+    else item.removeAttribute('aria-current')
+  }
+  listHost
+    .closest('.settings-content')
+    ?.querySelector<HTMLElement>('.config-heading')
+    ?.setAttribute('hidden', '')
 }

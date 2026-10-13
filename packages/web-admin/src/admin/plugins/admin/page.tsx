@@ -9,7 +9,6 @@ import type {
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
-import { settingsSections } from '@agnes/web-client'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
@@ -54,7 +53,7 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
-import { button, element, setDialog } from './dom.js'
+import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
   type PreviewMode,
@@ -63,6 +62,7 @@ import {
   type TrackedOperation,
 } from './operation-storage.js'
 import { matchesPluginSearch, pluginPresentation } from './presentation.js'
+import { type PluginPageSurface, settingsPaneHosts } from './surface.js'
 import {
   renderConfirmPluginView,
   renderDetailPluginView,
@@ -92,7 +92,12 @@ export type PluginAdminOptions = Readonly<{
   schedules?: SchedulesApi
   candidateSessionTitle?: (key: string) => Promise<string | undefined>
   candidateSessionTurnTime?: (key: string, turn: number) => Promise<string | undefined>
+  /** Renders the plugins full page into a host it supplies, instead of the settings pane markup. */
+  surface?: PluginPageSurface
 }>
+
+/** The latest controller to open one of the three shared admin dialogs renders them. */
+let dialogOwner: PluginAdminPage | undefined
 
 const pluginAdminCatalogs = {
   [PLUGIN_ADMIN_LOCALE_NAMESPACE]: pluginAdminLocaleCatalog,
@@ -148,16 +153,19 @@ export class PluginAdminPage {
         return createUiTranslator(page.#locale, PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
       },
       get layout() {
-        return page.#layout
+        return page.#pane?.layout as HTMLElement
       },
       get listHost() {
         return page.#listHost
+      },
+      get surface() {
+        return page.#surface
       },
       get locale() {
         return page.#locale
       },
       get notice() {
-        return page.#notice
+        return page.#pane?.notice as HTMLElement
       },
       get noticeState() {
         return page.#noticeState
@@ -181,7 +189,7 @@ export class PluginAdminPage {
         page.#orphanPinNotice = value
       },
       get orphanPinsHost() {
-        return page.#orphanPinsHost
+        return page.#pane?.orphanPins as HTMLElement
       },
       get pendingConfirm() {
         return page.#pendingConfirm
@@ -199,7 +207,7 @@ export class PluginAdminPage {
         page.#queryRaw = value
       },
       get recovery() {
-        return page.#recovery
+        return page.#pane?.recovery as HTMLElement
       },
       get refreshSettings() {
         return page.#refreshSettings
@@ -250,7 +258,7 @@ export class PluginAdminPage {
         page.#tab = value
       },
       get treeStatus() {
-        return page.#treeStatus
+        return page.#pane?.treeStatus as HTMLElement
       },
       get actualSlots() {
         return page.actualSlots
@@ -283,6 +291,7 @@ export class PluginAdminPage {
       renderSource: page.renderSource.bind(page),
       runtimeState: page.runtimeState.bind(page),
       selectItem: page.selectItem.bind(page),
+      selectTab: page.selectTab.bind(page),
       settingsText: page.settingsText.bind(page),
       showError: page.showError.bind(page),
       sourceIntro: page.sourceIntro.bind(page),
@@ -306,6 +315,9 @@ export class PluginAdminPage {
   private readonly actualSlots: ((packageId: string) => readonly string[]) | undefined
 
   constructor(options: PluginAdminOptions = {}) {
+    this.#surface = options.surface
+    this.#listHost = options.surface?.host ?? element('plugin-list', 'section')
+    if (!options.surface) this.#pane = settingsPaneHosts()
     this.#detail.classList.add('agh-drawer')
     // Keep the scrollable tab panel keyboard reachable during empty/loading states.
     this.#listHost.tabIndex = 0
@@ -382,34 +394,16 @@ export class PluginAdminPage {
   // visible with a clear message instead of silently keeping a now-unverified stale list.
   #orphanPinFetchError: { detail: AdminError; localize: boolean } | undefined
 
-  readonly #orphanPinsHost = element('orphan-pins', 'section')
-  readonly #notice = element('admin-notice', 'p')
-  readonly #treeStatus = element('plugin-tree-status', 'p')
-  readonly #recovery = element('recovery-notice', 'section')
-  readonly #layout = element('plugin-layout', 'div')
-  readonly #listHost = element('plugin-list', 'section')
+  readonly #surface: PluginPageSurface | undefined
+  // The settings pane markup; absent when a page surface owns the layout.
+  #pane: ReturnType<typeof settingsPaneHosts> | undefined
+  readonly #listHost: HTMLElement
   readonly #onSettingsPage = (page: SettingsPage): void => {
     const tab = page === 'discover' ? 'discover' : 'installed'
     if ((page === 'plugins' || page === 'discover') && this.#tab !== tab) {
       queueMicrotask(() => void this.selectTab(tab))
     }
-    const shell = document.getElementById('config-form')
-    if (shell) {
-      shell.dataset.runtimePage = page
-      shell.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: page, bubbles: true }))
-      for (const item of shell.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
-        const active =
-          item.dataset.runtimePage === page ||
-          settingsSections.get(item.dataset.runtimePage ?? '')?.group === settingsSections.get(page)?.group
-        item.classList.toggle('active', active)
-        if (active) item.setAttribute('aria-current', 'page')
-        else item.removeAttribute('aria-current')
-      }
-      this.#listHost
-        .closest('.settings-content')
-        ?.querySelector<HTMLElement>('.config-heading')
-        ?.setAttribute('hidden', '')
-    }
+    markSettingsPage(page, this.#listHost)
   }
   #exampleInstallId: string | undefined
   #exampleFlowId: string | undefined
@@ -452,9 +446,11 @@ export class PluginAdminPage {
       if (event.target === this.#detail) this.closeDetail()
     })
     // The registry owns navigation; remove the legacy second tab level and toolbar.
-    this.#listHost.closest('.admin-main, .admin-pane-body')?.querySelector('.plugin-toolbar')?.remove()
-    document.getElementById('install-source')?.remove()
-    this.#listHost.removeAttribute('role')
+    if (!this.#surface) {
+      this.#listHost.closest('.admin-main, .admin-pane-body')?.querySelector('.plugin-toolbar')?.remove()
+      document.getElementById('install-source')?.remove()
+      this.#listHost.removeAttribute('role')
+    }
     this.#sourceDialog.addEventListener('cancel', (event) => {
       event.preventDefault()
       this.closeSourceDialog()
@@ -692,9 +688,10 @@ export class PluginAdminPage {
   openSourceDialog(mode: PreviewMode, item?: PackageInstalledDescriptor, trigger?: HTMLElement): void {
     if (!this.effectApi('packages.install')) return
     if (item && this.packageBusy(item.id)) return
+    this.#ownsDialogs(true)
     this.#sourceMode = mode
     this.#sourcePackageId = item?.id
-    this.#sourceTrigger = trigger ?? button('install-source')
+    this.#sourceTrigger = trigger ?? this.#installTrigger()
     this.#sourceError = undefined
     this.#sourceProblem = undefined
     this.#sourceRefValue = ''
@@ -747,7 +744,7 @@ export class PluginAdminPage {
     this.#sourceProblem = undefined
     const mode = this.#sourceMode
     const packageId = this.#sourcePackageId
-    const trigger = this.#sourceTrigger ?? button('install-source')
+    const trigger = this.#sourceTrigger ?? this.#installTrigger()
     this.#sourceError = undefined
     this.#sourceBusy = true
     // Stay on this dialog until the backend has accepted the check: a refusal has to be readable
@@ -878,6 +875,7 @@ export class PluginAdminPage {
   }
 
   configureConfirm(pending: PendingConfirm): void {
+    this.#ownsDialogs(true)
     this.#pendingConfirm = pending
     this.#confirmActionDisabled = false
     this.renderConfirm()
@@ -1008,21 +1006,7 @@ export class PluginAdminPage {
   }
 
   errorMessage(error: AdminError): string {
-    const keyByCode: Readonly<Record<string, string>> = {
-      ADMIN_UNAVAILABLE: 'error.connection',
-      RECOVERY_READ_ONLY: 'error.read-only',
-      ADMIN_FORBIDDEN: 'error.forbidden',
-      FORBIDDEN: 'error.forbidden',
-      PACKAGE_BUSY: 'error.busy',
-      ADMIN_CONTEXT_INVALID: 'error.context-invalid',
-      ADMIN_RESPONSE_INVALID: 'error.response-invalid',
-      RUNTIME_NOT_CONFIRMED: 'notice.runtime-pending',
-      RUNTIME_IDENTITY_UNKNOWN: 'error.runtime-unconfirmed',
-      E_PACKAGE_TRUST: 'error.capability-unconfirmed',
-      E_PACKAGE_STATE: 'error.state-changed',
-    }
-    const key = keyByCode[error.code]
-    return this.#t(key ?? 'error.operation-failed')
+    return this.#t(adminErrorKey(error.code))
   }
 
   track(
@@ -1137,7 +1121,19 @@ export class PluginAdminPage {
 
   /** React 键控行会复用 DOM：键盘焦点跟随 data-plugin-id 保留，无需手工恢复。 */
 
+  /** Where focus returns after an install flow that no row or button started. */
+  #installTrigger(): HTMLElement {
+    return document.getElementById('install-source') ?? this.#listHost
+  }
+
+  /** Two controllers can be alive (settings pane and full page); only one draws the shared dialogs. */
+  #ownsDialogs(claim = false): boolean {
+    if (claim || !dialogOwner) dialogOwner = this
+    return dialogOwner === this
+  }
+
   renderDetail(): void {
+    if (!this.#ownsDialogs()) return
     renderDetailPluginView.call(this.viewContext())
   }
 
@@ -1235,7 +1231,7 @@ export class PluginAdminPage {
         void this.inspect(
           catalog.source,
           installed ? 'update' : 'install',
-          button('install-source'),
+          this.#installTrigger(),
           installed ? catalog.id : undefined,
         ),
     })
@@ -1386,7 +1382,7 @@ export class PluginAdminPage {
           await this.inspect(
             sourceForCatalog(catalog),
             installed ? 'update' : 'install',
-            button('install-source'),
+            this.#installTrigger(),
             installed ? catalog.id : undefined,
           )
         },
@@ -1437,6 +1433,7 @@ export class PluginAdminPage {
   }
 
   selectItem(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void {
+    this.#ownsDialogs(true)
     // React 键控行复用 DOM：触发行查询自渲染结果，详情关闭后焦点可以精确归还。
     this.#detailTrigger =
       this.#listHost.querySelector<HTMLElement>(`.plugin-row[data-plugin-id="${CSS.escape(item.id)}"]`) ??
@@ -1693,10 +1690,12 @@ export class PluginAdminPage {
   }
 
   renderConfirm(): void {
+    if (!this.#ownsDialogs()) return
     renderConfirmPluginView.call(this.viewContext())
   }
 
   renderSource(): void {
+    if (!this.#ownsDialogs()) return
     renderSourcePluginView.call(this.viewContext())
   }
 
@@ -1711,8 +1710,11 @@ export class PluginAdminPage {
     }
     this.#operationTimers.clear()
     this.#operationCompletions.clear()
-    unmountRegion(this.#orphanPinsHost)
+    if (this.#pane) unmountRegion(this.#pane.orphanPins)
     unmountRegion(this.#listHost)
+    // The dialogs are shared: a controller that never opened one leaves the other's content alone.
+    if (dialogOwner && dialogOwner !== this) return
+    dialogOwner = undefined
     unmountRegion(this.#detail)
     unmountRegion(this.#sourceDialog)
     unmountRegion(this.#confirmDialog)

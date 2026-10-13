@@ -55,6 +55,8 @@ export function CandidateInbox({
   sessionTitle,
   sessionTurnTime,
   scope,
+  merged = false,
+  type,
   onPendingCount,
   reviewSurface,
 }: {
@@ -67,6 +69,9 @@ export function CandidateInbox({
   sessionTitle?: ((key: string) => Promise<string | undefined>) | undefined
   sessionTurnTime?: ((key: string, turn: number) => Promise<string | undefined>) | undefined
   scope?: 'skill' | 'plugin'
+  /** One list for plugin and skill candidates, in rows; `type` narrows it without a second read. */
+  merged?: boolean
+  type?: 'skill' | 'plugin' | undefined
   onPendingCount?(count: number): void
   reviewSurface?(content: ReactNode, onClose: () => void): ReactNode
 }) {
@@ -239,8 +244,11 @@ export function CandidateInbox({
           facts[item.candidateId]?.candidateHash === item.candidateHash &&
           facts[item.candidateId]?.identity.type === scope,
       )
-    : items
-  const pendingCount = visibleItems.filter((item) => item.state === 'review').length
+    : type
+      ? items.filter((item) => facts[item.candidateId]?.identity.type === type)
+      : items
+  // The count is the whole inbox: narrowing the list by type must not change the tab's number.
+  const pendingCount = (merged ? items : visibleItems).filter((item) => item.state === 'review').length
   useEffect(() => {
     onPendingCount?.(pendingCount)
   }, [onPendingCount, pendingCount])
@@ -258,9 +266,14 @@ export function CandidateInbox({
   const history = ordered.filter(terminal)
   const renderItem = (value: AuthoringCandidateSummary) => (
     <li key={value.candidateId} data-candidate-id={value.candidateId}>
-      {scope === 'skill' ? (
+      {scope === 'skill' || merged ? (
         <ListRow
-          icon={<Icon name="file-text" size={20} />}
+          icon={
+            <Icon
+              name={facts[value.candidateId]?.identity.type === 'plugin' ? 'plug' : 'file-text'}
+              size={20}
+            />
+          }
           title={
             resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.displayName ??
             facts[value.candidateId]?.skillText?.name ??
@@ -340,7 +353,8 @@ export function CandidateInbox({
         : ['failed', 'interrupted'].includes(state)
           ? ('bad' as const)
           : ('off' as const)
-  if (loaded && !visibleItems.length && !selected && !published && !error && scope !== 'skill') return null
+  if (loaded && !visibleItems.length && !selected && !published && !error && scope !== 'skill' && !merged)
+    return null
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
@@ -349,7 +363,7 @@ export function CandidateInbox({
             {t('candidates.back')}
           </Button>
         ) : (
-          <h3>{t('candidates.title')}</h3>
+          !merged && <h3>{t('candidates.title')}</h3>
         )}
         <Button
           data-testid="candidate-refresh"
@@ -372,8 +386,10 @@ export function CandidateInbox({
             data-testid="candidate-published-link"
             href={
               candidateIdentity(published).type === 'skill'
-                ? `/?${new URLSearchParams({ settings: 'skills', skill: candidateSkillText(published).name ?? published.packageId })}`
-                : '/admin/plugins'
+                ? `/?${new URLSearchParams({ ...(merged ? { page: 'plugins', tab: 'skills' } : { settings: 'skills' }), skill: candidateSkillText(published).name ?? published.packageId })}`
+                : merged
+                  ? '/?page=plugins'
+                  : '/admin/plugins'
             }
           >
             {t('candidates.viewPublished')}: {candidateSkillText(published).name ?? published.packageId}
@@ -387,7 +403,7 @@ export function CandidateInbox({
       )}
       {!selected ? (
         <>
-          <p>{t('candidates.description')}</p>
+          {!merged && <p>{t('candidates.description')}</p>}
           {!loaded ? (
             error ? null : (
               <SettingsState tone="loading">{t('candidates.loading')}</SettingsState>

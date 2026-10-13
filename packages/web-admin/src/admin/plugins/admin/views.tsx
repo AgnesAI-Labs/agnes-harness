@@ -47,12 +47,17 @@ const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
     label: type,
   }))
 
-export function renderPluginView(this: PluginAdminViewContext): void {
-  const { context, connection, error, loading, tree } = this.state
-  // 通知条/树状态/恢复横幅是骨架上的单行文本节点，命令式赋值即可；真正的手工业（列表行、
-  // 详情体、对话框内容）全部在下面的 React 区域里。
-  this.recovery.hidden = !context?.readOnly
-  this.layout.dataset.detail = String(this.hasDetail())
+/** The one status line of the plugin surface, and the tree line under it. */
+export function pluginNotice(view: PluginAdminViewContext): {
+  message: string
+  kind: 'error' | 'state' | ''
+  tree: string
+} {
+  return notice.call(view)
+}
+
+function notice(this: PluginAdminViewContext) {
+  const { connection, error, tree } = this.state
   const connectionNotice =
     connection === 'loading'
       ? this.t('connection.loading')
@@ -76,14 +81,35 @@ export function renderPluginView(this: PluginAdminViewContext): void {
           })
         : this.noticeText() || connectionNotice
   const noticeKind = error ? 'error' : connection === 'connected' ? this.noticeState.kind : 'state'
-  this.notice.textContent = noticeMessage
-  this.notice.dataset.kind = noticeKind
   const treeText =
     tree?.desiredDigest && !tree.actual
       ? tree.failurePhase && !tree.pending
         ? this.t('tree.error')
         : this.t('tree.loading')
       : ''
+  return { message: noticeMessage, kind: noticeKind, tree: treeText } as const
+}
+
+export function renderPluginView(this: PluginAdminViewContext): void {
+  if (this.surface) {
+    // The full page draws its own status, recovery banner and layout from the same view.
+    renderRegion(
+      this.listHost,
+      <UiLocaleProvider source={this.locale}>{this.surface.render(this)}</UiLocaleProvider>,
+    )
+    this.renderDetail()
+    this.renderConfirm()
+    this.renderSource()
+    return
+  }
+  const { context, loading } = this.state
+  // 通知条/树状态/恢复横幅是骨架上的单行文本节点，命令式赋值即可；真正的手工业（列表行、
+  // 详情体、对话框内容）全部在下面的 React 区域里。
+  this.recovery.hidden = !context?.readOnly
+  this.layout.dataset.detail = String(this.hasDetail())
+  const { message: noticeMessage, kind: noticeKind, tree: treeText } = notice.call(this)
+  this.notice.textContent = noticeMessage
+  this.notice.dataset.kind = noticeKind
   this.treeStatus.textContent = treeText
   this.treeStatus.hidden = !treeText
   this.orphanPinsHost.hidden = this.orphanPinList.length === 0 && !this.orphanPinFetchError
