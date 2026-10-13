@@ -118,7 +118,7 @@ describe('createClient', () => {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
-        _meta: { [META_KEY]: { capabilities: { permission: true } } },
+        _meta: { [META_KEY]: { capabilities: { permission: true, attachmentRefs: 1 } } },
       },
       _meta: { [META_KEY]: { auth: { kind: 'local' }, clientId: 'cid-1' } },
     })
@@ -140,6 +140,28 @@ describe('createClient', () => {
       authProviders: providers,
     })
     expect(await c.initialize()).toEqual({ agnesVersion: '9.9.9', capabilities: { loadSession: true } })
+  })
+
+  it('records whether the server reads attachment references', async () => {
+    for (const [meta, expected] of [
+      [{ agnes: { agnesVersion: '9.9.9', attachmentRefs: 1 } }, true],
+      [{ agnes: { agnesVersion: '9.9.9', attachmentRefs: true } }, false],
+      [{ agnes: { agnesVersion: '9.9.9' } }, false],
+      [undefined, false],
+    ] as const) {
+      const f = fakeEndpoint({
+        initialize: () => ({ protocolVersion: 1, ...(meta ? { _meta: meta } : {}) }),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      expect(c.serverCapabilities).toEqual({ attachmentRefs: false })
+      await c.initialize()
+      expect(c.serverCapabilities, JSON.stringify(meta)).toEqual({ attachmentRefs: expected })
+      await c.close()
+    }
   })
 
   it('rejects an unsupported negotiated protocol before sending business requests', async () => {

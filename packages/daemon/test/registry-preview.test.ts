@@ -36,7 +36,7 @@ async function openWith(registry: WorkerRegistry, key: string) {
 
 describe('WorkerRegistry live previews', () => {
   it('fans a preview out to every subscriber and stops after unsubscribe and close', async () => {
-    const link = fakeLink(async (method) => (method === 'scan' ? [] : undefined))
+    const link = fakeLink(async (method) => (method === 'scan' ? { rows: [] } : undefined))
     const registry = new WorkerRegistry({ acquire: vi.fn(async () => link) } as unknown as WorkerPool)
     await openWith(registry, 's')
     const a: PreviewUpdate[] = []
@@ -59,7 +59,7 @@ describe('WorkerRegistry live previews', () => {
   })
 
   it('does not let a preview overtake an event still being projected for artifact authority', async () => {
-    const link = fakeLink(async (method) => (method === 'scan' ? [] : undefined))
+    const link = fakeLink(async (method) => (method === 'scan' ? { rows: [] } : undefined))
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -98,7 +98,7 @@ describe('WorkerRegistry live previews', () => {
       const link = fakeLink(async (method) => {
         if (method !== 'scan') return undefined
         if (second) await scanGate
-        return []
+        return { rows: [] }
       })
       link.onExit = vi.fn((fn: () => void) => {
         if (!second) exit = fn
@@ -130,7 +130,7 @@ describe('WorkerRegistry live previews', () => {
   it('asks the hosting worker for the snapshot', async () => {
     const snapshot = [{ lane: 'main', effectId: 'e1', text: 'so far', thinking: '' }]
     const command = vi.fn(async (method: string) => {
-      if (method === 'scan') return []
+      if (method === 'scan') return { rows: [] }
       if (method === 'previewSnapshot') return snapshot
       return undefined
     })

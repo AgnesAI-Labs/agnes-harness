@@ -143,6 +143,9 @@ const TARGETS: Array<{
         defs: [
           'JsonValue',
           'ContentBlock',
+          'OmittedData',
+          'AttachmentRef',
+          'AttachmentThumbnail',
           'Actor',
           'SurfaceOp',
           'EventEnvelope',
@@ -182,6 +185,9 @@ const TARGETS: Array<{
         defs: [
           'JsonValue',
           'ContentBlock',
+          'OmittedData',
+          'AttachmentRef',
+          'AttachmentThumbnail',
           'ResolvedToolCallPolicy',
           'ExecutionDomain',
           'ToolCall',
@@ -208,6 +214,9 @@ const TARGETS: Array<{
           'JsonValue',
           'Actor',
           'ContentBlock',
+          'OmittedData',
+          'AttachmentRef',
+          'AttachmentThumbnail',
           'ToolResult',
           'PlanItems',
           'Verdict',
@@ -309,7 +318,12 @@ const TARGETS: Array<{
     schema: 'schema/jobs.json',
     out: 'gen/ts/jobs.ts',
     module: 'JobsSchema',
-    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue', 'ContentBlock'] }],
+    imports: [
+      {
+        from: 'schema/session-v1.json',
+        defs: ['JsonValue', 'ContentBlock', 'OmittedData', 'AttachmentRef', 'AttachmentThumbnail'],
+      },
+    ],
   },
   {
     schema: 'schema/authz.json',

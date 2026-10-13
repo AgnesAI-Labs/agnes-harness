@@ -1,5 +1,6 @@
 import { type ContentBlock, type EventEnvelope, toAcpPrompt } from '@agnes/protocol'
 import type { ToolKind } from '@agnes/protocol/gen/acp'
+import { acpUserBlocks } from './acp-blocks.js'
 
 // Typed against ACP's own ToolKind: a value outside it fails the outbound validation, and for an
 // approval request that means the call is refused without anyone being asked.
@@ -21,6 +22,30 @@ export const toolKind = (name: string | undefined): ToolKind =>
 
 const PLAN_STATUS: Record<string, string> = { done: 'completed', doing: 'in_progress' }
 
+type SessionUpdate = { sessionUpdate: string; payload: Record<string, unknown> }
+
+/** One `user_message_chunk` per content block; an empty message still says that something was sent. */
+function userChunks(event: EventEnvelope, d: Record<string, unknown>): SessionUpdate[] {
+  const blocks = acpUserBlocks((d.content as ContentBlock[] | undefined) ?? [], event.seq)
+  return (blocks.length > 0 ? blocks : [{ type: 'text', text: '' }]).map((content) => ({
+    sessionUpdate: 'user_message_chunk',
+    payload: { content },
+  }))
+}
+
+/**
+ * Every ACP session/update an event becomes, in order. A user message is one chunk per block - ACP
+ * carries one content block per chunk - so a message with text and images replays all of them.
+ */
+export function toSessionUpdates(event: EventEnvelope, o: { replay?: boolean } = {}): SessionUpdate[] {
+  if (event.type === 'user/message') {
+    const d = (event.data ?? {}) as Record<string, unknown>
+    return d.kind === 'runtime_context' ? [] : userChunks(event, d)
+  }
+  const one = toSessionUpdate(event, o)
+  return one ? [one] : []
+}
+
 /**
  * The event classes that have an ACP session/update form. Everything else is ours alone.
  *
@@ -28,10 +53,7 @@ const PLAN_STATUS: Record<string, string> = { done: 'completed', doing: 'in_prog
  * carry the assistant's words differently - live previews while streaming, the durable message on a
  * replay - so one of the two has to be silent in each direction or the text is said twice.
  */
-export function toSessionUpdate(
-  event: EventEnvelope,
-  o: { replay?: boolean } = {},
-): { sessionUpdate: string; payload: Record<string, unknown> } | null {
+export function toSessionUpdate(event: EventEnvelope, o: { replay?: boolean } = {}): SessionUpdate | null {
   const d = (event.data ?? {}) as Record<string, unknown>
   switch (event.type) {
     case 'assistant/message': {
@@ -58,15 +80,7 @@ export function toSessionUpdate(
       // would misattribute this exactly as badly as user_message_chunk does - so this gets the same
       // "no representation on this surface" treatment as the other UINode-consuming renderers.
       if (d.kind === 'runtime_context') return null
-      return {
-        sessionUpdate: 'user_message_chunk',
-        payload: {
-          content: toAcpPrompt((d.content as ContentBlock[] | undefined) ?? [])[0] ?? {
-            type: 'text',
-            text: '',
-          },
-        },
-      }
+      return userChunks(event, d)[0] ?? null
     case 'tool/call':
       return {
         sessionUpdate: 'tool_call',

@@ -82,6 +82,60 @@ describe('WorkerLink command settlement', () => {
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
 
+  it('hands a record frame to its observer and counts every byte received from the worker', async () => {
+    const socket = new FakeSocket()
+    const records: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onRecord: (sessionKey, record) => records.push([sessionKey, record]),
+    })
+    expect(link.receivedBytes()).toBe(0)
+    const frame = encodeFrame({
+      kind: 'record',
+      sessionKey: 'a',
+      record: { kind: 'session.open', detail: { lastSeq: 3 } },
+    })
+    socket.emit('data', frame)
+    await vi.waitFor(() => expect(records).toEqual([['a', { kind: 'session.open', detail: { lastSeq: 3 } }]]))
+    expect(link.receivedBytes()).toBe(frame.length)
+    socket.emit(
+      'data',
+      encodeFrame({ kind: 'record', sessionKey: 'a', record: { kind: 'daemon.crashed', detail: {} } }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(records).toHaveLength(1)
+    socket.emit('data', encodeFrame({ kind: 'record', record: { kind: 'session.open', detail: {} } }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+  })
+
+  it('hands open progress to its observer and ignores a malformed one', async () => {
+    const socket = new FakeSocket()
+    const seen: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onProgress: (sessionKey, progress) => seen.push([sessionKey, progress]),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({ kind: 'progress', sessionKey: 'a', phase: 'verify', done: 500, total: 900 }),
+    )
+    await vi.waitFor(() => expect(seen).toEqual([['a', { phase: 'verify', done: 500, total: 900 }]]))
+    for (const bad of [
+      { phase: 'read', done: 1, total: 2 },
+      { phase: 'fold', done: -1, total: 2 },
+      { phase: 'fold', done: 1.5, total: 2 },
+      { phase: 'fold', done: '1', total: 2 },
+    ])
+      socket.emit('data', encodeFrame({ kind: 'progress', sessionKey: 'a', ...bad }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(seen).toHaveLength(1)
+    expect(link.alive).toBe(true)
+    socket.emit('data', encodeFrame({ kind: 'progress', phase: 'fold', done: 1, total: 2 }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+  })
+
   it('does not settle a later reply before an earlier event projection finishes', async () => {
     let release: (() => void) | undefined
     const projected = new Promise<void>((resolve) => {
@@ -230,6 +284,40 @@ describe('WorkerLink command settlement', () => {
     if ('error' in reply) await expect(command).rejects.toEqual(reply.error)
     else await expect(command).resolves.toEqual(reply.result)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('carries the error code of an interrupted session to the failure observer', async () => {
+    const socket = new FakeSocket()
+    const failures: Array<{ key: string; code: unknown; message: string }> = []
+    new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onSessionFailure: (key, error) =>
+        failures.push({ key, code: (error as { code?: unknown }).code, message: (error as Error).message }),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'session.interrupted',
+        sessionKey: 'a',
+        reason: 'ledger digest mismatch',
+        code: 'E_LEDGER_INTEGRITY',
+      }),
+    )
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'session.interrupted',
+        sessionKey: 'b',
+        reason: 'tail failed',
+        code: 'not a code',
+      }),
+    )
+    await vi.waitFor(() => expect(failures).toHaveLength(2))
+    expect(failures).toEqual([
+      { key: 'a', code: 'E_LEDGER_INTEGRITY', message: 'ledger digest mismatch' },
+      { key: 'b', code: undefined, message: 'tail failed' },
+    ])
   })
 
   it('clears every pending deadline when the link closes', async () => {

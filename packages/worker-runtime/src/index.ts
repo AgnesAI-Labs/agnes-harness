@@ -1,4 +1,6 @@
+export * from './attachment-read.js'
 export * from './commands.js'
+export * from './export-raw.js'
 export * from './frames.js'
 export * from './framing.js'
 export * from './hosted-sessions.js'

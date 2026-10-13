@@ -47,8 +47,19 @@ Built-in templates provide the base. User profiles and the Host configuration ov
 | `policy.capabilityCeiling` | Capability ceiling; excludes services by default |
 | `policy.workspacePackages` | deny or require-project-trust |
 | `computerUse` | Enablement, application access, capture, and retention limits |
+| `attachments.storeByReference` | Default `true`: new message attachments are written once to the attachment store under the data directory, and the session keeps a small reference. `false` writes new attachments into the session again; sessions that already hold references stay readable. User profile only. When a package other than `@agnes/base` owns the `artifacts` seam, attachments stay in the session. Downgrading to a release that predates attachment references is not supported: export sessions first |
 | `extensionIsolation` | Isolation requests and unavailable behavior; declaration alone does not prove enforcement |
 | `limits` | Supported dotted keys for daemon/worker/jobs/shutdown and other limits |
+
+Attachment storage reads five `limits` keys; a missing or invalid value uses the default:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `attachments.max_upload_bytes` | 2 GiB | Largest single attachment |
+| `attachments.session_quota_bytes` | 8 GiB | Attachment bytes one session may reference |
+| `attachments.global_quota_bytes` | 64 GiB | Attachment bytes in the store |
+| `attachments.min_free_bytes` | 2 GiB | Free disk space that must remain after a write |
+| `attachments.orphan_grace_ms` | 3 days | How long an attachment no session references is kept |
 
 Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host/src/profile/types.ts), [local-dev template](../../packages/host/templates/local-dev.yaml), and [enterprise template](../../packages/host/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 

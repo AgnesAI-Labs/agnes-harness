@@ -22,13 +22,20 @@ import {
   type PermissionOutcome,
   type PermissionRequest,
   type Session,
+  type SessionLoadingNotice,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { createAntdRoot, NotificationHost, type Notifier, type NotifyInput } from '@agnes/web-ui'
-import { attachmentErrorNotice } from '@agnes/web-units'
+import {
+  attachmentErrorNotice,
+  type ComposerAttachmentBlock,
+  type ComposerReferenceBlock,
+  type ComposerUploadTarget,
+} from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
+import { createStoredHistory, type StoredHistoryView } from './app/stored-history.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
 import { liveApprovalCard } from './approval-card.js'
@@ -130,6 +137,13 @@ reconnectNotice.id = 'reconnect-notice'
 reconnectNotice.setAttribute('role', 'status')
 reconnectNotice.hidden = true
 notice.after(reconnectNotice)
+// Says that what the transcript shows is the stored history, read-only and unverified, while a slow
+// open runs or after one failed.
+const storedHistoryNotice = document.createElement('p')
+storedHistoryNotice.id = 'stored-history-notice'
+storedHistoryNotice.setAttribute('role', 'status')
+storedHistoryNotice.hidden = true
+reconnectNotice.after(storedHistoryNotice)
 const reconnect = createReconnectController({
   probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   reload: () => location.reload(),
@@ -338,7 +352,20 @@ const clientModules = await startClientModules({
         }),
     },
   },
-  transcript: { nodeHost: 'react', onFork: forkTurn },
+  transcript: {
+    nodeHost: 'react',
+    onFork: forkTurn,
+    // Images sent by reference are read back from the session shown, a window at a time.
+    readAttachment: (input, signal) => {
+      const session = current
+      if (!session) return Promise.reject(new Error(t('app.trace.noSession')))
+      return client.call(
+        '_agnes/v1/session.attachmentRead',
+        { sessionId: session.id, ...input },
+        signal ? { signal } : {},
+      )
+    },
+  },
   conversationContainer: conversation,
   topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
   approvalContainer: document.getElementById('approval') ?? undefined,
@@ -356,6 +383,15 @@ const clientModules = await startClientModules({
     onSendNow: (itemId) => handleQueuedAction(itemId, 'sendNow'),
     onRemoveQueued: (itemId) => handleQueuedAction(itemId, 'removeQueued'),
     onWorkspace: handleComposerWorkspace,
+    // Attachments are uploaded by reference into the open session when the daemon takes uploads. Before
+    // a session exists they wait for the send to create one; only an older daemon gets them inline.
+    upload: {
+      open: async () => {
+        if (!client.serverCapabilities.attachmentRefs) return undefined
+        const session = current
+        return session ? uploadTarget(session.id) : 'deferred'
+      },
+    },
   },
   traceContainer: document.getElementById('trace-panel') ?? undefined,
   trace: {
@@ -368,6 +404,8 @@ const clientModules = await startClientModules({
       if (session.id !== sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
     },
+    readAttachment: (sessionId, input, signal) =>
+      client.call('_agnes/v1/session.attachmentRead', { sessionId, ...input }, signal ? { signal } : {}),
   },
   rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
   settingsPaneContainer: document.getElementById('config') ?? undefined,
@@ -552,6 +590,55 @@ const sessionActions = createSessionActions({
   translate: t,
 })
 let sessionRecovery: { id: string; message: string } | undefined
+// What the status line says while a slow open is still going; unset, it says the session is preparing.
+let loadingStatus: string | undefined
+const storedHistory = createStoredHistory({
+  storedOpening: (id) => client.session.storedOpening(id),
+  show: showStoredHistory,
+  clear: clearStoredHistory,
+})
+function showStoredHistory(view: StoredHistoryView): void {
+  const timeline = view.timeline as UITimeline
+  renderer.reset()
+  renderer.render(webView(timeline, undefined, t).nodes, timeline.turns, { hasEarlier: false })
+  storedHistoryNotice.textContent = view.reason
+    ? t('app.storedHistory.failed', { reason: view.reason })
+    : t('app.storedHistory.loading')
+  storedHistoryNotice.hidden = false
+}
+function clearStoredHistory(): void {
+  storedHistoryNotice.hidden = true
+  storedHistoryNotice.textContent = ''
+}
+/** After 2 s of loading, the status line says how far the open has got instead of only "preparing". */
+function loadingProgress(epoch: number): { update(p: SessionLoadingNotice): void; stop(): void } {
+  let last: SessionLoadingNotice | undefined
+  let visible = false
+  const paint = () => {
+    if (epoch !== selection) return
+    loadingStatus = loadingText(last)
+    renderControls()
+  }
+  const timer = setTimeout(() => {
+    visible = true
+    paint()
+  }, 2_000)
+  return {
+    update(p) {
+      last = p
+      if (visible) paint()
+    },
+    stop() {
+      clearTimeout(timer)
+      if (epoch === selection) loadingStatus = undefined
+    },
+  }
+}
+function loadingText(p: SessionLoadingNotice | undefined): string {
+  if (!p || p.phase === 'open' || p.total <= 0) return t('app.loading.still')
+  const percent = Math.min(100, Math.floor((p.done / p.total) * 100))
+  return t(`app.loading.${p.phase}`, { percent: String(percent) })
+}
 function errorMessage(error: unknown): string {
   // 附件与图片校验错误自带 code，先按词条本地化；其余错误沿用后台返回的文案。
   // 这一步必须在 errorNotice 之前：它只看得见 error.data 里的 code/reason。
@@ -676,7 +763,8 @@ function renderControls(): void {
   const available = connected
   const busy = projection ? webView(projection, undefined, t).busy : false
   const images = composerRuntime.getAttachmentBlocks()
-  const hasInput = composerRuntime.getDraft().trim().length > 0 || images.length > 0
+  const hasInput =
+    composerRuntime.getDraft().trim().length > 0 || images.length > 0 || composerRuntime.hasDeferredUploads()
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
   const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
@@ -836,7 +924,7 @@ function renderControls(): void {
   composerRuntime.render(composerView)
   updateSidebar()
   if (sessionPending) {
-    topbarRuntime.setStatus(t('topbar.preparing'), 'loading')
+    topbarRuntime.setStatus(loadingStatus ?? t('topbar.preparing'), 'loading')
   }
   conversationRuntime.setEmptyStateVisible(shouldShowEmptyState(projection))
   renderNewSessionControls()
@@ -1135,8 +1223,12 @@ async function open(
   } = {},
 ): Promise<void> {
   const epoch = ++selection
+  // A status left by the open this one replaces would otherwise show until this one reports.
+  loadingStatus = undefined
   if (!options.preserveSending) submissionGeneration++
   let selectionReady = false
+  // Only a session/load that did not finish falls back to the stored history.
+  let loadPending = false
   sessionPending = true
   draftingNew = false
   renderControls()
@@ -1196,9 +1288,26 @@ async function open(
         context.signal.addEventListener('abort', reject, { once: true })
         render()
       })
-    const binding = options.created
-      ? bindWebSession(options.created, permission)
-      : await loadWebSession((sessionId, options) => client.session.load(sessionId, options), id, permission)
+    let binding: Awaited<ReturnType<typeof loadWebSession>>
+    if (options.created) binding = bindWebSession(options.created, permission)
+    else {
+      // A slow open shows the stored history read-only after a while; the live session replaces it.
+      storedHistory.started(id)
+      loadPending = true
+      const progress = loadingProgress(epoch)
+      try {
+        binding = await loadWebSession(
+          (sessionId, loadOptions) =>
+            client.session.load(sessionId, { ...loadOptions, onLoading: progress.update }),
+          id,
+          permission,
+        )
+      } finally {
+        progress.stop()
+      }
+      loadPending = false
+      if (epoch === selection) storedHistory.succeeded()
+    }
     if (epoch !== selection) {
       binding.offPermission?.()
       return
@@ -1317,9 +1426,15 @@ async function open(
       sessionPending = false
       render()
       if (!options.created && !options.preserveSending) {
+        // The awaits above can see another session selected; this failure is then not shown at all.
+        if (epoch !== selection) return
+        // What storage holds is still worth reading when the full open cannot finish.
+        if (loadPending && (await storedHistory.failed(id, errorMessage(error)))) return
+        if (epoch !== selection) return
         showSessionRecovery(error, id)
         return
       }
+      if (loadPending && epoch === selection) storedHistory.succeeded()
     }
     throw error
   }
@@ -1471,6 +1586,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (sessionPending || sending) return
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
+  // A draft replaces whatever stored history an earlier open left on screen.
+  storedHistory.succeeded()
+  loadingStatus = undefined
   const epoch = ++selection
   const previous = current
   if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
@@ -2034,14 +2152,56 @@ function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], f
     }),
   ).byteLength
 }
+/**
+ * Where the new session takes no uploads after all, the waiting attachments travel inline, under the
+ * same checks an inline send gets.
+ */
+async function deferredInline(): Promise<readonly ContentBlock[]> {
+  const blocks = await composerRuntime.inlineDeferred()
+  validateUserAttachments(blocks)
+  decodeSafeImages(
+    blocks.filter(
+      (block): block is Extract<ComposerAttachmentBlock, { type: 'image' }> =>
+        block.type === 'image' && 'data' in block,
+    ),
+    USER_MESSAGE_IMAGE_LIMITS,
+  )
+  if (imageSubmissionFrameBytes('s'.repeat(512), [...blocks], false) > MAX_FRAME_BYTES)
+    throw new Error(t('app.error.messageTooLarge'))
+  return blocks
+}
+/** The open session's upload channel, or undefined where the daemon keeps attachments inline. */
+async function uploadTarget(sessionId: string): Promise<ComposerUploadTarget | undefined> {
+  try {
+    const { limits } = await client.call<{ limits: { maxBytes: number; maxConcurrent: number } }>(
+      '_agnes/v1/attachment.upload',
+      { operation: 'limits', sessionId },
+    )
+    return {
+      sessionId,
+      maxBytes: limits.maxBytes,
+      maxConcurrent: limits.maxConcurrent,
+      upload: (input, o) => client.attachments.upload(sessionId, input, o),
+      cancel: (uploadId) => client.attachments.cancel(sessionId, uploadId),
+    }
+  } catch {
+    return undefined
+  }
+}
 function submitComposer(): void {
   const originalDraft = composerRuntime.getDraft()
   const input = originalDraft.trim()
   const attachments = composerRuntime.getAttachmentBlocks()
   const images = attachments.filter((block) => block.type === 'image')
+  // Only inline attachments carry bytes in the message; a reference is a few hundred bytes.
+  const inlineImages = images.filter(
+    (block): block is Extract<ComposerAttachmentBlock, { type: 'image' }> => 'data' in block,
+  )
+  // Attachments added before the session existed are uploaded once the send has created it.
+  const deferred = composerRuntime.hasDeferredUploads()
   let session = current
   if (
-    (!input && attachments.length === 0) ||
+    (!input && attachments.length === 0 && !deferred) ||
     composerRuntime.hasPendingImages() ||
     !configured ||
     !selectedModelAvailable() ||
@@ -2057,7 +2217,7 @@ function submitComposer(): void {
   )
   try {
     validateUserAttachments(attachments)
-    decodeSafeImages(images, USER_MESSAGE_IMAGE_LIMITS)
+    decodeSafeImages(inlineImages, USER_MESSAGE_IMAGE_LIMITS)
   } catch (error) {
     showError(error)
     return
@@ -2067,10 +2227,11 @@ function submitComposer(): void {
     showError(new Error(imageError))
     return
   }
-  const content: ContentBlock[] = [...(input ? [{ type: 'text' as const, text: input }] : []), ...attachments]
+  const text: ContentBlock[] = input ? [{ type: 'text' as const, text: input }] : []
+  let content: ContentBlock[] = [...text, ...attachments]
   const busy = projection?.opState !== null && projection?.opState !== undefined
   if (
-    attachments.length > 0 &&
+    attachments.some((block) => 'data' in block) &&
     imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy) > MAX_FRAME_BYTES
   ) {
     showError(new Error(t('app.error.messageTooLarge')))
@@ -2089,7 +2250,8 @@ function submitComposer(): void {
   sending = true
   awaitingPromptStart = !busy
   composerRuntime.setDraft('')
-  composerRuntime.clearImageBlocks()
+  // Waiting attachments stay in the composer, with their progress, until they are uploaded below.
+  if (!deferred) composerRuntime.clearImageBlocks()
   sessionStorage.removeItem(composerDraftKey)
   composerRuntime.resize()
   renderer.pinToBottom()
@@ -2148,6 +2310,14 @@ function submitComposer(): void {
       throw new Error(t('app.error.connectionChanged'))
     if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
     if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
+    if (deferred) {
+      // Now that the session exists, its attachments go into it. A failed one stays with its Retry.
+      const target = await uploadTarget(session.id)
+      const sent = target ? await composerRuntime.uploadDeferred(target) : await deferredInline()
+      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
+      content = [...text, ...sent]
+      composerRuntime.clearImageBlocks()
+    }
     const result = await (busy
       ? session.followUp(content)
       : session.prompt(content, {
@@ -2177,7 +2347,13 @@ function submitComposer(): void {
             sessionStorage.setItem(composerDraftKey, restoredDraft)
           }
           if (!composerRuntime.getAttachmentBlocks().length && !composerRuntime.hasPendingImages())
-            composerRuntime.restoreAttachmentBlocks(attachments)
+            // What was sent, uploaded references included, comes back for another try.
+            composerRuntime.restoreAttachmentBlocks(
+              content.filter(
+                (block): block is ComposerAttachmentBlock | ComposerReferenceBlock =>
+                  block.type === 'image' || block.type === 'file',
+              ),
+            )
           composerRuntime.resize()
         }
         showError(error)
@@ -2237,9 +2413,53 @@ client.on('generationChanged', (payload) => {
   if (!forCurrent(payload)) return
   void live?.resync().catch(showError)
 })
+/**
+ * The daemon closed the open session for good (its stored history failed the integrity check, or a
+ * reconnect found it written by another build): stop following it, keep no composer on it, and show
+ * the stored history read-only with why. Where storage cannot be read, the transcript already on
+ * screen stays, labelled the same way: it was built from the history that failed.
+ */
+function refuseCurrentSession(id: string, code: unknown): void {
+  const session = current
+  if (!session || session.id !== id || sessionPending) return
+  const reason =
+    code === 'LEGACY_LEDGER_FORMAT'
+      ? 'legacy-ledger-format'
+      : code === 'NEWER_LEDGER_FORMAT'
+        ? 'newer-ledger-format'
+        : 'ledger-integrity'
+  const message = errorNotice('', undefined, undefined, undefined, reason, t)
+  const epoch = selection
+  const shown = projection
+  const stop = stopEvents
+  stopEvents = undefined
+  live = undefined
+  current = undefined
+  clientModules.session.setSession(undefined)
+  offPermission?.()
+  offPermission = undefined
+  liveApproval?.finish({ verdict: 'rejected' })
+  liveApproval = undefined
+  sending = false
+  stopping = false
+  awaitingPromptStart = false
+  projection = undefined
+  void stopWithTimeout(stop)
+  void session.detach().catch(() => undefined)
+  renderControls()
+  storedHistory.started(id)
+  void storedHistory.failed(id, message, shown?.sessionId === id ? shown : undefined).then((ok) => {
+    if (!ok && epoch === selection) notify({ text: message, kind: 'error' })
+  })
+}
 // 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
 client.on('notice', (payload) => {
-  const incoming = payload as { kind?: unknown; detail?: unknown }
+  const incoming = payload as { kind?: unknown; detail?: unknown; sessionId?: unknown; code?: unknown }
+  // integrity_failed comes from the daemon; session-refused from the SDK, when a reconnect is refused.
+  if (incoming.kind === 'integrity_failed' && typeof incoming.sessionId === 'string')
+    return refuseCurrentSession(incoming.sessionId, 'E_LEDGER_INTEGRITY')
+  if (incoming.kind === 'session-refused' && typeof incoming.sessionId === 'string')
+    return refuseCurrentSession(incoming.sessionId, incoming.code)
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null

@@ -1,9 +1,17 @@
-import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
+import {
+  defineTool,
+  type ResolvedToolCallPolicy,
+  type ToolContext,
+  type ToolResult,
+} from '@agnes/extension-api'
 import { observe, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { readWorkspaceImage } from './local-image.js'
+import { saveAttachment } from './save-to.js'
 import { ReadParams } from './schemas.js'
+
+export { SAVE_TO_MAX_BYTES } from './save-to.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
 // large file would both hold the whole file in the process and push the whole file into the
@@ -170,7 +178,7 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). A workspace PNG or JPEG file (up to 20 MiB and 64 megapixels, single frame) becomes an image for the model when the model supports images; it is downscaled to the model limit, and max_edge lowers its longest edge further. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details.',
+    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). A workspace PNG or JPEG file (up to 20 MiB and 64 megapixels, single frame) becomes an image for the model when the model supports images; it is downscaled to the model limit, and max_edge lowers its longest edge further. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace; a target that already exists is refused.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -182,7 +190,29 @@ export const readTool = defineTool({
     deferLoading: false,
     requiresApproval: 'never',
   },
+  policyVersion: 'read-save-to-v2',
+  // A call with saveTo writes a file into the workspace, so it is classified exactly as `write` is:
+  // not read-only and destructive, so the person is asked in manual mode as for `write` (and a
+  // tainted turn or an unavailable sandbox is handled as for any writing call), and never replayed
+  // after a crash, so an interrupted copy is reported as unknown rather than run again.
+  classify: (args): ResolvedToolCallPolicy =>
+    args.saveTo === undefined
+      ? {
+          isReadOnly: true,
+          isDestructive: false,
+          replay: 'safe',
+          requiresApproval: 'never',
+          approvalScopes: [],
+        }
+      : {
+          isReadOnly: false,
+          isDestructive: true,
+          replay: 'never',
+          requiresApproval: 'destructive',
+          approvalScopes: [],
+        },
   async execute(args, ctx): Promise<ToolResult> {
+    if (args.saveTo !== undefined) return saveAttachment(ctx, args.path, args.saveTo)
     if (args.path.startsWith('session-file://')) {
       try {
         const file = await ctx.session.readAttachment?.({ ...args, maxBytes: ctx.outputMaxBytes })

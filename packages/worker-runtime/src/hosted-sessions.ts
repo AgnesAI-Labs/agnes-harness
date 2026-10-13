@@ -1,14 +1,17 @@
-import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
+import { type Host, type HostSession, leanEvent, type WorkspaceBinding } from '@agnes/host'
 import type { WorkerGeneration } from '@agnes/protocol'
 import { assertBatchItemConfinement } from './batch-confinement.js'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
+import { releaseRawExport } from './export-raw.js'
 import {
   type EventFrame,
   type PreviewFrame,
+  type ProgressFrame,
   parseWorkspaceBinding,
   type SessionCommandFrame,
   type SessionOpenFrame,
   type SessionOpenResult,
+  sessionHash,
 } from './frames.js'
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
@@ -22,6 +25,8 @@ type HostedSession = {
   inflight: number
   lastActivityAt: number
 }
+
+const ERROR_CODE = /^E_[A-Z0-9_]{1,64}$/
 
 /** What a hibernated session keeps: enough to reopen it, and nothing that grants authority. */
 type HibernatedStub = {
@@ -151,14 +156,23 @@ export class HostedSessions {
       this.assertAuthority(hosted.session, binding, parent)
       return this.describe(hosted.session)
     }
+    const openedAt = this.clock()
     const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host.createSession({
-        key: frame.sessionKey,
-        binding,
-        ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-        ...(parent ? { parent } : {}),
-      })
+      const session = await this.options.host
+        .createSession({
+          key: frame.sessionKey,
+          binding,
+          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+          ...(parent ? { parent } : {}),
+          onOpenProgress: this.progressSender(frame.sessionKey),
+          onFullVerify: this.fullVerifyRecorder(frame.sessionKey),
+        })
+        .catch((error: unknown) => {
+          this.recordOpenFailed(frame.sessionKey, error, openedAt)
+          throw error
+        })
       const hosted = this.adopt(frame.sessionKey, session)
+      this.recordOpen(frame.sessionKey, session, openedAt)
       return hosted
     })
     this.opening.set(frame.sessionKey, opening)
@@ -203,14 +217,17 @@ export class HostedSessions {
             kind: 'event',
             sessionKey,
             seq: event.seq,
-            event,
+            // Lean, like scan replies: a large inline attachment stays in this process's ledger.
+            event: leanEvent(event as never) as typeof event,
           } satisfies EventFrame)
       },
       onError: (error) => {
+        const code = (error as { code?: unknown } | null)?.code
         this.options.send({
           kind: 'session.interrupted',
           sessionKey,
           reason: error instanceof Error ? error.message : String(error),
+          ...(typeof code === 'string' && ERROR_CODE.test(code) ? { code } : {}),
         })
       },
     })
@@ -328,6 +345,7 @@ export class HostedSessions {
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
     })
     hosted.tail?.abort()
+    releaseRawExport(session)
     const done = (async () => {
       try {
         await session.close()
@@ -375,13 +393,21 @@ export class HostedSessions {
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
       assertBatchItemConfinement(this.options.host, key)
-      const session = await this.options.host.createSession({
-        key,
-        binding: stub.binding,
-        preset: stub.preset,
-      })
+      const session = await this.options.host
+        .createSession({
+          key,
+          binding: stub.binding,
+          preset: stub.preset,
+          onOpenProgress: this.progressSender(key),
+          onFullVerify: this.fullVerifyRecorder(key),
+        })
+        .catch((error: unknown) => {
+          this.recordOpenFailed(key, error, started)
+          throw error
+        })
       this.stubs.delete(key)
       const hosted = this.adopt(key, session)
+      this.recordOpen(key, session, started)
       if (stub.tailFrom !== undefined) this.follow(key, hosted, stub.tailFrom)
       return hosted
     })
@@ -403,6 +429,77 @@ export class HostedSessions {
     const hosted: HostedSession = { session, aborts: new Map(), inflight: 0, lastActivityAt: this.clock() }
     this.sessions.set(key, hosted)
     return hosted
+  }
+
+  private recordOpen(sessionKey: string, session: HostSession, startedAt: number): void {
+    try {
+      // A verified head past the stored head is the only trace rows were removed from the end of the
+      // ledger (the chain cannot show it); the open replaces that checkpoint, so say so here.
+      if (session.d.log.openStats.checkpoint.reason === 'beyond-head')
+        this.log(
+          sessionKey,
+          'warn',
+          `ledger ends at seq ${session.lastSeq}, before its verified checkpoint: rows after it may have been removed`,
+        )
+      this.record(sessionKey, {
+        ...session.d.log.openStats,
+        wallMs: this.clock() - startedAt,
+        outcome: 'ok',
+      })
+    } catch {
+      /* diagnostics must not change the outcome */
+    }
+  }
+
+  private recordOpenFailed(sessionKey: string, error: unknown, startedAt: number): void {
+    const code = (error as { code?: unknown } | null)?.code
+    this.record(sessionKey, {
+      wallMs: this.clock() - startedAt,
+      outcome: 'failed',
+      ...(typeof code === 'string' ? { code } : {}),
+    })
+  }
+
+  private record(
+    sessionKey: string,
+    detail: Record<string, unknown>,
+    kind: 'session.open' | 'session.verify_full' = 'session.open',
+  ): void {
+    try {
+      this.options.send({
+        kind: 'record',
+        sessionKey,
+        record: { kind, detail: { session: sessionHash(sessionKey), ...detail } },
+      })
+    } catch {
+      /* diagnostics must not change the outcome */
+    }
+  }
+
+  /** At most one progress frame a second per open, plus the one that finishes a phase. */
+  private progressSender(
+    sessionKey: string,
+  ): (p: { phase: 'verify' | 'fold'; done: number; total: number }) => void {
+    let last: number | undefined
+    return (p) => {
+      const now = this.clock()
+      if (last !== undefined && now - last < 1_000 && p.done < p.total) return
+      last = now
+      try {
+        this.options.send({ kind: 'progress', sessionKey, ...p } satisfies ProgressFrame)
+      } catch {
+        /* progress must not change the open */
+      }
+    }
+  }
+
+  /**
+   * Records how the background verification of a session opened from a checkpoint ended. A failure
+   * also seals the session, which a tail following it reports to the client as `session.interrupted`.
+   */
+  private fullVerifyRecorder(sessionKey: string) {
+    return (r: { ms: number; rows: number; bytes: number; outcome: 'ok' | 'failed'; seq?: number }): void =>
+      this.record(sessionKey, { ...r }, 'session.verify_full')
   }
 
   private log(sessionKey: string, level: 'info' | 'warn', message: string): void {
@@ -496,6 +593,7 @@ export class HostedSessions {
       if (!hosted) return
       this.sessions.delete(sessionKey)
       hosted.tail?.abort()
+      releaseRawExport(hosted.session)
       for (const abort of hosted.aborts.values()) abort.abort()
       this.options.channel.closeSession(sessionKey)
       try {

@@ -90,6 +90,7 @@ export type {
   WorkspaceListParams,
   WorkspaceListResult,
 } from '@agnes/protocol'
+export * from './attachment-upload.js'
 export { type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 export * from './branding.js'
 export type {
@@ -100,6 +101,7 @@ export type {
   GenerationChangedEvent,
   InitializeInfo,
   ReconnectedEvent,
+  SessionLoadOptions,
 } from './client.js'
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting

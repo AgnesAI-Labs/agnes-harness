@@ -2,6 +2,7 @@ import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { requireChildControl } from '../src/child/store.js'
 import { Kernel } from '../src/kernel.js'
+import { forkBaseProviders } from '../src/log/fork-seed.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import type { ScanQuery, StorageAdapter } from '../src/log/storage.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -146,8 +147,37 @@ describe('what creating a delegated child still detects', () => {
   })
 })
 
+describe('a delegated child in a newer ledger format', () => {
+  it('is refused on the live-parent path before any of its rows are read', async () => {
+    const storage = new MemoryStorage({ clock: () => CLOCK })
+    const childReads: string[] = []
+    const newer: StorageAdapter = Object.create(storage, {
+      open: {
+        value: async (key: string, claim: { writerRunId: string; ttlMs: number }) => {
+          const opened = await storage.open(key, claim)
+          return opened.parent ? { ...opened, formatVersion: 3 } : opened
+        },
+      },
+      scanIntegrity: {
+        value: async (key: string, q: { fromSeq: Seq; toSeq: Seq; limit: number }) => {
+          if (key !== 'parent') childReads.push(key)
+          return storage.scanIntegrity(key, q)
+        },
+      },
+    })
+    const { k, parent } = await parentReady(newer, script())
+    // The parent's fork point is in hand, so the child opens from the live parent, not cold.
+    expect(forkBaseProviders.has(parent.d.log)).toBe(true)
+    await expect(
+      createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }),
+    ).rejects.toMatchObject({ code: 'E_FORMAT', detail: { reason: 'newer-ledger-format', formatVersion: 3 } })
+    expect(childReads).toEqual([])
+    await k.close()
+  })
+})
+
 describe('what creating a delegated child no longer detects (approved)', () => {
-  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and any cold open refuses it', async () => {
+  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and a cold open refuses it once the history is verified', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const provider = script()
     const { k, parent, c } = await parentReady(storage, provider)
@@ -173,14 +203,26 @@ describe('what creating a delegated child no longer detects (approved)', () => {
     expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
     const childKey = child.key
     await k.close()
+    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
+    // is hashed again; the background verification refuses the row and seals the session.
     const again = kernel(storage, fakeProvider([]))
-    await expect(again.session('parent', { ...sessionOpts, writerRunId: 'r3' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(again.session(childKey, { ...sessionOpts, writerRunId: 'r4' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
+    for (const [key, writerRunId] of [
+      ['parent', 'r3'],
+      [childKey, 'r4'],
+    ] as const) {
+      const reopened = await again.session(key, { ...sessionOpts, writerRunId })
+      await expect(reopened.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    }
     await again.close()
+    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
+    const third = kernel(storage, fakeProvider([]))
+    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    await third.close()
   })
 
   it('a rewritten parent row after the boundary: outside the child, as before', async () => {

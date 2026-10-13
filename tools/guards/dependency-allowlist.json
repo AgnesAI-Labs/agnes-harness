@@ -85,6 +85,7 @@
   ],
   "@agnes/daemon": [
     "@agnes/protocol",
+    "@agnes/protocol-validation",
     "@agnes/host",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",

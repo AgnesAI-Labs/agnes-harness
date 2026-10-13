@@ -6,12 +6,15 @@ import {
   ActivationInProgressError,
   type ConfigurationService,
   composeSecrets,
+  createAttachmentStore,
   createExtensionActivationBarrier,
   createFileAudit,
   createPlatform,
   createSecretsEnv,
   createSecretsFile,
   createSqliteStorage,
+  createStoredOpeningReader,
+  createUserAttachmentPort,
   defaultProcessIdentity,
   type ExtensionActivationBarrier,
   type Host,
@@ -23,6 +26,7 @@ import {
   type ResolvedPreset,
   type ResolvedProfile,
   resolveWorkspaceDirectory,
+  type StoredOpeningReader,
   sessionsDbPath,
 } from '@agnes/host'
 import {
@@ -92,10 +96,16 @@ import {
   requireSessionOwner,
 } from '../local/methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '../local/methods/artifacts.js'
+import {
+  type AttachmentUploadService,
+  createAttachmentUploadService,
+  registerAttachmentUpload,
+} from '../local/methods/attachment-upload.js'
 import { registerConfiguration } from '../local/methods/config.js'
 import { registerDiagnostics } from '../local/methods/diagnostics.js'
 import { executeJournaledEffect, registerExtensions } from '../local/methods/extensions.js'
 import { registerSessionPreferences } from '../local/methods/session-preferences.js'
+import { registerStoredOpening } from '../local/methods/stored-opening.js'
 import { registerSurfaces } from '../local/methods/surfaces.js'
 import { registerWorkspaces } from '../local/methods/workspaces.js'
 import { NoticeSink } from '../local/notice.js'
@@ -136,7 +146,7 @@ import {
 } from '../packages/index.js'
 import { discoverLocalExamples } from '../packages/local-examples.js'
 import { pluginProposalSourceAdapter } from '../packages/plugin-source.js'
-import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
+import type { OpenProgressUpdate, PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import {
   createResourceControlService,
   createResourceControlStore,
@@ -401,6 +411,15 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
   previewSnapshot(key: string): Promise<PreviewSnapshotEntry[]> {
     return this.inner.previewSnapshot(key)
   }
+  recordLoad(key: string, timing: { acpReplayMs: number }): void {
+    this.inner.recordLoad(key, timing)
+  }
+  onOpenProgress(key: string, fn: (p: OpenProgressUpdate) => void): Disposer {
+    return this.inner.onOpenProgress(key, fn)
+  }
+  recordLoadFailed(key: string, failure: { elapsedMs: number; error: unknown }): void {
+    this.inner.recordLoadFailed(key, failure)
+  }
   preset(key: string): Promise<string | null> {
     return this.inner.require(key).session.currentPreset()
   }
@@ -651,6 +670,16 @@ export type StartSupervisorOptions = {
   jobTables?: Pick<Tables, 'table'>
   /** Dedicated-schema capability for the fail-closed artifact authority index. */
   artifactAuthorityTable?: TableHandle
+  /**
+   * Reads a session's latest history straight from storage, read-only and unverified, for a client
+   * whose full open is slow or failed. Absent, `session.storedOpening` is refused.
+   */
+  storedOpening?: Pick<StoredOpeningReader, 'opening'>
+  /**
+   * Chunked attachment uploads into the attachment store, shared by every connection so an upload
+   * resumes across reconnects. Absent, every upload step is refused as unavailable.
+   */
+  attachmentUpload?: AttachmentUploadService
   /** Resolved remote credentials. Secret references are resolved only by the executable composition
    * root and never stored in the profile snapshot written for workers. */
   remoteAuth?: Omit<AuthConfig, 'transport'> & {
@@ -1136,6 +1165,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
+      onRecord: (_sessionKey, record) => o.audit?.({ kind: record.kind, detail: record.detail }),
+      onProgress: (sessionKey, progress) => registry.openProgress(sessionKey, progress),
       onLifecycle: (record) => o.audit?.(record),
       onSessionFailure: (sessionKey, error) => {
         // The reopened session reads this as a process that died; the reason only survives here.
@@ -1221,7 +1252,9 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, o.audit, (sessionId) =>
+      notices.emit('integrity_failed', { sessionId, detail: { code: 'E_LEDGER_INTEGRITY' } }),
+    )
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({
@@ -1805,6 +1838,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         authKind: 'local',
         credentialKind: 'local',
         artifactRead: artifactReadConfigured,
+        attachmentUpload: o.attachmentUpload !== undefined,
         ...(o.lockedPackageMutations !== undefined
           ? { lockedPackageMutations: o.lockedPackageMutations }
           : {}),
@@ -1870,7 +1904,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         registry: cx.registry,
         dataDir: o.config.dataDir,
       })
+      registerStoredOpening(ep, {
+        requireSessionOwner: requireSessionOwner(cx),
+        ...(o.storedOpening ? { storedOpening: o.storedOpening } : {}),
+      })
       if (artifactReadConfigured) registerArtifactRead(ep, artifactRead as ArtifactReadRpcOptions)
+      registerAttachmentUpload(ep, requireSessionOwner(cx), o.attachmentUpload)
       if (effectivePackageAdmin)
         registerPackageAdmin(
           ep,
@@ -2161,19 +2200,40 @@ export async function startProductionSupervisor(
   o: Omit<StartSupervisorOptions, 'tables' | 'jobTables' | 'artifactAuthorityTable'>,
   deps: {
     createStorage?: typeof createSqliteStorage
+    createStoredOpening?: typeof createStoredOpeningReader
     start?: typeof startSupervisor
   } = {},
 ): Promise<SupervisorHandle> {
   prepareDaemonSocketPaths(o.config)
+  const file = join(o.config.dataDir, 'sessions.db')
   const storage = (deps.createStorage ?? createSqliteStorage)({
-    file: join(o.config.dataDir, 'sessions.db'),
+    file,
     tablesDir: join(o.config.dataDir, 'tables'),
     ...(o.clock ? { clock: o.clock } : {}),
   })
+  // Opened on first use: most daemons never need it, and its read-only connection is its own.
+  let reader: StoredOpeningReader | undefined
+  const storedOpening: Pick<StoredOpeningReader, 'opening'> = {
+    opening: (sessionKey, maxNodes) => {
+      reader ??= (deps.createStoredOpening ?? createStoredOpeningReader)({ file })
+      return reader.opening(sessionKey, maxNodes)
+    },
+  }
+  const closeReader = () => {
+    try {
+      reader?.close()
+    } catch {
+      /* a read-only connection holds nothing to lose */
+    }
+    reader = undefined
+  }
+  const attachmentUpload = productionAttachmentUpload(o.profile)
   let supervisor: SupervisorHandle
   try {
     supervisor = await (deps.start ?? startSupervisor)({
       ...o,
+      storedOpening,
+      ...(attachmentUpload ? { attachmentUpload } : {}),
       jobTables: adaptHostTables(storage.tables('@agnes/daemon')),
       artifactAuthorityTable: adaptHostTables(storage.tables('@agnes/daemon/artifact-read-authority')).table(
         'artifact_read_authority',
@@ -2181,6 +2241,8 @@ export async function startProductionSupervisor(
       reclaim: storage.crashReclaim,
     })
   } catch (error) {
+    closeReader()
+    await attachmentUpload?.uploads.dispose().catch(() => undefined)
     try {
       await storage.close()
     } catch (cleanupError) {
@@ -2197,6 +2259,9 @@ export async function startProductionSupervisor(
     } catch (error) {
       supervisorError = error
     }
+    closeReader()
+    // Open uploads are not resumed across a restart; their staging files are closed now.
+    await attachmentUpload?.uploads.dispose().catch(() => undefined)
     try {
       await storage.close()
     } catch (storageError) {
@@ -2220,6 +2285,21 @@ export async function startProductionSupervisor(
       return closePromise
     },
   }
+}
+
+/**
+ * Uploads go to the same attachment store the session workers read, under the profile's data
+ * directory. They are served only where attachments are stored by reference: with the switch off, or
+ * another artifacts implementation owning the tree, clients keep sending attachments inline. Staging
+ * files an earlier process left behind are swept once they are a day old.
+ */
+function productionAttachmentUpload(profile: ResolvedProfile): AttachmentUploadService | undefined {
+  // The same condition the worker's assembly applies to storing attachments by reference.
+  if (!profile.attachments?.storeByReference || profile.seams?.artifacts !== '@agnes/base') return undefined
+  const store = createAttachmentStore({ dataDir: profile.dataDir })
+  void store.sweepStaging(Date.now()).catch(() => undefined)
+  const port = createUserAttachmentPort({ store, limits: profile.limits, storeByReference: true })
+  return createAttachmentUploadService({ store, limits: profile.limits, reserve: port.reserve })
 }
 
 /**

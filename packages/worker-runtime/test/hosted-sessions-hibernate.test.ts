@@ -71,6 +71,24 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.sent.filter((f) => f.kind === 'log')).not.toHaveLength(0)
   })
 
+  it('reports open progress through Host and the kernel when a session with history wakes', async () => {
+    const t = await setup()
+    const progress = () => t.sent.filter((f) => f.kind === 'progress')
+    const session = await t.open('progress')
+    // A new ledger is empty when it is opened; session/start is written after.
+    expect(progress()).toEqual([])
+    const head = session.lastSeq
+    expect(head).toBeGreaterThan(0)
+    await t.idle()
+    expect(t.hibernated('progress')).toBe(true)
+    await t.hosted.dispatch(t.command('progress', 'latest', { register: 'op.state' }))
+    // Hibernating closed the session cleanly, so the wake opens from its verified-head checkpoint:
+    // the whole history is folded at once and verified in the background.
+    expect(progress()).toEqual([
+      { kind: 'progress', sessionKey: 'progress', phase: 'fold', done: head, total: head },
+    ])
+  })
+
   it('does nothing when T is zero', async () => {
     const t = await realHosted({ idleCloseMs: 0, clock: () => Date.now() + 10 * T })
     cleanups.push(t.close)

@@ -631,12 +631,32 @@ export class TuiApp {
   }
 
   // `daemon.notice` payloads are heterogeneous (packages/protocol's `DaemonNotice` is
-  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the two kinds the
-  // spec calls out get a status-bar rendering today, matching what daemon's reclaim path
-  // (packages/daemon/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
-  // worker-pool.ts) actually emit. Anything else is left alone rather than guessed at.
+  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); the two kinds the spec calls
+  // out get a status-bar rendering, matching what daemon's reclaim path (packages/daemon/src/lease/
+  // reclaim.ts) and worker pool (packages/daemon/src/supervisor/worker-pool.ts) actually emit, and a
+  // refusal of this session (below) ends it. Anything else is left alone rather than guessed at.
   private handleNotice(payload: unknown): void {
-    const n = payload as { kind?: string; detail?: { lastStep?: number } }
+    const n = payload as {
+      kind?: string
+      sessionId?: unknown
+      code?: unknown
+      detail?: { lastStep?: number }
+    }
+    // Final for this session: the daemon refuses it from now on (`integrity_failed` from the daemon,
+    // `session-refused` from the SDK when a reconnect is refused). What is on screen stays, labelled.
+    if (
+      (n.kind === 'integrity_failed' || n.kind === 'session-refused') &&
+      n.sessionId === this.o.session.id
+    ) {
+      const code = n.kind === 'integrity_failed' ? 'E_LEDGER_INTEGRITY' : n.code
+      this.handleClosed(
+        t(
+          code === 'E_LEDGER_INTEGRITY' ? 'notice.integrityFailed' : 'notice.formatRefused',
+          this.o.locale ?? 'en',
+        ),
+      )
+      return
+    }
     if (n.kind === 'resumed') {
       const step = n.detail?.lastStep
       this.statusBar.setNotice(t('notice.resumed', this.o.locale ?? 'en', { step: step ?? '?' }), 'success')
@@ -650,9 +670,12 @@ export class TuiApp {
 
   // 'closed' is terminal: the projection's event stream has ended, so the closing `opState: null`
   // tick that would stop the spinner never arrives. Queued drafts are dropped for the same reason
-  // input is refused: sending them would run a turn nobody can see.
-  private handleClosed(): void {
-    this.closedNotice = t('notice.closed', this.o.locale ?? 'en', { id: escapeControl(this.o.session.id) })
+  // input is refused: sending them would run a turn nobody can see. A session the daemon refuses
+  // for good ends the same way, with its own notice.
+  private handleClosed(
+    notice = t('notice.closed', this.o.locale ?? 'en', { id: escapeControl(this.o.session.id) }),
+  ): void {
+    this.closedNotice = notice
     this.pendingPrompts.length = 0
     // Timers armed before the close would still call resync()/projectUI and re-dial.
     if (this.queuedWake) clearTimeout(this.queuedWake)

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import { releaseRawExport } from '@agnes/worker-runtime'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
 import type { JsonRpcId } from '../rpc.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
@@ -64,6 +65,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
       clock: () => number
       pollMs?: number
       observe?: (sessionKey: string, event: EventEnvelope, cwd: string) => void
+      /** Told once when a session's stored history fails verification; it stays refused. */
+      onIntegrityFailure?: (sessionKey: string) => void
     },
   ) {}
 
@@ -217,6 +220,14 @@ export class SessionRegistry implements Registry<SessionEntry> {
       signal: ac.signal,
       onError: (e) => {
         entry.tailError = e
+        // The log sealed itself because its history failed verification: attached clients are told.
+        if ((e as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY') {
+          try {
+            this.o.onIntegrityFailure?.(entry.key)
+          } catch {
+            /* a notice must not change the outcome */
+          }
+        }
       },
       onEvents: (evs) => {
         for (const e of evs) {
@@ -308,6 +319,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     e.inflight?.abort.abort()
     e.ac.abort()
     e.tail()
+    releaseRawExport(e.session)
     await e.session.close()
   }
 

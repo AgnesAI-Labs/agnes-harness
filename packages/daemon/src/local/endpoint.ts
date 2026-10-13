@@ -51,7 +51,11 @@ export type ConnectionState = {
   initialized: boolean
   /** Set only after this connection successfully calls the authorized client-module roster RPC. */
   clientModuleNotices: boolean
-  capabilities: { permission: boolean }
+  /**
+   * What the client declared at `initialize`. `attachmentRefs`: it reads attachment reference
+   * blocks; without it every row and projection it receives has them replaced by links and text.
+   */
+  capabilities: { permission: boolean; attachmentRefs: boolean }
   attached: Map<string, AttachPrefs>
   // Set by authGate (local/auth.ts) once `initialize`'s credential has actually verified. Absent
   // rather than defaulted to 'local': a connection that never ran the gate (every test that talks to
@@ -234,7 +238,7 @@ export class LocalEndpoint implements RpcEndpoint {
         clientId: 'local',
         initialized: false,
         clientModuleNotices: false,
-        capabilities: { permission: false },
+        capabilities: { permission: false, attachmentRefs: false },
         attached: new Map<string, AttachPrefs>(),
       },
       'principalId',
@@ -430,7 +434,11 @@ export class LocalEndpoint implements RpcEndpoint {
       if (id === undefined) return undefined
       if (isRpcError(e)) {
         // A refusal the caller can act on that an operator still has to be able to find.
-        if (e.data.code === 'LEGACY_LEDGER_FORMAT') {
+        if (
+          e.data.code === 'LEGACY_LEDGER_FORMAT' ||
+          e.data.code === 'NEWER_LEDGER_FORMAT' ||
+          e.data.code === 'E_LEDGER_INTEGRITY'
+        ) {
           const diagnosticId = randomUUID()
           try {
             this.o.audit?.({

@@ -892,6 +892,98 @@ describe('web session selection', () => {
     20_000,
   )
 
+  it('uploads a large first-message attachment into the session the send creates', async () => {
+    installPublicFixture()
+    history.replaceState(null, '', '/#test-launcher-token')
+    const fresh = session('fresh', async () => idleTimeline('fresh', { route: 'local', id: 'model-a' }))
+    const reference = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'insects.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 20 * 1024 * 1024 },
+    }
+    const order: string[] = []
+    const upload = vi.fn(async (sessionId: string) => {
+      order.push(`upload:${sessionId}`)
+      return reference
+    })
+    fresh.prompt.mockImplementation(async () => {
+      order.push('prompt')
+      return undefined
+    })
+    const client = {
+      connectionState: 'connected',
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(() => () => undefined),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({
+          configured: true,
+          profile: 'local',
+          provider: { id: 'local', route: 'local', model: 'model-a' },
+        })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      approval: { decide: vi.fn(async () => undefined) },
+      workspace: {
+        list: vi.fn(async () => ({ items: [] })),
+        add: vi.fn(async (path: string) => ({
+          workspace: { path, name: 'agnes', lastUsedAt: null, sessionCount: 0, available: true },
+        })),
+      },
+      session: {
+        list: vi.fn(async () => ({ items: [] })),
+        load: vi.fn(async () => fresh),
+        new: vi.fn(async () => {
+          order.push('new')
+          return fresh
+        }),
+      },
+      serverCapabilities: { attachmentRefs: true },
+      call: vi.fn(async (method: string) =>
+        method === '_agnes/v1/attachment.upload'
+          ? { limits: { maxBytes: 2 * 1024 ** 3, chunkBytes: 1024 * 1024, maxConcurrent: 4 } }
+          : undefined,
+      ),
+      attachments: { upload, cancel: vi.fn(async () => undefined) },
+    }
+    sdk.createClient.mockReturnValue(client)
+    binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+      session: selected,
+      offPermission: vi.fn(),
+    }))
+    await import('../src/app.js')
+    await vi.waitFor(() =>
+      expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+    )
+    const cwd = document.getElementById('new-session-cwd') as HTMLInputElement
+    cwd.value = '/workspace/agnes'
+    document
+      .getElementById('new-session-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() =>
+      expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(false),
+    )
+    const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    const file = new File([new Uint8Array(20 * 1024 * 1024)], 'insects.zip', { type: 'application/zip' })
+    Object.defineProperty(event, 'clipboardData', {
+      value: { files: [file], items: [], getData: () => '' },
+    })
+    prompt.dispatchEvent(event)
+    // Kept, not capped at 8 MiB, and not uploaded yet: there is no session to upload into.
+    await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+    expect(notices()).not.toContain('8 MiB')
+    expect(upload).not.toHaveBeenCalled()
+    const send = document.getElementById('send') as HTMLButtonElement
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['new', 'upload:fresh', 'prompt'])
+    expect(fresh.prompt).toHaveBeenCalledWith([reference], { titleLocale: 'zh-CN' })
+  })
+
   it('starts a draft in the workspace chosen from its sidebar action', async () => {
     installPublicFixture()
     const alpha = {
@@ -2191,6 +2283,8 @@ describe('image composer submissions', () => {
     sessionValue: SessionDouble,
     busy = false,
     inputModes: readonly ('text' | 'image')[] = ['text', 'image'],
+    uploads?: { upload: ReturnType<typeof vi.fn>; cancel?: ReturnType<typeof vi.fn> },
+    others: SessionDouble[] = [],
   ): Promise<void> {
     installPublicFixture()
     const imageUrl = `blob:${sessionValue.id}-image`
@@ -2210,11 +2304,29 @@ describe('image composer submissions', () => {
       on: vi.fn(),
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
-        list: vi.fn(async () => ({ items: [{ sessionId: sessionValue.id }] })),
-        load: vi.fn(async () => sessionValue),
+        list: vi.fn(async () => ({
+          items: [sessionValue, ...others].map((value) => ({ sessionId: value.id })),
+        })),
+        load: vi.fn(
+          async (id: string) => [sessionValue, ...others].find((value) => value.id === id) ?? sessionValue,
+        ),
       },
+      ...(uploads
+        ? {
+            serverCapabilities: { attachmentRefs: true },
+            call: vi.fn(async (method: string) =>
+              method === '_agnes/v1/attachment.upload'
+                ? { limits: { maxBytes: 2 * 1024 ** 3, chunkBytes: 1024 * 1024, maxConcurrent: 4 } }
+                : undefined,
+            ),
+            attachments: { upload: uploads.upload, cancel: uploads.cancel ?? vi.fn(async () => undefined) },
+          }
+        : {}),
     })
-    binding.loadWebSession.mockResolvedValue({ session: sessionValue, offPermission: vi.fn() })
+    binding.loadWebSession.mockImplementation(async (_load: unknown, id: string) => ({
+      session: [sessionValue, ...others].find((value) => value.id === id) ?? sessionValue,
+      offPermission: vi.fn(),
+    }))
     binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
       session: selected,
       offPermission: vi.fn(),
@@ -2247,15 +2359,15 @@ describe('image composer submissions', () => {
       await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
   }
 
-  it.each(['PNG', '10 MiB JPEG'])(
+  it.each(['PNG', '7 MiB JPEG'])(
     'enables and sends a %s without text through session.prompt',
     async (format) => {
       const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
       await start(active)
       let bytes = imagePngBytes
       let mimeType = 'image/png'
-      if (format === '10 MiB JPEG') {
-        bytes = new Uint8Array(10 * 1024 * 1024)
+      if (format === '7 MiB JPEG') {
+        bytes = new Uint8Array(7 * 1024 * 1024)
         bytes.set([
           0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
         ])
@@ -2275,6 +2387,106 @@ describe('image composer submissions', () => {
       )
     },
   )
+
+  it('keeps an attachment over 8 MiB out when it cannot be uploaded by reference', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng(
+      false,
+      new File([new Uint8Array(9 * 1024 * 1024)], 'data.zip', { type: 'application/zip' }),
+    )
+    await vi.waitFor(() => expect(notices()).toContain('此服务器不接收附件上传，超过 8 MiB 的附件无法发送'))
+    expect(document.querySelector('.composer-file-preview')).toBeNull()
+  })
+
+  it('uploads attachments by reference and sends only the references', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const zip = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'data.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 10 * 1024 * 1024 },
+    }
+    const png = {
+      type: 'image',
+      mimeType: 'image/png',
+      attachment: { sha256: 'b'.repeat(64), bytes: imagePngBytes.length },
+      width: 1,
+      height: 1,
+      name: 'one.png',
+    }
+    const finishers = new Map<string, (value: unknown) => void>()
+    const upload = vi.fn(
+      (_session: string, input: { name: string }) =>
+        new Promise((resolve) => finishers.set(input.name, resolve)),
+    )
+    await start(active, false, ['text', 'image'], { upload })
+    await attachPng(
+      false,
+      new File([new Uint8Array(10 * 1024 * 1024)], 'data.zip', { type: 'application/zip' }),
+    )
+    await attachPng()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+    expect(upload).toHaveBeenCalledWith(
+      'old',
+      expect.objectContaining({ name: 'data.zip', mimeType: 'application/zip' }),
+      expect.anything(),
+    )
+    const send = document.getElementById('send') as HTMLButtonElement
+    // Not sendable while an upload runs.
+    expect(send.disabled).toBe(true)
+    finishers.get('data.zip')?.(zip)
+    finishers.get('one.png')?.(png)
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+    // References only: neither the frame estimate nor the inline image check refuses them.
+    expect(active.prompt).toHaveBeenCalledWith([zip, png], { titleLocale: 'zh-CN' })
+  })
+
+  it('cancels an upload into the session the user leaves, telling the server', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const next = session('next', async () => idleTimeline('next', { route: 'local', id: 'model-a' }))
+    let signal: AbortSignal | undefined
+    const upload = vi.fn(
+      (_session: string, _input: unknown, o: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal = o.signal
+          o.signal?.addEventListener('abort', () => reject(o.signal?.reason))
+        }),
+    )
+    await start(active, false, ['text', 'image'], { upload }, [next])
+    await attachPng(false, new File([new Uint8Array(1024)], 'data.zip', { type: 'application/zip' }))
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledWith('old', expect.anything(), expect.anything()))
+    await vi.waitFor(() => expect(document.querySelector('[data-session="next"]')).not.toBeNull())
+    document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+    await vi.waitFor(() => expect(next.projectUIOpening).toHaveBeenCalled())
+    // The SDK sends the daemon a cancel when its signal aborts.
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true))
+    expect(document.querySelector('.composer-file-preview')).toBeNull()
+  })
+
+  it('shows the typed sentence when the daemon refuses an attachment of a send', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    const refusal = Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
+      data: { code: 'ATTACHMENT_MISSING', reason: 'attachment-missing', name: 'insects.zip' },
+    })
+    active.prompt.mockRejectedValueOnce(refusal)
+    const reference = {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'insects.zip',
+      attachment: { sha256: 'a'.repeat(64), bytes: 9 },
+    }
+    await start(active, false, ['text', 'image'], { upload: vi.fn(async () => reference) })
+    await attachPng(false, new File([new Uint8Array(9)], 'insects.zip', { type: 'application/zip' }))
+    const send = document.getElementById('send') as HTMLButtonElement
+    await vi.waitFor(() => expect(send.disabled).toBe(false))
+    submit('')
+    await vi.waitFor(() => expect(notices()).toContain('“insects.zip”已不在存储中，请移除后重新添加。'))
+    // The reference comes back for another try.
+    await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
+  })
 
   it('sends mixed text and images through session.followUp and restores both on failure', async () => {
     const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))
@@ -2891,4 +3103,217 @@ it('renders Computer Use in the application and retires its late operation reply
   expect(pane?.innerHTML).toBe(before)
   expect(call.mock.calls).toHaveLength(requests)
   expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
+})
+
+describe('opening a large session', () => {
+  const storedTimeline = (): UITimeline => ({
+    ...idleTimeline('old'),
+    upto: 1,
+    nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'stored question' }] }],
+  })
+  function boot(
+    storedOpening: (id: string) => Promise<unknown>,
+    load = vi.fn(),
+    items = [{ sessionId: 'old', title: 'Old' }],
+    on = vi.fn(),
+  ) {
+    installPublicFixture()
+    sdk.createClient.mockReturnValue({
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      close: vi.fn(async () => undefined),
+      initialize: vi.fn(async () => undefined),
+      on,
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: {
+        list: vi.fn(async () => ({ items })),
+        load,
+        storedOpening: vi.fn(storedOpening),
+      },
+    })
+  }
+
+  it('keeps the stored history read-only with the reason when the load fails, then the live session replaces it', async () => {
+    const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+    boot(storedOpening)
+    const old = session('old', async () => idleTimeline('old'))
+    binding.loadWebSession
+      .mockRejectedValueOnce(
+        Object.assign(new Error('session/load made no progress'), { code: 'LOAD_STALLED' }),
+      )
+      .mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const stored = () => document.getElementById('stored-history-notice') as HTMLElement
+    await vi.waitFor(() => expect(stored().hidden).toBe(false))
+    expect(storedOpening).toHaveBeenCalledWith('old')
+    expect(stored().textContent).toContain('无法完整打开')
+    expect(stored().textContent).toContain('session/load made no progress')
+    await vi.waitFor(() =>
+      expect(document.getElementById('transcript')?.textContent).toContain('stored question'),
+    )
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(true)
+
+    const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
+      button.textContent?.includes('Old'),
+    )
+    row?.click()
+    await vi.waitFor(() => expect(stored().hidden).toBe(true))
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+  })
+
+  it('drops the stored history of a failed open once another session was selected meanwhile', async () => {
+    let release!: (value: unknown) => void
+    const storedOpening = vi.fn((id: string) =>
+      id === 'old'
+        ? new Promise((resolve) => {
+            release = resolve
+          })
+        : Promise.resolve({ timeline: storedTimeline(), hasEarlier: false }),
+    )
+    boot(storedOpening, vi.fn(), [
+      { sessionId: 'old', title: 'Old' },
+      { sessionId: 'other', title: 'Other' },
+    ])
+    const other = session('other', async () => idleTimeline('other'))
+    binding.loadWebSession
+      .mockRejectedValueOnce(new Error('open failed'))
+      .mockResolvedValue({ session: other, offPermission: vi.fn() })
+    await import('../src/app.js')
+    await vi.waitFor(() => expect(storedOpening).toHaveBeenCalledWith('old'))
+    const row = [...document.querySelectorAll<HTMLButtonElement>('#sessions button')].find((button) =>
+      button.textContent?.includes('Other'),
+    )
+    row?.click()
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+    )
+    release({ timeline: storedTimeline(), hasEarlier: false })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((document.getElementById('stored-history-notice') as HTMLElement).hidden).toBe(true)
+    expect(document.getElementById('notice')?.dataset.kind).not.toBe('session-recovery')
+    expect(document.getElementById('transcript')?.textContent).not.toContain('stored question')
+  })
+
+  it('falls back to session recovery when the stored history cannot be read either', async () => {
+    boot(async () => {
+      throw new Error('stored-opening-unavailable')
+    })
+    binding.loadWebSession.mockRejectedValueOnce(new Error('open failed'))
+    await import('../src/app.js')
+    const notice = document.getElementById('notice') as HTMLElement
+    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+    expect((document.getElementById('stored-history-notice') as HTMLElement).hidden).toBe(true)
+  })
+
+  describe('a session the daemon closes for good while it is open', () => {
+    async function openThenRefuse(
+      storedOpening: (id: string) => Promise<unknown>,
+      notice: Record<string, unknown>,
+    ) {
+      const on = vi.fn(() => () => undefined)
+      boot(storedOpening, vi.fn(), undefined, on)
+      const live = (): UITimeline => ({
+        ...idleTimeline('old'),
+        upto: 1,
+        nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'live question' }] }],
+      })
+      const old = session('old', async () => live())
+      binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+      await import('../src/app.js')
+      const prompt = document.getElementById('prompt') as HTMLTextAreaElement
+      await vi.waitFor(() => expect(prompt.disabled).toBe(false))
+      await vi.waitFor(() =>
+        expect(document.getElementById('transcript')?.textContent).toContain('live question'),
+      )
+      for (const [event, handler] of on.mock.calls as unknown as Array<[string, (p: unknown) => void]>)
+        if (event === 'notice') handler(notice)
+      return { old, prompt, stored: document.getElementById('stored-history-notice') as HTMLElement }
+    }
+
+    it.each([
+      [
+        'the daemon reports its history failed verification',
+        { kind: 'integrity_failed', sessionId: 'old', detail: { code: 'E_LEDGER_INTEGRITY' }, at: 't' },
+      ],
+      [
+        'a reconnect is refused for the same reason',
+        { kind: 'session-refused', sessionId: 'old', code: 'E_LEDGER_INTEGRITY' },
+      ],
+    ])(
+      'when %s: input stops, the live view stops, and the stored history is shown unverified with why',
+      async (_case, notice) => {
+        const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+        const { old, prompt, stored } = await openThenRefuse(storedOpening, notice)
+        await vi.waitFor(() => expect(stored.hidden).toBe(false))
+        expect(stored.textContent).toContain('未通过完整性校验')
+        expect(stored.textContent).toContain('未校验，只读')
+        expect(storedOpening).toHaveBeenCalledWith('old')
+        expect(prompt.disabled).toBe(true)
+        expect(old.detach).toHaveBeenCalled()
+        await vi.waitFor(() =>
+          expect(document.getElementById('transcript')?.textContent).toContain('stored question'),
+        )
+      },
+    )
+
+    it('keeps the transcript on screen, labelled unverified, when storage cannot be read', async () => {
+      const { prompt, stored } = await openThenRefuse(
+        async () => {
+          throw new Error('stored-opening-unavailable')
+        },
+        { kind: 'integrity_failed', sessionId: 'old', detail: { code: 'E_LEDGER_INTEGRITY' }, at: 't' },
+      )
+      await vi.waitFor(() => expect(stored.hidden).toBe(false))
+      expect(stored.textContent).toContain('未通过完整性校验')
+      expect(stored.textContent).toContain('未校验，只读')
+      expect(prompt.disabled).toBe(true)
+      expect(document.getElementById('transcript')?.textContent).toContain('live question')
+    })
+
+    it("ignores another session's notice", async () => {
+      const storedOpening = vi.fn(async () => ({ timeline: storedTimeline(), hasEarlier: false }))
+      const { prompt, stored } = await openThenRefuse(storedOpening, {
+        kind: 'integrity_failed',
+        sessionId: 'other',
+        detail: { code: 'E_LEDGER_INTEGRITY' },
+        at: 't',
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(stored.hidden).toBe(true)
+      expect(prompt.disabled).toBe(false)
+      expect(storedOpening).not.toHaveBeenCalled()
+    })
+  })
+
+  it('says how far the load has got once it has taken 2 s', async () => {
+    let finish!: () => void
+    const old = session('old', async () => idleTimeline('old'))
+    const load = vi.fn(async (_id: string, o: { onLoading?: (p: unknown) => void }) => {
+      o.onLoading?.({ phase: 'verify', done: 40, total: 100 })
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      return old
+    })
+    boot(async () => ({ timeline: storedTimeline(), hasEarlier: false }), load)
+    binding.loadWebSession.mockImplementationOnce(
+      async (run: (id: string, o: object) => Promise<unknown>) => ({
+        session: await run('old', {}),
+        offPermission: vi.fn(),
+      }),
+    )
+    await import('../src/app.js')
+    const status = () => document.getElementById('status')?.textContent
+    await vi.waitFor(() => expect(load).toHaveBeenCalled())
+    expect(status()).not.toContain('40%')
+    await vi.waitFor(() => expect(status()).toBe('仍在加载：正在校验历史 40%'), { timeout: 3_000 })
+    finish()
+    await vi.waitFor(() => expect(status()).not.toContain('仍在加载'))
+  })
 })

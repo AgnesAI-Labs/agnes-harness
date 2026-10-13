@@ -16,7 +16,15 @@ import type {
   SeamWorkspace,
   Verdict,
 } from '@agnes/core'
-import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
+import {
+  defaultIds,
+  type Event,
+  inboxEvent,
+  prepareIntegrity,
+  SessionLogImpl,
+  scanAll,
+  verifyLedger,
+} from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { localRealpathSync } from '../src/adapters/fs-io-local.js'
@@ -157,6 +165,13 @@ export type TestHostOptions = {
   provider?: Provider | ((p: ResolvedProfile, o: ProviderBuildOptions) => Provider)
   /** Profile `limits` this host resolves with, e.g. the deployment's `cost.credits_per_usd`. */
   limits?: Record<string, number>
+  /**
+   * The profile's `attachments.storeByReference`. On unless a case turns it off, so attachments a
+   * case sends are stored by reference and read back from the store, as a new install does.
+   */
+  storeAttachmentsByReference?: boolean
+  /** The trusted request-media port a worker assembles in production; omitted, a test host has none. */
+  requestMedia?: HostOptions['requestMedia']
   script?: ConstructorParameters<typeof ScriptedProvider>[0]['scripts']
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
@@ -312,6 +327,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
         ...(o.allowed ? { presets: { allowed: o.allowed } } : {}),
         provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
         ...(o.limits ? { limits: o.limits } : {}),
+        attachments: { storeByReference: o.storeAttachmentsByReference ?? true },
         ...o.profileInputs?.user,
         ...(o.contract !== undefined
           ? {
@@ -378,6 +394,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),
     ...(o.disableSessionTitle ? { disableSessionTitle: true } : {}),
     ...(o.currentRuntime ? { currentRuntime: o.currentRuntime } : {}),
+    ...(o.requestMedia ? { requestMedia: o.requestMedia } : {}),
     // Omission exercises production buildProvider. A script explicitly requests the test model.
     ...(o.provider !== undefined || o.script !== undefined
       ? {
@@ -614,6 +631,127 @@ export async function appendRowAsOlderBuild(
     const { seq: _seq, ...event } = row
     await storage.commit(key, { events: [event], integrity: entries, expectedWriterRunId: 'older-build' })
     await storage.release(key, 'older-build')
+  } finally {
+    await storage.close()
+  }
+}
+
+/**
+ * Writes inbox rows to a stored session the way a build that queued attachments inline did: each
+ * snapshot is the whole queue at that moment, one row per snapshot, and every item carries its
+ * content block list as given. The session's next turn then claims the first item and copies it
+ * into the ledger, so the same bytes sit in several rows. The session must be closed.
+ */
+export async function appendInboxRowsAsOlderBuild(
+  dataDir: string,
+  key: string,
+  snapshots: ReadonlyArray<ReadonlyArray<{ content: unknown[] }>>,
+): Promise<void> {
+  const storage = createSqliteStorage({
+    file: join(dataDir, 'sessions.db'),
+    tablesDir: join(dataDir, 'older-build'),
+  })
+  try {
+    const log = await SessionLogImpl.open({
+      storage,
+      key,
+      writerRunId: 'older-build',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers: {
+        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+        clearTimeout: (t) => globalThis.clearTimeout(t as never),
+      },
+    })
+    try {
+      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
+      if (!last) throw new Error(`session ${key} has no rows`)
+      for (const snapshot of snapshots)
+        await log.append([
+          inboxEvent('main', last.actor, {
+            items: snapshot.map((item, index) => ({
+              itemId: `older-build-${index}`,
+              target: 'next-turn' as const,
+              content: item.content as never,
+              actor: last.actor,
+              kind: 'follow_up' as const,
+              commandId: `older-build-${index}`,
+              enqueuedAt: new Date().toISOString(),
+            })),
+          }),
+        ])
+    } finally {
+      await log.close()
+    }
+  } finally {
+    await storage.close()
+  }
+}
+
+/**
+ * Writes one turn that was claimed from the queue and answered, the way a build that copied queued
+ * content into the ledger left it: the claim empties the queue, the content becomes the user message
+ * as given, and the turn runs to its end. The queue must already hold the item (see
+ * `appendInboxRowsAsOlderBuild`), `turn` is the number this turn takes, and the session must be closed.
+ */
+export async function appendClaimedTurnAsOlderBuild(
+  dataDir: string,
+  key: string,
+  o: { turn: number; content: unknown[]; answer: string },
+): Promise<void> {
+  const storage = createSqliteStorage({
+    file: join(dataDir, 'sessions.db'),
+    tablesDir: join(dataDir, 'older-build'),
+  })
+  try {
+    const log = await SessionLogImpl.open({
+      storage,
+      key,
+      writerRunId: 'older-build',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers: {
+        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+        clearTimeout: (t) => globalThis.clearTimeout(t as never),
+      },
+    })
+    try {
+      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
+      if (!last) throw new Error(`session ${key} has no rows`)
+      const system = { origin: 'system', trust: 'trusted', actor: last.actor, lane: 'main' } as const
+      const assistantSeq = log.lastSeq + 5
+      await log.append([
+        inboxEvent('main', last.actor, { items: [] }),
+        {
+          type: 'user/message',
+          origin: 'principal',
+          trust: 'trusted',
+          actor: last.actor,
+          lane: 'main',
+          data: { content: o.content, kind: 'follow_up' },
+        },
+        { type: 'turn/start', ...system, data: { turn: o.turn, trigger: 'follow_up' } },
+        { type: 'step/start', ...system, data: { turn: o.turn, step: 1 } },
+        {
+          type: 'assistant/message',
+          origin: 'model',
+          trust: 'trusted',
+          actor: last.actor,
+          lane: 'main',
+          data: { content: [{ type: 'text', text: o.answer }], stopReason: 'end_turn' },
+        },
+        { type: 'step/end', ...system, data: { turn: o.turn, step: 1 } },
+        {
+          type: 'turn/end',
+          ...system,
+          data: { reason: 'completed', lastAssistantSeq: assistantSeq },
+        },
+      ] as never)
+    } finally {
+      await log.close()
+    }
   } finally {
     await storage.close()
   }

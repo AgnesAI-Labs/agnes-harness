@@ -2,6 +2,8 @@ import type { Duplex } from 'node:stream'
 import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
 import type { PreviewUpdate } from '../registry.js'
 import type {
+  ProgressFrame,
+  RecordFrame,
   RequestFrame,
   SessionMethod,
   SessionOpenResult,
@@ -52,6 +54,11 @@ export class WorkerSessionChannel {
     void this.closeSession(_reason).catch(() => undefined)
   }
 
+  /** Bytes the whole worker connection has received so far; a difference measures a span of work. */
+  receivedBytes(): number {
+    return this.worker.receivedBytes()
+  }
+
   tail(fromSeq: number): Promise<void> {
     if (this.closed) return Promise.reject(new Error('worker session channel closed'))
     return this.worker.tailSession(this.sessionKey, fromSeq)
@@ -92,6 +99,7 @@ export class WorkerLink {
   private readonly exitHandlers: Array<() => void> = []
   private readonly frameChains = new Map<string, Promise<void>>()
   private readonly failedSessions = new Set<string>()
+  private received = 0
 
   constructor(
     private readonly socket: Duplex,
@@ -101,6 +109,8 @@ export class WorkerLink {
       onResourceStatus?: (serverId: string, status: McpStatus) => void
       onRequest: (frame: RequestFrame) => Promise<unknown>
       onLog?: (sessionKey: string, level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
+      onRecord?: (sessionKey: string, record: RecordFrame['record']) => void
+      onProgress?: (sessionKey: string, progress: Omit<ProgressFrame, 'kind' | 'sessionKey'>) => void
       onActivity?: (sessionKey: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onRuntimeFrame?: (frame: unknown) => void
@@ -111,6 +121,7 @@ export class WorkerLink {
     })
     const decoder = new JsonlDecoder()
     socket.on('data', (chunk: Buffer) => {
+      this.received += chunk.length
       let frames: WorkerToSupervisor[]
       try {
         frames = decoder.feed(chunk) as WorkerToSupervisor[]
@@ -146,7 +157,15 @@ export class WorkerLink {
       this.close('invalid worker frame')
       return
     }
-    const sessionKinds = new Set(['event', 'preview', 'request', 'session.interrupted', 'log'])
+    const sessionKinds = new Set([
+      'event',
+      'preview',
+      'request',
+      'session.interrupted',
+      'log',
+      'record',
+      'progress',
+    ])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
       sessionKinds.has(frame.kind) &&
@@ -164,6 +183,8 @@ export class WorkerLink {
       'request',
       'session.interrupted',
       'log',
+      'record',
+      'progress',
     ])
     if (!knownKinds.has(frame.kind)) {
       this.close('unknown worker frame')
@@ -226,12 +247,26 @@ export class WorkerLink {
       return
     }
     if (frame.kind === 'session.interrupted') {
-      this.failSession(frame.sessionKey, new Error(frame.reason))
+      const code =
+        typeof frame.code === 'string' && /^E_[A-Z0-9_]{1,64}$/.test(frame.code) ? frame.code : undefined
+      this.failSession(frame.sessionKey, Object.assign(new Error(frame.reason), code ? { code } : {}))
+      return
+    }
+    if (frame.kind === 'progress') {
+      const progress = openProgress(frame)
+      if (progress) this.options.onProgress?.(frame.sessionKey, progress)
       return
     }
     if (frame.kind === 'log') {
       this.options.onLog?.(frame.sessionKey, frame.level, frame.message)
       this.options.onActivity?.(frame.sessionKey)
+      return
+    }
+    if (frame.kind === 'record') {
+      // A worker may only report the records it owns; the runtime log is the daemon's to write.
+      const kind = frame.record?.kind
+      if (kind === 'session.open' || kind === 'session.verify_full')
+        this.options.onRecord?.(frame.sessionKey, frame.record)
       return
     }
     if (frame.kind === 'reply') {
@@ -280,6 +315,10 @@ export class WorkerLink {
         }),
     )
     this.options.onActivity?.(frame.sessionKey)
+  }
+
+  receivedBytes(): number {
+    return this.received
   }
 
   private markDead(): void {
@@ -455,4 +494,12 @@ export class WorkerLink {
     }
     this.exitHandlers.push(handler)
   }
+}
+
+/** A progress frame's figures, or nothing when the worker sent something that is not one. */
+function openProgress(frame: ProgressFrame): Omit<ProgressFrame, 'kind' | 'sessionKey'> | undefined {
+  const { phase, done, total } = frame
+  if (phase !== 'verify' && phase !== 'fold') return undefined
+  if (!Number.isSafeInteger(done) || !Number.isSafeInteger(total) || done < 0 || total < 0) return undefined
+  return { phase, done, total }
 }

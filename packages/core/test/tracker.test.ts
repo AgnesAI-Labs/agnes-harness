@@ -338,7 +338,7 @@ describe('StateTracker', () => {
     await reopened.log.close()
   })
 
-  it('keeps no UI projection state in storage: commits carry none and close only releases', async () => {
+  it('keeps no UI projection state in storage: commits carry none and close records only its verified head', async () => {
     const storage = new MemoryStorage()
     const calls: string[] = []
     const commits: string[][] = []
@@ -372,14 +372,17 @@ describe('StateTracker', () => {
     ])
     calls.length = 0
     await opened.log.close()
-    expect(calls).toEqual(['release'])
+    // The verified head is a position in the ledger (seq and digest), never folded state.
+    expect(calls).toEqual(['writeVerifiedHead', 'release'])
     for (const keys of commits)
       expect(
         keys.filter((key) => !['claim', 'events', 'expectedWriterRunId', 'integrity'].includes(key)),
       ).toEqual([])
   })
 
-  it('does not let a reopen past a tampered prefix row', async () => {
+  // The wrapped adapter has no readVerifiedHead, so this reopen verifies every row from the first;
+  // a reopen from a checkpoint folds that prefix first and is covered in verified-head.test.ts.
+  it('without a checkpoint, does not let a reopen past a tampered prefix row', async () => {
     const storage = new MemoryStorage()
     const first = await openTracked({ ...common, storage, writerRunId: 'r1', ids: defaultIds() })
     await first.log.append(

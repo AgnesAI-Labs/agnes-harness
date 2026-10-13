@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
-import type { Host, HostSession } from '@agnes/host'
-import type { EventEnvelope, SessionStart } from '@agnes/protocol'
+import { type AttachmentStore, createAttachmentStore, type Host, type HostSession } from '@agnes/host'
+import { attachmentForm, type EventEnvelope, type SessionStart } from '@agnes/protocol'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
 
@@ -87,6 +88,103 @@ const importedMarker = (
   return { source: 'agnes', sourceId: key.slice(0, 256), cwd: cwd.slice(0, 4096) }
 }
 
+/** An import refused because its rows name attachment bytes it does not bring. */
+export class ImportAttachmentError extends CommandError {
+  constructor(
+    readonly reason: 'ATTACHMENT_MISSING' | 'ATTACHMENT_HASH_MISMATCH',
+    message: string,
+  ) {
+    // The code leads the message: the command line prints only the message.
+    super(`${reason}: ${message}`)
+    this.name = 'ImportAttachmentError'
+  }
+}
+
+type NamedObject = Readonly<{ sha256: string; bytes: number; mimeType: string }>
+
+/** The stored objects user input rows name: attachment references and their thumbnails. */
+function namedObjects(events: readonly EventEnvelope[]): NamedObject[] {
+  const found = new Map<string, NamedObject>()
+  const add = (value: unknown, mimeType: string) => {
+    const v = value as { sha256?: unknown; bytes?: unknown } | null
+    if (typeof v?.sha256 === 'string' && typeof v.bytes === 'number' && !found.has(v.sha256))
+      found.set(v.sha256, { sha256: v.sha256, bytes: v.bytes, mimeType })
+  }
+  const visit = (content: unknown) => {
+    if (!Array.isArray(content)) return
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (attachmentForm(block) !== 'reference') continue
+      add(block.attachment, String(block.mimeType))
+      // Thumbnails are JPEG; the marker's type is informative only.
+      if (block.thumbnail !== undefined) add(block.thumbnail, 'image/jpeg')
+    }
+  }
+  for (const event of events) {
+    const data = event.data as { content?: unknown; items?: unknown } | null
+    if (event.type === 'user/message') visit(data?.content)
+    if (event.type === 'inbox' && Array.isArray(data?.items))
+      for (const item of data.items) visit((item as { content?: unknown } | null)?.content)
+  }
+  return [...found.values()]
+}
+
+/**
+ * Imported rows meet the same rule as live input: a reference is written only for bytes the store
+ * holds as a user attachment. An import brings them in `<file>.attachments/<sha256>`, which a raw
+ * export writes; each is checked against its digest and size on the way in. A reference whose bytes
+ * are neither there nor already stored refuses the whole import before anything is written.
+ */
+async function admitImportedAttachments(
+  file: string,
+  objects: readonly NamedObject[],
+  store: AttachmentStore,
+): Promise<void> {
+  const dir = `${file}.attachments`
+  const mismatch = (sha256: string) =>
+    new ImportAttachmentError(
+      'ATTACHMENT_HASH_MISMATCH',
+      `${file}: ${join(dir, sha256)} is not the attachment the rows name; nothing was imported`,
+    )
+  for (const object of objects) {
+    const side = join(dir, object.sha256)
+    if (existsSync(side)) {
+      const staging = await store.stage({
+        kind: 'user-attachment',
+        mimeType: object.mimeType,
+        maxBytes: object.bytes,
+      })
+      let stored: Awaited<ReturnType<typeof staging.commit>>
+      try {
+        for await (const chunk of createReadStream(side, { highWaterMark: 1024 * 1024 }))
+          await staging.write(chunk as Buffer)
+        // A size the row understates is refused before anything is published: a committed object
+        // nobody marks would never be reclaimed.
+        if (staging.bytes !== object.bytes) throw mismatch(object.sha256)
+        stored = await staging.commit(object.sha256)
+      } catch (error) {
+        await staging.abort().catch(() => undefined)
+        if (error instanceof ImportAttachmentError) throw error
+        const code = (error as { code?: unknown } | null)?.code
+        if (code === 'ATTACHMENT_HASH_MISMATCH' || code === 'ATTACHMENT_TOO_LARGE')
+          throw mismatch(object.sha256)
+        throw error
+      }
+      await store.markUserAttachment(stored, { mimeType: object.mimeType })
+      continue
+    }
+    const missing = () =>
+      new ImportAttachmentError(
+        'ATTACHMENT_MISSING',
+        `${file}: attachment ${object.sha256} is neither in ${dir} nor stored here; nothing was imported (a raw export with --out writes that directory)`,
+      )
+    if (!(await store.userAttachment(object.sha256).catch(() => undefined))) throw missing()
+    // Seen now, before the bytes are checked: the attachment sweep re-reads the marker after setting
+    // bytes aside, so it cannot take them between this check and the rows that name them.
+    await store.markUserAttachment(object, { mimeType: object.mimeType })
+    if ((await store.stat(object.sha256))?.bytes !== object.bytes) throw missing()
+  }
+}
+
 export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<number> {
   if (parsed.connect || deps.env.AGNES_CONNECT)
     throw new UsageError('import only runs in one-shot form (no --connect)')
@@ -108,6 +206,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         ? `${file} line ${hole.line}: this export comes from an older format (${hole.reason}); an agnes export must keep every row, and this build cannot import it`
         : `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
     )
+  const objects = namedObjects(converted.events)
   // No session_start hooks: an extension may record a row there (code-mode notes that no kernel is
   // alive yet), and anything after session/start would move the imported body off its sequence.
   let reservedNew = false
@@ -115,6 +214,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     const reserved = await deps.admission.reserve(key, deps.cwd)
     reservedNew = reserved.reservedNew
+    // After the key is admitted: a key that is refused stores and marks nothing.
+    if (objects.length > 0)
+      await admitImportedAttachments(file, objects, createAttachmentStore({ dataDir: deps.host.dataDir }))
     const imported = importedMarker(converted.events, converted.report.source, reserved.binding.canonicalRoot)
     session = await deps.host
       .createSession({

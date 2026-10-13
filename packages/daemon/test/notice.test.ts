@@ -31,6 +31,34 @@ describe('NoticeSink', () => {
     expect(audit[0]).toMatchObject({ kind: 'daemon.notice', notice: { kind: 'resumed', sessionId: 'k1' } })
   })
 
+  it('sends integrity_failed, a terminal session notice, only to connections attached to it', () => {
+    const a = new LocalEndpoint({ clock: () => 0, principalId: 'a' })
+    const b = new LocalEndpoint({ clock: () => 0, principalId: 'b' })
+    a.conn.attached.set('k1', {
+      cursor: { fromSeq: 1, generation: 1 },
+      filter: { preview: false, acpUpdates: false },
+    })
+    const audit: Array<{ kind: string }> = []
+    const sink = new NoticeSink({
+      endpoints: () => [
+        { ep: a, conn: a.conn },
+        { ep: b, conn: b.conn },
+      ],
+      audit: (r) => audit.push(r as { kind: string }),
+      clock: () => 42,
+    })
+    sink.emit('integrity_failed', { sessionId: 'k1', detail: { code: 'E_LEDGER_INTEGRITY' } })
+    // The wire accepted it (no OUTBOUND_INVALID drop) and only the attached connection got it.
+    expect(a.pending().events).toBe(1)
+    expect(b.pending().events).toBe(0)
+    expect(audit).toEqual([
+      expect.objectContaining({
+        kind: 'daemon.notice',
+        notice: expect.objectContaining({ kind: 'integrity_failed' }),
+      }),
+    ])
+  })
+
   it('broadcasts packages_changed to every authorized connection in its profile without attachment', () => {
     const first = new LocalEndpoint({ clock: () => 0, principalId: 'first', profile: 'p1' })
     const second = new LocalEndpoint({ clock: () => 0, principalId: 'second', profile: 'p1' })

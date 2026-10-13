@@ -46,6 +46,7 @@ import {
 import { canonicalJson, sha256Hex } from '../request/hash.js'
 import { inlineImageMediaSurface } from '../request/inline-images.js'
 import { toProviderRequest } from '../request/to-provider.js'
+import { type PreparedUserImages, prepareUserImages } from '../request/user-images.js'
 import { CoreError, type Event, type EventInput, type Seq } from '../types.js'
 import {
   attemptProviderCount,
@@ -621,13 +622,28 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       })
     }
   }
+  // User images are chosen on their recorded size and read before the synchronous derivation; a
+  // byte limit the selection could not see is enforced there once the bytes are in.
+  let userImages: PreparedUserImages
+  try {
+    userImages = await prepareUserImages(s, {
+      surface,
+      kind: 'turn',
+      model: inlineImageModel,
+      mediaCount: requestMedia?.header.route === 'native-image' ? requestMedia.selected.length : 0,
+      textBytes: 0,
+      canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
+      signal: s.ac.signal,
+    })
+  } catch (error) {
+    if (!s.ac.signal.aborted) throw error
+    await s.endTurn('aborted')
+    return { phase: 'terminal', reason: 'aborted' }
+  }
   await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
     kind: 'turn',
-    inlineImages: {
-      model: inlineImageModel,
-      canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
-    },
+    userImages,
     merged,
     harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,

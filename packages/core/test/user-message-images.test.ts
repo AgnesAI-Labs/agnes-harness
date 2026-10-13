@@ -284,9 +284,11 @@ it('runs a long image conversation and reloads originals through the existing to
     (row.data as { content?: { type: string }[] }).content?.some((b) => b.type === 'image'),
   )
   expect(originals).toHaveLength(40)
+  // Forty images against a limit of four: the oldest 36 go, in steps of two, and four are sent (the
+  // previous rule sent the images of the latest three messages).
   expect(
     provider.requests.at(-1)?.messages.flatMap((m) => m.content.filter((b) => b.type === 'image')),
-  ).toHaveLength(3)
+  ).toHaveLength(4)
   const list = await readSessionImages(
     session,
     { path: 'session-image://list', offset: 18, limit: 2 },

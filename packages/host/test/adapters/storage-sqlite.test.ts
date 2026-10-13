@@ -40,6 +40,7 @@ describe('storage-sqlite', () => {
       'child_writer_gens',
       'cost_origins',
       'events',
+      'ledger_verified_head_v1',
       'registers',
       'sessions',
       'writer_claims',
@@ -56,6 +57,23 @@ describe('storage-sqlite', () => {
     })
     expect(r).toEqual({ firstSeq: 1, seqs: [1, 2] })
     expect(await s.registers('k')).toEqual([{ register: 'op.state', key: 'main', seq: 2, data: { step: 1 } }])
+  })
+  it('reports the stored size of one session in bytes, not characters', async () => {
+    await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
+    await s.open('other', { writerRunId: 'r2', ttlMs: 1000 })
+    expect(await s.ledgerStats?.('k')).toEqual({ storedBytes: 0, maxRowBytes: 0 })
+    const small = { content: [{ type: 'text', text: 'a' }] }
+    const wide = { content: [{ type: 'text', text: '€'.repeat(100) }] }
+    await s.commit('k', {
+      events: [ev('user/message', small), ev('user/message', wide)],
+      expectedWriterRunId: 'r1',
+    })
+    await s.commit('other', { events: [ev('user/message', wide)], expectedWriterRunId: 'r2' })
+    const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value))
+    expect(await s.ledgerStats?.('k')).toEqual({
+      storedBytes: bytes(small) + bytes(wide),
+      maxRowBytes: bytes(wide),
+    })
   })
   it('drops the retired UI projection cache table when a database is opened', async () => {
     const legacy = mkdtempSync(join(tmpdir(), 'agnes-sqlite-ui-cache-'))
@@ -461,17 +479,22 @@ describe('storage-sqlite', () => {
     attacker.close()
 
     s = createSqliteStorage({ file, clock: () => now + 5000, tablesDir: join(dir, 'tables') })
-    await expect(
+    const reopen = (writerRunId: string) =>
       SessionLogImpl.open({
         storage: s,
         key: 'protected',
-        writerRunId: 'reader',
+        writerRunId,
         ttlMs: 1000,
         ids: defaultIds(),
         clock: () => now + 5000,
         timers: { setTimeout: () => 0, clearTimeout: () => undefined },
-      }),
-    ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      })
+    // The writer's close left a verified-head checkpoint, so this open starts from it; the background
+    // verification then finds the row, seals the session and drops the checkpoint.
+    const reader = await reopen('reader')
+    await expect(reader.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await reader.close()
+    await expect(reopen('second-reader')).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
   })
 
   it('continues a protected parent prefix under the physical owner key', async () => {

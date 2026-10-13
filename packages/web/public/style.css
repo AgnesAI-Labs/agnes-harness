@@ -1219,7 +1219,8 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   display: none;
 }
 #notice,
-#reconnect-notice {
+#reconnect-notice,
+#stored-history-notice {
   width: min(50rem, calc(100% - 3rem));
   min-height: 0;
   margin: 0 auto;
@@ -1756,6 +1757,10 @@ button.trace-gantt-bar:focus-visible {
 }
 .trace-detail-media {
   margin: 0.5rem 0;
+}
+.trace-image-omitted {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
 }
 .trace-image-thumb {
   display: block;
@@ -2701,6 +2706,33 @@ body.session-switching #approval {
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }
+.composer-upload-progress {
+  display: block;
+  width: 100%;
+  height: 0.375rem;
+}
+.composer-upload-waiting {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.composer-image-preview .composer-upload-progress {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  width: auto;
+}
+.composer-upload-retry {
+  min-height: 0;
+  padding: 0.125rem 0.5rem;
+  font-size: var(--font-size-xs);
+}
+.composer-image-preview .composer-upload-retry {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  left: 0.25rem;
+}
 .composer-controls {
   display: flex;
   align-items: center;
@@ -3340,6 +3372,7 @@ body {
   }
   #notice,
   #reconnect-notice,
+  #stored-history-notice,
   #approval,
   #composer,
   #empty-state {
@@ -3434,6 +3467,7 @@ body {
 @media (max-width: 380px) {
   #notice,
   #reconnect-notice,
+  #stored-history-notice,
   #approval,
   #composer,
   #empty-state {

@@ -75,11 +75,16 @@ export type MethodName =
   | '_agnes/v1/session.attach'
   | '_agnes/v1/session.steer'
   | '_agnes/v1/session.budget'
+  | '_agnes/v1/session.verifyHistory'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
+  | '_agnes/v1/session.storedOpening'
   | '_agnes/v1/session.readToolDetail'
+  | '_agnes/v1/session.exportRaw'
+  | '_agnes/v1/session.attachmentRead'
+  | '_agnes/v1/attachment.upload'
   | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.rename'
@@ -113,6 +118,7 @@ export type MethodName =
   | '_agnes/v1/auth.claim'
   | '_agnes/v1/session.event'
   | '_agnes/v1/session.preview'
+  | '_agnes/v1/session.loading'
   | '_agnes/v1/daemon.notice'
 
 export const METHODS: Record<MethodName, MethodSpec> = {
@@ -193,6 +199,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionIdParams,
     result: A.SessionBudgetResult,
   },
+  // Settles once every stored row of the session has been verified; refuses with E_LEDGER_INTEGRITY.
+  '_agnes/v1/session.verifyHistory': clientRequest(A.SessionIdParams, A.Empty),
   '_agnes/v1/session.projectUI': {
     kind: 'request',
     direction: 'c2s',
@@ -217,10 +225,20 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
+  '_agnes/v1/session.storedOpening': clientRequest(
+    A.SessionStoredOpeningParams,
+    A.SessionStoredOpeningResult,
+  ),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
   ),
+  '_agnes/v1/session.exportRaw': clientRequest(A.SessionExportRawParams, A.SessionExportRawResult),
+  '_agnes/v1/session.attachmentRead': clientRequest(
+    A.SessionAttachmentReadParams,
+    A.SessionAttachmentReadResult,
+  ),
+  '_agnes/v1/attachment.upload': clientRequest(A.AttachmentUploadParams, A.AttachmentUploadResult),
   '_agnes/v1/session.followUp': {
     kind: 'request',
     direction: 'c2s',
@@ -324,6 +342,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
   '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
+  '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },
 }
 

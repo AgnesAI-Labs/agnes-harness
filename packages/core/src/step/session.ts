@@ -89,11 +89,14 @@ import {
   hasTrustedToolCallProvenance,
 } from '../registry/tool-policy.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
+import { type AttachmentWindow, attachmentRange } from '../request/attachment-bytes.js'
+import type { AttachmentIndex, AttachmentKind } from '../request/attachment-index.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import type { RequestImageTransform } from '../request/request-version.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
@@ -103,6 +106,12 @@ import type {
 import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
+import {
+  admitAttachments,
+  attachmentDeadlineMs,
+  checkUserImageBudget,
+  type UserAttachmentPort,
+} from './attachment-admission.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { deferredEffectId } from './deferred.js'
@@ -350,6 +359,8 @@ export type SessionDeps = {
   surface: SurfaceCache
   ui: UIProjectionCell
   lane: string
+  /** Every user attachment of the session, kept current by the tracker that feeds `surface` and `ui`. */
+  attachmentIndex: AttachmentIndex
   runtime: SeamRuntime
   provider: Provider
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
@@ -378,6 +389,20 @@ export type SessionDeps = {
       transformImage?: AuxiliaryVisionAssemblyInput['transformImage']
     }>
   }>
+  /**
+   * Host attachment store: inline attachments become references before they are queued, and user
+   * attachments are read from it. Omitted where no store is assembled.
+   */
+  attachments?: UserAttachmentPort
+  /**
+   * A stored image made to fit a route's image limits, from the host's request-version cache. Omitted,
+   * an image the route cannot take as it is is left out of the request (or refused, for this turn's).
+   */
+  requestVersions?: (
+    source: Readonly<{ sha256: string; bytes: number; mimeType: string }>,
+    t: RequestImageTransform,
+    signal: AbortSignal,
+  ) => Promise<{ bytes: Uint8Array; mimeType: string; width: number; height: number }>
   registry: ToolRegistry
   /** Legacy fixed resource table used when Host does not supply a current-generation lookup. */
   resources?: ResourceRegistry
@@ -565,6 +590,8 @@ export class SessionImpl {
     this.grantsRestored = true
   }
   private lock: Promise<void> = Promise.resolve()
+  /** Settles once the latest enqueue has taken its place in the lock queue, or failed before it. */
+  private enqueueTail: Promise<void> = Promise.resolve()
   /**
    * The cancellation scope of the work in flight, which is the scope of one `run()`. `run()`
    * replaces it, because "stop this turn" and "this session is over" are different statements and
@@ -660,6 +687,35 @@ export class SessionImpl {
   }
   get state() {
     return this.d.tracker.state
+  }
+  get attachmentIndex(): AttachmentIndex {
+    return this.d.attachmentIndex
+  }
+  /** One window of a user attachment (or its thumbnail) for a client download; never rescans the ledger. */
+  readAttachmentRange(
+    input: {
+      seq: number
+      kind: AttachmentKind
+      index: number
+      offset: number
+      length: number
+      thumbnail?: boolean
+    },
+    signal?: AbortSignal,
+  ): Promise<AttachmentWindow> {
+    const { seq, kind, index } = input
+    // Confined to this session's lane, as the tool readers are.
+    // A reference only an inbox row names (a queued item, or one removed from the queue) is located
+    // the same way, by that row's seq.
+    const entry =
+      this.d.attachmentIndex.get(seq, kind, index) ?? this.d.attachmentIndex.queued(seq, kind, index)
+    return attachmentRange(
+      this,
+      { seq, kind, index },
+      input,
+      entry?.lane === this.lane ? entry : undefined,
+      signal,
+    )
   }
 
   private initialModelSettingsRestored = false
@@ -953,23 +1009,75 @@ export class SessionImpl {
     let content: ContentBlock[]
     try {
       content = structuredClone(msg.content)
+      // Images a model request could not carry are refused first, with their own code.
+      checkUserImageBudget(content)
       validateUserMessageImages(content)
+      // Refusals that cost nothing to decide come before any bytes are stored.
+      this.checkQueuedInput(target, msg, content)
     } catch (error) {
       return Promise.reject(error)
     }
+    // Outside the lock: storing bytes can take seconds and writes nothing to the ledger.
+    const admitted = admitAttachments({
+      content,
+      sessionKey: this.key,
+      port: this.d.attachments,
+      referenced: (sha256) => this.attachmentIndex.referenced(sha256),
+      sessionBytes: () => this.attachmentIndex.referencedBytes(),
+      signal: AbortSignal.timeout(attachmentDeadlineMs(content)),
+    })
+    admitted.catch(() => undefined)
+    // Inputs still reach the lock in the order they were sent: each waits for the one before it to
+    // take its place in the queue, while the stores themselves run side by side.
+    const previous = this.enqueueTail
+    let placed!: () => void
+    this.enqueueTail = new Promise<void>((resolve) => {
+      placed = resolve
+    })
+    return previous
+      .then(() => admitted)
+      .then(
+        (queued) => {
+          const written = this.lockedEnqueue(target, msg, content, queued)
+          placed()
+          return written
+        },
+        (error: unknown) => {
+          placed()
+          throw error
+        },
+      )
+  }
+
+  private checkQueuedInput(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    checked: ContentBlock[],
+  ): void {
+    if (msg.budget !== undefined) {
+      if (target !== 'next-turn')
+        throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
+      if (!Number.isFinite(msg.budget) || msg.budget < 0)
+        throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
+    }
+    if (checked.some((block) => block.type === 'image')) {
+      const route = resolveModel(this, 'primary')
+      const model = this.d.provider.models().find((m) => m.route === route.route && m.id === route.model)
+      const error = modelImageInputError(model, [{ content: checked }])
+      if (error) throw new CoreError('E_ENVELOPE', error)
+    }
+  }
+
+  /** `checked` is the input as sent, for the model's image limits; `content` is what the ledger keeps. */
+  private lockedEnqueue(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    checked: ContentBlock[],
+    content: ContentBlock[],
+  ): Promise<Seq> {
     return this.locked(async () => {
-      if (msg.budget !== undefined) {
-        if (target !== 'next-turn')
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
-        if (!Number.isFinite(msg.budget) || msg.budget < 0)
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
-      }
-      if (content.some((block) => block.type === 'image')) {
-        const target = resolveModel(this, 'primary')
-        const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
-        const error = modelImageInputError(model, [{ content }])
-        if (error) throw new CoreError('E_ENVELOPE', error)
-      }
+      // Again under the lock: the selected model may have changed while the bytes were stored.
+      this.checkQueuedInput(target, msg, checked)
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),
@@ -989,17 +1097,21 @@ export class SessionImpl {
           'E_ENVELOPE',
           'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
         )
-      const r = await this.d.log.append([
-        nextInbox,
-        ...(msg.budget !== undefined
-          ? [
-              budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                itemId: item.itemId,
-                creditsCap: msg.budget,
-              }),
-            ]
-          : []),
-      ])
+      // Queuing input is the one write let through while the history is still being verified.
+      const r = await this.d.log.append(
+        [
+          nextInbox,
+          ...(msg.budget !== undefined
+            ? [
+                budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
+                  itemId: item.itemId,
+                  creditsCap: msg.budget,
+                }),
+              ]
+            : []),
+        ],
+        { beforeFullVerify: 'allow' },
+      )
       return r.firstSeq
     })
   }
@@ -1010,12 +1122,15 @@ export class SessionImpl {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       if (!inbox.items.some((item) => item.itemId === itemId && item.target === 'next-turn'))
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
-      const written = await this.d.log.append([
-        inboxEvent(this.lane, this.d.actor, {
-          items: inbox.items.filter((item) => item.itemId !== itemId),
-        }),
-        this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
-      ])
+      const written = await this.d.log.append(
+        [
+          inboxEvent(this.lane, this.d.actor, {
+            items: inbox.items.filter((item) => item.itemId !== itemId),
+          }),
+          this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
+        ],
+        { beforeFullVerify: 'allow' },
+      )
       return written.firstSeq
     })
   }
@@ -1457,6 +1572,10 @@ export class SessionImpl {
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
   async step(): Promise<StepOutcome> {
+    // Every model request, tool run and step hook starts in a step, so none starts on history that an
+    // open folded from a checkpoint until the background verification has hashed all of it, and none
+    // at all once that verification failed: `fullVerified()` then rejects with the failure.
+    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -1755,7 +1874,11 @@ export class SessionImpl {
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
           const error = {
-            code: 'E_STEP_FAILED',
+            // A ledger that failed its integrity check is reported as itself: the session cannot go on.
+            code:
+              err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY'
+                ? 'E_LEDGER_INTEGRITY'
+                : 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
           }
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
@@ -1936,11 +2059,24 @@ export class SessionImpl {
   append(tx: EventInput[]) {
     return this.d.log.append(tx)
   }
-  discardNewSession(): Promise<void> {
-    return this.d.log.discardNewSession()
+  async discardNewSession(): Promise<void> {
+    await this.d.log.discardNewSession()
+    // The key can be bound again by a new session, which must not inherit uploads made to this one.
+    // The session is gone either way, so a failure here is reported, not raised as a failed discard.
+    try {
+      await this.d.attachments?.forgetReceipts?.(this.key)
+    } catch (error) {
+      this.d.logger.warn('upload receipts of a discarded session were not removed', {
+        sessionKey: this.key,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)
+  }
+  scanLean(q: ScanQuery): Promise<Event[]> {
+    return this.d.log.scanLean(q)
   }
   latest(register: string, key?: string): unknown {
     return this.d.log.latest(
@@ -2179,7 +2315,8 @@ export class SessionImpl {
   }
 
   private guardProjection(): void {
-    if (this.d.log.faulted) throw new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    // A history that failed verification is refused as such, so a client can say why.
+    this.d.log.sealCheck()
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 
@@ -2213,8 +2350,9 @@ export class SessionImpl {
   ): Promise<CoreUITimeline> {
     const events: Event[] = []
     let fromSeq = 1
+    // Lean rows, as the live UI cell folds them: nothing below reads attachment bytes.
     while (fromSeq <= cut) {
-      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
+      const page = await this.d.log.scanLean({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
       if (page.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'UI projection scan ended before its captured cut', {
           fromSeq,

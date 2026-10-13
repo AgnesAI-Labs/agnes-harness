@@ -9,6 +9,7 @@ import {
   type IntegrityRow,
   type IntegrityScanQuery,
   type LeaseClaim,
+  leanEvents,
   type OpenResult,
   type RegisterRow,
   registerKey,
@@ -17,12 +18,15 @@ import {
   type SessionKey,
   type StorageAdapter,
   scanTruncated,
+  type VerifiedHead,
 } from '@agnes/core'
 import { assertSessionTreeTableName } from '../session-tree-schema.js'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
+import { EVENT_COLUMNS_LEAN } from './storage-sqlite-lean.js'
+import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
@@ -68,6 +72,13 @@ export type CrashReclaimStore = {
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
   readonly file: string
+  /** Always served here: the lean rewrite runs in SQL, so large attachment bytes stay in storage. */
+  scanLean(key: SessionKey, q: ScanQuery): Promise<Event[]>
+  /** Always kept here, in `ledger_verified_head_v1`. */
+  readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined>
+  writeVerifiedHead(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead(key: SessionKey): Promise<void>
+  integrityDigestAt(key: SessionKey, seq: number): Promise<string | null | undefined>
   /**
    * A package's own tables, on its own connection. A separate file is not by itself an isolation
    * story: SQL reaching a handle could name a second file with ATTACH and read the ledger or
@@ -220,6 +231,11 @@ function rowToEvent(r: Row): Event {
   } as Event
 }
 
+/** A stored row as an event, for a reader that selects the same columns on its own connection. */
+export function rowToEventForRead(r: unknown): Event {
+  return rowToEvent(r as Row)
+}
+
 function rowToIntegrity(r: Row): IntegrityRow {
   let event: Event
   try {
@@ -329,10 +345,17 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     insertSession: db.prepare(
       'INSERT OR IGNORE INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
     ),
+    // A child reads its parent's rows up to the boundary, so it starts at the parent's format.
     insertChildSession: db.prepare(
-      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
+      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) SELECT ?, format_version, session_key, ?, ? FROM sessions WHERE session_key = ?',
+    ),
+    raiseFormat: db.prepare(
+      'UPDATE sessions SET format_version = MAX(format_version, ?) WHERE session_key = ?',
     ),
     lastSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE session_key = ?'),
+    ledgerStats: db.prepare(
+      'SELECT COALESCE(SUM(octet_length(data)), 0) AS total, COALESCE(MAX(octet_length(data)), 0) AS max FROM events WHERE session_key = ?',
+    ),
     insertEvent: db.prepare(
       'INSERT INTO events (session_key, seq, ts, id, type, lane, v, actor, origin, trust, register, ignorable, surface_op, source_event_seqs, data, integrity_mode, integrity_prev, integrity_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ),
@@ -357,6 +380,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     deleteRegisters: db.prepare('DELETE FROM registers WHERE session_key = ?'),
     deleteLease: db.prepare('DELETE FROM writer_claims WHERE session_key = ? AND run_id = ?'),
     deleteSession: db.prepare('DELETE FROM sessions WHERE session_key = ?'),
+    deleteVerifiedHead: db.prepare('DELETE FROM ledger_verified_head_v1 WHERE session_key = ?'),
   }
   const tx = <T>(fn: () => T): T => {
     db.exec('BEGIN IMMEDIATE')
@@ -399,7 +423,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     return parentOf(key)?.boundarySeq ?? 0
   }
   /** Up to `take` matching rows, the parent prefix included; the caller decides what `take` means. */
-  function scanRows(key: SessionKey, qy: ScanQuery, take: number): Event[] {
+  function scanRows(key: SessionKey, qy: ScanQuery, take: number, lean = false): Event[] {
     const parent = parentOf(key)
     const where: string[] = ['session_key = ?']
     const params: SqlParam[] = [key]
@@ -422,15 +446,30 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
     }
     const order = qy.order === 'desc' ? 'DESC' : 'ASC'
     const own = db
-      .prepare(`SELECT * FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`)
+      .prepare(
+        `SELECT ${lean ? EVENT_COLUMNS_LEAN : '*'} FROM events WHERE ${where.join(' AND ')} ORDER BY seq ${order} LIMIT ?`,
+      )
       .all(...params, take) as unknown as Row[]
     let rows = own.map(rowToEvent)
     if (parent) {
       const upper = qy.toSeq === undefined ? parent.boundarySeq : Math.min(qy.toSeq, parent.boundarySeq)
-      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take)
+      const prefix = scanRows(parent.key, { ...qy, toSeq: upper }, take, lean)
       rows = order === 'ASC' ? [...prefix, ...rows] : [...rows, ...prefix]
       rows = rows.slice(0, take)
     }
+    return rows
+  }
+
+  function scanPage(key: SessionKey, qy: ScanQuery, lean: boolean): Event[] {
+    if (qy.toSeq === undefined && qy.limit === undefined)
+      throw new CoreError('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit', {})
+    if (qy.limit !== undefined && (!Number.isSafeInteger(qy.limit) || qy.limit <= 0))
+      throw new CoreError('E_SCAN_UNBOUNDED', 'scan limit must be a positive integer', {})
+    // A page is read as asked. A request for everything reads one row past the page, and that
+    // row's presence is the whole test for "there was more than fits".
+    if (qy.limit !== undefined && qy.limit <= SCAN_PAGE_MAX) return scanRows(key, qy, qy.limit, lean)
+    const rows = scanRows(key, qy, SCAN_PAGE_MAX + 1, lean)
+    if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(qy)
     return rows
   }
 
@@ -455,6 +494,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   return {
     file: opts.file,
     ...childControl,
+    ...verifiedHeadStore(db, parentOf),
     async clearWriterLease(key) {
       tx(() => {
         db.prepare('DELETE FROM writer_claims WHERE session_key = ?').run(key)
@@ -469,9 +509,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
         const parent = parentOf(key)
+        const row = q.session.get(key) as { format_version: number }
         return {
           lastSeq: lastSeq(key),
-          formatVersion: 1,
+          formatVersion: Number(row.format_version),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
         }
@@ -536,6 +577,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           }
           seqs.push(seq)
         }
+        if (c.formatVersion) q.raiseFormat.run(c.formatVersion, key)
         if (c.opState) {
           const lane = keyBytes(c.opState.lane)
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)
@@ -565,19 +607,15 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteRegisters.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
+        q.deleteVerifiedHead.run(key)
       })
     },
     async scan(key, qy) {
-      if (qy.toSeq === undefined && qy.limit === undefined)
-        throw new CoreError('E_SCAN_UNBOUNDED', 'scan needs toSeq or limit', {})
-      if (qy.limit !== undefined && (!Number.isSafeInteger(qy.limit) || qy.limit <= 0))
-        throw new CoreError('E_SCAN_UNBOUNDED', 'scan limit must be a positive integer', {})
-      // A page is read as asked. A request for everything reads one row past the page, and that
-      // row's presence is the whole test for "there was more than fits".
-      if (qy.limit !== undefined && qy.limit <= SCAN_PAGE_MAX) return scanRows(key, qy, qy.limit)
-      const rows = scanRows(key, qy, SCAN_PAGE_MAX + 1)
-      if (rows.length > SCAN_PAGE_MAX) throw scanTruncated(qy)
-      return rows
+      return scanPage(key, qy, false)
+    },
+    // The SQL leaves whole only a block it cannot measure as JS would; the JS rule finishes those.
+    async scanLean(key, qy) {
+      return leanEvents(scanPage(key, qy, true))
     },
     async scanIntegrity(key, qy) {
       if (!Number.isSafeInteger(qy.limit) || qy.limit <= 0)
@@ -594,6 +632,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         }>
       ).map((r) => ({ register: r.register, key: keyText(r.key), seq: r.seq, data: JSON.parse(r.data) }))
     },
+    async ledgerStats(key) {
+      const row = q.ledgerStats.get(key) as { total: number; max: number }
+      return { storedBytes: row.total, maxRowBytes: row.max }
+    },
     async createChild(parentKey, boundarySeq, childKey) {
       tx(() => {
         if (!q.session.get(parentKey) || boundarySeq > lastSeq(parentKey))
@@ -606,7 +648,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey })
         }
         try {
-          q.insertChildSession.run(childKey, parentKey, boundarySeq, new Date(clock()).toISOString())
+          q.insertChildSession.run(childKey, boundarySeq, new Date(clock()).toISOString(), parentKey)
         } catch {
           throw new CoreError('E_STORAGE_FAULT', 'child key exists', { childKey })
         }

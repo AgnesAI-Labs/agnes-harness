@@ -36,6 +36,7 @@ import {
   type ConversationHandle,
   downscaleImageFile,
   EMPTY_SIDEBAR_STATE,
+  makeImageThumbnail,
   PANE_IDS,
   SETTINGS_DSH_SLOT_NAMES,
   SettingsBuiltin,
@@ -89,6 +90,7 @@ const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
   createPermissionPicker,
   createUsagePanel,
   downscaleImage: downscaleImageFile,
+  makeThumbnail: makeImageThumbnail,
   UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
   resize: resizeComposer,
@@ -652,7 +654,8 @@ export function mountComposerRegion(
     },
     () => createElement(SlotOutlet, { name: 'conversation.composer.bar' }),
   )
-  const removeSessionListener = registry.subscribeSession(() => handle.current?.clearImageBlocks())
+  // Attachments belong to the session they were added in; only those waiting for a session stay.
+  const removeSessionListener = registry.subscribeSession(() => handle.current?.sessionChanged())
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
@@ -679,6 +682,18 @@ export function mountComposerRegion(
     },
     hasPendingImages() {
       return handle.current?.hasPendingImages() ?? false
+    },
+    hasDeferredUploads() {
+      return handle.current?.hasDeferredUploads() ?? false
+    },
+    uploadDeferred(target) {
+      return handle.current ? handle.current.uploadDeferred(target) : Promise.resolve([])
+    },
+    inlineDeferred() {
+      return handle.current ? handle.current.inlineDeferred() : Promise.resolve([])
+    },
+    sessionChanged() {
+      handle.current?.sessionChanged()
     },
     render(next) {
       view = next
@@ -1487,6 +1502,7 @@ export function mountTranscriptRegion(
     claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
+    readAttachment?: import('@agnes/web-ui/assistant-ui').AttachmentWindowReader
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService
@@ -1523,6 +1539,7 @@ export function mountTranscriptRegion(
             ...(options.claim ? { claim: options.claim } : {}),
             ...(options.newContentButton ? { newContentButton: options.newContentButton } : {}),
             ...(options.onFork ? { onFork: options.onFork } : {}),
+            ...(options.readAttachment ? { readAttachment: options.readAttachment } : {}),
             ...(options.session ? { session: options.session } : {}),
             ...(options.locale ? { locale: options.locale } : {}),
             ...(options.resources ? { resources: options.resources } : {}),

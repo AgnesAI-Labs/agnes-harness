@@ -7,6 +7,7 @@ import {
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
+  downgradeEvent,
   type EventEnvelope,
   rpcError,
 } from '@agnes/protocol'
@@ -154,7 +155,10 @@ export function registerDiagnostics(
         more = false
         break
       }
-      const { _meta: _dropped, ...event } = sanitize(row) as EventEnvelope & { _meta?: unknown }
+      // Rows go out as session.event sends them: a client that never declared attachment
+      // references (a support tool, a person reading the bundle) gets links and text instead.
+      const shown = c.conn.capabilities.attachmentRefs ? row : downgradeEvent(row)
+      const { _meta: _dropped, ...event } = sanitize(shown) as EventEnvelope & { _meta?: unknown }
       const size = Buffer.byteLength(JSON.stringify(event))
       if (events.length > 0 && bytes + size > maxBytes) {
         more = true

@@ -39,6 +39,7 @@ const TOP_LEVEL_KEYS = new Set([
   'reconcile',
   'approvals',
   'computerUse',
+  'attachments',
   'extensionIsolation',
 ])
 
@@ -111,6 +112,16 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
     bad(
       'computerUse must declare the reviewed local automatic or enterprise disabled defaults with an empty appAllowlist',
     )
+  const attachments = m.attachments as Record<string, unknown> | undefined
+  if (
+    attachments !== undefined &&
+    (typeof attachments !== 'object' ||
+      attachments === null ||
+      Object.entries(attachments).some(
+        ([key, value]) => key !== 'storeByReference' || typeof value !== 'boolean',
+      ))
+  )
+    bad('attachments may contain only the boolean storeByReference')
   const reconcile = m.reconcile as
     | { point?: unknown; maxWaitMs?: unknown; [key: string]: unknown }
     | undefined

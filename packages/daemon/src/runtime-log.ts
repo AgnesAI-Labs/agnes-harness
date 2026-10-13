@@ -13,7 +13,15 @@ export const RUNTIME_LOG = 'runtime.jsonl'
 /** Live file bound; one previous generation (`runtime.jsonl.1`) is kept beside it. */
 const RUNTIME_LOG_MAX_BYTES = 2 * 1024 * 1024
 
-const ROUTED = new Set(['worker.exited', 'worker.start_failed', 'session.interrupted', 'daemon.error'])
+const ROUTED = new Set([
+  'worker.exited',
+  'worker.start_failed',
+  'session.interrupted',
+  'daemon.error',
+  'session.open',
+  'session.load',
+  'session.verify_full',
+])
 const MAX_CHARS = 2000
 const MAX_ITEMS = 50
 

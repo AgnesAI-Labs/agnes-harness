@@ -24,6 +24,18 @@ export function storageContract(
     ).toEqual([1, 2])
     await s.close()
   })
+  it(`${name}: raises the ledger format only when a batch asks, never lowers it, and children inherit it`, async () => {
+    const s = open()
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1', formatVersion: 2 })
+    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(2)
+    await s.createChild('k', 3, 'child')
+    expect((await s.open('child', { writerRunId: 'r2', ttlMs: 1000 })).formatVersion).toBe(2)
+    await s.close()
+  })
   it(`${name}: stores integrity metadata beside events without exposing it in public scans`, async () => {
     const s = open()
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
@@ -254,6 +266,71 @@ export function storageContract(
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
     await s.renew('k', 'r1')
     await expect(s.renew('k', 'r2')).rejects.toMatchObject({ code: 'E_WRITER_LEASE' })
+    await s.close()
+  })
+  it(`${name}: keeps the furthest verified head, and reads a row digest through a child's parent`, async () => {
+    const s = open()
+    const read = s.readVerifiedHead?.bind(s)
+    const write = s.writeVerifiedHead?.bind(s)
+    const digestAt = s.integrityDigestAt?.bind(s)
+    if (!read || !write || !digestAt || !s.deleteVerifiedHead)
+      throw new Error(`${name} keeps no verified head`)
+    await s.open('p', { writerRunId: 'r1', ttlMs: 1000 })
+    const digest = (c: string) => c.repeat(64)
+    await s.commit('p', {
+      events: [ev('user/message', {}), ev('user/message', {})],
+      integrity: [
+        { seq: 1, mode: 'anchor', previousDigest: null, digest: digest('a') },
+        { seq: 2, mode: 'chain', previousDigest: digest('a'), digest: digest('b') },
+      ],
+      expectedWriterRunId: 'r1',
+    })
+    await s.commit('p', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    await s.createChild('p', 2, 'c')
+    expect(await digestAt('p', 2)).toBe(digest('b'))
+    expect(await digestAt('p', 3)).toBeNull()
+    expect(await digestAt('p', 4)).toBeUndefined()
+    expect(await digestAt('c', 1)).toBe(digest('a'))
+    expect(await digestAt('c', 3)).toBeUndefined()
+    expect(await digestAt('nobody', 1)).toBeUndefined()
+    const head = {
+      sessionKey: 'p',
+      throughSeq: 2,
+      headDigest: digest('b'),
+      legacyThroughSeq: 0,
+      algorithm: 'agnes-ledger-jcs-sha256-v1' as const,
+      verifiedFullAtMs: 1,
+      writtenAtMs: 2,
+      checkpointDigest: digest('c'),
+    }
+    expect(await read('p')).toBeUndefined()
+    await write(head)
+    expect(await read('p')).toEqual(head)
+    await write({ ...head, throughSeq: 1 })
+    expect((await read('p'))?.throughSeq).toBe(2)
+    await write({ ...head, throughSeq: 1 }, { force: true })
+    expect((await read('p'))?.throughSeq).toBe(1)
+    await s.deleteVerifiedHead('p')
+    expect(await read('p')).toBeUndefined()
+    await s.close()
+  })
+  it(`${name}: discarding a new session drops its verified head`, async () => {
+    const s = open()
+    if (!s.discardNewSession || !s.writeVerifiedHead || !s.readVerifiedHead) return
+    await s.open('n', { writerRunId: 'r1', ttlMs: 1000 })
+    await s.commit('n', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
+    await s.writeVerifiedHead({
+      sessionKey: 'n',
+      throughSeq: 1,
+      headDigest: 'a'.repeat(64),
+      legacyThroughSeq: 0,
+      algorithm: 'agnes-ledger-jcs-sha256-v1',
+      verifiedFullAtMs: 1,
+      writtenAtMs: 1,
+      checkpointDigest: 'b'.repeat(64),
+    })
+    await s.discardNewSession('n', 'r1')
+    expect(await s.readVerifiedHead('n')).toBeUndefined()
     await s.close()
   })
 }

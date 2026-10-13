@@ -170,6 +170,68 @@ describe('WorkerPool', () => {
     for (const end of [poolA, poolB, workerA, workerB]) end.destroy()
   })
 
+  it('passes on open progress only from the link that hosts the session', async () => {
+    const progress: Array<{ key: string; done: number }> = []
+    const pool = new WorkerPool({
+      config: {
+        profileName: 'p',
+        dataDir: '/unused',
+        socketPath: '/unused/client.sock',
+        workersSocketPath: '/unused/worker.sock',
+        limits: DEFAULT_LIMITS,
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile: '/unused/profile.json',
+      clock: () => 0,
+      onEvent: () => undefined,
+      onProgress: (key, p) => progress.push({ key, done: p.done }),
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+    })
+    const internals = pool as unknown as {
+      slots: Map<string, unknown>
+      pendingByToken: Map<string, (link: unknown) => void>
+    }
+    const claimed = (token: string, slotKey: string, channels: string[]) =>
+      new Promise<void>((resolve) => {
+        internals.pendingByToken.set(token, (link) => {
+          internals.slots.set(slotKey, {
+            link,
+            channels: new Map(channels.map((c) => [c, {}])),
+            resourceControl: slotKey !== '@shared',
+          })
+          resolve()
+        })
+      })
+    const [poolA, workerA] = duplexPair()
+    const [poolB, workerB] = duplexPair()
+    const adoptedA = claimed('token-a', '@shared', ['s'])
+    const adoptedB = claimed('token-b', 'service', [])
+    pool.adopt(poolA)
+    pool.adopt(poolB)
+    const hello = (token: string, workerGeneration: number, workerKind: 'session' | 'service') =>
+      encodeFrame({
+        kind: 'hello',
+        token,
+        workerKey: workerKind === 'session' ? '@shared' : 'service',
+        workerKind,
+        workerGeneration,
+        profileHash: 'h1',
+      })
+    workerA.write(hello('token-a', 1, 'session'))
+    workerB.write(hello('token-b', 2, 'service'))
+    await Promise.all([adoptedA, adoptedB])
+    const frame = (sessionKey: string, done: number) =>
+      encodeFrame({ kind: 'progress', sessionKey, phase: 'verify', done, total: 10 })
+    workerB.write(frame('s', 1))
+    workerA.write(frame('other', 2))
+    workerA.write(frame('s', 3))
+    await vi.waitFor(() => expect(progress).toHaveLength(1))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(progress).toEqual([{ key: 's', done: 3 }])
+    for (const end of [poolA, poolB, workerA, workerB]) end.destroy()
+  })
+
   it('survives a session interruption on a link whose session has an attached connection', async () => {
     // A worker that loses its session tail reports `session.interrupted`. The daemon retires the
     // session and reports the failure; it must not push a notice the protocol cannot carry, and a

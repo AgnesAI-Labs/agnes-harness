@@ -302,7 +302,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06 the composer's paperclip hint moves off the native title onto a Tooltip, which needs
   // its own wrapper here (antd's Tooltip consumes `rootClassName`, not `className`). Measured: 6678.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6687, exact.
-  'packages/web-ui/src': 6687,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-ui/src 6691; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the omitted image size label; reviewed exact countLines packages/web-ui/src 6702; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web-ui/src 6710; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web-ui/src 6922; no exclusions or spare allocation.
+  'packages/web-ui/src': 6922,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -320,13 +324,19 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06 review fix: a refused file block reports through the shared attachment-error map
   // instead of claiming the attachment could not be read. Measured: 6242, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 6273, exact.
-  'packages/web-units/src': 6273,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web-units/src 6278; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the omitted input image label; reviewed exact countLines packages/web-units/src 6290; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web-units/src 6884; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: a waiting-to-upload state for attachments added before the session exists, sentences for the send-time store refusals, and the known upload limit in the too-large message. Reviewed exact countLines packages/web-units/src 6918; no exclusions or spare allocation.
+  'packages/web-units/src': 6918,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 1080, exact.
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/base/extensions/tools-core 1252; no exclusions or spare allocation.
   // 2026-10-13 batch processing: read workspace images; reviewed exact countLines packages/base/extensions/tools-core 1297; no exclusions or spare allocation.
   // 2026-10-13 the image codec loads on the first image read, so a machine without it still starts sessions; measured 1313, exact.
-  'packages/base/extensions/tools-core': 1313,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/base/extensions/tools-core 1485; no exclusions or spare allocation.
+  'packages/base/extensions/tools-core': 1485,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -435,7 +445,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 141, exact.
-  'packages/web/src/presentation': 141,
+  // 2026-10-13 attachments by reference: refusal copy for a failed integrity check and a newer ledger; reviewed exact countLines packages/web/src/presentation 143; no exclusions or spare allocation.
+  'packages/web/src/presentation': 143,
   'packages/web/src/markdown': 48,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
@@ -503,7 +514,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // `notify`. Two rounds of review fixes on that work added the bfcache guards on all three pagehide
   // listeners, the detached-notifier reset, the shared noticeHoldsPersistentContent predicate every
   // notice writer now goes through, and the dismiss on submit. Measured: 2222, exact, no spare.
-  'packages/web/src/app': 2222,
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src/app 2368; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src/app 2406; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web/src/app 2481; no exclusions or spare allocation.
+  'packages/web/src/app': 2481,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -540,7 +554,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 807, exact, no spare.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 810, exact.
-  'packages/web/src/timeline': 810,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src/timeline 811; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web/src/timeline 813; no exclusions or spare allocation.
+  'packages/web/src/timeline': 813,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1084,9 +1100,21 @@ const INITIAL_CEILING: Record<string, number> = {
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
-  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 26812, exact.
+  // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; 2026-10-13 request version ids and the version cache, and ledger hashing through node:crypto; measured 26941, exact.
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/core/src 26994; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/core/src 27083; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/core/src 27125; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/core/src 27144; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/core/src 27465; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/core/src 27751; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/core/src 28242; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/core/src 28595; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/core/src 28630; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/core/src 28687; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: typed admission timeout, per-image refusal and checkpoint kept on a storage error; reviewed exact countLines packages/core/src 28691; no exclusions or spare allocation.
   // 2026-10-13 batch processing: core image input port; reviewed exact countLines packages/core/src 26917; no exclusions or spare allocation.
-  'packages/core/src': 26917,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/core/src 28796; no exclusions or spare allocation.
+  'packages/core/src': 28796,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1102,7 +1130,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 4169, exact.
-  'packages/ai/src': 4169,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/ai/src 4173; no exclusions or spare allocation.
+  'packages/ai/src': 4173,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1321,9 +1350,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
   // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/assemble 4223; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src/assemble 4250; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/host/src/assemble 4260; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: set-aside attachment bytes put back at host start; reviewed exact countLines packages/host/src/assemble 4270; no exclusions or spare allocation.
   // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 4214, exact.
   // 2026-10-13 batch processing: the daemon batch bridge reaches agnes/batch only; measured 4218, exact.
-  'packages/host/src/assemble': 4218,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/host/src/assemble 4276; no exclusions or spare allocation.
+  'packages/host/src/assemble': 4276,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1399,9 +1433,18 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+9).
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
-  // tree: 2201, exact.
+  // tree: 2201, exact. Extended 2026-10-13 for the JCS string fast path and chunked serializer; measured 2305, exact.
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/protocol/src 2306; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the raw row export method; reviewed exact countLines packages/protocol/src 2310; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/protocol/src 2390; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/protocol/src 2400; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/protocol/src 2402; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/protocol/src 2404; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/protocol/src 2411; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/protocol/src 2476; no exclusions or spare allocation.
   // 2026-10-13 batch processing: protocol types and local methods; reviewed exact countLines packages/protocol/src 2303; no exclusions or spare allocation.
-  'packages/protocol/src': 2303,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/protocol/src 2498; no exclusions or spare allocation.
+  'packages/protocol/src': 2498,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1483,7 +1526,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C3: projection.ts is now a re-export of the SDK engine.
   // measured 4238 (-534), exact, lowered to the measured value.
   // CHUNK-LEDGER-SLIM final tree: the TUI live line reads merged previews. Measured 4232, exact, no spare (-6).
-  'packages/cli-tui/src': 4737,
+  // 2026-10-13 attachments by reference: the terminal UI ends a session whose history failed verification; reviewed exact countLines packages/cli-tui/src 4764; no exclusions or spare allocation.
+  'packages/cli-tui/src': 4764,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1594,7 +1638,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
   // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
   // Measured: 5176, exact, no spare.
-  'packages/sdk/src': 5189,
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/sdk/src 5194; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/sdk/src 5284; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/sdk/src 5287; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: a session refused for good ends its recovery; verifyHistory and exportRaw without a request deadline; reviewed exact countLines packages/sdk/src 5345; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/sdk/src 5491; no exclusions or spare allocation.
+  'packages/sdk/src': 5491,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1961,6 +2010,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 26917, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 26919, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 27138, exact.
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/daemon/src 27243; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: scan resume, raw row export and ACP block replay; reviewed exact countLines packages/daemon/src 27281; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/daemon/src 27312; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/daemon/src 27459; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/daemon/src 27523; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: one typed mapping for integrity refusals, the in-process integrity notice and a typed interrupted open; reviewed exact countLines packages/daemon/src 27564; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/daemon/src 27613; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/daemon/src 28203; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: a failed staged write drops its upload, and a finished image is classified by the send budget from a bounded header read; reviewed exact countLines packages/daemon/src 28231; no exclusions or spare allocation.
   // 2026-10-13 batch processing: engine pure functions; reviewed exact countLines packages/daemon/src 27572; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch tables and result export; reviewed exact countLines packages/daemon/src 28326; no exclusions or spare allocation.
   // 2026-10-13 batch processing: batch engine; reviewed exact countLines packages/daemon/src 29034; no exclusions or spare allocation.
@@ -1970,7 +2028,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-13 batch processing review fixes: the stop reason leaves model replies out, a status no longer reports a mid-run summary as final, a run stopped by the budget exhausts the batch, an unused prepared session is closed; measured 29358, exact.
   // 2026-10-13 batch processing review fixes: job ids of batch items are protected names, local callers only; measured 29360, exact.
   // 2026-10-13 batch processing re-review fixes: answer problems carry a cause without anything the model wrote, a batch whose every run hit the budget ends budget_exhausted, one summary head shared by export and status; measured 29398, exact.
-  'packages/daemon/src': 29398,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/daemon/src 30491; no exclusions or spare allocation.
+  'packages/daemon/src': 30491,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2228,7 +2287,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // neither side's number holds. Re-measured with countLines() on the merged tree: 16967, exact.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 16990, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 17030, exact.
-  'packages/web/src': 17030,
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/web/src 17031; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/web/src 17033; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/web/src 17193; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the Web stops and labels a session whose history failed verification; reviewed exact countLines packages/web/src 17239; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/web/src 17242; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/web/src 17341; no exclusions or spare allocation.
+  'packages/web/src': 17341,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2310,7 +2375,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5250 with countLines(); the guard still rejects any further growth.
   // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
   // Measured 5252, exact, no spare (+2).
-  'packages/channels/src': 5252,
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/channels/src 5255; no exclusions or spare allocation.
+  'packages/channels/src': 5255,
   'packages/code/src': 1600,
   'packages/cli/src/args': 300,
   'packages/runtime-python/src': 400,
@@ -2713,10 +2779,27 @@ const INITIAL_CEILING: Record<string, number> = {
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 39040, exact.
+  // 2026-10-13 attachments by reference: the streaming content-addressed attachment store and the request version cache. Reviewed exact countLines packages/host/src 39693; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src 39703; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src 39757; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean helpers re-exported for workers; reviewed exact countLines packages/host/src 39760; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src 39765; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src 39897; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src 39989; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: title generation and its usage recovery wait for the verified history; reviewed exact countLines packages/host/src 40004; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src 40215; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: one attachment port for admission and reads; reviewed exact countLines packages/host/src 40352; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: user images chosen by recorded size with stepped omission, read by form, and request versions; reviewed exact countLines packages/host/src 40380; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the unreferenced attachment sweep, raw export and import, and forgotten upload receipts, combined with user image selection and request versions; reviewed exact countLines packages/host/src 40651; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: chunked uploads over the client connection, reference images in the transcript, typed refusals and the image send budget, combined with the attachment sweep, raw export and request versions; reviewed exact countLines packages/host/src 40664; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: attachment markers with a malformed size or type count as absent, and a send only refreshes an existing marker; reviewed exact countLines packages/host/src 40692; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: set-aside bytes are put back under the ledger write lock, at host start as in every sweep; reviewed exact countLines packages/host/src 40745; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: the attachment sweep decides in synchronous batches under the ledger write lock, with a synchronous root proof and marker read; reviewed exact countLines packages/host/src 40810; no exclusions or spare allocation.
   // 2026-10-13 batch processing: agnes/batch joins the builtin extension rows (+2); measured 39042, exact.
   // 2026-10-13 batch processing: the daemon batch bridge reaches agnes/batch only; measured 39049, exact.
   // 2026-10-13 batch processing: the audit vocabulary gains the started-batch record; measured 39050, exact.
-  'packages/host/src': 39050,
+  // 2026-10-13 attachments by reference merged with batch processing from main; reviewed exact countLines packages/host/src 40820; no exclusions or spare allocation.
+  'packages/host/src': 40820,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2770,7 +2853,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-20 appAccess and signed application identity policy. Measured 1116; exact cap.
   // 2026-09-21 AGH namespace rename (.agnes -> .agh): +1 counted line: inputs.ts imports AGH_DIR for <cwd>/.agh/profile.local.yaml.
   // Re-measured with this guard's countLines(): 1185, exact cap, no spare.
-  'packages/host/src/profile': 1187,
+  // 2026-10-13 attachments by reference: attachments are stored by reference when queued; reviewed exact countLines packages/host/src/profile 1226; no exclusions or spare allocation.
+  'packages/host/src/profile': 1226,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
@@ -2886,7 +2970,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 5248, exact.
   // Windows tool fixes, background jobs, and the fixes from two Windows diagnostics bundles; measured 5572, exact.
-  'packages/host/src/adapters': 5572,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters 5579; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters 5631; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters 5636; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters 5639; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src/adapters 5722; no exclusions or spare allocation.
+  'packages/host/src/adapters': 5722,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2907,7 +2996,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // open. Measured on this tree: 632, exact, no spare (-48).
   // Durable WAL checkpoints on darwin: the ledger and table-store connections call the checkpoint
   // sync helper. Measured 635, exact, no spare (+3).
-  'packages/host/src/adapters/storage-sqlite': 635,
+  // 2026-10-13 attachments by reference: incident reproduction fixture and open-phase records; reviewed exact countLines packages/host/src/adapters/storage-sqlite 642; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean ledger rows; reviewed exact countLines packages/host/src/adapters/storage-sqlite 653; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: lean rows, reference blocks and ledger format 2 combined; reviewed exact countLines packages/host/src/adapters/storage-sqlite 658; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: load progress, stored opening and read-only fallback; reviewed exact countLines packages/host/src/adapters/storage-sqlite 661; no exclusions or spare allocation.
+  // 2026-10-13 attachments by reference: checkpoint, background verification and integrity handling combined; reviewed exact countLines packages/host/src/adapters/storage-sqlite 670; no exclusions or spare allocation.
+  'packages/host/src/adapters/storage-sqlite': 670,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   'packages/base/extensions/refine': 400,
@@ -2951,8 +3045,10 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // CRLF-preserving write/edit, the stopped-process notice, background shell, the job tool, and the
   // PowerShell, timeout and wrapper feedback in shell results; measured 1080, exact (a sibling
   // extension for `job` alone would still leave this above 922).
+  // 2026-10-13 attachments by reference: reads of stored attachments, saveTo and image references; measured 1252, exact.
   // 2026-10-13 batch processing reads workspace images (1297); the codec now loads on the first image read; measured 1313, exact.
-  ['tools-core', 1313],
+  // 2026-10-13 attachments by reference merged with batch processing from main: stored attachment reads, saveTo and workspace image reads together; measured 1485, exact.
+  ['tools-core', 1485],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

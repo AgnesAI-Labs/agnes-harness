@@ -16,6 +16,7 @@ import {
   type ComputerUsePermissionsStatusResult,
   type ComputerUseStatusResult,
   type CostLedger,
+  downgradeTimeline,
   type EventEnvelope,
   type ExtUiResponseParams,
   type ParticipantListResult,
@@ -45,6 +46,8 @@ import {
 } from '@agnes/protocol'
 import { SessionRemoveQueuedParams, SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
 import {
+  attachmentReadPage,
+  exportRawChunk,
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
   type ToolDetailRead,
@@ -67,7 +70,17 @@ import type {
   JournalResult,
   SessionLister,
 } from '../ports.js'
-import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
+import {
+  attachmentRefusal,
+  type Feed,
+  isNewerLedgerFormat,
+  type LocalContext,
+  ledgerIntegrityRefusal,
+  legacyLedgerRpcError,
+  newerLedgerRpcError,
+} from './acp.js'
+import { registerAttachmentRead } from './attachment-read.js'
+import { registerExportRaw } from './export-raw.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
@@ -86,6 +99,8 @@ export type AgnesContext = LocalContext & {
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
+  /** Whether chunked attachment uploads are served (the method answers either way). */
+  attachmentUpload?: boolean
   /** Host-owned, read-only locked-package mutation readiness. Absence is reported as unknown. */
   lockedPackageMutations?: Readonly<{ status(): unknown }>
   /** Present only when Host completed platform-scoped production admission. */
@@ -189,6 +204,11 @@ function rememberProjection(
     if (oldest === undefined) break
     baselines.delete(oldest)
   }
+}
+
+/** A projection as this connection may see it: links and text in place of reference blocks it never declared. */
+export function projectionFor<T>(connection: { capabilities: { attachmentRefs: boolean } }, value: T): T {
+  return connection.capabilities.attachmentRefs ? value : downgradeTimeline(value)
 }
 
 const UI_HISTORY_CURSOR_SECRET = randomBytes(32)
@@ -431,11 +451,14 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.steer',
       'session.followUp',
       'session.budget',
+      'session.verifyHistory',
       'session.projectUI',
       'session.projectUIPatch',
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.readToolDetail',
+      'session.exportRaw',
+      'session.attachmentRead',
       'session.list',
       'session.rename',
       'session.archive',
@@ -490,6 +513,13 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     methods: ['_agnes/v1/artifact.read'],
     guidance: 'authenticated content-addressed reads; session and lane are authorization targets',
     when: (x) => x.artifactRead === true,
+  },
+  {
+    name: 'attachment',
+    methods: ['_agnes/v1/attachment.upload'],
+    guidance:
+      'upload an attachment in 1 MiB chunks for a session you own, then send the returned reference block',
+    when: (x) => x.attachmentUpload === true,
   },
   // Local authentication is the whole condition. The old `|| !!x.jobs` advertised the protected
   // enqueue to every remote connection on any daemon that runs a jobs service, which is the opposite
@@ -749,92 +779,97 @@ export function registerAgnes(
       const current = cx.registry.require(sessionId).generation
       if (generation !== current) throw rpcError('GENERATION_STALE', { generation: current })
     }
-  ep.register('_agnes/v1/approval.decide', async (params, c) => {
-    if (!cx.resolveActor) throw rpcError('CAPABILITY_DENIED', { method: 'approval.decide' })
-    const p = params as {
-      ticket: string
-      verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
-      approverCredential: unknown
-    }
-    type ApprovalSession = {
-      resumeApproval?: (
-        ticket: string,
-        verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
-        actor: Actor,
-      ) => Promise<{ seq: number }>
-      decideApproval?: (input: {
+  // Typed as a whole: the reopen, the ticket scan and the decision all read or write the history.
+  ep.register(
+    '_agnes/v1/approval.decide',
+    typedLedgerHandler(async (params, c) => {
+      if (!cx.resolveActor) throw rpcError('CAPABILITY_DENIED', { method: 'approval.decide' })
+      const p = params as {
         ticket: string
         verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
-        decidedBy: Actor
-      }) => Promise<{ seq: number }>
-    }
-    const matches: Array<{ sessionId: string; session: ApprovalSession }> = []
-    // A ticket deliberately carries no session id. Prefer the event-built index; unlike an open
-    // registry scan it survives daemon restart. Ticket cwd is history only: reopening must restore
-    // the daemon-issued authority binding for the indexed session.
-    const indexed = cx.tickets?.get(p.ticket)
-    if (indexed)
-      try {
-        requireOwner('approval.decide', indexed, c)
-      } catch {
-        throw rpcError('APPROVAL_REJECTED', { reason: 'unknown ticket' })
+        approverCredential: unknown
       }
-    if (indexed && !cx.registry.get(indexed)) {
-      let binding: WorkspaceBindingEnvelope
-      try {
-        binding = await cx.workspaces.restoreBinding(indexed)
-      } catch {
+      type ApprovalSession = {
+        resumeApproval?: (
+          ticket: string,
+          verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
+          actor: Actor,
+        ) => Promise<{ seq: number }>
+        decideApproval?: (input: {
+          ticket: string
+          verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
+          decidedBy: Actor
+        }) => Promise<{ seq: number }>
+      }
+      const matches: Array<{ sessionId: string; session: ApprovalSession }> = []
+      // A ticket deliberately carries no session id. Prefer the event-built index; unlike an open
+      // registry scan it survives daemon restart. Ticket cwd is history only: reopening must restore
+      // the daemon-issued authority binding for the indexed session.
+      const indexed = cx.tickets?.get(p.ticket)
+      if (indexed)
+        try {
+          requireOwner('approval.decide', indexed, c)
+        } catch {
+          throw rpcError('APPROVAL_REJECTED', { reason: 'unknown ticket' })
+        }
+      if (indexed && !cx.registry.get(indexed)) {
+        let binding: WorkspaceBindingEnvelope
+        try {
+          binding = await cx.workspaces.restoreBinding(indexed)
+        } catch {
+          throw rpcError('APPROVAL_REJECTED', {
+            reason: 'ticket workspace unavailable',
+          })
+        }
+        try {
+          await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
+        } catch (error) {
+          if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+          if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
+          throw error
+        }
+      }
+      const candidates = indexed ? [indexed] : cx.registry.keys()
+      // An index miss keeps the older fallback of scanning open sessions for the ticket. Refuse
+      // ambiguity rather than choosing whichever registry key happens to enumerate first.
+      for (const sessionId of candidates) {
+        try {
+          requireOwner('approval.decide', sessionId, c)
+        } catch {
+          continue
+        }
+        const session = cx.registry.get(sessionId)?.session
+        if (!session) continue
+        const asked = await scanNewest(
+          session as unknown as ScannableSession,
+          'approval/asked',
+          (event) => (event.data as { pending?: { ticket?: unknown } } | null)?.pending?.ticket === p.ticket,
+        )
+        if (asked) matches.push({ sessionId, session: session as ApprovalSession })
+        if (matches.length > 1) break
+      }
+      if (matches.length !== 1)
         throw rpcError('APPROVAL_REJECTED', {
-          reason: 'ticket workspace unavailable',
+          reason: matches.length === 0 ? 'unknown ticket' : 'ambiguous ticket',
         })
-      }
+      const match = matches[0] as (typeof matches)[number]
+      const approver = await cx.resolveActor(p.approverCredential, 'approval', match.sessionId)
+      const session = match.session
       try {
-        await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
+        if (session.resumeApproval) return session.resumeApproval(p.ticket, p.verdict, approver)
+        if (session.decideApproval)
+          return session.decideApproval({ ticket: p.ticket, verdict: p.verdict, decidedBy: approver })
+        throw new Error('session has no approval callback')
       } catch (error) {
-        if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        const e = error as { code?: unknown; message?: unknown }
+        if (e.code === 'E_RELATION')
+          throw rpcError('APPROVAL_REJECTED', {
+            reason: typeof e.message === 'string' ? e.message : 'approval rejected',
+          })
         throw error
       }
-    }
-    const candidates = indexed ? [indexed] : cx.registry.keys()
-    // An index miss retains Task 11's compatibility fallback over open sessions. Refuse ambiguity
-    // rather than choosing whichever registry key happens to enumerate first.
-    for (const sessionId of candidates) {
-      try {
-        requireOwner('approval.decide', sessionId, c)
-      } catch {
-        continue
-      }
-      const session = cx.registry.get(sessionId)?.session
-      if (!session) continue
-      const asked = await scanNewest(
-        session as unknown as ScannableSession,
-        'approval/asked',
-        (event) => (event.data as { pending?: { ticket?: unknown } } | null)?.pending?.ticket === p.ticket,
-      )
-      if (asked) matches.push({ sessionId, session: session as ApprovalSession })
-      if (matches.length > 1) break
-    }
-    if (matches.length !== 1)
-      throw rpcError('APPROVAL_REJECTED', {
-        reason: matches.length === 0 ? 'unknown ticket' : 'ambiguous ticket',
-      })
-    const match = matches[0] as (typeof matches)[number]
-    const approver = await cx.resolveActor(p.approverCredential, 'approval', match.sessionId)
-    const session = match.session
-    try {
-      if (session.resumeApproval) return session.resumeApproval(p.ticket, p.verdict, approver)
-      if (session.decideApproval)
-        return session.decideApproval({ ticket: p.ticket, verdict: p.verdict, decidedBy: approver })
-      throw new Error('session has no approval callback')
-    } catch (error) {
-      const e = error as { code?: unknown; message?: unknown }
-      if (e.code === 'E_RELATION')
-        throw rpcError('APPROVAL_REJECTED', {
-          reason: typeof e.message === 'string' ? e.message : 'approval rejected',
-        })
-      throw error
-    }
-  })
+    }),
+  )
   ep.register('_agnes/v1/session.budget', async (params, c) => {
     const sessionId = (params as { sessionId: string }).sessionId
     requireOwner('session.budget', sessionId, c)
@@ -853,6 +888,18 @@ export function registerAgnes(
     })
     return { state, ledger }
   })
+  // Answers once every stored row has been verified, so a reader that hands the history on (export)
+  // does not hand on rows an open from a checkpoint has only folded so far.
+  ep.register('_agnes/v1/session.verifyHistory', async (params, c) => {
+    const sessionId = (params as { sessionId: string }).sessionId
+    requireOwner('session.verifyHistory', sessionId, c)
+    try {
+      await verifyHistory(cx.registry.require(sessionId).session)
+    } catch (error) {
+      throw ledgerIntegrityRefusal(error) ?? error
+    }
+    return {}
+  })
   ep.register('_agnes/v1/session.projectUI', async (params, c) => {
     const p = params as SessionProjectUIParams
     requireOwner('session.projectUI', p.sessionId, c)
@@ -860,10 +907,12 @@ export function registerAgnes(
       throw rpcError('INVALID_PARAMS', { reason: 'invalid projection upper bound' })
     const entry = cx.registry.require(p.sessionId)
     const generation = entry.generation
-    const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
+    const timeline = await typedLedger(
+      entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {}),
+    )
     const current = { ...timeline, generation } as UITimeline
     rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), current)
-    return current
+    return projectionFor(c.conn, current)
   })
   ep.register('_agnes/v1/session.projectUIOpening', async (params, c) => {
     const p = params as SessionProjectUIOpeningParams
@@ -883,13 +932,15 @@ export function registerAgnes(
       'projection byte limit',
     )
     const entry = cx.registry.require(p.sessionId)
-    const core = (await entry.session.projectUIOpening({
-      ...(p.surface ? { surface: p.surface } : {}),
-      maxNodes,
-      // Leave room for timeline metadata, history coordinates, cursor and JSON object keys. The
-      // exact serialized result is checked below; this only avoids cloning avoidable nodes first.
-      maxBytes: Math.max(1, maxBytes - 4096),
-    })) as {
+    const core = (await typedLedger(
+      entry.session.projectUIOpening({
+        ...(p.surface ? { surface: p.surface } : {}),
+        maxNodes,
+        // Leave room for timeline metadata, history coordinates, cursor and JSON object keys. The
+        // exact serialized result is checked below; this only avoids cloning avoidable nodes first.
+        maxBytes: Math.max(1, maxBytes - 4096),
+      }),
+    )) as {
       timeline: Omit<UITimeline, 'generation'>
       hasEarlier: boolean
       startIndex: number
@@ -920,10 +971,12 @@ export function registerAgnes(
         timeline: { ...core.timeline, generation: entry.generation, nodes, turns },
         history,
       }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) {
+      // Measured as sent: the links and text that replace references are not the same size.
+      const sent = projectionFor(c.conn, result)
+      if (Buffer.byteLength(JSON.stringify(sent), 'utf8') <= maxBytes) {
         windowedProjectionConnections.add(c.conn)
         rememberProjection(c.conn, uiProjectionKey(p.sessionId, p.surface), result.timeline, 'windowed')
-        return result
+        return sent
       }
       if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
       nodes = nodes.slice(1)
@@ -973,7 +1026,7 @@ export function registerAgnes(
     } catch (error) {
       if ((error as { code?: unknown })?.code === 'E_ENVELOPE')
         throw rpcError('CURSOR_OUT_OF_RANGE', { earliestSeq: 0, lastSeq: entry.session.lastSeq })
-      throw error
+      throw ledgerIntegrityRefusal(error) ?? error
     }
     if (
       core.sessionId !== p.sessionId ||
@@ -1007,7 +1060,8 @@ export function registerAgnes(
         startIndex,
         totalNodes: core.totalNodes,
       }
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') <= maxBytes) return result
+      const sent = projectionFor(c.conn, result)
+      if (Buffer.byteLength(JSON.stringify(sent), 'utf8') <= maxBytes) return sent
       if (nodes.length <= 1) throw rpcError('INTERNAL_ERROR', { code: 'UI_PROJECTION_NODE_TOO_LARGE' })
       nodes = nodes.slice(1)
       startIndex += 1
@@ -1045,6 +1099,8 @@ export function registerAgnes(
     if (!outcome.ok) throw rpcError('INVALID_PARAMS', { reason: outcome.reason })
     return { sessionId: p.sessionId, ...outcome.page }
   })
+  registerExportRaw(ep, cx, requireOwner, exportRawChunk)
+  registerAttachmentRead(ep, cx, requireOwner, attachmentReadPage)
   ep.register('_agnes/v1/session.projectUIPatch', async (params, c): Promise<UIProjectionUpdate> => {
     const p = params as SessionProjectUIPatchParams
     requireOwner('session.projectUIPatch', p.sessionId, c)
@@ -1066,21 +1122,21 @@ export function registerAgnes(
     ) {
       if (previous?.mode === 'windowed' || (!previous && windowedProjectionConnections.has(c.conn)))
         throw projectionResyncRequired()
-      const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
+      const timeline = await typedLedger(
+        entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {}),
+      )
       const current = { ...timeline, generation: entry.generation } as UITimeline
       rememberProjection(c.conn, key, current)
-      return { kind: 'replace', timeline: current }
+      return projectionFor(c.conn, { kind: 'replace', timeline: current })
     }
-    const update = (await entry.session.projectUIPatch(
-      p.after,
-      p.upto,
-      p.surface ? { surface: p.surface } : {},
+    const update = (await typedLedger(
+      entry.session.projectUIPatch(p.after, p.upto, p.surface ? { surface: p.surface } : {}),
     )) as CoreUIProjectionUpdate
     if (update.kind === 'replace') {
       if (previous.mode === 'windowed') throw projectionResyncRequired()
       const current = { ...update.timeline, generation: entry.generation } as UITimeline
       rememberProjection(c.conn, key, current)
-      return { kind: 'replace', timeline: current }
+      return projectionFor(c.conn, { kind: 'replace', timeline: current })
     }
     const patch = { ...update.patch, generation: entry.generation } as UITimelinePatch
     const windowCoordinatesValid =
@@ -1097,15 +1153,17 @@ export function registerAgnes(
       windowCoordinatesValid
     ) {
       rememberProjection(c.conn, key, patch, previous.mode)
-      return { kind: 'patch', patch }
+      return projectionFor(c.conn, { kind: 'patch', patch })
     }
     if (previous.mode === 'windowed') throw projectionResyncRequired()
     // A corrupt or incompatible optimization result never crosses the client boundary. Rebuild
     // from Core's authoritative projection and repair this connection's baseline instead.
-    const timeline = await entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {})
+    const timeline = await typedLedger(
+      entry.session.projectUI(p.upto, p.surface ? { surface: p.surface } : {}),
+    )
     const current = { ...timeline, generation: entry.generation } as UITimeline
     rememberProjection(c.conn, key, current)
-    return { kind: 'replace', timeline: current }
+    return projectionFor(c.conn, { kind: 'replace', timeline: current })
   })
   // `cx.lister` is declared optional on `AgnesContext` only because nothing outside this package's
   // own `createLocalEndpoint` constructs one directly; that one always supplies a `RegistryLister`
@@ -1297,7 +1355,7 @@ export function registerAgnes(
         attached.delete(p.sessionId)
         c.conn.attached.delete(p.sessionId)
       }
-      throw error
+      throw ledgerIntegrityRefusal(error) ?? error
     }
     return {
       generation: gen,
@@ -1582,13 +1640,18 @@ export function registerAgnes(
         try {
           const invocation = await queued.start()
           return await invocation.run(async () => {
-            const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-              content: payload.content as never,
-              actor: connActor(c.conn),
-              kind: kind === 'steer' ? 'steer' : 'follow_up',
-              commandId,
-              admissionId,
-            })
+            const seq = await entry.session
+              .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
+                content: payload.content as never,
+                actor: connActor(c.conn),
+                kind: kind === 'steer' ? 'steer' : 'follow_up',
+                commandId,
+                admissionId,
+              })
+              .catch((error: unknown) => {
+                // An input refused for its attachments answers with the refusal's own code.
+                throw attachmentRefusal(error) ?? error
+              })
             if (kind === 'followUp') cx.continueFollowUps?.(entry)
             return { seq }
           })
@@ -1911,5 +1974,31 @@ export function registerAgnes(
     if (p.limit !== undefined && p.windowMs !== undefined)
       return cx.claims.withinRateLimit(bucket, p.value, p.limit, p.windowMs, now)
     return { granted: await cx.claims.once(bucket, p.value, p.expiresAtMs ?? now + 5 * 60_000, now) }
+  })
+}
+
+/** An in-process session verifies through its log; a worker-backed one asks its worker to. */
+function verifyHistory(session: unknown): Promise<unknown> {
+  const s = session as {
+    verifyHistory?: () => Promise<unknown>
+    d?: { log?: { fullVerified?: () => Promise<void> } }
+  }
+  if (s.verifyHistory) return s.verifyHistory()
+  const log = s.d?.log
+  // A session that cannot say whether its history is verified is not vouched for: export refuses it.
+  return log?.fullVerified
+    ? log.fullVerified()
+    : Promise.reject(rpcError('INTERNAL_ERROR', { code: 'HISTORY_VERIFICATION_UNAVAILABLE' }))
+}
+
+/** A handler whose failure because the history failed verification answers with the typed refusal. */
+function typedLedgerHandler<P, C, T>(handler: (params: P, call: C) => Promise<T>) {
+  return (params: P, call: C): Promise<T> => typedLedger(handler(params, call))
+}
+
+/** A session read that failed because its history failed verification answers with the typed refusal. */
+function typedLedger<T>(read: Promise<T>): Promise<T> {
+  return read.catch((error: unknown) => {
+    throw ledgerIntegrityRefusal(error) ?? error
   })
 }

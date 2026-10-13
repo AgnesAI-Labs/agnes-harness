@@ -76,6 +76,40 @@ describe('methods (I1 set)', () => {
       ]),
     ).toThrow()
   })
+  it('carries attachment references through ACP prompts as resource links', () => {
+    const sha256 = 'b'.repeat(64)
+    const blocks = [
+      { type: 'text' as const, text: 'see' },
+      {
+        type: 'image' as const,
+        mimeType: 'image/png',
+        attachment: { sha256, bytes: 9 },
+        width: 8,
+        height: 8,
+        thumbnail: { sha256: 'c'.repeat(64), bytes: 4, width: 8, height: 8 },
+      },
+      { type: 'file' as const, mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 9 } },
+    ] as Parameters<typeof toAcpPrompt>[0]
+    const prompt = toAcpPrompt(blocks)
+    expect(validateMethod('session/prompt', 'params', { sessionId: 's', prompt }).ok).toBe(true)
+    expect(prompt[1]).toMatchObject({ type: 'resource_link', uri: `artifact://${sha256}`, name: 'image' })
+    expect(fromAcpPrompt(prompt)).toEqual(blocks)
+    // An ordinary link, or one whose carried block does not match its own link, stays a link.
+    const link = { type: 'resource_link', uri: `artifact://${sha256}`, name: 'a.zip' }
+    expect(fromAcpPrompt([link])).toEqual([link])
+    const mismatched = {
+      ...(prompt[2] as object),
+      uri: `artifact://${'d'.repeat(64)}`,
+    }
+    expect(fromAcpPrompt([mismatched])).toEqual([mismatched])
+    const malformed = {
+      ...link,
+      _meta: {
+        'ai.agnes.harness': { attachment: { type: 'file', mimeType: 'a/b', name: 'a', data: 'QUJD' } },
+      },
+    }
+    expect(fromAcpPrompt([malformed])).toEqual([malformed])
+  })
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual([
       '_agnes/v1/apis.list',
@@ -84,6 +118,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/approvalGrants.revoke',
       '_agnes/v1/artifact.job.status',
       '_agnes/v1/artifact.read',
+      '_agnes/v1/attachment.upload',
       '_agnes/v1/auth.claim',
       '_agnes/v1/batch.cancel',
       '_agnes/v1/batch.list',
@@ -161,12 +196,15 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/resources.operation.get',
       '_agnes/v1/session.archive',
       '_agnes/v1/session.attach',
+      '_agnes/v1/session.attachmentRead',
       '_agnes/v1/session.budget',
       '_agnes/v1/session.detach',
       '_agnes/v1/session.event',
+      '_agnes/v1/session.exportRaw',
       '_agnes/v1/session.followUp',
       '_agnes/v1/session.fork',
       '_agnes/v1/session.list',
+      '_agnes/v1/session.loading',
       '_agnes/v1/session.preview',
       '_agnes/v1/session.projectUI',
       '_agnes/v1/session.projectUIHistory',
@@ -178,6 +216,8 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.setPreset',
       '_agnes/v1/session.setYolo',
       '_agnes/v1/session.steer',
+      '_agnes/v1/session.storedOpening',
+      '_agnes/v1/session.verifyHistory',
       '_agnes/v1/skills.priority.set',
       '_agnes/v1/skills.refresh',
       '_agnes/v1/skills.remove',
@@ -199,13 +239,154 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(120)
+    expect(Object.keys(METHODS)).toHaveLength(126)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
 
+  it('describes session load progress and the stored opening', () => {
+    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
+    for (const phase of ['open', 'verify', 'fold', 'replay'])
+      expect(
+        validateMethod('_agnes/v1/session.loading', 'params', { sessionId: 's', phase, done: 3, total: 9 })
+          .ok,
+      ).toBe(true)
+    for (const bad of [
+      { sessionId: 's', phase: 'read', done: 0, total: 0 },
+      { sessionId: 's', phase: 'fold', done: -1, total: 0 },
+      { sessionId: 's', phase: 'fold', done: 1.5, total: 2 },
+      { sessionId: 's', phase: 'fold', done: 1 },
+      { sessionId: 's', phase: 'fold', done: 1, total: 2, extra: true },
+    ])
+      expect(validateMethod('_agnes/v1/session.loading', 'params', bad).ok).toBe(false)
+
+    const method = '_agnes/v1/session.storedOpening'
+    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
+    expect(validateMethod(method, 'params', { sessionId: 's' }).ok).toBe(true)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 500 }).ok).toBe(true)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 0 }).ok).toBe(false)
+    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 501 }).ok).toBe(false)
+    const timeline = { sessionId: 's', upto: 9, generation: 1, opState: null, nodes: [], turns: [] }
+    expect(
+      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: true, lastSeq: 9 }).ok,
+    ).toBe(false)
+    expect(
+      validateMethod(method, 'result', { timeline: {}, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
+    ).toBe(false)
+  })
+
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
+  })
+
+  it('closes each upload step and bounds a chunk to one MiB of base64', () => {
+    const method = '_agnes/v1/attachment.upload'
+    const uploadId = '0f0e0d0c-0b0a-4908-8706-050403020100'
+    const sha256 = 'a'.repeat(64)
+    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
+    for (const ok of [
+      { operation: 'limits', sessionId: 's' },
+      { operation: 'start', sessionId: 's', uploadId, name: 'a.zip', mimeType: 'application/zip', size: 0 },
+      {
+        operation: 'start',
+        sessionId: 's',
+        uploadId,
+        name: 't.jpg',
+        mimeType: 'image/jpeg',
+        size: 9,
+        purpose: 'thumbnail',
+      },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398104), sha256 },
+      { operation: 'status', sessionId: 's', uploadId },
+      { operation: 'cancel', sessionId: 's', uploadId },
+      { operation: 'finish', sessionId: 's', uploadId },
+      { operation: 'finish', sessionId: 's', uploadId, sha256 },
+    ])
+      expect(validateMethod(method, 'params', ok).ok, JSON.stringify(ok).slice(0, 80)).toBe(true)
+    const start = { operation: 'start', sessionId: 's', uploadId, name: 'a', mimeType: 'a/b', size: 1 }
+    for (const bad of [
+      { operation: 'limits', sessionId: 's', uploadId },
+      { ...start, uploadId: 'not-a-uuid' },
+      { ...start, uploadId: uploadId.toUpperCase() },
+      { ...start, name: '' },
+      { ...start, name: 'n'.repeat(257) },
+      { ...start, mimeType: 'm'.repeat(129) },
+      { ...start, size: -1 },
+      { ...start, size: 2 ** 53 },
+      { ...start, purpose: 'other' },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398105), sha256 },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: '', sha256 },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'QUJD', sha256: 'A'.repeat(64) },
+      { operation: 'chunk', sessionId: 's', uploadId, offset: -1, data: 'QUJD', sha256 },
+      { operation: 'status', sessionId: 's' },
+      { operation: 'finish', sessionId: 's', uploadId, extra: 1 },
+      { operation: 'resume', sessionId: 's', uploadId },
+    ])
+      expect(validateMethod(method, 'params', bad).ok, JSON.stringify(bad).slice(0, 80)).toBe(false)
+    const ref = { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 3 } }
+    for (const ok of [
+      { limits: { maxBytes: 2 ** 31, chunkBytes: 1048576, maxConcurrent: 4 } },
+      { offset: 3 },
+      {},
+      { offset: 3, attachment: ref },
+      { offset: 3, attachment: { sha256, bytes: 3, width: 320, height: 200 } },
+    ])
+      expect(validateMethod(method, 'result', ok).ok).toBe(true)
+    for (const bad of [
+      { limits: { maxBytes: 1, chunkBytes: 1048577, maxConcurrent: 4 } },
+      { offset: -1 },
+      { offset: 3, attachment: { sha256, bytes: 3, width: 321, height: 200 } },
+      { offset: 3, extra: true },
+    ])
+      expect(validateMethod(method, 'result', bad).ok).toBe(false)
+  })
+
+  it('bounds attachment windows to one MiB and names the attachment by place', () => {
+    const method = '_agnes/v1/session.attachmentRead'
+    const ok = { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048576 }
+    expect(validateMethod(method, 'params', ok).ok).toBe(true)
+    expect(validateMethod(method, 'params', { ...ok, kind: 'image', thumbnail: true }).ok).toBe(true)
+    for (const bad of [
+      { ...ok, length: 1048577 },
+      { ...ok, length: 0 },
+      { ...ok, offset: -1 },
+      { ...ok, seq: 0 },
+      { ...ok, index: 0 },
+      { ...ok, kind: 'audio' },
+      { ...ok, thumbnail: 'yes' },
+      { ...ok, sessionId: '' },
+      { ...ok, extra: 1 },
+    ])
+      expect(validateMethod(method, 'params', bad).ok).toBe(false)
+    expect(
+      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'QUJD' }).ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'A'.repeat(1398105) })
+        .ok,
+    ).toBe(false)
+  })
+
+  it('bounds raw row export positions and pieces', () => {
+    const method = '_agnes/v1/session.exportRaw'
+    expect(validateMethod(method, 'params', { sessionId: 's', seq: 1, offset: 0 }).ok).toBe(true)
+    for (const bad of [
+      { sessionId: 's', seq: 0, offset: 0 },
+      { sessionId: 's', seq: 1, offset: -1 },
+      { sessionId: 's', seq: 1.5, offset: 0 },
+      { sessionId: '', seq: 1, offset: 0 },
+      { sessionId: 's', seq: 1 },
+      { sessionId: 's', seq: 1, offset: 0, extra: true },
+    ])
+      expect(validateMethod(method, 'params', bad).ok).toBe(false)
+    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: null }).ok).toBe(true)
+    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: 3 }).ok).toBe(true)
+    expect(
+      validateMethod(method, 'result', { seq: 1, base64: 'A'.repeat(11184813), nextOffset: null }).ok,
+    ).toBe(false)
   })
 
   it('bounds on-demand tool detail reads and validates base64 chunks', () => {

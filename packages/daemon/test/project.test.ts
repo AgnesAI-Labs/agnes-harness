@@ -1,6 +1,6 @@
 import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { toSessionUpdate } from '../src/local/project.js'
+import { toSessionUpdate, toSessionUpdates } from '../src/local/project.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const ev = (type: string, data: unknown) =>
@@ -171,5 +171,43 @@ describe('toSessionUpdate', () => {
       { content: 'b', priority: 'medium', status: 'in_progress' },
       { content: 'c', priority: 'medium', status: 'pending' },
     ])
+  })
+})
+
+describe('toSessionUpdates', () => {
+  it('gives each user block its own valid ACP chunk and names a lean attachment', () => {
+    const updates = toSessionUpdates(
+      ev('user/message', {
+        content: [
+          { type: 'text', text: 'see' },
+          { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 300_000 } },
+          { type: 'file', mimeType: 'application/zip', name: 'a.zip', dataOmitted: { bytes: 9 } },
+        ],
+      }),
+      { replay: true },
+    )
+    expect(updates.map((u) => u.payload.content)).toEqual([
+      { type: 'text', text: 'see' },
+      { type: 'text', text: '[image omitted: 300000 bytes; read session-image://1/1]' },
+      { type: 'text', text: '[file "a.zip" omitted: 9 bytes; read session-file://1/1]' },
+    ])
+    for (const u of updates)
+      expect(
+        validateMethod('session/update', 'params', {
+          sessionId: 's',
+          update: { sessionUpdate: u.sessionUpdate, ...u.payload },
+        }).ok,
+      ).toBe(true)
+  })
+
+  it('keeps an empty message as one empty chunk, hides runtime context, and wraps other rows', () => {
+    expect(toSessionUpdates(ev('user/message', { content: [] }))).toEqual([
+      { sessionUpdate: 'user_message_chunk', payload: { content: { type: 'text', text: '' } } },
+    ])
+    expect(toSessionUpdates(ev('user/message', { kind: 'runtime_context', content: [] }))).toEqual([])
+    expect(toSessionUpdates(ev('plan.items', { items: [] }))).toEqual([
+      toSessionUpdate(ev('plan.items', { items: [] })),
+    ])
+    expect(toSessionUpdates(ev('turn/end', { reason: 'completed', lastAssistantSeq: null }))).toEqual([])
   })
 })

@@ -1,7 +1,10 @@
 export const PACKAGE_NAME = '@agnes/host' as const
 
-// Ledger paging for the packages that reach core only through host.
+// Ledger paging and the lean read view for the packages that reach core only through host.
 export {
+  isLeanEvent,
+  leanEvent,
+  leanEvents,
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   SCAN_PAGE_MAX,
   type ScanRead,
@@ -91,6 +94,23 @@ export * from './assemble/packages.js'
 export * from './assemble/routes.js'
 export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
 export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
+export {
+  type AttachmentOrphanOptions,
+  collectAttachmentOrphans,
+  scheduleAttachmentOrphans,
+} from './attachment-orphans.js'
+export {
+  type AttachmentKind,
+  type AttachmentStaging,
+  type AttachmentStore,
+  AttachmentStoreError,
+  type AttachmentStoreErrorCode,
+  attachmentDeadlineMs,
+  attachmentReceiptFor,
+  createAttachmentStore,
+  type StoredObject,
+  type UserAttachmentMarker,
+} from './attachment-store.js'
 export * from './audit.js'
 export {
   type ChildCandidate,
@@ -409,6 +429,7 @@ export {
   createProductionImageInputTokenFallback,
   type ProductionRequestMediaConfiguration,
 } from './request-media-runtime.js'
+export * from './request-versions.js'
 export * from './resources/index.js'
 export type { McpManageBridge, McpManageInvocation } from './resources/mcp-manage-port.js'
 export type { PluginManageBridge, PluginManageInvocation } from './resources/plugin-manage-port.js'
@@ -427,6 +448,20 @@ export {
 export { readProfileTelemetryConsent } from './session-hooks.js'
 export { loadSessionTitle } from './session-title.js'
 export * from './session-workspace-runtime.js'
+export {
+  createStoredOpeningReader,
+  StoredOpeningError,
+  type StoredOpeningReader,
+} from './stored-opening.js'
+export { createUserAttachmentReader } from './user-attachment-cache.js'
+export {
+  ATTACHMENT_LIMIT_DEFAULTS,
+  type AttachmentLimitKey,
+  AttachmentQuotaError,
+  attachmentLimit,
+  createUserAttachmentPort,
+  type HostUserAttachmentPort,
+} from './user-attachments.js'
 export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,

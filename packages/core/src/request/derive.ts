@@ -15,8 +15,9 @@ import {
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
 import type { EnvelopeCache } from './envelope-cache.js'
 import { canonicalJson, sha256Hex, utf8 } from './hash.js'
-import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
+import { applyUserImages, withoutUnreadImages } from './inline-images.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
+import type { PreparedUserImages } from './user-images.js'
 
 export type ContractRef = { contract_id: string | null; parser_version: string }
 /**
@@ -27,8 +28,11 @@ export type ContractRef = { contract_id: string | null; parser_version: string }
 export type RequestHeaderData = RequestHeader
 export type DeriveInput = {
   kind: 'turn' | 'summary'
-  /** Core's current model snapshot governs inline history; originals stay on the ledger. */
-  inlineImages?: InlineImagePolicy
+  /**
+   * The user images this request carries, chosen and read beforehand (see `prepareUserImages`);
+   * every other user image becomes a note naming it. Originals stay on the ledger.
+   */
+  userImages?: PreparedUserImages
   merged: Merged
   harnessEntries: Iterable<HarnessEntry>
   surface: readonly SurfaceNode[]
@@ -523,6 +527,17 @@ function imageBlock(b: Block): { type: 'image'; data: string; mimeType: string }
   return { type: 'image', data: sanitize(String(b.data)), mimeType: sanitize(String(b.mimeType)) }
 }
 
+/**
+ * A user image as this derivation first places it: an inline image with its bytes, anything else
+ * (a stored reference, or a large inline image read without its bytes) with empty data. Which images
+ * go out with bytes is decided afterwards, and an empty one only ever leaves as a note.
+ */
+function userImageBlock(b: Block): { type: 'image'; data: string; mimeType: string } {
+  return typeof b.data === 'string'
+    ? imageBlock(b)
+    : { type: 'image', data: '', mimeType: sanitize(String(b.mimeType)) }
+}
+
 function validatePreparedMedia(
   messages: RequestMessage[],
   surface: readonly SurfaceNode[],
@@ -608,14 +623,21 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     // adapter, where image parts are shaped anyway. Both fields are scrubbed all the same: a base64
     // payload is unaffected by the scrub, and `mimeType` is a short string an adapter is going to
     // interpolate somewhere.
-    for (const b of blocks) if (b.type === 'image') content.push(imageBlock(b))
+    // A tool result's image always holds its bytes; one that does not is named rather than sent empty.
+    for (const b of blocks)
+      if (b.type === 'image')
+        content.push(
+          typeof b.data === 'string'
+            ? imageBlock(b)
+            : { type: 'text', text: '[image omitted: its bytes are not in this record]' },
+        )
     msg = { role: 'tool', seq: node.seq, content }
   } else if (node.kind === 'user') {
     const content: RequestMessage['content'] = []
     let fileIndex = 0
     for (const b of blocksOf(d.content)) {
       if (b.type === 'text') content.push({ type: 'text', text: wrap(String(b.text)) })
-      else if (b.type === 'image') content.push(imageBlock(b))
+      else if (b.type === 'image') content.push(userImageBlock(b))
       else if (b.type === 'resource_link')
         content.push({ type: 'text', text: wrap(`[resource ${String(b.uri)}]`) })
       else if (b.type === 'file')
@@ -1004,12 +1026,9 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     nonce: input.nonce,
     ...(input.model.thinking === undefined ? {} : { samplingParams: { thinking: input.model.thinking } }),
   }
-  if (input.inlineImages)
-    selectInlineImages(
-      body,
-      input.inlineImages,
-      input.media?.header.route === 'native-image' ? input.media.selected : [],
-    )
+  let userImages: RequestHeaderData['userImages']
+  if (input.userImages) userImages = applyUserImages(body, input.userImages, userImageByteLimit(input))
+  else withoutUnreadImages(body)
   const request = mintFrom(body)
   const header: RequestHeaderData = {
     // The nonce is dropped: it is minted once per turn and does not vary within one, so leaving it
@@ -1035,6 +1054,11 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     model: model.model,
     envelopeNonce: input.nonce,
     ...(input.media === undefined ? {} : { media: input.media.header }),
+    // Named only when the request has user images to account for, so a request without any keeps the
+    // header it always had.
+    ...(userImages && (userImages.included.length || userImages.omitted || userImages.missing.length)
+      ? { userImages }
+      : {}),
   }
   if (input.media !== undefined)
     bindRequestMediaAuthority(
@@ -1051,6 +1075,28 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     runtimeContext: { changed, ...(event ? { event } : {}) },
     notes,
   }
+}
+
+/**
+ * What the request body may weigh once user images are in, in Core's representation (the adapter
+ * separately checks the real provider payload): the route's limit less the selected tool images,
+ * which the provider request adds beside the body.
+ */
+function userImageByteLimit(input: DeriveInput): number | undefined {
+  const limit = input.userImages?.maxRequestBytes
+  if (limit === undefined) return undefined
+  const media = input.media?.header.route === 'native-image' ? input.media.selected : []
+  return media.reduce(
+    (left, image) =>
+      left -
+      utf8(
+        JSON.stringify([
+          { type: 'text', text: image.untrustedLabel },
+          { type: 'image', data: image.data, mimeType: image.mimeType },
+        ]),
+      ).length,
+    limit,
+  )
 }
 
 export function hashDerivedRequest(body: RequestBody, media?: RequestMediaHashMaterial): string {
@@ -1080,6 +1126,9 @@ export function headerEquals(a: RequestHeaderData, b: RequestHeaderData): boolea
     a.model === b.model &&
     a.contract_id === b.contract_id &&
     a.parser_version === b.parser_version &&
-    canonicalJson(a.media ?? null) === canonicalJson(b.media ?? null)
+    canonicalJson(a.media ?? null) === canonicalJson(b.media ?? null) &&
+    // Two requests can send the same bytes while accounting for a left-out history image differently
+    // (over the budget, or missing from the store); the header records which, so it is compared too.
+    canonicalJson(a.userImages ?? null) === canonicalJson(b.userImages ?? null)
   )
 }

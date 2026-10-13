@@ -226,6 +226,9 @@ const SESSION_DEFS: Record<string, TSchema> = {
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
+  OmittedData: SessionGen.OmittedData,
+  AttachmentRef: SessionGen.AttachmentRef,
+  AttachmentThumbnail: SessionGen.AttachmentThumbnail,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
   SessionStart: SessionGen.SessionStart,
@@ -357,6 +360,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionProjectUIHistoryParams: AgnesGen.SessionProjectUIHistoryParams,
   SessionReadToolDetailParams: AgnesGen.SessionReadToolDetailParams,
   SessionReadToolDetailResult: AgnesGen.SessionReadToolDetailResult,
+  SessionAttachmentReadParams: AgnesGen.SessionAttachmentReadParams,
+  AttachmentUploadParams: AgnesGen.AttachmentUploadParams,
+  AttachmentUploadResult: AgnesGen.AttachmentUploadResult,
+  SessionAttachmentReadResult: AgnesGen.SessionAttachmentReadResult,
+  SessionExportRawParams: AgnesGen.SessionExportRawParams,
+  SessionExportRawResult: AgnesGen.SessionExportRawResult,
   SlotFillView: AgnesGen.SlotFillView,
   UINode: AgnesGen.UINode,
   UIPendingInput: AgnesGen.UIPendingInput,
@@ -440,6 +449,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   AuthClaimResult: AgnesGen.AuthClaimResult,
   SessionEventParams: AgnesGen.SessionEventParams,
   SessionPreviewParams: AgnesGen.SessionPreviewParams,
+  SessionLoadingParams: AgnesGen.SessionLoadingParams,
+  SessionStoredOpeningParams: AgnesGen.SessionStoredOpeningParams,
+  SessionStoredOpeningResult: AgnesGen.SessionStoredOpeningResult,
   DaemonNotice: AgnesGen.DaemonNotice,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
   // the JsonValue/ContentBlock/Actor/SurfaceOp/EventEnvelope aliases above: spelled in agnes-v1.json
@@ -1197,8 +1209,75 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { type: 'image', data: 'x', mimeType: rep(129) }, // boundary: maxLength:128
       { type: 'resource_link', uri: rep(4097) }, // boundary: maxLength:4096
       { type: 'resource_link', uri: 'u', name: rep(257) }, // boundary: maxLength:256
+      { type: 'image', mimeType: 'image/png', dataOmitted: { bytes: -1 } }, // boundary: OmittedData.bytes minimum:0
+      { type: 'image', mimeType: 'image/png', name: '', dataOmitted: { bytes: 1 } }, // boundary: lean image name minLength:1
+      { type: 'image', mimeType: 'image/png', data: 'x', dataOmitted: { bytes: 1 } }, // inline and lean at once
+      { type: 'file', mimeType: 'application/zip', dataOmitted: { bytes: 1 } }, // a lean file keeps its name
+      { type: 'file', mimeType: '', name: 'a.zip', dataOmitted: { bytes: 1 } }, // boundary: lean file mimeType minLength:1
+      { type: 'text', text: 't', dataOmitted: { bytes: 1 } }, // only image and file have a lean form
+      { type: 'image', mimeType: 'image/png', attachment: { sha256: rep64, bytes: 1 }, width: 1 }, // a reference image needs both dimensions
+      { type: 'image', mimeType: 'image/gif', attachment: { sha256: rep64, bytes: 1 }, width: 1, height: 1 }, // reference images are PNG or JPEG only
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        attachment: { sha256: rep64, bytes: 1 },
+        width: 65536,
+        height: 1,
+      }, // boundary: width maximum:65535
+      {
+        type: 'image',
+        mimeType: 'image/png',
+        data: 'x',
+        attachment: { sha256: rep64, bytes: 1 },
+        width: 1,
+        height: 1,
+      }, // inline and reference at once
+      { type: 'file', mimeType: 'application/zip', attachment: { sha256: rep64, bytes: 1 } }, // a referenced file keeps its name
+      {
+        type: 'file',
+        mimeType: 'application/zip',
+        name: 'a.zip',
+        attachment: { sha256: rep64, bytes: 1 },
+        dataOmitted: { bytes: 1 },
+      }, // reference and lean at once
     ],
     note: 'valid reuses .data.content[0] from the user/message fixture; invalid are hand-written (no separate illegal-ContentBlock fixture)',
+  },
+  OmittedData: {
+    valid: { bytes: 9007199254740991 },
+    invalid: [
+      { bytes: -1 }, // boundary: minimum:0
+      { bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
+      { bytes: 1.5 }, // integer
+      {}, // required
+      { bytes: 1, extra: true }, // additionalProperties:false
+    ],
+    note: 'the lean read view of an inline attachment; no fixture writes it (append refuses it), so every sample is hand-written',
+  },
+  AttachmentRef: {
+    valid: { sha256: rep64, bytes: 9007199254740991 },
+    invalid: [
+      { sha256: 'A'.repeat(64), bytes: 1 }, // pattern: lowercase hex only
+      { sha256: `${rep64}0`, bytes: 1 }, // pattern: exactly 64 digits
+      { sha256: rep64, bytes: -1 }, // boundary: minimum:0
+      { sha256: rep64, bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
+      { sha256: rep64, bytes: 1.5 }, // integer
+      { sha256: rep64 }, // required
+      { sha256: rep64, bytes: 1, extra: true }, // additionalProperties:false
+    ],
+    note: 'a stored attachment named by digest; hand-written, as no fixture predates reference blocks',
+  },
+  AttachmentThumbnail: {
+    valid: { sha256: rep64, bytes: 262144, width: 320, height: 1 },
+    invalid: [
+      { sha256: rep64, bytes: 0, width: 1, height: 1 }, // boundary: bytes minimum:1
+      { sha256: rep64, bytes: 262145, width: 1, height: 1 }, // boundary: bytes maximum:262144
+      { sha256: rep64, bytes: 1, width: 321, height: 1 }, // boundary: width maximum:320
+      { sha256: rep64, bytes: 1, width: 1, height: 0 }, // boundary: height minimum:1
+      { sha256: rep64, bytes: 1, width: 1 }, // required
+      { sha256: 'x', bytes: 1, width: 1, height: 1 }, // pattern
+    ],
+    note: 'the browser-made preview of a reference image; hand-written, as no fixture predates reference blocks',
   },
   ToolCallState: {
     valid: toolCallStateOk,
@@ -1981,6 +2060,94 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', callSeq: 3, offset: 0, totalBytes: 2, data: 'e30=', nextOffset: -1 },
     ],
     note: 'base64 chunks carry bounded encoded bytes and a nullable next offset',
+  },
+  SessionAttachmentReadParams: {
+    valid: { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048576, thumbnail: false },
+    invalid: [
+      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048577 },
+      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 0 },
+      { sessionId: 's', seq: 5, kind: 'file', index: 0, offset: 0, length: 1 },
+      { sessionId: 's', seq: 5, kind: 'audio', index: 1, offset: 0, length: 1 },
+      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: -1, length: 1 },
+      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0 },
+      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1, extra: 1 },
+    ],
+    note: 'attachment windows name the attachment by message seq, kind and place, and carry at most 1 MiB',
+  },
+  SessionAttachmentReadResult: {
+    valid: { mimeType: 'application/zip', totalBytes: 3, base64: 'QUJD', sha256: 'a'.repeat(64) },
+    invalid: [
+      { mimeType: 'a/b', totalBytes: 3, base64: 'QUJD', sha256: 'A'.repeat(64) },
+      { mimeType: '', totalBytes: 3, base64: 'QUJD' },
+      { mimeType: 'a/b', totalBytes: -1, base64: 'QUJD' },
+      { mimeType: 'a/b', totalBytes: 3, base64: rep(1_398_105) },
+      { mimeType: 'a/b', totalBytes: 3 },
+    ],
+    note: 'attachment windows carry at most 1 MiB of bytes as base64 and the whole size',
+  },
+  AttachmentUploadParams: {
+    valid: {
+      operation: 'chunk',
+      sessionId: 's',
+      uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100',
+      offset: 0,
+      data: 'QUJD',
+      sha256: 'a'.repeat(64),
+    },
+    invalid: [
+      { operation: 'limits', sessionId: '' },
+      { operation: 'start', sessionId: 's', uploadId: 'x', name: 'a', mimeType: 'a/b', size: 1 },
+      {
+        operation: 'chunk',
+        sessionId: 's',
+        uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100',
+        offset: 0,
+        data: rep(1_398_105),
+        sha256: 'a'.repeat(64),
+      },
+      { operation: 'finish', sessionId: 's', uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100', extra: 1 },
+      { operation: 'resume', sessionId: 's', uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100' },
+    ],
+    note: 'upload steps are closed per operation and a chunk carries at most 1 MiB as base64',
+  },
+  AttachmentUploadResult: {
+    valid: {
+      offset: 3,
+      attachment: {
+        type: 'file',
+        mimeType: 'a/b',
+        name: 'a',
+        attachment: { sha256: 'a'.repeat(64), bytes: 3 },
+      },
+    },
+    invalid: [
+      { offset: -1 },
+      { limits: { maxBytes: 1, chunkBytes: 0, maxConcurrent: 4 } },
+      { offset: 3, attachment: { sha256: 'a'.repeat(64), bytes: 0, width: 1, height: 1 } },
+      { extra: true },
+    ],
+    note: 'an upload answers limits, an offset, or the stored reference block or thumbnail',
+  },
+  SessionExportRawParams: {
+    valid: { sessionId: 's', seq: 1, offset: 0 },
+    invalid: [
+      { sessionId: 's', seq: 0, offset: 0 },
+      { sessionId: 's', seq: 1, offset: -1 },
+      { sessionId: '', seq: 1, offset: 0 },
+      { sessionId: 's', seq: 1 },
+      { sessionId: 's', seq: 1, offset: 0, extra: 1 },
+    ],
+    note: 'raw row export addresses one positive ledger seq and a non-negative byte offset',
+  },
+  SessionExportRawResult: {
+    valid: { seq: 1, base64: 'e30=', nextOffset: null },
+    invalid: [
+      { seq: 0, base64: 'e30=', nextOffset: null },
+      { seq: 1, base64: 'e30=', nextOffset: -1 },
+      { seq: 1, base64: rep(11_184_813), nextOffset: null },
+      { seq: 1, base64: 'e30=' },
+    ],
+    note: 'raw row pieces carry at most 8 MiB of bytes as base64 and a nullable next offset',
   },
   SlotFillView: {
     valid: { slot: 'status.line', extId: 'test/e', payload: { text: 'ok' } },
@@ -2804,6 +2971,52 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi', seq: 1 }, // additionalProperties:false
     ],
     note: 'hand-written; a preview carries no seq because it is never a ledger row',
+  },
+  SessionLoadingParams: {
+    valid: { sessionId: 's1', phase: 'fold', done: 3, total: 9 },
+    invalid: [
+      { sessionId: 's1', phase: 'read', done: 3, total: 9 }, // enum
+      { sessionId: 's1', phase: 'fold', done: -1, total: 9 }, // boundary: minimum:0
+      { sessionId: 's1', phase: 'fold', done: 3, total: -1 }, // boundary: minimum:0
+      { sessionId: rep(513), phase: 'open', done: 0, total: 0 }, // boundary: maxLength:512
+      { sessionId: 's1', phase: 'fold', done: 3 }, // missing required total
+      { sessionId: 's1', phase: 'fold', done: 3, total: 9, seq: 1 }, // additionalProperties:false
+    ],
+    note: 'hand-written; progress of a session/load in flight, never a ledger row',
+  },
+  SessionStoredOpeningParams: {
+    valid: { sessionId: 's1', maxNodes: 200 },
+    invalid: [
+      { sessionId: 's1', maxNodes: 0 }, // boundary: minimum:1
+      { sessionId: 's1', maxNodes: 501 }, // boundary: maximum:500
+      { maxNodes: 200 }, // missing required sessionId
+      { sessionId: 's1', maxBytes: 16_384 }, // additionalProperties:false
+    ],
+    note: 'hand-written; the read-only stored history asked for while a full open is slow or failed',
+  },
+  SessionStoredOpeningResult: {
+    valid: {
+      timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+      hasEarlier: true,
+      verified: false,
+      lastSeq: 9,
+    },
+    invalid: [
+      {
+        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+        hasEarlier: true,
+        verified: true,
+        lastSeq: 9,
+      }, // const:false
+      { timeline: { sessionId: 's1' }, hasEarlier: true, verified: false, lastSeq: 9 }, // UITimeline $ref
+      {
+        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
+        hasEarlier: true,
+        verified: false,
+        lastSeq: -1,
+      }, // boundary: minimum:0
+    ],
+    note: 'hand-written; stored history is never verified, and says so',
   },
   DaemonNotice: {
     valid: daemonNoticeOk,
@@ -4156,6 +4369,59 @@ function assertParity(target: ParityTarget, scope: string, name: string, x: unkn
   expect(actual).toEqual({ ajv: expected, typebox: expected })
 }
 
+describe('attachment reference blocks ajv ↔ TypeBox parity', () => {
+  // ContentBlock registers one valid sample, so the two reference forms are pinned here as accepted.
+  it.each([
+    {
+      type: 'image',
+      mimeType: 'image/png',
+      attachment: { sha256: rep64, bytes: 1234 },
+      width: 640,
+      height: 480,
+    },
+    {
+      type: 'image',
+      mimeType: 'image/jpeg',
+      name: 'shot.jpg',
+      attachment: { sha256: rep64, bytes: 0 },
+      width: 65535,
+      height: 1,
+      thumbnail: { sha256: rep64, bytes: 1, width: 320, height: 240 },
+    },
+    {
+      type: 'file',
+      mimeType: 'application/zip',
+      name: 'a.zip',
+      attachment: { sha256: rep64, bytes: 9007199254740991 },
+    },
+  ])('ContentBlock accepts the reference form %j', (block) => {
+    assertParity(
+      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
+      SESSION_ID,
+      'ContentBlock',
+      block,
+      true,
+    )
+  })
+})
+
+describe('lean attachment blocks ajv ↔ TypeBox parity', () => {
+  // ContentBlock registers one valid sample, so the two lean forms are pinned here as accepted.
+  it.each([
+    { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 0 } },
+    { type: 'image', mimeType: 'image/jpeg', name: 'shot.jpg', dataOmitted: { bytes: 196611 } },
+    { type: 'file', mimeType: 'application/zip', name: 'a.zip', dataOmitted: { bytes: 9007199254740991 } },
+  ])('ContentBlock accepts the lean form %j', (block) => {
+    assertParity(
+      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
+      SESSION_ID,
+      'ContentBlock',
+      block,
+      true,
+    )
+  })
+})
+
 describe('persisted tool policy envelope ajv ↔ TypeBox parity', () => {
   const keys = ['resolvedPolicy', 'executionDomain', 'definitionFingerprint', 'policyHash'] as const
   const withoutEnvelope = (value: Json): Json => {
@@ -4504,6 +4770,16 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { mode: 'automatic' }, { mode: 'manual', extra: true }],
     note: 'the resolved approval policy is explicit and closed',
   },
+  AttachmentsProfile: {
+    valid: { storeByReference: false },
+    invalid: [{ storeByReference: 'no' }, { storeByReference: true, extra: true }, null],
+    note: 'the attachment storage switch is one optional boolean',
+  },
+  ResolvedAttachmentsProfile: {
+    valid: { storeByReference: true },
+    invalid: [{}, { storeByReference: 1 }, { storeByReference: true, extra: true }],
+    note: 'resolved profiles always say how attachments are stored',
+  },
   ComputerUseAppIdentity: {
     valid: {
       platform: 'win32',
@@ -4748,6 +5024,8 @@ const JOBS_SAMPLES: Record<string, Sample> = {
 const ProfileDefs: Record<string, TSchema> = {
   ApprovalMode: ProfileGen.ApprovalMode,
   ApprovalProfile: ProfileGen.ApprovalProfile,
+  AttachmentsProfile: ProfileGen.AttachmentsProfile,
+  ResolvedAttachmentsProfile: ProfileGen.ResolvedAttachmentsProfile,
   CommandHookGrant: ProfileGen.CommandHookGrant,
   CommandHooksPolicy: ProfileGen.CommandHooksPolicy,
   ComputerUseAppIdentity: ProfileGen.ComputerUseAppIdentity,
@@ -6028,6 +6306,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionReadToolDetailParams',
     result: 'SessionReadToolDetailResult',
   },
+  '_agnes/v1/session.exportRaw': {
+    fileId: AGNES_ID,
+    params: 'SessionExportRawParams',
+    result: 'SessionExportRawResult',
+  },
+  '_agnes/v1/session.attachmentRead': {
+    fileId: AGNES_ID,
+    params: 'SessionAttachmentReadParams',
+    result: 'SessionAttachmentReadResult',
+  },
+  '_agnes/v1/attachment.upload': {
+    fileId: AGNES_ID,
+    params: 'AttachmentUploadParams',
+    result: 'AttachmentUploadResult',
+  },
   initialize: { fileId: ACP_ID, params: 'InitializeRequest', result: 'InitializeResponse' },
   'session/new': { fileId: ACP_ID, params: 'NewSessionRequest', result: 'NewSessionResponse' },
   'session/prompt': { fileId: ACP_ID, params: 'PromptRequest', result: 'PromptResponse' },
@@ -6056,9 +6349,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   'session/load': { fileId: ACP_ID, params: 'LoadSessionRequest', result: 'LoadSessionResponse' },
   'session/set_mode': { fileId: ACP_ID, params: 'SetSessionModeRequest', result: 'SetSessionModeResponse' },
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
+  '_agnes/v1/session.verifyHistory': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
+  '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
+  '_agnes/v1/session.storedOpening': {
+    fileId: AGNES_ID,
+    params: 'SessionStoredOpeningParams',
+    result: 'SessionStoredOpeningResult',
+  },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
   '_agnes/v1/session.rename': {
@@ -6225,6 +6525,9 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.SessionProjectUIOpeningParams as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.SessionProjectUIHistoryParams as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailParams as Sample,
+  '_agnes/v1/session.exportRaw': AGNES_SAMPLES.SessionExportRawParams as Sample,
+  '_agnes/v1/session.attachmentRead': AGNES_SAMPLES.SessionAttachmentReadParams as Sample,
+  '_agnes/v1/attachment.upload': AGNES_SAMPLES.AttachmentUploadParams as Sample,
   initialize: ACP_SAMPLES.InitializeRequest as Sample,
   'session/new': ACP_SAMPLES.NewSessionRequest as Sample,
   'session/prompt': ACP_SAMPLES.PromptRequest as Sample,
@@ -6248,6 +6551,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   'session/load': ACP_SAMPLES.LoadSessionRequest as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeRequest as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.SessionIdParams as Sample,
   // The windowed branch of the oneOf, so that between this entry and AGNES_SAMPLES.AuthClaimParams
   // (which takes the once-only branch) both shapes are accepted by a valid sample somewhere, not just
   // rejected by negatives.
@@ -6261,6 +6565,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
+  '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
+  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
   '_agnes/v1/session.rename': {
@@ -6387,6 +6693,10 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.UIOpeningResult as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.UIHistoryPage as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailResult as Sample,
+  '_agnes/v1/session.exportRaw': AGNES_SAMPLES.SessionExportRawResult as Sample,
+  '_agnes/v1/session.attachmentRead': AGNES_SAMPLES.SessionAttachmentReadResult as Sample,
+  '_agnes/v1/attachment.upload': AGNES_SAMPLES.AttachmentUploadResult as Sample,
+  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,
@@ -6413,6 +6723,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   'session/load': ACP_SAMPLES.LoadSessionResponse as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeResponse as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/auth.claim': AGNES_SAMPLES.AuthClaimResult as Sample,
   '_agnes/v1/approval.decide': AGNES_SAMPLES.SeqResult as Sample,
   '_agnes/v1/participant.join': AGNES_SAMPLES.SeqResult as Sample,

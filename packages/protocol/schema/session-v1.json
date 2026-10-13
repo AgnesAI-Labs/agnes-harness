@@ -91,6 +91,53 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["type", "mimeType", "dataOmitted"],
+          "properties": {
+            "type": { "const": "image" },
+            "mimeType": { "type": "string", "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "dataOmitted": { "$ref": "#/$defs/OmittedData" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "mimeType", "name", "dataOmitted"],
+          "properties": {
+            "type": { "const": "file" },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "dataOmitted": { "$ref": "#/$defs/OmittedData" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "mimeType", "attachment", "width", "height"],
+          "properties": {
+            "type": { "const": "image" },
+            "mimeType": { "enum": ["image/png", "image/jpeg"] },
+            "attachment": { "$ref": "#/$defs/AttachmentRef" },
+            "width": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "height": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "thumbnail": { "$ref": "#/$defs/AttachmentThumbnail" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "mimeType", "name", "attachment"],
+          "properties": {
+            "type": { "const": "file" },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "attachment": { "$ref": "#/$defs/AttachmentRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["type", "uri"],
           "properties": {
             "type": { "const": "resource_link" },
@@ -100,6 +147,32 @@
           }
         }
       ]
+    },
+    "OmittedData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes"],
+      "properties": { "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } }
+    },
+    "AttachmentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "AttachmentThumbnail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "bytes", "width", "height"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 262144 },
+        "width": { "type": "integer", "minimum": 1, "maximum": 320 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 320 }
+      }
     },
     "SurfaceOp": {
       "oneOf": [
@@ -524,7 +597,25 @@
         "contract_id": { "type": ["string", "null"], "maxLength": 128 },
         "model": { "type": "string", "maxLength": 256 },
         "envelopeNonce": { "type": "string", "maxLength": 64 },
-        "media": { "$ref": "#/$defs/RequestMediaHeader" }
+        "media": { "$ref": "#/$defs/RequestMediaHeader" },
+        "userImages": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["included", "omitted", "missing"],
+          "properties": {
+            "included": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": { "type": "string", "maxLength": 64 }
+            },
+            "omitted": { "type": "integer", "minimum": 0 },
+            "missing": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": { "type": "string", "maxLength": 64 }
+            }
+          }
+        }
       }
     },
     "RequestSent": {

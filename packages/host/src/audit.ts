@@ -63,6 +63,9 @@ export const AUDIT_KINDS = [
   'worker.start_failed',
   'worker.log',
   'session.interrupted',
+  'session.open',
+  'session.load',
+  'session.verify_full',
   // A batch of files handed to the model; the one record of who started it and with what limits.
   'batch.started',
 ] as const

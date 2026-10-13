@@ -17,7 +17,9 @@ import {
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
 
+import { attachmentReadPage } from './attachment-read.js'
 import { batchItemConfinementLive } from './batch-confinement.js'
+import { exportRawChunk } from './export-raw.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -274,6 +276,8 @@ export async function handleCommand(
       credential: unknown
       binding: unknown
     }) => Promise<unknown>
+    /** Tests only: the byte ceiling of one `scan` reply, below the real frame limit. */
+    maxScanFrameBytes?: number
   },
 ): Promise<unknown> {
   const p = cmd.params
@@ -320,12 +324,46 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
+    case 'verifyHistory':
+      // Rejects with the integrity failure once the background verification has found one.
+      await session.d.log.fullVerified()
+      return {}
     case 'scan': {
-      const rows = await session.scan(p as never)
-      if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > MAX_FRAME_BYTES - 4096)
-        throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
-      return rows
+      // Lean rows only: large inline attachment bytes stay in this process. A page that still would not
+      // fit one frame ends early and says where the supervisor resumes, so no row is read twice.
+      const query = p as { fromSeq?: number; toSeq?: number; limit?: number; order?: 'asc' | 'desc' }
+      const rows = (await session.scanLean(query as never)) as Array<{ seq: number }>
+      const cap = o.maxScanFrameBytes ?? MAX_FRAME_BYTES - 4096
+      let bytes = 2
+      let kept = 0
+      for (const row of rows) {
+        const size = Buffer.byteLength(JSON.stringify(row), 'utf8') + 1
+        if (bytes + size > cap) break
+        bytes += size
+        kept++
+      }
+      if (kept === rows.length) return { rows }
+      if (kept === 0) throw rpcError('INTERNAL_ERROR', { code: 'SCAN_ROW_TOO_LARGE', seq: rows[0]?.seq })
+      const page = rows.slice(0, kept)
+      const last = (page.at(-1) as { seq: number }).seq
+      // The resumed read continues the same query. One theoretical edge: a `limit` above SCAN_PAGE_MAX
+      // asks for every row (and fails with E_SCAN_TRUNCATED past the page maximum); once `limit - kept`
+      // falls to SCAN_PAGE_MAX or below, the resumed read becomes an ordinary page. That only differs
+      // when `toSeq` is open and rows are appended between the two replies: they would be read as a
+      // page up to that limit rather than refused. The first reply already proved the range fits.
+      const limit = typeof query.limit === 'number' ? query.limit - kept : undefined
+      return {
+        rows: page,
+        resume: {
+          ...(query.order === 'desc' ? { toSeq: last - 1 } : { fromSeq: last + 1 }),
+          ...(limit === undefined ? {} : { limit }),
+        },
+      }
     }
+    case 'exportRaw':
+      return exportRawChunk(session, Number(p.seq), Number(p.offset))
+    case 'attachmentRead':
+      return attachmentReadPage(session, p)
     case 'readToolDetail':
       return readToolDetailPage(session, {
         callSeq: Number(p.callSeq),

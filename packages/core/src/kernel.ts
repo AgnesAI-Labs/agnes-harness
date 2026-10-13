@@ -14,7 +14,7 @@ import { defaultIds } from './ids.js'
 import { CORE_CHECKS } from './invariants/core-checks.js'
 import { InvariantRegistry } from './invariants/registry.js'
 import { forkPaths } from './log/fork-seed.js'
-import type { Timers } from './log/session-log.js'
+import type { OpenLogOptions, OpenProgress, Timers } from './log/session-log.js'
 import type { StorageAdapter } from './log/storage.js'
 import { ProjectionRegistry } from './project/named.js'
 import { openTracked } from './reduce/tracker.js'
@@ -121,6 +121,11 @@ export type KernelOptions = {
   hostToolDispatch?: HostToolDispatchPort
   /** Host-private artifact/media ports; auxiliary admission remains a non-root Core capability. */
   requestMedia?: SessionDeps['requestMedia']
+  /** Host attachment store: inline user attachments are stored by reference when they are queued, and
+   * user attachments are read from it. Omitted, attachments stay inline and references are refused. */
+  attachments?: SessionDeps['attachments']
+  /** Request versions of stored images, for routes with image size limits. */
+  requestVersions?: SessionDeps['requestVersions']
   /** Host-owned whole-wire image token bound used only when the provider cannot count images. */
   imageInputTokenFallback?: SessionDeps['imageInputTokenFallback']
   logger?: Logger
@@ -168,6 +173,10 @@ export type SessionOptions = {
     rootTaskId: string
     generationDepth: number
   }
+  /** Told how far opening the ledger has got; see `OpenLogOptions.progress`. */
+  onOpenProgress?: (p: OpenProgress) => void
+  /** See OpenLogOptions: the outcome of verifying the history in the background after an open. */
+  onFullVerify?: OpenLogOptions['onFullVerify']
 }
 
 const NO_LOG: Logger = {
@@ -433,6 +442,8 @@ export class Kernel {
         lane,
         ...(forked ? { existing: forked } : {}),
         ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(so.onOpenProgress ? { progress: so.onOpenProgress } : {}),
+        ...(so.onFullVerify ? { onFullVerify: so.onFullVerify } : {}),
       })
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its
@@ -440,7 +451,7 @@ export class Kernel {
       await forked?.abandon().catch(() => undefined)
       throw error
     }
-    const { log, tracker, surface, ui, registersRebuilt } = tracked
+    const { log, tracker, surface, ui, attachments, registersRebuilt } = tracked
     const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
     const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
     const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
@@ -466,6 +477,7 @@ export class Kernel {
       surface,
       ui,
       lane,
+      attachmentIndex: attachments,
       runtime,
       provider: this.o.provider,
       ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
@@ -495,6 +507,8 @@ export class Kernel {
       ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
       ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
       ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
+      ...(this.o.attachments ? { attachments: this.o.attachments } : {}),
+      ...(this.o.requestVersions ? { requestVersions: this.o.requestVersions } : {}),
       ...(this.o.imageInputTokenFallback ? { imageInputTokenFallback: this.o.imageInputTokenFallback } : {}),
       logger,
       invariants: this.invariants,

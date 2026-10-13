@@ -119,12 +119,15 @@ export function createProductionImageInputTokenFallback(): ImageInputTokenFallba
     const images: Array<{ data: string; mimeType: string; persisted: boolean }> = []
     for (const message of wire.messages)
       for (const block of message.content)
-        if (block.type === 'image')
+        if (block.type === 'image') {
+          // A lean image has no bytes to measure, so no bound can be given for it.
+          if (!('data' in block)) return null
           images.push({
             data: block.data,
             mimeType: block.mimeType,
             persisted: message.role === 'tool_result',
           })
+        }
     if (images.length !== imageCount || !Number.isSafeInteger(imageCount) || imageCount < 1) return null
 
     const persisted = new Map<string, number>()

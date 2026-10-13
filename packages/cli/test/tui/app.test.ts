@@ -138,6 +138,65 @@ it('renders localized daemon notices delivered through the real SDK Client event
   }
 })
 
+it.each([
+  [
+    'the daemon reports its history failed verification',
+    { kind: 'integrity_failed', detail: { code: 'E_LEDGER_INTEGRITY' } },
+    '历史未通过完整性校验',
+  ],
+  [
+    'a reconnect was refused for a newer ledger',
+    { kind: 'session-refused', code: 'NEWER_LEDGER_FORMAT' },
+    '当前版本无法读取该会话',
+  ],
+])(
+  'ends a session when %s: says so, keeps the transcript and sends nothing more',
+  async (_case, notice, text) => {
+    const sessionId = 'agnes:local:default:cli:dm:refused'
+    const endpoint = new FakeEndpoint()
+      .on('initialize', () => ({
+        protocolVersion: 1,
+        agentCapabilities: {},
+        _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+      }))
+      .on('session/new', () => ({ sessionId }))
+      .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 1, resolvedProfileHash: 'h' }))
+      .on('_agnes/v1/session.detach', () => ({}))
+      .on('_agnes/v1/session.projectUI', () => ({
+        sessionId,
+        generation: 1,
+        upto: 1,
+        opState: null,
+        turns: [],
+        nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'earlier question' }] }],
+      }))
+      .on('session/prompt', () => ({ stopReason: 'end_turn' }))
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    const app = new TuiApp({ session, term, header: 'Agnes', locale: 'zh-CN' })
+    try {
+      await app.start()
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 80, 24)).join('\n')).toContain('earlier question'),
+      )
+      // The SDK's own notice stands for a refused reconnect; the daemon's arrives over the wire.
+      if (notice.kind === 'session-refused') client.notice({ ...notice, sessionId })
+      else endpoint.pushNotice({ ...notice, sessionId, at: new Date(0).toISOString() } as never)
+      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain(text))
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('earlier question')
+      term.feed('one more')
+      term.feed('\r')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(endpoint.calls.map((call) => call.method)).not.toContain('session/prompt')
+    } finally {
+      await app.stop()
+      await client.close()
+      await endpoint.close()
+    }
+  },
+)
+
 it('opens a long restored session without replaying off-window history or fixed chrome into scrollback', async () => {
   const sessionId = 'agnes:local:default:cli:dm:long-opening'
   const nodes = Array.from({ length: 1_002 }, (_, index) => ({

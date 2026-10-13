@@ -8,6 +8,7 @@ import {
   type HookPort,
   hasChildControl,
   Kernel,
+  type KernelOptions,
   noopHooks,
   type Operation,
   type PresetView,
@@ -76,6 +77,8 @@ import type { HostBuiltinRowClaim, HostPluginTreeBase } from './assemble/seams-c
 import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from './assemble/skill-row.js'
 import { trustedHookCommands } from './assemble/trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
+import { restoreSetAsideAttachments, scheduleAttachmentOrphans } from './attachment-orphans.js'
+import { type AttachmentStore, createAttachmentStore } from './attachment-store.js'
 import fixedComputerUseDriverLock from './computer-use/computer-use-driver-lock.json' with { type: 'json' }
 import {
   evaluateFixedComputerUsePlatformAdmission,
@@ -153,6 +156,7 @@ import { PublicationDispatch } from './publication-dispatch.js'
 import { PublicationGate } from './publication-gate.js'
 import { HostQuietState } from './quiet-state.js'
 import { createProductionImageInputTokenFallback } from './request-media-runtime.js'
+import { createRequestVersionCache, identityImageEncoder } from './request-versions.js'
 import { bindSkillRuntimeToWorkspace, createSkillPromptPreloader } from './resources/skill-preload.js'
 import { safeSkillReadRoots } from './resources/skill-read-roots.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
@@ -190,6 +194,7 @@ import {
   type WorkspaceRuntimeFence,
 } from './session-workspace-runtime.js'
 import { createTrajectoryLifecycle } from './trajectory-lifecycle.js'
+import { attachmentLimit, createUserAttachmentPort } from './user-attachments.js'
 import type { WorkspaceBinding } from './workspace-authority.js'
 import { WorkspaceHookLoader } from './workspace-hook-loader.js'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
@@ -1699,6 +1704,35 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let extensionLeaseFor: ((source: string) => LeaseView | undefined) | undefined
     const extensionSessions = new ExtensionSessions<HookPort>()
     const compaction = assembleCompaction(modules.get('@agnes/base')?.buildCompactionPlan)
+    // The port is assembled whatever the switch says, so references a session already holds stay
+    // readable. Inline attachments go to the store only when the switch is on and the bundled
+    // artifacts seam owns the tree: another artifacts implementation would not see the objects, so
+    // they stay inline in the ledger as before, and old inline attachments are not copied into it.
+    const bundledArtifacts = profile.seams.artifacts === '@agnes/base'
+    const attachmentStore = createAttachmentStore({ dataDir })
+    const attachments = createUserAttachmentPort({
+      store: attachmentStore,
+      limits: profile.limits,
+      storeByReference: profile.attachments.storeByReference && bundledArtifacts,
+      cacheInline: bundledArtifacts,
+    })
+    const requestVersions = assembleRequestVersions(attachmentStore, dataDir, clock)
+    // Bytes a sweep had set aside when its process died go back now rather than at the next sweep,
+    // whatever the switch says: references a session holds are read either way.
+    try {
+      restoreSetAsideAttachments(attachmentStore.root)
+    } catch (error) {
+      deps.log.warn('attachment restore failed', { error: String(error) })
+    }
+    if (attachments.storeByReference) {
+      const orphans = scheduleAttachmentOrphans({
+        dataDir,
+        store: attachmentStore,
+        graceMs: attachmentLimit(profile.limits, 'attachments.orphan_grace_ms'),
+        onError: (error) => deps.log.warn('attachment orphan cleanup failed', { error: String(error) }),
+      })
+      rollback.push('attachment-orphans', () => orphans.close())
+    }
     kernel = Kernel.create({
       storage: adapters.storage,
       seams,
@@ -1719,6 +1753,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
+      attachments,
+      requestVersions,
       ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
       ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
       logger: deps.log,
@@ -2409,5 +2445,36 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
   } catch (e) {
     return fail(step, e)
+  }
+}
+
+const REQUEST_VERSION_CACHE_BYTES = 1024 ** 3
+const REQUEST_VERSION_TRIM_MS = 60_000
+
+/**
+ * Request versions of stored images: `<dataDir>/artifacts/request-versions/`, at most 1 GiB, trimmed
+ * after a version is used (at most once a minute). This build has no image codec, so the encoder uses
+ * an image as it is when it already fits and refuses one that would have to be made smaller; an
+ * encoder that resizes replaces it here.
+ */
+function assembleRequestVersions(
+  store: AttachmentStore,
+  dataDir: string,
+  clock: () => number,
+): NonNullable<KernelOptions['requestVersions']> {
+  const cache = createRequestVersionCache({
+    store,
+    root: join(dataDir, 'artifacts', 'request-versions'),
+    maxBytes: REQUEST_VERSION_CACHE_BYTES,
+    encoder: identityImageEncoder,
+  })
+  let lastTrim = Number.NEGATIVE_INFINITY
+  return async (source, t, signal) => {
+    const { image } = await cache.getOrCreate(source, t, signal)
+    if (clock() - lastTrim >= REQUEST_VERSION_TRIM_MS) {
+      lastTrim = clock()
+      void cache.trim().catch(() => undefined)
+    }
+    return image
   }
 }

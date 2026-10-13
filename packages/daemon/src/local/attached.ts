@@ -1,5 +1,11 @@
 import type { HostSession } from '@agnes/host'
-import { type DaemonNotice, type EventEnvelope, MAX_FRAME_BYTES, META_KEY } from '@agnes/protocol'
+import {
+  type DaemonNotice,
+  downgradeEvent,
+  type EventEnvelope,
+  MAX_FRAME_BYTES,
+  META_KEY,
+} from '@agnes/protocol'
 import type { PreviewSnapshotEntry, PreviewUpdate } from '../registry.js'
 import { notify } from '../rpc.js'
 import { type AttachPrefs, type LocalEndpoint, utf8JsonBytes } from './endpoint.js'
@@ -191,7 +197,8 @@ export class AttachedFeed {
     const { meta, next } = stampMeta(e, this.meta)
     const frame = notify('_agnes/v1/session.event', {
       sessionId: this.o.key,
-      event: e,
+      // A client that never declared attachment references gets links and text in their place.
+      event: this.o.ep.conn.capabilities.attachmentRefs ? e : downgradeEvent(e),
       _meta: { [META_KEY]: meta },
     })
     const incoming = utf8JsonBytes(frame)

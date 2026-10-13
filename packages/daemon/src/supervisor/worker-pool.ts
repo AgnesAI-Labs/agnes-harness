@@ -21,7 +21,7 @@ import {
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import type { CompositeRuntimeDelivery, RuntimeBootDelivery } from '../composite-runtime-delivery.js'
 import type { DaemonConfig } from '../config.js'
-import type { PreviewUpdate } from '../registry.js'
+import type { OpenProgressUpdate, PreviewUpdate } from '../registry.js'
 import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
 import type { RequestFrame } from './frames.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
@@ -178,6 +178,9 @@ export class WorkerPool {
         level: 'debug' | 'info' | 'warn' | 'error'
         message: string
       }) => void
+      onRecord?: (sessionKey: string, record: { kind: string; detail: Record<string, unknown> }) => void
+      /** How far a session's open has got, as its worker reports it while opening. */
+      onProgress?: (sessionKey: string, progress: OpenProgressUpdate) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onLifecycle?: (record: WorkerLifecycleRecord) => void
       runtimeDelivery?: CompositeRuntimeDelivery
@@ -212,10 +215,17 @@ export class WorkerPool {
           ? Promise.reject(new Error('A batch request must come from the session that makes it.'))
           : this.o.onRequest(f.sessionKey, f),
       onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
+      onRecord: (sessionKey, record) => this.o.onRecord?.(sessionKey, record),
+      // Same fence as previews: the session's channel is registered before its open frame is sent,
+      // so the worker opening it hosts it for the whole open, and no other link may speak for it.
+      onProgress: (sessionKey, progress) => {
+        if (this.hosts(link, sessionKey)) this.o.onProgress?.(sessionKey, progress)
+      },
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
-        // No notice here: the protocol has no kind for a session-scoped interruption, and the
-        // registry reopens a watched session on its own, so attached clients see a reconnect.
+        // No notice here: the registry decides what the failure means. It reopens a watched session on
+        // its own, so attached clients see a reconnect; an integrity failure is final, and the
+        // registry tells attached clients `integrity_failed` instead.
         this.retire([sessionKey], 'session-projection-failed')
         this.o.onSessionFailure?.(sessionKey, error)
       },

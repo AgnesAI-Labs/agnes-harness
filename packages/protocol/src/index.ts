@@ -39,6 +39,8 @@ export type {
   ArtifactReadParams,
   ArtifactReadResult,
   AttachFilter,
+  AttachmentUploadParams,
+  AttachmentUploadResult,
   Auth,
   AuthClaimParams,
   AuthClaimResult,
@@ -99,14 +101,19 @@ export type {
   ParticipantParams,
   SeqResult,
   SessionArchiveParams,
+  SessionAttachmentReadParams,
+  SessionAttachmentReadResult,
   SessionAttachParams,
   SessionAttachResult,
   SessionBudgetResult,
   SessionCompactParams,
   SessionEventParams,
+  SessionExportRawParams,
+  SessionExportRawResult,
   SessionForkParams,
   SessionIdParams,
   SessionListParams,
+  SessionLoadingParams,
   SessionMeta,
   SessionPreferences,
   SessionPreviewParams,
@@ -124,6 +131,8 @@ export type {
   SessionSetYoloParams,
   SessionSteerParams,
   SessionSteerResult,
+  SessionStoredOpeningParams,
+  SessionStoredOpeningResult,
   SlotFillView,
   SubmitParams,
   SurfacesMountsParams,
@@ -264,6 +273,7 @@ export type { PresetDoc } from '../gen/ts/preset.js'
 export type {
   ApprovalMode,
   ApprovalProfile,
+  AttachmentsProfile,
   Capability,
   CommandHookGrant,
   CommandHooksPolicy,
@@ -280,6 +290,7 @@ export type {
   ProfileFragment,
   ReconcilePoint,
   ReconcilePolicy,
+  ResolvedAttachmentsProfile,
   ResolvedComputerUseProfile,
   ResolvedProfile,
   RuntimeProfileManifest,
@@ -361,6 +372,8 @@ export type {
   ArtifactRef,
   AssistantMessage,
   AssistantOutput,
+  AttachmentRef,
+  AttachmentThumbnail,
   Billing,
   BudgetState,
   ContentBlock,
@@ -379,6 +392,7 @@ export type {
   Inbox,
   InboxItem,
   JsonValue,
+  OmittedData,
   OpState,
   Participant,
   PlanItems,
@@ -427,6 +441,7 @@ export type {
   RuntimeTargetIdentity,
   WorkerGeneration,
 } from '../gen/ts/worker.js'
+export * from './attachment-blocks.js'
 export * from './attachments.js'
 export type { BatchRequest } from './batch.js'
 export { BATCH_ITEM_SESSION_PATTERN } from './batch.js'
@@ -436,7 +451,7 @@ export * from './configs.js'
 export * from './constants.js'
 export * from './errors.js'
 export * from './hooks.js'
-export { jcs } from './jcs.js'
+export { jcs, jcsWrite } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
 export * from './meta.js'
 export * from './methods.js'

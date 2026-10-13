@@ -1634,6 +1634,67 @@
         }
       }
     },
+    "SessionLoadingParams": {
+      "description": "How far a session/load in progress has got. At most one a second per connection and session, and at least one every 5 s until the open ends; phase open is a heartbeat with done and total 0. Advisory: a client that does not know it may ignore it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "phase", "done", "total"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "phase": {
+          "enum": ["open", "verify", "fold", "replay"]
+        },
+        "done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SessionStoredOpeningParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "maxNodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 200
+        }
+      }
+    },
+    "SessionStoredOpeningResult": {
+      "description": "The session's latest history read straight from storage, read-only. verified is always false: no integrity check ran.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeline", "hasEarlier", "verified", "lastSeq"],
+      "properties": {
+        "timeline": {
+          "$ref": "#/$defs/UITimeline"
+        },
+        "hasEarlier": {
+          "type": "boolean"
+        },
+        "verified": {
+          "const": false
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "DaemonNotice": {
       "oneOf": [
         {
@@ -1721,7 +1782,8 @@
                 "overloaded",
                 "job_dispatched",
                 "job_dead",
-                "shutting_down"
+                "shutting_down",
+                "integrity_failed"
               ]
             },
             "sessionId": { "type": "string", "maxLength": 512 },
@@ -1913,6 +1975,168 @@
           "type": "string",
           "maxLength": 349528,
           "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "nextOffset": {
+          "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+        }
+      }
+    },
+    "SessionAttachmentReadParams": {
+      "description": "Read one window of a user attachment of the session (or of its thumbnail), located as session-image:// and session-file:// paths locate it: the message seq, the kind, and its 1-based place among that message's blocks of the kind. The daemon authenticates session ownership first, and nothing is served before the session's history has been verified.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "seq", "kind", "index", "offset", "length"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["image", "file"] },
+        "index": { "type": "integer", "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0 },
+        "length": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "thumbnail": { "type": "boolean" }
+      }
+    },
+    "SessionAttachmentReadResult": {
+      "description": "One window of the attachment's bytes. totalBytes is the size of the whole attachment (or thumbnail); read on from offset plus the decoded length until it reaches totalBytes. sha256, when present, is the digest of the stored object the window was read from (the reference, the thumbnail, or the store copy of an old inline attachment); an object larger than one window is not checked by the server, so check the assembled bytes against it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mimeType", "totalBytes", "base64"],
+      "properties": {
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "base64": {
+          "description": "Standard base64 for at most 1048576 bytes.",
+          "type": "string",
+          "maxLength": 1398104
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "AttachmentUploadParams": {
+      "description": "One step of a chunked upload of a user attachment into the attachment store, over the client connection, for one session. The daemon authenticates session ownership first. 'limits' reports the upload limits; 'start' opens an upload (starting the same uploadId again reports the bytes received so far); 'chunk' appends at most 1 MiB at exactly the received offset, with the chunk's SHA-256; 'status' reports the received offset; 'cancel' drops the upload; 'finish' stores the object, records that this session uploaded it, and returns the reference block to send (for a thumbnail, its digest, size and dimensions). Refusals are SEMANTIC_REJECTED with an UPLOAD_* code.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId"],
+          "properties": {
+            "operation": { "const": "limits" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId", "name", "mimeType", "size"],
+          "properties": {
+            "operation": { "const": "start" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "size": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "purpose": { "enum": ["attachment", "thumbnail"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId", "offset", "data", "sha256"],
+          "properties": {
+            "operation": { "const": "chunk" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "data": {
+              "description": "Standard base64 for at most 1048576 bytes.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1398104
+            },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId"],
+          "properties": {
+            "operation": { "enum": ["status", "cancel"] },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "sessionId", "uploadId"],
+          "properties": {
+            "operation": { "const": "finish" },
+            "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "uploadId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      ]
+    },
+    "AttachmentUploadResult": {
+      "description": "'limits' answers limits; 'start', 'chunk' and 'status' answer the offset received so far; 'cancel' answers {}; 'finish' answers the offset and the attachment: a reference block, or for a thumbnail its digest, size and dimensions.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "chunkBytes", "maxConcurrent"],
+          "properties": {
+            "maxBytes": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "chunkBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+            "maxConcurrent": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "attachment": {
+          "anyOf": [
+            { "$ref": "#/$defs/ContentBlock" },
+            { "$ref": "session-v1.json#/$defs/AttachmentThumbnail" }
+          ]
+        }
+      }
+    },
+    "SessionExportRawParams": {
+      "description": "Read one stored ledger row's envelope as one JSONL line (its UTF-8 JSON and a newline), in pieces of at most 8 MiB. Replays of worker-hosted sessions leave large inline attachment data out and name it; this returns the full row. The daemon authenticates session ownership first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "seq", "offset"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "offset": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SessionExportRawResult": {
+      "description": "One piece of a stored row's envelope as a JSONL line. Decode and concatenate pieces until nextOffset is null.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "base64", "nextOffset"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "base64": {
+          "description": "Standard base64 for at most 8388608 bytes of the line. No canonical-base64 pattern is declared on purpose: a regular expression over a string this long exceeds the regex engine's stack.",
+          "type": "string",
+          "maxLength": 11184812
         },
         "nextOffset": {
           "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]

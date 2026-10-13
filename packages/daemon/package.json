@@ -23,6 +23,7 @@
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
+    "@agnes/protocol-validation": "workspace:*",
     "@agnes/resource-control-store": "workspace:*",
     "@agnes/resource-control-daemon": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",

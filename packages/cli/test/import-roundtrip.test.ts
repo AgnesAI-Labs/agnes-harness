@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { PassThrough, Readable } from 'node:stream'
 import { createTestHost } from '@agnes/host/testkit'
 import type { EventEnvelope } from '@agnes/protocol'
@@ -150,6 +151,64 @@ describe('agnes export -> import round trip', () => {
       expect(imported.code).not.toBe(0)
       expect(imported.err).toContain('an agnes export must keep every row')
       expect(imported.err).toContain('this export comes from an older format')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+})
+
+describe('agnes export of a history that fails its integrity check', () => {
+  /** The ledger file under a home that holds this session, wherever the host keeps it. */
+  function ledgerFile(dir: string, sessionId: string): string {
+    const found: string[] = []
+    const walk = (at: string) => {
+      for (const entry of readdirSync(at, { withFileTypes: true })) {
+        const path = join(at, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (entry.name === 'sessions.db') found.push(path)
+      }
+    }
+    walk(dir)
+    const holding = found.filter((path) => {
+      const db = new DatabaseSync(path)
+      try {
+        const row = db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_key = ?').get(sessionId)
+        return ((row as { n: number } | undefined)?.n ?? 0) > 0
+      } catch {
+        return false
+      } finally {
+        db.close()
+      }
+    })
+    if (holding.length !== 1)
+      throw new Error(`expected one ledger holding the session, found ${holding.length}`)
+    return holding[0] as string
+  }
+
+  it('exports nothing from a history changed under its verified-head checkpoint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-export-tampered-'))
+    const file = join(dir, 'session.jsonl')
+    try {
+      const turn = await run(dir, ['-p', 'hello', '--mode', 'json'])
+      expect(turn.code, turn.err).toBe(0)
+      const { sessionId } = JSON.parse(turn.out) as { sessionId: string }
+      const db = new DatabaseSync(ledgerFile(dir, sessionId))
+      try {
+        // The close of that run left a checkpoint; the next open starts from it without hashing row 1.
+        const heads = db
+          .prepare('SELECT COUNT(*) AS n FROM ledger_verified_head_v1 WHERE session_key = ?')
+          .get(sessionId) as { n: number }
+        expect(heads.n).toBe(1)
+        db.prepare(
+          `UPDATE events SET data = json_set(data, '$.agnesVersion', 'tampered') WHERE session_key = ? AND seq = 1`,
+        ).run(sessionId)
+      } finally {
+        db.close()
+      }
+      const exported = await run(dir, ['export', sessionId, '--raw', '-o', file])
+      expect(exported.code).not.toBe(0)
+      expect(exported.err).toMatch(/E_LEDGER_INTEGRITY|ledger digest mismatch/)
+      expect(existsSync(file)).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

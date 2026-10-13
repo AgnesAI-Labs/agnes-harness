@@ -37,6 +37,10 @@ node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key ag
 
 The native import above uses a new session key. Choose a previously unused key for each trial. Omitting the key may point back to the original session; open or nonempty targets are rejected. Import is a one-shot path and does not support `--connect`. An imported session records its origin in its first event (`session/start` field `imported`: the source format, and for a native import the original session key); a Web diagnostics export of it carries an `imported` warning.
 
+Message attachments are kept in the attachment store under the data directory, and the session holds a reference to each. A default export keeps only what a reference says (digest, size, name, type); attachment data written into older sessions is replaced by a marker. `export --raw -o FILE` writes the rows exactly as stored, one at a time, and the bytes of every attachment the session's messages and queued input reference into `FILE.attachments/`, one file per attachment named by its SHA-256 and checked against it. `import FILE` reads that directory: an imported reference is accepted only when its bytes are there, or already stored on this installation, and match. Otherwise the import is refused before anything is written, with `ATTACHMENT_MISSING` (the bytes are in neither place) or `ATTACHMENT_HASH_MISMATCH` (the file there is not the attachment the rows name) at the start of the message. Attachments nothing references any more are deleted after 3 days (`attachments.orphan_grace_ms`).
+
+Export before going back to an older build: `export --raw -o FILE` for each session you need. Builds from before attachment references do not check a session's format, so one of them may open a session that holds references and read it wrongly; going back to such a build is not supported. From this build on, a session written by a newer build is refused with `E_FORMAT` and left unchanged.
+
 Exports may contain prompts, tool arguments, paths, and business data. Review them before sharing. `--raw` reduces privacy filtering and is not the default sharing method. Importing external formats such as Claude Code, Codex, or Pi converts data; it does not restore the original permissions or process, or guarantee lossless semantics. Preserve import errors and inspect the session list. Changing IDs and retrying is not a substitute for diagnosing a failure.
 
 <a id="中断与重启"></a>
@@ -48,5 +52,31 @@ A stop request, process exit, expired approval, and completed run are different 
 After a daemon failure, preserve the home and error, inspect `daemon status`, restart with the same profile, and check history before continuing. Do not delete SQLite, owner, or audit records to force a restart. Stop the relevant instance before backing up related data from its home. Copying a database file while it is being written is not a reliable backup.
 
 TUI `/rewind SEQ` and Web forking create a new session from a historical point. They do not undo file writes, recall network requests, or invalidate completed tools. Recovery applies current permissions; past authorization is not revived automatically.
+
+<a id="打开很大的旧会话"></a>
+
+## Opening a very large session
+
+A session with years of history or large attachments can take a while to open, because its whole history is checked before anything in it is trusted. While it opens:
+
+- The daemon reports progress at least every 5 seconds. After 2 seconds the Web status line says how far it has got, for example "Still loading: checking history 40%".
+- A client gives up only after 30 seconds with no word from the daemon (SDK `session.load` throws `LoadStalled`, code `LOAD_STALLED`), or after 10 minutes in all. A slow open that keeps reporting progress is left to finish. SDK callers can change both limits with `idleTimeoutMs` and `hardTimeoutMs`.
+- After 10 seconds the Web shows the session's latest history read straight from storage, read-only, with a notice above it. It switches to the live session by itself when the open finishes. If the open fails, the stored history stays on screen with the reason.
+
+The stored history is not verified: no integrity check ran on it, so treat it as a view for reading, not as proof of what the session contains. Large attachments appear in it as placeholders. Only a daemon that runs its sessions in workers reads it; an in-process daemon refuses the request (`stored-opening-unavailable`).
+
+<a id="历史完整性校验"></a>
+
+## History integrity
+
+Every session's history is a hash chain, checked when the session opens. A session that was closed cleanly records how far its history was last checked, so reopening it shows the history before that part has been checked again and checks the full chain in the background. Until that check finishes, the session still accepts new messages and changes to queued input, but it starts no step: nothing is sent to the model and no tool runs, and its title is not generated. Forking the session, exporting it, and other writes such as stopping a turn or answering an approval wait for the check as well.
+
+Some work does run before the check finishes, on the history as shown: the extension hooks that run when a session opens (`session_start`, `resources_discover`). A write that waits for the check holds the session's lock while it waits, so a new message sent behind it is accepted only once the check has finished.
+
+If the check finds a changed record or a gap in the sequence, the session stops accepting anything, and every client attached to it is told that its history failed the check, whether the daemon runs sessions in workers or in its own process. The Web stops following the session, disables input, and shows the history read straight from storage, read-only and marked as not verified, with the reason; where storage cannot be read, the transcript already on screen stays with the same notice. The terminal UI says so in its status line and refuses further input. Requests about that session (opening, attaching, projecting, prompting, verifying, exporting, approving) are refused with `E_LEDGER_INTEGRITY`, and a client that reconnects gives that session up instead of retrying it.
+
+The session is not reopened automatically. A failed check drops the record of how far the history was checked, so the next open, which someone has to ask for, checks the whole history from its first record: a history that was really changed is refused again. A record of the check that is itself wrong (it hashes correctly but names the wrong position or digest) makes an intact history fail once in the background; the next open checks everything from the first record and succeeds.
+
+Known limits: the chain cannot show that records were removed from the end of a history; when a history ends before the position it was last checked to, the daemon writes a warning to its runtime log. `agh export` without `--raw` asks for the check once and then reads the history through the event stream; if the session's worker is put to sleep and woken between the two, the woken session shows its history before checking it again, so the export could read rows that check has not finished on. That needs something writing to `sessions.db` meanwhile. Do not edit `sessions.db` by hand; restore a backup taken while the instance was stopped instead.
 
 Implementation: [session SDK](../../packages/sdk/src/session.ts), [Core](../../packages/core/src), [import](../../packages/cli/src/commands/import.ts), [export](../../packages/cli/src/commands/export.ts).

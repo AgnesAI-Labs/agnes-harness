@@ -70,7 +70,12 @@ function omitInlineMedia(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitInlineMedia)
   if (value === null || typeof value !== 'object') return value
   const record = value as Record<string, unknown>
-  if ((record.type === 'image' || record.type === 'audio') && typeof record.data === 'string')
+  // Files too: a message's old inline attachments are file blocks as often as images. References
+  // and the lean form carry no bytes and keep their metadata.
+  if (
+    (record.type === 'image' || record.type === 'audio' || record.type === 'file') &&
+    typeof record.data === 'string'
+  )
     return { ...record, data: `[OMITTED:${record.type}:base64]` }
   if (record.type === 'base64' && typeof record.data === 'string')
     return { ...record, data: '[OMITTED:binary:base64]' }

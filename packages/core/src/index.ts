@@ -71,8 +71,9 @@ export type { InvariantCheck, Violation } from './invariants/registry.js'
 export { InvariantRegistry } from './invariants/registry.js'
 export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
 export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
-export type { IntegrityState } from './log/integrity.js'
+export type { IntegrityState, LedgerTiming } from './log/integrity.js'
 export {
+  foldVerifiedPrefix,
   INTEGRITY_PAGE_SIZE,
   LEDGER_INTEGRITY_ALGORITHM,
   LedgerIntegrityFailure,
@@ -80,10 +81,18 @@ export {
   verifyIntegrityRows,
   verifyLedger,
 } from './log/integrity.js'
+export { base64DecodedBytes, isLeanEvent, LEAN_DATA_MIN_CHARS, leanEvent, leanEvents } from './log/lean.js'
 export { MemoryStorage } from './log/memory-storage.js'
 export { checkRelations, makeRelationCheck } from './log/relations.js'
 export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'
-export type { AppendOptions, OpenLogOptions, Timers } from './log/session-log.js'
+export type {
+  AppendOptions,
+  FullVerifyReport,
+  OpenLogOptions,
+  OpenProgress,
+  SessionOpenStats,
+  Timers,
+} from './log/session-log.js'
 export { SessionLogImpl } from './log/session-log.js'
 // Named rather than `export *`: a star export puts `cacheKey` and `RegisterMap` on the package's
 // root surface, and `cacheKey` alone is enough for a consumer to assemble a second register map
@@ -103,6 +112,13 @@ export type {
   StorageAdapter,
 } from './log/storage.js'
 export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
+export type { CheckpointDecision, VerifiedHead } from './log/verified-head.js'
+export {
+  decideCheckpoint,
+  makeVerifiedHead,
+  VERIFIED_HEAD_ALGORITHM,
+  verifiedHeadDigest,
+} from './log/verified-head.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
   AUXILIARY_VISION_PURPOSE,
@@ -149,7 +165,7 @@ export type {
   UIOptions,
   UIProjectionUsageOptions,
 } from './project/ui.js'
-export { projectUI } from './project/ui.js'
+export { projectUI, UIProjectionCell } from './project/ui.js'
 export type { UsageProjectionInput } from './project/usage.js'
 export { contextTokensAtCut, projectUsage } from './project/usage.js'
 export { foldEvents, initialState, reduce } from './reduce/reducer.js'
@@ -178,6 +194,8 @@ export type {
   TrustTier,
 } from './registry/tools.js'
 export { ToolRegistry } from './registry/tools.js'
+export type { AttachmentReadPort } from './request/attachment-bytes.js'
+export type { AttachmentEntry, AttachmentKind } from './request/attachment-index.js'
 export type { Conflict, Contribution, Merged, PromptSection } from './request/contribute.js'
 export { harnessSections, mergeContributions } from './request/contribute.js'
 export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from './request/derive.js'
@@ -190,6 +208,8 @@ export { canonicalJson, sha256Hex, utf8 } from './request/hash.js'
 // brand exists to withhold, which is the ability to present a request that was never derived.
 export type { LedgerRequest } from './request/mint.js'
 export { isLedgerRequest } from './request/mint.js'
+export type { ImageEncoderSpec, RequestImageTransform } from './request/request-version.js'
+export { REQUEST_IMAGE_ENCODER, requestImageTransform, requestVersionId } from './request/request-version.js'
 export { toProviderRequest } from './request/to-provider.js'
 export type { BeforeRequestPatch, ContextResult } from './request/transforms.js'
 export {
@@ -205,6 +225,7 @@ export type {
 } from './runtime/current.js'
 export type { SessionOverlayPort } from './runtime/overlay.js'
 export { approvalDeadlineMs } from './step/approval-callback.js'
+export type { UserAttachmentPort } from './step/attachment-admission.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './step/compaction.js'
 export { CompactionRunner, runCompaction } from './step/compaction.js'
 export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, stopGate } from './step/gate.js'

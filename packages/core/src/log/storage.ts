@@ -1,5 +1,6 @@
 import type { OpState } from '@agnes/protocol'
 import { CoreError, type Event, type Lane, type PreparedEvent, type Seq, type SessionKey } from '../types.js'
+import type { VerifiedHead } from './verified-head.js'
 
 /** The most rows one adapter scan call returns. */
 export const SCAN_PAGE_MAX = 500
@@ -78,6 +79,11 @@ export type CommitTx = {
    * the batch's last row; null removes it. A batch that carries it must carry at least one row.
    */
   opState?: OpWrite
+  /**
+   * Raises the session's ledger format to at least this value in the same transaction as `events`;
+   * never lowers it. Set on the batch that writes the first attachment reference block.
+   */
+  formatVersion?: 2
 }
 
 /** One lane's program-counter value, written as a register cell rather than as a ledger row. */
@@ -102,8 +108,28 @@ export interface StorageAdapter {
   renew(key: SessionKey, writerRunId: string, claim?: LeaseClaim): Promise<void>
   release(key: SessionKey, writerRunId: string): Promise<void>
   scan(key: SessionKey, q: ScanQuery): Promise<Event[]>
+  /**
+   * `scan` with every large inline attachment replaced by its lean form (see log/lean.ts). Optional:
+   * a caller without it applies `leanEvents` to `scan`, which reads the full rows first.
+   */
+  scanLean?(key: SessionKey, q: ScanQuery): Promise<Event[]>
   scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]>
   registers(key: SessionKey): Promise<RegisterRow[]>
+  /** Stored size of a session's rows, for the open record; adapters that cannot say leave it out. */
+  ledgerStats?(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }>
+  /** The verified-head checkpoint of this session, if the adapter keeps one. */
+  readVerifiedHead?(key: SessionKey): Promise<VerifiedHead | undefined>
+  /**
+   * Only moves forward, unless `force`: an open that has just verified every row writes its head with
+   * it, replacing a checkpoint it could not use (one past the head, say).
+   */
+  writeVerifiedHead?(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
+  deleteVerifiedHead?(key: SessionKey): Promise<void>
+  /**
+   * The stored integrity digest of one row (the parent's row for a child's prefix): undefined when
+   * the row is absent, null when it is a legacy row without one.
+   */
+  integrityDigestAt?(key: SessionKey, seq: Seq): Promise<string | null | undefined>
   /** Remove a session only after Core proves this open created it and storage verifies its writer lease. */
   discardNewSession?(key: SessionKey, expectedWriterRunId: string, claim?: LeaseClaim): Promise<void>
   createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void>

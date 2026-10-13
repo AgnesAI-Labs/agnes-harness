@@ -48,11 +48,19 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
         say('attachments handled'),
       ],
     })
-    const h = await openTestHost({ provider })
+    // Inline storage: the case is about the bytes a client sent coming back in the projection, which a
+    // client without attachment references sees only while the attachment stays inline.
+    const h = await openTestHost({ provider, storeAttachmentsByReference: false })
     // This fixture has no installed extension manifests. Exercise the exported builtin definition.
     const reader = TOOLS_CORE.find((tool) => tool.name === 'read')
     if (!reader) throw new Error('builtin attachment reader is missing')
-    h.host.kernel.tools.add(reader, { source: 'agnes/tools-core', trust: 'builtin' })
+    // As the host registers a bundled extension's tools: a classified tool needs its package attested.
+    h.host.kernel.tools.add(reader, {
+      source: 'agnes/tools-core',
+      trust: 'builtin',
+      packageIdentity: '@agnes/base',
+      packageVersion: '0.0.0',
+    })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
     const draining = (async () => {
       for await (const _ of ep.notifications) {
@@ -495,12 +503,9 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
       error: { code: -32603, data: { code: 'UI_PROJECTION_RESYNC_REQUIRED' } },
     })
 
-    const imageBytes = Buffer.alloc(10 * 1024 * 1024)
-    imageBytes.set([
-      0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
-    ])
-    imageBytes.set([0xff, 0xd9], imageBytes.length - 2)
-    const image = { type: 'image' as const, mimeType: 'image/jpeg', data: imageBytes.toString('base64') }
+    // A single node larger than the byte budget must fail closed. The block is text: attachment bytes
+    // never reach a node any more (see the lean-image test below).
+    const image = { type: 'text' as const, text: 'y'.repeat(64 * 1024) }
     await opened.append([opened.ev('user/message', { content: [image] })])
     const oversizedOpening = await ep.handle({
       jsonrpc: '2.0',
@@ -747,6 +752,46 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     expect(page2.result.items[0]?.sessionId).not.toBe(page1.result.items[0]?.sessionId)
     await ep.close()
     await h.close()
+  })
+
+  it('keeps large attachment bytes out of the opening projection', async () => {
+    const h = await openTestHost()
+    const createSession = h.host.createSession.bind(h.host)
+    let opened: HostSession | undefined
+    vi.spyOn(h.host, 'createSession').mockImplementation(async (opts) => {
+      const created = await createSession(opts)
+      opened ??= created
+      return created
+    })
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    await ep.handle(init)
+    const created = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/new',
+      params: { cwd: h.dataDir, mcpServers: [] },
+    })) as { result: { sessionId: string } }
+    if (!opened) throw new Error('session was not captured')
+    const imageBytes = Buffer.alloc(10 * 1024 * 1024)
+    imageBytes.set([
+      0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
+    ])
+    imageBytes.set([0xff, 0xd9], imageBytes.length - 2)
+    const image = { type: 'image' as const, mimeType: 'image/jpeg', data: imageBytes.toString('base64') }
+    await opened.append([opened.ev('user/message', { content: [image] })])
+    const maxBytes = 16 * 1024
+    const opening = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 101,
+      method: '_agnes/v1/session.projectUIOpening',
+      params: { sessionId: created.result.sessionId, surface: 'tui', maxNodes: 1, maxBytes },
+    })) as { result: { timeline: UITimeline } }
+    expect(Buffer.byteLength(JSON.stringify(opening.result), 'utf8')).toBeLessThanOrEqual(maxBytes)
+    const node = opening.result.timeline.nodes[0] as { kind: string; content: Array<Record<string, unknown>> }
+    expect(node.kind).toBe('user')
+    expect(node.content[0]).toMatchObject({ type: 'image', mimeType: 'image/jpeg' })
+    expect('data' in (node.content[0] ?? {})).toBe(false)
+    expect(node.content[0]?.dataOmitted).toBeDefined()
   })
 
   it('setPreset switches an allowed preset and rejects one outside presets.allowed', async () => {

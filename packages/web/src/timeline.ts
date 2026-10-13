@@ -134,9 +134,12 @@ function fingerprint(node: UINode): string {
       const body = textContent(node)
       const images = node.content
         .filter((block) => block.type === 'image')
-        .map(
-          (block) =>
-            `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`,
+        .map((block) =>
+          'data' in block
+            ? `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
+            : 'attachment' in block
+              ? `${block.mimeType}:ref:${block.attachment.sha256}`
+              : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`,
         )
         .join('|')
       return `${node.kind}:${node.id}:${sampledPart(body)}:${images}`

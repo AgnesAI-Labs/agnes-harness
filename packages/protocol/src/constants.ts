@@ -69,6 +69,41 @@ export const MAX_FRAME_BYTES = 144 * 1024 * 1024
 export const MAX_RUNTIME_TARGET_ARTIFACT_BASE64_LENGTH = 16_776_788
 /** Raw-byte ceiling for one JSON-RPC artifact range response. Larger artifacts are read in ranges. */
 export const ARTIFACT_READ_RPC_MAX_BYTES = 1024 * 1024
+/** Raw bytes in one `_agnes/v1/attachment.upload` chunk; Base64 makes it at most 1,398,104 characters. */
+export const ATTACHMENT_UPLOAD_CHUNK_BYTES = 1024 * 1024
+/**
+ * The thumbnail a client makes for an uploaded image and uploads as a second object: the longest edge
+ * at most `maxEdge` pixels, JPEG at `jpegQuality`, and at most `maxBytes`.
+ */
+export const USER_ATTACHMENT_THUMBNAIL = Object.freeze({ maxEdge: 320, jpegQuality: 0.8, maxBytes: 262_144 })
+/**
+ * The codes (`data.code` of a SEMANTIC_REJECTED error) for a refused attachment: an upload step, or a
+ * prompt, steer or follow-up whose attachment was refused before anything was queued.
+ */
+export const ATTACHMENT_REFUSAL_CODES = Object.freeze([
+  'UPLOAD_INVALID',
+  'UPLOAD_SIZE_LIMIT',
+  'UPLOAD_OFFSET',
+  'UPLOAD_HASH_MISMATCH',
+  'UPLOAD_INCOMPLETE',
+  'UPLOAD_CANCELLED',
+  'UPLOAD_BUSY',
+  'UPLOAD_EXPIRED',
+  'UPLOAD_QUOTA',
+  'UPLOAD_UNAVAILABLE',
+  'UPLOAD_NOT_IMAGE',
+  'ATTACHMENT_NOT_AUTHORIZED',
+  'ATTACHMENT_MISSING',
+  'ATTACHMENT_DATA',
+  'ATTACHMENT_BYTES',
+  'ATTACHMENT_IMAGE_TOO_LARGE',
+  'ATTACHMENT_CORRUPT',
+  'ATTACHMENT_HASH_MISMATCH',
+  'ATTACHMENT_TOO_LARGE',
+  'ATTACHMENT_TIMEOUT',
+  'ATTACHMENT_UNAVAILABLE',
+] as const)
+export type AttachmentRefusalCode = (typeof ATTACHMENT_REFUSAL_CODES)[number]
 /** Default and hard request ceilings for bounded UI projection reads (IP10). */
 export const UI_OPENING_DEFAULT_MAX_NODES = 200
 export const UI_OPENING_MAX_NODES = 500

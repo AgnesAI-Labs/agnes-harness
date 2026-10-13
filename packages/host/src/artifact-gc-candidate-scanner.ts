@@ -65,6 +65,16 @@ export async function scanComputerUseArtifactCandidates(
       const artifact = join(dataDir, 'artifacts', 'sha256', sha256.slice(0, 2), sha256)
       // Deleted or reclaimed bytes are not candidates; their markers are not read at all.
       if (!pathEntryExists(artifact)) continue
+      // Bytes that are also a user attachment are never reclaimed as a screenshot: re-putting the
+      // same bytes as a screenshot refreshes its Computer Use age, and that must not decide them.
+      // The attachment sweep drops the user-attachment marker once nothing needs the bytes as an
+      // attachment, and from then on they are collected as a screenshot again.
+      if (
+        pathEntryExists(
+          join(dataDir, 'artifacts', 'user-attachment-meta', sha256.slice(0, 2), `${sha256}.json`),
+        )
+      )
+        continue
       const marker = parseComputerUseMarker(await readPrivateMarker(join(directory, file.name)), sha256)
       let read: Awaited<ReturnType<typeof readRegularSingleLink>>
       try {

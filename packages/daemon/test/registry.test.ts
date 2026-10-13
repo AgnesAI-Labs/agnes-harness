@@ -1,10 +1,11 @@
-import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { LocalContext } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
 import type { Registry } from '../src/registry.js'
 import { type RemoteEntry, WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
+import { handleCommand } from '../src/worker/commands.js'
 import { workspaceBinding } from './workspace-authority.js'
 
 async function open(
@@ -21,6 +22,103 @@ async function open(
 // `tsc` accepts these assignments at all, not any particular runtime behavior. Each `it` still calls
 // one shared method so the assertion is not entirely inert.
 describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/registry.ts WorkerRegistry)', () => {
+  describe('session.load records', () => {
+    function coldRegistry(audit: (record: unknown) => void) {
+      let received = 0
+      const link = {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello' as const,
+          token: 'token-load-trace',
+          sessionKey: 'load-trace-session',
+          writerRunId: 'run-load-trace',
+          generation: 1,
+          profileHash: 'sha256-profile',
+        }),
+        onExit: vi.fn(),
+        receivedBytes: () => received,
+        command: vi.fn(async () => undefined),
+        closeSession: vi.fn(async () => undefined),
+        close: vi.fn(),
+      }
+      const registry = new WorkerRegistry(
+        {
+          acquire: vi.fn(async () => link),
+          retire: vi.fn(),
+        } as unknown as WorkerPool,
+        undefined,
+        audit,
+      )
+      return { registry, receive: (bytes: number) => (received += bytes) }
+    }
+    const key = 'load-trace-session'
+
+    it('is written for a load that opened the session and counts only that open', async () => {
+      const audit = vi.fn()
+      const { registry, receive } = coldRegistry(audit)
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      receive(4096)
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).toHaveBeenCalledTimes(1)
+      const record = audit.mock.calls[0]?.[0] as { kind: string; detail: Record<string, unknown> }
+      expect(record.kind).toBe('session.load')
+      expect(record.detail).toMatchObject({
+        transferBytes: 4096,
+        resumes: 0,
+        outcome: 'ok',
+        ms: { acpReplay: 5, open: expect.any(Number), authorityReplay: expect.any(Number) },
+      })
+      expect(record.detail.session).toMatch(/^[0-9a-f]{16}$/)
+      expect(JSON.stringify(record)).not.toContain(key)
+    })
+
+    it('is not written for a load that finds the session already open', async () => {
+      const audit = vi.fn()
+      const { registry, receive } = coldRegistry(audit)
+      // A new session is opened by session/new, which never asks for a record.
+      await open(registry, { key, cwd: '/workspace' })
+      receive(1_000_000)
+      // The later session/load finds it live.
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).not.toHaveBeenCalled()
+    })
+
+    it('is not written after the session was closed, and nothing is kept for it', async () => {
+      const audit = vi.fn()
+      const { registry } = coldRegistry(audit)
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      await registry.close(key)
+      registry.recordLoad(key, { acpReplayMs: 5 })
+      expect(audit).not.toHaveBeenCalled()
+      expect(registry.get(key)).toBeUndefined()
+    })
+
+    it('keeps working when the audit sink throws', async () => {
+      const { registry } = coldRegistry(() => {
+        throw new Error('disk full')
+      })
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      expect(() => registry.recordLoad(key, { acpReplayMs: 1 })).not.toThrow()
+      expect(() => registry.recordLoadFailed(key, { elapsedMs: 1, error: new Error('x') })).not.toThrow()
+    })
+
+    it('records a failed load with the error code only', () => {
+      const audit = vi.fn()
+      const registry = new WorkerRegistry({} as unknown as WorkerPool, undefined, audit)
+      registry.recordLoadFailed('failing-session', {
+        elapsedMs: 12,
+        error: Object.assign(new Error('path /private/name'), { code: 'E_LEDGER_INTEGRITY' }),
+      })
+      expect(audit.mock.calls[0]?.[0]).toMatchObject({
+        kind: 'session.load',
+        detail: { outcome: 'failed', code: 'E_LEDGER_INTEGRITY', transferBytes: 0, ms: { total: 12 } },
+      })
+      expect(JSON.stringify(audit.mock.calls)).not.toContain('private')
+    })
+  })
+
   it('lets the live tool-result projection satisfy an overtaking same-turn media read', async () => {
     const artifactEvent = {
       seq: 7,
@@ -29,8 +127,8 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     } as EventEnvelope
     const command = vi.fn(async (method: string, params: Record<string, unknown>) => {
       if (method !== 'scan') return undefined
-      if (params.fromSeq === 1) return []
-      return []
+      if (params.fromSeq === 1) return { rows: [] }
+      return { rows: [] }
     })
     const link = {
       alive: true,
@@ -72,7 +170,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       type: 'tool/result',
       lane: 'main',
     } as EventEnvelope
-    const command = vi.fn(async (method: string) => (method === 'scan' ? [] : undefined))
+    const command = vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined))
     const link = {
       alive: true,
       hello: Promise.resolve({
@@ -115,7 +213,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         profileHash: 'sha256-profile',
       }),
       onExit: vi.fn(),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     }
     const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
     const registry = new WorkerRegistry(
@@ -170,17 +268,17 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       }),
       command: vi.fn(async (method: string, params: Record<string, unknown>) => {
         if (method !== 'scan') return undefined
-        const page = (await scan)
-          .filter(
-            (event) =>
-              event.seq >= Number(params.fromSeq) &&
-              (params.toSeq === undefined || event.seq <= Number(params.toSeq)),
-          )
-          .slice(0, Number(params.limit))
-        // A small synthetic wire budget exercises the real oversized-page refusal without large fixtures.
-        if (Buffer.byteLength(JSON.stringify(page)) > 1024)
-          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
-        return page
+        const read = async (q: { fromSeq: number; toSeq?: number; limit: number }) =>
+          (await scan)
+            .filter((event) => event.seq >= q.fromSeq && (q.toSeq === undefined || event.seq <= q.toSeq))
+            .slice(0, q.limit)
+        // The real worker command with a small frame budget: a page that does not fit comes back in
+        // parts, without large fixtures.
+        return handleCommand(
+          { scanLean: read } as never,
+          { kind: 'command', requestId: 'scan', method: 'scan', params },
+          { host: {} as never, aborts: new Map(), maxScanFrameBytes: 1024 },
+        )
       }),
     }
     const pool = { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool
@@ -229,7 +327,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         onExit: vi.fn(),
         closeSession: vi.fn(async () => undefined),
         command: vi.fn((method: string) => {
-          if (method === 'scan') return scan
+          if (method === 'scan') return scan.then((rows) => ({ rows }))
           return Promise.resolve(undefined)
         }),
       }
@@ -337,7 +435,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           profileHash: 'sha256-profile',
         }),
         onExit: vi.fn(),
-        command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
       })),
       retire,
     } as unknown as WorkerPool
@@ -425,7 +523,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(closeSession),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     })
     const initial = link('old-generation', async () => {
       staleDeliveries.push(
@@ -692,7 +790,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const parentCommand = vi.fn(async (method: string) => {
       if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
       if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
       if (method === 'fork') return { sessionId: 'child', parent: { key: 'parent', boundarySeq: 9 } }
       throw new Error(`unexpected parent command ${method}`)
     })
@@ -755,7 +853,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const parentCommand = vi.fn(async (method: string) => {
       if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
       if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
       if (method === 'fork') return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
       throw new Error(`unexpected parent command ${method}`)
     })
@@ -901,7 +999,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       // Like a real session channel, exit is observed on the whole worker link.
       onExit: (notify: () => void) => void workerExit.push(notify),
       closeSession: vi.fn(async () => undefined),
-      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
     })
     let releaseFirst: ((link: unknown) => void) | undefined
     const first = new Promise<unknown>((resolve) => {
@@ -926,6 +1024,104 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     await vi.waitFor(() => expect(registry.get(key)?.session.writerRunId).toBe('recovered'))
     expect(acquire).toHaveBeenCalledTimes(3)
     await registry.closeAll()
+  })
+
+  describe('a session whose ledger failed its integrity check', () => {
+    const integrity = () => Object.assign(new Error('ledger digest mismatch'), { code: 'E_LEDGER_INTEGRITY' })
+    const channel = (key: string, onExit?: (notify: () => void) => void) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token: 'token',
+        sessionKey: key,
+        writerRunId: 'run',
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      onExit: onExit ?? (() => undefined),
+      closeSession: vi.fn(async () => undefined),
+      command: vi.fn(async () => undefined),
+    })
+
+    it('is not reopened when its worker reports the integrity failure', async () => {
+      const key = 'tampered-interrupted'
+      const acquire = vi.fn().mockResolvedValue(channel(key))
+      const failed = vi.fn()
+      const registry = new WorkerRegistry(
+        { acquire, retire: vi.fn() } as unknown as WorkerPool,
+        undefined,
+        undefined,
+        failed,
+      )
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.subscribe(key, () => undefined)
+      registry.interrupt(key, integrity())
+      await new Promise((r) => setTimeout(r, 300))
+      expect(acquire).toHaveBeenCalledOnce()
+      expect(registry.get(key)).toBeUndefined()
+      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
+      await registry.closeAll()
+    })
+
+    it('fails an open the integrity failure interrupted with that failure, not as unavailable', async () => {
+      const key = 'tampered-while-opening'
+      let releaseTail!: () => void
+      let tailing!: () => void
+      const tailStarted = new Promise<void>((resolve) => {
+        tailing = resolve
+      })
+      const link = {
+        ...channel(key),
+        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+        tail: () => {
+          tailing()
+          return new Promise<void>((resolve) => {
+            releaseTail = resolve
+          })
+        },
+      }
+      const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
+      const registry = new WorkerRegistry(
+        { acquire: vi.fn().mockResolvedValue(link), retire: vi.fn() } as unknown as WorkerPool,
+        lifecycle,
+        undefined,
+        vi.fn(),
+      )
+      const opening = open(registry, { key, cwd: '/workspace', resume: true })
+      await tailStarted
+      registry.interrupt(key, integrity())
+      releaseTail()
+      await expect(opening).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await registry.closeAll()
+    })
+
+    it('stops recovering after a reopen fails the integrity check', async () => {
+      const key = 'tampered-recovery'
+      let crash: (() => void) | undefined
+      const acquire = vi
+        .fn()
+        .mockResolvedValueOnce(
+          channel(key, (notify) => {
+            crash = notify
+          }),
+        )
+        .mockRejectedValue(integrity())
+      const failed = vi.fn()
+      const registry = new WorkerRegistry(
+        { acquire, retire: vi.fn() } as unknown as WorkerPool,
+        undefined,
+        undefined,
+        failed,
+      )
+      await open(registry, { key, cwd: '/workspace', resume: true })
+      registry.subscribe(key, () => undefined)
+      crash?.()
+      await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce())
+      await new Promise((r) => setTimeout(r, 1_500))
+      expect(acquire).toHaveBeenCalledTimes(2)
+      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
+      await registry.closeAll()
+    })
   })
 
   it('finishes pending and map cleanup after the first session close fails', async () => {

@@ -83,6 +83,23 @@ describe('runtime log', () => {
     expect(JSON.stringify(written)).not.toContain(FAKE_TOKEN)
   })
 
+  it('keeps the session open, load and full-verification records as they arrive', async () => {
+    const log = openRuntimeLog(dir, new EventEmitter() as never)
+    log.record({ kind: 'session.open', detail: { session: 'abc', ms: { total: 12 } } })
+    log.record({ kind: 'session.load', detail: { session: 'abc', ms: { total: 40 }, transferBytes: 900 } })
+    log.record({ kind: 'session.verify_full', detail: { session: 'abc', ms: 7, rows: 3, bytes: 90 } })
+    // The log does not filter content; keeping names out of a record is the producer's job.
+    log.record({ kind: 'session.open', detail: { session: 'abc', name: 'insects.zip' } })
+    await log.close()
+    const written = rows(join(dir, 'audit', RUNTIME_LOG)).filter((row) => row.kind.startsWith('session.'))
+    expect(written.map((row) => ({ kind: row.kind, detail: row.detail }))).toEqual([
+      { kind: 'session.open', detail: { session: 'abc', ms: { total: 12 } } },
+      { kind: 'session.load', detail: { session: 'abc', ms: { total: 40 }, transferBytes: 900 } },
+      { kind: 'session.verify_full', detail: { session: 'abc', ms: 7, rows: 3, bytes: 90 } },
+      { kind: 'session.open', detail: { session: 'abc', name: 'insects.zip' } },
+    ])
+  })
+
   it('records an uncaught exception before the process ends, and detaches on close', async () => {
     const source = new EventEmitter()
     const log = openRuntimeLog(dir, source as never)

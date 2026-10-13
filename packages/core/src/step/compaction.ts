@@ -10,6 +10,7 @@ import { canonicalJson } from '../request/hash.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'
+import { imageBlockTokens, noUserImages } from '../request/user-images.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
 import { elideSpan } from './compaction-elide.js'
@@ -31,7 +32,6 @@ import {
   resolveModel,
   surfaceToolCalls,
 } from './inference.js'
-import { resolvedModelRecord } from './model-tools.js'
 import { type OpStateObj, type OpStatePhase, withPhase } from './op-state.js'
 import type { CompactionPort, SessionImpl, StepOutcome } from './session.js'
 
@@ -234,8 +234,14 @@ function hookSurface(
 }
 
 function nodeTokens(node: SurfaceNode, argsTokens: ReadonlyMap<Seq, number>): number {
-  const data = node.event.data as { content?: Array<{ text?: string }> } | null
-  const text = (data?.content ?? []).reduce((sum, block) => sum + estimateTokens(block.text ?? ''), 0)
+  const data = node.event.data as {
+    content?: Array<{ type?: string; text?: string; width?: number; height?: number; data?: unknown }>
+  } | null
+  const text = (data?.content ?? []).reduce(
+    (sum, block) =>
+      sum + (block.type === 'image' ? imageBlockTokens(block) : estimateTokens(block.text ?? '')),
+    0,
+  )
   return text + (node.kind === 'assistant' ? (argsTokens.get(node.seq) ?? 0) : 0)
 }
 
@@ -344,10 +350,8 @@ function summaryRequest(
     : segment.instruction
   let derived = deriveRequest({
     kind: 'summary',
-    inlineImages: {
-      model: resolvedModelRecord(s.d.provider, target),
-      canRead: false,
-    },
+    // A summary is written from text: every user image is a note, and no bytes are read for it.
+    userImages: noUserImages(),
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
     harnessEntries: [],
     surface: segment.nodes,

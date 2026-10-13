@@ -3,6 +3,7 @@ import { decidedFields, isPending } from '../effects/approval-answer.js'
 import { scanAll } from '../log/scan-pages.js'
 import type { BudgetState, Inbox, RepairDecision } from '../reduce/shapes.js'
 import { canonicalJson } from '../request/hash.js'
+import { imageBlockTokens } from '../request/user-images.js'
 import { CoreError, type EventInput, type Seq } from '../types.js'
 import { quoteBudget } from './calibrate.js'
 import { claimFrom, inboxEvent } from './inbox.js'
@@ -37,8 +38,11 @@ function tokensSince(s: SessionImpl, anchor: { seq: Seq; total: number } | null)
   let n = anchor?.total ?? 0
   for (const node of s.surface()) {
     if (anchor && node.seq <= anchor.seq) continue
-    const d = node.event.data as { content?: Array<{ text?: string }> } | null
-    for (const b of d?.content ?? []) n += estimateTokens(b.text ?? '')
+    const d = node.event.data as {
+      content?: Array<{ type?: string; text?: string; width?: number; height?: number; data?: unknown }>
+    } | null
+    for (const b of d?.content ?? [])
+      n += b.type === 'image' ? imageBlockTokens(b) : estimateTokens(b.text ?? '')
   }
   return n
 }

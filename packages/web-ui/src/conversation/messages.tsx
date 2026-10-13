@@ -15,7 +15,14 @@ import {
   useState,
 } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { formatMegabytes } from '../format-bytes.js'
 import type { Translate } from '../locales/index.js'
+import {
+  AttachmentReaderContext,
+  type AttachmentWindowReader,
+  useAttachmentReader,
+  useReferenceImage,
+} from './attachment-image.js'
 import { ConversationCost } from './cost.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
@@ -47,6 +54,8 @@ export interface ConversationMessagesProps {
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
+  /** Reads attachment bytes of the open session, for images sent by reference. */
+  readAttachment?: AttachmentWindowReader
 }
 
 type ConversationMessageContextValue = {
@@ -169,9 +178,11 @@ function UserMessageImage({
 }) {
   const [previewUrl, setPreviewUrl] = useState<string>()
   const [unavailable, setUnavailable] = useState(false)
-  const { data, mimeType } = image
+  const { mimeType } = image
+  // 精简块（字节留在服务端）没有可解码的数据：不解码，下面改为显示它的大小。
+  const data = 'data' in image ? image.data : undefined
   useEffect(() => {
-    if (!allowed) {
+    if (!allowed || data === undefined) {
       setUnavailable(true)
       return
     }
@@ -188,6 +199,13 @@ function UserMessageImage({
     return () => URL.revokeObjectURL(url)
   }, [allowed, data, mimeType])
 
+  // 精简块的字节还在服务端，只是没有随回放下发：说明大小，而不是显示成坏图。
+  if ('dataOmitted' in image)
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.image.omitted', { size: formatMegabytes(image.dataOmitted.bytes) })}
+      </span>
+    )
   if (unavailable)
     return (
       <span className="user-message-image-unavailable" role="status">
@@ -201,6 +219,46 @@ function UserMessageImage({
       className="user-message-image"
       src={previewUrl}
       alt={t('conversation.imageAlt', { index: index + 1 })}
+      width={USER_MESSAGE_IMAGE_THUMBNAIL.width}
+      height={USER_MESSAGE_IMAGE_THUMBNAIL.height}
+    />
+  )
+}
+
+/** An image sent by reference: its thumbnail, or the original when small enough, read from the session. */
+function UserMessageReferenceImage({
+  image,
+  seq,
+  index,
+  t,
+}: {
+  image: Extract<ContentBlock, { type: 'image'; attachment: unknown }>
+  seq: number
+  index: number
+  t: Translate
+}) {
+  const state = useReferenceImage(image, { seq, index }, useAttachmentReader())
+  if (state.status === 'large')
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.image.reference', {
+          name: image.name ?? t('conversation.imageAlt', { index }),
+          size: formatMegabytes(image.attachment.bytes),
+        })}
+      </span>
+    )
+  if (state.status === 'unavailable')
+    return (
+      <span className="user-message-image-unavailable" role="status">
+        {t('conversation.imageUnavailable')}
+      </span>
+    )
+  if (state.status === 'loading') return null
+  return (
+    <Image
+      className="user-message-image"
+      src={state.url}
+      alt={t('conversation.imageAlt', { index })}
       width={USER_MESSAGE_IMAGE_THUMBNAIL.width}
       height={USER_MESSAGE_IMAGE_THUMBNAIL.height}
     />
@@ -222,17 +280,33 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
     <Image.PreviewGroup>
       <div className="user-message-images">
         {images.map((block, index) => {
+          const data = 'data' in block ? block.data : ''
           const decodedLength =
-            Math.floor((block.data.length * 3) / 4) -
-            (block.data.endsWith('==') ? 2 : block.data.endsWith('=') ? 1 : 0)
+            Math.floor((data.length * 3) / 4) - (data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0)
           const allowed =
             decodedLength > 0 &&
             decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage &&
             imageBytes + decodedLength <= USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
           if (allowed) imageBytes += decodedLength
-          const imageKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 16)}:${block.data.slice(-16)}`
+          const imageKey =
+            'data' in block
+              ? `${block.mimeType}:${data.length}:${data.slice(0, 16)}:${data.slice(-16)}`
+              : 'attachment' in block
+                ? `${block.mimeType}:ref:${block.attachment.sha256}`
+                : `${block.mimeType}:omitted:${block.dataOmitted.bytes}`
           const occurrence = imageKeys.get(imageKey) ?? 0
           imageKeys.set(imageKey, occurrence + 1)
+          // Its place among the message's images is how the session reads it back.
+          if ('attachment' in block)
+            return (
+              <UserMessageReferenceImage
+                key={`${imageKey}:${occurrence}`}
+                image={block}
+                seq={node.seq}
+                index={index + 1}
+                t={t}
+              />
+            )
           return (
             <UserMessageImage
               key={`${imageKey}:${occurrence}`}
@@ -270,7 +344,13 @@ function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> })
   return (
     <ul className="user-message-files">
       {files.map((file) => {
-        const key = `${file.name}:${file.mimeType}:${file.data.length}`
+        const size =
+          'data' in file
+            ? file.data.length
+            : 'attachment' in file
+              ? `ref:${file.attachment.sha256}`
+              : file.dataOmitted.bytes
+        const key = `${file.name}:${file.mimeType}:${size}`
         const occurrence = occurrences.get(key) ?? 0
         occurrences.set(key, occurrence + 1)
         return (
@@ -956,43 +1036,47 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.turns.flatMap((turn) => turn.nodeIds.map((id) => [id, turn.id] as const)),
     )
     return (
+      <AttachmentReaderContext.Provider value={props.readAttachment}>
+        <ConversationMessageTargetContext.Provider value={targetContext}>
+          <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
+            <section data-agnes-conversation-messages="">
+              <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
+              {props.turns.map((turn) => (
+                <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
+              ))}
+              <section
+                className="timeline-unassigned"
+                hidden={[...nodes.keys()].every((id) => assigned.has(id))}
+              >
+                {[...nodes]
+                  .filter(([id]) => !assigned.has(id))
+                  .map(([id, node]) => (
+                    <Message key={id} node={node} props={props} />
+                  ))}
+              </section>
+            </section>
+          </registerConversationMessageTargetContext.Provider>
+        </ConversationMessageTargetContext.Provider>
+      </AttachmentReaderContext.Provider>
+    )
+  }
+  return (
+    <AttachmentReaderContext.Provider value={props.readAttachment}>
       <ConversationMessageTargetContext.Provider value={targetContext}>
         <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
           <section data-agnes-conversation-messages="">
             <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
-            {props.turns.map((turn) => (
-              <Turn key={turn.id} turn={turn} nodes={nodes} ownerByNodeId={ownerByNodeId} props={props} />
-            ))}
-            <section
-              className="timeline-unassigned"
-              hidden={[...nodes.keys()].every((id) => assigned.has(id))}
-            >
-              {[...nodes]
-                .filter(([id]) => !assigned.has(id))
-                .map(([id, node]) => (
-                  <Message key={id} node={node} props={props} />
-                ))}
-            </section>
+            {messages.map((message) => {
+              if (visible && !visible.has(message.id)) return null
+              const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
+              const node = custom?.node
+              return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
+                <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
+              ) : null
+            })}
           </section>
         </registerConversationMessageTargetContext.Provider>
       </ConversationMessageTargetContext.Provider>
-    )
-  }
-  return (
-    <ConversationMessageTargetContext.Provider value={targetContext}>
-      <registerConversationMessageTargetContext.Provider value={registerMessageTarget}>
-        <section data-agnes-conversation-messages="">
-          <ThreadPrimitive.Messages components={assistantUiMessageComponents} />
-          {messages.map((message) => {
-            if (visible && !visible.has(message.id)) return null
-            const custom = message.metadata.custom as ConversationMessage['metadata']['custom'] | undefined
-            const node = custom?.node
-            return node && node.kind !== 'context' && node.kind !== 'context-sections' ? (
-              <Message key={message.id} node={node} props={props} turnStatus={custom?.turnStatus} />
-            ) : null
-          })}
-        </section>
-      </registerConversationMessageTargetContext.Provider>
-    </ConversationMessageTargetContext.Provider>
+    </AttachmentReaderContext.Provider>
   )
 }

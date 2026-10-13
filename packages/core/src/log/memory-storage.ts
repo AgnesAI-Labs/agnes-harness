@@ -24,6 +24,7 @@ import {
   type TreeUsage,
 } from '../child/types.js'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '../types.js'
+import { leanEvents } from './lean.js'
 import {
   type CommitReceipt,
   type CommitTx,
@@ -40,6 +41,7 @@ import {
   type StorageAdapter,
   scanTruncated,
 } from './storage.js'
+import type { VerifiedHead } from './verified-head.js'
 
 type Book = {
   events: Event[]
@@ -56,6 +58,8 @@ type Book = {
   parent?: { key: SessionKey; boundarySeq: Seq }
   /** Program-counter cells written as cells, by lane. A child never sees its parent's. */
   opCells?: Map<string, RegisterRow>
+  /** The ledger format, as `sessions.format_version` holds it; absent means 1. */
+  formatVersion?: number
 }
 
 /**
@@ -74,6 +78,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
   private readonly workspaces = new Map<string, PlannedWorkspace>()
   private readonly ordinals = new Map<string, number>()
   private readonly writerGens = new Map<SessionKey, number>()
+  private readonly verifiedHeads = new Map<SessionKey, VerifiedHead>()
   private permitSeq = 0
 
   constructor(opts: { clock?: Clock; childControlFormat?: number } = {}) {
@@ -222,7 +227,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     b.opened = true
     return {
       lastSeq: this.lastSeq(b),
-      formatVersion: 1,
+      formatVersion: b.formatVersion ?? 1,
       ...(created ? { created: true } : {}),
       ...(b.parent ? { parent: b.parent } : {}),
     }
@@ -263,6 +268,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       seqs.push(e.seq)
     }
     b.events.push(...stamped)
+    if (tx.formatVersion) b.formatVersion = Math.max(b.formatVersion ?? 1, tx.formatVersion)
     for (const entry of tx.integrity ?? []) {
       const { seq: entrySeq, ...metadata } = entry
       b.integrity.set(entrySeq, metadata)
@@ -316,6 +322,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     return rows
   }
 
+  async scanLean(key: SessionKey, q: ScanQuery): Promise<Event[]> {
+    return leanEvents(await this.scan(key, q))
+  }
+
   async scanIntegrity(key: SessionKey, q: IntegrityScanQuery): Promise<IntegrityRow[]> {
     if (!Number.isSafeInteger(q.limit) || q.limit <= 0)
       throw new CoreError('E_SCAN_UNBOUNDED', 'integrity scan needs a positive limit')
@@ -326,6 +336,40 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
 
   async registers(key: SessionKey): Promise<RegisterRow[]> {
     return this.registerView(this.book(key)).values()
+  }
+
+  /** Sizes are counted in characters of the JSON text, not bytes: this adapter stores no encoded form. */
+  async ledgerStats(key: SessionKey): Promise<{ storedBytes: number; maxRowBytes: number }> {
+    let storedBytes = 0
+    let maxRowBytes = 0
+    for (const row of this.prefixedIntegrity(key, this.book(key))) {
+      const size = JSON.stringify(row.event.data).length
+      storedBytes += size
+      if (size > maxRowBytes) maxRowBytes = size
+    }
+    return { storedBytes, maxRowBytes }
+  }
+
+  async readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined> {
+    const head = this.verifiedHeads.get(key)
+    return head && { ...head }
+  }
+
+  async writeVerifiedHead(head: VerifiedHead, opts?: { force?: boolean }): Promise<void> {
+    const current = this.verifiedHeads.get(head.sessionKey)
+    if (current && current.throughSeq > head.throughSeq && !opts?.force) return
+    this.verifiedHeads.set(head.sessionKey, { ...head })
+  }
+
+  async deleteVerifiedHead(key: SessionKey): Promise<void> {
+    this.verifiedHeads.delete(key)
+  }
+
+  async integrityDigestAt(key: SessionKey, seq: Seq): Promise<string | null | undefined> {
+    const b = this.books.get(key)
+    if (!b) return undefined
+    const row = this.prefixedIntegrity(key, b).find((r) => r.event.seq === seq)
+    return row ? (row.integrity?.digest ?? null) : undefined
   }
 
   async createChild(parentKey: SessionKey, boundarySeq: Seq, childKey: SessionKey): Promise<void> {
@@ -343,6 +387,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       registers: new RegisterMap(),
       opened: true,
       parent: { key: parentKey, boundarySeq },
+      ...(parent.formatVersion ? { formatVersion: parent.formatVersion } : {}),
     })
   }
 
@@ -350,6 +395,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     const b = this.book(key)
     this.holdLease(b, runId, claim)
     this.books.delete(key)
+    this.verifiedHeads.delete(key)
   }
 
   async close(): Promise<void> {
@@ -597,6 +643,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
       integrity: new Map(),
       registers: new RegisterMap(),
       parent: { key: input.parentKey, boundarySeq: input.boundarySeq },
+      ...(parent.formatVersion ? { formatVersion: parent.formatVersion } : {}),
     })
 
     let budgetScopeId = parentTask?.budgetScopeId ?? root.scopeId

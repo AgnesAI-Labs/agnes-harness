@@ -34,6 +34,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'cost.callDetailsAria': 'View the cost breakdown for this call',
     'session.error.legacyLedger':
       'This session was created by an older build and cannot be opened in this version. Start a new session.',
+    'session.error.newerLedger':
+      'This session was written by a newer build and cannot be opened in this version. Upgrade to open it.',
+    'session.error.ledgerIntegrity':
+      "This session's stored history failed its integrity check and was closed. Restore a backup or start a new session.",
     'session.error.authFailed':
       'Model credentials have expired or were rejected by the provider. Reconfigure or sign in again in Settings.',
     'session.error.outputLimit':
@@ -85,6 +89,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.workspace.currentTitle': '当前会话工作区',
     'cost.callDetailsAria': '查看本次调用用量明细',
     'session.error.legacyLedger': '该会话由旧版本创建，当前版本无法打开，请新建会话。',
+    'session.error.newerLedger': '该会话由更新的版本写入，当前版本无法打开，请升级后再打开。',
+    'session.error.ledgerIntegrity': '该会话存储的历史未通过完整性校验，已关闭。请恢复备份或新建会话。',
     'session.error.authFailed': '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
     'session.error.outputLimit':
       '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',

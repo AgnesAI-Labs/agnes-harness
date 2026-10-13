@@ -46,11 +46,14 @@ import {
   requireSessionOwner,
 } from './methods/agnes.js'
 import { type ArtifactReadRpcOptions, registerArtifactRead } from './methods/artifacts.js'
+import { type AttachmentUploadService, registerAttachmentUpload } from './methods/attachment-upload.js'
 import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
+import { registerStoredOpening } from './methods/stored-opening.js'
 import { registerWorkspaces } from './methods/workspaces.js'
+import { NoticeSink } from './notice.js'
 import {
   type BatchPort,
   type ClaimStore,
@@ -209,6 +212,11 @@ export {
   type ArtifactReadScopeAuthority,
   registerArtifactRead,
 } from './methods/artifacts.js'
+export {
+  type AttachmentUploadService,
+  createAttachmentUploadService,
+  registerAttachmentUpload,
+} from './methods/attachment-upload.js'
 export { type ExtensionMethodsContext, registerExtensions } from './methods/extensions.js'
 export { registerWorkspaces, throwWorkspaceRpcError } from './methods/workspaces.js'
 export {
@@ -223,7 +231,8 @@ export {
   type SessionLister,
   type SessionMetaRow,
 } from './ports.js'
-export { toSessionUpdate } from './project.js'
+// The complete form: a user message is several updates, so the single-update form stays internal.
+export { toSessionUpdates } from './project.js'
 export type { ApprovalRequest, AskOutcome, Prompter } from './prompter.js'
 export { PrompterRouter } from './prompter.js'
 export {
@@ -284,6 +293,8 @@ export type LocalEndpointOptions = {
   artifactRead?: ArtifactReadRpcOptions
   /** Where diagnostics.collect reads `audit/*.jsonl` tails. Omitted: both logs report missing. */
   dataDir?: string
+  /** Chunked attachment uploads into the attachment store. Omitted: every upload step is refused as unavailable. */
+  attachmentUpload?: AttachmentUploadService
 }
 
 /**
@@ -338,10 +349,14 @@ export function createLocalEndpoint(
   const workspaces =
     opts.workspaces ??
     new WorkspaceCatalogImpl(new MemoryWorkspaceStore(), sessionWorkspaces, resolveWorkspaceDirectory, clock)
+  // The one connection this endpoint serves hears session notices only while attached, as in a daemon.
+  const notices = new NoticeSink({ endpoints: () => [{ ep, conn: ep.conn }], clock })
   const registry = new SessionRegistry(host, {
     clock,
     ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}),
     observe: (sessionKey, event, cwd) => indexApprovalTicket(tickets, sessionKey, event, cwd),
+    onIntegrityFailure: (sessionId) =>
+      notices.emit('integrity_failed', { sessionId, detail: { code: 'E_LEDGER_INTEGRITY' } }),
   })
   const prompter = new PrompterRouter({
     ...(opts.prompter ? { local: opts.prompter } : {}),
@@ -411,6 +426,7 @@ export function createLocalEndpoint(
       authKind: identity.authKind,
       credentialKind: identity.credentialKind,
       artifactRead: artifactReadConfigured,
+      attachmentUpload: opts.attachmentUpload !== undefined,
       ...(lockedPackageMutations ? { lockedPackageMutations } : {}),
       ...(computerUse ? { computerUse } : {}),
       forkSession: async (sessionId, at, childKey, credential, principalId) => {
@@ -461,7 +477,10 @@ export function createLocalEndpoint(
     registry,
     ...(opts.dataDir === undefined ? {} : { dataDir: opts.dataDir }),
   })
+  // In process there is no separate read path: the request is answered with a refusal.
+  registerStoredOpening(ep, { requireSessionOwner: requireSessionOwner(cx) })
   if (artifactReadConfigured) registerArtifactRead(ep, opts.artifactRead as ArtifactReadRpcOptions)
+  registerAttachmentUpload(ep, requireSessionOwner(cx), opts.attachmentUpload)
   if (opts.packageAdmin) {
     // The loopback Web connection is authenticated as the local owner but is not an administration
     // channel; it gets the one skin read the workbench actually needs (design §23.3). Every other

@@ -16,6 +16,8 @@ export function noticeText(notice: DaemonNotice): string | null {
       return '执行反复失败，已暂停；请联系管理员'
     case 'shutting_down':
       return '服务维护中，稍后自动恢复'
+    case 'integrity_failed':
+      return '会话历史校验失败，已停止；请联系管理员'
     case 'overloaded':
       return '消息太多，正在追赶'
     case 'job_dispatched':

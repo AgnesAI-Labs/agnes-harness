@@ -5,6 +5,7 @@ DEFAULT_BRANDING
 Emitter
 FrameDecoder
 JsonRpcError
+LoadStalled
 MAX_DEFERRED_UI_OVERLAYS
 OPENING_RETRY_MS
 PREVIEW_MAX_CHARS
@@ -21,6 +22,8 @@ UIProjectionSync
 Unsupported
 applyUITimelinePatch
 applyWindowedUITimelinePatch
+attachmentRefusal
+cancelAttachmentUpload
 classify
 createClient
 createExtensionClient
@@ -51,5 +54,6 @@ surfaceAuthProvider
 textFor
 toContentBlocks
 unixTransport
+uploadAttachment
 verifyPortalIdentity
 wsTransport

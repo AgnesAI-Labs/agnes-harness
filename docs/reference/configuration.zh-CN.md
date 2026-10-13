@@ -41,8 +41,19 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `policy.capabilityCeiling` | 能力上限；默认不含 services |
 | `policy.workspacePackages` | deny 或 require-project-trust |
 | `computerUse` | 启用、应用访问范围、捕获与保留限制 |
+| `attachments.storeByReference` | 缺省 `true`：新消息附件只写一次到数据目录下的附件存储，会话里保留一个很小的引用。设为 `false` 时新附件重新写进会话；已经写成引用的会话照常可读。只能在用户 profile 设置。`artifacts` 接缝由 `@agnes/base` 以外的包提供时，附件仍写进会话。不支持降级到早于附件引用的版本：降级前先导出会话 |
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
+
+附件存储读取五个 `limits` 键；缺省或取值无效时用缺省值：
+
+| 键 | 缺省 | 含义 |
+| --- | --- | --- |
+| `attachments.max_upload_bytes` | 2 GiB | 单个附件上限 |
+| `attachments.session_quota_bytes` | 8 GiB | 一个会话可引用的附件字节数 |
+| `attachments.global_quota_bytes` | 64 GiB | 附件存储的总字节数 |
+| `attachments.min_free_bytes` | 2 GiB | 写入后必须剩余的磁盘空间 |
+| `attachments.orphan_grace_ms` | 3 天 | 没有任何会话引用的附件保留多久 |
 
 完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host/src/profile/types.ts)、[local-dev 模板](../../packages/host/templates/local-dev.yaml)及[enterprise 模板](../../packages/host/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 

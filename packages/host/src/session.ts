@@ -3,9 +3,11 @@ import {
   type ChildWorkspaceRuntimePort,
   CoreError,
   type SessionWorkspaceRuntime as CoreSessionWorkspaceRuntime,
+  type OpenProgress,
   type SandboxSeam,
   type SeamImplementations,
   type Seq,
+  type SessionOptions,
   type SessionWorkspaceLifecycle,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
@@ -51,6 +53,10 @@ export type CreateSessionOptions = {
    * a caller that is never called opened a ledger that was already sound.
    */
   onRecovered?: (recovery: SessionRecovery) => void
+  /** Told how far opening the ledger has got, by seq; a listener that throws is ignored. */
+  onOpenProgress?: (p: OpenProgress) => void
+  /** See core's SessionOptions: the outcome of verifying the history in the background after an open. */
+  onFullVerify?: SessionOptions['onFullVerify']
 }
 
 export function sessionKey(profile: ResolvedProfile, actor: Actor, cwd: string): string {
@@ -383,6 +389,8 @@ export async function createSession(
     ...(opts.lane ? { lane: opts.lane } : {}),
     ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
     ...(opts.imported ? { imported: opts.imported } : {}),
+    ...(opts.onOpenProgress ? { onOpenProgress: opts.onOpenProgress } : {}),
+    ...(opts.onFullVerify ? { onFullVerify: opts.onFullVerify } : {}),
     ...(workspace
       ? {
           workspaceRuntime: workspace.runtime,
@@ -413,36 +421,45 @@ export async function createSession(
   // session it already holds - so a second open of a live session is E_LANE_BUSY and never reaches
   // this line. That matters: resuming underneath a turn already running on that session would be two
   // writers to one program counter, which no lease is watching for.
-  const recovery = await session.resume()
-  // `resumed` alone is not news - it says a turn was open, which a parked session is too. What the
-  // caller is told about is work that was actually settled, which is what makes the report honest on
-  // a second open that found nothing left to do.
-  if (recovery.actions.length > 0) {
-    audit?.write({
-      kind: 'session.recovered',
-      detail: {
-        sessionKey: key,
-        ...(recovery.phase ? { phase: recovery.phase } : {}),
-        actions: recovery.actions.map((x) => x.action),
-      },
-    })
-    opts.onRecovered?.(recovery)
+  try {
+    const recovery = await session.resume()
+    // `resumed` alone is not news - it says a turn was open, which a parked session is too. What the
+    // caller is told about is work that was actually settled, which is what makes the report honest on
+    // a second open that found nothing left to do.
+    if (recovery.actions.length > 0) {
+      audit?.write({
+        kind: 'session.recovered',
+        detail: {
+          sessionKey: key,
+          ...(recovery.phase ? { phase: recovery.phase } : {}),
+          actions: recovery.actions.map((x) => x.action),
+        },
+      })
+      opts.onRecovered?.(recovery)
+    }
+    // A graceful endpoint close records cancel_requested before the log is torn down. Resume settles
+    // the interrupted inference but leaves the turn in failure_drain; the next prompt would then
+    // observe that abort as its own outcome. Drain the cancelled turn here so the session is idle and
+    // the caller's next turn is a new one.
+    const leftover = session.op()
+    if (
+      leftover &&
+      (leftover.control.status === 'cancel_requested' || leftover.phase.kind === 'failure_drain')
+    ) {
+      await session.step()
+    }
+    // core's setPreset/setModel take effect in memory and record an audit row. Every fresh open
+    // recovers the latest preset baseline and then its later model switches before handing the
+    // session to the caller; see session-switch.ts. A session that never switched keeps its
+    // session/start snapshot.
+    await replaySwitchesOnOpen(session, profile, a)
+  } catch (error) {
+    // The caller never receives this session, so nothing else would close it: its writer lease and
+    // its place in the kernel would outlive the failed open. A ledger that fails its background
+    // verification while the open is still settling lands here.
+    await session.close().catch(() => undefined)
+    if (a.kernel.sessions.get(key) === session) a.kernel.sessions.delete(key)
+    throw error
   }
-  // A graceful endpoint close records cancel_requested before the log is torn down. Resume settles
-  // the interrupted inference but leaves the turn in failure_drain; the next prompt would then
-  // observe that abort as its own outcome. Drain the cancelled turn here so the session is idle and
-  // the caller's next turn is a new one.
-  const leftover = session.op()
-  if (
-    leftover &&
-    (leftover.control.status === 'cancel_requested' || leftover.phase.kind === 'failure_drain')
-  ) {
-    await session.step()
-  }
-  // core's setPreset/setModel take effect in memory and record an audit row. Every fresh open
-  // recovers the latest preset baseline and then its later model switches before handing the
-  // session to the caller; see session-switch.ts. A session that never switched keeps its
-  // session/start snapshot.
-  await replaySwitchesOnOpen(session, profile, a)
   return session
 }

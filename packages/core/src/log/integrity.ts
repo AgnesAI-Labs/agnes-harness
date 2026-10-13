@@ -1,5 +1,5 @@
-import { jcs } from '@agnes/protocol'
-import { sha256Hex, utf8 } from '../request/hash.js'
+import { jcsWrite } from '@agnes/protocol'
+import { createSha256, type Sha256Stream } from '../request/hash.js'
 import { CoreError, type Event, type Seq, type SessionKey } from '../types.js'
 import type { IntegrityCommit, IntegrityMetadata, IntegrityRow, StorageAdapter } from './storage.js'
 
@@ -11,6 +11,9 @@ export type IntegrityState = {
   legacyThroughSeq: Seq
   headDigest: string | null
 }
+
+/** Milliseconds a verification spent reading pages, checking digests and handing pages to the fold. */
+export type LedgerTiming = { readMs: number; verifyMs: number; foldMs: number }
 
 export class LedgerIntegrityFailure extends CoreError {
   constructor(message = 'ledger integrity verification failed', detail?: Record<string, unknown>) {
@@ -29,9 +32,40 @@ function sameDigest(a: string, b: string): boolean {
   return different === 0
 }
 
+/** Small tokens are coalesced so the hash sees few large updates; large strings go through in slices. */
+const FLUSH_CHARS = 64 * 1024
+/** A large string is fed in slices of at most this many code units, cut between code points, so the
+ * hash never converts a whole multi-megabyte token to UTF-8 at once. */
+const SLICE_CHARS = 1024 * 1024
+
+function updateSliced(hash: Sha256Stream, text: string): void {
+  for (let at = 0; at < text.length; ) {
+    let end = Math.min(at + SLICE_CHARS, text.length)
+    const last = text.charCodeAt(end - 1)
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--
+    hash.update(text.slice(at, end))
+    at = end
+  }
+}
+
 function digestCanonical(value: unknown): { digest: string; bytes: number } {
-  const canonical = jcs(value)
-  return { digest: sha256Hex(canonical), bytes: utf8(canonical).byteLength }
+  const hash = createSha256()
+  let pending = ''
+  jcsWrite(value, (chunk) => {
+    if (chunk.length >= FLUSH_CHARS) {
+      if (pending) hash.update(pending)
+      pending = ''
+      updateSliced(hash, chunk)
+      return
+    }
+    pending += chunk
+    if (pending.length >= FLUSH_CHARS) {
+      hash.update(pending)
+      pending = ''
+    }
+  })
+  if (pending) hash.update(pending)
+  return { digest: hash.digestHex(), bytes: hash.bytes }
 }
 
 function anchorDigest(
@@ -104,18 +138,89 @@ export async function verifyLedger(
   lastSeq: Seq,
   yieldPage?: () => void | Promise<void>,
   onPage?: (events: Event[]) => void,
+  timing?: LedgerTiming,
 ): Promise<IntegrityState> {
   let state = { ...EMPTY_STATE }
   while (state.lastSeq < lastSeq) {
     if (state.lastSeq > 0) await yieldPage?.()
+    const readAt = performance.now()
     const rows = await storage.scanIntegrity(key, {
       fromSeq: state.lastSeq + 1,
       toSeq: lastSeq,
       limit: INTEGRITY_PAGE_SIZE,
     })
+    const verifyAt = performance.now()
+    if (timing) timing.readMs += verifyAt - readAt
     if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
     state = verifyIntegrityRows(rows, state)
+    const foldAt = performance.now()
+    if (timing) timing.verifyMs += foldAt - verifyAt
     onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
+  }
+  if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
+  return state
+}
+
+/**
+ * Folds rows a verified-head checkpoint vouches for without hashing them, then verifies the rest of
+ * the chain onward from the checkpoint's head. Contiguity is still checked row by row: a missing row
+ * fails here exactly as it would in a full verify. The prefix itself is only trusted until the
+ * caller's background full verification has hashed it again.
+ */
+export async function foldVerifiedPrefix(
+  storage: StorageAdapter,
+  key: SessionKey,
+  lastSeq: Seq,
+  head: { throughSeq: Seq; headDigest: string; legacyThroughSeq: Seq },
+  yieldPage?: () => void | Promise<void>,
+  onPage?: (events: Event[]) => void,
+  timing?: LedgerTiming,
+  progress?: (p: { phase: 'verify' | 'fold'; done: number; total: number }) => void,
+): Promise<IntegrityState> {
+  let seq = 0
+  while (seq < head.throughSeq) {
+    if (seq > 0) await yieldPage?.()
+    const readAt = performance.now()
+    const rows = await storage.scanIntegrity(key, {
+      fromSeq: seq + 1,
+      toSeq: head.throughSeq,
+      limit: INTEGRITY_PAGE_SIZE,
+    })
+    if (timing) timing.readMs += performance.now() - readAt
+    if (rows.length === 0) fail('ledger ended before advertised sequence', seq + 1)
+    for (const row of rows) {
+      if (row.event.seq !== seq + 1) fail('ledger sequence is not contiguous', row.event.seq)
+      seq = row.event.seq
+    }
+    const foldAt = performance.now()
+    onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
+    progress?.({ phase: 'fold', done: seq, total: lastSeq })
+  }
+  if (seq !== head.throughSeq) fail('ledger exceeds advertised sequence', seq)
+  let state: IntegrityState = {
+    lastSeq: head.throughSeq,
+    legacyThroughSeq: head.legacyThroughSeq,
+    headDigest: head.headDigest,
+  }
+  while (state.lastSeq < lastSeq) {
+    await yieldPage?.()
+    const readAt = performance.now()
+    const rows = await storage.scanIntegrity(key, {
+      fromSeq: state.lastSeq + 1,
+      toSeq: lastSeq,
+      limit: INTEGRITY_PAGE_SIZE,
+    })
+    const verifyAt = performance.now()
+    if (timing) timing.readMs += verifyAt - readAt
+    if (rows.length === 0) fail('ledger ended before advertised sequence', state.lastSeq + 1)
+    state = verifyIntegrityRows(rows, state)
+    const foldAt = performance.now()
+    if (timing) timing.verifyMs += foldAt - verifyAt
+    onPage?.(rows.map((row) => row.event))
+    if (timing) timing.foldMs += performance.now() - foldAt
+    progress?.({ phase: 'verify', done: state.lastSeq, total: lastSeq })
   }
   if (state.lastSeq !== lastSeq) fail('ledger exceeds advertised sequence', state.lastSeq)
   return state

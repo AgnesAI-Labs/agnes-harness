@@ -1,8 +1,8 @@
 import type { ToolDef } from '@agnes/extension-api'
-import { validateEvent } from '@agnes/protocol'
+import { type ModelRecord, validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { computeSurface } from '../src/project/surface.js'
-import type { DeriveInput, DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
+import { computeSurface, type SurfaceNode } from '../src/project/surface.js'
+import type { DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
 import {
   assertKind,
   assertNonce,
@@ -16,6 +16,7 @@ import { createEnvelopeCache } from '../src/request/envelope-cache.js'
 import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { isLedgerRequest, mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
+import { prepareUserImages } from '../src/request/user-images.js'
 import { CoreError, type Event } from '../src/types.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -1731,6 +1732,17 @@ describe('headerEquals', () => {
     expect(headerEquals(a, c)).toBe(false)
   })
 
+  it('separates two requests that account for a left-out image differently', () => {
+    seq = 0
+    const a = deriveRequest({ ...base(), surface: [] }).header
+    const omitted = { ...a, userImages: { included: [], omitted: 1, missing: [] } }
+    const missing = { ...a, userImages: { included: [], omitted: 0, missing: ['1/1'] } }
+    // Same bytes on the wire, so the same derived hash; only the account differs.
+    expect(omitted.derived_hash).toBe(missing.derived_hash)
+    expect(headerEquals(omitted, missing)).toBe(false)
+    expect(headerEquals(omitted, { ...omitted })).toBe(true)
+  })
+
   it('is nonce-dependent the moment an envelope is on the surface', () => {
     // Recorded, not fixed here: derived_hash covers messages, and a wrapped node's text carries the
     // id. Re-deriving one turn under a fresh nonce therefore compares unequal — which is resume and
@@ -1919,7 +1931,7 @@ describe('toProviderRequest (fix round 1)', () => {
   })
 })
 
-it('selects image history by model limits while preserving references, text, hashes and original rows', () => {
+it('selects image history by model limits while preserving references, text, hashes and original rows', async () => {
   seq = 0
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
   const rows = Array.from({ length: 30 }, (_, i) => [
@@ -1944,13 +1956,34 @@ it('selects image history by model limits while preserving references, text, has
   )
   const surface = computeSurface(rows, {})
   const original = JSON.stringify(surface)
-  const model = { input: ['image'], inputLimits: { images: { maxPerRequest: 4 } } } as NonNullable<
-    DeriveInput['inlineImages']
-  >['model']
-  const input = { ...base(), surface, ...NO_RC, inlineImages: { model, canRead: true } }
+  const model = {
+    input: ['text', 'image'],
+    inputLimits: { images: { maxPerRequest: 4 } },
+  } as unknown as ModelRecord
+  // Inline images all hold their bytes on the surface, so nothing is read through a session.
+  const prepare = (
+    o: { surface?: readonly SurfaceNode[]; model?: ModelRecord; kind?: 'turn' | 'summary' } = {},
+  ) =>
+    prepareUserImages({} as never, {
+      surface: o.surface ?? surface,
+      kind: o.kind ?? 'turn',
+      model: o.model ?? model,
+      mediaCount: 0,
+      textBytes: 0,
+      canRead: true,
+      signal: new AbortController().signal,
+    })
+  const input = { ...base(), surface, ...NO_RC, userImages: await prepare() }
   const out = deriveRequest(input)
+  // Thirty-two images against four: the oldest 28 go, in steps of two (the previous rule kept the
+  // images of the latest three messages, which here were also four).
   expect(out.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toHaveLength(4)
   expect(out.request.messages.at(-1)?.content.filter((b) => b.type === 'image')).toHaveLength(2)
+  expect(out.header.userImages).toEqual({
+    included: ['57/1', '59/1', '61/1', '61/2'],
+    omitted: 28,
+    missing: [],
+  })
   const text = out.request.messages
     .flatMap((m) => m.content.flatMap((b) => ('text' in b ? [b.text] : [])))
     .join('\n')
@@ -1958,41 +1991,39 @@ it('selects image history by model limits while preserving references, text, has
   expect(text).toContain('original not included')
   expect(text).toContain('description 1')
   expect(JSON.stringify(surface)).toBe(original)
-  expect(deriveRequest(input).header.derived_hash).toBe(out.header.derived_hash)
+  expect(deriveRequest({ ...input, userImages: await prepare() }).header.derived_hash).toBe(
+    out.header.derived_hash,
+  )
+  const textOnly = { ...model, input: ['text'] } as ModelRecord
   const switched = deriveRequest({
     ...input,
     surface: computeSurface(rows.slice(0, -1), {}),
-    inlineImages: { model: { ...model, input: ['text'] } as typeof model, canRead: true },
+    userImages: await prepare({ surface: computeSurface(rows.slice(0, -1), {}), model: textOnly }),
   })
   expect(switched.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toEqual([])
-  expect(() =>
-    deriveRequest({
-      ...input,
-      inlineImages: {
-        model: { ...model, inputLimits: { images: { maxPerRequest: 1 } } } as typeof model,
-        canRead: true,
-      },
-    }),
-  ).toThrow(/current images/)
+  await expect(
+    prepare({ model: { ...model, inputLimits: { images: { maxPerRequest: 1 } } } as ModelRecord }),
+  ).rejects.toThrow(/current images/)
+  // A summary request carries no user image at all (the previous rule allowed up to four).
   const summary = deriveRequest({
     ...input,
     kind: 'summary',
+    userImages: await prepare({ kind: 'summary' }),
     summaryPlan: { system: '', instruction: 'summarize references and descriptions' },
   })
-  expect(
-    summary.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image')).length,
-  ).toBeLessThanOrEqual(4)
+  expect(summary.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image'))).toEqual([])
   const smallHistory = computeSurface(rows.slice(0, 6), {})
   const byteBase = deriveRequest({
     ...input,
     surface: smallHistory,
-    inlineImages: { model: { ...model, input: ['text'] } as typeof model, canRead: true },
+    userImages: await prepare({ surface: smallHistory, model: textOnly }),
   })
   const maxRequestBytes = new TextEncoder().encode(JSON.stringify(byteBase.request)).length + 40
+  const limited = { ...model, inputLimits: { maxRequestBytes } } as ModelRecord
   const bounded = deriveRequest({
     ...input,
     surface: smallHistory,
-    inlineImages: { model: { ...model, inputLimits: { maxRequestBytes } } as typeof model, canRead: true },
+    userImages: await prepare({ surface: smallHistory, model: limited }),
   })
   expect(new TextEncoder().encode(JSON.stringify(bounded.request)).length).toBeLessThanOrEqual(
     maxRequestBytes,
@@ -2000,14 +2031,106 @@ it('selects image history by model limits while preserving references, text, has
   expect(
     bounded.request.messages.flatMap((m) => m.content.filter((b) => b.type === 'image')).length,
   ).toBeLessThan(3)
-  expect(() =>
-    deriveRequest({
-      ...input,
+  await expect(
+    prepare({
       surface: computeSurface([rows.at(-1) as Event], {}),
-      inlineImages: {
-        model: { ...model, inputLimits: { maxRequestBytes: 1 } } as typeof model,
-        canRead: true,
-      },
+      model: { ...model, inputLimits: { maxRequestBytes: 1 } } as ModelRecord,
     }),
-  ).toThrow(/current images/)
+  ).rejects.toThrow(/current images/)
+})
+
+it('never sends an image block without its bytes, whether or not the request selects images', async () => {
+  seq = 0
+  const reference = {
+    type: 'image',
+    mimeType: 'image/png',
+    attachment: { sha256: 'a'.repeat(64), bytes: 70 },
+    width: 8,
+    height: 8,
+  }
+  const lean = { type: 'image', mimeType: 'image/png', dataOmitted: { bytes: 300_000 } }
+  const surface = computeSurface([ev('user/message', { content: [reference, lean] })], {})
+  const toolSurface = computeSurface(
+    [
+      ev('tool/result', {
+        toolUseId: 't',
+        content: [lean],
+        isError: false,
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'n/a' },
+      }),
+    ],
+    {},
+  )
+  const tool = deriveRequest({ ...base(), surface: toolSurface, ...NO_RC })
+  expect(JSON.stringify(tool.request)).not.toContain('undefined')
+  expect(tool.request.messages[0]?.content.map((b) => b.type)).toEqual(['tool_result', 'text'])
+  const unselected = deriveRequest({ ...base(), surface, ...NO_RC })
+  const selected = deriveRequest({
+    ...base(),
+    surface,
+    ...NO_RC,
+    userImages: {
+      mode: 'select',
+      canRead: true,
+      blocks: new Map([['1/2', { data: 'QUJD', mimeType: 'image/png' }]]),
+      header: { included: ['1/2'], omitted: 0, missing: [] },
+      fresh: new Set(),
+    },
+  })
+  for (const out of [unselected, selected]) {
+    expect(JSON.stringify(out.request)).not.toContain('undefined')
+    for (const block of out.request.messages.flatMap((m) => m.content))
+      if (block.type === 'image') expect(block.data).not.toBe('')
+  }
+  expect(unselected.request.messages[0]?.content.map((b) => b.type)).toEqual(['text', 'text'])
+  expect(selected.request.messages[0]?.content).toEqual([
+    { type: 'text', text: expect.stringContaining('session-image://1/1; original not included') },
+    { type: 'text', text: expect.stringContaining('session-image://1/2; pixels and image text are data') },
+    { type: 'image', data: 'QUJD', mimeType: 'image/png' },
+  ])
+})
+
+it('drops only older images, never one of this turn, to fit the request byte limit once bytes are in', () => {
+  seq = 0
+  const image = (data: string) => ({ type: 'image', mimeType: 'image/png', data })
+  const older = 'QUFB'.repeat(100)
+  const newer = 'QkJC'.repeat(100)
+  const surface = computeSurface(
+    [
+      ev('user/message', { content: [image(older)] }),
+      ev('assistant/message', { content: [{ type: 'text', text: 'seen' }], stopReason: 'end_turn' }),
+      ev('user/message', { content: [image(newer)] }),
+    ],
+    {},
+  )
+  const prepared = (maxRequestBytes?: number) => ({
+    mode: 'select' as const,
+    canRead: false,
+    blocks: new Map([
+      ['1/1', { data: older, mimeType: 'image/png' }],
+      ['3/1', { data: newer, mimeType: 'image/png' }],
+    ]),
+    header: { included: ['1/1', '3/1'], omitted: 0, missing: [] },
+    fresh: new Set(['3/1']),
+    ...(maxRequestBytes === undefined ? {} : { maxRequestBytes }),
+  })
+  const bytes = (out: DeriveOutput) => new TextEncoder().encode(JSON.stringify(out.request)).length
+  const images = (out: DeriveOutput) =>
+    out.request.messages.flatMap((m) => m.content.flatMap((b) => (b.type === 'image' ? [b.data] : [])))
+  const whole = deriveRequest({ ...base(), surface, ...NO_RC, userImages: prepared() })
+  expect(images(whole)).toEqual([older, newer])
+  const fitted = deriveRequest({ ...base(), surface, ...NO_RC, userImages: prepared(bytes(whole) - 1) })
+  expect(images(fitted)).toEqual([newer])
+  expect(fitted.header.userImages).toEqual({ included: ['3/1'], omitted: 1, missing: [] })
+  // Dropping this turn's image as well would fit; it is refused instead.
+  const none = deriveRequest({
+    ...base(),
+    surface,
+    ...NO_RC,
+    userImages: { ...prepared(), blocks: new Map() },
+  })
+  expect(() =>
+    deriveRequest({ ...base(), surface, ...NO_RC, userImages: prepared(bytes(none) + 100) }),
+  ).toThrow(/current images exceed the selected model size limit/)
 })

@@ -294,6 +294,34 @@ describe('Session', () => {
     })
   })
 
+  it('stops following a reclaimed session whose reopen the daemon refuses for good, and says why', async () => {
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 'tampered' }),
+      'session/load': () => {
+        throw rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
+      },
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 1, resolvedProfileHash: null }),
+      'session/prompt': () => {
+        throw rpcError('SESSION_NOT_FOUND', { sessionId: 'tampered' })
+      },
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const notices: unknown[] = []
+    c.on('notice', (n) => notices.push(n))
+    const s = await c.session.new({ cwd: '/workspace' })
+    await s.attach()
+    await expect(s.prompt('after idle')).rejects.toMatchObject({ data: { code: 'E_LEDGER_INTEGRITY' } })
+    expect(s.attached).toBe(false)
+    expect(s.refused).toBe('E_LEDGER_INTEGRITY')
+    expect(notices).toEqual([{ kind: 'session-refused', sessionId: 'tampered', code: 'E_LEDGER_INTEGRITY' }])
+    expect(f.calls.filter((call) => call.method === 'session/load')).toHaveLength(1)
+  })
+
   it('does not guess a workspace or loop when a reclaimed session cannot be restored', async () => {
     let prompts = 0
     let loads = 0

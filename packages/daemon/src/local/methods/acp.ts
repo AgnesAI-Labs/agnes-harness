@@ -7,6 +7,8 @@ import {
   type QueuedActivationInvocation,
 } from '@agnes/host'
 import {
+  ATTACHMENT_REFUSAL_CODES,
+  downgradeEvent,
   type EventEnvelope,
   fromAcpPrompt,
   type HarnessMeta,
@@ -28,7 +30,7 @@ import { type AttachPrefs, connActor, type Handler, type LocalEndpoint } from '.
 import { createFollowUpRunner } from '../follow-up-runner.js'
 import { type MetaState, stampMeta } from '../meta.js'
 import { PreviewPipe } from '../preview.js'
-import { toSessionUpdate } from '../project.js'
+import { toSessionUpdates } from '../project.js'
 import type { PrompterRouter } from '../prompter.js'
 import { reserveOwnedSession, SessionAdmissionDenied } from '../session-admission.js'
 import type { SessionEntry } from '../sessions.js'
@@ -261,20 +263,20 @@ export class Feed {
     const prefs = this.prefs()
     // An attached client that asked for raw rows only gets no ACP projection; everyone else does.
     if (!prefs || prefs.filter.acpUpdates) {
-      const u = toSessionUpdate(e, o)
-      if (u)
-        this.ep.push(
-          notify(
-            'session/update',
-            setHarnessMeta(
-              { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } },
-              meta,
-            ),
-          ),
-        )
+      // ACP has no content block for an attachment reference (its image needs inline data), so
+      // every client gets the link and text here; the reference itself travels on session.event
+      // and in UI projections to a connection that declared it.
+      const updates = toSessionUpdates(downgradeEvent(e), o)
+      updates.forEach((u, i) => {
+        const update = { sessionId: this.entry.key, update: { sessionUpdate: u.sessionUpdate, ...u.payload } }
+        // One row, one ledger position: only its first update carries the row's meta, so each
+        // eventSequence is still told once. The further blocks of a user message follow it unstamped,
+        // like previews, and an ACP client joins them into that message.
+        this.ep.push(notify('session/update', i === 0 ? setHarnessMeta(update, meta) : update))
+      })
       // turn/end has no projection of its own; the phase rides an empty chunk so an ACP client sees
       // terminalQuiescence as the last session/update of the turn.
-      else if (e.type === 'turn/end')
+      if (updates.length === 0 && e.type === 'turn/end')
         this.ep.push(
           notify(
             'session/update',
@@ -352,6 +354,10 @@ export function throwSessionOpenRpcError(error: unknown): never {
   // A ledger holding a row type this build no longer knows was written by an older build; it fails
   // closed, and the caller is told so rather than handed an internal error.
   if (e?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+  // The reverse: a newer build wrote it in a format this one does not read. Nothing was changed.
+  if (isNewerLedgerFormat(error)) throw newerLedgerRpcError()
+  const refusal = ledgerIntegrityRefusal(error)
+  if (refusal) throw refusal
   if (e?.code === 'E_PRESET_UNRESOLVED' && (e.reason ?? e.detail?.reason) === 'no-routes')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'PROVIDER_UNCONFIGURED',
@@ -360,10 +366,80 @@ export function throwSessionOpenRpcError(error: unknown): never {
   throwWorkspaceRpcError(error)
 }
 
+/** The refusal for a session whose stored history failed its integrity check: it stays refused. */
+export function ledgerIntegrityRpcError(): RpcError {
+  return rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
+}
+
+/**
+ * The one mapping of a history that failed its integrity check, whatever reached it first (an open, a
+ * read, a projection, a write, a run's outcome, in process or forwarded by a worker): its typed
+ * refusal, or undefined for any other error. Callers throw `ledgerIntegrityRefusal(e) ?? e`.
+ */
+export function ledgerIntegrityRefusal(error: unknown): RpcError | undefined {
+  return (error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY'
+    ? ledgerIntegrityRpcError()
+    : undefined
+}
+
+const ATTACHMENT_REFUSALS: ReadonlySet<string> = new Set(ATTACHMENT_REFUSAL_CODES)
+
+/**
+ * The one mapping of an input refused because of its attachments (not uploaded to this session, no
+ * longer stored, malformed, too large, over a quota): SEMANTIC_REJECTED with the refusal's code, or
+ * undefined for any other error. Core names the refusal in `detail.reason`; a worker forwards it as
+ * `reason`, the only part of the detail that crosses the boundary.
+ */
+export function attachmentRefusal(error: unknown): RpcError | undefined {
+  const e = error as {
+    code?: unknown
+    reason?: unknown
+    message?: unknown
+    detail?: { reason?: unknown; name?: unknown }
+  } | null
+  if (e?.code !== 'E_ENVELOPE') return undefined
+  const reason = e.reason ?? e.detail?.reason
+  if (typeof reason !== 'string') return undefined
+  const code = reason.toUpperCase().replaceAll('-', '_')
+  if (!ATTACHMENT_REFUSALS.has(code)) return undefined
+  // Which attachment is gone: core names it in the detail, and in its message, which is all of it a
+  // worker forwards.
+  const named =
+    typeof e.detail?.name === 'string'
+      ? e.detail.name
+      : typeof e.message === 'string'
+        ? /“([^”]{1,256})”/u.exec(e.message)?.[1]
+        : undefined
+  return rpcError('SEMANTIC_REJECTED', {
+    code,
+    reason,
+    ...(code === 'ATTACHMENT_MISSING' && named ? { name: named } : {}),
+  })
+}
+
 /** The refusal for a session whose ledger an older build wrote in a format this one cannot read. */
 export function legacyLedgerRpcError(): RpcError {
   return rpcError('SEMANTIC_REJECTED', { code: 'LEGACY_LEDGER_FORMAT', reason: 'legacy-ledger-format' })
 }
+
+/**
+ * A session ledger in a newer format. Core marks it with a `reason` because E_FORMAT alone also
+ * means a newer child-control format; a worker forwards the reason and drops the rest of detail.
+ */
+export function isNewerLedgerFormat(error: unknown): boolean {
+  const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  return e?.code === 'E_FORMAT' && (e.reason ?? e.detail?.reason) === 'newer-ledger-format'
+}
+
+/** The refusal for a session a newer build wrote in a ledger format this one does not read; upgrade. */
+export function newerLedgerRpcError(): RpcError {
+  return rpcError('SEMANTIC_REJECTED', { code: 'NEWER_LEDGER_FORMAT', reason: 'newer-ledger-format' })
+}
+
+type LoadingProgress = { phase: 'open' | 'verify' | 'fold' | 'replay'; done: number; total: number }
+/** A loading client hears something at least this often while the session opens. */
+const LOADING_HEARTBEAT_MS = 5_000
+const OPEN_HEARTBEAT: LoadingProgress = { phase: 'open', done: 0, total: 0 }
 
 export function registerAcp(
   ep: LocalEndpoint,
@@ -382,6 +458,27 @@ export function registerAcp(
     }
     denyOwnership(method, sessionId)
   }
+  // When this connection was last told how a session's load is going: one notice a second at most,
+  // and a heartbeat only once nothing else has been said for a while.
+  const loadingSentAt = new Map<string, number>()
+  const loadingNotifier =
+    (sessionId: string) =>
+    (progress: LoadingProgress, heartbeat = false): void => {
+      const now = cx.clock()
+      const last = loadingSentAt.get(sessionId)
+      if (last !== undefined) {
+        const quiet = now - last
+        // The notice that ends a phase always goes, so a client sees 100% before the next phase.
+        const ends = progress.phase !== 'open' && progress.done >= progress.total
+        if (heartbeat ? quiet < LOADING_HEARTBEAT_MS - 1_000 : quiet < 1_000 && !ends) return
+      }
+      loadingSentAt.set(sessionId, now)
+      try {
+        ep.push(notify('_agnes/v1/session.loading', { sessionId, ...progress }))
+      } catch {
+        /* a progress notice must not fail the load it describes */
+      }
+    }
   const feedFor = (entry: SessionEntry): Feed => {
     // Nobody is left to push to: hand back a Feed that subscribes to nothing and never makes a
     // prompt wait for rows.
@@ -450,9 +547,10 @@ export function registerAcp(
     // is InitializeMeta { auth?, clientId? } with additionalProperties:false - it has no capabilities
     // key, and reading one from there leaves permission false for every client there is.
     const declared = pocket((params as { clientCapabilities?: unknown }).clientCapabilities).capabilities as
-      | { permission?: boolean }
+      | { permission?: boolean; attachmentRefs?: unknown }
       | undefined
     c.conn.capabilities.permission = declared?.permission === true
+    c.conn.capabilities.attachmentRefs = declared?.attachmentRefs === 1
     // A label, not an identity: it never becomes principalId, and nothing buckets on it. authGate
     // has already set it from this same pocket before this handler ever runs; setting it again here
     // is a no-op on the credentialed path and the only path that reaches it when there is no gate.
@@ -464,7 +562,7 @@ export function registerAcp(
         loadSession: true,
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
-      _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list' } },
+      _meta: { agnes: { agnesVersion: cx.agnesVersion, apis: 'call apis.list', attachmentRefs: 1 } },
     }
   }
   // Credential verification runs before anything else `initialize` does: a failing auth.kind never
@@ -552,36 +650,58 @@ export function registerAcp(
   ep.register('session/load', async (params) => {
     const p = params as { sessionId: string; cwd: string }
     requireOwner('session/load', p.sessionId)
-    let entry = cx.registry.get(p.sessionId)
+    const loading = loadingNotifier(p.sessionId)
+    // The registry relays the worker's own progress; the heartbeat covers a registry that has none
+    // and any stretch the worker or the replay goes quiet, so the client can tell slow from stuck.
+    const offProgress = cx.registry.onOpenProgress?.(p.sessionId, (progress) => loading(progress))
+    const heartbeat = setInterval(() => loading(OPEN_HEARTBEAT, true), 1_000)
     try {
-      const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
-      // Calling open for a live entry is intentional: both registries must reject a different
-      // authority binding rather than ignoring it until the next restart.
-      entry = await cx.registry.open({
-        key: p.sessionId,
-        cwd: binding.canonicalRoot,
-        binding,
-        resume: true,
-      } as Parameters<typeof cx.registry.open>[0])
-    } catch (error) {
-      throwSessionOpenRpcError(error)
+      let entry = cx.registry.get(p.sessionId)
+      const loadStartedAt = performance.now()
+      try {
+        const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
+        // Calling open for a live entry is intentional: both registries must reject a different
+        // authority binding rather than ignoring it until the next restart.
+        entry = await cx.registry.open({
+          key: p.sessionId,
+          cwd: binding.canonicalRoot,
+          binding,
+          resume: true,
+        } as Parameters<typeof cx.registry.open>[0])
+      } catch (error) {
+        cx.registry.recordLoadFailed?.(p.sessionId, { elapsedMs: performance.now() - loadStartedAt, error })
+        throwSessionOpenRpcError(error)
+      } finally {
+        offProgress?.()
+      }
+      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      const feed = feedFor(entry)
+      // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
+      // silently truncate a long transcript at whatever limit was written here.
+      const lastSeq = entry.session.lastSeq
+      const replayStartedAt = performance.now()
+      try {
+        for (let from = 1; from <= lastSeq; from += 500) {
+          const upto = Math.min(lastSeq, from + 499)
+          feed.replayLoad(
+            (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
+          )
+          loading({ phase: 'replay', done: upto, total: lastSeq })
+        }
+      } catch (error) {
+        // The background verification of a history opened from a checkpoint can fail mid-replay; the
+        // load is then refused with the same typed code as an open that failed it.
+        throw ledgerIntegrityRefusal(error) ?? error
+      }
+      cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
+      // Whatever is streaming now is not in the transcript yet; the snapshot says it.
+      feed.previewResync()
+      return {}
+    } finally {
+      clearInterval(heartbeat)
+      offProgress?.()
+      loadingSentAt.delete(p.sessionId)
     }
-    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-    const feed = feedFor(entry)
-    // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would
-    // silently truncate a long transcript at whatever limit was written here.
-    const lastSeq = entry.session.lastSeq
-    for (let from = 1; from <= lastSeq; from += 500)
-      feed.replayLoad(
-        (await entry.session.scan({
-          fromSeq: from,
-          toSeq: Math.min(lastSeq, from + 499),
-          limit: 500,
-        })) as EventEnvelope[],
-      )
-    // Whatever is streaming now is not in the transcript yet; the snapshot says it.
-    feed.previewResync()
-    return {}
   })
 
   ep.register('session/prompt', async (params, c) => {
@@ -650,6 +770,9 @@ export function registerAcp(
       completed = out.reason === 'completed'
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
+      // A run that stopped because the history failed verification is refused as that, not as a fault.
+      const refused = out.reason === 'error' ? ledgerIntegrityRefusal(out.error) : undefined
+      if (refused) throw refused
       if (out.reason === 'error')
         throw rpcError('INTERNAL_ERROR', {
           code: 'TURN_ERROR',
@@ -660,6 +783,10 @@ export function registerAcp(
         stopReason: toAcpStopReason(out.reason as Exclude<TurnEndReason, 'error'>),
         _meta: { [HARNESS]: { phase: 'terminalQuiescence', turnEnd: { reason: out.reason } } },
       }
+    } catch (error) {
+      // The prompt's own input is refused the same way once the history failed verification, and with
+      // its typed code when an attachment was refused.
+      throw ledgerIntegrityRefusal(error) ?? attachmentRefusal(error) ?? error
     } finally {
       queued.cancel()
       const followUps =

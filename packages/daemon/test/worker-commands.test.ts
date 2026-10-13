@@ -105,8 +105,8 @@ describe('worker command dispatch against a real host+session', () => {
       session,
       { kind: 'command', requestId: '3', method: 'scan', params: { fromSeq: 1, limit: 10 } },
       { host: t.host, aborts },
-    )) as unknown[]
-    expect(rows.length).toBeGreaterThan(0)
+    )) as { rows: unknown[] }
+    expect(rows.rows.length).toBeGreaterThan(0)
     await expect(
       handleCommand(
         session,

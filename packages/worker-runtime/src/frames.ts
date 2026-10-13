@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   EventEnvelope,
   McpStatus,
@@ -15,12 +16,15 @@ export type SessionMethod =
   | 'run'
   | 'abort'
   | 'scan'
+  | 'verifyHistory'
   | 'latest'
   | 'projectUI'
   | 'projectUIPatch'
   | 'projectUIOpening'
   | 'projectUIHistory'
   | 'readToolDetail'
+  | 'exportRaw'
+  | 'attachmentRead'
   | 'append'
   | 'setPreset'
   | 'setModel'
@@ -132,12 +136,33 @@ export type SessionInterruptedFrame = {
   kind: 'session.interrupted'
   sessionKey: string
   reason: string
+  /** The error code, when the cause had one; E_LEDGER_INTEGRITY means the session cannot be reopened. */
+  code?: string
 }
 export type LogFrame = {
   kind: 'log'
   sessionKey: string
   level: 'debug' | 'info' | 'warn' | 'error'
   message: string
+}
+/** The session name used in runtime-log records: stable, short, and not the key itself. */
+export function sessionHash(sessionKey: string): string {
+  return createHash('sha256').update(sessionKey).digest('hex').slice(0, 16)
+}
+
+/** A diagnostic the supervisor writes to the runtime log: sizes, timings and outcomes, never content. */
+export type RecordFrame = {
+  kind: 'record'
+  sessionKey: string
+  record: { kind: 'session.open' | 'session.verify_full'; detail: Record<string, unknown> }
+}
+/** How far opening a session has got, by seq; throttled by the worker, relayed to the loading client. */
+export type ProgressFrame = {
+  kind: 'progress'
+  sessionKey: string
+  phase: 'verify' | 'fold'
+  done: number
+  total: number
 }
 export type ResourceStatusFrame = { kind: 'resourceStatus'; serverId: string; status: McpStatus }
 export type WorkerReplyFrame = {
@@ -211,6 +236,8 @@ export type WorkerToSupervisor =
   | PreviewFrame
   | SessionInterruptedFrame
   | LogFrame
+  | RecordFrame
+  | ProgressFrame
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame

@@ -1,12 +1,11 @@
 import type { Host, HostSession } from '@agnes/host'
-import { rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { handleCommand } from '../src/worker/commands.js'
 
-it('propagates unrelated scan errors and refuses an indivisible oversized row', async () => {
-  for (const code of ['SCAN_PAGE_TOO_LARGE', 'UNAUTHORIZED']) {
+it('propagates scan errors, including a single row too large for one frame', async () => {
+  for (const code of ['SCAN_ROW_TOO_LARGE', 'UNAUTHORIZED']) {
     const error = { code: -32603, message: 'refused', data: { code } }
     const remote = new RemoteSession(
       'error',
@@ -20,9 +19,7 @@ it('propagates unrelated scan errors and refuses an indivisible oversized row', 
       } as never,
       '/test',
     )
-    await expect(
-      remote.scan({ fromSeq: 1, toSeq: code === 'UNAUTHORIZED' ? 500 : 1, limit: 500 }),
-    ).rejects.toBe(error)
+    await expect(remote.scan({ fromSeq: 1, toSeq: 500, limit: 500 })).rejects.toBe(error)
   }
 })
 
@@ -30,23 +27,22 @@ it.each(['asc', 'desc'] as const)(
   'reads large history pages completely in %s order across worker frames',
   async (order) => {
     const rows = [1, 2, 3].map((seq) => ({ seq, data: 'A'.repeat(512) }))
-    const hosted = {
-      async scan(q: { fromSeq: number; toSeq: number; limit: number; order: string }) {
-        const found = rows.filter((row) => row.seq >= q.fromSeq && row.seq <= q.toSeq)
-        return (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
-      },
-    } as unknown as HostSession
+    const read = async (q: { fromSeq: number; toSeq: number; limit: number; order: string }) => {
+      const found = rows.filter((row) => row.seq >= q.fromSeq && row.seq <= q.toSeq)
+      return (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
+    }
+    const hosted = { scan: read, scanLean: read } as unknown as HostSession
+    const sent: unknown[] = []
     const link = {
       alive: true,
       async command(method: string, params: Record<string, unknown>) {
+        sent.push(params)
+        // A small frame budget keeps the resume path covered when the production ceiling grows.
         const result = await handleCommand(
           hosted,
           { kind: 'command', requestId: '1', method: method as 'scan', params },
-          { host: {} as Host, aborts: new Map() },
+          { host: {} as Host, aborts: new Map(), maxScanFrameBytes: 1024 },
         )
-        // A small wire budget keeps this refusal path covered when the production ceiling grows.
-        if (Buffer.byteLength(JSON.stringify(result)) > 1024)
-          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
         return JSON.parse(encodeFrame({ kind: 'reply', requestId: '1', result }).toString()).result
       },
     }
@@ -59,8 +55,18 @@ it.each(['asc', 'desc'] as const)(
     })) as typeof rows
     expect(result.map((row) => row.seq)).toEqual(order === 'asc' ? [1, 2, 3] : [3, 2])
     expect(result).toEqual(order === 'asc' ? rows : [...rows].reverse().slice(0, 2))
+    // Each row was read once: one reply per row here, never a re-read of a half.
+    expect(sent).toHaveLength(order === 'asc' ? 3 : 2)
+    expect(remote.scanResumes).toBe(sent.length - 1)
   },
 )
+
+it('counts no resumes while every page fits one worker frame', async () => {
+  const link = { alive: true, command: async () => ({ rows: [{ seq: 1 }] }) }
+  const remote = new RemoteSession('small', 'writer', 1, link as never, '/test')
+  await remote.scan({ fromSeq: 1, toSeq: 1, limit: 1 })
+  expect(remote.scanResumes).toBe(0)
+})
 
 describe('RemoteSession switch result bridge', () => {
   it('unwraps worker command envelopes to the HostSession sequence contract', async () => {

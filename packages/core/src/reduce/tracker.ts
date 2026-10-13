@@ -7,12 +7,14 @@ import {
   type SeededLog,
   seededLogs,
 } from '../log/fork-seed.js'
+import { leanEvents } from '../log/lean.js'
 import { makeRelationCheck } from '../log/relations.js'
 import { scanPages } from '../log/scan-pages.js'
 import { type AppendedExtra, type OpenLogOptions, SessionLogImpl } from '../log/session-log.js'
 import { type RegisterRow, SCAN_PAGE_MAX } from '../log/storage.js'
 import { SurfaceCache, seedSurface } from '../project/surface.js'
 import { markIncomplete, UIProjectionCell } from '../project/ui.js'
+import { AttachmentIndex } from '../request/attachment-index.js'
 import { canonicalJson } from '../request/hash.js'
 import { CoreError, type Event, type Seq } from '../types.js'
 import { verifyOpCells } from './op-check.js'
@@ -142,12 +144,15 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
   surface: SurfaceCache
   surfaces: Map<string, SurfaceCache>
   ui: UIProjectionCell
+  attachments: AttachmentIndex
   registersRebuilt: boolean
 }> {
   const lane = o.lane ?? 'main'
   const tracker = new StateTracker()
   let surface = new SurfaceCache(lane)
   let ui = new UIProjectionCell(o.key, lane)
+  // Folded from the full rows, not the lean view: an inline block's size is read from its data.
+  const attachments = new AttachmentIndex()
   const surfaces = new Map([[lane, surface]])
   // The default check reads the tracker's live state and this surface, which are what the batch is
   // about to be appended to. A caller that brings its own check replaces it wholesale.
@@ -166,27 +171,34 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
     tracker.apply(upto)
     const stateAtTrigger = tracker.state
     tracker.apply(after)
-    ui.apply(events)
+    // The surface and the UI hold the lean rows: a large inline attachment's bytes are read from its
+    // row when a request picks it, not kept in memory for the life of the session.
+    const lean = leanEvents(events)
+    ui.apply(lean)
+    attachments.apply(events)
     ui.setOp(currentOp(log, lane))
     // Every registered cache is fed, not just the opened lane's: each one filters the batch down
     // to its own lane, so feeding them all is how a later-registered lane stays live.
-    for (const c of surfaces.values()) c.push(upto)
+    for (const c of surfaces.values()) c.push(cut === -1 ? lean : lean.slice(0, cut))
     if (digest !== undefined)
       forkPoint = {
         kind: 'trigger',
         seq: trigger as Seq,
         state: stateAtTrigger,
         surface: surface.snapshot(),
+        attachments,
         headDigest: digest,
       }
-    for (const c of surfaces.values()) c.push(after)
+    for (const c of surfaces.values()) c.push(cut === -1 ? [] : lean.slice(cut))
     o.onAppended?.(events, extra)
   }
   // Folds ledger rows into the tracker, the surface and the UI cell, every row from the first.
   const foldPage = (events: Event[]): void => {
     tracker.apply(events)
-    surface.push(events)
-    ui.apply(events)
+    const lean = leanEvents(events)
+    surface.push(lean)
+    ui.apply(lean)
+    attachments.apply(events)
   }
   let log: SessionLogImpl
   let seed: SeededLog | undefined
@@ -218,11 +230,16 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
       ui.startAfter(log.parent.boundarySeq)
       markIncomplete(ui)
       const own = [...seed.own, ...seed.tail]
+      // The parent's attachments up to the fork point are shared; the rows after it are folded here.
+      if (seed.base.attachments) attachments.inherit(seed.base.attachments, seed.base.seq)
+      attachments.apply(seed.inherited)
+      attachments.apply(own)
       tracker.apply(seed.inherited)
       tracker.apply(own)
-      surface.push(seed.inherited)
-      surface.push(own)
-      ui.apply(own)
+      surface.push(leanEvents(seed.inherited))
+      const leanOwn = leanEvents(own)
+      surface.push(leanOwn)
+      ui.apply(leanOwn)
     } else if (o.existing) await replay()
     ui.sealReplay()
     return await finishOpen()
@@ -268,10 +285,16 @@ export async function openTracked(o: OpenTrackedOptions): Promise<{
         tracker.state.lastSeq === boundarySeq &&
         surface.upto === boundarySeq
       )
-        return { kind: 'head', seq: boundarySeq, state: tracker.state, surface: surface.snapshot() }
+        return {
+          kind: 'head',
+          seq: boundarySeq,
+          state: tracker.state,
+          surface: surface.snapshot(),
+          attachments,
+        }
       return forkPoint && forkPoint.seq <= boundarySeq ? forkPoint : undefined
     })
-    return { log, tracker, surface, surfaces, ui, registersRebuilt }
+    return { log, tracker, surface, surfaces, ui, attachments, registersRebuilt }
   }
 }
 
