@@ -8,6 +8,7 @@ import { type Feed, type LocalContext, registerAcp } from '../src/local/methods/
 import { registerStoredOpening } from '../src/local/methods/stored-opening.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
+import { workspaceBinding } from './workspace-authority.js'
 
 const KEY = 'agnes:local:default:daemon:dm:session-loading'
 type Progress = { phase: string; done: number; total: number }
@@ -130,7 +131,7 @@ function connect(registry: ReturnType<typeof slowRegistry>) {
       method: 'session/load',
       params: { sessionId: KEY, cwd: '/workspace', mcpServers: [] },
     })
-  return { pushed, load }
+  return { pushed, load, cx }
 }
 
 describe('session/load progress notifications', () => {
@@ -232,6 +233,99 @@ describe('session/load progress around failures and slow replay', () => {
     const count = c.pushed.length
     await vi.advanceTimersByTimeAsync(20_000)
     expect(c.pushed.length).toBe(count)
+  })
+})
+
+describe('session/load of a history that fails its integrity check mid-replay', () => {
+  it('ends the heartbeat, refuses the load with the typed code, and never reopens the session', async () => {
+    vi.useFakeTimers()
+    const integrity = () => Object.assign(new Error('ledger digest mismatch'), { code: 'E_LEDGER_INTEGRITY' })
+    let releaseScan!: () => void
+    const scanHeld = new Promise<void>((resolve) => {
+      releaseScan = resolve
+    })
+    const command = vi.fn(async (method: string) => {
+      if (method !== 'scan') return undefined
+      // The worker answers the replay read only after its background verification has failed.
+      await scanHeld
+      throw integrity()
+    })
+    const channel = {
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token: 'token',
+        sessionKey: KEY,
+        writerRunId: 'run',
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      onExit: () => undefined,
+      closeSession: vi.fn(async () => undefined),
+      command,
+    }
+    // A reopen would fail the same check; it must not be attempted at all.
+    const acquire = vi.fn().mockResolvedValueOnce(channel).mockRejectedValue(integrity())
+    const failed = vi.fn()
+    const inner = new WorkerRegistry(
+      { acquire, retire: vi.fn() } as unknown as WorkerPool,
+      undefined,
+      undefined,
+      failed,
+    )
+    const unsubscribed = vi.fn()
+    const registry = new Proxy(inner, {
+      get(target, prop) {
+        if (prop === 'open')
+          return async (o: Parameters<WorkerRegistry['open']>[0]) => {
+            const entry = await target.open(o)
+            // The worker's ledger holds 1,200 rows, so the load replays them after the open.
+            entry.session.lastSeq = 1_200
+            // An attached client is watching it, so a plain interruption would be recovered.
+            target.subscribe(KEY, () => undefined)
+            return entry
+          }
+        if (prop === 'onOpenProgress')
+          return (key: string, fn: (p: Progress) => void) => {
+            const off = target.onOpenProgress(key, fn)
+            return () => {
+              unsubscribed()
+              off()
+            }
+          }
+        const value = Reflect.get(target, prop, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const c = connect(registry as unknown as ReturnType<typeof slowRegistry>)
+    const binding = await workspaceBinding(KEY)
+    ;(c.cx.workspaces as { restoreBinding: unknown }).restoreBinding = async () => binding
+
+    const answer = c.load()
+    await vi.advanceTimersByTimeAsync(10_000)
+    // The replay is held: the load is still alive and its heartbeat is running.
+    expect(command).toHaveBeenCalledWith('scan', expect.anything())
+    const beats = c.pushed.filter((n) => n.params.phase === 'open')
+    expect(beats.length).toBeGreaterThanOrEqual(2)
+
+    // The worker reports the failed verification for the session while the load replays it.
+    inner.interrupt(KEY, integrity())
+    expect(failed).toHaveBeenCalledExactlyOnceWith(KEY)
+    releaseScan()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await answer).toMatchObject({
+      error: { message: 'SEMANTIC_REJECTED', data: { code: 'E_LEDGER_INTEGRITY' } },
+    })
+    expect(unsubscribed).toHaveBeenCalled()
+
+    // Nothing keeps going afterwards: no heartbeat, no recovery, no second notice.
+    const count = c.pushed.length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(c.pushed.length).toBe(count)
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(failed).toHaveBeenCalledOnce()
+    expect(inner.get(KEY)).toBeUndefined()
+    await inner.closeAll()
   })
 })
 

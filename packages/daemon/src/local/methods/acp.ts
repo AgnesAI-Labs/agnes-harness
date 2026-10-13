@@ -632,12 +632,20 @@ export function registerAcp(
       // silently truncate a long transcript at whatever limit was written here.
       const lastSeq = entry.session.lastSeq
       const replayStartedAt = performance.now()
-      for (let from = 1; from <= lastSeq; from += 500) {
-        const upto = Math.min(lastSeq, from + 499)
-        feed.replayLoad(
-          (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
-        )
-        loading({ phase: 'replay', done: upto, total: lastSeq })
+      try {
+        for (let from = 1; from <= lastSeq; from += 500) {
+          const upto = Math.min(lastSeq, from + 499)
+          feed.replayLoad(
+            (await entry.session.scan({ fromSeq: from, toSeq: upto, limit: 500 })) as EventEnvelope[],
+          )
+          loading({ phase: 'replay', done: upto, total: lastSeq })
+        }
+      } catch (error) {
+        // The background verification of a history opened from a checkpoint can fail mid-replay; the
+        // load is then refused with the same typed code as an open that failed it.
+        if ((error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY')
+          throw ledgerIntegrityRpcError()
+        throw error
       }
       cx.registry.recordLoad?.(p.sessionId, { acpReplayMs: performance.now() - replayStartedAt })
       // Whatever is streaming now is not in the transcript yet; the snapshot says it.
