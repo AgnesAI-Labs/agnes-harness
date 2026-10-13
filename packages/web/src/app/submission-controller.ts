@@ -168,7 +168,6 @@ export function createSubmissionController(
     ) {
       context.composerRuntime.setDraft('')
       sessionStorage.removeItem(context.composerDraftKey)
-      context.composerRuntime.resize()
       const toggle = context.goalHost.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')
       if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click()
       toggle?.focus()
@@ -193,7 +192,6 @@ export function createSubmissionController(
       }
       context.composerRuntime.setDraft('')
       sessionStorage.removeItem(context.composerDraftKey)
-      context.composerRuntime.resize()
       void submitPlanCommand(cwd, input)
         .then((result) => {
           context.notice.setText(result.text)
@@ -276,7 +274,6 @@ export function createSubmissionController(
     context.composerRuntime.clearImageBlocks()
     context.references.clear()
     sessionStorage.removeItem(context.composerDraftKey)
-    context.composerRuntime.resize()
     context.renderer.pinToBottom()
     context.renderControls()
     // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
@@ -373,7 +370,6 @@ export function createSubmissionController(
             )
               context.composerRuntime.restoreAttachmentBlocks(attachments)
             context.references.restore([...selectedReferences, ...context.references.getSnapshot()])
-            context.composerRuntime.resize()
           }
           context.showError(error)
         }

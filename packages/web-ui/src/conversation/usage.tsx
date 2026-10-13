@@ -66,9 +66,13 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
     >
       <summary
         aria-label={usage ? t('usage.viewAria', { summary }) : t('usage.viewAriaFallback')}
-        title={t('usage.title')}
+        title={usage ? summary : t('usage.title')}
       >
         <span className="usage-ring" aria-hidden="true" style={{ '--usage-pct': fill } as CSSProperties} />
+        {/* The gauge shows the share only; the tooltip and the popover carry the token counts. */}
+        <span className="usage-percent" aria-hidden="true">
+          {usage ? `${Math.round(Number(pct))}%` : ''}
+        </span>
         <span className="usage-summary-label">{summary}</span>
       </summary>
       <div className="usage-popover">

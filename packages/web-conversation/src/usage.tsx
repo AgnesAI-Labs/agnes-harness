@@ -1,9 +1,7 @@
-import type { UsageView } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
-import { createRegionHost, createRegionRenderer, renderRegion, unmountRegion } from '@agnes/web-ui'
-import { ConversationUsage, type CostNode, costDetails, costSummary } from '@agnes/web-ui/conversation'
+import { createRegionHost, renderRegion, unmountRegion } from '@agnes/web-ui'
+import { type CostNode, costDetails, costSummary } from '@agnes/web-ui/conversation'
 import { Fragment } from 'react'
-import { flushSync } from 'react-dom'
 
 export { type CostNode, costDetails, costSummary } from '@agnes/web-ui/conversation'
 
@@ -36,33 +34,5 @@ export function createCostDetails(
     disposed = true
     queueMicrotask(() => unmountRegion(host))
   }
-  return update
-}
-
-export type UsagePanelUpdater = ((usage: UsageView | undefined, connected: boolean) => void) & {
-  dispose(): void
-}
-
-/** Synchronous compatibility root; production composer injects ConversationUsage directly. */
-export function createUsagePanel(
-  parent: HTMLElement,
-  t?: (key: string, vars?: LocaleVars) => string,
-): UsagePanelUpdater {
-  const root = createRegionRenderer(parent)
-  let disposed = false
-  const update = ((usage, connected) => {
-    if (disposed) return
-    parent.hidden = !usage
-    flushSync(() =>
-      root.render(<ConversationUsage usage={usage} connected={connected} {...(t ? { t } : {})} />),
-    )
-  }) as UsagePanelUpdater
-  update.dispose = () => {
-    if (disposed) return
-    disposed = true
-    flushSync(() => root.unmount())
-    parent.hidden = true
-  }
-  update(undefined, false)
   return update
 }

@@ -28,18 +28,6 @@ export type KnownSessionModel = {
   thinking?: ThinkingLevel
 }
 
-type ResizeableComposer = {
-  scrollHeight: number
-  style: Pick<CSSStyleDeclaration, 'height' | 'overflowY'>
-}
-
-export function resizeComposer(composer: ResizeableComposer, maxHeight = 180): void {
-  composer.style.height = 'auto'
-  const height = Math.min(composer.scrollHeight, maxHeight)
-  composer.style.height = `${height}px`
-  composer.style.overflowY = composer.scrollHeight > maxHeight ? 'auto' : 'hidden'
-}
-
 export function isComposerSubmitShortcut(
   event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'isComposing' | 'keyCode'> &
     Partial<Pick<KeyboardEvent, 'metaKey' | 'ctrlKey'>>,

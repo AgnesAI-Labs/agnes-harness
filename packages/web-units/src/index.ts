@@ -17,8 +17,10 @@ export {
   type ComposerView,
   downscaleImageFile,
   type ModelPickerOption,
+  type ModelPickerProps,
   type ModelPickerState,
   type PermissionMode,
+  type PermissionPickerProps,
   type PermissionPickerState,
 } from './composer.js'
 export {

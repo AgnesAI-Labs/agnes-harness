@@ -444,7 +444,6 @@ export function createComposerController(
 
   function handleComposerDraftChange(value: string): void {
     sessionStorage.setItem(context.composerDraftKey, value)
-    context.composerRuntime.resize()
     renderControls()
   }
 

@@ -18,7 +18,7 @@
     "./admin/resources/api": "./src/admin/resources/api.ts",
     "./admin/resources/types": "./src/admin/resources/types.ts",
     "./oauth-controls": "./src/oauth-controls.ts",
-    "./permission-picker": "./src/permission-picker.ts",
+    "./permission-picker": "./src/permission-picker.tsx",
     "./provider-picker": "./src/provider-picker.ts",
     "./settings": "./src/settings.ts",
     "./settings/api": "./src/settings/api.ts",

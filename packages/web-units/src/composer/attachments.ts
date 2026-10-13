@@ -328,7 +328,8 @@ export function useComposerAttachments({
     publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
   }
 
-  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+  /** Files become attachments; text pasted alongside them goes through the owner of the draft. */
+  const handlePaste = (event: ClipboardEvent<HTMLElement>, insertText: (text: string) => void): void => {
     const clipboard = event.clipboardData
     const itemFiles: File[] = []
     for (const item of Array.from(clipboard.items)) {
@@ -340,11 +341,7 @@ export function useComposerAttachments({
     if (files.length === 0) return
     event.preventDefault()
     const text = clipboard.getData('text/plain')
-    if (text) {
-      const textarea = event.currentTarget
-      textarea.setRangeText(text, textarea.selectionStart, textarea.selectionEnd, 'end')
-      textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    }
+    if (text) insertText(text)
     void addFiles(files)
   }
 

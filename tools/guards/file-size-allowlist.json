@@ -29,6 +29,5 @@
   "packages/web-ui/src/ui/icons.ts": 1305,
   "packages/web-units/src/trace.tsx": 1167,
   "packages/web/src/app.ts": 2381,
-  "packages/web/src/model-picker.ts": 832,
   "tools/e2e-web/ui-flows.spec.ts": 1184
 }

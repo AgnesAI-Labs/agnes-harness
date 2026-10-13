@@ -62,6 +62,11 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.initial.send': 'Send',
     'composer.initial.sendTitle': 'Send (Enter)',
     'composer.initial.workspace': 'Select workspace',
+    'composer.add.label': 'Add files or references',
+    'composer.add.file': 'Upload files…',
+    'composer.add.reference': 'Reference a file or session',
+    'composer.shortcut.send': 'send',
+    'composer.shortcut.newline': 'new line',
     'composer.attachment.add': 'Add attachments',
     'composer.attachment.hint':
       'Files upload in chunks with progress and cancel; size and type limits are checked before upload. Up to 50 attachments. Inline images follow model limits and a 100 MiB total limit. Some formats may be unreadable.',
@@ -162,6 +167,11 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.initial.send': '发送',
     'composer.initial.sendTitle': '发送（Enter）',
     'composer.initial.workspace': '选择工作区',
+    'composer.add.label': '添加文件或引用',
+    'composer.add.file': '上传文件…',
+    'composer.add.reference': '引用文件或会话',
+    'composer.shortcut.send': '发送',
+    'composer.shortcut.newline': '换行',
     'composer.attachment.add': '添加附件',
     'composer.attachment.hint':
       '文件分块上传，支持进度与取消；上传前检查大小与类型限制，最多 50 个附件。内联图片按模型限制，合计不超过 100 MiB。部分格式可能无法解析。',

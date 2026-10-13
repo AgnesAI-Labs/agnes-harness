@@ -1,18 +1,30 @@
 // @vitest-environment happy-dom
 import type { UINode, UsageView } from '@agnes/protocol'
-import {
-  costDetails,
-  costSummary,
-  createUsagePanel,
-  type UsagePanelUpdater,
-} from '@agnes/web-conversation/usage'
+import { costDetails, costSummary } from '@agnes/web-conversation/usage'
+import { createRegionRenderer } from '@agnes/web-ui'
+import { ConversationUsage } from '@agnes/web-ui/conversation'
+import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
-const panels: UsagePanelUpdater[] = []
-function mountUsage(parent: HTMLElement) {
-  const panel = createUsagePanel(parent, zhT)
+type UsagePanel = ((usage: UsageView | undefined, connected: boolean) => void) & { dispose(): void }
+const panels: UsagePanel[] = []
+/** The composer renders this component in its own tree; the fixture drives it the same way. */
+function mountUsage(parent: HTMLElement): UsagePanel {
+  const root = createRegionRenderer(parent)
+  let disposed = false
+  const panel = ((usage, connected) => {
+    if (disposed) return
+    root.render(createElement(ConversationUsage, { usage, connected, t: zhT }))
+    root.flush()
+  }) as UsagePanel
+  panel.dispose = () => {
+    if (disposed) return
+    disposed = true
+    root.unmount()
+  }
+  panel(undefined, false)
   panels.push(panel)
   return panel
 }
@@ -91,7 +103,10 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
   expect(head?.querySelector('.usage-context-value')?.textContent).toBe('1.2%')
   expect(head?.querySelector('.usage-context-caption')?.textContent).toBe('约 1.5K / 128.0K')
   expect(container.querySelector<HTMLElement>('.usage-bar > span')?.style.width).toBe('1.2%')
-  expect(container.querySelector('summary')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  // 量表只显示占比；完整读数在提示与无障碍名称里。
+  expect(container.querySelector('.usage-percent')?.textContent).toBe('1%')
+  expect(container.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  expect(container.querySelector('summary')?.title).toBe('上下文约 1.5K / 128.0K · 1.2%')
   expect(container.textContent).toContain('上下文占用')
   expect(container.textContent).toContain('1,500 Token')
   expect(container.textContent).toContain('128,000 Token')
@@ -104,7 +119,7 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
   expect(details.open).toBe(true)
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
-  expect(container.hidden).toBe(true)
+  expect(details.hidden).toBe(true)
   expect(details.open).toBe(false)
 })
 
@@ -134,7 +149,7 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   expect(details.open).toBe(true)
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
-  expect(container.hidden).toBe(true)
+  expect(details.hidden).toBe(true)
   expect(details.open).toBe(false)
 })
 
@@ -169,25 +184,22 @@ it('treats unknown and object-prototype purpose names as the generic single-call
   }
 })
 
-it('hides before first data, owns dismiss cleanup and ignores retired compatibility updates', () => {
+it('hides before first data and releases its dismiss listener when unmounted', () => {
   const container = document.createElement('section')
   document.body.append(container)
   const removed = vi.spyOn(document, 'removeEventListener')
   const added = vi.spyOn(document, 'addEventListener')
   const update = mountUsage(container)
-  expect(container.hidden).toBe(true)
+  expect(required(container.querySelector('details')).hidden).toBe(true)
   update(usage, true)
   const details = required(container.querySelector('details'))
+  expect(details.hidden).toBe(false)
   details.open = true
   required(container.querySelector<HTMLElement>('.usage-popover')).click()
   expect(details.open).toBe(true)
   document.body.click()
   expect(details.open).toBe(false)
   update.dispose()
-  update.dispose()
-  update(usage, false)
-  expect(container.hidden).toBe(true)
-  expect(container.childElementCount).toBe(0)
   const click = added.mock.calls.find(([event]) => event === 'click')
   expect(click).toBeDefined()
   expect(removed.mock.calls.some(([event, callback]) => event === 'click' && callback === click?.[1])).toBe(

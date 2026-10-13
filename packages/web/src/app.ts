@@ -2331,8 +2331,6 @@ window.addEventListener('pagehide', () => {
   void (stopEvents?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
-composerRuntime.resize()
-
 run(async () => {
   const startupSelection = selection
   setConnection('connecting')

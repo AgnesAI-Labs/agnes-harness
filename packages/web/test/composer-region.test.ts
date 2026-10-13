@@ -90,12 +90,14 @@ describe('rendered composer region', () => {
     expect(fileInput?.type).toBe('file')
     expect(fileInput?.hidden).toBe(true)
     expect(fileInput?.multiple).toBe(true)
-    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(
-      usage.context.tokens / usage.context.window < 0.6,
-    )
+    // The gauge is part of the quiet row whenever the session reports a context window.
+    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(false)
+    expect(document.querySelector('#session-usage')?.closest('.composer-meta')).toBeTruthy()
+    expect(document.querySelector('.usage-percent')?.textContent).toBe('2%')
 
     if (!prompt) throw new Error('missing composer input')
-    prompt.value = '键盘提交'
+    // The draft is React state: write through the native setter so the input event reads as typing.
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(prompt, '键盘提交')
     prompt.dispatchEvent(new Event('input', { bubbles: true }))
     prompt.focus()
     const enter = new KeyboardEvent('keydown', {
@@ -200,7 +202,7 @@ describe('rendered composer region', () => {
           model: { route: 'local', id: 'next', thinking: 'off' },
         },
       })
-      expect(host().hidden).toBe(true)
+      expect(host().hidden).toBe(false)
       expect(host().textContent).toContain('0 Token')
       expect(host().textContent).not.toContain('1,024')
       expect(details.open).toBe(false)
@@ -303,9 +305,7 @@ describe('rendered composer region', () => {
     // the registry to the service's (empty) session, which hides every session-scoped entry.
     runtime.session.setSession('session-1')
     await vi.waitFor(() => {
-      expect(
-        document.querySelector('#fixture-input-left-content')?.closest('.composer-controls'),
-      ).toBeTruthy()
+      expect(document.querySelector('#fixture-input-left-content')?.closest('.composer-meta')).toBeTruthy()
       expect(document.querySelector('#fixture-input-overlay-content')?.closest('#composer')).toBeTruthy()
       expect(document.querySelector('#composer-workspace')).toBeTruthy()
       expect(document.querySelector('#send')).toBeTruthy()

@@ -1,5 +1,4 @@
 import { type LocaleService, SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
-import { createUsagePanel } from '@agnes/web-conversation/usage'
 import { createRegionRenderer } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
@@ -91,7 +90,6 @@ export function mountComposerRegion(
     translate: (key, vars) => locale.t(key, vars),
     // Wrap the usage panel so the shared React component renders with the current locale.
     UsagePanel: (props) => <ConversationUsage {...props} t={(key, vars) => locale.t(key, vars)} />,
-    createUsagePanel: (parent) => createUsagePanel(parent, (key, vars) => locale.t(key, vars)),
   }
   const ownedShell = registry.spec('root') ? undefined : mountDshShellRegion(registry)
   if (!registry.spec('conversation.composer'))
@@ -192,9 +190,6 @@ export function mountComposerRegion(
     },
     restoreAttachmentBlocks(attachments) {
       handle.current?.restoreAttachmentBlocks(attachments)
-    },
-    resize() {
-      handle.current?.resize()
     },
     setDraft(value) {
       draft = value

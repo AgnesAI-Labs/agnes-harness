@@ -1,7 +1,6 @@
-import { createPermissionPicker } from '@agnes/web-admin/permission-picker'
+import { PermissionPickerControl } from '@agnes/web-admin/permission-picker'
 import type { SlotName, SlotRegistry } from '@agnes/web-client'
-import { isComposerSubmitShortcut, resizeComposer } from '@agnes/web-conversation/presentation'
-import { createUsagePanel } from '@agnes/web-conversation/usage'
+import { isComposerSubmitShortcut } from '@agnes/web-conversation/presentation'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   type ComposerDependencies,
@@ -12,7 +11,7 @@ import {
   type TranscriptDependencies,
 } from '@agnes/web-units'
 import { observeSlotCards } from '../client-modules/timeline-slot.js'
-import { createModelPicker } from '../model-picker.js'
+import { ModelPickerControl } from '../model-picker.js'
 import { bindSidebar } from '../shell.js'
 import { createTimelineRenderer } from '../timeline.js'
 
@@ -28,13 +27,11 @@ export const TRANSCRIPT_DEPENDENCIES: TranscriptDependencies = {
 }
 
 export const COMPOSER_DEPENDENCIES: Omit<ComposerDependencies, 'translate'> = {
-  createModelPicker,
-  createPermissionPicker,
-  createUsagePanel,
+  ModelPicker: ModelPickerControl,
+  PermissionPicker: PermissionPickerControl,
   downscaleImage: downscaleImageFile,
   UsagePanel: ConversationUsage,
   isSubmitShortcut: isComposerSubmitShortcut,
-  resize: resizeComposer,
 }
 
 export const COMPOSER_DSH_CHILDREN = Object.freeze({

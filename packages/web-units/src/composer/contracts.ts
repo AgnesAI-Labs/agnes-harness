@@ -1,4 +1,5 @@
 import type {
+  AuxiliaryModelSlots,
   ContentBlock,
   ModelSettings,
   ThinkingLevel,
@@ -40,9 +41,14 @@ export type ModelPickerState = {
   settings?: ModelPickerSettings
 }
 
-export type ModelPicker = {
-  destroy(): void
-  render(state: ModelPickerState): void
+export type ModelPickerProps = {
+  state: ModelPickerState
+  onError(error: unknown): void
+  onSelect(option: ModelPickerOption): Promise<boolean>
+  /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
+  onSettingsChange?(settings: ModelSettings): Promise<boolean>
+  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
+  onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
 }
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
@@ -53,39 +59,23 @@ export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'f
 
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 
-export type PermissionPicker = {
-  destroy(): void
-  render(state: PermissionPickerState): void
+export type PermissionPickerProps = {
+  state: PermissionPickerState
+  onError(error: unknown): void
+  onSelect(mode: PermissionMode): Promise<boolean>
 }
 
-/** DOM helpers remain host adapters so this package has no dependency on the Web application. */
+/** Host adapters: this package has no dependency on the Web application or its pickers. */
 export interface ComposerDependencies {
   /** Locale-bound translate (host injects `LocaleService#t`); called during render, never cached. */
   translate: Translate
-  createModelPicker(options: {
-    trigger: HTMLButtonElement
-    onError(error: unknown): void
-    onSelect(option: ModelPickerOption): Promise<boolean>
-    /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
-    onSettingsChange?(settings: ModelSettings): Promise<boolean>
-    onAuxiliaryRead?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
-    onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
-  }): ModelPicker
-  createPermissionPicker(options: {
-    trigger: HTMLButtonElement
-    onError(error: unknown): void
-    onSelect(mode: PermissionMode): Promise<boolean>
-  }): PermissionPicker
-  createUsagePanel(
-    parent: HTMLElement,
-    t?: Translate,
-  ): ((usage: UsageView | undefined, connected: boolean) => void) & {
-    dispose?(): void
-  }
+  /** Trigger plus popover for the session model; the host owns the catalog and the confirmed choice. */
+  ModelPicker: ComponentType<ModelPickerProps>
+  /** Trigger plus popover for the session approval mode. */
+  PermissionPicker: ComponentType<PermissionPickerProps>
+  UsagePanel: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
   downscaleImage?(file: File, policy?: ReturnType<typeof userImagePolicy>): Promise<File>
-  /** Component injection keeps production usage in the composer root; factories remain compatible. */
-  UsagePanel?: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
   isSubmitShortcut(event: {
     key: string
     shiftKey: boolean
@@ -94,7 +84,6 @@ export interface ComposerDependencies {
     metaKey: boolean
     ctrlKey: boolean
   }): boolean
-  resize(textarea: HTMLTextAreaElement): void
 }
 
 export interface ComposerView {
@@ -152,7 +141,6 @@ export interface ComposerHandle {
   hasPendingImages(): boolean
   render(view: ComposerView): void
   restoreImageBlocks(images: readonly ComposerImageBlock[]): void
-  resize(): void
   setDraft(value: string): void
 }
 
@@ -164,7 +152,7 @@ export interface ComposerRegionOptions {
   prepareUploadSession?(): Promise<string>
   onDraftChange(value: string): void
   onError(error: unknown): void
-  onAuxiliaryRead?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
+  onAuxiliaryRead?(): Promise<AuxiliaryModelSlots>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>

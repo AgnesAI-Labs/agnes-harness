@@ -38,7 +38,10 @@ const rows = () =>
 
 it('renders only actual context fields with the existing ring, values and labels', async () => {
   await render(usage)
-  expect(host.querySelector('summary')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  // The gauge shows the share; the full reading is the tooltip and the accessible name.
+  expect(host.querySelector('.usage-percent')?.textContent).toBe('1%')
+  expect(host.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  expect(host.querySelector('summary')?.title).toBe('上下文约 1.5K / 128.0K · 1.2%')
   expect(host.querySelector('summary')?.getAttribute('aria-label')).toBe('查看上下文约 1.5K / 128.0K · 1.2%')
   expect(host.querySelector<HTMLElement>('.usage-ring')?.style.getPropertyValue('--usage-pct')).toBe('1.2%')
   expect(host.querySelector<HTMLElement>('.usage-bar > span')?.style.width).toBe('1.2%')

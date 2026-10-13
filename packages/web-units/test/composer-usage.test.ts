@@ -9,16 +9,20 @@ import {
   type ComposerDependencies,
   type ComposerHandle,
   type ComposerView,
+  type ModelPickerProps,
+  type PermissionPickerProps,
 } from '../src/composer.js'
 
-it('uses component ownership and disposes compatible custom factories on replacement and unmount', async () => {
+it('renders the injected pickers and usage gauge in its own tree and feeds them the current view', async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
   const host = document.createElement('section')
   document.body.append(host)
   const root = createRoot(host)
   const handle = createRef<ComposerHandle>()
-  const update = Object.assign(vi.fn(), { dispose: vi.fn() })
-  const picker = () => ({ destroy: vi.fn(), render: vi.fn() })
+  const model = vi.fn((_props: ModelPickerProps) => createElement('span', { id: 'fixture-model' }))
+  const permission = vi.fn((_props: PermissionPickerProps) =>
+    createElement('span', { id: 'fixture-permission' }),
+  )
   const dependencies: ComposerDependencies = {
     // 组件已改为从目录取词，所以桩要返回真实文案（含 {var} 插值）而不是 key 本身。
     translate: (key, vars) => {
@@ -28,34 +32,32 @@ it('uses component ownership and disposes compatible custom factories on replace
         Object.hasOwn(vars, name) ? String(vars[name]) : match,
       )
     },
-    createModelPicker: picker,
-    createPermissionPicker: picker,
-    createUsagePanel: vi.fn(() => update),
+    ModelPicker: model,
+    PermissionPicker: permission,
+    UsagePanel: ConversationUsage,
     isSubmitShortcut: () => false,
-    resize: () => {},
   }
+  const onModelSelect = async () => false
+  const onPermissionSelect = async () => false
+  const onModelSettingsChange = async () => false
   const options = {
     onCancel() {},
     onDraftChange() {},
     onError() {},
     onSubmit() {},
     onWorkspace() {},
-    onModelSelect: async () => false,
-    onPermissionSelect: async () => false,
+    onModelSelect,
+    onModelSettingsChange,
+    onPermissionSelect,
   }
-  const render = async (deps: ComposerDependencies) =>
-    act(async () =>
+  try {
+    await act(async () =>
       root.render(
-        createElement(
-          StrictMode,
-          null,
-          createElement(Composer, { ...options, ref: handle, dependencies: deps }),
-        ),
+        createElement(StrictMode, null, createElement(Composer, { ...options, ref: handle, dependencies })),
       ),
     )
-  try {
-    await render({ ...dependencies, UsagePanel: ConversationUsage })
-    expect(dependencies.createUsagePanel).not.toHaveBeenCalled()
+    // Nothing to gauge before the session reports a context window.
+    expect(host.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(true)
     const view: ComposerView = {
       cancel: { disabled: true, hidden: true, label: '停止' },
       connected: false,
@@ -64,8 +66,20 @@ it('uses component ownership and disposes compatible custom factories on replace
       hint: { kind: 'state', text: 'disconnected' },
       input: { disabled: false, placeholder: 'task' },
       loading: false,
-      model: { accessibleName: 'model', disabled: true, label: 'model', options: [], pending: false },
-      permission: { disabled: true, pending: false, selected: 'workspace' },
+      model: {
+        accessibleName: 'model',
+        disabled: true,
+        label: 'model',
+        options: [{ route: 'local', id: 'm' }],
+        pending: false,
+        selected: { route: 'local', id: 'm' },
+      },
+      modelSettings: {
+        settings: { thinking: 'high', contextWindow: 64000 },
+        contextWindow: 128000,
+        thinkingLevelMap: { low: 'low', high: 'high' },
+      },
+      permission: { disabled: true, pending: false, selected: 'full' },
       sending: false,
       send: { disabled: true, label: 'send', mode: 'idle', title: 'send' },
       stopping: false,
@@ -77,19 +91,40 @@ it('uses component ownership and disposes compatible custom factories on replace
       workspace: { disabled: true, label: 'workspace', title: 'workspace' },
     }
     await act(async () => handle.current?.render(view))
-    expect(host.querySelector('#session-usage')?.textContent).toContain('上次同步')
-    await render(dependencies)
-    expect(dependencies.createUsagePanel).toHaveBeenCalledTimes(1)
-    expect(update).toHaveBeenLastCalledWith(view.usage, false)
-    const next = Object.assign(vi.fn(), { dispose: vi.fn() })
-    await render({ ...dependencies, createUsagePanel: () => next })
-    expect(update.dispose).toHaveBeenCalledTimes(1)
-    expect(next).toHaveBeenLastCalledWith(view.usage, false)
-    await act(async () => root.render(null))
-    expect(next.dispose).toHaveBeenCalledTimes(1)
-    // Older custom factories with no disposal property still satisfy the injection contract.
-    await render({ ...dependencies, createUsagePanel: () => vi.fn(() => {}) })
-    await act(async () => root.render(null))
+
+    // The model stays with the message controls in the card; session-wide controls sit in the row below.
+    expect(host.querySelector('#fixture-model')?.closest('#composer .composer-controls')).toBeTruthy()
+    expect(host.querySelector('#fixture-permission')?.closest('.composer-meta')).toBeTruthy()
+    expect(host.querySelector('#fixture-permission')?.closest('#composer')).toBeNull()
+    const usage = host.querySelector<HTMLElement>('#session-usage')
+    expect(usage?.closest('.composer-meta')).toBeTruthy()
+    expect(usage?.hidden).toBe(false)
+    expect(usage?.querySelector('.usage-percent')?.textContent).toBe('1%')
+    expect(usage?.textContent).toContain('上次同步')
+
+    expect(model.mock.lastCall?.[0]).toMatchObject({
+      onSelect: onModelSelect,
+      onSettingsChange: onModelSettingsChange,
+      state: {
+        label: 'model',
+        selected: { route: 'local', id: 'm' },
+        // Session settings and the catalog capacity reach the picker as one state.
+        settings: {
+          thinking: 'high',
+          contextWindow: 64000,
+          capacity: 128000,
+          thinkingLevelMap: { low: 'low', high: 'high' },
+        },
+      },
+    })
+    expect(permission.mock.lastCall?.[0]).toMatchObject({
+      onSelect: onPermissionSelect,
+      state: { disabled: true, pending: false, selected: 'full' },
+    })
+    // The reason sending is unavailable stays readable in the card and describes the input.
+    expect(host.querySelector('#composer-hint')?.textContent).toBe('disconnected')
+    expect(host.querySelector('#prompt')?.getAttribute('aria-describedby')).toBe('composer-hint')
+    expect(host.querySelector('.composer-shortcuts')).toBeNull()
   } finally {
     await act(async () => root.unmount())
     host.remove()

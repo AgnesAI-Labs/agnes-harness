@@ -10,7 +10,6 @@ import {
   launcherCredential,
   modelSelectAccessibleName,
   modelSelectLabel,
-  resizeComposer,
   setButtonLabel,
   shouldShowEmptyState,
   type Translate,
@@ -27,16 +26,6 @@ const zhT: Translate = (key, vars) => {
 }
 
 describe('web presentation controls', () => {
-  it('grows the composer to its cap and makes overflow available after it', () => {
-    const short = { scrollHeight: 72, style: { height: '', overflowY: '' } }
-    resizeComposer(short)
-    expect(short.style).toEqual({ height: '72px', overflowY: 'hidden' })
-
-    const long = { scrollHeight: 252, style: { height: '', overflowY: '' } }
-    resizeComposer(long)
-    expect(long.style).toEqual({ height: '180px', overflowY: 'auto' })
-  })
-
   it('uses a non-composing Enter as the send shortcut and keeps Shift+Enter for a newline', () => {
     const shortcut = { key: 'Enter', shiftKey: false, isComposing: false, keyCode: 13 }
     expect(isComposerSubmitShortcut(shortcut)).toBe(true)

@@ -89,14 +89,27 @@ const tokenAt = (input: HTMLTextAreaElement) => {
   return { start: before.length - query.length - 1, end: input.selectionStart, query }
 }
 
+/** Edit that starts a reference at the caret, as if the user had typed `@`. */
+export function referenceStart(input: HTMLTextAreaElement): { start: number; end: number; text: string } {
+  const before = input.value.slice(0, input.selectionStart)
+  return {
+    start: input.selectionStart,
+    end: input.selectionEnd,
+    text: before && !/\s$/u.test(before) ? ' @' : '@',
+  }
+}
+
 /** One composer mount point; keyboard capture keeps Enter from submitting while choosing. */
 export function ReferencePicker({
   textarea,
+  edit,
   adapter,
   t,
   disabled,
 }: {
   textarea: RefObject<HTMLTextAreaElement>
+  /** The composer owns the draft; the picker asks it to replace the `@query` it consumed. */
+  edit(start: number, end: number, text: string): void
   adapter?: ComposerReferences
   t: Translate
   disabled: boolean
@@ -108,6 +121,8 @@ export function ReferencePicker({
   const listId = useId()
   const disabledRef = useRef(disabled)
   disabledRef.current = disabled
+  const editRef = useRef(edit)
+  editRef.current = edit
   const [page, setPage] = useState<ReferenceSearchResult>({ items: [], truncated: false })
   const [opened, setOpened] = useState(false)
   const [active, setActive] = useState(0)
@@ -169,10 +184,8 @@ export function ReferencePicker({
         setStatus('limit')
         return
       }
-      input.setRangeText('', token.start, token.end, 'end')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
+      editRef.current(token.start, token.end, '')
       close()
-      input.focus()
     }
     const keydown = (event: globalThis.KeyboardEvent) => {
       if (disabledRef.current || !state.current.opened || event.isComposing) return

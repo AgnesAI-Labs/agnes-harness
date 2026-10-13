@@ -31,11 +31,10 @@ const dependencies: ComposerDependencies = {
       Object.hasOwn(vars, name) ? String(vars[name]) : match,
     )
   },
-  createModelPicker: () => ({ destroy() {}, render() {} }),
-  createPermissionPicker: () => ({ destroy() {}, render() {} }),
-  createUsagePanel: () => () => undefined,
+  ModelPicker: () => null,
+  PermissionPicker: () => null,
+  UsagePanel: () => null,
   isSubmitShortcut: () => false,
-  resize: () => undefined,
 }
 
 const view: ComposerView = {

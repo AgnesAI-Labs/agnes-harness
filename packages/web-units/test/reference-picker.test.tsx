@@ -38,12 +38,16 @@ it('navigates a combobox, selects locators without submitting', async () => {
   const textarea = createRef<HTMLTextAreaElement>()
   const submit = vi.fn()
   const t = (key: string) => composerLocaleCatalog.en[key] ?? key
+  // The draft belongs to the composer; this fixture owner applies the requested replacement.
+  const edit = vi.fn((start: number, end: number, text: string) =>
+    textarea.current?.setRangeText(text, start, end, 'end'),
+  )
   const render = (disabled: boolean) =>
     root.render(
       createElement(
         'form',
         { onSubmit: submit },
-        createElement(ReferencePicker, { textarea, adapter, t, disabled }),
+        createElement(ReferencePicker, { textarea, edit, adapter, t, disabled }),
         createElement(SettingsTextArea, { ref: textarea, disabled }),
       ),
     )
@@ -74,6 +78,8 @@ it('navigates a combobox, selects locators without submitting', async () => {
   expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain('Previous')
   expect((await key('Enter')).defaultPrevented).toBe(true)
   expect(adapter.getSnapshot()).toEqual([candidates[1]])
+  // The consumed `@query` is handed back to the owner as one edit.
+  expect(edit).toHaveBeenLastCalledWith(0, 1, '')
   expect(input.value).toBe('')
   expect(submit).not.toHaveBeenCalled()
   pauseSearch = true
