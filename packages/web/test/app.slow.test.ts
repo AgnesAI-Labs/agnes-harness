@@ -1488,7 +1488,8 @@ describe('web session selection', () => {
     expect(send.disabled).toBe(true)
     expect(send.dataset.mode).toBe('idle')
     expect(send.getAttribute('aria-label')).toBe('发送')
-    expect(send.title).toBe('发送（Enter）')
+    // The send button's tooltip carries the shortcut hint while the composer is idle.
+    expect(send.title).toBe('Enter 发送，Shift+Enter 换行')
     expect(document.getElementById('composer-hint')?.dataset.kind).toBe('shortcut')
     expect(model.tagName).toBe('BUTTON')
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('选择模型')
@@ -2586,8 +2587,12 @@ describe('web model confirmation', () => {
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).not.toContain('account-acct-private')
 
-    modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
-    await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(2))
+    // The panel takes one request at a time: a choice made before the failed one has settled is
+    // ignored, so choose again until the panel accepts it.
+    await vi.waitFor(() => {
+      modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+      expect(old.setModel).toHaveBeenCalledTimes(2)
+    })
     expect(model.disabled).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
     await vi.waitFor(() => expect(next.projectUIOpening).toHaveBeenCalled())
