@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { appendInboxRowsAsOlderBuild } from '@agnes/host/testkit'
+import { appendClaimedTurnAsOlderBuild, appendInboxRowsAsOlderBuild } from '@agnes/host/testkit'
 import { type ContentBlock, toAcpPrompt } from '@agnes/protocol'
 import { uploadAttachment } from '@agnes/sdk'
 import { openSupervisor, type Session } from './harness.js'
@@ -78,7 +78,15 @@ export async function buildLegacySession(
   await appendInboxRowsAsOlderBuild(dir, sessionId, snapshots)
 
   // The next prompt claims the attachment from the queue: the user message is a copy of the item,
-  // with no conversion in between.
+  // with no conversion in between. Images this large are refused by the request budget now, so for
+  // them the claiming turn is written the way an older build left it, and the prompt that follows
+  // sends them as history, where they are omitted.
+  if (o.kind === 'images')
+    await appendClaimedTurnAsOlderBuild(dir, sessionId, {
+      turn: o.prefixTurns + 1,
+      content: attachment.content,
+      answer: 'assistant answer ',
+    })
   const second = await openSupervisor(dir)
   try {
     await second.must('session/load', { sessionId, cwd: dir, mcpServers: [] })

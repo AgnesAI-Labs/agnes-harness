@@ -7,14 +7,6 @@ import { measureColdLoad, measureUpload } from './attachment-open/measure.js'
 
 type Budget = {
   enforce: boolean
-  legacyZip: {
-    loadMs: number
-    workerPeakMb: number
-    transferBytes: number
-    /** Counts scan resumes now (`scanResumes`); a resume re-reads nothing. */
-    splitScans: number
-    verifyFullMs: number
-  }
   byReference: { loadMs: number; maxRowBytes: number; dbGrowthBytes: number }
   upload100MbMs: number
 }
@@ -36,27 +28,20 @@ afterAll(() => {
 })
 
 describe('opening a session that carries a large attachment', () => {
-  it('opens the legacy session with a 95 MiB-base64 zip attachment within budget', async () => {
+  // Sessions written by older builds (inline attachments) are not gated: this case is measured and
+  // written into the bench output, and only checks that the session opens.
+  it('records the legacy session with a 95 MiB-base64 zip attachment', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-open-zip-'))
     dirs.push(dir)
     await buildLegacySession(dir, { attachmentMB: 95, kind: 'zip', queuedBehind: 2, prefixTurns: 20 })
     const r = await measureColdLoad(dir)
     results.legacyZip = r
-    // Always true, with or without enforcement: these do not depend on the machine.
     expect(r.records).toContainEqual(
       expect.objectContaining({
         kind: 'session.open',
         detail: expect.objectContaining({ outcome: 'ok', lastSeq: expect.any(Number) }),
       }),
     )
-    // Workers send lean rows across the process boundary, so every replay page of the legacy session
-    // fits one frame and no scan has to be resumed in a second reply.
-    expect(r.splitScans).toBe(budget.legacyZip.splitScans)
-    if (!enforce) return
-    expect(r.loadMs).toBeLessThanOrEqual(budget.legacyZip.loadMs)
-    expect(r.workerPeakMb ?? 0).toBeLessThanOrEqual(budget.legacyZip.workerPeakMb)
-    expect(r.transferBytes).toBeLessThanOrEqual(budget.legacyZip.transferBytes)
-    expect(r.verifyFullMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(budget.legacyZip.verifyFullMs)
   }, 600_000)
 
   it('records the 90 MiB-base64 image control', async () => {

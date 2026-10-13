@@ -685,3 +685,71 @@ export async function appendInboxRowsAsOlderBuild(
     await storage.close()
   }
 }
+
+/**
+ * Writes one turn that was claimed from the queue and answered, the way a build that copied queued
+ * content into the ledger left it: the claim empties the queue, the content becomes the user message
+ * as given, and the turn runs to its end. The queue must already hold the item (see
+ * `appendInboxRowsAsOlderBuild`), `turn` is the number this turn takes, and the session must be closed.
+ */
+export async function appendClaimedTurnAsOlderBuild(
+  dataDir: string,
+  key: string,
+  o: { turn: number; content: unknown[]; answer: string },
+): Promise<void> {
+  const storage = createSqliteStorage({
+    file: join(dataDir, 'sessions.db'),
+    tablesDir: join(dataDir, 'older-build'),
+  })
+  try {
+    const log = await SessionLogImpl.open({
+      storage,
+      key,
+      writerRunId: 'older-build',
+      ttlMs: 60_000,
+      ids: defaultIds(),
+      clock: () => Date.now(),
+      timers: {
+        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+        clearTimeout: (t) => globalThis.clearTimeout(t as never),
+      },
+    })
+    try {
+      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
+      if (!last) throw new Error(`session ${key} has no rows`)
+      const system = { origin: 'system', trust: 'trusted', actor: last.actor, lane: 'main' } as const
+      const assistantSeq = log.lastSeq + 5
+      await log.append([
+        inboxEvent('main', last.actor, { items: [] }),
+        {
+          type: 'user/message',
+          origin: 'principal',
+          trust: 'trusted',
+          actor: last.actor,
+          lane: 'main',
+          data: { content: o.content, kind: 'follow_up' },
+        },
+        { type: 'turn/start', ...system, data: { turn: o.turn, trigger: 'follow_up' } },
+        { type: 'step/start', ...system, data: { turn: o.turn, step: 1 } },
+        {
+          type: 'assistant/message',
+          origin: 'model',
+          trust: 'trusted',
+          actor: last.actor,
+          lane: 'main',
+          data: { content: [{ type: 'text', text: o.answer }], stopReason: 'end_turn' },
+        },
+        { type: 'step/end', ...system, data: { turn: o.turn, step: 1 } },
+        {
+          type: 'turn/end',
+          ...system,
+          data: { reason: 'completed', lastAssistantSeq: assistantSeq },
+        },
+      ] as never)
+    } finally {
+      await log.close()
+    }
+  } finally {
+    await storage.close()
+  }
+}

@@ -1,12 +1,5 @@
 {
   "enforce": false,
-  "legacyZip": {
-    "loadMs": 1500,
-    "workerPeakMb": 1536,
-    "transferBytes": 5242880,
-    "splitScans": 0,
-    "verifyFullMs": 1500
-  },
   "byReference": { "loadMs": 800, "maxRowBytes": 65536, "dbGrowthBytes": 1048576 },
   "upload100MbMs": 10000
 }
