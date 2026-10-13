@@ -22,6 +22,8 @@ export type FakeTurn = {
   fail?: string
   /** Waits for the scheduler's abort signal, like a turn that never finishes. */
   hang?: boolean
+  /** The turn ends for this reason before answering, as one stopped by its budget does ('budget'). */
+  end?: string
 }
 export type FakeModel = (prompt: string, sessionKey: string, turn: number) => FakeTurn
 
@@ -109,6 +111,12 @@ export function fakeItemSessions(model: FakeModel, options: { dir?: string; runM
               push('turn/end', { reason: 'error' })
               save(key, rows)
               return { reason: 'error', lastSeq: rows.length, error: { code: 'X', message: answer.fail } }
+            }
+            if (answer.end) {
+              push('cost/ledger', { purpose: 'inference', effectId: `e${rows.length}`, credits: unbilled })
+              push('turn/end', { reason: answer.end })
+              save(key, rows)
+              return { reason: answer.end, lastSeq: rows.length }
             }
             const args = /call the read tool with (\{.*?\})\./u.exec(prompt)?.[1]
             if (args && answer.read !== false) {

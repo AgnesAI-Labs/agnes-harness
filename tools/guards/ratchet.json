@@ -19,7 +19,7 @@
   "packages/sdk/src/package-admin.node": 147,
   "packages/sdk/src/surface.browser": 3,
   "packages/sdk/src/surface.node": 163,
-  "packages/daemon/src": 29340,
+  "packages/daemon/src": 29358,
   "packages/daemon/src/packages/admin-session": 46,
   "packages/daemon/src/packages/admin-surface": 231,
   "packages/daemon/src/packages/handler": 1509,
@@ -130,5 +130,5 @@
   "packages/base/extensions/mcp-server": 800,
   "packages/base/extensions/mcp-search": 800,
   "packages/base/extensions/batch": 167,
-  "packages/daemon/src/batch": 2073
+  "packages/daemon/src/batch": 2091
 }

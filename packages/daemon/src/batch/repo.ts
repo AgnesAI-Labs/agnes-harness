@@ -27,6 +27,8 @@ const SETTLED_STATES: ReadonlySet<string> = new Set<SettledState>(['done', 'inva
 /** A stored answer larger than this (as JSON) is kept as `invalid` instead. */
 export const MAX_OUTPUT_BYTES = 256 * 1024
 export const MAX_ERROR_CHARS = 1000
+/** In an item error, what follows this is the model's (clipped) reply: kept for errors.jsonl only. */
+export const REPLY_MARK = '; reply: '
 /** The protocol's limit on `BatchStatus.reason`. */
 export const MAX_REASON_CHARS = 1024
 const MAX_PAGE = 1000
@@ -305,12 +307,24 @@ export class BatchRepo {
     )
   }
 
+  /** The most frequent cause among failed and invalid items, without any reply the model wrote. */
   commonError(id: string): string | undefined {
-    return this.table.get<{ error: string }>(
-      `SELECT error FROM batch_items WHERE batch_id = ? AND status IN ('failed', 'invalid') AND error IS NOT NULL
-       GROUP BY error ORDER BY COUNT(*) DESC, error LIMIT 1`,
-      [id],
-    )?.error
+    return this.table.get<{ cause: string }>(
+      `SELECT CASE WHEN instr(error, ?) > 0 THEN substr(error, 1, instr(error, ?) - 1) ELSE error END AS cause
+       FROM batch_items WHERE batch_id = ? AND status IN ('failed', 'invalid') AND error IS NOT NULL
+       GROUP BY cause ORDER BY COUNT(*) DESC, cause LIMIT 1`,
+      [REPLY_MARK, REPLY_MARK, id],
+    )?.cause
+  }
+
+  /** Whether some item of the batch failed with exactly this error. */
+  hasFailure(id: string, error: string): boolean {
+    return (
+      this.table.get(
+        `SELECT 1 AS found FROM batch_items WHERE batch_id = ? AND status = 'failed' AND error = ? LIMIT 1`,
+        [id, error],
+      ) !== undefined
+    )
   }
 
   /**

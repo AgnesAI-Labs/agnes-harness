@@ -13,6 +13,7 @@ import {
   clipText,
   ITEM_STATES,
   type ItemRow,
+  REPLY_MARK,
 } from './repo.js'
 import {
   BatchSpecError,
@@ -339,8 +340,12 @@ export class BatchEngine {
       return exportNow
         ? this.view(batch, await exportBatch({ repo: this.o.repo, batch, now: this.o.clock() }))
         : this.view(batch)
+    // A summary that does not state the final status is from an export made while the batch ran:
+    // the one at its end failed, so the files are not reported as written.
     const summary = await readSummary(batch)
-    if (summary !== undefined) return this.view(batch, { files: this.files(batch), summary })
+    const status = summary?.split('\n', 3)[2]
+    if (status === `- Status: ${batch.status}` || status?.startsWith(`- Status: ${batch.status} (`))
+      return this.view(batch, { files: this.files(batch), summary: summary as string })
     if (!exportNow) return this.view(batch)
     return this.view(batch, await exportBatch({ repo: this.o.repo, batch, now: this.o.clock() }))
   }
@@ -457,7 +462,11 @@ export class BatchEngine {
     const batch = this.o.repo.get(id) as BatchRow
     if (confinement.kind === 'fail') return this.finish(batch, 'failed', confinement.reason)
     let counts = this.o.repo.counts(id)
-    if (counts.done === 0 && counts.failed + counts.invalid >= FAIL_FAST_ITEMS)
+    // A run stopped by its turn budget shows that what is left cannot pay for one item: the budget
+    // is spent then too, and items that fail on it do not make the batch a failure.
+    const budget = batch.spec.budgetCredits
+    const outrun = budget !== undefined && counts.failed > 0 && this.o.repo.hasFailure(id, 'turn_budget')
+    if (!outrun && counts.done === 0 && counts.failed + counts.invalid >= FAIL_FAST_ITEMS)
       return this.finish(
         batch,
         'failed',
@@ -466,10 +475,13 @@ export class BatchEngine {
     if (confinement.kind === 'pause') return this.report(id, confinement.reason)
     // A spent budget stops items from starting; a batch with none left to start simply completes.
     // A remainder that a job would carry as 0 is spent too.
-    const budget = batch.spec.budgetCredits
-    if (budget !== undefined && round(budget - batch.spent) <= 0 && counts.pending > 0) {
+    if (budget !== undefined && (outrun || round(budget - batch.spent) <= 0) && counts.pending > 0) {
       if (counts.running === 0)
-        await this.finish(batch, 'budget_exhausted', `spent ${round(batch.spent)} of ${budget} credits`)
+        await this.finish(
+          batch,
+          'budget_exhausted',
+          `spent ${round(batch.spent)} of ${budget} credits${outrun ? "; a file's run was stopped by the remaining budget" : ''}`,
+        )
       return
     }
     // The batch's concurrency is held here: a job is written only for an item that takes a free slot.
@@ -519,7 +531,8 @@ export class BatchEngine {
       return this.settle(batch, item, 'failed', { error: `session_unavailable: ${message(error)}` })
     }
     const jobId = itemJobId(batch.id, item.ordinal, 0)
-    // False when the item changed meanwhile (a cancel): then no job is written for it.
+    // False when the item changed meanwhile (a cancel): then no job is written for it, and the
+    // session just prepared is closed rather than left to the worker.
     if (
       !this.o.repo.markRunning(batch.id, item.ordinal, {
         jobId,
@@ -528,7 +541,7 @@ export class BatchEngine {
         startedAt: this.o.clock(),
       })
     )
-      return
+      return this.release(sessionKey)
     await this.send(batch, { ...item, sessionKey }, jobId, prompt, 0)
   }
 
@@ -666,7 +679,7 @@ export class BatchEngine {
     if (item.repairs >= 1)
       return {
         kind: 'invalid',
-        error: `invalid_output: ${reason}; reply: ${clip(outcome.text, 500)}`,
+        error: `invalid_output: ${reason}${REPLY_MARK}${clip(outcome.text, 500)}`,
         credits: outcome.credits,
       }
     return { kind: 'repair', problem: reason, credits: outcome.credits }
