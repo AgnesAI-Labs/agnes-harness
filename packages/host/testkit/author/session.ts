@@ -260,7 +260,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
                 standard: {
                   name: 'standard',
                   extends: 'base',
-                  model: { route: { primary: primary.route }, id: { primary: primary.id } },
+                  model: { route: { primary: { route: primary.route, model: primary.id } } },
                 },
               },
             }

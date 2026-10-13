@@ -1823,7 +1823,13 @@ describe('assemble', () => {
     const pinned: PackageModule = {
       id: '@agnes/code',
       operations: {},
-      presets: { standard: { name: 'standard', extends: 'base', model: { id: { primary: 'ghost-model' } } } },
+      presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          model: { route: { primary: { route: 'gw', model: 'ghost-model' } } },
+        },
+      },
     }
     const d = deps({ '@agnes/base': baseModule(), '@agnes/code': pinned, '@agnes/ai': aiModule })
     delete d.providerFactory
