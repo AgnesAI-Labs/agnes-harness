@@ -34,8 +34,8 @@ vi.mock('@agnes/host', async (original) => ({
               source,
               ...(config ? { config } : {}),
             })),
-            ...(profile.composition ? { composition: profile.composition } : {}),
           },
+          ...(profile.composition ? { adminComposition: profile.composition } : {}),
         },
         lock: {
           packages: Object.fromEntries(
