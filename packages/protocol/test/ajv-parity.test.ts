@@ -2113,7 +2113,12 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   AttachmentUploadResult: {
     valid: {
       offset: 3,
-      attachment: { type: 'file', mimeType: 'a/b', name: 'a', attachment: { sha256: 'a'.repeat(64), bytes: 3 } },
+      attachment: {
+        type: 'file',
+        mimeType: 'a/b',
+        name: 'a',
+        attachment: { sha256: 'a'.repeat(64), bytes: 3 },
+      },
     },
     invalid: [
       { offset: -1 },
