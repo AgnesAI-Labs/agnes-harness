@@ -85,8 +85,7 @@ type HardRequirements = {
  * A session open or runtime switch through `validatePresetSwitch` checks the preset against
  * the actual assembly: is it in `presets.allowed`, can
  * this deployment provide the sandbox/runtime it hard-requires, does its routing resolve against the
- * routes this host actually built. A deprecated `command_policy` rule is reported to `audit` and
- * does not refuse; the other checks throw `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED`.
+ * routes this host actually built. The checks throw `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED`.
  *
  * Takes the whole `ResolvedPreset`, not just its `.view`: the hard-requirement checks below read
  * `resolved.doc` (the raw `PresetDoc`) and the routing check reads `resolved.view` (the `PresetView`
@@ -98,7 +97,6 @@ export function checkPresetHardRequirements(
   a: Assembled,
   resolved: ResolvedPreset,
   name: string,
-  audit?: AuditSink,
 ): void {
   const unsupported = (why: string, detail: Record<string, unknown>): never => {
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} ${why}`, {
@@ -134,16 +132,8 @@ export function checkPresetHardRequirements(
       capability: `code_runtime.${lang}`,
     })
   // Every rule is checked when the session opens, not when the first approval arrives: a rule that
-  // cannot decide anything must not sit in a live preset looking like a policy. A rule written in a
-  // spelling that still parses and will stop parsing is not a refusal but is not silence either: it
-  // goes to the host's audit, which is the same channel the resolved profile is recorded on and the
-  // one an operator already reads to see what this deployment decided.
-  for (const rule of doc.approval?.command_policy ?? [])
-    for (const d of checkCommandRule(rule))
-      audit?.write({
-        kind: 'preset.deprecated',
-        detail: { capability: 'approval.command_policy', preset: name, ...d },
-      })
+  // cannot decide anything must not sit in a live preset looking like a policy.
+  for (const rule of doc.approval?.command_policy ?? []) checkCommandRule(rule)
 
   // The sentinel again, for a preset that is not the one the host was assembled with. assemble()
   // pinned only the default view, so this one still reads `default`, and core would record a request
@@ -305,7 +295,7 @@ export async function createSession(
   // checkPresetHardRequirements repeats the allowed-list check above - harmless here since `name`
   // already passed it - because validatePresetSwitch (session-switch.ts) calls it with no such
   // pre-check of its own.
-  checkPresetHardRequirements(profile, a, preset, name, audit)
+  checkPresetHardRequirements(profile, a, preset, name)
 
   // The fs adapter is fenced at the workspace root this host was assembled with, so a session opened
   // somewhere else would read and write through a fence that is not its own. v0.1 refuses; one host

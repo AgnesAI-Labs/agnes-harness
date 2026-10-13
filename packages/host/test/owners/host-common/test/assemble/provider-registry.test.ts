@@ -245,22 +245,23 @@ it('accepts only canonical selections, ignores resolved identities and reads the
   const selections = readProviderSelections(profile as never)
   expect(selections.loop).toEqual({ provider: 'echo' })
   expect(
-    readProviderSelections({ packages: [], composition: { 'model-adapter': { provider: [] } } } as never)[
-      'model-adapter'
-    ],
+    readProviderSelections({
+      packages: [],
+      composition: { providers: { 'model-adapter': { provider: [] } } },
+    } as never)['model-adapter'],
   ).toBeUndefined()
   // A composition layer that chose a kind overrides the table; the default layer does not.
   expect(
     readProviderSelections({
       ...profile,
-      composition: { loop: { provider: 'session', version: '2.0.0' } },
+      composition: { providers: { loop: { provider: 'session', version: '2.0.0' } } },
       compositionSources: { loop: { layer: 'session', name: 'request' } },
     } as never).loop,
   ).toEqual({ provider: 'session', version: '2.0.0' })
   expect(
     readProviderSelections({
       ...profile,
-      composition: { loop: { provider: 'builtin', version: '1.0.0' } },
+      composition: { providers: { loop: { provider: 'builtin', version: '1.0.0' } } },
       compositionSources: { loop: { layer: 'default', name: 'default' } },
     } as never).loop,
   ).toEqual({ provider: 'echo' })
@@ -284,14 +285,14 @@ it('accepts only canonical selections, ignores resolved identities and reads the
   ).toEqual({ provider: 'enterprise', version: '2.0.0' })
   expect(
     readProviderSelections({
-      composition: { compaction: null },
+      composition: { providers: { compaction: null } },
       packages: [],
       providers: { compaction: { provider: 'default' } },
     } as never).compaction,
   ).toBeUndefined()
   expect(applyProviderPreset({ name: 'standard', approval: { timeout_ms: 10 } }, selections)).toMatchObject({
     approval: { timeout_ms: 10 },
-    'tool-policy': { provider: 'read-only' },
+    providers: { 'tool-policy': { provider: 'read-only' } },
   })
   // An enabled package's own config is its plugin's data: it selects nothing.
   expect(

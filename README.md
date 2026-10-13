@@ -20,7 +20,7 @@ Drive the agent from business events too: opt-in [GitHub and generic webhook tri
 
 ## 2. Upgrade without replacing work in progress
 
-New sessions use the reviewed new plugin code; saved sessions retain their code and UI version across restart. Inspect model requests, tool results and recovery gaps through the trace and execution-evidence views. Uncertain external effects require reconciliation before another dispatch.
+New sessions use the reviewed new plugin code; saved sessions retain their backend code (tools, hooks, loops and seams) across restart, while plugin panels and views always come from the installed version. Inspect model requests, tool results and recovery gaps through the trace and execution-evidence views. Uncertain external effects require reconciliation before another dispatch.
 
 ![An installed plugin disabled for new sessions while an older version remains in use](docs/assets/readme/plugin-old-version-en-light.png)
 

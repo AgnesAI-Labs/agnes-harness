@@ -1,17 +1,12 @@
 import { loadPreset } from '@agnes/code'
-import {
-  COMMAND_ACTIONS,
-  type CommandRule,
-  checkCommandRule,
-  DEPRECATED_ACTION,
-} from '@agnes/host-common/command-policy'
+import { COMMAND_ACTIONS, type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { describe, expect, it } from 'vitest'
 
 describe('checkCommandRule', () => {
   it('accepts both shipped Windows absolute-path rules at session open', () => {
     const approval = loadPreset('standard-windows').approval as { command_policy: CommandRule[] }
     expect(approval.command_policy).toHaveLength(2)
-    for (const rule of approval.command_policy) expect(checkCommandRule(rule)).toEqual([])
+    for (const rule of approval.command_policy) expect(checkCommandRule(rule)).toBeUndefined()
   })
   const why = (rule: CommandRule): string => {
     try {
@@ -35,9 +30,9 @@ describe('checkCommandRule', () => {
   })
   it('accepts the absolute spellings, and applies the absolute rule only to allow', () => {
     for (const argv of ['^/repo/', '^[/\\\\]repo', '^[\\\\/]repo', '^C:\\\\repo', '^[A-Za-z]:'])
-      expect(checkCommandRule({ tool: 'edit', argv, action: 'allow' }), argv).toEqual([])
+      expect(checkCommandRule({ tool: 'edit', argv, action: 'allow' }), argv).toBeUndefined()
     // A deny rule that matches a relative path denies more, not less, so it is not refused here.
-    expect(checkCommandRule({ tool: 'edit', argv: '^src/', action: 'deny' })).toEqual([])
+    expect(checkCommandRule({ tool: 'edit', argv: '^src/', action: 'deny' })).toBeUndefined()
   })
   it('refuses an allow rule whose leading class is not a separator', () => {
     // `^[` used to be read as absolute on its own. The second of these is an allow rule matching the
@@ -63,7 +58,7 @@ describe('checkCommandRule', () => {
     for (const argv of ['^\\w+/evil$', '^\\S*$', '^\\/?tmp/evil$', '^\\\\?server'])
       expect(why({ tool: 'edit', argv, action: 'allow' }), argv).toMatch(/absolute/)
     for (const argv of ['^\\/repo/', '^\\\\server'])
-      expect(checkCommandRule({ tool: 'edit', argv, action: 'allow' }), argv).toEqual([])
+      expect(checkCommandRule({ tool: 'edit', argv, action: 'allow' }), argv).toBeUndefined()
   })
   it('refuses an allow rule with a top-level alternation that bypasses the anchor', () => {
     // `^/` is only one branch of `^/|foo`; the pattern as a whole also matches the relative "foo"
@@ -72,12 +67,12 @@ describe('checkCommandRule', () => {
   })
   it('keeps accepting alternation nested inside a group', () => {
     // Unlike a top-level `|`, one inside `(...)` cannot let the match skip the leading `/`.
-    expect(checkCommandRule({ tool: 'edit', argv: '^/(a|b)/', action: 'allow' })).toEqual([])
+    expect(checkCommandRule({ tool: 'edit', argv: '^/(a|b)/', action: 'allow' })).toBeUndefined()
   })
   it('accepts the shipped standard preset absolute-path rule at session open', () => {
     const approval = loadPreset('standard').approval as { command_policy: CommandRule[] }
     expect(approval.command_policy).toHaveLength(1)
-    for (const rule of approval.command_policy) expect(checkCommandRule(rule)).toEqual([])
+    for (const rule of approval.command_policy) expect(checkCommandRule(rule)).toBeUndefined()
   })
 
   // The vocabulary is the evaluator's, and this file is the only thing that checks a table before it
@@ -87,25 +82,16 @@ describe('checkCommandRule', () => {
   it('validates the evaluator words, and refuses an action outside them', () => {
     expect(COMMAND_ACTIONS).toEqual(['allow', 'require_approval', 'deny'])
     for (const action of COMMAND_ACTIONS)
-      expect(checkCommandRule({ tool: 'edit', argv: '^/repo/', action }), action).toEqual([])
+      expect(() => checkCommandRule({ tool: 'edit', argv: '^/repo/', action }), action).not.toThrow()
     for (const action of ['ALLOW', 'approve', 'prompt', 'require-approval', ''])
       expect(why({ tool: 'edit', argv: '^/repo/', action: action as never })).toMatch(
         /not one of the actions allow, require_approval, deny/,
       )
   })
 
-  // `ask` was this file's own spelling for the middle action while the evaluator spelled it
-  // `require_approval`. It is accepted for one more version and every use of it is reported, so the
-  // synonym cannot sit there growing usages.
-  it('accepts the deprecated ask spelling and reports every rule that uses it', () => {
-    expect(DEPRECATED_ACTION).toBe('ask')
-    expect(checkCommandRule({ tool: 'shell', argv: '^curl ', action: 'ask' })).toEqual([
-      { tool: 'shell', action: 'ask', use: 'require_approval' },
-    ])
-    // Only the deprecated one is reported: a table written in the current words is silent.
-    expect(checkCommandRule({ tool: 'shell', argv: '^curl ', action: 'require_approval' })).toEqual([])
-  })
-  it('holds a deprecated rule to every other check as well', () => {
-    expect(why({ tool: 'edit', argv: 'src/', action: 'ask' })).toMatch(/anchored/)
+  it('refuses the retired ask spelling', () => {
+    expect(why({ tool: 'shell', argv: '^curl ', action: 'ask' as never })).toMatch(
+      /not one of the actions allow, require_approval, deny/,
+    )
   })
 })

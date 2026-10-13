@@ -100,10 +100,6 @@
                   "minimum": 1,
                   "maximum": 8
                 },
-                "backoff_ms": {
-                  "type": "integer",
-                  "minimum": 0
-                },
                 "base_delay_ms": {
                   "type": "integer",
                   "minimum": 0
@@ -569,7 +565,7 @@
           "additionalProperties": false,
           "properties": {
             "unknown_child": {
-              "enum": ["model", "park", "human"]
+              "enum": ["model", "human"]
             }
           }
         },

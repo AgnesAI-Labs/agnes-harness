@@ -477,7 +477,6 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             a,
             resolvePreset(presetName, a.presets, a.sessionPresetLimits()),
             presetName,
-            undefined,
           )
           let canonicalRoot: string
           try {

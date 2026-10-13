@@ -156,9 +156,12 @@ describe('toPresetView', () => {
       ).toThrow(/names no route/)
   })
   it('leaves the bare string form exactly as it was', () => {
-    const v = toPresetView({ name: 'x', model: { route: { primary: 'gw' }, id: { primary: 'm9' } } })
+    const v = toPresetView({ name: 'x', model: { route: { primary: 'gw' } } })
     expect(v.model.route).toEqual({ primary: 'gw' })
-    expect(v.model.id).toEqual({ primary: 'm9' })
+    expect(v.model.id).toEqual({})
+    expect(() =>
+      toPresetView({ name: 'x', model: { route: { primary: 'gw' }, id: { primary: 'm9' } } }),
+    ).toThrow(/E_PRESET_UNSUPPORTED/)
   })
   it('a limit value other than 1 does not park', () => {
     expect(toPresetView({ name: 'x' }, { limits: { 'approval.park': 0 } }).approval.onUnavailable).toBe(

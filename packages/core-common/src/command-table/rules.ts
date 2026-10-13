@@ -1,14 +1,7 @@
 export type PolicyRule = { tool: string; argv: string; action: 'allow' | 'require_approval' | 'deny' }
 
-/**
- * `require_approval` is the word, and this evaluator owns it: it is the only thing in the repository
- * that turns a rule into a verdict, so the vocabulary is the one it reads. `ask` was a second
- * spelling of the same action carried by the session validator, and for one version it is still
- * accepted here so a table already written in it keeps deciding rather than silently never firing.
- * Every use of it is reported when the session opens, and the spelling goes away after that.
- */
-const ASK_SPELLINGS = ['require_approval', 'ask']
-const ACTIONS = ['allow', 'deny', ...ASK_SPELLINGS]
+/** The three words a rule's action can be; the evaluator reads exactly these. */
+const ACTIONS = ['allow', 'deny', 'require_approval']
 
 /**
  * The command table a preset states under `approval.command_policy`, read whenever that preset is
@@ -41,6 +34,6 @@ export function readCommandRules(raw: unknown): PolicyRule[] {
     // the author believed the pattern was unanchored - which is the belief that let `myshell`
     // inherit shell's allow list - so it is refused rather than silently double-anchored.
     if (/[$^]/.test(r.tool)) throw new Error(`${at}: tool pattern must not carry its own anchor: ${r.tool}`)
-    return ASK_SPELLINGS.includes(r.action) ? { ...r, action: 'require_approval' as const } : r
+    return r
   })
 }

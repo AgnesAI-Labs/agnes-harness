@@ -32,6 +32,7 @@ export function RuntimeInfo({ runtime, t }: { runtime: SessionRuntimeDescriptor;
       <ListRow
         title={t('session.runtime.generation')}
         description={generation.id ?? t('session.runtime.unpinned')}
+        meta={generation.id ? <MetaText>{t('session.runtime.clientLive')}</MetaText> : undefined}
         status={
           generation.newer ? (
             <Tag tone="warn">

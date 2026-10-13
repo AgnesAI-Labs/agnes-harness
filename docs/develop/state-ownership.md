@@ -110,7 +110,7 @@ Three different counters share the word and are not interchangeable. A *plugin g
 
 ### Publication rule
 
-Within a bound code container a publication that changes code forks a new generation; one that changes only resources, or is registry-neutral, or arrives while no session is bound, updates in place (`host.ts:756-770`). Backend facets cannot change in a running process: rows `adapter:*`, `seam:sandbox` and `seam:platform`, and packages that own process-scope providers, are refused with `E_GENERATION_RESTART_REQUIRED` (`host.ts:687-703`). The fingerprint separately stops an old generation from being rebuilt under a different backend deployment (`E_GENERATION_INCOMPATIBLE`, `host.ts:230`).
+Within a bound code container a publication that changes code forks a new generation; one that changes only resources, or is registry-neutral, or arrives while no session is bound, updates in place (`host.ts:756-770`). Registry-neutral means only `web:` rows (client panels and views) changed: those are live client resources, served from the installed version to every session including saved ones, and a generation pins backend code (tool, hook, loop and seam registries) only. The session runtime dialog says so beside the pinned generation. Backend facets cannot change in a running process: rows `adapter:*`, `seam:sandbox` and `seam:platform`, and packages that own process-scope providers, are refused with `E_GENERATION_RESTART_REQUIRED` (`host.ts:687-703`). The fingerprint separately stops an old generation from being rebuilt under a different backend deployment (`E_GENERATION_INCOMPATIBLE`, `host.ts:230`).
 
 ### Seam pins and the session runtime descriptor
 

@@ -177,40 +177,20 @@ describe('createSession', () => {
     expect(e.detail.capability).toBe('approval.command_policy')
     await host.close()
   })
-  // The vocabulary is the evaluator's; `ask` is this host's own former spelling of the middle
-  // action, kept for one version so a deployment that already ships it still opens. It is not
-  // silence: the audit is where the resolved profile is recorded and is what an operator reads to
-  // see what this deployment decided, so the spelling that is going away is recorded beside it.
-  it('opens on the deprecated ask spelling and records it on the audit', async () => {
+  it('refuses the retired ask spelling as an action the evaluator does not know', async () => {
     const dataDir = tmp()
-    const { host, audit } = await createTestHost({
+    const { host } = await createTestHost({
       dataDir,
       presets: {
         old: {
           name: 'old',
           extends: 'standard',
-          approval: {
-            command_policy: [
-              { tool: 'shell', argv: '^curl ', action: 'ask' },
-              { tool: 'edit', argv: '^/repo/', action: 'require_approval' },
-            ],
-          },
+          approval: { command_policy: [{ tool: 'shell', argv: '^curl ', action: 'ask' }] },
         },
       },
       allowed: ['standard', 'old'],
     })
-    const s = await host.createSession({ cwd: dataDir, preset: 'old' })
-    expect(s.key).toBeDefined()
-    // One line for the deprecated rule, none for the one already written in the current words.
-    expect(audit.events.filter((e) => e.kind === 'preset.deprecated').map((e) => e.detail)).toEqual([
-      {
-        capability: 'approval.command_policy',
-        preset: 'old',
-        tool: 'shell',
-        action: 'ask',
-        use: 'require_approval',
-      },
-    ])
+    await expect(host.createSession({ cwd: dataDir, preset: 'old' })).rejects.toThrow(/E_PRESET_UNSUPPORTED/)
     await host.close()
   })
   it('refuses a preset whose command_policy names an action the evaluator does not know', async () => {

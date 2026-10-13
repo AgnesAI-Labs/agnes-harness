@@ -8,55 +8,44 @@ const resolve = (doc: PresetDoc) => resolvePreset('custom', { custom: doc })
 describe('merged preset production validation', () => {
   it('validates only after inherited routes are complete and hashes unchanged raw merged content', () => {
     const docs = {
-      base: { name: 'base', model: { route: { primary: 'gw', fast: 'fast' }, id: { primary: 'm' } } },
+      base: { name: 'base', model: { route: { primary: { route: 'gw', model: 'm' }, fast: 'fast' } } },
       custom: { name: 'custom', extends: 'base', model: { route: { fast: 'other' } } },
     }
     const before = JSON.stringify(docs)
     const result = resolvePreset('custom', docs)
     expect(result.view.model.route).toEqual({ primary: 'gw', fast: 'other' })
     expect(result.view.model.id).toEqual({ primary: 'm' })
-    expect(result.doc.model).toEqual({ route: { primary: 'gw', fast: 'other' }, id: { primary: 'm' } })
+    expect(result.doc.model).toEqual({ route: { primary: { route: 'gw', model: 'm' }, fast: 'other' } })
     expect(result.hash).toBe(`sha256-${sha256hex(canonicalJson(result.doc))}`)
     expect(JSON.stringify(docs)).toBe(before)
     expect(() => resolve({ name: 'custom', model: { route: { fast: 'other' } } })).toThrow(
       /E_PRESET_UNSUPPORTED/,
     )
   })
-  it('preserves explicit object model priority over the legacy pin and rejects unknown pin slots', () => {
-    expect(
-      resolve({
-        name: 'custom',
-        model: { route: { primary: { route: 'gw', model: 'explicit' } }, id: { primary: 'legacy' } },
-      }).view.model.id,
-    ).toEqual({ primary: 'explicit' })
-    expect(() => resolve({ name: 'custom', model: { id: { typo: 'm' } } })).toThrow(/model.id.typo/)
-    expect(() => resolve({ name: 'custom', model: { id: { primary: 17 } } })).toThrow(/model.id.primary/)
+  it('refuses the retired model.id pin, retry alias and recovery spelling', () => {
+    for (const fields of [
+      { model: { id: { primary: 'legacy' } } },
+      { model: { retry: { backoff_ms: 37 } } },
+      { recovery: { unknown_child: 'park' } },
+    ])
+      expect(() => resolve({ name: 'custom', ...fields })).toThrow(/E_PRESET_UNSUPPORTED/)
   })
-  it('normalizes retry aliases into the actual core reader without changing the hash document', () => {
-    for (const retry of [{ backoff_ms: 37 }, { base_delay_ms: 37 }, { backoff_ms: 37, base_delay_ms: 37 }]) {
-      const raw = { name: 'custom', model: { retry } }
-      const result = resolve(raw)
-      expect(result.view.model.retry.baseDelayMs).toBe(37)
-      expect(result.doc).toEqual(raw)
-      expect(result.hash).toBe(`sha256-${sha256hex(canonicalJson(raw))}`)
-    }
-    expect(() =>
-      resolve({ name: 'custom', model: { retry: { backoff_ms: 37, base_delay_ms: 38 } } }),
-    ).toThrow(/conflicts/)
-  })
-  it('reads all reconciled fields and resolves the deprecated recovery alias to human', () => {
-    const r = resolve({
+  it('reads the retry delay and the reconciled fields into the actual core reader', () => {
+    const raw = {
       name: 'custom',
-      model: { timeout_ms: 1234 },
+      model: { retry: { base_delay_ms: 37 }, timeout_ms: 1234 },
       deferred: { poll_ms: 17 },
       telemetry: { invariants: 'strict' },
-      recovery: { unknown_child: 'park' },
-    })
+      recovery: { unknown_child: 'human' },
+    }
+    const r = resolve(raw)
+    expect(r.view.model.retry.baseDelayMs).toBe(37)
     expect(r.view.model.timeoutMs).toBe(1234)
     expect(r.view.deferred.pollMs).toBe(17)
     expect(r.view.telemetry.invariants).toBe('strict')
     expect(r.view.recovery.unknownChild).toBe('human')
-    expect(r.doc.recovery).toEqual({ unknown_child: 'park' })
+    expect(r.doc).toEqual(raw)
+    expect(r.hash).toBe(`sha256-${sha256hex(canonicalJson(raw))}`)
   })
   it('omitted configuration reaches actual core defaults without inserting document fields', () => {
     const r = resolve({ name: 'custom' })

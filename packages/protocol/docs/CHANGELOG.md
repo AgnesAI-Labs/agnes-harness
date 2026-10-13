@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preset documents lose their retired spellings: `model.retry.backoff_ms` (use `base_delay_ms`), `recovery.unknown_child: park` (use `human`), the document-level `model.id` pin map (pin a model in the slot's `model.route.<slot>: { route, model }`) and the command-policy action `ask` (use `require_approval`). They are refused as invalid preset input instead of being rewritten.
 - `SessionDefaultsState.defaults` (`_agnes/v1/sessionSelection.defaults.get/save`, the admin defaults routes and the persisted configuration) selects in the one `providers.<kind>` form: `{ preset?, providers?: { loop?: { provider, version }, 'model-adapter'?: { provider, version } }, model? }`. It replaces `loop: { id, version }` and `modelAdapter: { id, version, model }`; `model` is valid only beside `providers.model-adapter`. The SDK helpers `defaultLoop` and `defaultModelAdapter` read the exact identities back.
 - `PluginGenerationStatus.blocked` (optional, additive): `{ file, reason }[]` for the durable pin or head records the Host cannot read, with `file` relative to the profile directory. Present only while one is damaged; generation collection removes nothing while it is.
 - `CompositionPatch` selects providers only in `providers: { loop?, 'model-adapter'?, compaction?, persistence?, sandbox? }`; the top-level `loop`, `model-adapter`, `compaction`, `persistence` and `sandbox` patch keys are refused with the sentence that names the table. A profile manifest's own `composition` still cannot carry `providers`.

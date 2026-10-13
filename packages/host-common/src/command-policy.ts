@@ -1,27 +1,12 @@
 import { HostError } from './errors.js'
 
 /**
- * The vocabulary, owned by the evaluator that uses it.
- *
- * There is one evaluator - base's approval-policy seam - and it is the only thing in the repository
- * that turns a rule into a verdict. This file is the validator that runs when a session opens, and
- * it validates the evaluator's words rather than a second set of its own. It used to spell the
- * middle action `ask` while the evaluator spelled it `require_approval`, and the two only agreed
- * because the evaluator quietly accepted both. A synonym is not a decision: left alone, both
- * spellings grow usages and a rule table written in one of them reads as a different policy to
- * whoever knows the other.
- *
- * `ask` is accepted for one version as a deprecated spelling. Every rule that uses it produces a
- * warning when the session opens, which is where an operator can act on it.
+ * The vocabulary the command table's evaluator reads (`readCommandRules` in core-common), validated
+ * here when a session opens so a rule spelled in any other word is refused instead of never firing.
  */
 export const COMMAND_ACTIONS = ['allow', 'require_approval', 'deny'] as const
-/** The spelling this file used to own. Accepted for one version, warned about on every use. */
-export const DEPRECATED_ACTION = 'ask'
-export type CommandAction = (typeof COMMAND_ACTIONS)[number] | typeof DEPRECATED_ACTION
+export type CommandAction = (typeof COMMAND_ACTIONS)[number]
 export type CommandRule = { tool: string; argv: string; action: CommandAction }
-
-/** One rule written in a spelling that still parses and will stop parsing. */
-export type PolicyDeprecation = { tool: string; action: string; use: string }
 
 /**
  * The argv contract, in the second of the three places it has to hold (protocol states it on the
@@ -41,10 +26,8 @@ export type PolicyDeprecation = { tool: string; action: string; use: string }
  * Validated when the session opens, not when the first approval arrives: a rule that cannot decide
  * anything must not sit in a preset looking like a policy. An `allow` rule in particular has to be
  * anchored and has to require an absolute path, because the string it is matched against is one.
- *
- * Returns the deprecations this rule carries, so the caller can put them where an operator reads.
  */
-export function checkCommandRule(rule: CommandRule): PolicyDeprecation[] {
+export function checkCommandRule(rule: CommandRule): void {
   const bad = (why: string): never => {
     throw new HostError('E_PRESET_UNSUPPORTED', `approval.command_policy rule for ${rule.tool} is ${why}`, {
       detail: { capability: 'approval.command_policy', tool: rule.tool, reason: why },
@@ -56,18 +39,15 @@ export function checkCommandRule(rule: CommandRule): PolicyDeprecation[] {
   } catch {
     bad('not a valid regular expression')
   }
-  // An action the evaluator does not know decides nothing: base's matchPolicy compares it against
-  // its own three words and a rule spelled otherwise simply never fires, so a table that reads as a
-  // policy is not one. Refused here rather than at the first call it fails to decide.
-  if (!(COMMAND_ACTIONS as readonly string[]).includes(rule.action) && rule.action !== DEPRECATED_ACTION)
+  // An action the evaluator does not know decides nothing: a rule spelled otherwise simply never
+  // fires, so a table that reads as a policy is not one. Refused here rather than at the first call
+  // it fails to decide.
+  if (!(COMMAND_ACTIONS as readonly string[]).includes(rule.action))
     bad(`not one of the actions ${COMMAND_ACTIONS.join(', ')}`)
   if (!rule.argv.startsWith('^')) bad('not anchored at the start of the path')
   // An allow rule that a relative path can satisfy is one resolved against a cwd it never saw.
   if (rule.action === 'allow' && !requiresAbsolutePath(rule.argv))
     bad('an allow rule must require an absolute path')
-  return rule.action === DEPRECATED_ACTION
-    ? [{ tool: rule.tool, action: DEPRECATED_ACTION, use: 'require_approval' }]
-    : []
 }
 
 /**

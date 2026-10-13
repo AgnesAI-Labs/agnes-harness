@@ -18,6 +18,8 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.current': 'Latest',
     'session.runtime.historical': 'Older generation',
     'session.runtime.newerGeneration': 'Newer generation {id} — {effect}',
+    'session.runtime.clientLive':
+      'Panels and views of its plugins always come from the installed version; this generation pins backend code only.',
     'session.runtime.loop': 'Loop',
     'session.runtime.preset': 'Preset {name}',
     'session.runtime.seam': 'Seam · {kind}',
@@ -74,6 +76,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.current': '最新',
     'session.runtime.historical': '较早的代次',
     'session.runtime.newerGeneration': '有更新的代次 {id}：{effect}',
+    'session.runtime.clientLive': '其插件的面板与视图始终来自当前已安装的版本；本代次只固定后端代码。',
     'session.runtime.loop': 'Loop',
     'session.runtime.preset': '预设 {name}',
     'session.runtime.seam': 'Seam · {kind}',

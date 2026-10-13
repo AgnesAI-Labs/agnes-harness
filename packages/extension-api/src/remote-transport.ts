@@ -1,5 +1,5 @@
 /**
- * Portable remote channel contract (B1). No host implementation types are required.
+ * Portable remote channel contract. No host implementation types are required.
  *
  * exec MUST preserve argv, cwd, env and stdin. For shell-only APIs quote every argv element
  * with single quotes and escape each embedded quote by closing, backslash-quoting, and reopening
