@@ -36,6 +36,7 @@ type Setup = {
   resultChars: number
   answerAt: (step: number) => boolean
   tokenFactor?: number
+  outputMaxBytes?: number
   readArgs?: (step: number) => Record<string, unknown>
   summaryFaults?: ReadonlyMap<number, SummaryFault>
   /** Result text override for one read, by path. */
@@ -71,6 +72,7 @@ async function open(o: Setup) {
   preset.compaction.reserveTokens = o.reserve
   preset.compaction.keepRecentTokens = o.keep
   preset.budget.maxSteps = 200
+  if (o.outputMaxBytes !== undefined) preset.tools.outputMaxBytes = o.outputMaxBytes
   preset.telemetry.invariants = 'strict'
   const opened = await openSession({
     provider,
@@ -345,6 +347,8 @@ describe('compaction inside long tool loops', () => {
       keep: 4000,
       resultChars: 400,
       tokenFactor: 1.5,
+      // Let this fixture reach provider overflow before the independent tool-result budget truncates it.
+      outputMaxBytes: 64 * 1024,
       answerAt: (step) => hugeAt !== undefined && step >= hugeAt + 3,
       resultFor: (path, provider) => {
         const last = provider.inputs.at(-1) ?? 0
