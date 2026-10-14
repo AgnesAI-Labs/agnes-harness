@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { advanced, chooseWorkspace, closeSettings, homePage } from './ui.js'
 
 // Explicit mutation opt-in: only point this flow at a disposable real daemon home.
 for (const [locale, example, loop] of [
@@ -12,69 +13,58 @@ for (const [locale, example, loop] of [
     test.setTimeout(90_000)
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.addInitScript((locale: string) => localStorage.setItem('agnes-locale', locale), locale)
-    await page.goto('/?settings=examples')
-    const more = page.getByTestId('example-more')
-    if (await more.count()) await page.getByTestId('example-more-toggle').click()
-    const button = page.getByTestId(`example-install-${example}`)
+    await page.goto('/?page=plugins&tab=market')
+    const card = page
+      .getByTestId('market-card')
+      .and(page.locator(`[data-plugin-id="@agnes-example/${example}"]`))
+    const button = card.getByTestId('market-install')
     await expect(button).toBeVisible()
     const folder = process.env.AGH_UI_REPORT && join(process.env.AGH_UI_REPORT, 'flow', locale)
     if (folder) await mkdir(folder, { recursive: true })
     async function screen(name: string) {
       if (folder) await page.screenshot({ path: join(folder, `${name}.png`) })
     }
-    if (!(await button.isDisabled())) {
-      await button.click()
-      await expect(page.locator('#plugin-confirm[open]')).toBeVisible()
-      if (
-        (await page.locator('#plugin-confirm-action').textContent()) ===
-        (locale === 'en' ? 'Confirm installation' : '确认安装')
-      ) {
-        await screen('official-capability-review')
-        const other = locale === 'en' ? 'zh-CN' : 'en'
-        await page.evaluate((value: string) => {
-          document.documentElement.lang = value
-          window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
-        }, other)
-        await expect(
-          page.locator('#plugin-confirm').getByRole('heading', {
-            name: other === 'en' ? 'Requested capabilities' : '请求的能力',
-            exact: true,
-          }),
-        ).toBeVisible()
-        await page.evaluate((value: string) => {
-          document.documentElement.lang = value
-          window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
-        }, locale)
-
-        await page.locator('#plugin-confirm-action').click()
-        await expect(page.locator('#plugin-confirm-action')).toHaveText(
-          locale === 'en' ? 'Confirm enable' : '确认启用',
-          { timeout: 30_000 },
-        )
-      }
-      await screen('official-trust-enable')
-      await page.locator('#plugin-confirm-action').click()
-    }
-    const start = page.getByTestId(`example-start-${example}`)
-    await expect(start).toBeVisible({ timeout: 30_000 })
-    await start.scrollIntoViewIfNeeded()
+    await button.click()
+    const review = page.locator('#plugin-confirm')
+    await expect(review).toBeVisible()
+    await expect(page.locator('#plugin-confirm-action')).toHaveText(
+      locale === 'en' ? 'Install and enable' : '安装并启用',
+    )
+    await screen('official-capability-review')
+    const other = locale === 'en' ? 'zh-CN' : 'en'
+    await page.evaluate((value: string) => {
+      document.documentElement.lang = value
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
+    }, other)
+    await expect(
+      review.getByRole('heading', { name: other === 'en' ? 'What it gets' : '它会获得什么', exact: true }),
+    ).toBeVisible()
+    await page.evaluate((value: string) => {
+      document.documentElement.lang = value
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
+    }, locale)
+    await screen('official-trust-enable')
+    await page.locator('#plugin-confirm-action').click()
+    await expect(review).toBeHidden({ timeout: 30_000 })
+    const detail = page.locator('#plugin-detail')
+    await expect(detail).toBeVisible({ timeout: 30_000 })
+    await expect(detail).toContainText(locale === 'en' ? 'Enable: Completed' : '启用：已完成', {
+      timeout: 30_000,
+    })
+    await detail.locator('.plugin-detail-close').click()
+    await homePage(page, 'plugins')
+    await page.getByTestId('builtin-execution').click()
+    const mode = page.getByTestId('execution-modes').locator(`[data-loop-id="${loop}"]`)
+    await expect(mode).toBeVisible({ timeout: 30_000 })
     await screen('official-available')
-    await start.click()
+    await mode.getByTestId('execution-start').click()
+    const workspace = process.env.AGH_UI_WORKSPACE
+    if (!workspace) throw new Error('Official-example flow requires an isolated workspace')
+    await chooseWorkspace(page, { workspace }, locale)
+    await expect(page.locator('#prompt')).toBeEnabled()
+    await advanced(page)
+    await closeSettings(page, locale)
     await expect(page.getByTestId('composer-agent')).toBeVisible()
-    await page.waitForTimeout(1000)
-    if (
-      await page
-        .getByRole('dialog', { name: locale === 'en' ? 'Choose a workspace' : '选择工作区', exact: true })
-        .isVisible()
-    ) {
-      const workspace = process.env.AGH_UI_WORKSPACE
-      if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for the isolated home')
-      await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
-        element.open = true
-      })
-      await page.locator('#new-session-cwd').fill(workspace)
-      await page.locator('#new-session-create').click()
-    }
     await page.getByTestId('composer-agent').click()
     await expect(page.getByTestId('agent-options')).toContainText(loop)
     await screen('official-new-session')
