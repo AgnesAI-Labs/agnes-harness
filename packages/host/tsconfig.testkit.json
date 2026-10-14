@@ -11,6 +11,7 @@
     "testkit/plugin-registration.ts",
     "testkit/wire-capture.ts",
     "testkit/author/index.ts",
+    "testkit/author/loop-contract.ts",
     "testkit/author/session.ts",
     "testkit/author/model-replay.ts",
     "testkit/author/fault-server.ts"

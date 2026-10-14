@@ -102,3 +102,22 @@ Use `driveLoop(workflow.factory, { inputs, replies, tools })` from `@agnes/host/
 Each `LoopContext` belongs to one execution generation. Timeout, replacement or disposal permanently revokes its mutation ports (`E_CLOSED`); retaining the context cannot grant authority in a later turn. Core also rechecks queued writes at ledger commit admission. Core retains late real effect receipts against the original effect; the replacement Loop can inspect them with `effects.status(invocationId)`, including after cold restore. A late receipt does not reopen the old turn or commit its assistant message or checkpoint.
 
 The default Loop and generic `model.stream()` / `model.complete()` share Core’s model transport and settlement. Every dispatched request has one cost row and one billing record, including provider errors and cancellation. Missing usage uses the same estimated token counts and `creditSource: estimated`; repeated usage reports are request totals, so the last report replaces earlier totals. Cancellation stops waiting even when a provider ignores its signal. An unavailable billing record refuses subsequent model dispatch in that turn. Loops still choose retries, compaction and subsequent calls.
+
+
+### Execution contract suite
+
+Loop authors can run the same Core-backed execution checks as the default Loop:
+
+```ts
+import { verifyLoopExecutionContract } from '@agnes/host/author-testkit'
+import { myLoopFactory } from './my-loop.js'
+
+await verifyLoopExecutionContract(myLoopFactory)
+```
+
+The suite uses synthetic providers, tools and storage. It checks cancellation, approval rejection,
+usage and missing-usage settlement, unknown outcomes, cold restore, stale scope refusal and
+coexisting Loop generations. The factory must handle ordinary text prompts and model tool-call
+replies; adapt a custom planning language in the supplied factory. Run it in the heavy test tier
+because the stale-scope scenario waits for a real deadline. This additive Host testkit export does
+not change the extension-api contract version.
