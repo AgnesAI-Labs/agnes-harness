@@ -113,3 +113,8 @@ Badge, Tag, EmptyState, Skeleton, ListRow, Banner, Icon and SheetHandle remain c
 | `PageHeader` | Shared | Contract CSS | Full-page head: 26px bold title (`h1`, `headingId`), one line of description, page actions. / 整页页头：26px 粗体标题、一句说明、页面操作。 |
 
 `Select` without `showSearch` or `mode` is a popup button: a raised surface ending in the accent block with up/down chevrons (`.agh-popup-chevrons`); pass `suffixIcon` to replace it. Control proportions, hairlines, continuous corners and motion live in `refinement.css` and read scale tokens only. / 不带搜索与多选的 `Select` 是弹出按钮；控件比例、发丝线、连续圆角与动效集中在 `refinement.css`，只读取尺度 token。
+
+| `SettingsSubpageFrame` / `SettingsDrill` / `SettingsExpand` | A | 设置二级页 | 带 › 的行打开同一弹框内的二级页（顶部「‹ 返回」、浏览器后退、`settings-subsection-<id>` 深链即打开）；`SettingsExpand` 在行下就地展开；`SettingsPage` 顶层自带二级页框架 |
+| `SettingsBlock` / `SettingsTag` / `SettingsInfo` | A | 设置分组 | 分组标题是名词，右侧放分组操作；保存失败只在标题处显示「保存失败 · 重试」；读取失败一行 + 重试且不清空；同一套状态小标；说明文字收进名称旁 ⓘ |
+| `useAutosave` / `SettingsUndoScope` | A | 自动保存 | 开关/选择立即保存，文字停 1 秒或失焦保存；不显示「已保存」；⌘Z 在文本框外撤销最近一次保存 |
+| `SettingsPresetSelect` / `SettingsChips` / `SettingsChipToggle` | A | 人话取值 | 毫秒 ↔ 秒/分钟档位（默认 / 档位 / 自定义保留原值）；逗号列表 ↔ 标签；固定选项多选标签 |

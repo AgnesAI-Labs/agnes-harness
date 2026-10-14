@@ -123,6 +123,11 @@ export function matchesSettings(query: string, text: string): boolean {
 export function revealSettingsAnchor(anchor: string): void {
   const node = document.getElementById(anchor)
   if (!node) return
+  // A row that opens a subpage is revealed by opening that subpage.
+  if (node.dataset.settingsDrill !== undefined) {
+    if (node.getAttribute('aria-expanded') !== 'true') node.click()
+    return
+  }
   for (let current: HTMLElement | null = node; current; current = current.parentElement)
     if (current instanceof HTMLDetailsElement) current.open = true
     else if (current.classList.contains('agh-disclosure')) setDisclosureOpen(current, true)

@@ -436,16 +436,20 @@
   .agnes-settings-page[data-layout="list"] {
     max-width: 960px;
   }
-  .agnes-settings-page > .agnes-settings-page-heading {
+  .agnes-settings-page > .agnes-settings-page-heading,
+  .agnes-settings-page .agnes-settings-page-top {
     margin-bottom: var(--s24);
   }
-  .agnes-settings-page > .agnes-settings-page-heading h2 {
+  .agnes-settings-page > .agnes-settings-page-heading h2,
+  .agnes-settings-page .agnes-settings-page-top h2 {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-md);
   }
   .agnes-settings-page > .agnes-settings-toolbar,
-  .agnes-settings-page > .agh-banner {
+  .agnes-settings-page > .agh-banner,
+  .agnes-settings-subpage-main > .agnes-settings-toolbar,
+  .agnes-settings-subpage-main > .agh-banner {
     margin-bottom: var(--s16);
   }
   .agh-settings-toolbar-search {
@@ -2009,5 +2013,292 @@
     .agnes-settings-item-control {
       justify-content: flex-start;
     }
+  }
+
+  /* ── Settings v4: labelled groups, drill rows, subpages, chips ─────────────── */
+  .agnes-settings-block {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .agnes-settings-block-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: var(--s24);
+    padding-inline: var(--s4);
+  }
+  .agnes-settings-block-label > h3 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .agnes-settings-block-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    margin-inline-start: auto;
+  }
+  .agnes-settings-save-failed {
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-save-failed > button,
+  .agnes-settings-read-failed > button {
+    padding: 0;
+    border: 0;
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agnes-settings-read-failed {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  /* A drill row is a button that reads as a row: name left, value and chevron right. */
+  .agnes-settings-drill {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .agnes-settings-drill:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-drill:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-line);
+  }
+  .agnes-settings-drill:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agnes-settings-group > :first-child > .agnes-settings-drill,
+  .agnes-settings-group > .agnes-settings-drill:first-child {
+    border-start-start-radius: var(--radius-card);
+    border-start-end-radius: var(--radius-card);
+  }
+  .agnes-settings-group > :last-child > .agnes-settings-drill:last-of-type,
+  .agnes-settings-group > .agnes-settings-drill:last-child {
+    border-end-start-radius: var(--radius-card);
+    border-end-end-radius: var(--radius-card);
+  }
+  .agnes-settings-value {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+    margin-inline-start: auto;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-settings-chevron {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-settings-expand-body {
+    padding: var(--s8) var(--s16) var(--s12);
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-settings-info {
+    display: inline-flex;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    vertical-align: -2px;
+    cursor: help;
+  }
+  .agnes-settings-info:focus-visible {
+    border-radius: var(--radius-full);
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-info > .icon {
+    width: 14px;
+    height: 14px;
+  }
+  .agnes-settings-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+  .agnes-settings-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-settings-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-settings-tag[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agnes-settings-tag[data-tone="brand"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 24rem;
+  }
+  .agnes-settings-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-chip[data-on="true"] {
+    border-color: var(--agnes-brand-primary);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chip > button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+  }
+  .agnes-settings-chip > button > .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .agnes-settings-chip-input {
+    width: 9rem;
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-chip-input:focus {
+    border-style: solid;
+    border-color: var(--agnes-brand-primary);
+    outline: none;
+  }
+  .agnes-settings-preset,
+  .agnes-settings-preset-custom {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .agnes-settings-preset-custom > input {
+    width: 6rem;
+    text-align: end;
+  }
+  /* The subpage frame and undo scope add no boxes of their own: the page lays out its header and
+   body as before. */
+  .agnes-settings-undo-scope,
+  .agnes-settings-subpage-frame,
+  .agnes-settings-subpage-main:not([hidden]),
+  .agnes-settings-subpage-main-header:not([hidden]),
+  .agnes-settings-subpage-header:not([hidden]) {
+    display: contents;
+  }
+  .agnes-settings-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    margin: 0 0 var(--s4) calc(-1 * var(--s4));
+    padding: var(--s2) var(--s4);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-back:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-back:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-subpage-header h2:focus {
+    outline: none;
+  }
+  .agnes-settings-subpage-body:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--s16);
+  }
+  /* A text area that is the first row of a group has no frame of its own. */
+  .agnes-settings-group > textarea.agnes-settings-bare {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5.5rem;
+    padding: var(--s12) var(--s16);
+    border: 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    line-height: 1.6;
+    resize: vertical;
+  }
+  .agnes-settings-group > textarea.agnes-settings-bare:focus {
+    outline: none;
+    background: var(--agnes-bg-subtle);
+  }
+  /* A page in the navigation that needs attention carries one small dot. */
+  [data-attention]::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    margin-inline-start: auto;
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-warning-solid);
+  }
+  [data-attention="error"]::after {
+    background: var(--agnes-status-danger-solid);
   }
 }

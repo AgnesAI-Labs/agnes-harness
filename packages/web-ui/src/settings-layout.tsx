@@ -10,6 +10,8 @@ import { createPortal } from 'react-dom'
 
 import { useAdvancedSettings } from './advanced-settings.js'
 import { fallbackT } from './locales/index.js'
+import { SettingsUndoScope } from './settings-autosave.js'
+import { SettingsInfo, SettingsSubpageFrame } from './ui/settings-subpages.js'
 import { Button } from './ui/button.js'
 import { CopyButton } from './ui/copy-button.js'
 import { Disclosure, type DisclosureProps, NestedSurfaceContext } from './ui/disclosure.js'
@@ -61,9 +63,25 @@ export function SettingsPage({
     <>
       {banner}
       {toolbar}
-      <div className={['agnes-settings-stack', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
+      <div
+        className={['agnes-settings-stack', !nested && 'agnes-settings-page-body', bodyClassName]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {children}
+      </div>
       {saveBar}
     </>
+  )
+  const header = (
+    <SettingsPageHeader
+      className={nested ? undefined : 'agnes-settings-page-top'}
+      title={title}
+      description={description}
+      actions={actions}
+      headingId={headingId}
+      slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
+    />
   )
   return (
     <section
@@ -72,17 +90,18 @@ export function SettingsPage({
       data-nested={nested || undefined}
       className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}
     >
-      <SettingsPageHeader
-        title={title}
-        description={description}
-        actions={actions}
-        headingId={headingId}
-        slots={nested ? undefined : { lead: setLead, actions: setActionsHost }}
-      />
       {nested ? (
-        body
+        <>
+          {header}
+          {body}
+        </>
       ) : (
-        <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
+        // A top-level page drills into subpages and undoes its last saved change with ⌘Z.
+        <SettingsUndoScope>
+          <SettingsSubpageFrame header={header}>
+            <SettingsPageFrameContext.Provider value={frame}>{body}</SettingsPageFrameContext.Provider>
+          </SettingsSubpageFrame>
+        </SettingsUndoScope>
       )}
     </section>
   )
@@ -159,6 +178,7 @@ export function SettingsGroup({ children, ...props }: HTMLAttributes<HTMLDivElem
 export function SettingsItem({
   label,
   description,
+  info,
   labelId,
   icon,
   stacked = false,
@@ -168,6 +188,8 @@ export function SettingsItem({
   DataAttributes & {
     label: ReactNode
     description?: ReactNode
+    /** The longer explanation, behind an ⓘ beside the name. */
+    info?: string | undefined
     labelId?: string
     icon?: IconName
     stacked?: boolean
@@ -182,6 +204,7 @@ export function SettingsItem({
       <div className="agnes-settings-item-copy">
         <div className="agnes-settings-item-label" id={labelId}>
           {label}
+          {info && <SettingsInfo text={info} />}
         </div>
         {description && <div className="agnes-settings-item-description">{description}</div>}
       </div>

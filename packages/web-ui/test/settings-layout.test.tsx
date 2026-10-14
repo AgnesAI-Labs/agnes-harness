@@ -55,13 +55,19 @@ it('keeps page hooks and lays out heading, notice, toolbar, body and dirty actio
     ),
   )
   expect(host.querySelector('#existing-pane')?.getAttribute('data-agnes-region')).toBe('settings-pane')
-  expect([...host.querySelector('#existing-pane')!.children].map((node) => node.tagName)).toEqual([
-    'HEADER',
-    'DIV',
-    'DIV',
-    'DIV',
-    'DIV',
-  ])
+  // Header, notice, toolbar, body and save bar, in that order (the subpage frame adds no boxes).
+  const page = host.querySelector('#existing-pane')!
+  const parts = [
+    'header.agnes-settings-page-top',
+    '.agh-banner',
+    '.agnes-settings-toolbar',
+    '.agnes-settings-page-body',
+    '.agh-settings-save-bar',
+  ].map((selector) => page.querySelector(selector))
+  expect(parts.every(Boolean)).toBe(true)
+  for (const [index, part] of parts.entries())
+    if (index > 0)
+      expect(parts[index - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(host.querySelector('#existing-title')?.textContent).toBe('Settings')
   const actions = host.querySelectorAll<HTMLButtonElement>('.agh-settings-save-bar button')
   expect([...actions].map((node) => node.textContent)).toEqual(['Discard', 'Save'])

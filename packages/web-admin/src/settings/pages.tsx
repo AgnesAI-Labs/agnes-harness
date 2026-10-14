@@ -208,6 +208,8 @@ function SettingsPageHost({
   return (
     <div data-testid={`settings-page-${section.id}`} id={`settings-hub-panel-${section.id}`}>
       <SettingsPageLayout
+        // Another page starts at its top level, not inside the last page's subpage.
+        key={section.id}
         title={title}
         actions={
           needsRuntimeCatalog || adminFailed ? (

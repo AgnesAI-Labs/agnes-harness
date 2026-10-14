@@ -93,12 +93,22 @@ export * from './session-auxiliary-models.js'
 export { type SessionOption, SessionPicker } from './session-picker.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
+export { AUTOSAVE_IDLE_MS, type Autosave, SettingsUndoScope, useAutosave } from './settings-autosave.js'
 export {
   ComputerUseCapability,
   type SettingsComputerUseActions,
   type SettingsComputerUseView,
 } from './settings-computer-use.js'
 export * from './settings-control-templates.js'
+export {
+  SettingsBlock,
+  SettingsChips,
+  SettingsChipToggle,
+  SettingsPresetSelect,
+  SettingsTag,
+  type SettingsTagTone,
+  setSettingsNavAttention,
+} from './ui/settings-controls.js'
 export { SettingsIcon, settingsIconName } from './settings-icon.js'
 export {
   SchemeThumbnail,
@@ -135,6 +145,23 @@ export {
   type SettingsSelectOption,
   setSettingsSelectOptions,
 } from './settings-option-select.js'
+export {
+  SettingsDrill,
+  SettingsExpand,
+  SettingsInfo,
+  SettingsSubpageFrame,
+  useSettingsSubpages,
+} from './ui/settings-subpages.js'
+export {
+  formatTokens,
+  joinList,
+  minutePresets,
+  parseTokens,
+  presetChoice,
+  type SettingsPreset,
+  secondPresets,
+  splitList,
+} from './settings-values.js'
 export { terminalKey, terminalScreen } from './terminal-screen.js'
 export { Badge } from './ui/badge.js'
 export { Banner, type BannerProps } from './ui/banner.js'

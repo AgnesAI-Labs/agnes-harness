@@ -30,8 +30,9 @@
 
   /* Header: the page names itself once. Actions sit on the title's line, inside the column. */
   .settings-shell .settings-content > .agnes-settings-page-heading,
-  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-page-heading,
-  .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-top,
+  .settings-shell .settings-content .agnes-settings-page-top,
+  .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
     flex: 0 0 auto;
     display: flex;
     align-items: flex-start;
@@ -47,7 +48,7 @@
     background: var(--agnes-bg-surface);
   }
   /* A page rendered in a scrolling list keeps its header in view while the body moves under it. */
-  .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+  .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
     position: sticky;
     top: 0;
     z-index: 1;
@@ -88,21 +89,11 @@
   }
   /* The dialog's close button owns the top corner: a page's own actions sit on the description's
    line, a row below it, as quiet small icons. */
-  #settings-sections-pane
-    > div
-    > .agnes-settings-page
-    > .agnes-settings-page-heading
-    > .agnes-settings-actions {
+  #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions {
     align-self: flex-end;
     min-height: 0;
   }
-  #settings-sections-pane
-    > div
-    > .agnes-settings-page
-    > .agnes-settings-page-heading
-    > .agnes-settings-actions
-    .agh-btn--icon
-    .icon {
+  #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions .agh-btn--icon .icon {
     width: var(--s16);
     height: var(--s16);
   }
@@ -170,7 +161,8 @@
 
   /* Body: the one vertical scroller of a page. */
   .settings-shell .config-workspace,
-  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body,
+  .settings-shell .settings-content .agnes-settings-subpage-body,
   .settings-shell .archived-pane-body,
   .settings-shell #plugin-list,
   .settings-shell #resource-list {
@@ -196,7 +188,8 @@
     flex-shrink: 0;
   }
   .settings-shell .config-workspace > *,
-  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack > *,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body > *,
+  .settings-shell .settings-content .agnes-settings-subpage-body > *,
   .settings-shell .archived-pane-body > *,
   .settings-shell #plugin-list > *,
   .settings-shell #resource-list > * {
@@ -213,7 +206,7 @@
     gap: var(--s24);
   }
   .settings-shell .config-workspace,
-  #settings-sections-pane > div > .agnes-settings-page > .agnes-settings-stack {
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
@@ -397,7 +390,7 @@
       --settings-gutter: var(--s16);
     }
     .settings-shell .settings-content > .agnes-settings-page-heading,
-    .runtime-settings .agnes-settings-page:not([data-nested]) > .agnes-settings-page-heading {
+    .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
       flex-wrap: wrap;
       padding-top: var(--s8);
     }
