@@ -178,7 +178,7 @@ const PROMPT_TEXT: Record<string, string> = {
     '| --- | --- |',
     '| A file to open or download | `present` |',
     '| One question or choice | `ask_user_question` |',
-    '| Tables, charts, forms or dashboards in the UI | `ui_render` |',
+    '| Tables, charts, forms or dashboards in the UI; plain text and outlines stay in the reply | `ui_render` |',
   ].join('\n'),
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',

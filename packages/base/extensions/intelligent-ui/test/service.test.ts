@@ -378,6 +378,10 @@ describe('preset surface contract and ledger lifecycle', () => {
       if (name === 'ui_render') {
         expect(tool.description).toContain('show/display in the UI')
         expect(tool.description).toContain('instead of writing HTML and presenting a file')
+        // Words go in the reply; titles in one language; ids are the model's own.
+        expect(tool.description).toContain('Plain text, outlines and summaries belong in the reply')
+        expect(tool.description).toContain('never a bilingual "A / B" title')
+        expect(tool.description).toContain('never imitate system ids')
       }
       const described = await describe.execute({ name }, ctx)
       const text = described.content[0] as { text: string }

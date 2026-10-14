@@ -4,4 +4,4 @@ Use only tools offered in this request. When a capability is missing, use tool_s
 | --- | --- |
 | A file to open or download | `present` |
 | One question or choice | `ask_user_question` |
-| Tables, charts, forms or dashboards in the UI | `ui_render` |
+| Tables, charts, forms or dashboards in the UI; plain text and outlines stay in the reply | `ui_render` |
