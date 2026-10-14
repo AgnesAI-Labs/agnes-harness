@@ -28,6 +28,11 @@ export interface ConversationMessagesProps {
   /** Optional snapshot gate when a host supplies turns and messages through separate subscriptions. */
   visibleNodeIds?: readonly string[]
   renderTurnActions?: (turn: UITurn, finalText: string, settled: boolean) => ReactNode
+  /**
+   * A loop step's result recorded as an assistant message. The turn shows it as a step row of its
+   * activity, never as the answer's prose.
+   */
+  processStep?: (node: AssistantNode) => import('./process-step.js').ProcessStepResult | undefined
   /** Files the turn produced, shown inside its answer between the text and the action row. */
   renderTurnDeliverables?: (turn: UITurn) => ReactNode
   renderMarkdown?: (text: string, part: 'thinking' | 'body', state?: ConversationMarkdownState) => ReactNode

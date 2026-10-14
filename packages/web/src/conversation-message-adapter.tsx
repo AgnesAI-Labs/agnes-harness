@@ -30,6 +30,7 @@ import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { TurnDeliverables } from './intelligent-ui/turn-deliverables.js'
+import { workflowStepRecord } from './workflow-step.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
@@ -205,6 +206,7 @@ export function WebConversationMessages({
     ...(turns ? { turns } : {}),
     ...(visibleNodeIds ? { visibleNodeIds } : {}),
     renderTurnDeliverables: (turn) => <TurnDeliverables turn={turn} />,
+    processStep: (node) => workflowStepRecord(node.text),
     renderTurnActions: (turn, finalText, settled) => {
       const answer = turn.finalAssistantId ? answers.get(turn.finalAssistantId) : undefined
       const rated =

@@ -8,6 +8,7 @@ import { ActivityIcon, ActivityRow, type ActivityState } from './activity-row.js
 import type { AssistantNode, ConversationMessagesProps, ToolNode } from './context.js'
 import { markdownState } from './markdown-state.js'
 import { isEmptyStreamingAssistant, isSystemInput, Message } from './message.js'
+import { ProcessStep } from './process-step.js'
 import { Thinking } from './thinking.js'
 import { toolOutcome } from './tool-card.js'
 import { type ActivityKind, activitySummary, thoughtLine, toolStep } from './tool-step.js'
@@ -118,8 +119,11 @@ export function Turn({
     .flatMap((node) => (node.kind === 'assistant' && node.thinking?.trim() ? [node.id] : []))
     .join('\n')
   const shownThoughts = new Set(useInteractionSnapshot(response, thoughtIds).split('\n'))
+  const stepOf = (node: UINode) =>
+    node.kind === 'assistant' && !node.streaming ? props.processStep?.(node) : undefined
   const finalNode = members.find((node) => node.id === turn.finalAssistantId)
-  const finalText = finalNode?.kind === 'assistant' ? finalNode.text : ''
+  // A step record is not an answer: there is nothing of it to copy as the reply.
+  const finalText = finalNode?.kind === 'assistant' && !stepOf(finalNode) ? finalNode.text : ''
 
   // The process is one flat list in the order things happened: prose stands alone, consecutive
   // steps share a group row. Flat, so a node never changes parent as the turn moves on.
@@ -138,7 +142,8 @@ export function Turn({
     (a, b) => Number(a.id === turn.finalAssistantId) - Number(b.id === turn.finalAssistantId),
   )
   for (const node of ordered) {
-    if (node.kind === 'assistant') {
+    if (stepOf(node)) addStep(node, false)
+    else if (node.kind === 'assistant') {
       if (node.thinking?.trim() || shownThoughts.has(node.id)) addStep(node, true)
       const final = node.id === turn.finalAssistantId
       const written = Boolean(node.text.trim()) || node.lostChars !== undefined
@@ -166,7 +171,9 @@ export function Turn({
       ? 'thinking'
       : step.node.kind === 'tool'
         ? toolStep(step.node, t, interactionToolPresentation(step.node, t)).kind
-        : 'approval'
+        : step.node.kind === 'assistant'
+          ? 'step'
+          : 'approval'
   const groupRow = (current: Group) => {
     const open = openGroups.has(current.key)
     const tools = current.members.flatMap((step) =>
@@ -221,6 +228,14 @@ export function Turn({
         }
       />
     )
+  }
+  const stepResult = (node: UINode) => {
+    const result = stepOf(node)
+    return result ? (
+      <article className="timeline-node process-step" data-node-id={node.id} data-node-kind="process-step">
+        <ProcessStep nodeId={node.id} step={result} props={props} />
+      </article>
+    ) : null
   }
   const process = (
     <>
@@ -307,7 +322,7 @@ export function Turn({
             }
             return (
               <div key={step.key} className="turn-process-body turn-step" data-grouped={rail} hidden={!shown}>
-                <Message node={step.node} props={props} turnStatus={turn.status} />
+                {stepResult(step.node) ?? <Message node={step.node} props={props} turnStatus={turn.status} />}
               </div>
             )
           }

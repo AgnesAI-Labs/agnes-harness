@@ -12,6 +12,7 @@ export type ActivityKind =
   | 'tool'
   | 'thinking'
   | 'approval'
+  | 'step'
 
 // Order is priority: a name such as `web_search` is the web, `read_file` is a read.
 const KIND_BY_NAME: readonly (readonly [RegExp, ActivityKind])[] = [
@@ -40,6 +41,7 @@ const TARGET_KEYS: Record<ActivityKind, readonly string[]> = {
   tool: ['description', 'title', 'name', 'path', 'query', 'command', 'prompt', 'message', 'id'],
   thinking: [],
   approval: [],
+  step: [],
 }
 
 const HOME = /^(?:\/Users|\/home)\/[^/\s]+(?=\/|$)|^[A-Za-z]:\\Users\\[^\\\s]+(?=\\|$)/
@@ -139,6 +141,7 @@ const SUMMARY_ORDER: readonly ActivityKind[] = [
   'command',
   'edit',
   'web',
+  'step',
   'tool',
   'approval',
 ]

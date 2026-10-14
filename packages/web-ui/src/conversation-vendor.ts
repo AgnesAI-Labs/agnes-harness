@@ -14,6 +14,11 @@ export {
 } from './conversation/interaction-result.js'
 export { ConversationMarkdown, type ConversationMarkdownProps } from './conversation/markdown.js'
 export {
+  type ProcessStepResult,
+  processStepLabel,
+  processStepSummary,
+} from './conversation/messages/process-step.js'
+export {
   type ConversationMarkdownState,
   ConversationMessages,
   type ConversationMessagesProps,

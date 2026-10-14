@@ -11,6 +11,7 @@ const ICONS = {
   ],
   approval: ['M12 3 5 6v5c0 4.5 2.9 8.3 7 10 4.1-1.7 7-5.5 7-10V6Z', 'm9 12 2 2 4-4'],
   chevron: ['m9 6 6 6-6 6'],
+  step: ['M4 6h16', 'M4 12h10', 'M4 18h7', 'm15 17 2 2 4-4'],
 } as const
 
 export function ActivityIcon({ name }: { name: keyof typeof ICONS }) {
