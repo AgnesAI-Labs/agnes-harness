@@ -68,7 +68,7 @@ test.beforeAll(async () => {
         <button type="button" className="primary-button" id="native-primary">Save</button>
         <IconButton name="refresh-cw" label="Refresh" id="icon-action" onClick={() => refresh(value => value + 1)} />
         <p id="refresh-count" aria-live="polite">Refreshed {refreshed}</p>
-        <Menu label="Actions" trigger={<Button>More</Button>} items={[
+        <Menu label="Actions" trigger={<IconButton name="ellipsis" label="More"/>} items={[
           {id:'delete', label:'Delete', danger:true, onSelect:() => select('Deleted')},
           {id:'edit', label:'Edit', onSelect:() => select('Edited')},
           {id:'copy', label:'Copy', onSelect:() => select('Copied')},
@@ -139,7 +139,9 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
     })
   expect(await presentation('#native-primary')).toEqual(await presentation('#react-primary'))
   const trigger = page.getByRole('button', { name: 'More', exact: true })
+  await trigger.hover()
   await trigger.focus()
+  await expect(page.getByRole('tooltip', { name: 'More', exact: true })).toBeVisible()
   await page.keyboard.press('ArrowDown')
   await expect(page.getByRole('menuitem', { name: 'Edit' })).toBeFocused()
   await page.keyboard.press('ArrowDown')
@@ -149,6 +151,9 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   await page.keyboard.press('Escape')
   await expect(trigger).toBeFocused()
   await trigger.click()
+  // The pending hover hint must not cover an expanded menu.
+  await page.waitForTimeout(600)
+  await expect(page.getByRole('tooltip', { name: 'More', exact: true })).toBeHidden()
   await page.getByRole('menuitem', { name: 'Copy' }).click()
   await expect(page.getByRole('status')).toHaveText('Copied')
   await expect(trigger).toBeFocused()

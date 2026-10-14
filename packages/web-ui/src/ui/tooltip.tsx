@@ -12,12 +12,16 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
   const [open, setOpen] = useState(false)
   const id = useId()
   if (!children) return null
+  const expanded =
+    'aria-expanded' in children.props &&
+    (children.props['aria-expanded'] === true || children.props['aria-expanded'] === 'true')
+  const visible = open && !expanded
   return (
     <AntTooltip
       {...props}
       id={id}
       title={title}
-      open={open}
+      open={visible}
       trigger="hover"
       mouseEnterDelay={0.5}
       onOpenChange={setOpen}
@@ -39,7 +43,7 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
       >
         {cloneElement(children, {
           'aria-describedby':
-            [children.props['aria-describedby'], open && id].filter(Boolean).join(' ') || undefined,
+            [children.props['aria-describedby'], visible && id].filter(Boolean).join(' ') || undefined,
         })}
       </span>
     </AntTooltip>
