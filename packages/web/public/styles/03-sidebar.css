@@ -59,6 +59,12 @@
     width: 1.375rem;
     height: 1.375rem;
   }
+  /* The mark's ink sits low in its square (the swoosh carries its weight, about 2.5px below the
+   centre at this size), so a centred box still reads low beside the name and the collapse button.
+   Lifting it puts its visual centre on their shared midline. */
+  .sidebar-head .brand-mark-image {
+    translate: 0 -2px;
+  }
   .brand-wordmark-text {
     min-width: 0;
     overflow: hidden;

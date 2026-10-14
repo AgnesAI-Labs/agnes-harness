@@ -40,6 +40,12 @@ describe('home page layout', () => {
     expect(css).toMatch(/main\[data-home-page\] > :is\(\.workbench-split,/)
   })
 
+  it('lifts the brand mark onto the midline of the name and the collapse button', () => {
+    // The mark's ink sits low in its square, so its box is raised to centre what the eye sees.
+    expect(ruleBody('.sidebar-head .brand-mark-image')).toMatch(/translate: 0 -2px;/)
+    expect(ruleBody('.brand-lockup')).toMatch(/align-items: center;/)
+  })
+
   it('keeps the sidebar footer pinned: the sidebar clips, only the session list scrolls', () => {
     expect(ruleBody('.sidebar')).toMatch(/overflow: hidden;/)
     expect(ruleBody('.sidebar-footer')).toMatch(/flex: none;/)
