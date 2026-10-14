@@ -347,6 +347,28 @@
   .automation-history > li[data-failed] > svg {
     color: var(--agnes-status-danger-text);
   }
+  .automation-history > li {
+    flex-wrap: wrap;
+    row-gap: var(--s2);
+  }
+  .automation-history > li > a {
+    margin-inline-start: auto;
+    font-size: var(--font-size-xs);
+  }
+  /* The task dialog: one column of fields; the interval number and its unit share a row. */
+  .schedule-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .schedule-form-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 8rem);
+    gap: var(--s8);
+  }
+  .schedule-form [data-testid="schedules-preview"]:empty {
+    display: none;
+  }
   /* Short fields sit two to a row; one to a row where the dialog is narrow. */
   .automation-fields {
     display: grid;

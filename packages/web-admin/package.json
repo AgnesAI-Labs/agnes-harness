@@ -40,6 +40,7 @@
     "./settings/pages": "./src/settings/pages.tsx",
     "./settings/registry": "./src/settings/registry.tsx",
     "./settings/runtime-panels": "./src/settings/runtime-panels.tsx",
+    "./settings/schedule-model": "./src/settings/schedule-model.ts",
     "./settings/schedules": "./src/settings/schedules.tsx",
     "./settings/search": "./src/settings/search.tsx",
     "./settings/security-status": "./src/settings/security-status.tsx",

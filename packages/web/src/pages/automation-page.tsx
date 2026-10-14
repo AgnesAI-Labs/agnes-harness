@@ -1,11 +1,12 @@
 import { AUTOMATION_NAMESPACE, automationCatalog } from '@agnes/web-admin/settings/automation-locale'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '@agnes/web-admin/settings/locales'
+import { scheduleChoices } from '@agnes/web-admin/settings/schedule-model'
 import { type SchedulesApi, SchedulesPage } from '@agnes/web-admin/settings/schedules'
 import { TriggersPanel } from '@agnes/web-admin/settings/triggers'
 import { homeNavigation, type UiExtensionContext } from '@agnes/web-client'
 import { Tabs, useUiText } from '@agnes/web-ui'
 import { useMemo, useState } from 'react'
-import { canEffect, useHomeAdmin } from './admin-api.js'
+import { canEffect, homeAdmin, useHomeAdmin } from './admin-api.js'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 
@@ -14,8 +15,8 @@ const tabOf = (selection: unknown): AutomationTab =>
   (selection as { tab?: unknown } | undefined)?.tab === 'triggers' ? 'triggers' : 'schedules'
 
 /**
- * 自动化: what happens by itself. Scheduled tasks continue a session at a set time; triggers start
- * one when another system sends an event. The tab is part of the page's address.
+ * 自动化: what happens by itself. Scheduled tasks run at a set time, in a new session or an existing
+ * one; triggers start a session when another system sends an event. The tab is part of the address.
  */
 export function AutomationPage({ context }: { context: UiExtensionContext }) {
   const data = context.data as HomePageData
@@ -29,7 +30,28 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
       list: (params) => data.call('_agnes/v1/schedules.list', params),
       upsert: (params) => data.call('_agnes/v1/schedules.upsert', params),
       archive: (params) => data.call('_agnes/v1/schedules.archive', params),
+      control: (params) => data.call('_agnes/v1/schedules.control', params),
       sessionKey: () => data.sessionId(),
+      workspaces: () => data.call('_agnes/v1/workspace.list', {}),
+      sessions: () => data.call('_agnes/v1/session.list', { limit: 200 }),
+      // The same catalog a new chat chooses from; a reader without admin access sees the defaults only.
+      choices: async () => {
+        const { api } = await homeAdmin()
+        const [loops, adapters, runtime] = await Promise.allSettled([
+          api.loops(),
+          api.modelAdapters(),
+          api.runtime(),
+        ])
+        return scheduleChoices({
+          ...(loops.status === 'fulfilled'
+            ? { loops: loops.value.loops, ...(loops.value.presets ? { presets: loops.value.presets } : {}) }
+            : {}),
+          ...(adapters.status === 'fulfilled' ? { adapters: adapters.value.modelAdapters } : {}),
+          ...(runtime.status === 'fulfilled' && runtime.value.bundles
+            ? { bundles: runtime.value.bundles }
+            : {}),
+        })
+      },
     }),
     [data],
   )

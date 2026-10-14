@@ -1,5 +1,7 @@
 import type { SessionApprovalGrant, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { SessionSchedules } from '@agnes/web-admin/settings/schedules'
+import { homeNavigation } from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import {
   Button,
@@ -280,6 +282,16 @@ export function createRuntimeDialog(options: {
                 onRefresh={() => void readTools(version)}
                 t={t}
               />
+              {sessionId && (
+                <SessionSchedules
+                  list={listSchedules}
+                  sessionKey={sessionId}
+                  onManage={() => {
+                    close()
+                    homeNavigation.open('automation', { tab: 'schedules' })
+                  }}
+                />
+              )}
             </RuntimeInfo>
           ) : (
             <p aria-busy="true">{t('session.runtime.loading')}</p>
@@ -292,6 +304,8 @@ export function createRuntimeDialog(options: {
     )
   }
   const render = () => renderRegion(host, <RuntimeDialog />)
+  const listSchedules = (params: { scope: 'session'; sessionKey: string }) =>
+    options.client.call('_agnes/v1/schedules.list', params)
   /** The daemon lists what this session may do without asking; a refusal hides the section. */
   const readGrants = async (mine: number, id: string) => {
     let next: SessionGrants
