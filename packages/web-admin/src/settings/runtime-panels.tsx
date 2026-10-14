@@ -3,14 +3,17 @@ import {
   Badge,
   Banner,
   Button,
-  Disclosure,
-  Field,
   MetaText,
   SettingsDetails,
+  SettingsFooter,
+  SettingsGroup,
   SettingsInput,
+  SettingsItem,
   SettingsList,
   SettingsRow,
+  SettingsSection,
   SettingsState,
+  SettingsTechnicalDetails,
   Tag,
 } from '@agnes/web-ui'
 import { useState } from 'react'
@@ -46,15 +49,18 @@ export function ProvidersPanel({
   }
   return (
     <>
-      {kinds.length > 1 && <p>{t('providerHelp')}</p>}
       {kinds.map((kind) => (
-        <section key={kind} aria-label={t(`provider.${kind}`)} data-testid={`providers-${kind}`}>
-          <h3>{t(`provider.${kind}`)}</h3>
-          <p>{t(`providerHelp.${kind}`)}</p>
+        <SettingsSection
+          key={kind}
+          aria-label={t(`provider.${kind}`)}
+          data-testid={`providers-${kind}`}
+          title={t(`provider.${kind}`)}
+          description={t(`providerHelp.${kind}`)}
+        >
           {kind === 'persistence' && (
-            <SettingsDetails title={t('technicalDetails')} data-testid="persistence-provider-help">
+            <SettingsTechnicalDetails data-testid="persistence-provider-help">
               <p>{t('persistenceHelp')}</p>
-            </SettingsDetails>
+            </SettingsTechnicalDetails>
           )}
           {!snapshot.providers.some((entry) => entry.kind === kind) && (
             <SettingsState>{t('empty')}</SettingsState>
@@ -79,7 +85,7 @@ export function ProvidersPanel({
                       .slice(0, 3)
                       .join(' · ')}
                   </MetaText>
-                  <SettingsDetails title={t('technicalDetails')} data-testid="provider-technical-details">
+                  <SettingsTechnicalDetails data-testid="provider-technical-details">
                     <dl>
                       <dt>{t('providerName')}</dt>
                       <dd>
@@ -104,11 +110,11 @@ export function ProvidersPanel({
                         </>
                       )}
                     </dl>
-                  </SettingsDetails>
+                  </SettingsTechnicalDetails>
                 </SettingsRow>
               ))}
           </SettingsList>
-        </section>
+        </SettingsSection>
       ))}
     </>
   )
@@ -161,47 +167,68 @@ export function GenerationsPanel({
       setBusy(false)
     }
   }
+  const short = (id: string) => (id.length > 12 ? `${id.slice(0, 12)}…` : id)
   return (
-    <Disclosure variant="plain" data-testid="plugin-generations" summary={t('generation')}>
-      {!status?.generations.length && <p>{t('noGenerations')}</p>}
-      {status?.currentGenerationId && (
-        <p>
-          {t('currentGeneration')}: <code>{status.currentGenerationId}</code>
-        </p>
+    <SettingsDetails
+      data-testid="plugin-generations"
+      title={t('generation')}
+      summary={
+        status?.generations.length ? t('generationCount', { count: status.generations.length }) : undefined
+      }
+    >
+      {!status?.generations.length ? (
+        <SettingsState>{t('noGenerations')}</SettingsState>
+      ) : (
+        <SettingsList>
+          {status.generations.map((generation) => (
+            <SettingsRow
+              key={generation.id}
+              title={
+                <>
+                  <code title={generation.id}>{short(generation.id)}</code>{' '}
+                  <Badge tone={generation.id === status.currentGenerationId ? 'ok' : 'off'}>
+                    {t(
+                      generation.id === status.currentGenerationId
+                        ? 'currentGeneration'
+                        : `generationState.${generation.state}`,
+                    )}
+                  </Badge>
+                </>
+              }
+              description={`${t('bound')} ${generation.boundSessions} · ${t('openSessions')} ${generation.openSessions}`}
+            >
+              {generation.error && <SettingsState tone="error">{t('generationFailure')}</SettingsState>}
+              <SettingsTechnicalDetails>
+                <dl>
+                  <dt>{t('generationId')}</dt>
+                  <dd>
+                    <code>{generation.id}</code>
+                  </dd>
+                  <dt>{t('generationPackages')}</dt>
+                  <dd>{generation.packages.map((pkg) => `${pkg.id} ${pkg.version}`).join(', ') || '—'}</dd>
+                  {generation.sessions && generation.sessions.length > 0 && (
+                    <>
+                      <dt>{t('generationSessions')}</dt>
+                      <dd>{generation.sessions.map((item) => item.key).join(', ')}</dd>
+                    </>
+                  )}
+                </dl>
+              </SettingsTechnicalDetails>
+            </SettingsRow>
+          ))}
+        </SettingsList>
       )}
-      {status?.generations.map((generation) => (
-        <div className="agnes-settings-row" key={generation.id}>
-          <p>
-            <code>{generation.id}</code> <Badge>{t(`generationState.${generation.state}`)}</Badge>
-          </p>
-          <p>
-            {t('bound')}: {generation.boundSessions} · {t('openSessions')}: {generation.openSessions}
-          </p>
-          {generation.sessions && generation.sessions.length > 0 && (
-            <p>
-              {t('generationSessions')}: {generation.sessions.map((item) => item.key).join(', ')}
-            </p>
-          )}
-          <ul>
-            {generation.packages.map((pkg) => (
-              <li key={pkg.id}>
-                {pkg.id} · {pkg.version}
-              </li>
-            ))}
-          </ul>
-          {generation.error && <SettingsState tone="error">{t('generationFailure')}</SettingsState>}
-        </div>
-      ))}
-      <section data-testid="session-generation-migration" aria-busy={busy}>
-        <h3>{t('migrate')}</h3>
-        <p>{t('migrationHelp')}</p>
-        {!supported && <p>{t('migrationUnavailable')}</p>}
+      <SettingsSection
+        data-testid="session-generation-migration"
+        aria-busy={busy}
+        title={t('migrate')}
+        description={t(supported ? 'migrationHelp' : 'migrationUnavailable')}
+      >
         {/* Pick from the sessions the backend reports on an earlier version; typing a key stays possible. */}
-        <h4>{t('migrateFromList')}</h4>
         {stale.length === 0 ? (
-          <p>{t('migrateNone')}</p>
+          <SettingsState>{t('migrateNone')}</SettingsState>
         ) : (
-          <SettingsList data-testid="migration-sessions">
+          <SettingsList data-testid="migration-sessions" aria-label={t('migrateFromList')}>
             {stale.map((session) => (
               <SettingsRow
                 key={`${session.generation}:${session.key}`}
@@ -244,83 +271,114 @@ export function GenerationsPanel({
             ))}
           </SettingsList>
         )}
-        <SettingsDetails title={t('migrateManual')} data-testid="migration-manual" compact>
-          <Field label={t('sessionKey')} htmlFor="migration-session-key">
-            <SettingsInput
-              id="migration-session-key"
-              data-testid="migration-session-key"
-              type="text"
-              maxLength={512}
-              value={sessionId}
-              disabled={!supported || !canSave || busy}
-              onChange={(event) => {
-                setSessionId(event.target.value)
-                setConfirming(false)
-                setMessage('')
-                setResult(undefined)
-              }}
-            />
-          </Field>
-          <Button
-            data-testid="migrate-session"
-            disabled={!supported || !canSave || busy || !sessionId.trim() || confirming}
-            onClick={() => setConfirming(true)}
-          >
-            {t('migrate')}
-          </Button>
-        </SettingsDetails>
         {confirming && (
-          <fieldset aria-label={t('migrationConfirm')}>
-            <p>
-              {t('migrationConfirm')} <code>{sessionId.trim()}</code>
-            </p>
-            <Button
-              data-testid="confirm-session-migration"
-              disabled={busy}
-              loading={busy}
-              onClick={() => void migrate()}
-            >
-              {t('confirmMigration')}
-            </Button>{' '}
-            <Button disabled={busy} onClick={() => setConfirming(false)}>
-              {t('cancel')}
-            </Button>
-          </fieldset>
+          <Banner
+            tone="warning"
+            role="group"
+            aria-label={t('migrationConfirm')}
+            action={
+              <>
+                <Button size="small" disabled={busy} onClick={() => setConfirming(false)}>
+                  {t('cancel')}
+                </Button>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  data-testid="confirm-session-migration"
+                  disabled={busy}
+                  loading={busy}
+                  onClick={() => void migrate()}
+                >
+                  {t('confirmMigration')}
+                </Button>
+              </>
+            }
+          >
+            {t('migrationConfirm')} <code>{sessionId.trim()}</code>
+          </Banner>
         )}
-        {message && <p role={message === 'migrationFailed' ? 'alert' : 'status'}>{t(message)}</p>}
-        {result && (
-          <p data-testid="session-migration-result">
-            <code>{result.previous}</code> → <code>{result.current}</code>
-          </p>
-        )}
-      </section>
-    </Disclosure>
+        {message &&
+          (message === 'migrationFailed' ? (
+            <Banner tone="error" role="alert">
+              {t(message)}
+            </Banner>
+          ) : (
+            <SettingsState tone="success" role="status" data-testid="session-migration-status">
+              {t(message)}{' '}
+              {result && (
+                <span data-testid="session-migration-result">
+                  <code>{short(result.previous)}</code> → <code>{short(result.current)}</code>
+                </span>
+              )}
+            </SettingsState>
+          ))}
+        <SettingsDetails title={t('migrateManual')} data-testid="migration-manual" compact>
+          <SettingsGroup>
+            <SettingsItem label={t('sessionKey')} labelId="migration-session-key-label">
+              <SettingsInput
+                id="migration-session-key"
+                data-testid="migration-session-key"
+                aria-labelledby="migration-session-key-label"
+                type="text"
+                maxLength={512}
+                value={sessionId}
+                disabled={!supported || !canSave || busy}
+                onChange={(event) => {
+                  setSessionId(event.target.value)
+                  setConfirming(false)
+                  setMessage('')
+                  setResult(undefined)
+                }}
+              />
+              <Button
+                data-testid="migrate-session"
+                disabled={!supported || !canSave || busy || !sessionId.trim() || confirming}
+                onClick={() => setConfirming(true)}
+              >
+                {t('migrateAction')}
+              </Button>
+            </SettingsItem>
+          </SettingsGroup>
+        </SettingsDetails>
+      </SettingsSection>
+    </SettingsDetails>
   )
 }
 export function PublicationPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
   const report = snapshot.publication
   return (
-    <section className="runtime-card" data-testid="composition-publication">
-      <h3>{t('publication')}</h3>
+    <SettingsSection
+      data-testid="composition-publication"
+      title={t('publication')}
+      description={report ? report.operation : undefined}
+    >
       {!report ? (
-        <p>{t('noPublication')}</p>
+        <SettingsState>{t('noPublication')}</SettingsState>
       ) : (
         <>
-          <p>{report.operation}</p>
-          {!report.ok && <SettingsState tone="error">{t('publicationRetry')}</SettingsState>}
-          <ul>
+          {!report.ok && (
+            <Banner tone="error" role="alert">
+              {t('publicationRetry')}
+            </Banner>
+          )}
+          <SettingsList>
             {report.containers.map((container) => (
-              <li key={container.compositionHash}>
-                <code>{container.compositionHash}</code>{' '}
-                <Badge tone={container.status === 'applied' ? 'ok' : 'bad'}>
-                  {t(container.status === 'applied' ? 'publicationApplied' : 'publicationFailed')}
-                </Badge>
-              </li>
+              <SettingsRow
+                key={container.compositionHash}
+                title={
+                  <code title={container.compositionHash}>{container.compositionHash.slice(0, 12)}</code>
+                }
+                actions={
+                  <Badge tone={container.status === 'applied' ? 'ok' : 'bad'}>
+                    {t(container.status === 'applied' ? 'publicationApplied' : 'publicationFailed')}
+                  </Badge>
+                }
+              />
             ))}
-          </ul>
+          </SettingsList>
         </>
       )}
-    </section>
+    </SettingsSection>
   )
 }
 
@@ -379,26 +437,21 @@ export function LocalPluginsPanel({
     }
   }
   return (
-    <Disclosure
-      variant="plain"
-      data-testid="local-plugins"
-      summary={t('local')}
-      summaryProps={{ 'data-testid': 'local-plugins-toggle' }}
-    >
-      <p>{t('localHelp')}</p>
-      <dl>
-        <dt>{t('home')}</dt>
-        <dd>
-          <code>{snapshot.localPluginFolders.home}</code>
-        </dd>
-        <dt>{t('workspace')}</dt>
-        <dd>
-          <code>{snapshot.localPluginFolders.workspace}</code>
-        </dd>
-      </dl>
+    <SettingsDetails data-testid="local-plugins" title={t('local')}>
+      <SettingsSection description={t('localHelp')}>
+        <dl>
+          <dt>{t('home')}</dt>
+          <dd>
+            <code>{snapshot.localPluginFolders.home}</code>
+          </dd>
+          <dt>{t('workspace')}</dt>
+          <dd>
+            <code>{snapshot.localPluginFolders.workspace}</code>
+          </dd>
+        </dl>
+      </SettingsSection>
       {deployments.length > 0 && (
-        <>
-          <h4>{t('workspaceDeployments')}</h4>
+        <SettingsSection title={t('workspaceDeployments')}>
           <SettingsList data-testid="workspace-deployments">
             {deployments.map((deployment) => (
               <SettingsRow
@@ -446,18 +499,24 @@ export function LocalPluginsPanel({
               {t('trustConfirm', { path: confirming.path })}
             </Banner>
           )}
-        </>
+        </SettingsSection>
       )}
-      <Button
-        data-testid="reload-local-plugins"
-        disabled={!canSave || busy}
-        loading={busy}
-        onClick={() => void reload()}
-      >
-        {t('reloadLocal')}
-      </Button>
-      {message && <p role={failed ? 'alert' : 'status'}>{t(message)}</p>}
-    </Disclosure>
+      {message && failed && (
+        <Banner tone="error" role="alert">
+          {t(message)}
+        </Banner>
+      )}
+      <SettingsFooter status={message && !failed ? t(message) : undefined}>
+        <Button
+          data-testid="reload-local-plugins"
+          disabled={!canSave || busy}
+          loading={busy}
+          onClick={() => void reload()}
+        >
+          {t('reloadLocal')}
+        </Button>
+      </SettingsFooter>
+    </SettingsDetails>
   )
 }
 export const sessionStartUrl = (

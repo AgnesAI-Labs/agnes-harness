@@ -1,6 +1,20 @@
-import { Button, Field, Select, SettingsCard, SettingsInput, useUiText } from '@agnes/web-ui'
+import {
+  Banner,
+  Button,
+  IconButton,
+  Select,
+  SettingsCode,
+  SettingsFooter,
+  SettingsGroup,
+  SettingsItem,
+  SettingsState,
+  SettingsTechnicalDetails,
+  StateSwitch,
+  Tag,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import { ChoiceLabel } from '../../settings/choices.js'
+import { choiceName } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
@@ -22,12 +36,14 @@ export function BundlesPanel({
   const [selected, setSelected] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [failed, setFailed] = useState('')
   const [dump, setDump] = useState('')
   const [sessionInfo, setSessionInfo] = useState<unknown>()
   const [dumpPreset, setDumpPreset] = useState<string>()
   const [origins, setOrigins] = useState<{ choice: string; layer: string; name: string }[]>([])
   const [reload, setReload] = useState(0)
   function moveBundle(index: number, offset: number) {
+    setMessage('')
     setSelected((prior) => {
       const next = [...prior]
       const item = next[index],
@@ -46,6 +62,7 @@ export function BundlesPanel({
     setOrigins([])
     setSessionInfo(undefined)
     setMessage('')
+    setFailed('')
     if (!api) return
     setBusy(true)
     Promise.all([api.bundles(), api.composition()])
@@ -57,7 +74,7 @@ export function BundlesPanel({
         }
       })
       .catch(() => {
-        if (current) setMessage('bundles.unavailable')
+        if (current) setFailed('bundles.unavailable')
       })
       .finally(() => {
         if (current) setBusy(false)
@@ -66,15 +83,27 @@ export function BundlesPanel({
       current = false
     }
   }, [api, reload])
+  const dirty =
+    !!snapshot &&
+    (selected.length !== snapshot.bundles.length ||
+      selected.some((id, index) => id !== snapshot.bundles[index]))
+  const toggle = (id: string, on: boolean) => {
+    setMessage('')
+    setSelected((prior) => (on ? [...prior, id] : prior.filter((entry) => entry !== id)))
+  }
   async function save() {
-    if (!api || !snapshot || busy || !canSave) return
+    if (!api || !snapshot || busy || !canSave || !dirty) return
     setBusy(true)
+    setFailed('')
     try {
       await api.saveBundles({ revision: snapshot.revision, bundles: selected })
+      // Read the stored selection back: its revision moved with the save.
+      const value = await api.bundles()
+      setSnapshot(value)
+      setSelected(value.bundles)
       setMessage('bundles.saved')
-      setReload((value) => value + 1)
     } catch {
-      setMessage('bundles.failed')
+      setFailed('bundles.failed')
     } finally {
       setBusy(false)
     }
@@ -106,21 +135,42 @@ export function BundlesPanel({
           ),
         )
     } catch {
-      setMessage('bundles.unavailable')
+      setFailed('bundles.unavailable')
     } finally {
       setBusy(false)
     }
   }
+  // Chosen bundles first, in the order they apply; the rest follow as the catalog lists them.
+  const rows = snapshot
+    ? [
+        ...selected.map((id) => ({ id, entry: snapshot.catalog.find((item) => item.id === id) })),
+        ...snapshot.catalog
+          .filter((item) => !selected.includes(item.id))
+          .map((entry) => ({ id: entry.id, entry })),
+      ]
+    : []
   return (
-    <SettingsCard aria-label={t('bundles.title')}>
-      <h2>{t('bundles.title')}</h2>
-      <p>{t('bundles.description')}</p>
-      <SessionToolsPanel value={sessionInfo} t={settingsText} />
-      {message && <p role="status">{t(message)}</p>}
-      {snapshot && (
-        <div
+    <div className="agnes-settings-stack" aria-busy={busy} data-testid="bundles-panel">
+      {failed && (
+        <Banner
+          tone="error"
+          role="alert"
+          action={
+            <Button size="small" disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
+              {t('defaults.reload')}
+            </Button>
+          }
+        >
+          {t(failed)}
+        </Banner>
+      )}
+      {busy && !snapshot && <SettingsState tone="loading" />}
+      {snapshot && rows.length === 0 && <SettingsState>{t('bundles.empty')}</SettingsState>}
+      {snapshot && rows.length > 0 && (
+        <SettingsGroup
           role="group"
           aria-label={t('bundles.title')}
+          data-testid="bundle-order"
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.defaultPrevented) return
             if (!(event.target instanceof HTMLInputElement)) return
@@ -129,121 +179,114 @@ export function BundlesPanel({
             void save()
           }}
         >
-          <ol data-testid="bundle-order">
-            {selected.map((id, index) => (
-              <li key={id}>
-                {id}{' '}
-                <Button
-                  aria-label={`${t('bundles.up')} ${id}`}
-                  disabled={index === 0 || busy || !canSave}
-                  onClick={() => moveBundle(index, -1)}
-                >
-                  {t('bundles.up')}
-                </Button>{' '}
-                <Button
-                  aria-label={`${t('bundles.down')} ${id}`}
-                  disabled={index === selected.length - 1 || busy || !canSave}
-                  onClick={() => moveBundle(index, 1)}
-                >
-                  {t('bundles.down')}
-                </Button>
-              </li>
-            ))}
-          </ol>
-          {snapshot.catalog.map((entry) => {
-            const { id, sourcePackage } = entry
+          {rows.map(({ id, entry }) => {
+            const position = selected.indexOf(id)
+            const on = position >= 0
+            const name = entry ? choiceName(entry, settingsText) : id
             return (
-              <label
+              <SettingsItem
                 key={id}
-                className="agnes-settings-checkbox"
-                htmlFor={`bundle-default-${encodeURIComponent(id)}`}
+                data-bundle={id}
+                data-selected={on || undefined}
+                label={
+                  <>
+                    {on && <span className="agnes-settings-order">{position + 1}</span>}
+                    <span>{name}</span>
+                    {!entry && <Tag tone="warn">{t('bundles.missing')}</Tag>}
+                  </>
+                }
+                description={entry ? t('bundles.from', { name: entry.sourcePackage }) : undefined}
               >
-                <SettingsInput
+                {on && selected.length > 1 && (
+                  <>
+                    <IconButton
+                      name="chevron-up"
+                      label={`${t('bundles.up')} ${name}`}
+                      disabled={position === 0 || busy || !canSave}
+                      onClick={() => moveBundle(position, -1)}
+                    />
+                    <IconButton
+                      name="chevron-down"
+                      label={`${t('bundles.down')} ${name}`}
+                      disabled={position === selected.length - 1 || busy || !canSave}
+                      onClick={() => moveBundle(position, 1)}
+                    />
+                  </>
+                )}
+                <StateSwitch
                   id={`bundle-default-${encodeURIComponent(id)}`}
-                  type="checkbox"
-                  checked={selected.includes(id)}
+                  label={name}
+                  checked={on}
                   disabled={busy || !canSave}
-                  onChange={(event) =>
-                    setSelected((prior) =>
-                      event.target.checked ? [...prior, id] : prior.filter((entry) => entry !== id),
-                    )
-                  }
-                />{' '}
-                {selected.includes(id) ? String(selected.indexOf(id) + 1) + '. ' : ''}
-                <ChoiceLabel entry={entry} t={settingsText} />
-                {' · '}
-                {sourcePackage}
-              </label>
+                  onToggle={(checked) => toggle(id, checked)}
+                />
+              </SettingsItem>
             )
           })}
-          {selected
-            .filter((id) => !snapshot.catalog.some((entry) => entry.id === id))
-            .map((id) => (
-              <p key={id}>
-                <label htmlFor={`bundle-missing-${encodeURIComponent(id)}`}>
-                  <SettingsInput
-                    id={`bundle-missing-${encodeURIComponent(id)}`}
-                    type="checkbox"
-                    checked
-                    disabled={busy || !canSave}
-                    onChange={() => setSelected((prior) => prior.filter((entry) => entry !== id))}
-                  />{' '}
-                  {t('bundles.missing')}: {id}
-                </label>
-              </p>
-            ))}
-          <Button onClick={() => void save()} disabled={busy || !canSave}>
+        </SettingsGroup>
+      )}
+      {snapshot && (
+        <SettingsFooter status={message ? t(message) : t('bundles.description')}>
+          <Button
+            appearance="primary"
+            data-testid="bundles-save"
+            onClick={() => void save()}
+            loading={busy && dirty}
+            disabled={!dirty || busy || !canSave}
+          >
             {t('bundles.save')}
           </Button>
-        </div>
+        </SettingsFooter>
       )}
-      <Button disabled={!api || busy} onClick={() => setReload((value) => value + 1)}>
-        {t('defaults.reload')}
-      </Button>
-      <Field label={settingsText('presets')}>
-        <Select<string>
-          aria-label={settingsText('presets')}
-          data-testid="config-dump-preset"
-          value={dumpPreset ?? ''}
-          onChange={(value) => setDumpPreset(value || undefined)}
-          options={[
-            { value: '', label: t('defaults.configured') },
-            ...presets.map((entry) => ({
-              value: entry.id,
-              label: <ChoiceLabel entry={entry} t={settingsText} />,
-            })),
-          ]}
-        />
-      </Field>
-      <Button data-testid="config-dump" disabled={!api || busy} onClick={() => void explain()}>
-        {t('bundles.explain')}
-      </Button>
-      {dump && (
-        <>
-          <p>{settingsText('dumpHelp')}</p>
-          <table data-testid="config-choice-sources">
-            <caption>{settingsText('origin')}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{settingsText('choice')}</th>
-                <th scope="col">{settingsText('layer')}</th>
-                <th scope="col">{settingsText('source')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {origins.map((origin) => (
-                <tr key={origin.choice}>
-                  <th scope="row">{origin.choice}</th>
-                  <td>{origin.layer}</td>
-                  <td>{origin.name}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the dump. */}
-          <pre tabIndex={0}>{dump}</pre>
-        </>
-      )}
-    </SettingsCard>
+      <SettingsTechnicalDetails data-testid="bundles-technical">
+        <SettingsGroup>
+          <SettingsItem label={t('bundles.explain')} description={settingsText('dumpHelp')}>
+            <Select<string>
+              aria-label={settingsText('presets')}
+              data-testid="config-dump-preset"
+              value={dumpPreset ?? ''}
+              popupMatchSelectWidth={false}
+              onChange={(value) => setDumpPreset(value || undefined)}
+              options={[
+                { value: '', label: t('defaults.configured') },
+                ...presets.map((entry) => ({ value: entry.id, label: choiceName(entry, settingsText) })),
+              ]}
+            />
+            <Button data-testid="config-dump" disabled={!api || busy} onClick={() => void explain()}>
+              {t('bundles.explain-action')}
+            </Button>
+          </SettingsItem>
+        </SettingsGroup>
+        {dump && (
+          <>
+            <div className="agnes-settings-table">
+              <table data-testid="config-choice-sources">
+                <caption>{settingsText('origin')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{settingsText('choice')}</th>
+                    <th scope="col">{settingsText('layer')}</th>
+                    <th scope="col">{settingsText('source')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {origins.map((origin) => (
+                    <tr key={origin.choice}>
+                      <th scope="row">{origin.choice}</th>
+                      <td>{origin.layer}</td>
+                      <td>{origin.name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <SettingsCode label={t('bundles.explain')} copy={dump}>
+              {dump}
+            </SettingsCode>
+          </>
+        )}
+        <SessionToolsPanel value={sessionInfo} t={settingsText} />
+      </SettingsTechnicalDetails>
+    </div>
   )
 }

@@ -338,20 +338,39 @@ it('loads catalog choices and saves their exact identities and revision', async 
     ),
   )
   expect(host.querySelector('form form')).toBeNull()
-  expect(host.textContent).toContain('Defaults for new sessions')
+  expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Defaults for new sessions')
+  // One row per choice: its name on the left, its control on the right.
+  expect([...host.querySelectorAll('.agnes-settings-item-label')].map((label) => label.textContent)).toEqual([
+    'How the agent works',
+    'Model adapter',
+    'Model',
+    'Permissions',
+  ])
   expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
-  expect(host.querySelector('[data-testid="admin-default-loop-readonly"]')?.textContent).toContain('workflow')
-  expect(host.querySelector('[aria-label="Permission preset"]')).not.toBeNull()
-  expect(host.textContent).toContain('read-only')
+  expect(host.querySelector('[data-testid="admin-default-loop-readonly"]')?.textContent).toBe('workflow')
+  // Identifiers are technical details, not row text.
+  expect(host.querySelector('.agnes-settings-group')?.textContent).not.toContain('1.0.0')
+  expect(host.querySelector('[data-testid="session-defaults-technical"]')).not.toBeNull()
+  const save = host.querySelector<HTMLButtonElement>('[data-testid="session-defaults-save"]')
+  // Nothing changed yet, so there is nothing to save.
+  expect(save?.disabled).toBe(true)
   await act(async () =>
-    Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === t('defaults.save'))
-      ?.click(),
+    host
+      .querySelector('[aria-label="Permissions"]')
+      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
   )
+  const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find((entry) =>
+    entry.textContent?.includes(settingsCatalog.en?.['choice.workspace-write'] ?? ''),
+  )
+  expect(option).toBeDefined()
+  await act(async () => option?.click())
+  expect(save?.disabled).toBe(false)
+  await act(async () => save?.click())
   expect(
     JSON.parse(String(fetcher.mock.calls.find(([url]) => String(url).endsWith('/defaults'))?.[1]?.body)),
-  ).toEqual(snapshot)
-  expect(host.textContent).toContain('Defaults saved.')
+  ).toEqual({ ...snapshot, defaults: { ...snapshot.defaults, preset: 'workspace-write' } })
+  expect(host.textContent).toContain(t('defaults.saved'))
+  expect(save?.disabled).toBe(true)
   expect(outerSubmit).not.toHaveBeenCalled()
 })
 
@@ -369,7 +388,7 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
     fetcher,
   )
   const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: false, t }))
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('defaults.unavailable'))
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t('defaults.unavailable'))
   expect(host.querySelector('form')).toBeNull()
   fetcher.mockImplementation(async (url) =>
     String(url).endsWith('/loops')
@@ -379,11 +398,58 @@ it('keeps unavailable catalog errors visible and read-only saves disabled', asyn
   await act(async () => {
     host.querySelector('button')?.click()
   })
-  expect(
-    Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === t('defaults.save'),
-    )?.disabled,
-  ).toBe(true)
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="session-defaults-save"]')?.disabled).toBe(true)
+})
+
+it('lists the other provider slots as rows that state what is in effect', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (url) =>
+    String(url).endsWith('/loops')
+      ? Response.json({ loops: [], revision: 0, defaults: {} })
+      : String(url).endsWith('/model-adapters')
+        ? Response.json({ modelAdapters: [] })
+        : Response.json({}),
+  )
+  const api = new PluginAdminApi(
+    { profile: 'local-dev', clientId: 'admin', permissions: ['packages.read'], readOnly: false },
+    fetcher,
+  )
+  const provider = (kind: string, id: string, active: boolean) => ({
+    kind,
+    id,
+    version: '1.0.0',
+    sourcePackage: '@acme/pack',
+    capabilities: [],
+    restartRequired: false,
+    required: false,
+    pinned: false,
+    active,
+    selectedFor: [],
+  })
+  const host = await mount(
+    createElement(SessionDefaultsPanel, {
+      api,
+      canSave: true,
+      t,
+      providers: [
+        provider('memory', 'files', true),
+        provider('memory', 'vector', false),
+        provider('child-agent', 'builtin', true),
+        provider('sandbox', 'native', true),
+      ],
+    }),
+  )
+  // Two memory providers are installed: the row lists both and says why it cannot be changed here.
+  const memory = host.querySelector('[data-testid="session-default-slot-memory"]')
+  expect(memory?.querySelector('[role="combobox"]')?.hasAttribute('disabled')).toBe(true)
+  expect(memory?.textContent).toContain(t('defaults.slot-fixed'))
+  // One child-agent provider: the row simply names it.
+  const child = host.querySelector('[data-testid="session-default-slot-child-agent"]')
+  expect(child?.querySelector('[role="combobox"]')).toBeNull()
+  expect(child?.textContent).toContain('builtin')
+  // Sandbox and the other rarely changed slots sit in one fold; slots nothing provides are not listed.
+  const more = host.querySelector('[data-testid="session-default-more-slots"]')
+  expect(more?.getAttribute('data-open')).toBe('false')
+  expect(host.querySelector('[data-testid="session-default-slot-compaction"]')).toBeNull()
 })
 
 it('navigates runtime capabilities and never offers a disallowed security preset', async () => {
@@ -563,7 +629,9 @@ it('reports publication failures and requires an explicit eligible migration wit
     host.querySelector<HTMLButtonElement>('[data-testid="confirm-session-migration"]')?.click(),
   )
   expect(migrateSession).toHaveBeenLastCalledWith('session-key')
-  expect(host.querySelector('[role="status"]')?.textContent).toBe(text('migrated'))
+  expect(host.querySelector('[data-testid="session-migration-status"]')?.textContent).toContain(
+    text('migrated'),
+  )
   expect(host.textContent).toContain('previous → current')
 })
 

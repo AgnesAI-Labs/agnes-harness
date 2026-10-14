@@ -1,5 +1,5 @@
 import { type SessionCapability, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
-import { Disclosure, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import { Disclosure, SettingsDetails, SettingsSection, SettingsState } from '@agnes/web-ui'
 
 type ToolGroup = {
   packageId: string
@@ -44,9 +44,12 @@ export function sessionToolInfo(value: unknown): SessionInfo[] {
 export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string): string }) {
   const sessions = sessionToolInfo(value)
   return (
-    <SettingsCard data-testid="session-tool-info" aria-label={t('sessionToolInfo')}>
-      <h3>{t('sessionToolInfo')}</h3>
-      <p>{t('sessionToolHelp')}</p>
+    <SettingsSection
+      data-testid="session-tool-info"
+      aria-label={t('sessionToolInfo')}
+      title={t('sessionToolInfo')}
+      description={t('sessionToolHelp')}
+    >
       {!sessions.length && <SettingsState>{t('sessionToolUnavailable')}</SettingsState>}
       {sessions.map((session, index) => (
         <Disclosure
@@ -103,7 +106,7 @@ export function SessionToolsPanel({ value, t }: { value: unknown; t(key: string)
           )}
         </Disclosure>
       ))}
-    </SettingsCard>
+    </SettingsSection>
   )
 }
 
