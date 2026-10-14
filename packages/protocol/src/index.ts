@@ -454,6 +454,7 @@ export type {
   McpStdioTransport,
   McpTool,
   McpToolCatalogPage,
+  McpToolDisclosure,
   McpToolPolicy,
   McpToolsListParams,
   McpTrustSetParams,
