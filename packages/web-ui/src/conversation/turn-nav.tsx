@@ -79,9 +79,21 @@ const BOOKMARK_PATH =
 export function scrollToTurn(viewport: HTMLElement, entry: TurnNavEntry): boolean {
   const target = anchorOf(viewport, entry)
   if (!target) return false
-  const top =
-    viewport.scrollTop + target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16
-  viewport.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? 'auto' : 'smooth' })
+  const top = Math.max(
+    0,
+    viewport.scrollTop + target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 16,
+  )
+  const still = reducedMotion()
+  const distance = top - viewport.scrollTop
+  // A long way off, gliding the whole distance takes seconds: arrive within a screen at once and
+  // glide only the last stretch, so the reader still sees which way the conversation moved.
+  if (!still && Math.abs(distance) > viewport.clientHeight * 1.5) {
+    const behavior = viewport.style.scrollBehavior
+    viewport.style.scrollBehavior = 'auto'
+    viewport.scrollTop = top - Math.sign(distance) * viewport.clientHeight
+    viewport.style.scrollBehavior = behavior
+  }
+  viewport.scrollTo({ top, behavior: still ? 'auto' : 'smooth' })
   target.setAttribute('data-turn-nav-flash', 'true')
   setTimeout(() => target.removeAttribute('data-turn-nav-flash'), TURN_NAV_FLASH_MS)
   return true
@@ -252,7 +264,8 @@ export function TurnNav({
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
     const first = ticks.current[0]
     if (!first) return
-    const centre = first.getBoundingClientRect().top + pitch / 2
+    const box = first.getBoundingClientRect()
+    const centre = box.top + box.height / 2
     const y = event.clientY - centre
     setPointer(y)
     show(nearestTick(y, pitch, count))

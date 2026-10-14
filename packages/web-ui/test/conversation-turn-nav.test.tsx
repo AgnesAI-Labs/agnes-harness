@@ -292,9 +292,9 @@ describe('turn navigator', () => {
     if (!first) throw new Error('missing tick')
     first.getBoundingClientRect = () => new DOMRect(18, 100, 12, 2)
     const nav = shell.querySelector('nav')
-    // Pitch is 9px (7px gap + 2px line); the first tick's centre is at 104.5. Point at the third.
+    // Pitch is 9px (7px gap + 2px line); the first tick's centre is at 101. Point at the third.
     await act(async () => {
-      nav?.dispatchEvent(new PointerEvent('pointermove', { clientY: 104.5 + 18, bubbles: true }))
+      nav?.dispatchEvent(new PointerEvent('pointermove', { clientY: 101 + 18, bubbles: true }))
     })
     expect(ticks().map((tick) => tick.style.width)).toEqual(['22px', '26px', '30px', '26px', '21.9px'])
     expect(ticks()[2]?.dataset.hot).toBe('true')
@@ -359,6 +359,20 @@ describe('turn navigator', () => {
     expect(document.activeElement).toBe(ticks()[3])
     await press('Enter', {}, ticks()[3] as HTMLElement)
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1184, behavior: 'smooth' })
+  })
+
+  it('arrives within a screen of a far prompt at once and glides the rest', async () => {
+    await render(6)
+    viewport.scrollTop = 2000
+    const seen: number[] = []
+    scrollTo.mockImplementation((options: ScrollToOptions) => {
+      seen.push(viewport.scrollTop)
+      viewport.scrollTop = options.top ?? 0
+    })
+    await act(async () => ticks()[0]?.click())
+    // Turn 1 sits at 0: the reader is put one screen (600px) below it, then glides up.
+    expect(seen).toEqual([600])
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'smooth' })
   })
 
   it('moves to the previous and next prompt with ⌥↑ / ⌥↓, not while typing or when hidden', async () => {
