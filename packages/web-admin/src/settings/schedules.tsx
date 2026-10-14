@@ -107,6 +107,15 @@ function whenFor(kind: Kind, current: string): string {
   return /^\d{4}-/.test(current) ? current : ''
 }
 
+/**
+ * The scheduler records a delivery only after the prompt reached the session: `prompt` means an idle
+ * session started a turn, no reason means it joined a running one. Neither is a failure.
+ */
+const DELIVERED = new Set(['prompt', 'resumed'])
+export function deliveryFailed(delivery: { reason?: string }): boolean {
+  return delivery.reason !== undefined && !DELIVERED.has(delivery.reason)
+}
+
 function isRow(value: unknown): value is ScheduleRow {
   if (!value || typeof value !== 'object') return false
   const row = value as ScheduleRow
@@ -589,18 +598,22 @@ export function SchedulesPage({
                     data-testid="schedules-history"
                   >
                     <ul className="automation-history">
-                      {row.deliveries.map((delivery) => (
-                        <li
-                          key={`${delivery.at}:${delivery.seq ?? ''}`}
-                          data-failed={delivery.reason ? true : undefined}
-                        >
-                          <Icon name={delivery.reason ? 'x' : 'check'} size={16} />
-                          {moment(delivery.at)}
-                          <MetaText>
-                            {delivery.reason ? t('schedulesDeliveryIssue') : t('schedulesStatus.fired')}
-                          </MetaText>
-                        </li>
-                      ))}
+                      {row.deliveries.map((delivery) => {
+                        const failed = deliveryFailed(delivery)
+                        return (
+                          <li
+                            key={`${delivery.at}:${delivery.seq ?? ''}`}
+                            data-testid="schedules-delivery"
+                            data-failed={failed ? true : undefined}
+                          >
+                            <Icon name={failed ? 'x' : 'check'} size={16} />
+                            {moment(delivery.at)}
+                            <MetaText>
+                              {failed ? t('schedulesDeliveryIssue') : t('schedulesStatus.fired')}
+                            </MetaText>
+                          </li>
+                        )
+                      })}
                     </ul>
                   </SettingsDetails>
                 )}

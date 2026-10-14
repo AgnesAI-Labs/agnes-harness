@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { settingsCatalog } from '../src/settings/locales.js'
 import {
+  deliveryFailed,
   describeSchedule,
   localTimeZone,
   type SchedulesApi,
@@ -187,6 +188,24 @@ it('describes a schedule rule in words, and hosts its primary action where the p
   expect(host.querySelector('[data-testid="schedules-new"]')).toBeNull()
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
   expect(host.querySelector('[data-testid="schedules-row"]')?.textContent).toContain('Weekly Tue')
+})
+
+it('shows a prompt that started a turn as delivered, not as a failure', async () => {
+  expect(deliveryFailed({ reason: 'prompt' })).toBe(false)
+  expect(deliveryFailed({})).toBe(false)
+  expect(deliveryFailed({ reason: 'workspace_missing' })).toBe(true)
+  const api: SchedulesApi = {
+    sessionKey: () => 's1',
+    list: async () => ({ schedules: [reminder] }),
+    upsert: async () => ({}),
+    archive: async () => ({ deleted: true }),
+  }
+  const host = await mount(createElement(SchedulesPage, { api, t }))
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-delivery"]')).not.toBeNull())
+  const delivery = must(host.querySelector('[data-testid="schedules-delivery"]'), 'delivery')
+  expect(delivery.getAttribute('data-failed')).toBeNull()
+  expect(delivery.textContent).toContain(t('schedulesStatus.fired'))
+  expect(delivery.textContent).not.toContain(t('schedulesDeliveryIssue'))
 })
 
 it('keeps time zone and Cron under advanced options, opened when a schedule uses them', async () => {
