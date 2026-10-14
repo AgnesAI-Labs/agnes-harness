@@ -1,12 +1,18 @@
 import {
   appServerErrorMessage,
+  Banner,
   Button,
-  Disclosure,
-  Field,
-  SettingsCard,
+  IconButton,
+  Select,
+  SettingsCode,
+  SettingsDetails,
+  SettingsFooter,
+  SettingsGroup,
   SettingsInput,
-  SettingsSelect,
+  SettingsItem,
+  SettingsSection,
   SettingsState,
+  SettingsTechnicalDetails,
   SettingsTextArea,
   StateSwitch,
   useUiText,
@@ -126,7 +132,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
       abort.abort()
     }
   }, [])
-  async function refresh(save = false) {
+  async function refresh(save = false, workspace = cwd) {
     if (busy) return
     setBusy(true)
     setError(false)
@@ -134,7 +140,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
     try {
       const value = await contextRequest(
         {
-          ...(cwd ? { cwd } : {}),
+          ...(workspace ? { cwd: workspace } : {}),
           ...(save && config
             ? {
                 config: {
@@ -161,136 +167,200 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
       if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
+  const stored = snapshot?.config
+  const dirty =
+    !!config &&
+    !!stored &&
+    (config.rulesEnabled !== stored.rulesEnabled ||
+      config.timeEnabled !== stored.timeEnabled ||
+      config.timeZone !== stored.timeZone ||
+      config.refreshIntervalMs !== stored.refreshIntervalMs ||
+      roots.trim() !== stored.customSkillRoots.join('\n'))
+  const edit = (next: Config) => {
+    setSaved(false)
+    setConfig(next)
+  }
+  const locked = !canSave || busy
+  const workspaces = snapshot?.workspaces.filter((entry) => entry.available) ?? []
   return (
-    <SettingsCard data-testid="context-panel" aria-busy={busy}>
-      <p>{t('contextHelp')}</p>
+    <div className="agnes-settings-stack" data-testid="context-panel" aria-busy={busy}>
       {Boolean(error) && (
-        <SettingsState tone="error">
+        <Banner tone="error" role="alert">
           {appServerErrorMessage(error, document.documentElement.lang) ?? t('contextFailed')}
-        </SettingsState>
+        </Banner>
       )}
-      {saved && <SettingsState tone="success">{t('contextSaved')}</SettingsState>}
+      {busy && !config && <SettingsState tone="loading" />}
       {config && (
-        <fieldset disabled={!canSave || busy}>
-          <legend>{t('contextDefaults')}</legend>
-          <label className="agnes-settings-checkbox" htmlFor="context-rules-enabled">
-            <StateSwitch
-              id="context-rules-enabled"
-              testId="context-rules-enabled"
-              label={t('contextRules')}
-              disabled={!canSave || busy}
-              checked={config.rulesEnabled}
-              onToggle={(checked) => setConfig({ ...config, rulesEnabled: checked })}
-            />
-            {t('contextRules')}
-          </label>
-          <label className="agnes-settings-checkbox" htmlFor="context-time-enabled">
-            <StateSwitch
-              id="context-time-enabled"
-              testId="context-time-enabled"
-              label={t('contextTime')}
-              disabled={!canSave || busy}
-              checked={config.timeEnabled}
-              onToggle={(checked) => setConfig({ ...config, timeEnabled: checked })}
-            />
-            {t('contextTime')}
-          </label>
-          <Field label={t('contextZone')} htmlFor="context-zone">
-            <SettingsInput
-              id="context-zone"
-              data-testid="context-zone"
-              value={config.timeZone}
-              onChange={(e) => setConfig({ ...config, timeZone: e.target.value })}
-            />
-          </Field>
-          <Field label={t('contextInterval')} htmlFor="context-interval">
-            <SettingsInput
-              id="context-interval"
-              type="number"
-              min={0}
-              max={86400000}
-              value={config.refreshIntervalMs}
-              onChange={(e) => setConfig({ ...config, refreshIntervalMs: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label={t('contextRoots')} htmlFor="context-roots">
-            <SettingsTextArea
-              id="context-roots"
-              data-testid="context-skill-roots"
-              value={roots}
-              onChange={(e) => setRoots(e.target.value)}
-            />
-          </Field>
-          <Button data-testid="context-save" onClick={() => void refresh(true)}>
-            {t('contextSave')}
-          </Button>
-        </fieldset>
-      )}
-      <Field label={t('workspace')} htmlFor="context-workspace">
-        <SettingsSelect
-          id="context-workspace"
-          data-testid="context-workspace"
-          disabled={busy}
-          value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
-        >
-          <option value="">{t('contextChoose')}</option>
-          {snapshot?.workspaces
-            .filter((w) => w.available)
-            .map((w) => (
-              <option key={w.path} value={w.path}>
-                {w.path}
-              </option>
-            ))}
-        </SettingsSelect>
-      </Field>
-      <Button data-testid="context-refresh" disabled={busy} onClick={() => void refresh()}>
-        {t('contextRefresh')}
-      </Button>
-      <p>{t('contextScopeHelp')}</p>
-      {snapshot?.rules && (
-        <div data-testid="context-rule-files">
-          {!snapshot.rules.files.length && <SettingsState>{t('contextNoRules')}</SettingsState>}
-          {snapshot.rules.files.map((file) => (
-            <Disclosure
-              variant="plain"
-              key={file.path}
-              summary={
-                <>
-                  {file.path} · {file.scope} · {file.trust}
-                </>
-              }
+        <>
+          <SettingsGroup>
+            <SettingsItem label={t('contextRules')} description={t('contextRulesHint')}>
+              <StateSwitch
+                id="context-rules-enabled"
+                testId="context-rules-enabled"
+                label={t('contextRules')}
+                disabled={locked}
+                checked={config.rulesEnabled}
+                onToggle={(checked) => edit({ ...config, rulesEnabled: checked })}
+              />
+            </SettingsItem>
+            <SettingsItem label={t('contextTime')} description={t('contextTimeHint')}>
+              <StateSwitch
+                id="context-time-enabled"
+                testId="context-time-enabled"
+                label={t('contextTime')}
+                disabled={locked}
+                checked={config.timeEnabled}
+                onToggle={(checked) => edit({ ...config, timeEnabled: checked })}
+              />
+            </SettingsItem>
+            <SettingsItem
+              label={t('contextZone')}
+              description={t('contextZoneHint')}
+              labelId="context-zone-label"
             >
-              <pre>{file.content}</pre>
-            </Disclosure>
-          ))}
-          {snapshot.rules.skipped.length > 0 && (
-            <SettingsState>
-              {t('contextSkipped')}: {snapshot.rules.skipped.join(', ')}
-            </SettingsState>
-          )}
-        </div>
+              <SettingsInput
+                id="context-zone"
+                data-testid="context-zone"
+                aria-labelledby="context-zone-label"
+                disabled={locked || !config.timeEnabled}
+                value={config.timeZone}
+                onChange={(e) => edit({ ...config, timeZone: e.target.value })}
+              />
+            </SettingsItem>
+            <SettingsItem
+              label={t('contextInterval')}
+              description={t('contextIntervalHint')}
+              labelId="context-interval-label"
+            >
+              <SettingsInput
+                id="context-interval"
+                type="number"
+                min={0}
+                max={86400000}
+                aria-labelledby="context-interval-label"
+                disabled={locked || !config.timeEnabled}
+                value={config.refreshIntervalMs}
+                onChange={(e) => edit({ ...config, refreshIntervalMs: Number(e.target.value) })}
+              />
+            </SettingsItem>
+            <SettingsItem
+              stacked
+              label={t('contextRoots')}
+              description={t('contextRootsHint')}
+              labelId="context-roots-label"
+            >
+              <SettingsTextArea
+                id="context-roots"
+                data-testid="context-skill-roots"
+                aria-labelledby="context-roots-label"
+                rows={2}
+                disabled={locked}
+                value={roots}
+                onChange={(e) => {
+                  setSaved(false)
+                  setRoots(e.target.value)
+                }}
+              />
+            </SettingsItem>
+          </SettingsGroup>
+          <SettingsFooter status={saved ? t('contextSaved') : undefined}>
+            <Button
+              appearance="primary"
+              data-testid="context-save"
+              disabled={locked || !dirty}
+              loading={busy && dirty}
+              onClick={() => void refresh(true)}
+            >
+              {t('contextSave')}
+            </Button>
+          </SettingsFooter>
+        </>
       )}
-      <h3>{t('contextSkillInvoke')}</h3>
-      <Field label={t('contextSkillName')} htmlFor="context-skill">
-        <SettingsInput
-          id="context-skill"
-          data-testid="context-skill-name"
-          value={skill}
-          onChange={(e) => setSkill(e.target.value)}
-        />
-      </Field>
-      <Field label={t('contextSkillArgs')} htmlFor="context-skill-args">
-        <SettingsInput id="context-skill-args" value={args} onChange={(e) => setArgs(e.target.value)} />
-      </Field>
-      <Button
-        data-testid="context-skill-invoke"
-        disabled={!skill.trim() || /\s/.test(skill.trim())}
-        href={sessionStartUrl(undefined, `/skill invoke ${skill.trim()} ${args}`)}
+      <SettingsSection
+        title={t('contextLoaded')}
+        description={t('contextScopeHelp')}
+        actions={
+          <>
+            <Select<string>
+              id="context-workspace"
+              data-testid="context-workspace"
+              aria-label={t('contextChoose')}
+              disabled={busy || !workspaces.length}
+              value={cwd || null}
+              placeholder={t('contextChoose')}
+              popupMatchSelectWidth={false}
+              onChange={(value) => {
+                setCwd(value)
+                void refresh(false, value)
+              }}
+              options={workspaces.map((entry) => ({ value: entry.path, label: entry.path }))}
+            />
+            <IconButton
+              name="refresh-cw"
+              label={t('contextRefresh')}
+              data-testid="context-refresh"
+              disabled={busy || !cwd}
+              onClick={() => void refresh()}
+            />
+          </>
+        }
       >
-        {t('contextSkillInvoke')}
-      </Button>
-      <p>{t('contextQuestionHelp')}</p>
-    </SettingsCard>
+        {!snapshot?.rules ? (
+          <SettingsState>{t(workspaces.length ? 'contextPick' : 'contextNoWorkspace')}</SettingsState>
+        ) : (
+          <div className="agnes-settings-stack" data-testid="context-rule-files">
+            {!snapshot.rules.files.length && <SettingsState>{t('contextNoRules')}</SettingsState>}
+            {snapshot.rules.files.length > 0 && (
+              <SettingsGroup>
+                {snapshot.rules.files.map((file) => (
+                  <SettingsDetails
+                    key={file.path}
+                    title={<span translate="no">{file.path}</span>}
+                    summary={`${file.scope} · ${file.trust}`}
+                  >
+                    <SettingsCode label={file.path} copy={file.content}>
+                      {file.content}
+                    </SettingsCode>
+                  </SettingsDetails>
+                ))}
+              </SettingsGroup>
+            )}
+            {snapshot.rules.skipped.length > 0 && (
+              <SettingsState>
+                {t('contextSkipped')}: {snapshot.rules.skipped.join(', ')}
+              </SettingsState>
+            )}
+          </div>
+        )}
+      </SettingsSection>
+      <SettingsTechnicalDetails data-testid="context-technical">
+        <SettingsGroup>
+          <SettingsItem stacked label={t('contextSkillInvoke')} description={t('contextSkillInvokeHint')}>
+            <SettingsInput
+              id="context-skill"
+              data-testid="context-skill-name"
+              aria-label={t('contextSkillName')}
+              placeholder={t('contextSkillName')}
+              value={skill}
+              onChange={(e) => setSkill(e.target.value)}
+            />
+            <SettingsInput
+              id="context-skill-args"
+              aria-label={t('contextSkillArgs')}
+              placeholder={t('contextSkillArgs')}
+              value={args}
+              onChange={(e) => setArgs(e.target.value)}
+            />
+            <Button
+              data-testid="context-skill-invoke"
+              disabled={!skill.trim() || /\s/.test(skill.trim())}
+              href={sessionStartUrl(undefined, `/skill invoke ${skill.trim()} ${args}`)}
+            >
+              {t('contextSkillStart')}
+            </Button>
+          </SettingsItem>
+        </SettingsGroup>
+      </SettingsTechnicalDetails>
+    </div>
   )
 }

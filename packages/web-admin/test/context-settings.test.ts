@@ -53,13 +53,31 @@ it('loads and saves installation context, previews workspace rules and composes 
   try {
     flushSync(() => root.render(createElement(ContextPanel, { canSave: true })))
     await vi.waitFor(() => expect(control('context-zone')?.value).toBe('UTC'))
-    flushSync(() => {
-      const select = control('context-workspace')
-      select.value = '/synthetic/project'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    flushSync(() => control('context-refresh').click())
+    // Nothing is edited yet, so there is nothing to save.
+    expect((control('context-save') as unknown as HTMLButtonElement).disabled).toBe(true)
+    expect(host.querySelector('[data-testid="context-rule-files"]')).toBeNull()
+    // Choosing a workspace reads its rules at once.
+    flushSync(() =>
+      host.querySelector('#context-workspace')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+    )
+    const workspace = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+      (entry) => entry.textContent === '/synthetic/project',
+    )
+    expect(workspace).toBeDefined()
+    flushSync(() => workspace?.click())
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="context-rule-files"]')).not.toBeNull())
+    expect(requests.at(-1)).toEqual({ cwd: '/synthetic/project' })
+    // Each rule file is a row; its text opens inside a code block that can be copied.
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="context-rule-files"] .agh-disclosure-summary')).not.toBeNull(),
+    )
+    flushSync(() =>
+      host.querySelector<HTMLElement>('[data-testid="context-rule-files"] .agh-disclosure-summary')?.click(),
+    )
     await vi.waitFor(() => expect(host.textContent).toContain('Follow project conventions'))
+    expect(
+      host.querySelector('[data-testid="context-rule-files"] .agnes-settings-code button'),
+    ).not.toBeNull()
     flushSync(() => {
       const input = control('context-skill-roots')
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
